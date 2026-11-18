@@ -142,6 +142,9 @@ class _ResultChipState extends State<ResultChip> {
         color: fill,
         borderRadius: BorderRadius.circular(pill ? 999 : 5),
       ),
+      foregroundDecoration: widget.result.count?.mark == true
+          ? _DashedOutline(ink.withValues(alpha: 0.45), pill ? 999 : 5)
+          : null,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -204,5 +207,47 @@ class _ResultChipState extends State<ResultChip> {
         ),
       ),
     );
+  }
+}
+
+/// A thin dashed outline: the quietest way to say that a result is not in the
+/// note's total.
+class _DashedOutline extends Decoration {
+  const _DashedOutline(this.color, this.radius);
+
+  final Color color;
+  final double radius;
+
+  @override
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) =>
+      _DashedOutlinePainter(color, radius);
+}
+
+class _DashedOutlinePainter extends BoxPainter {
+  _DashedOutlinePainter(this.color, this.radius);
+
+  final Color color;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
+    final size = configuration.size;
+    if (size == null) return;
+    final outline = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          (offset & size).deflate(0.5),
+          Radius.circular(radius),
+        ),
+      );
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (final metric in outline.computeMetrics()) {
+      for (var at = 0.0; at < metric.length; at += 6) {
+        canvas.drawPath(metric.extractPath(at, at + 3), paint);
+      }
+    }
   }
 }

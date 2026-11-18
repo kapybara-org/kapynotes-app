@@ -505,6 +505,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   Map<int, LineResult> _results = const {};
   String? _totalText;
+  String? _totalDetail;
   String? _hoveredKeywordId;
   late TextEditingValue _lastValue;
   late List<NoteFormatRange> _formats;
@@ -5959,6 +5960,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
     _results = evaluation.results;
     _totalText = evaluation.totalText;
+    _totalDetail = evaluation.totalDetail;
   }
 
   static DateTime _localTime(DateTime value) => value.toLocal();
@@ -6914,6 +6916,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           done: checklist.done,
           tasks: checklist.total,
           total: _totalText,
+          totalDetail: _totalDetail,
           typing: widget.typing,
           readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
           readOnlyIcon: widget.readOnlyIcon,

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../data/time_zones.dart';
 import 'ast.dart';
+import 'contribution.dart';
 import 'notation.dart';
 import 'parser.dart';
 import 'unit.dart';
@@ -17,13 +18,26 @@ import 'value.dart';
 class CalcScope {
   final Map<String, CalcValue> _variables = {};
   CalcValue? _prev;
-  CalcValue? _runningSum;
 
-  /// The sum of the results that read nothing from the note's other lines,
-  /// which is the figure the note's footer shows: a line worked out from
-  /// another's result would otherwise be counted twice.
-  CalcValue? _ownSum;
-  int _numericCount = 0;
+  /// Every amount some line has added to the note's total, in line order.
+  final List<CountedAmount> _entries = [];
+
+  /// The entry that last defined each name an amount was counted under.
+  final Map<String, CountedAmount> _owners = {};
+
+  /// What the total says about the lines that added nothing, by line.
+  final Map<int, CountNote> _skipped = {};
+
+  /// The total is in the unit of the first amount that has one, and holds
+  /// the amounts of that kind. Bare numbers add up apart from them and are
+  /// the total only while no amount has a unit.
+  CalcValue? _unitSum;
+  int _unitCount = 0;
+  CalcValue? _bareSum;
+  int _bareCount = 0;
+
+  /// Whether an amount has come off the total since it was last added up.
+  bool _stale = false;
 
   /// The defined names, sorted and joined, so that scopes defining the same
   /// names hold equal strings. Null once a name comes or goes, until asked
@@ -65,60 +79,151 @@ class CalcScope {
     return _prev;
   }
 
+  /// The note's total so far: what `total` and `sum` read.
   CalcValue? get runningSum {
+    final sum = _total;
     _trace
       ?.._readsSum = true
-      .._sumSeen = _runningSum;
-    return _runningSum;
+      .._sumSeen = sum;
+    return sum;
   }
 
   CalcValue? get average {
     final sum = runningSum;
+    final count = _totalCount;
     _trace
       ?.._readsCount = true
-      .._countSeen = _numericCount;
-    if (sum == null || _numericCount == 0) return null;
-    return Arith.scale(sum, 1 / _numericCount);
+      .._countSeen = count;
+    if (sum == null || count == 0) return null;
+    return Arith.scale(sum, 1 / count);
   }
 
-  /// The sum of the results that read nothing from other lines.
-  CalcValue? get ownSum => _ownSum;
+  CalcValue? get _total {
+    if (_stale) _addUp();
+    return _unitSum ?? _bareSum;
+  }
 
-  /// Whether the line being traced read a variable, `prev`, `sum` or `avg`:
-  /// whether its answer is worked out from the note's other lines.
-  bool get tracedReadsResults {
+  int get _totalCount {
+    if (_stale) _addUp();
+    return _unitSum != null ? _unitCount : _bareCount;
+  }
+
+  /// Whether the line being traced read `prev`, `sum`, `total` or `avg`:
+  /// whether it is worked out from the total itself.
+  bool get tracedReadsAggregate {
     final trace = _trace!;
-    return trace._values.isNotEmpty ||
-        trace._readsPrev ||
-        trace._readsSum ||
-        trace._readsCount;
+    return trace._readsPrev || trace._readsSum || trace._readsCount;
   }
 
-  /// Folds a line's result into the running aggregates. Values that cannot
-  /// join the sum (a boolean, or a unit that does not match) update `prev`
-  /// but are left out of `sum`/`avg` rather than poisoning them. A [derived]
-  /// result, one worked out from other lines, joins them but not [ownSum].
-  void record(CalcValue value, {bool derived = false}) {
+  /// The amount an earlier line is still counting under [name].
+  CountedAmount? liveOwner(String name) {
+    final entry = _owners[name];
+    return entry != null && entry.live ? entry : null;
+  }
+
+  /// Folds line [line], which gave [value], into the total as [claim] says.
+  /// A line that adds nothing still updates `prev`; one that redefines a
+  /// name, or takes an earlier amount as its input, takes that amount's
+  /// place in the total.
+  void record(int line, CalcValue value, Contribution claim) {
     _prev = value;
-    final joined = _joined(_runningSum, value);
-    if (joined != null) {
-      _runningSum = joined;
-      _numericCount++;
+    if (claim.skipped case final reason?) _skipped[line] = CountNote(reason);
+    final name = claim.defines;
+    claim.consumes.forEach((consumed, role) {
+      final entry = liveOwner(consumed);
+      if (entry != null) {
+        _retire(entry, 'used as a $role by ${name ?? 'line ${line + 1}'}');
+      }
+    });
+    if (name != null) {
+      final entry = claim.replaces ? liveOwner(name) : null;
+      if (entry != null) _retire(entry, 'replaced by a later $name');
+      _owners.remove(name);
     }
-    if (derived) return;
-    _ownSum = _joined(_ownSum, value) ?? _ownSum;
+    final amount = claim.amount;
+    if (amount == null) return;
+    final entry = CountedAmount(line, amount, name);
+    _entries.add(entry);
+    if (name != null) _owners[name] = entry;
+    if (!_stale) _join(entry);
   }
 
-  /// [sum] with [value] added, or null where [value] cannot join it: a
-  /// boolean or a date, or mixed dimensions, which leave the sum intact.
-  static CalcValue? _joined(CalcValue? sum, CalcValue value) {
-    if (value is BooleanValue || value is DateTimeValue) return null;
-    if (sum == null) return value;
-    try {
-      return Arith.add(sum, value);
-    } on CalcError {
-      return null;
+  void _retire(CountedAmount entry, String reason) {
+    entry.live = false;
+    entry.note = CountNote('Not in the total: $reason');
+    _stale = true;
+  }
+
+  /// Adds the amounts that are still in the total up afresh, which is how an
+  /// amount comes out of it without leaving rounding behind, and lets one
+  /// that was of another kind join if the amount that set the kind is gone.
+  void _addUp() {
+    _stale = false;
+    _unitSum = null;
+    _unitCount = 0;
+    _bareSum = null;
+    _bareCount = 0;
+    for (final entry in _entries) {
+      if (!entry.live) continue;
+      entry.joined = true;
+      _join(entry);
     }
+  }
+
+  void _join(CountedAmount entry) {
+    final amount = entry.amount;
+    if (amount is! QuantityValue) {
+      _bareSum = _bareSum == null ? amount : Arith.add(_bareSum!, amount);
+      _bareCount++;
+      return;
+    }
+    final sum = _unitSum;
+    if (sum is! QuantityValue) {
+      _unitSum = amount;
+      _unitCount = 1;
+    } else if (sum.unit.dimension == amount.unit.dimension) {
+      _unitSum = Arith.add(sum, amount);
+      _unitCount++;
+    } else {
+      entry.joined = false;
+    }
+  }
+
+  /// What the total says about each line it left out or could not join,
+  /// by line. A bare number is left out of a total that has a unit.
+  Map<int, CountNote> notes() {
+    final total = _total;
+    final notes = {..._skipped};
+    for (final entry in _entries) {
+      if (!entry.live) {
+        notes[entry.line] = entry.note!;
+      } else if (!entry.joined) {
+        final amount = entry.amount as QuantityValue;
+        final into = (total as QuantityValue).unit.format();
+        notes[entry.line] = CountNote(
+          "Not in the total: ${amount.unit.format()} doesn't add to $into",
+          mark: true,
+        );
+      } else if (total is QuantityValue && entry.amount is! QuantityValue) {
+        notes[entry.line] = CountNote(
+          "Not in the total: it has no unit, so it doesn't add to ${total.unit.format()}",
+          mark: true,
+        );
+      }
+    }
+    return notes;
+  }
+
+  /// The amounts in the total, in line order.
+  List<CountedAmount> get counted {
+    final unit = _total is QuantityValue;
+    return [
+      for (final entry in _entries)
+        if (entry.live &&
+            entry.joined &&
+            (entry.amount is QuantityValue) == unit)
+          entry,
+    ];
   }
 
   /// Starts writing down what the next line reads and writes.
@@ -156,8 +261,8 @@ class CalcScope {
       }
     }
     if ((trace._readsPrev && !_same(_prev, trace._prevSeen)) ||
-        (trace._readsSum && !_same(_runningSum, trace._sumSeen)) ||
-        (trace._readsCount && _numericCount != trace._countSeen)) {
+        (trace._readsSum && !_same(_total, trace._sumSeen)) ||
+        (trace._readsCount && _totalCount != trace._countSeen)) {
       return false;
     }
     if (trace._wrote.isNotEmpty) {

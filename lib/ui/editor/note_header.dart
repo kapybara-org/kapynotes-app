@@ -63,6 +63,7 @@ class NoteMetaRow extends StatelessWidget {
     this.done = 0,
     this.tasks = 0,
     this.total,
+    this.totalDetail,
     this.typing = const [],
     this.readOnlyLabel,
     this.readOnlyIcon,
@@ -82,6 +83,9 @@ class NoteMetaRow extends StatelessWidget {
   final int tasks;
 
   final String? total;
+
+  /// What the total counted and how, for the hover on it.
+  final String? totalDetail;
   final List<Collaborator> typing;
 
   /// Set only when the note cannot be changed: what that is called here.
@@ -134,13 +138,16 @@ class NoteMetaRow extends StatelessWidget {
           ),
         ),
       if (total case final total?)
-        Text.rich(
-          key: const ValueKey('note-total'),
-          TextSpan(
-            text: 'Total: ',
-            children: [TextSpan(text: total, style: strong)],
+        Tooltip(
+          message: totalDetail ?? '',
+          child: Text.rich(
+            key: const ValueKey('note-total'),
+            TextSpan(
+              text: 'Total: ',
+              children: [TextSpan(text: total, style: strong)],
+            ),
+            style: quiet,
           ),
-          style: quiet,
         ),
       if (typingText != null)
         Semantics(
