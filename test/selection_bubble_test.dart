@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -414,6 +415,86 @@ void main() {
       await tester.pumpAndSettle();
       expect(_bubble, findsNothing);
     });
+
+    testWidgets(
+      'every button works under a mouse click, and the note keeps its '
+      'focus and its selection',
+      (tester) async {
+        const body = 'Some words to format';
+        await tester.pumpWidget(_editor(body));
+        await tester.pumpAndSettle();
+        final controller = _controller(tester);
+        final focus = tester.widget<NoteField>(noteField).focusNode;
+        // A click as a mouse makes one: the button goes down, frames pass,
+        // and it comes up again.
+        Future<void> click(String key) async {
+          final gesture = await tester.startGesture(
+            tester.getCenter(find.byKey(ValueKey(key))),
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pump(const Duration(milliseconds: 80));
+          await gesture.up();
+          await tester.pumpAndSettle();
+        }
+
+        for (final action in ['bold', 'italic', 'strikethrough', 'code']) {
+          await _select(tester, 'words');
+          expect(focus.hasFocus, isTrue);
+          await click('selection-$action');
+          expect(controller.text, isNot(body), reason: action);
+          expect(controller.text, contains('words'), reason: action);
+          expect(focus.hasFocus, isTrue, reason: action);
+          expect(controller.selection.isCollapsed, isFalse, reason: action);
+          expect(_bubble, findsOneWidget, reason: action);
+          await click('selection-$action');
+          expect(controller.text, body, reason: action);
+        }
+
+        await _select(tester, 'words');
+        await click('selection-link');
+        final field = find.byKey(const ValueKey('selection-link-field'));
+        expect(field, findsOneWidget);
+        await tester.enterText(field, 'https://kapynotes.app');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(
+          controller.text,
+          'Some [words](https://kapynotes.app) to format',
+        );
+
+        controller.text = body;
+        await _select(tester, 'words');
+        await click('selection-block');
+        expect(
+          find.byKey(const ValueKey('selection-block-menu')),
+          findsOneWidget,
+        );
+        await click('selection-block-Heading 2');
+        expect(controller.text, '## $body');
+        expect(focus.hasFocus, isTrue);
+
+        await _select(tester, 'words');
+        await _chord(tester, ShortcutAction.formatBold);
+        expect(controller.text, isNot('## $body'));
+        await _chord(tester, ShortcutAction.formatBold);
+        await _chord(tester, ShortcutAction.formatItalic);
+        expect(controller.text, isNot('## $body'));
+
+        // Anywhere else is still outside the note.
+        await _select(tester, 'words');
+        expect(_bubble, findsOneWidget);
+        final away = await tester.startGesture(
+          const Offset(20, 20),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pump(const Duration(milliseconds: 80));
+        await away.up();
+        await tester.pumpAndSettle();
+        expect(focus.hasFocus, isFalse);
+        expect(_bubble, findsNothing);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
 
     testWidgets('bold, strikethrough and inline code toggle, and stay', (
       tester,
