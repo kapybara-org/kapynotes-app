@@ -33,8 +33,13 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
   static const double maxHeight = 600;
 
   /// How long the engine has to put the panel's view on screen and draw it.
-  /// An engine that takes the panel but never shows it gets the menu back.
+  /// A showing that takes longer gives that click the menu instead.
   static const Duration showTimeout = Duration(seconds: 2);
+
+  /// Showings that may fail in a row before the icon keeps its menu for the
+  /// rest of the session. One slow showing on a busy Mac is not a broken
+  /// engine, so the next click tries the panel again.
+  static const int maxFailedShows = 3;
 
   final MethodChannel _channel;
 
@@ -57,6 +62,7 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
   bool _resized = false;
   double _height = 420;
   int _openings = 0;
+  int _failedShows = 0;
   Completer<void>? _arrival;
 
   bool get isOpen => _open;
@@ -86,31 +92,41 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
   Future<bool> click() async {
     if (!await isSupported) return false;
     if (await _ask<bool>('isControlPressed') ?? false) return false;
-    await toggle();
-    return isSupported;
+    if (!_open) return open();
+    await close();
+    return true;
   }
 
-  Future<void> toggle() => _open ? close() : open();
+  Future<void> toggle() async {
+    if (_open) return close();
+    await open();
+  }
 
-  Future<void> open() async {
-    if (_open || !await isSupported) return;
+  /// Opens the panel, and answers whether it is showing.
+  Future<bool> open() async {
+    if (_open) return true;
+    if (!await isSupported) return false;
     _open = true;
     _openings++;
     final id = await _ask<int>('show', {'height': _height, 'key': takesKey});
     if (id == null) {
       _open = false;
-      return;
+      return false;
     }
     _viewId = id;
     final shown = await _drawAndReveal().timeout(
       showTimeout,
       onTimeout: () => false,
     );
-    if (shown) return;
+    if (shown) {
+      _failedShows = 0;
+      return true;
+    }
     _open = false;
-    _supported = Future.value(false);
+    if (++_failedShows >= maxFailedShows) _supported = Future.value(false);
     notifyListeners();
     await _ask<void>('hide');
+    return false;
   }
 
   Future<bool> _drawAndReveal() async {

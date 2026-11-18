@@ -637,35 +637,78 @@ void main() {
     });
   });
 
-  testWidgets('an engine that never shows the panel gives the menu back', (
-    tester,
-  ) async {
-    const channel = MethodChannel('test/menubar_panel_never_shown');
-    final calls = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
-      call,
-    ) async {
-      calls.add(call.method);
-      return switch (call.method) {
-        'isSupported' => true,
-        'isControlPressed' => false,
-        'show' => 7,
-        _ => null,
-      };
+  group('a panel the engine is slow to show', () {
+    const channel = MethodChannel('test/menubar_panel_slow');
+    late List<String> calls;
+    late bool slow;
+    late MenuBarPanelController panel;
+
+    setUp(() {
+      calls = [];
+      slow = true;
+      panel = MenuBarPanelController(channel: channel);
+      addTearDown(panel.dispose);
     });
-    final panel = MenuBarPanelController(channel: channel);
-    addTearDown(panel.dispose);
 
-    final clicked = panel.click();
-    await tester.pump(MenuBarPanelController.showTimeout);
-    expect(await clicked, isFalse, reason: 'the icon opens its menu');
-    expect(panel.isOpen, isFalse);
-    expect(calls, containsAllInOrder(['show', 'hide']));
-    expect(calls, isNot(contains('reveal')));
+    void answer(WidgetTester tester) => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call.method);
+          return switch (call.method) {
+            'isSupported' => true,
+            'isControlPressed' => false,
+            // A view the engine never delivers, or the one it already has.
+            'show' => slow ? 99 : tester.view.viewId,
+            _ => null,
+          };
+        });
 
-    calls.clear();
-    expect(await panel.click(), isFalse, reason: 'and keeps it this session');
-    expect(calls, isEmpty);
+    Future<bool> slowClick(WidgetTester tester) async {
+      calls.clear();
+      final clicked = panel.click();
+      await tester.pump(MenuBarPanelController.showTimeout);
+      return clicked;
+    }
+
+    testWidgets('gives that click the menu, and the next one the panel', (
+      tester,
+    ) async {
+      answer(tester);
+      expect(await slowClick(tester), isFalse, reason: 'the menu, this once');
+      expect(calls, containsAllInOrder(['show', 'hide']));
+      expect(calls, isNot(contains('reveal')));
+      expect(panel.isOpen, isFalse);
+
+      slow = false;
+      calls.clear();
+      final clicked = panel.click();
+      await tester.pump();
+      await tester.pump();
+      expect(await clicked, isTrue);
+      expect(panel.isOpen, isTrue);
+      expect(calls, containsAllInOrder(['show', 'reveal']));
+      await panel.close();
+
+      // The good showing started the count over: two slow ones in a row
+      // still leave the third click trying the panel.
+      slow = true;
+      expect(await slowClick(tester), isFalse);
+      expect(await slowClick(tester), isFalse);
+      expect(await slowClick(tester), isFalse);
+      expect(calls, contains('show'));
+    });
+
+    testWidgets('keeps the menu for the session after three in a row', (
+      tester,
+    ) async {
+      answer(tester);
+      for (var i = 0; i < MenuBarPanelController.maxFailedShows; i++) {
+        expect(await slowClick(tester), isFalse);
+        expect(calls, containsAllInOrder(['show', 'hide']));
+      }
+      calls.clear();
+      expect(await panel.click(), isFalse);
+      expect(calls, isEmpty, reason: 'straight to the menu');
+    });
   });
 }
 

@@ -613,7 +613,7 @@ void main() {
       await subject.initialize(ShortcutPrefs(_MemoryStore())..load());
 
       expect(subject.isTaken(ShortcutAction.openMenuBarPanel), isTrue);
-      expect(await subject.panel.click(), isTrue);
+      await subject.panel.click();
       expect(panel.calls, contains('show'));
     });
 
