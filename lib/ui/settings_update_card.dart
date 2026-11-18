@@ -221,7 +221,12 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
             Text('Restart to update to ${staged.version}', style: title),
             if (error != null) ...[
               const SizedBox(height: 4),
-              Text(error, style: body),
+              Text(
+                error,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: body,
+              ),
             ],
             const SizedBox(height: 10),
             restart,

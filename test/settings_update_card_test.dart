@@ -10,6 +10,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
+import 'package:kapy_notes/data/update_installer.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_update_card.dart';
 import 'package:material_ui/material_ui.dart';
@@ -261,6 +262,68 @@ void main() {
         final lowestItem = tester.getBottomLeft(items.last).dy;
         expect(tester.getTopLeft(card).dy, greaterThanOrEqualTo(lowestItem));
       }
+    });
+  }
+
+  // At 520 px the card is down to its one-line form and shows no error; the
+  // taller window gets the whole card, where a long error must stop at the two
+  // lines its height estimate allows.
+  for (final height in [520.0, 760.0]) {
+    testWidgets('a long update error in a window ${height.toInt()} px high '
+        'takes two lines at most and leaves every category reachable', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(760, height);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = _MemoryStore();
+      final notes = NotesStore(store);
+      await notes.load();
+      final (updates, installer) = await _readyChecker(store);
+      installer.installError = UpdateInstallerException(
+        List.filled(40, 'The installer could not be started').join('. '),
+      );
+      await updates.installAndRestart();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: SettingsDialog(
+              layoutPrefs: LayoutPrefs(store),
+              shortcuts: ShortcutPrefs(store)..load(),
+              rates: RatesRepository(store),
+              notes: notes,
+              updates: updates,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final items = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('settings-section-'),
+      );
+      expect(items.hitTestable(), findsNWidgets(items.evaluate().length));
+      final card = find.byKey(_card);
+      if (card.evaluate().isNotEmpty) {
+        expect(
+          tester.getTopLeft(card).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(items.last).dy),
+        );
+      }
+      final error = find.descendant(
+        of: card,
+        matching: find.textContaining('The installer could not be started'),
+      );
+      if (height < 600) {
+        expect(error, findsNothing);
+        return;
+      }
+      expect(error, findsOneWidget);
+      expect(tester.widget<Text>(error).maxLines, 2);
+      expect(tester.getSize(card).height, lessThanOrEqualTo(122));
     });
   }
 
