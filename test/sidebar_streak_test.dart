@@ -254,7 +254,7 @@ void main() {
     await tester.pump();
 
     expect(flameScale(tester), 1);
-    // Already the lit red, one frame in.
+    // Already lit, one frame in.
     expect(
       tester
           .widget<Text>(
@@ -265,7 +265,7 @@ void main() {
           )
           .style!
           .color,
-      const Color(0xFFFF7A5C),
+      KapyTheme.darkPalette.textPrimary,
     );
   });
 
