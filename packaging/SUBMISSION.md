@@ -2,11 +2,14 @@
 
 One codebase, bundle ID `com.kapybara.kapynotes`, team `96V66447C6` (Kapybara LLC).
 
+Store status as of 18 Nov 2026. Read the live state from the stores before
+relying on it: `packaging/upload_ios.sh confirm` and `packaging/upload_play.py confirm`.
+
 | Artifact | Channel | Status | Command |
 |---|---|---|---|
 | `KapyNotes-<version>.dmg` | Direct, kapynotes.com | **current plan** | `packaging/release.sh mac-direct` |
-| `kapy-ios.ipa` | iOS App Store | **live, 1.0.0** | `packaging/release.sh ios` |
-| `kapy-notes.aab` | Google Play | **live, 1.4.0** | `packaging/release.sh android` |
+| `kapy-ios.ipa` | iOS App Store | **live, 1.29.0**; 1.32.0 (38) in review, phased release | `packaging/release.sh ios` |
+| `kapy-android.aab` | Google Play | **live, 1.29.0**; 1.32.0 (38) in review, staged at 20% | `packaging/release.sh android` |
 | `kapy-macos.pkg` | Mac App Store | not in use | `packaging/release.sh mac-store` |
 
 The product is called **Kapy Notes** in the Dock, on the Home Screen, in the

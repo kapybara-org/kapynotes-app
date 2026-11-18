@@ -37,6 +37,7 @@ import '../compact_icon_button.dart';
 import '../notebook_paper.dart';
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
+import '../kapy_page_peek.dart';
 import 'editor_formatting.dart';
 import 'highlighting_controller.dart';
 import 'link_popover.dart';
@@ -175,6 +176,7 @@ class NoteEditor extends StatefulWidget {
     this.readOnlyLabel = 'View only',
     this.readOnlyIcon = Icons.visibility_outlined,
     this.onReadOnlyPressed,
+    this.idlePeekHeld,
     required this.engine,
     required this.highlighter,
     this.gutterWidth,
@@ -322,6 +324,10 @@ class NoteEditor extends StatefulWidget {
   final String readOnlyLabel;
   final IconData readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
+
+  /// Whether something besides input, such as Kapy AI answering, should keep
+  /// Kapy from peeking in at the page's corner right now.
+  final bool Function()? idlePeekHeld;
 
   final CalcEngine engine;
   final Highlighter highlighter;
@@ -7339,14 +7345,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         Positioned(
                           right: -6,
                           bottom: 0,
-                          child: IgnorePointer(
-                            child: Image.asset(
-                              KapyCursorPeek.assetPath,
-                              key: const ValueKey('page-kapy'),
-                              width: 60,
-                              height: 113,
-                              excludeFromSemantics: true,
-                            ),
+                          child: KapyPagePeek(
+                            held: widget.idlePeekHeld,
+                            activity: _controller,
                           ),
                         ),
                       if (_pasteChipShown)

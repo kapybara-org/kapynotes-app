@@ -3846,6 +3846,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
+          idlePeekHeld: () => _kapyAi?.answering ?? false,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
           paperStyle: widget.prefs.paperStyle,
           displayTime: widget.prefs.displayTime,
@@ -3939,6 +3940,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
+          idlePeekHeld: () => _kapyAi?.answering ?? false,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
           paperStyle: widget.prefs.paperStyle,
           displayTime: widget.prefs.displayTime,
