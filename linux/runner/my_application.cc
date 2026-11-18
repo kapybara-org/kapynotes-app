@@ -175,6 +175,12 @@ static void my_application_startup(GApplication* application) {
   g_signal_connect(application, "command-line", G_CALLBACK(command_line_cb),
                    self);
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
+  // The X11 WM_CLASS class, which is what the desktop entry's StartupWMClass
+  // names, so a dock groups the window under the app's own icon. GTK's own
+  // startup above sets it to the program name with a capital first letter,
+  // overwriting any earlier call, and the window takes it when it is created
+  // after this.
+  gdk_set_program_class(APPLICATION_ID);
   set_default_icon();
 }
 
@@ -210,10 +216,6 @@ MyApplication* my_application_new() {
   // corresponding .desktop file. This ensures better integration by allowing
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
-  // And the X11 WM_CLASS class with it, which GTK would otherwise capitalise.
-  // It is what the desktop entry's StartupWMClass names, so a dock groups
-  // the window under the app's own icon.
-  gdk_set_program_class(APPLICATION_ID);
 
   // Unique, rather than the template's G_APPLICATION_NON_UNIQUE: a second
   // launch, a deep link or a system shortcut running the binary hands its

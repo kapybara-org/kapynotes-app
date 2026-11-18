@@ -311,8 +311,10 @@ jobs:
       - name: Mount the AppImage through FUSE
         if: matrix.image == ''
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fuse3 xvfb x11-utils x11-apps dbus
+          # The runner image has no GL libraries at all, so it gets the
+          # containers' desktop baseline first, then FUSE 3 alone.
+          sudo packaging/linux/smoke_test.sh baseline
+          sudo apt-get install -y --no-install-recommends fuse3
           if dpkg -s libfuse2t64 >/dev/null 2>&1 || dpkg -s libfuse2 >/dev/null 2>&1; then
             sudo apt-get remove -y libfuse2t64 libfuse2 || true
           fi
