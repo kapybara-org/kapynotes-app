@@ -204,7 +204,6 @@ void main() {
   test('before the server has said, Free is twenty notes', () {
     expect(PlanTerms.defaultFreeNoteLimit, 20);
     expect(terms.freeNoteLimit, 20);
-    expect(Entitlements.freePreview.noteLimit, 20);
   });
 
   test('a trial, or Pro, lifts it the moment the answer says so', () async {

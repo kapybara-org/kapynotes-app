@@ -154,8 +154,13 @@ class Sharing extends ChangeNotifier {
   /// Moves a note into a shared space under a freshly minted content key,
   /// and pushes it so the other members receive it.
   Future<void> shareNote(String noteId, {required String spaceId}) async {
-    if (_notes.byId(noteId)?.isHidden ?? false) {
+    final note = _notes.byId(noteId);
+    if (note?.isHidden ?? false) {
       throw const SyncRefusedException(409, 'hidden-note', {});
+    }
+    final from = note == null ? null : spaceOf(note);
+    if (from != null && from.isTeam && !from.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
     }
     final space = _keyring.byId(spaceId);
     if (space == null || !space.isTeam) {
@@ -262,6 +267,13 @@ class Sharing extends ChangeNotifier {
     if (note == null || !note.isShared) {
       throw const SyncProtocolException('no such shared note');
     }
+    _notes.keepCopy(await _detached(note));
+  }
+
+  /// [note] with its attachments' bytes on this device and their server ids
+  /// dropped, so a copy uploads them again under itself. Throws when a
+  /// download fails.
+  Future<Note> _detached(Note note) async {
     final attachments = <NoteAttachmentRef>[];
     for (final ref in note.attachments) {
       final hashes = [
@@ -282,7 +294,7 @@ class Sharing extends ChangeNotifier {
         )!,
       );
     }
-    _notes.keepCopy(note.copyWith(attachments: attachments));
+    return note.copyWith(attachments: attachments);
   }
 
   /// A new note straight into a shared space.
@@ -358,10 +370,73 @@ class Sharing extends ChangeNotifier {
     _sync.requestSync();
   }
 
-  /// Leaving a space. The notes already on this device are the user's to
-  /// keep; nothing here pretends otherwise.
-  Future<void> leave(String spaceId) async {
-    await _api.removeMember(spaceId, userId);
+  /// Changes what a member may do, Editor or View only. Owner only.
+  ///
+  /// A server from before this has no such route, which answers a plain 404.
+  /// With one other person in the space, the notes then move to the pair
+  /// space for them at the new access, which they join from a fresh
+  /// invitation, and they leave this one.
+  Future<void> changeAccess(
+    String spaceId,
+    String userId,
+    SpaceRole role,
+  ) async {
+    final space = _keyring.byId(spaceId);
+    if (space == null || !space.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
+    }
+    if (role == SpaceRole.owner) {
+      throw const SyncProtocolException('ownership moves by transfer');
+    }
+    try {
+      await _api.changeRole(spaceId, userId, role);
+    } on SyncRefusedException catch (error) {
+      final others = space.othersThan(this.userId);
+      final notes = notesIn(spaceId);
+      if (error.status != 404 ||
+          error.code != 'server returned 404' ||
+          others.length != 1 ||
+          space.invites.isNotEmpty ||
+          notes.any((note) => note.isHidden)) {
+        rethrow;
+      }
+      for (final note in notes) {
+        await shareNoteWith(note.id, email: others.single.email, role: role);
+      }
+      await _api.removeMember(spaceId, userId);
+    }
+    await refresh();
+  }
+
+  /// Leaving a space. By default each of its notes stays as a private copy,
+  /// attachments included, hidden ones still hidden. The copies are written
+  /// to disk before the server is asked, so nothing is ever lost. A retry
+  /// reuses the copies an earlier attempt made, until one succeeds. Only a
+  /// refusal, which means
+  /// nothing changed, takes back the copies this attempt made; a timeout may
+  /// have left the space all the same, so they stay.
+  Future<void> leave(String spaceId, {bool keepCopies = true}) async {
+    final sources = keepCopies ? notesIn(spaceId) : const <Note>[];
+    final detached = [for (final note in sources) await _detached(note)];
+    final made = [
+      for (final note in detached)
+        if (_notes.privateCopyOf(note) case (:final note, made: true)) note,
+    ];
+    await _notes.flush();
+    try {
+      await _api.removeMember(spaceId, userId);
+    } on SyncRefusedException catch (error) {
+      final alreadyGone =
+          error.status == 404 &&
+          (error.code == 'not a member' || error.code == 'no such space');
+      if (!alreadyGone) {
+        for (final copy in made) {
+          _notes.delete(copy.id);
+        }
+        rethrow;
+      }
+    }
+    _notes.forgetPrivateCopies(sources.map((note) => note.id));
     await refresh();
     _sync.requestSync();
   }
