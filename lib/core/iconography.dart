@@ -239,11 +239,11 @@ class KapyIcons {
   );
   static const indentDecreaseRounded = KapyIconData(
     0xE029,
-    HugeIcons.strokeRoundedListIndentDecrease,
+    HugeIcons.strokeRoundedTextIndentLess,
   );
   static const indentIncreaseRounded = KapyIconData(
     0xE02A,
-    HugeIcons.strokeRoundedListIndentIncrease,
+    HugeIcons.strokeRoundedTextIndentMore,
   );
   static const formatItalicRounded = KapyIconData(
     0xE02B,
