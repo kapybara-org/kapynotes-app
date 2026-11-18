@@ -638,7 +638,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   ? palette.controlBackground
                   : palette.surfaceBackground,
               border: Border.all(color: palette.separator),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppRadii.dialog),
               boxShadow: [
                 BoxShadow(
                   color: dark
@@ -721,14 +721,14 @@ class _CommandMenuState extends State<CommandMenu> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: palette.separator,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(AppRadii.compact),
               ),
               child: Text(
                 'Tag note · ${widget.tagNote!.title}',
                 style: TextStyle(
                   fontSize: 12,
                   height: 16 / 12,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: palette.textPrimary,
                 ),
               ),
@@ -778,7 +778,7 @@ class _CommandMenuState extends State<CommandMenu> {
           style: TextStyle(
             fontSize: 12,
             height: 16 / 12,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: palette.textTertiary,
           ),
         ),
@@ -810,7 +810,7 @@ class _CommandMenuState extends State<CommandMenu> {
             color: lit
                 ? (dark ? palette.separator : palette.controlBackground)
                 : null,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Row(
             spacing: 12,
@@ -842,8 +842,8 @@ class _CommandMenuState extends State<CommandMenu> {
                                 fontSize: 14,
                                 height: 18 / 14,
                                 fontWeight: lit
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
+                                    ? FontWeight.w500
+                                    : FontWeight.w400,
                                 color: line.muted
                                     ? palette.textSecondary
                                     : palette.textPrimary,
@@ -982,7 +982,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   color: index == picker.at
                       ? (dark ? palette.separator : palette.controlBackground)
                       : null,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   spacing: 12,
@@ -996,7 +996,7 @@ class _CommandMenuState extends State<CommandMenu> {
                         style: TextStyle(
                           fontSize: 14,
                           height: 18 / 14,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w400,
                           color: palette.textPrimary,
                         ),
                       ),
@@ -1075,7 +1075,7 @@ class _CommandMenuState extends State<CommandMenu> {
                       style: TextStyle(
                         fontSize: 12,
                         height: 16 / 12,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w400,
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),

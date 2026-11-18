@@ -64,7 +64,7 @@ Offset _centerOf(WidgetTester tester, String body, String linkText) {
 Widget harness(
   String body, {
   List<NoteFormatRange> initialFormats = const [],
-  double? gutterWidth,
+  bool keepResultRoom = false,
   bool resultsVisible = true,
   double? width,
   DateTime? lastUpdatedAt,
@@ -94,7 +94,7 @@ Widget harness(
     initialFormats: initialFormats,
     engine: engine,
     highlighter: Highlighter(engine.registry),
-    gutterWidth: gutterWidth,
+    keepResultRoom: keepResultRoom,
     resultsVisible: resultsVisible,
     lastUpdatedAt: lastUpdatedAt,
     dailySeparatorsEnabled: dailySeparatorsEnabled,
@@ -1295,7 +1295,7 @@ void main() {
     final formatted = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Format',
     );
-    expect(formatted.style!.fontWeight, FontWeight.w700);
+    expect(formatted.style!.fontWeight, FontWeight.w600);
     expect(formatted.style!.fontStyle, FontStyle.italic);
   });
 
@@ -1388,7 +1388,7 @@ void main() {
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
-        'Plan\nProject title\nA supporting thought',
+        'Note\nProject title\nA supporting thought',
         onFormatsChanged: changes.add,
       ),
     );
@@ -1411,7 +1411,7 @@ void main() {
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Project title',
     );
-    expect(heading.style!.fontWeight, FontWeight.w700);
+    expect(heading.style!.fontWeight, FontWeight.w600);
     expect(
       heading.style!.fontSize,
       greaterThan(
@@ -1464,7 +1464,7 @@ void main() {
       (span) => span.text?.contains('Body') ?? false,
     );
     // The page's writing weight, in italic.
-    expect(body.style!.fontWeight, FontWeight.w500);
+    expect(body.style!.fontWeight, FontWeight.w400);
     expect(body.style!.fontStyle, FontStyle.italic);
 
     field.controller.value = const TextEditingValue(
@@ -1553,20 +1553,19 @@ void main() {
     ScrollController fieldScroll(WidgetTester tester) =>
         tester.widget<NoteField>(noteField).scrollController;
 
-    testWidgets('a drag over the gutter scrolls the note', (tester) async {
-      // The gutter is a sibling of the field, not part of it, so a drag here
-      // used to land on nothing at all — a third of a phone's width where
-      // scrolling silently did nothing.
+    testWidgets('a drag beside the results scrolls the note', (tester) async {
+      // The right of a phone's page, where results sit, once was a column
+      // of its own that a drag landed on nothing in.
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness(longBody(), gutterWidth: 140));
+      await tester.pumpWidget(harness(longBody(), keepResultRoom: true));
       await tester.pumpAndSettle();
 
       final scroll = fieldScroll(tester);
       expect(scroll.offset, 0);
 
-      final gutter = tester.getCenter(find.byType(ResultsGutter));
+      final gutter = tester.getRect(noteField).centerRight - const Offset(8, 0);
       await tester.dragFrom(gutter, const Offset(0, -160));
       await tester.pumpAndSettle();
 
@@ -1588,12 +1587,12 @@ void main() {
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness(longBody(), gutterWidth: 140));
+      await tester.pumpWidget(harness(longBody(), keepResultRoom: true));
       await tester.pumpAndSettle();
 
       final scroll = fieldScroll(tester);
-      await tester.fling(
-        find.byType(ResultsGutter),
+      await tester.flingFrom(
+        tester.getRect(noteField).centerRight - const Offset(8, 0),
         const Offset(0, -200),
         800,
       );
@@ -2126,7 +2125,7 @@ void main() {
     final italic = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'emphasis',
     );
-    expect(bold.style!.fontWeight, FontWeight.w700);
+    expect(bold.style!.fontWeight, FontWeight.w600);
     expect(italic.style!.fontStyle, FontStyle.italic);
   });
 
@@ -2629,7 +2628,7 @@ void main() {
 
     final rendered = NoteDriver(tester).span.style!;
     final expected = EditorMetrics.textStyle(
-      const Color(0xFF000000),
+      KapyTheme.darkPalette.textPrimary,
       WritingFont.handwritten,
     );
 
@@ -2748,7 +2747,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ResultLeader), findsWidgets);
-    expect(find.byType(ResultsGutter), findsNothing);
     final editable = NoteDriver(tester);
     final columnRight =
         editable.toGlobal(Offset.zero).dx + editable.columnWidth;
@@ -2831,11 +2829,11 @@ void main() {
     final advance = probe.width;
     probe.dispose();
 
-    // A calculating line that stops 40px short of the column's edge: too
+    // A calculating line that stops 24px short of the column's edge: too
     // close for its pill to sit there with a gap before it, with room enough
     // in the margin to step out into.
     const tail = ' = 6 * 7';
-    final chars = ((width - 40) / advance).floor() - tail.length;
+    final chars = ((width - 24) / advance).floor() - tail.length;
     // Under a blank first line, so this is not the note's title.
     final body = '\n${'x' * chars}$tail';
     await tester.pumpWidget(harness(body, writingFont: WritingFont.monospace));
@@ -2978,18 +2976,71 @@ void main() {
     expect(tester.getSize(noteField).width, shown);
   });
 
-  testWidgets('a phone keeps its results in a column beside the text', (
+  testWidgets('a phone puts a result at the right of its own line', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('Budget\n6 * 7', gutterWidth: 140));
+    await tester.pumpWidget(harness('Budget\n6 * 7', keepResultRoom: true));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ResultsGutter), findsOneWidget);
     expect(find.byType(ResultLeader), findsNothing);
     expect(
       tester.getCenter(chipWithText('42')).dy,
       closeTo(lineRect(tester, 'Budget\n6 * 7', 1).center.dy, 1.5),
     );
+    final target = tester.getSize(chipWithText('42'));
+    expect(target.width, greaterThanOrEqualTo(44));
+    expect(target.height, greaterThanOrEqualTo(44));
+  });
+
+  testWidgets('on a 390 pt phone, prose reaches the right margin and a '
+      'result line keeps its value whole at the right', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const body =
+        'We walked along the river until the light went and the cafes '
+        'began to close one after another\n'
+        'Flights for the two of us to Lisbon in October = 2 * 1147.50 eur';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    final editable = NoteDriver(tester);
+    final columnRight =
+        editable.toGlobal(Offset.zero).dx + editable.columnWidth;
+    final prose = NoteDriver(
+      tester,
+    ).boxesFor(TextSelection(baseOffset: 0, extentOffset: body.indexOf('\n')));
+    final proseRight = prose
+        .map((box) => box.right)
+        .fold(0.0, (a, b) => a > b ? a : b);
+    expect(
+      editable.toGlobal(Offset(proseRight, 0)).dx,
+      greaterThan(columnRight - 40),
+      reason: 'a line without a result keeps the full writing width',
+    );
+
+    final chip = chipWithText('2,295.00 EUR');
+    expect(chip, findsOneWidget);
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find.descendant(of: chip, matching: find.byType(RichText)),
+    );
+    expect(paragraph.didExceedMaxLines, isFalse);
+    final pill = tester.getRect(chip);
+    expect(pill.right, closeTo(columnRight, 1));
+
+    final calculation = NoteDriver(tester).boxesFor(
+      TextSelection(
+        baseOffset: body.indexOf('\n') + 1,
+        extentOffset: body.length,
+      ),
+    );
+    for (final box in calculation) {
+      expect(
+        editable.toGlobal(Offset(box.right, 0)).dx,
+        lessThanOrEqualTo(pill.left),
+        reason: 'the calculation wraps short of its result',
+      );
+    }
   });
 
   testWidgets('keeps results pinned to their lines while scrolling', (
@@ -3165,7 +3216,7 @@ total to usd''';
     final subtitle = sampleSpans.firstWhere(
       (span) => span.text?.startsWith('Notes and quick') ?? false,
     );
-    expect(heading.style!.fontWeight, FontWeight.w700);
+    expect(heading.style!.fontWeight, FontWeight.w600);
     expect(subtitle.style!.fontStyle, FontStyle.italic);
     expect(find.byKey(const ValueKey('note-total')), findsNothing);
 

@@ -60,7 +60,9 @@ class TonalButton extends StatelessWidget {
         shape: tall
             ? const WidgetStatePropertyAll(
                 RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(10)),
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(AppRadii.control),
+                  ),
                 ),
               )
             : null,
@@ -89,7 +91,7 @@ class TonalButton extends StatelessWidget {
         textStyle: WidgetStatePropertyAll(
           Theme.of(context).textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),

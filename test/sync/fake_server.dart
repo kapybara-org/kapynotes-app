@@ -57,6 +57,9 @@ class FakeServer {
   /// paths.
   SyncException? failNext;
 
+  /// Thrown by the next stop-sharing call alone, after its moves went up.
+  SyncException? failStop;
+
   /// Calls to let through before [failNext] is thrown.
   int failAfter = 0;
 
@@ -108,6 +111,10 @@ class FakeServer {
   /// asked after membership, so a stranger still hears 404. Change it, then
   /// [announceUsers], the way a purchase or a refund announces itself.
   final Set<String> needsPro = {};
+
+  /// Addresses an invitation to is refused, as the real server refuses one
+  /// past the daily cap.
+  final Set<String> refuseInvitesTo = {};
 
   void _covered(String spaceId) {
     if (needsPro.contains(spaceId)) {
@@ -979,6 +986,7 @@ class FakeServer {
     if (space.members[userId] != SpaceRole.owner) {
       _refuse(403, 'only the owner can do this');
     }
+    if (refuseInvitesTo.contains(email)) _refuse(429, 'invite-limit');
     for (final member in space.members.keys) {
       if (user(member).email.toLowerCase() == email) {
         _refuse(409, 'already a member');
@@ -2148,6 +2156,11 @@ class FakeApi implements SyncApi {
   @override
   Future<void> stopSharing(String spaceId, List<WireNote> notes) async {
     _gate();
+    final failure = server.failStop;
+    if (failure != null) {
+      server.failStop = null;
+      throw failure;
+    }
     server.stopSharing(userId, spaceId, notes);
   }
 

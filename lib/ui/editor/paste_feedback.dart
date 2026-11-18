@@ -94,7 +94,7 @@ class _WashPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final strength = 1 - Curves.easeIn.transform(fade.value);
+    final strength = 1 - Curves.easeInCubic.transform(fade.value);
     final area = strength == 0 ? null : rows();
     if (area == null) return;
     canvas.drawRRect(
@@ -270,7 +270,7 @@ class _Chip extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.controlBackground,
               border: Border.all(color: palette.selectedBorder),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -286,7 +286,7 @@ class _Chip extends StatelessWidget {
                   'Formatted',
                   style: _type(
                     AppTypeScale.small,
-                    FontWeight.w600,
+                    FontWeight.w500,
                     palette.textSubheading,
                   ),
                 ),
@@ -380,7 +380,7 @@ class _MenuState extends State<_Menu> {
                     'Next time, paste plain with',
                     style: _type(
                       AppTypeScale.small,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textTertiary,
                     ),
                   ),
@@ -431,7 +431,7 @@ class _MenuRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: lit ? palette.selectedBackground : null,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               spacing: 9,
@@ -449,7 +449,7 @@ class _MenuRow extends StatelessWidget {
                 ),
                 Text(
                   label,
-                  style: _type(13.5, FontWeight.w500, palette.textPrimary),
+                  style: _type(14, FontWeight.w400, palette.textPrimary),
                 ),
               ],
             ),

@@ -131,7 +131,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
                             11,
                             14,
                             palette.textTertiary,
-                            weight: FontWeight.w600,
+                            weight: FontWeight.w500,
                           ).copyWith(letterSpacing: 0.44),
                         ),
                       ),
@@ -179,7 +179,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
             : active
             ? palette.kapyMenu
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: ValueKey('kapy-ai-chat-${chat.id}'),
@@ -203,7 +203,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
                         13,
                         16,
                         open ? palette.textPrimary : palette.textSubheading,
-                        weight: FontWeight.w500,
+                        weight: FontWeight.w400,
                       ),
                     ),
                   ),
@@ -247,7 +247,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.selectedBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         children: [
@@ -273,7 +273,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
                   13,
                   16,
                   palette.textPrimary,
-                  weight: FontWeight.w500,
+                  weight: FontWeight.w400,
                 ),
                 decoration: const InputDecoration.collapsed(hintText: null),
                 onSubmitted: (_) => _saveRename(chat),
@@ -302,7 +302,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,7 +349,7 @@ class _SearchField extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         children: [

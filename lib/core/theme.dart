@@ -533,25 +533,26 @@ class EditorMetrics {
   /// [padding] gives the column what it has.
   static const double columnWidth = 680;
 
-  /// The note's first line, its title, on the page: Paper's 40/48, and the
-  /// meta row that sits under it, 10 below the title and 20 above the body:
-  /// Paper has 10 there, and Sanjay asked for more room between the details
-  /// and the writing. On a phone the tags take a line of their own.
-  static const double titleFontSize = 40;
-  static const double titleRow = 48;
+  /// The note's first line, its title: under twice the writing's size and a
+  /// step lighter than a heading's weight, so it names the note without
+  /// shouting over it. The meta row sits under it, 10 below the title and 24
+  /// above the body; on a phone the tags take a line of their own.
+  static double get titleFontSize => AppPlatform.isMobile ? 28 : 30;
+  static double get titleRow => AppPlatform.isMobile ? 36 : 38;
+  static const FontWeight titleWeight = FontWeight.w500;
   static const double metaGap = 10;
   static double get metaRow => AppPlatform.isMobile ? 16 + 8 + 22 : 16;
-  static const double metaBottom = 20;
+  static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
-  /// A heading on the page, Paper's p-5-0: 22, 19 and 17 over 16px writing,
-  /// each in a 28px line at the bottom of a row of 40 for the first level
-  /// and 36 below it. Set with proportional leading, nearly all of what the
-  /// row adds goes above the words. Deeper levels are the writing's own size
-  /// in the third level's row.
+  /// A heading against 16px writing: on the page 22, 19 and 17, each in a
+  /// 28px line at the bottom of a row of 40 for the first level and 36 below
+  /// it, and a step smaller on a phone. Set with proportional leading, nearly
+  /// all of what the row adds goes above the words. Deeper levels are the
+  /// writing's own size. Every level stays well under the title.
   static double headingFontSize(int level) => switch (level) {
-    <= 1 => 22,
-    2 => 19,
+    <= 1 => AppPlatform.isMobile ? 20 : 22,
+    2 => AppPlatform.isMobile ? 18 : 19,
     3 => 17,
     _ => 16,
   };
@@ -619,9 +620,12 @@ class EditorMetrics {
       color: color,
       letterSpacing: 0,
       wordSpacing: 0,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
       fontStyle: FontStyle.normal,
-      fontVariations: font.fontVariations,
+      fontVariations: [
+        ...font.faceVariations,
+        if (color.computeLuminance() > 0.5) const FontVariation('wght', 370),
+      ],
       textBaseline: TextBaseline.alphabetic,
       // A calculator column only lines up with tabular figures.
       fontFeatures: const [FontFeature.tabularFigures()],
@@ -686,9 +690,21 @@ class EditorMetrics {
 class AppRadii {
   const AppRadii._();
 
+  static const double small = 4;
+  static const double compact = 6;
   static const double control = 9;
   static const double surface = 12;
   static const double dialog = 18;
+  static const double pill = 999;
+}
+
+class AppHairline {
+  const AppHairline._();
+
+  /// One physical pixel at every display scale. A fixed 0.5 is crisp only at
+  /// 2x and blurs to grey at 1x, 125% and 150%.
+  static double of(BuildContext context) =>
+      1 / MediaQuery.devicePixelRatioOf(context);
 }
 
 /// Control geometry shared by every app surface, resolved per input device.
@@ -808,27 +824,27 @@ class AppControlMetrics {
 
   /// Adornments inside a control — a field's search glyph, a row's clear
   /// button, a hover-revealed delete.
-  static double get iconAdornment => _touch ? 18 : 15;
+  static double get iconAdornment => _touch ? 18 : 14;
 
   /// Search is visually circular and reads larger than other adornments at
   /// the same box size, so it uses a slightly quieter glyph.
-  static double get iconSearch => _touch ? 16 : 13;
+  static double get iconSearch => _touch ? 16 : 14;
 
   /// A secondary icon that is itself the button.
   static double get iconControl => _touch ? 22 : 16;
 
   /// A primary icon that is itself the button. The workhorse of every bar.
-  static double get iconAction => _touch ? 22 : 17;
+  static double get iconAction => _touch ? 22 : 16;
 
   /// Primary and secondary glyphs inside the roomier footer controls.
   ///
   /// These sit one or two points above title-bar glyphs so the repeated strip
   /// reads at the same visual weight as the surrounding editor and sidebar.
-  static double get footerIconAction => _touch ? 22 : 19;
+  static double get footerIconAction => _touch ? 22 : 18;
   static double get footerIconControl => _touch ? 22 : 18;
 
   /// Feature icons that head a pane or an empty state.
-  static double get iconFeature => _touch ? 26 : 21;
+  static double get iconFeature => _touch ? 26 : 20;
 
   /// What an `Icon` with no size of its own gets, via the theme.
   static double get iconDefault => _touch ? 22 : 18;
@@ -885,8 +901,8 @@ class AppTypeScale {
   static double get micro => _touch
       ? 13
       : _windows
-      ? 11.5
-      : 10.5;
+      ? 12
+      : 11;
 
   /// A keycap's legend: ⌘F, esc. Mono, and a half point over [micro] on a
   /// Mac, where the keycap sits beside 13pt controls and has to read as a
@@ -894,7 +910,7 @@ class AppTypeScale {
   static double get keycap => _touch
       ? 13
       : _windows
-      ? 11.5
+      ? 12
       : 11;
 
   /// The names under the spaces rail's tiles, and the streak's run of days.
@@ -912,19 +928,19 @@ class AppTypeScale {
   static double get badge => _touch
       ? 11
       : _windows
-      ? 10.5
-      : 9.5;
+      ? 11
+      : 10;
 
   /// Metadata, list snippets, the helper line under a control.
   static double get caption => _touch
       ? 13
       : _windows
-      ? 12.5
-      : 11.5;
+      ? 13
+      : 12;
 
   /// Dense secondary copy that is still read as a sentence.
   static double get small => _touch
-      ? 13.5
+      ? 14
       : _windows
       ? 13
       : 12;
@@ -933,8 +949,8 @@ class AppTypeScale {
   static double get body => _touch
       ? 15
       : _windows
-      ? 13.5
-      : 12.5;
+      ? 14
+      : 13;
 
   /// A calculation's result: its pill at the end of the line, or a figure in
   /// a phone's results column.
@@ -978,11 +994,11 @@ class AppTypeScale {
   static double get wordmark => _touch
       ? 17
       : _windows
-      ? 15.5
-      : 14.5;
+      ? 16
+      : 15;
 
   /// The lockup on the empty state, the one display-sized thing in the app.
-  static double get display => _touch ? 34 : 31;
+  static double get display => _touch ? 34 : 32;
 }
 
 /// The two faces the interface is set in, bundled so that every platform
@@ -993,6 +1009,9 @@ class AppFonts {
 
   /// Every control and label: menus, buttons, fields, lists.
   static const String ui = 'Figtree';
+
+  /// A note's title in the default writing font.
+  static const String title = 'Newsreader';
 
   /// Figures that have to line up and keys that have to look like keys:
   /// calculation results and keycaps.
@@ -1068,12 +1087,12 @@ class KapyTheme {
   static const CalcPalette darkPalette = CalcPalette(
     number: Color(0xFFE2DCCF),
     keyword: Color(0xFFE2DCCF),
-    unit: Color(0xFF8A8476),
-    currency: Color(0xFF8A8476),
+    unit: Color(0xFFA09A8C),
+    currency: Color(0xFFA09A8C),
     function: Color(0xFFE2DCCF),
     variable: Color(0xFFE2DCCF),
-    operator: Color(0xFF8A8476),
-    comment: Color(0xFF8A8476),
+    operator: Color(0xFFA09A8C),
+    comment: Color(0xFFA09A8C),
     chipNumber: Color(0xFFB3C79C),
     chipCurrency: Color(0xFFB3C79C),
     chipUnit: Color(0xFFB3C79C),
@@ -1081,7 +1100,7 @@ class KapyTheme {
     chipOther: Color(0xFFB3C79C),
     textPrimary: Color(0xFFE2DCCF),
     textSecondary: Color(0xFFA29A8A),
-    textTertiary: Color(0xFF8A8476),
+    textTertiary: Color(0xFFA09A8C),
     separator: Color(0xFF35312B),
     sidebarBackground: Color(0xFF1C1A17),
     editorBackground: Color(0xFF23201C),
@@ -1141,20 +1160,20 @@ class KapyTheme {
   static const CalcPalette lightPalette = CalcPalette(
     number: Color(0xFF2A2620),
     keyword: Color(0xFF2A2620),
-    unit: Color(0xFF8A8476),
-    currency: Color(0xFF8A8476),
+    unit: Color(0xFF666054),
+    currency: Color(0xFF666054),
     function: Color(0xFF2A2620),
     variable: Color(0xFF2A2620),
-    operator: Color(0xFF8A8476),
-    comment: Color(0xFF8A8476),
+    operator: Color(0xFF666054),
+    comment: Color(0xFF666054),
     chipNumber: Color(0xFF445A2F),
     chipCurrency: Color(0xFF445A2F),
     chipUnit: Color(0xFF445A2F),
     chipBoolean: Color(0xFF445A2F),
     chipOther: Color(0xFF445A2F),
     textPrimary: Color(0xFF2A2620),
-    textSecondary: Color(0xFF6F695C),
-    textTertiary: Color(0xFF8A8476),
+    textSecondary: Color(0xFF666054),
+    textTertiary: Color(0xFF666054),
     separator: Color(0xFFD9D2C1),
     sidebarBackground: Color(0xFFF3EFE4),
     editorBackground: Color(0xFFFCFAF4),
@@ -1178,7 +1197,7 @@ class KapyTheme {
     tonalKeyText: Color(0xFF56703C),
     keycapBackground: Color(0xFFEFEADD),
     keycapBorder: Color(0xFFD9D2C1),
-    keycapText: Color(0xFF6F695C),
+    keycapText: Color(0xFF666054),
     scrim: Color(0x332A2620),
     resultPillBackground: Color(0xFFE3EBD8),
     resultPillText: Color(0xFF445A2F),
@@ -1189,7 +1208,7 @@ class KapyTheme {
     textHeading: Color(0xFF2A2620),
     textSubheading: Color(0xFF3A352D),
     textMuted: Color(0xFF4A453B),
-    textDescription: Color(0xFF6F695C),
+    textDescription: Color(0xFF666054),
     cardBackground: Color(0xFFF6F2E8),
     paneEdge: Color(0xFFE2DCCB),
     switchTrackOff: Color(0xFFDCD5C4),
@@ -1489,7 +1508,7 @@ class KapyTheme {
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ).copyWith(
               backgroundColor: fillStates(
@@ -1520,7 +1539,7 @@ class KapyTheme {
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ).copyWith(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -1564,7 +1583,7 @@ class KapyTheme {
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ).copyWith(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -1606,7 +1625,7 @@ class KapyTheme {
           tapTargetSize: tapTarget,
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
           overlayColor: Colors.transparent,
           animationDuration: const Duration(milliseconds: 120),

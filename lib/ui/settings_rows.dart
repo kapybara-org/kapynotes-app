@@ -25,29 +25,25 @@ class SettingsMetrics {
   static bool get _touch => !AppPlatform.hasPointer;
 
   static EdgeInsets get padding => _touch
-      ? const EdgeInsets.fromLTRB(14, 12, 13, 12)
+      ? const EdgeInsets.symmetric(horizontal: 14, vertical: 12)
       : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
 
   /// The least a row is tall with a pointer: a title and its line of
   /// description, with room around them, so a pane of rows reads as a list
   /// of settings rather than a form.
   static double get minRowHeight => _touch ? 0 : 54;
-  static double get gap => _touch ? 11 : 12;
+  static double get gap => 12;
   static double get titleSize => _touch
-      ? 14.5
+      ? 15
       : AppPlatform.isWindows
       ? AppTypeScale.control
-      : 13.5;
-  static double get subtitleSize => _touch
-      ? 12.25
-      : AppPlatform.isWindows
-      ? 12.5
-      : 12;
-  static double get sectionLabelSize => _touch ? 10.5 : 14;
+      : 14;
+  static double get subtitleSize => _touch || AppPlatform.isWindows ? 13 : 12;
+  static double get sectionLabelSize => _touch ? 11 : 14;
   static double get noteSize =>
       AppPlatform.isWindows ? AppTypeScale.caption : 11;
-  static double get buttonLabelSize => _touch ? 12 : 12.5;
-  static FontWeight get titleWeight => _touch ? _mediumWeight : FontWeight.w600;
+  static double get buttonLabelSize => _touch ? 12 : 13;
+  static FontWeight get titleWeight => FontWeight.w500;
   static double get chevronSize => _touch ? 21 : 13;
 
   /// The height of a control at the end of a row: a button, a menu, a well.
@@ -80,36 +76,36 @@ class SettingsLabel extends StatelessWidget {
     final caption = this.caption;
     if (AppPlatform.hasPointer) {
       final heading = Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              text,
-              style: TextStyle(
-                fontFamily: 'Shantell Sans',
-                fontSize: SettingsMetrics.sectionLabelSize,
-                fontWeight: FontWeight.w600,
-                height: 18 / 14,
-                color: palette.textSubheading,
-              ),
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              fontFamily: 'Shantell Sans',
+              fontSize: SettingsMetrics.sectionLabelSize,
+              fontWeight: FontWeight.w500,
+              height: 18 / 14,
+              color: palette.textSubheading,
             ),
-            if (detail != null) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 16 / 12,
-                    color: palette.textTertiary,
-                  ),
+          ),
+          if (detail != null) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16 / 12,
+                  color: palette.textTertiary,
                 ),
               ),
-            ],
+            ),
           ],
-        );
+        ],
+      );
       return Padding(
         padding: const EdgeInsets.only(left: 2, bottom: 8),
         child: caption == null
@@ -316,8 +312,8 @@ class SettingsRowCopy extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             subtitle,
-            maxLines: 1,
-            softWrap: false,
+            maxLines: pointer ? 1 : 2,
+            softWrap: !pointer,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: SettingsMetrics.subtitleSize,
@@ -534,8 +530,13 @@ class SettingsRowButton extends StatelessWidget {
         disabledForegroundColor: palette.textTertiary,
         side: border == null
             ? null
-            : BorderSide(color: border, width: pointer ? 1 : 0.5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            : BorderSide(
+                color: border,
+                width: pointer ? 1 : AppHairline.of(context),
+              ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
       ),
       child: Text(
         label,
@@ -575,7 +576,9 @@ class SettingsMenuButton extends StatelessWidget {
           backgroundColor: palette.wellBackground,
           foregroundColor: palette.textPrimary,
           side: BorderSide(color: palette.controlBorder),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -659,7 +662,9 @@ class SettingsResetButton extends StatelessWidget {
       constraints: BoxConstraints.tightFor(width: extent, height: extent),
       style: IconButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.compact),
+        ),
       ),
     );
   }
@@ -709,7 +714,7 @@ class SettingsSegmented<T> extends StatelessWidget {
         child: InkWell(
           key: keyFor(option),
           onTap: enabled && !chosen ? () => onSelected(option) : null,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
@@ -718,7 +723,7 @@ class SettingsSegmented<T> extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: chosen ? palette.segmentSelected : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
               boxShadow: chosen
                   ? [
                       BoxShadow(
@@ -752,7 +757,7 @@ class SettingsSegmented<T> extends StatelessWidget {
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: palette.wellBackground,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(color: palette.controlBorder),
       ),
       child: Row(
@@ -800,7 +805,7 @@ class SettingsStepper extends StatelessWidget {
       child: InkWell(
         key: key,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: SizedBox(
           width: 30,
           height: height - 2,
@@ -821,7 +826,7 @@ class SettingsStepper extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: palette.wellBackground,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(color: palette.controlBorder),
       ),
       child: Row(
@@ -850,7 +855,7 @@ class SettingsStepper extends StatelessWidget {
                 fontFamily: AppPlatform.monoFontFallback.first,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
                 fontFeatures: const [FontFeature.tabularFigures()],
                 color: palette.textPrimary,
               ),
@@ -955,12 +960,12 @@ class SettingsSwitch extends StatelessWidget {
               : pointer
               ? palette.switchTrackOff
               : palette.controlBackground,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           border: pointer
               ? null
               : Border.all(
                   color: value ? Colors.transparent : palette.controlBorder,
-                  width: 0.5,
+                  width: AppHairline.of(context),
                 ),
         ),
         child: AnimatedAlign(
