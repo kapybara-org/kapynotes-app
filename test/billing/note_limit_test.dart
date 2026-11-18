@@ -180,6 +180,33 @@ void main() {
     expect(limit.canCreate, isTrue);
   });
 
+  test('when the server raises the limit to twenty, the notes held read-only '
+      'are editable at once, with nothing changed in them', () async {
+    final written = write(8);
+    await signInOnFree();
+    expect(limit.lockedIds, {written[0].id, written[1].id, written[2].id});
+    final bodies = [for (final note in notes.allNotes) note.body];
+
+    billingApi.answer = () => entitlementsFor(sync: false, noteLimit: 20);
+    await account.billing!.refresh();
+
+    expect(limit.limit, 20);
+    expect(limit.lockedIds, isEmpty);
+    expect(limit.canCreate, isTrue);
+    expect([for (final note in notes.allNotes) note.body], bodies);
+
+    write(12);
+    expect(limit.count, 20);
+    expect(limit.canCreate, isFalse);
+    expect(limit.lockedIds, isEmpty);
+  });
+
+  test('before the server has said, Free is twenty notes', () {
+    expect(PlanTerms.defaultFreeNoteLimit, 20);
+    expect(terms.freeNoteLimit, 20);
+    expect(Entitlements.freePreview.noteLimit, 20);
+  });
+
   test('a trial, or Pro, lifts it the moment the answer says so', () async {
     final written = write(7);
     await signInOnFree();

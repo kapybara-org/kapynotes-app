@@ -169,7 +169,11 @@ void main() {
 
     expect(find.text('Free plan'), findsOneWidget);
     expect(
-      find.text('Voice notes run on this device. Pro runs them in the cloud'),
+      find.text(
+        'Voice notes and summaries run on this device. Cloud transcription '
+        'only for languages it has no engine for: 15 min a month. Sync and '
+        'shared notes are on Pro.',
+      ),
       findsOneWidget,
     );
     // Free runs voice on the device, so its cloud minutes and summaries are
@@ -177,6 +181,29 @@ void main() {
     expect(find.byKey(const ValueKey('plan-transcription-usage')), findsNothing);
     expect(find.byKey(const ValueKey('plan-summary-usage')), findsNothing);
     expect(find.text('0 / 100 MB'), findsOneWidget);
+  });
+
+  testWidgets('the free line says only what the plan restricts', (tester) async {
+    await pumpSettings(
+      tester,
+      size: const Size(880, 640),
+      asSheet: false,
+      section: SettingsSection.account,
+      entitlements: const Entitlements(
+        plan: 'free',
+        storageBytes: 100 * 1024 * 1024,
+        storageUsedBytes: 0,
+        speechSecondsPerMonth: 0,
+        speechCreditSeconds: 0,
+        sync: true,
+        sharing: true,
+      ),
+    );
+
+    expect(
+      find.text('Voice notes and summaries run on this device.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('sharing sits inside Account & sync rather than beside it', (

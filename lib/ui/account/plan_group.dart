@@ -53,10 +53,7 @@ class PlanGroup extends StatelessWidget {
         'Pro',
         'Lifetime. Voice notes and summaries can run in the cloud',
       ),
-      (Entitlements(), _) => (
-        'Free plan',
-        'Voice notes run on this device. Pro runs them in the cloud',
-      ),
+      (final Entitlements value, _) => ('Free plan', _freeLine(value)),
       _ when failed => ('Plan unavailable', 'Could not reach the server'),
       _ => ('Checking your plan', 'Loading plan and usage'),
     };
@@ -146,6 +143,17 @@ class PlanGroup extends StatelessWidget {
       ],
     );
   }
+
+  /// What Free gives, from the entitlements the server sent: everything on
+  /// the device, cloud minutes only where the device has no engine, and sync
+  /// and sharing left to Pro while they are.
+  static String _freeLine(Entitlements plan) => [
+    'Voice notes and summaries run on this device.',
+    if (plan.speechSecondsPerMonth > 0)
+      'Cloud transcription only for languages it has no engine for: '
+          '${_minutes(plan.speechSecondsPerMonth)} min a month.',
+    if (!plan.sync) 'Sync and shared notes are on Pro.',
+  ].join(' ');
 
   static String _minutes(int seconds) {
     final minutes = seconds / 60;
