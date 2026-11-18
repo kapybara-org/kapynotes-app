@@ -612,6 +612,17 @@ class SyncOutdatedException extends SyncException {
   final int minimum;
 }
 
+/// Encryption was reset on another device, so the key this device holds no
+/// longer belongs to the account. Nothing local is wrong: sync stops until
+/// the new passphrase or recovery key arrives.
+class SyncKeysChangedException extends SyncException {
+  const SyncKeysChangedException(this.generation, this.reset)
+    : super('encryption was reset');
+
+  final int generation;
+  final KeyChange? reset;
+}
+
 /// The sync endpoints. Abstract so the service can be tested end to end
 /// without a server, which is most of what there is to get wrong.
 abstract class SyncApi {
@@ -673,6 +684,27 @@ abstract class SyncApi {
 
   /// Names this device, so other devices can say where a change came from.
   Future<void> reportDevice({required String name, required String platform});
+
+  /// What a reset would touch: the other devices to try first, the personal
+  /// notes on the server, and the spaces only this account can grant in.
+  Future<ResetPreview> fetchResetPreview();
+
+  /// Replaces the master key itself, if the bundle is still at
+  /// [expectedVersion]. The server moves the old copy aside and starts the
+  /// account's next key generation. Returns the new bundle.
+  Future<KeyBundle> resetEncryption({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required SealedBox recoveryWrappedMasterKey,
+    required WireIdentity identity,
+    required String? device,
+  });
+
+  /// The seals from before the last reset, or null when there was none in
+  /// the last 30 days.
+  Future<KeyArchive?> fetchKeyArchive();
 
   /// Publishes the identity keypairs for an account created before they
   /// existed. Refused once they exist.
@@ -817,9 +849,16 @@ const String deviceHeader = 'x-kapynotes-device';
 /// refusal, because those builds answered it by asking again, forever; and it
 /// hides a link-kept space's notes from anything before 5, which would
 /// otherwise bring them home and end the space. Version 6 reads the task
-/// index, and only it is woken by the socket's `tasks` frame.
+/// index, and only it is woken by the socket's `tasks` frame. Version 7
+/// names the key generation it holds in [keyGenerationHeader], so after a
+/// reset the server answers a device still holding the old key with
+/// [SyncKeysChangedException] rather than taking what it sends.
 const String protocolHeader = 'x-kapynotes-protocol';
-const int protocolVersion = 6;
+const int protocolVersion = 7;
+
+/// The key generation this device's master key belongs to. Matches
+/// `KEY_GENERATION_HEADER`.
+const String keyGenerationHeader = 'x-kapynotes-key-generation';
 
 /// The server's refusal of a space nobody in it has Pro for. Matches
 /// `ProRequired`, on HTTP status 402 and as a socket error naming the space.
@@ -834,16 +873,19 @@ class HttpSyncApi implements SyncApi {
     required Uri baseUrl,
     required Future<String?> Function() token,
     required String deviceId,
+    int Function()? keyGeneration,
     http.Client? client,
     this.timeout = const Duration(seconds: 30),
   }) : _baseUrl = baseUrl,
        _token = token,
        _deviceId = deviceId,
+       _keyGeneration = keyGeneration ?? (() => 1),
        _client = client ?? http.Client();
 
   final Uri _baseUrl;
   final Future<String?> Function() _token;
   final String _deviceId;
+  final int Function() _keyGeneration;
   final http.Client _client;
   final Duration timeout;
 
@@ -920,7 +962,11 @@ class HttpSyncApi implements SyncApi {
   SyncSocket openSocket() => WebSocketSyncSocket(
     url: _baseUrl.resolve('sync/ws'),
     token: _token,
-    headers: {deviceHeader: _deviceId, protocolHeader: '$protocolVersion'},
+    headers: {
+      deviceHeader: _deviceId,
+      protocolHeader: '$protocolVersion',
+      keyGenerationHeader: '${_keyGeneration()}',
+    },
   );
 
   @override
@@ -1009,6 +1055,56 @@ class HttpSyncApi implements SyncApi {
         _baseUrl.resolve('keys/device'),
         payload: {'name': name, 'platform': platform},
       );
+
+  @override
+  Future<ResetPreview> fetchResetPreview() async {
+    final preview = ResetPreview.fromJson(
+      await _send('GET', _baseUrl.resolve('keys/reset/preview')),
+    );
+    if (preview == null) {
+      throw const SyncProtocolException('reset preview was malformed');
+    }
+    return preview;
+  }
+
+  @override
+  Future<KeyBundle> resetEncryption({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required SealedBox recoveryWrappedMasterKey,
+    required WireIdentity identity,
+    required String? device,
+  }) async {
+    final bundle = KeyBundle.fromJson(
+      await _send(
+        'POST',
+        _baseUrl.resolve('keys/reset'),
+        payload: {
+          'expectedVersion': expectedVersion,
+          'proof': proof,
+          'wrappedMasterKey': wrappedMasterKey.toJson(),
+          'kdf': kdf.toJson(),
+          'recoveryWrappedMasterKey': recoveryWrappedMasterKey.toJson(),
+          'identity': identity.toJson(),
+          'device': device,
+        },
+      ),
+    );
+    if (bundle == null) throw const SyncProtocolException('no bundle');
+    return bundle;
+  }
+
+  @override
+  Future<KeyArchive?> fetchKeyArchive() async {
+    final body = await _send(
+      'GET',
+      _baseUrl.resolve('keys/archive'),
+      absentIsNull: true,
+    );
+    return body.isEmpty ? null : KeyArchive.fromJson(body);
+  }
 
   @override
   Future<void> publishIdentity(WireIdentity identity) => _send(
@@ -1456,7 +1552,8 @@ class HttpSyncApi implements SyncApi {
       ..headers[deviceHeader] = _deviceId
       // Every request says which protocol it speaks, so a server that has
       // moved on can refuse it with 426 before doing any work.
-      ..headers[protocolHeader] = '$protocolVersion';
+      ..headers[protocolHeader] = '$protocolVersion'
+      ..headers[keyGenerationHeader] = '${_keyGeneration()}';
     if (payload != null) {
       request.headers['content-type'] = 'application/json';
       request.body = jsonEncode(payload);
@@ -1480,6 +1577,16 @@ class HttpSyncApi implements SyncApi {
       final body = _decode(response.body);
       final minimum = body['minimum'];
       throw SyncOutdatedException(minimum is int ? minimum : protocolVersion);
+    }
+    if (status == 409) {
+      final body = _decode(response.body);
+      final generation = body['generation'];
+      if (body['error'] == 'keys-changed' && generation is int) {
+        throw SyncKeysChangedException(
+          generation,
+          KeyChange.fromJson(body['reset']),
+        );
+      }
     }
     if (status == 404 && absentIsNull) return const {};
     // 429 and 5xx are the server asking for patience, not a bad request.

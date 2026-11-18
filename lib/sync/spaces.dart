@@ -54,6 +54,11 @@ class SpaceMember {
   final Uint8List? x25519Public;
   final Uint8List? ed25519Public;
 
+  /// When this member last reset encryption, as the server says. Only
+  /// softens how a changed safety code is described; the code itself is
+  /// still what proves who holds the key.
+  final DateTime? identityResetAt;
+
   const SpaceMember({
     required this.userId,
     required this.email,
@@ -64,6 +69,7 @@ class SpaceMember {
     required this.hasKey,
     this.x25519Public,
     this.ed25519Public,
+    this.identityResetAt,
   });
 
   bool get isOwner => role == SpaceRole.owner;
@@ -115,6 +121,9 @@ class SpaceMember {
       hasKey: raw['hasKey'] == true,
       x25519Public: _bytes(raw['x25519Public']),
       ed25519Public: _bytes(raw['ed25519Public']),
+      identityResetAt: raw['identityResetAt'] is String
+          ? DateTime.tryParse(raw['identityResetAt'] as String)?.toLocal()
+          : null,
     );
   }
 }
@@ -465,6 +474,7 @@ class Space {
           'ed25519Public': m.ed25519Public == null
               ? null
               : base64.encode(m.ed25519Public!),
+          'identityResetAt': m.identityResetAt?.toUtc().toIso8601String(),
         },
     ],
     'invites': [

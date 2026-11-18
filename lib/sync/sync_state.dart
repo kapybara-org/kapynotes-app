@@ -40,6 +40,8 @@ class SyncState {
   String? _accountId;
   String? _deviceId;
   DateTime? _lastSyncedAt;
+  int _keyGeneration = 1;
+  bool _rejoinOwed = false;
 
   /// The one-off repair this build runs. Builds before it could skip ops
   /// while applying the log, or lose them on the way up, so a device that
@@ -89,6 +91,14 @@ class SyncState {
 
   bool get hasSynced => _cursors.isNotEmpty;
 
+  /// The key generation this device's master key belongs to. One until the
+  /// account is reset; every sync request names it.
+  int get keyGeneration => _keyGeneration;
+
+  /// Whether this device still owes the personal space a complete copy of
+  /// its notes after a reset. See [beginRejoin].
+  bool get owesRejoin => _rejoinOwed;
+
   void load() {
     final stored = _store.read<Map<String, Object?>>(_key);
     if (stored == null) return;
@@ -99,6 +109,7 @@ class SyncState {
     final lastSyncedAt = stored['lastSyncedAt'];
     final owed = stored['repairOwed'];
     final repairVersion = stored['repairVersion'];
+    final keyGeneration = stored['keyGeneration'];
     _cursors.clear();
     if (cursors is Map) {
       for (final entry in cursors.entries) {
@@ -122,6 +133,10 @@ class SyncState {
     _lastSyncedAt = lastSyncedAt is int
         ? DateTime.fromMillisecondsSinceEpoch(lastSyncedAt)
         : null;
+    _keyGeneration = keyGeneration is int && keyGeneration > 1
+        ? keyGeneration
+        : 1;
+    _rejoinOwed = stored['rejoinOwed'] == true;
   }
 
   /// Records which space is the personal one.
@@ -184,6 +199,26 @@ class SyncState {
     return _repairOwed.isNotEmpty;
   }
 
+  /// This device now holds the key of [generation]. A move to a later one is
+  /// a reset: the personal space on the server starts empty, so its log is
+  /// read again from the start and every note here is owed to it whole,
+  /// however old. Nothing is ever taken away because the log lacks it.
+  void beginRejoin(int generation) {
+    if (generation <= _keyGeneration) return;
+    _keyGeneration = generation;
+    _rejoinOwed = true;
+    final personal = _personalSpaceId;
+    if (personal != null) _cursors[personal] = 0;
+    _rewriteSaved();
+  }
+
+  /// The personal space's notes have been queued for the server in full.
+  void rejoinDone() {
+    if (!_rejoinOwed) return;
+    _rejoinOwed = false;
+    _save();
+  }
+
   /// Whether [spaceId] still owes the server a complete copy of its notes.
   bool owesRepair(String spaceId) => _repairOwed.contains(spaceId);
 
@@ -217,6 +252,8 @@ class SyncState {
     _cursors.clear();
     _repairOwed.clear();
     _personalSpaceId = null;
+    _keyGeneration = 1;
+    _rejoinOwed = false;
     _rewriteSaved();
   }
 
@@ -254,6 +291,8 @@ class SyncState {
     // signing in as somebody else does not make this a different device.
     'deviceId': _deviceId,
     'lastSyncedAt': _lastSyncedAt?.millisecondsSinceEpoch,
+    if (_keyGeneration > 1) 'keyGeneration': _keyGeneration,
+    if (_rejoinOwed) 'rejoinOwed': true,
   });
 
   /// 16 bytes from the platform CSPRNG, hex. Long enough that two installs

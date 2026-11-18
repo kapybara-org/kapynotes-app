@@ -42,6 +42,11 @@ enum SyncStatus {
   /// scheduled — the next launch tries once more.
   outdated,
 
+  /// Encryption was reset on another device, so the key here no longer
+  /// belongs to the account. Every note stays; nothing syncs until the new
+  /// passphrase or recovery key arrives.
+  keysChanged,
+
   /// Something the server refused outright. Retrying would send the same bad
   /// request again, so it waits for a human.
   failed,
@@ -552,6 +557,25 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   }
 
   /// Signing out. Sync stops; the notes stay exactly where they are.
+  /// Told when the server says encryption was reset elsewhere. The account
+  /// decides what happens to the key; this only stops.
+  void Function(SyncKeysChangedException error)? onKeysChanged;
+
+  bool get _halted =>
+      _status == SyncStatus.outdated || _status == SyncStatus.keysChanged;
+
+  void _keysChanged(SyncKeysChangedException error) {
+    _lastError = error.message;
+    _sendTimer?.cancel();
+    _sendTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _stopPolling();
+    _disconnect();
+    _setStatus(SyncStatus.keysChanged);
+    onKeysChanged?.call(error);
+  }
+
   void lock() {
     leaveNote();
     _vault = null;
@@ -570,7 +594,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// now it reconciles what changed and drains the outbox.
   void requestSync() {
     if (_disposed || _vault == null) return;
-    if (_status == SyncStatus.outdated) return;
+    if (_halted) return;
     _scheduleReconcile();
     if (!_live) _scheduleRetry(soon: true);
   }
@@ -602,7 +626,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _setStatus(SyncStatus.locked);
       return;
     }
-    if (_status == SyncStatus.outdated) return;
+    if (_halted) return;
     _retryTimer?.cancel();
     _retryTimer = null;
     _setStatus(SyncStatus.syncing);
@@ -642,6 +666,8 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _stopPolling();
       _disconnect();
       _setStatus(SyncStatus.outdated);
+    } on SyncKeysChangedException catch (error) {
+      _keysChanged(error);
     } on SyncTransientException catch (error) {
       _lastError = error.message;
       _setStatus(SyncStatus.offline);
@@ -666,7 +692,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
   void _connect() {
     if (_disposed || !_foreground || _vault == null) return;
-    if (_status == SyncStatus.outdated) return;
+    if (_halted) return;
     if (_socket != null) return;
     final socket = _api.openSocket();
     _socket = socket;
@@ -1391,6 +1417,8 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
             _scheduleRetry();
           } else if (error is SyncOutdatedException) {
             _setStatus(SyncStatus.outdated);
+          } else if (error is SyncKeysChangedException) {
+            _keysChanged(error);
           }
           return;
         }
@@ -1716,19 +1744,32 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// words a build before this one lost on their way up reach everyone else,
   /// and theirs come back the same way. An op somebody already has costs them
   /// a decryption and changes nothing.
+  ///
+  /// After a reset ([SyncState.beginRejoin]) the personal space owes it for
+  /// every note, however old, because the server's copy started empty; and a
+  /// note this device never seeded is seeded now. What the log lacks is only
+  /// ever added, never taken away here.
   void _republishIfOwed(String spaceId) {
-    if (!_state.owesRepair(spaceId) || !_docs.isLoaded) return;
+    final personalId = _keyring.personal?.id;
+    final rejoin = _state.owesRejoin && spaceId == personalId;
+    if (!(rejoin || _state.owesRepair(spaceId)) || !_docs.isLoaded) return;
     // Somebody who may only read holds nothing the others lack.
     if (!(_keyring.byId(spaceId)?.canEdit ?? false)) {
       _state.repairDone(spaceId);
       return;
     }
-    final personalId = _keyring.personal?.id;
+    if (rejoin) {
+      for (final note in _notes.allNotes) {
+        if ((note.spaceId ?? personalId) != spaceId) continue;
+        if (note.isDirty || (_docs.get(note.id)?.seeded ?? false)) continue;
+        _notes.touch(note.id);
+      }
+    }
     for (final record in _docs.records.toList()) {
       if (record.spaceId != spaceId || !record.seeded) continue;
       final note = _notes.byId(record.noteId);
       if (note == null || (note.spaceId ?? personalId) != spaceId) continue;
-      if (note.updatedAt.isBefore(_opLogLaunch)) continue;
+      if (!rejoin && note.updatedAt.isBefore(_opLogLaunch)) continue;
       for (final ops in record.doc.stateOps()) {
         record.outbox.add(
           OutboxEntry(
@@ -1742,6 +1783,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _docs.markDirty(record.noteId);
     }
     _state.repairDone(spaceId);
+    if (rejoin) {
+      _state.rejoinDone();
+      _scheduleReconcile();
+    }
     _scheduleSend();
   }
 
@@ -2062,7 +2107,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     var changed = false;
     for (final space in _keyring.teams) {
       final key = _keyring.keyFor(space.id);
-      if (key == null || !space.canEdit) continue;
+      if (!space.canEdit) continue;
+      if (key == null) {
+        try {
+          if (await _rescue(space)) changed = true;
+        } on SyncRefusedException catch (error) {
+          debugPrint('KapyNotes: rescue of ${space.id} refused: ${error.code}');
+          changed = true;
+        }
+        continue;
+      }
       try {
         // Handing a key to somebody new grows the space, which needs Pro;
         // rotating and bringing notes home are ways out, and never do.
@@ -2135,6 +2189,51 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       expectedGeneration: space.keyGeneration,
       spaceKeys: spaceKeys,
       noteKeys: noteKeys,
+    );
+    _keyring.remember(space.id, newKey);
+    return true;
+  }
+
+  /// A space nobody can grant the key in any more: this account reset
+  /// encryption, and no other owner or Editor holds the key. This device
+  /// mints a new one for every member, and re-wraps under it the content key
+  /// of each note it holds a copy of. Viewers keep their copies and can read
+  /// on; a note this device has no copy of stays under the old key.
+  ///
+  /// Only a device holding the space's notes does it, so a member still
+  /// waiting for their first grant never mints a key over notes they lack.
+  Future<bool> _rescue(Space space) async {
+    if (space.spaceKey != null) return false;
+    final me = _keyring.userId;
+    final someoneCanGrant = space.members.any(
+      (member) => member.userId != me && member.canEdit && member.hasKey,
+    );
+    if (someoneCanGrant) return false;
+    final held = [
+      for (final note in _notes.notesIn(space.id))
+        if (note.contentKey != null) note,
+    ];
+    if (held.isEmpty) return false;
+
+    final newKey = randomKey();
+    final spaceKeys = <String, SealedToPublicKey>{};
+    for (final member in space.members) {
+      final public = member.x25519Public;
+      if (public == null) continue;
+      spaceKeys[member.userId] = await sealToPublicKey(newKey, public);
+    }
+    if (!spaceKeys.containsKey(me)) return false;
+    await _api.rotate(
+      spaceId: space.id,
+      expectedGeneration: space.keyGeneration,
+      spaceKeys: spaceKeys,
+      noteKeys: {
+        for (final note in held)
+          note.id: (
+            key: await wrapKey(note.contentKey!, newKey),
+            fromEpoch: note.contentKeyEpoch,
+          ),
+      },
     );
     _keyring.remember(space.id, newKey);
     return true;
