@@ -507,6 +507,30 @@ void main() {
   });
 
   group('no edit is lost', () {
+    test('an edit made after an offline delete wins over it', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+      await two.docs.flush();
+
+      await two.relaunch(whileDown: () => two.notes.delete(note.id));
+      one.notes.updateBody(note.id, 'Start, edited later');
+      await settle(server);
+
+      await two.goLive();
+      await settle(server);
+      expect(two.bodyOf(note.id), 'Start, edited later', reason: 'the stale delete won');
+      expect(one.bodyOf(note.id), 'Start, edited later');
+      expect(two.notes.tombstones.where((s) => s.id == note.id), isEmpty);
+      one.dispose();
+      two.dispose();
+    });
+
     test('typing after a lost ack is not folded into the resent push', () async {
       final one = Device(server, name: 'one');
       final two = Device(server, name: 'two');

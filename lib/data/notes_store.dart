@@ -828,6 +828,16 @@ class NotesStore extends ChangeNotifier {
     return kept;
   }
 
+  /// Forgets deletions of this device's that never went up, because a later
+  /// edit from somebody else won over them.
+  void dropTombstones(List<Tombstone> stones) {
+    final keys = {for (final s in stones) _stoneKey(s.spaceId, s.id)};
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => !keys.contains(_stoneKey(s.spaceId, s.id))),
+    );
+    _persist();
+  }
+
   /// Shared notes this account took out of its own notes without deleting
   /// them for everyone, by id, with the space each was in.
   Map<String, String> get _dismissed => {
