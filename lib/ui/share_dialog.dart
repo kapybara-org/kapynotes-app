@@ -706,8 +706,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                             null => 'Leave these shared notes?',
                           },
                           body:
-                              'You stop receiving updates. Unsynced notes '
-                              'remain in my notes.',
+                              'You stop receiving updates. A private copy of '
+                              'each note stays in your notes.',
                           action: 'Leave',
                           destructive: true,
                           run: () async {

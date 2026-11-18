@@ -25,7 +25,7 @@ import 'package:material_ui/material_ui.dart';
 import 'billing/billing_fakes.dart';
 
 /// The rows the redesign added: Hidden Notes in Notes, engines chosen by
-/// plan, what is changed from the default, and the appearance preview.
+/// plan, and the appearance preview.
 
 class _Store extends LocalStore {
   _Store() : super(fileName: 'settings-redesign-test.json');
@@ -336,27 +336,6 @@ void main() {
       );
       expect(find.text('Cloud summaries are on Pro'), findsOneWidget);
     });
-  });
-
-  testWidgets('the changed list shows what is off its default, and puts it '
-      'back', (tester) async {
-    prefs.dailySeparatorsEnabled = false;
-    await _open(tester);
-
-    await tester.tap(find.byKey(const ValueKey('settings-changed')));
-    await tester.pumpAndSettle();
-    expect(find.text('1 setting changed'), findsOneWidget);
-    final row = find.byKey(
-      const ValueKey('settings-search-result-daily-separators-toggle'),
-    );
-    expect(row, findsOneWidget);
-
-    await tester.tap(
-      find.descendant(of: row, matching: find.byType(SettingsResetButton)),
-    );
-    await tester.pumpAndSettle();
-    expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(find.text('Everything is as Kapy Notes came.'), findsOneWidget);
   });
 
   testWidgets('the preview writes numbers the way they are set', (

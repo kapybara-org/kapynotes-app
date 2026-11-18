@@ -47,6 +47,7 @@ class NoteField extends StatefulWidget {
     this.magnifierConfiguration,
     this.columnWidth,
     this.trailingOf,
+    this.selectionOf,
   });
 
   final HighlightingController controller;
@@ -97,6 +98,10 @@ class NoteField extends StatefulWidget {
   /// What a line shows past its writing, such as a calculation's result,
   /// built while the line is in view.
   final LineTrailing? Function(int line)? trailingOf;
+
+  /// Where the selection shows on a line its writing doesn't draw: see
+  /// [NoteLayout.selectionOf].
+  final List<Rect>? Function(int line, TextRange selected)? selectionOf;
 
   @override
   State<NoteField> createState() => NoteFieldState();
@@ -2070,6 +2075,7 @@ class NoteFieldState extends State<NoteField>
     layout
       ..columnWidth = widget.columnWidth
       ..trailingOf = widget.trailingOf
+      ..selectionOf = widget.selectionOf
       ..restyled();
     final theme = Theme.of(context);
     final selectionStyle = DefaultSelectionStyle.of(context);

@@ -344,8 +344,11 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('leave-space')));
     await tester.pumpAndSettle();
-    // Honest about what leaving does not do.
-    expect(find.textContaining('Unsynced notes remain'), findsOneWidget);
+    // Says what leaving keeps.
+    expect(
+      find.textContaining('A private copy of each note stays'),
+      findsOneWidget,
+    );
     await tester.runAsync(() async {
       await tester.tap(find.widgetWithText(FilledButton, 'Leave'));
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -499,8 +502,6 @@ void main() {
       final theirs = laptop.notes.notes.single;
       expect(theirs.attachments.single.isUploaded, isTrue);
 
-      await laptop.sharing.makePrivateCopy(theirs.id);
-      await settle(laptop);
       await laptop.sharing.leave(theirs.spaceId!);
       await settle(laptop);
 
@@ -1238,11 +1239,11 @@ void main() {
     expect(tester.testTextInput.isVisible, isFalse);
   });
 
-  // The server lets only a team space's owner move a note out of it. A
-  // 1.32.0 editor still offers "Move to my notes"; this is what their
-  // device does when the server refuses that move. Sync and the move path
-  // here are unchanged since v1.32.0.
-  test('an old editor whose move out is refused keeps everything', () async {
+  // The server lets only a team space's owner move a note out of it. 1.32.0
+  // offered "Move to my notes" to any editor; how that build took the
+  // refusal was proven at 7377085 (#75). Since #78 a refused note waits for
+  // its next edit, and the failure stays shown until then.
+  test('an editor\'s refused move out keeps everything', () async {
     await alice.boot();
     await bob.boot();
     final note = alice.notes.create(body: 'Trip budget');
@@ -1254,21 +1255,21 @@ void main() {
     final theirs = bob.notes.notes.single;
     final spaceId = theirs.spaceId!;
 
-    // 1.32.0's unshareNote, which let any editor do this.
+    // What 1.32.0's unshareNote let any editor do.
     bob.notes.moveToSpace(theirs.id, spaceId: null, contentKey: null);
     await bob.sync.syncNow();
+    final refused = server.refusals.where((c) => c == 'owner-only').length;
+    expect(refused, greaterThan(0));
     final other = bob.notes.create(body: 'Groceries');
     for (var pass = 0; pass < 3; pass++) {
       await bob.sync.syncNow();
-      expect(bob.sync.status, SyncStatus.idle);
-      expect(bob.sync.lastError, isNull);
+      expect(bob.sync.status, SyncStatus.failed);
+      expect(bob.sync.lastError, contains('owner-only'));
     }
     await alice.sync.syncNow();
 
-    // At most one refused push per sync pass: no loop.
-    final refusals = server.refusals.where((code) => code == 'owner-only');
-    expect(refusals, isNotEmpty);
-    expect(refusals.length, lessThanOrEqualTo(4));
+    // Nothing goes up again until that note is edited.
+    expect(server.refusals.where((c) => c == 'owner-only'), hasLength(refused));
     // The editor keeps the text, in their own notes, unsynced.
     final kept = bob.notes.byId(theirs.id)!;
     expect(kept.spaceId, isNull);
