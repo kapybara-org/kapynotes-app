@@ -21,14 +21,18 @@ class _RealHttp extends HttpOverrides {}
 void main() {
   late McpFixture f;
   late McpService service;
+  late Directory scratch;
   String? clipboard;
 
   setUp(() async {
     f = McpFixture();
+    scratch = Directory('${Directory.systemTemp.createTempSync('mcp').path}/kapy-mcpb');
+    addTearDown(() => scratch.parent.deleteSync(recursive: true));
     service = McpService(
       store: f.store,
       secrets: MemorySecrets(),
       library: f.library,
+      scratch: () async => scratch,
     );
     await service.load();
     clipboard = null;
@@ -85,6 +89,39 @@ void main() {
       find.text('Copied. Paste it in Terminal, then ask Claude about your notes'),
       findsOneWidget,
     );
+    await tester.runAsync(() => service.setEnabled(false));
+  });
+
+  testWidgets('when Claude doesn’t open, its file is deleted and its token revoked', (tester) async {
+    final opened = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/url_launcher'),
+      (call) async {
+        opened.add((call.arguments as Map)['url'] as String);
+        return false;
+      },
+    );
+    await tester.runAsync(() => service.setEnabled(true));
+    await pumpPane(tester);
+    final add = find.text('Add to Claude');
+    await tester.ensureVisible(add);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(add);
+      for (var i = 0; i < 100 && opened.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+
+    expect(opened.single, endsWith('/Kapy%20Notes.mcpb'));
+    final file = File(Uri.parse(opened.single).toFilePath());
+    expect(file.path, startsWith(scratch.path));
+    expect(file.existsSync(), isFalse);
+    expect(file.parent.existsSync(), isFalse);
+    expect(service.connections, isEmpty);
+    expect(find.text('Claude didn’t open. Install Claude, then try again'), findsOneWidget);
     await tester.runAsync(() => service.setEnabled(false));
   });
 
