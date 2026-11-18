@@ -1678,14 +1678,13 @@ class NoteFieldState extends State<NoteField>
   TextRange getWordBoundary(TextPosition position) {
     final line = _lines.lineAt(position.offset);
     final start = _lines.startOf(line);
-    final word = layout
-        .paragraphOf(line)
-        .getWordBoundary(_local(position, line));
-    final length = _lines[line].length;
-    return TextRange(
-      start: start + math.min(word.start, length),
-      end: start + math.min(word.end, length),
-    );
+    final painter = TextPainter(
+      text: TextSpan(text: _lines[line], style: widget.style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final word = painter.getWordBoundary(_local(position, line));
+    painter.dispose();
+    return TextRange(start: start + word.start, end: start + word.end);
   }
 
   @override

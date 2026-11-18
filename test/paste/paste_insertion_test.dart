@@ -54,6 +54,15 @@ void main() {
     expect(paste('  - |', '- one\n  - two'), '  - one\n    - two|');
   });
 
+  test("a paste in front of a line's structure goes in as written", () {
+    expect(paste('| dog', 'one\ntwo'), 'one\ntwo| dog');
+    expect(paste('|# Heading', 'one\ntwo'), 'one\ntwo|# Heading');
+    expect(paste('|- item', 'one\ntwo'), 'one\ntwo|- item');
+    expect(paste('  |- item', 'one\ntwo'), '  one\ntwo|- item');
+    expect(paste('|> quote', 'one'), 'one|> quote');
+    expect(paste('|  - a\n- b|', 'x\ny'), 'x\ny|');
+  });
+
   test('lines pasted into a quote stay in it', () {
     expect(paste('> a|', 'b\n\nc'), '> ab\n>\n> c|');
   });

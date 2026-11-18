@@ -44,7 +44,9 @@ class PasteInsertion {
 /// and the last pasted line joins the words after it. Lines pasted into a
 /// list become more items of it, as Return would make them, and lines pasted
 /// into a quote stay in the quote. A block that can't share a line (a
-/// fence, a table row, a picture) gets a line of its own.
+/// fence, a table row, a picture) gets a line of its own. A paste in front of
+/// a line's structure, such as at the start of an indented line or before a
+/// heading's #, goes in as written, ahead of the line.
 PasteInsertion planPaste({
   required String note,
   required TextSelection selection,
@@ -90,6 +92,14 @@ PasteInsertion planPaste({
   }
 
   final line = _Line.at(note, start);
+  if (start < line.contentStart) {
+    return PasteInsertion(
+      start: start,
+      end: end,
+      text: output.text,
+      images: output.images,
+    );
+  }
   final lineEnd = note.indexOf('\n', end) < 0
       ? note.length
       : note.indexOf('\n', end);
