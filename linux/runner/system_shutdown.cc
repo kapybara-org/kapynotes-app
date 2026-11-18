@@ -7,7 +7,6 @@ struct _SystemShutdown {
   FlMethodChannel* channel;
   GApplication* application;
   GtkWindow* window;
-  GCancellable* cancellable;
   gboolean requested;
   guint signal_sources[3];
   guint deadline;
@@ -38,21 +37,6 @@ static gboolean deadline_cb(gpointer user_data) {
   return G_SOURCE_REMOVE;
 }
 
-// The app answers once it has saved and asked for `quit`. Any other answer,
-// such as the empty one that comes back when nothing on the Dart side is
-// listening yet, leaves nothing to wait for.
-static void shutdown_answered_cb(GObject* object, GAsyncResult* result,
-                                 gpointer user_data) {
-  g_autoptr(GError) error = nullptr;
-  g_autoptr(FlMethodResponse) response = fl_method_channel_invoke_method_finish(
-      FL_METHOD_CHANNEL(object), result, &error);
-  if (response == nullptr &&
-      g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
-    return;
-  }
-  quit(static_cast<SystemShutdown*>(user_data));
-}
-
 static void request(SystemShutdown* shutdown) {
   if (shutdown->requested) {
     quit(shutdown);
@@ -60,8 +44,7 @@ static void request(SystemShutdown* shutdown) {
   }
   shutdown->requested = TRUE;
   fl_method_channel_invoke_method(shutdown->channel, "shutdown", nullptr,
-                                  shutdown->cancellable, shutdown_answered_cb,
-                                  shutdown);
+                                  nullptr, nullptr, nullptr);
   shutdown->deadline = g_timeout_add_seconds(10, deadline_cb, shutdown);
 }
 
@@ -111,7 +94,6 @@ SystemShutdown* system_shutdown_new(FlBinaryMessenger* messenger,
   fl_method_channel_set_method_call_handler(shutdown->channel, method_call_cb,
                                             shutdown, nullptr);
   shutdown->application = application;
-  shutdown->cancellable = g_cancellable_new();
   const int signals[] = {SIGTERM, SIGINT, SIGHUP};
   for (int i = 0; i < 3; i++) {
     shutdown->signal_sources[i] = g_unix_signal_add(signals[i], signal_cb, shutdown);
@@ -125,8 +107,6 @@ SystemShutdown* system_shutdown_new(FlBinaryMessenger* messenger,
 }
 
 void system_shutdown_free(SystemShutdown* shutdown) {
-  g_cancellable_cancel(shutdown->cancellable);
-  g_clear_object(&shutdown->cancellable);
   for (guint source : shutdown->signal_sources) {
     if (source != 0) g_source_remove(source);
   }
