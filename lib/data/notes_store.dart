@@ -1064,6 +1064,18 @@ class NotesStore extends ChangeNotifier {
     return (note: copy, made: true);
   }
 
+  /// Forgets the copies made of [sourceIds] once their leave is done, so a
+  /// later leave copies whatever those notes say by then.
+  void forgetPrivateCopies(Iterable<String> sourceIds) {
+    final raw = _store.data[_privateCopiesKey];
+    if (raw is! Map) return;
+    final done = sourceIds.toSet();
+    _store.put(_privateCopiesKey, {
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (!done.contains(key)) key: value,
+    });
+  }
+
   /// Writes notes an import decided to apply.
   ///
   /// Every one lands dirty — `syncedAt` stays null — because the server has

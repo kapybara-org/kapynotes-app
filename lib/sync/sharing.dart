@@ -411,7 +411,8 @@ class Sharing extends ChangeNotifier {
   /// Leaving a space. By default each of its notes stays as a private copy,
   /// attachments included, hidden ones still hidden. The copies are written
   /// to disk before the server is asked, so nothing is ever lost. A retry
-  /// reuses the copies an earlier attempt made. Only a refusal, which means
+  /// reuses the copies an earlier attempt made, until one succeeds. Only a
+  /// refusal, which means
   /// nothing changed, takes back the copies this attempt made; a timeout may
   /// have left the space all the same, so they stay.
   Future<void> leave(String spaceId, {bool keepCopies = true}) async {
@@ -435,6 +436,7 @@ class Sharing extends ChangeNotifier {
         rethrow;
       }
     }
+    _notes.forgetPrivateCopies(sources.map((note) => note.id));
     await refresh();
     _sync.requestSync();
   }
