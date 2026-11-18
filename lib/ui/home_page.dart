@@ -323,6 +323,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Tasks, while the rail has it open.
   bool _tasksMode = false;
+
+  /// The note that was open when a space it is not in was chosen, and the
+  /// item that space opened in its place. Choosing a space that holds the
+  /// note again, with that item still the one open, puts the note back.
+  String? _noteBeforeSpace;
+  String? _openedBySpace;
   TaskFilter _taskFilter = const TaskFilter.all();
   final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
   final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
@@ -1686,7 +1692,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// shared one is not this reader's to change.
   VoidCallback? get _removeOpenNote {
     final id = _selectedId;
-    if (id == null || !_canEditNote(widget.notes.byId(id))) return null;
+    if (id == null || !_canEditNote(_shownNote(id))) return null;
     return _specialMode
         ? () => unawaited(_deleteNote(id))
         : () => _archiveNote(id);
@@ -2407,7 +2413,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// shifting the ones beside it every time the selection changes.
   VoidCallback? get _shareSelected {
     final id = _selectedId;
-    return id == null || _specialMode ? null : () => _shareNote(id);
+    return id == null || _specialMode || _shownNote(id) == null
+        ? null
+        : () => _shareNote(id);
   }
 
   /// Everyone the open note is shared with, for the avatars in the title bar.
@@ -2923,7 +2931,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _sidebarTab = space == LibrarySpace.shared
           ? SidebarTab.shared
           : SidebarTab.mine;
+      if (_tasksMode || _specialMode || _usesCompactLayout) return;
+      final open = widget.notes.byId(_selectedId);
+      final parked = widget.notes.byId(_noteBeforeSpace);
+      if (parked != null && _selectedId == _openedBySpace && _inSpace(parked)) {
+        _noteBeforeSpace = _openedBySpace = null;
+        _setSelectedId(parked.id);
+        return;
+      }
+      if (open == null || _inSpace(open)) return;
+      _noteBeforeSpace = open.id;
+      _openedBySpace = null;
+      final first = _visibleNotes.firstOrNull;
+      if (first == null) return;
+      _openedBySpace = first.id;
+      _setSelectedId(first.id);
     });
+  }
+
+  /// Whether [note] belongs to the space on screen, so the page only ever
+  /// holds an item of the section the list is showing. The note a space
+  /// does not hold stays open underneath, and comes back with its space.
+  bool _inSpace(Note note) =>
+      _tasksMode || _specialMode || _narrowed([note]).isNotEmpty;
+
+  /// The note on the page, or null where there is none or it is in another
+  /// space.
+  Note? _shownNote(String? id) {
+    final note = widget.notes.byId(id);
+    return note != null && _inSpace(note) ? note : null;
   }
 
   /// My notes with the filter on [show], as Go to and its key open Hidden
@@ -3533,7 +3569,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildPane(int index) {
     final pane = _workspace.panes[index];
-    final note = widget.notes.byId(pane.noteId);
+    final note = _shownNote(pane.noteId);
     final active = _workspace.activePane == index;
     final split = _workspace.isSplit;
 

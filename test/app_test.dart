@@ -5522,6 +5522,48 @@ void main() {
       expect(spaceCount(tester), '0');
     });
 
+    testWidgets('Drawings never keeps a note on the page, and Notes gets '
+        'it back', (tester) async {
+      await notes.load();
+      notes.create(body: 'Words');
+      await pumpApp(tester);
+      expect(openNoteBody(tester), 'Words');
+
+      await openSpace(tester, 'drawings');
+      expect(find.text('No drawings yet'), findsOneWidget);
+      expect(find.byType(EmptyState), findsOneWidget);
+      expect(noteField, findsNothing);
+      expect(find.byType(DrawingCanvas), findsNothing);
+
+      await openSpace(tester, 'notes');
+      expect(openNoteBody(tester), 'Words');
+    });
+
+    testWidgets('Drawings opens its own first drawing in place of the note, '
+        'and Notes gets the note back', (tester) async {
+      store.data['notes.v1'] = [
+        {'id': 'words', 'body': 'Words', 'createdAt': 2000, 'updatedAt': 2000},
+        {
+          'id': 'sketch',
+          'body': 'Sketch',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      prefs.lastOpenedNoteId = 'words';
+      await pumpApp(tester);
+      expect(openNoteBody(tester), 'Words');
+
+      await openSpace(tester, 'drawings');
+      expect(noteField, findsNothing);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+
+      await openSpace(tester, 'notes');
+      expect(find.byType(DrawingCanvas), findsNothing);
+      expect(openNoteBody(tester), 'Words');
+    });
+
     testWidgets('the archive opens from the filter, and its ✕ leaves it', (
       tester,
     ) async {
