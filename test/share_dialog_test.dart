@@ -700,7 +700,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
           ),
@@ -725,16 +725,6 @@ void main() {
     // than repeated in it.
     expect(find.text('Kept at hand'), findsOneWidget);
     expect(top('Kept at hand'), lessThan(top('Shared with user-2')));
-
-    // "My notes" counts every note of their own, the pinned one included,
-    // and none of the space's.
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('sidebar-note-count')),
-        matching: find.text('2'),
-      ),
-      findsOneWidget,
-    );
 
     final inviteList = [
       'People with access',
@@ -783,7 +773,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
             collaborators: {
@@ -865,7 +855,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: bob.sharing,
           ),
@@ -904,7 +894,7 @@ void main() {
               displayTime: (t) => t,
               onSearch: () {},
               onSelect: (_) {},
-              onCreate: () {},
+              windowBar: const SizedBox(),
               onShare: (_) {},
               onArchive: (_) {},
               sharing: alice.sharing,
@@ -918,6 +908,10 @@ void main() {
       // title bar, where it acts on the note that is open rather than whichever
       // row happens to be under the pointer.
       expect(find.byKey(ValueKey('share-note-${shared.id}')), findsNothing);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: tester.getCenter(find.text('Shared')));
+      await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('note-actions-${shared.id}')), findsOneWidget);
 
       // Right-click still reaches it without opening the note first.
@@ -949,7 +943,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: device.sharing,
             tab: tab,
@@ -959,9 +953,7 @@ void main() {
       ),
     );
 
-    testWidgets('your own shared note stays in My Notes, with faces', (
-      tester,
-    ) async {
+    testWidgets('your own shared note stays in My Notes', (tester) async {
       late Note shared;
       late Space space;
       await tester.runAsync(() async {
@@ -980,19 +972,10 @@ void main() {
       await tester.pumpWidget(tabbed(alice, tab: SidebarTab.mine));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('sidebar-tabs')), findsOneWidget);
-      expect(find.text('My Notes'), findsOneWidget);
-      expect(find.text('Shared with Me'), findsOneWidget);
       expect(find.text('Private'), findsOneWidget);
       expect(find.text('Ours'), findsOneWidget);
-      // An ordinary row, not a section of its own: no space heading, and the
-      // people it is open to drawn after its timestamp instead.
+      // An ordinary row, not a section of its own: no space heading.
       expect(find.byKey(ValueKey('space-header-${space.id}')), findsNothing);
-      expect(find.byKey(const ValueKey('note-row-people')), findsOneWidget);
-      expect(
-        find.byKey(ValueKey('space-avatar-${space.id}-${bob.userId}')),
-        findsOneWidget,
-      );
 
       // Nobody else has shared anything with Alice.
       await tester.pumpWidget(tabbed(alice, tab: SidebarTab.shared));
@@ -1028,7 +1011,6 @@ void main() {
       // Grouped under who shared it, whose faces that heading already shows,
       // so the row does not repeat them.
       expect(find.byKey(ValueKey('space-header-${space.id}')), findsOneWidget);
-      expect(find.byKey(const ValueKey('note-row-people')), findsNothing);
     });
 
     testWidgets('an invitation waits under the search field until answered', (
@@ -1046,16 +1028,16 @@ void main() {
       SidebarTab? switchedTo;
 
       await tester.pumpWidget(
-        tabbed(bob, tab: SidebarTab.mine, onTabChanged: (t) => switchedTo = t),
+        tabbed(
+          bob,
+          tab: SidebarTab.shared,
+          onTabChanged: (t) => switchedTo = t,
+        ),
       );
       await tester.pumpAndSettle();
 
       final card = find.byKey(ValueKey('sidebar-invite-$token'));
       expect(card, findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
-        findsOneWidget,
-      );
       double top(Finder finder) => tester.getTopLeft(finder).dy;
       expect(
         top(card),
@@ -1072,10 +1054,6 @@ void main() {
       expect(bob.sharing.teams, hasLength(1));
       expect(switchedTo, SidebarTab.shared);
       expect(card, findsNothing);
-      expect(
-        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
-        findsNothing,
-      );
       // Joining asks for a sync soon; the timer must not outlive the test.
       bob.dispose();
       await tester.pump(const Duration(seconds: 3));
@@ -1100,7 +1078,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
           ),
