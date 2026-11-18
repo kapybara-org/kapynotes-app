@@ -52,8 +52,9 @@ class DocumentEvaluation {
 
   /// The sum of the lines that read nothing from other lines. A line worked
   /// out from another's result, as `per person = total / 2` is, is left out
-  /// so that nothing is counted twice, `total` and `sum` in the note still
-  /// read everything.
+  /// so that nothing is counted twice, though `total` and `sum` in the note
+  /// still read everything. Null when the note has a `total` or `sum` line of
+  /// its own, so that the footer never contradicts a total the writer wrote.
   final CalcValue? total;
   final DigitGrouping grouping;
 
@@ -64,7 +65,8 @@ class DocumentEvaluation {
   });
 
   /// Null when the note holds no calculations at all, so the footer can omit
-  /// the readout rather than claim a total of zero.
+  /// the readout rather than claim a total of zero, and when it has a `total`
+  /// or `sum` line of its own.
   String? get totalText => total == null
       ? null
       : ResultFormatter.display(total!, grouping: grouping);
@@ -173,7 +175,9 @@ class CalcEngine {
     _memo.end(pass);
     return DocumentEvaluation(
       results: Map<int, LineResult>.unmodifiable(results),
-      total: scope.ownSum,
+      total: results.values.any((result) => result.isTotal)
+          ? null
+          : scope.ownSum,
       grouping: grouping,
     );
   }
