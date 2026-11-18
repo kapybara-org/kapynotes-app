@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/quick_capture.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 
@@ -107,6 +108,15 @@ void main() {
 
       expect(filed.id, fixed.id);
       expect(filed.body, 'Inbox\n\nFrom the widget');
+    });
+
+    test('with nothing typed and nothing to carry on, it starts New Note', () {
+      for (final intent in LaunchIntent.values) {
+        final filed = QuickCapture.file(NotesStore(_MemoryStore()), '', intent);
+        expect(filed.body, Note.blankBody, reason: intent.name);
+      }
+      final filed = QuickCapture.file(notes, '', LaunchIntent.dictate);
+      expect(notes.namesHere(filed.id), isTrue, reason: 'named on this device');
     });
 
     test('with nothing to carry on, it starts the first note', () {

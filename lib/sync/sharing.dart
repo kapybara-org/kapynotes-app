@@ -252,6 +252,8 @@ class Sharing extends ChangeNotifier {
       throw const SyncProtocolException('no such shared space');
     }
     return _notes.create(
+      body: Note.blankBody,
+      authored: false,
       spaceId: spaceId,
       contentKey: randomKey(),
       keyGeneration: space.keyGeneration,
