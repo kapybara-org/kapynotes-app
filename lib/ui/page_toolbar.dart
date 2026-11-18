@@ -129,6 +129,10 @@ class PageToolbar extends StatelessWidget {
   /// Saved and is up to 125 wider.
   static const double _unloadedPicturesWidth = _savedWidth + 125;
 
+  /// Narrower than this, Share is its icon alone, so the window's own buttons
+  /// (Keep on top, More) still fit beside it.
+  static const double _shareLabelWidth = 300;
+
   /// Narrower than this, "Update and restart" shortens to "Update".
   static const double _updateLabelWidth = 680;
 
@@ -236,8 +240,14 @@ class PageToolbar extends StatelessWidget {
                       key: const ValueKey('page-share'),
                       tall: true,
                       icon: KapyIcons.personAddRounded,
-                      label: 'Share',
-                      tooltip: noteShared ? 'Manage sharing' : null,
+                      label: constraints.maxWidth >= _shareLabelWidth
+                          ? 'Share'
+                          : null,
+                      tooltip: noteShared
+                          ? 'Manage sharing'
+                          : constraints.maxWidth >= _shareLabelWidth
+                          ? null
+                          : 'Share',
                       onPressed: onShare,
                     ),
                     const SizedBox(width: 6),
