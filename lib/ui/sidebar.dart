@@ -1610,6 +1610,8 @@ class SidebarWindowBar extends StatelessWidget {
   /// Narrower than these, New note gives up its keycap and then its word, so
   /// the space's name keeps its room on a list dragged narrow. Measured at
   /// the reader's text size, which the name and the button both grow with.
+  /// The keycap's is for a two-glyph chord like ⌘N, and rises by however
+  /// much wider the real one prints, as Ctrl+N does on Windows.
   static const double _keycapWidth = 280;
   static const double _labelWidth = 250;
 
@@ -1634,7 +1636,14 @@ class SidebarWindowBar extends StatelessWidget {
                   final width =
                       constraints.maxWidth /
                       MediaQuery.textScalerOf(context).scale(1);
-                  final keycap = width >= _keycapWidth;
+                  final chord = newNoteShortcut?.keycapLabel;
+                  final keycap =
+                      width >=
+                      _keycapWidth +
+                          (chord == null
+                              ? 0
+                              : Keycap.textWidth(chord, tonal: true) -
+                                    Keycap.textWidth('⌘N', tonal: true));
                   final label = width >= _labelWidth;
                   return Row(
                     children: [
