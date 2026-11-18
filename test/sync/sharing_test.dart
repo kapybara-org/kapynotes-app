@@ -1292,6 +1292,22 @@ void main() {
       return (note, spaceId);
     }
 
+    test('a viewer\'s delete is dismissed the same way and leaves nothing '
+        'pending', () async {
+      final (note, spaceId) = await sharedWithBoth();
+      await alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.viewer);
+      await bob.sharing.refresh();
+      bob.tick();
+      bob.notes.delete(note.id);
+      await bob.syncAndSettle();
+
+      expect(bob.notes.byId(note.id), isNull);
+      expect(bob.notes.hasPendingChanges, isFalse);
+      expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+      expect(server.guestDeletes, 0, reason: 'nothing went up');
+      expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+    });
+
     test(
       'a guest\'s delete takes it out of their notes only, and is never sent',
       () async {

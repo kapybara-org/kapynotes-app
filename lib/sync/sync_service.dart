@@ -1143,7 +1143,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       final spaceId = stone.spaceId ?? personal.id;
       if (_needsPro.contains(spaceId)) continue;
       final space = _keyring.byId(spaceId);
-      if (space == null || !space.canEdit) continue;
+      if (space == null) continue;
       final record = _docs.get(stone.id);
       // A tombstone beside a live copy elsewhere is a move, and the move's
       // own entry tells the server where the note went.
@@ -1153,15 +1153,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _notes.markSynced(tombstones: [stone]);
         continue;
       }
+      if (space.isTeam && !space.isOwner) {
+        // Only the owner deletes a shared note for everyone. Anyone else's
+        // Delete takes it out of their own notes and is never sent, so it
+        // needs no right to edit: a viewer's is dismissed the same way.
+        _notes.dismiss(stone);
+        continue;
+      }
+      if (!space.canEdit) continue;
       if (record == null) {
         // Deleted before it was ever seeded: the server never had it.
         _notes.markSynced(tombstones: [stone]);
-        continue;
-      }
-      if (space.isTeam && !space.isOwner) {
-        // Only the owner deletes a shared note for everyone. Anyone else's
-        // Delete takes it out of their own notes and is never sent.
-        _notes.dismiss(stone);
         continue;
       }
       if (record.outbox.any((entry) => entry.deleted == true)) continue;
