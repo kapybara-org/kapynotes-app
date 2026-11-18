@@ -88,7 +88,7 @@ TextStyle paragraphTextStyle(
   if (paragraphStyle == NoteParagraphStyle.heading) {
     return _headingStyle(
       base,
-      EditorMetrics.page ? _pageHeadingScale(1) : 1.28,
+      _headingScale(1),
       1,
       writingFont,
     ).copyWith(color: primaryColor);
@@ -108,7 +108,7 @@ TextStyle paragraphTextStyle(
   );
 }
 
-/// The note's first line on the page, its title: Paper's 40/48 in bold, in
+/// The note's first line, its title, at [EditorMetrics.titleFontSize], in
 /// the handwritten face when the writing font is mixed. Emphasis in it
 /// stays.
 TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
@@ -127,7 +127,7 @@ TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
         ? null
         : EditorMetrics.titleRow / EditorMetrics.titleFontSize,
     leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: FontWeight.w600,
+    fontWeight: EditorMetrics.titleWeight,
   );
 }
 
@@ -137,9 +137,8 @@ double _pageScale(TextStyle base) =>
     ? 1
     : base.fontSize! * base.height! / EditorMetrics.lineHeight;
 
-/// A heading's size on the page against 16px writing.
-double _pageHeadingScale(int level) =>
-    EditorMetrics.headingFontSize(level) / 16;
+/// A heading's size against 16px writing.
+double _headingScale(int level) => EditorMetrics.headingFontSize(level) / 16;
 
 /// The least room a markdown list marker takes, before scaling: a task's
 /// box, and a gap between it and the words. See
@@ -164,14 +163,7 @@ TextStyle markdownHeadingStyle(
   Color? primaryColor,
   Color? secondaryColor,
 }) {
-  final scale = EditorMetrics.page
-      ? _pageHeadingScale(level)
-      : switch (level) {
-          <= 1 => 1.28,
-          2 => 1.18,
-          3 => 1.08,
-          _ => 1.0,
-        };
+  final scale = _headingScale(level);
   return _headingStyle(
     base,
     scale,

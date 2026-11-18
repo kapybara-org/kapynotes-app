@@ -538,25 +538,26 @@ class EditorMetrics {
   /// [padding] gives the column what it has.
   static const double columnWidth = 680;
 
-  /// The note's first line, its title, on the page: Paper's 40/48, and the
-  /// meta row that sits under it, 10 below the title and 20 above the body:
-  /// Paper has 10 there, and Sanjay asked for more room between the details
-  /// and the writing.
-  static const double titleFontSize = 40;
-  static const double titleRow = 48;
+  /// The note's first line, its title: under twice the writing's size and a
+  /// step lighter than a heading's weight, so it names the note without
+  /// shouting over it. On the page the meta row sits under it, 10 below the
+  /// title and 24 above the body.
+  static double get titleFontSize => page ? 30 : 28;
+  static double get titleRow => page ? 38 : 36;
+  static const FontWeight titleWeight = FontWeight.w500;
   static const double metaGap = 10;
   static const double metaRow = 16;
-  static const double metaBottom = 20;
+  static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
-  /// A heading on the page, Paper's p-5-0: 22, 19 and 17 over 16px writing,
-  /// each in a 28px line at the bottom of a row of 40 for the first level
-  /// and 36 below it. Set with proportional leading, nearly all of what the
-  /// row adds goes above the words. Deeper levels are the writing's own size
-  /// in the third level's row.
+  /// A heading against 16px writing: on the page 22, 19 and 17, each in a
+  /// 28px line at the bottom of a row of 40 for the first level and 36 below
+  /// it, and a step smaller on a phone. Set with proportional leading, nearly
+  /// all of what the row adds goes above the words. Deeper levels are the
+  /// writing's own size. Every level stays well under the title.
   static double headingFontSize(int level) => switch (level) {
-    <= 1 => 22,
-    2 => 19,
+    <= 1 => page ? 22 : 20,
+    2 => page ? 19 : 18,
     3 => 17,
     _ => 16,
   };

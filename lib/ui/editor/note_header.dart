@@ -29,7 +29,7 @@ class _UnderlinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final scale = word.height / EditorMetrics.titleRow;
+    final scale = word.height / 48;
     final path = Path()
       ..moveTo(word.left - 2.9 * scale, word.top + 47.1 * scale)
       ..quadraticBezierTo(

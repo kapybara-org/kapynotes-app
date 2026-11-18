@@ -368,7 +368,7 @@ class HighlightingController extends TextEditingController {
       base: base,
       scaler: scaler,
       page: page,
-      titleEnd: page ? _lineEndAt(source, 0) : 0,
+      titleEnd: _lineEndAt(source, 0),
       // Paper's sage on the page, a step lighter than the accent in the dark.
       linkColor: page ? _palette.accentText : colors.primary,
       errorColor: colors.error,

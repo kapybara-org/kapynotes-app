@@ -534,7 +534,7 @@ class _TodayTitle extends StatelessWidget {
           style: handStyle(
             EditorMetrics.titleFontSize,
             EditorMetrics.titleRow,
-            FontWeight.w700,
+            EditorMetrics.titleWeight,
             context.palette.textPrimary,
           ),
         ),
