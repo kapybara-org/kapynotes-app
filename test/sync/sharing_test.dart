@@ -136,17 +136,6 @@ class Person {
   }
 }
 
-/// Why two trips home cannot be exercised end to end yet: the last move
-/// out of a one-member space empties it, the server reaps it inside that
-/// same push (`reapIfEmpty(req.from)` in ops.ts), and `SyncService.bringHome`
-/// then calls `stopSharing` on a space that is already gone. The 404 is
-/// treated as a refused duty, the notes are never moved home locally, and
-/// the refresh that follows drops them as belonging to a space this account
-/// has left.
-const String reapedBeforeStop =
-    'SyncService.bringHome calls stopSharing after the last move has already '
-    'reaped the space; the 404 aborts the trip home and the notes are dropped';
-
 void main() {
   late FakeServer server;
   late Person alice;
@@ -756,11 +745,6 @@ void main() {
         expect(laptop.bodies, ['Out and back']);
         laptop.dispose();
       },
-      skip:
-          'the seed of a note moving back into a space it left carries no '
-          '`deleted: false`, and the server keeps the tombstone (`deletedAfter = '
-          'req.deleted ?? wasDeleted` in ops.ts), so the snapshot lands with '
-          'deleted: true and every other device deletes the note',
     );
 
     test(
@@ -781,7 +765,56 @@ void main() {
         expect(home.body, 'Lonely');
         expect(home.isDirty, isFalse);
       },
-      skip: reapedBeforeStop,
+    );
+
+    Future<void> keptOnEveryDevice(
+      Future<void> Function(Space space) end,
+    ) async {
+      final laptop = Person(
+        server,
+        userId: alice.userId,
+        device: 'alice-laptop',
+      );
+      await laptop.boot();
+      final note = await shareWithBob('Ours to keep');
+      final space = alice.sharing.teams.single;
+      laptop.tick();
+      await laptop.sync.syncNow();
+      expect(laptop.notes.byId(note.id)?.spaceId, space.id);
+      // Both on the socket, so the move reaches the laptop as it lands.
+      await alice.goLive();
+      await laptop.goLive();
+
+      await end(space);
+      alice.tick(2);
+      await alice.sync.syncNow();
+      await settle(server);
+      laptop.tick();
+      await laptop.sync.syncNow();
+
+      for (final device in [alice, laptop]) {
+        final home = device.notes.byId(note.id);
+        expect(home?.spaceId, isNull, reason: device.device);
+        expect(home?.body, 'Ours to keep', reason: device.device);
+      }
+      expect(
+        server.rowsIn(alice.keyring.personal!.id)[note.id]!.isTombstone,
+        isFalse,
+      );
+      laptop.dispose();
+    }
+
+    test(
+      "stopping sharing keeps the note on every one of the owner's devices",
+      () => keptOnEveryDevice((space) => alice.sharing.stopSharing(space.id)),
+    );
+
+    test(
+      "the last collaborator leaving keeps the note on every one of the owner's devices",
+      () => keptOnEveryDevice((space) async {
+        bob.tick();
+        await bob.sharing.leave(space.id);
+      }),
     );
   });
 
@@ -868,7 +901,6 @@ void main() {
         expect(home.spaceId, isNull);
         expect(home.body, 'Just us');
       },
-      skip: reapedBeforeStop,
     );
 
     test(
