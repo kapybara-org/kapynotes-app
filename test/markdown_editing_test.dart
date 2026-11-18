@@ -323,7 +323,7 @@ void main() {
 
     test('tick and untick a task', () {
       final ticked = toggleMarkdownTask(at('|- [ ] milk'), 2);
-      expect(shown(ticked), '- [x] |milk');
+      expect(shown(ticked), '|- [x] milk');
       expect(toggleMarkdownTask(ticked, 2).text, '- [ ] milk');
       expect(toggleMarkdownTask(at('|- [X] milk'), 2).text, '- [ ] milk');
     });

@@ -1597,6 +1597,11 @@ bool _isWordUnit(int unit) {
 String _unmask(String value) =>
     value.contains('') ? value.replaceAll('', '*') : value;
 
+/// A link's address with its masked `*` restored, which the parser has by
+/// then percent-encoded as it does any character outside ASCII.
+String _unmaskAddress(String address) =>
+    _unmask(address).replaceAll('%EE%80%80', '*');
+
 _Parts _parse(String source) {
   if (source.isEmpty) return _Parts.empty;
   final document = md.Markdown(
@@ -2318,7 +2323,11 @@ class _Collector {
           final destination = node.attributes['destination'];
           if (destination != null && to > from) {
             _links.add(
-              MarkdownLink(_clamp(from), _clamp(to), _unmask(destination)),
+              MarkdownLink(
+                _clamp(from),
+                _clamp(to),
+                _unmaskAddress(destination),
+              ),
             );
           }
           for (final marker in [markers.first, markers.last]) {
@@ -2689,7 +2698,9 @@ class _Collector {
     if (destination != null) {
       final from = _clamp(wordsStart);
       final to = _clamp(wordsEnd);
-      if (to > from) _links.add(MarkdownLink(from, to, _unmask(destination)));
+      if (to > from) {
+        _links.add(MarkdownLink(from, to, _unmaskAddress(destination)));
+      }
     }
   }
 
