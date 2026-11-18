@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/editor/table_controls.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -48,6 +47,7 @@ void main() {
       body,
       window: window,
       brightness: dark ? Brightness.dark : Brightness.light,
+      now: () => DateTime(2026, 11, 18, 9, 41),
     );
     await desk.settle();
     return (desk, desk.editor.debugTableFrames.single);
