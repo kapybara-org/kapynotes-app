@@ -17,6 +17,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/update_installer.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -698,7 +699,15 @@ void main() {
 
       // The newest is open; the one below it is a heading and nothing more.
       expect(find.text('The first public build.'), findsOneWidget);
-      expect(find.text('A notebook that does the math.'), findsOneWidget);
+      // The rail's card says the running version's lines too, so this looks
+      // only at the list, which is a group of rows.
+      expect(
+        find.descendant(
+          of: find.byType(SettingsGroup),
+          matching: find.text('A notebook that does the math.'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Before it had a name.'), findsNothing);
     });
 
