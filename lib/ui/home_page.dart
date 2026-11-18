@@ -1015,7 +1015,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .firstOrNull;
     final code = entry?.lastError;
     if (code == null) return null;
-    return describeSpeechError(SyncRefusedException(400, code, const {}));
+    return describeSpeechError(
+      SyncRefusedException(400, code, {'lang': entry?.lang}),
+    );
   }
 
   /// The editor the user is actually looking at. Split panes keep every

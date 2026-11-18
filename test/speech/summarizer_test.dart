@@ -7,16 +7,22 @@ import 'package:kapy_notes/speech/summarizer.dart';
 
 /// A summariser that answers however a test tells it to.
 class _Fake implements Summarizer {
-  _Fake(this.state, {this.title = 'Title'});
+  _Fake(this.state, {this.title = 'Title', this.languages});
 
   SummarizerReadiness state;
   final String title;
+
+  /// Null writes everything.
+  final Set<String>? languages;
   int calls = 0;
   String? lastInstruction;
   int rewrites = 0;
 
   @override
   Future<SummarizerReadiness> readiness() async => state;
+
+  @override
+  Future<bool> writes(String lang) async => languages?.contains(lang) ?? true;
 
   @override
   Future<SummaryDraft> summarize({
@@ -91,7 +97,10 @@ Standup thoughts
         'A very long heading that simply keeps going well past any '
         'reasonable length\n- one point',
       );
-      expect(parsed.title.split(' ').length, lessThanOrEqualTo(maxTitleWords + 1));
+      expect(
+        parsed.title.split(' ').length,
+        lessThanOrEqualTo(maxTitleWords + 1),
+      );
       expect(parsed.title, endsWith('…'));
     });
 
@@ -156,14 +165,73 @@ Standup thoughts
       );
     });
 
-    test('waiting is worth saying only when nothing else is actionable', () async {
+    test('Hindi skips a model without it for one with it', () async {
+      final apple = _Fake(
+        SummarizerReadiness.ready,
+        title: 'Apple',
+        languages: {'en'},
+      );
       final device = DeviceSummarizer([
-        _Fake(SummarizerReadiness.preparing),
+        apple,
+        _Fake(SummarizerReadiness.ready, title: 'Gemma'),
+      ]);
+
+      expect((await device.summarize(text: 'x', lang: 'hi')).title, 'Gemma');
+      expect((await device.summarize(text: 'x', lang: 'en')).title, 'Apple');
+      expect(apple.calls, 1);
+    });
+
+    test('Hindi with its model not downloaded asks for the download', () async {
+      final device = DeviceSummarizer([
+        _Fake(SummarizerReadiness.ready, languages: {'en'}),
+        _Fake(SummarizerReadiness.needsDownload),
+      ]);
+
+      await expectLater(
+        device.summarize(text: 'x', lang: 'hi'),
+        throwsA(
+          isA<SummarizerUnavailable>()
+              .having(
+                (e) => e.readiness,
+                'readiness',
+                SummarizerReadiness.needsDownload,
+              )
+              .having(
+                (e) => e is SummaryLanguageUnavailable,
+                'language',
+                isFalse,
+              ),
+        ),
+      );
+    });
+
+    test('Hindi where nothing here could ever write it says so', () async {
+      final device = DeviceSummarizer([
+        _Fake(SummarizerReadiness.ready, languages: {'en'}),
         _Fake(SummarizerReadiness.unsupported),
       ]);
 
-      expect(await device.readiness(), SummarizerReadiness.preparing);
+      await expectLater(
+        device.summarize(text: 'x', lang: 'hi'),
+        throwsA(
+          isA<SummaryLanguageUnavailable>().having((e) => e.lang, 'lang', 'hi'),
+        ),
+      );
+      expect(await device.writes('hi'), isFalse);
+      expect(await device.writes('en'), isTrue);
     });
+
+    test(
+      'waiting is worth saying only when nothing else is actionable',
+      () async {
+        final device = DeviceSummarizer([
+          _Fake(SummarizerReadiness.preparing),
+          _Fake(SummarizerReadiness.unsupported),
+        ]);
+
+        expect(await device.readiness(), SummarizerReadiness.preparing);
+      },
+    );
   });
 
   group('routing', () {
@@ -224,6 +292,24 @@ Standup thoughts
             .setMockMethodCallHandler(channel, null),
       );
     }
+
+    test('it asks the model which languages it writes, once each', () async {
+      answerWith(
+        (call) => call.method == 'writes' ? call.arguments == 'en' : 'ready',
+      );
+      final apple = AppleSummarizer();
+
+      expect(await apple.writes('hi'), isFalse);
+      expect(await apple.writes('en'), isTrue);
+      expect(await apple.writes('hi'), isFalse);
+      expect(calls.where((call) => call.method == 'writes'), hasLength(2));
+    });
+
+    test('a runner that cannot say which languages is a yes', () async {
+      answerWith((_) => throw PlatformException(code: 'old-runner'));
+
+      expect(await AppleSummarizer().writes('hi'), isTrue);
+    });
 
     test("the runner's four answers each mean something different", () async {
       final answers = <String, SummarizerReadiness>{

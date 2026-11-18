@@ -1,3 +1,5 @@
+import '../core/platform.dart';
+import '../data/voice_prefs.dart';
 import '../sync/sync_api.dart';
 import 'speech_api.dart';
 
@@ -29,6 +31,12 @@ String describeSpeechError(Object error) => switch (error) {
     SpeechCodes.sessionRejected => 'Sign in again to transcribe voice notes.',
     SpeechCodes.offline =>
       'Could not reach the server. This will finish when you are back online.',
+    SpeechCodes.summaryNeedsCloud =>
+      '${_languageSummaries(body)} on ${_device()} use the cloud. Choose '
+          'Cloud for summaries in Settings › Voice & AI.',
+    SpeechCodes.summaryNeedsCloudPlan =>
+      "${_languageSummaries(body)} on ${_device()} use the cloud, which isn't "
+          'part of the Free plan. The transcript is here.',
     _ => 'That action is not available.',
   },
   SyncTransientException() =>
@@ -36,6 +44,14 @@ String describeSpeechError(Object error) => switch (error) {
   SyncProtocolException(:final message) => message,
   _ => 'That did not work.',
 };
+
+/// "Hindi summaries", or plainer when the language has no name here.
+String _languageSummaries(Map<String, Object?> body) {
+  final name = speechLanguages[body['lang']];
+  return name == null ? 'Summaries in this language' : '$name summaries';
+}
+
+String _device() => AppPlatform.isIOS ? 'iPhone' : 'this device';
 
 /// Says when the minutes come back, because "out of minutes" without a date
 /// reads as "broken" rather than "wait".

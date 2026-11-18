@@ -86,6 +86,11 @@ class GemmaSummarizer implements Summarizer {
   /// by a script phase on the Runner target.
   static bool get isPossibleHere => !AppPlatform.isIOS;
 
+  /// Gemma is multilingual, and the fallback for every language Apple's
+  /// model lacks.
+  @override
+  Future<bool> writes(String lang) async => true;
+
   @override
   Future<SummarizerReadiness> readiness() async {
     if (!isPossibleHere) return SummarizerReadiness.unsupported;
