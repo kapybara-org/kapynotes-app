@@ -222,9 +222,11 @@ flutter:
     - assets/mascot/kapy_header_sleep_loop_30fps.webp
     # The tray icon, read by tray_manager from the bundle rather than painted:
     # an .ico for the Windows notification area, a template PNG that macOS
-    # tints for the menu bar. Desktop-only, and small enough not to matter.
+    # tints for the menu bar, a full-colour PNG for a Linux panel.
+    # Desktop-only, and small enough not to matter.
     - assets/branding/kapynotes_tray_windows.ico
     - assets/branding/kapynotes_tray_macos.png
+    - assets/branding/kapynotes_tray_linux.png
     - assets/fonts/ShantellSans-OFL.txt
     - assets/fonts/Figtree-OFL.txt
     - assets/fonts/GeistMono-OFL.txt

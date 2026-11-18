@@ -7,17 +7,22 @@ import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../data/layout_prefs.dart';
+import 'linux_desktop.dart';
 
 /// Places the native window before it is shown.
 ///
 /// A placement the user chose wins exactly while its title area is still on
 /// a connected display. A first launch, or a display which has since been
 /// unplugged, gets the sticky-note default on the right of the active screen.
+///
+/// Wayland leaves placement to the compositor: a window there can neither
+/// move itself nor read where it is, so only its size is restored.
 Future<void> placeInitialDesktopWindow(LayoutPrefs prefs) async {
+  final wayland = await LinuxDesktop.isWayland();
   final savedBounds = prefs.windowBounds;
-  var restored = false;
+  var restored = wayland;
 
-  if (savedBounds != null && await _canRestore(savedBounds)) {
+  if (!restored && savedBounds != null && await _canRestore(savedBounds)) {
     try {
       await windowManager.setPosition(savedBounds.topLeft);
       restored = true;
@@ -40,10 +45,24 @@ Future<void> placeInitialDesktopWindow(LayoutPrefs prefs) async {
     // Save what the OS actually accepted. It may constrain an oversized
     // legacy window to the current work area, and that adjusted answer is the
     // one the next launch should reproduce.
-    prefs.rememberWindowBounds(await windowManager.getBounds());
+    prefs.rememberWindowBounds(
+      await rememberedWindowBounds(prefs, wayland: wayland),
+    );
   } catch (error) {
     debugPrint('KapyNotes: could not read the initial window bounds: $error');
   }
+}
+
+/// The bounds worth saving. Wayland reports every window at the origin, so
+/// there only the size is news, and the position stays the last one a session
+/// that could see it saved.
+Future<Rect> rememberedWindowBounds(
+  LayoutPrefs prefs, {
+  required bool wayland,
+}) async {
+  final bounds = await windowManager.getBounds();
+  if (!wayland) return bounds;
+  return (prefs.windowBounds?.topLeft ?? Offset.zero) & bounds.size;
 }
 
 Future<bool> _canRestore(Rect savedBounds) async {

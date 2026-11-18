@@ -565,6 +565,9 @@ class LayoutPrefs extends ChangeNotifier {
   static bool get supportsTransparency =>
       AppPlatform.isMacOS || AppPlatform.isWindows;
 
+  /// Linux has no system spell checker to ask, so the switch is left out.
+  static bool get supportsSpellCheck => !AppPlatform.isLinux;
+
   set transparencyEnabled(bool value) {
     final supportedValue = supportsTransparency && value;
     if (supportedValue == _transparencyEnabled.value) return;

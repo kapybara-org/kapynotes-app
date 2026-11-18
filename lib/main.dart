@@ -54,9 +54,9 @@ Future<void> main() async {
   final prefs = LayoutPrefs(store);
   final shortcuts = ShortcutPrefs(store);
   final rates = RatesRepository(store);
-  // Only where the app can install its own updates: Linux desktop and the
-  // phones get theirs elsewhere and would show a button that lies.
-  final updates = AppPlatform.hasAutoUpdate ? UpdateChecker(store) : null;
+  // The desktops only: the phones update through their stores. Linux hears
+  // about a release and links to it; macOS and Windows also install it.
+  final updates = AppPlatform.isDesktop ? UpdateChecker(store) : null;
 
   // One object owns the session, the key and the sync loop; everything else
   // just hands it along. Constructed eagerly because it is cheap — nothing

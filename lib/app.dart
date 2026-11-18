@@ -404,8 +404,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     }
     widget.rates.loadCache();
     _engines = EngineProvider(widget.rates, widget.prefs, widget.notes.now);
-    if ((AppPlatform.isMacOS || AppPlatform.isWindows) &&
-        !AppPlatform.isFlutterTest) {
+    if (AppPlatform.isDesktop && !AppPlatform.isFlutterTest) {
       final engines = _engines!;
       _mcp = McpService(
         store: widget.store,

@@ -12,6 +12,7 @@ import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
 import '../core/editor_font.dart';
+import '../core/linux_desktop.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -1086,6 +1087,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         _swap = null;
         _recordError = AppPlatform.isMacOS
             ? 'Include Command, Control, Option or Shift.'
+            : AppPlatform.isLinux
+            ? 'Include Ctrl, Alt, Shift or Super.'
             : 'Include Ctrl, Alt, Shift or Windows.';
       });
       return KeyEventResult.handled;
@@ -1552,15 +1555,16 @@ class _SettingsDialogState extends State<SettingsDialog>
             byDefault: true,
             keywords: ['md', 'syntax', 'headings', 'bold', 'lists', 'checkbox'],
           ),
-          _toggle(
-            'spell-check-toggle',
-            'Check spelling',
-            'Underline words that may be misspelled',
-            value: prefs.spellCheckEnabled,
-            onChanged: (value) => prefs.spellCheckEnabled = value,
-            byDefault: true,
-            keywords: ['spellcheck', 'spell check', 'typos', 'dictionary'],
-          ),
+          if (LayoutPrefs.supportsSpellCheck)
+            _toggle(
+              'spell-check-toggle',
+              'Check spelling',
+              'Underline words that may be misspelled',
+              value: prefs.spellCheckEnabled,
+              onChanged: (value) => prefs.spellCheckEnabled = value,
+              byDefault: true,
+              keywords: ['spellcheck', 'spell check', 'typos', 'dictionary'],
+            ),
           _toggle(
             'daily-separators-toggle',
             'Daily separators',
@@ -2067,19 +2071,20 @@ class _SettingsDialogState extends State<SettingsDialog>
       _Group(
         'Running',
         [
-          _toggle(
-            'keep-running-toggle',
-            AppPlatform.isMacOS
-                ? 'Keep running in the menu bar'
-                : 'Keep running in the tray',
-            AppPlatform.isMacOS
-                ? 'Open, write or quit from the menu bar'
-                : 'Shortcuts keep working after the window closes',
-            value: prefs.keepRunningInBackground,
-            onChanged: _setKeepRunning,
-            byDefault: true,
-            keywords: ['background', 'menu bar', 'tray', 'close', 'quit'],
-          ),
+          if (integration?.canKeepRunningInBackground ?? true)
+            _toggle(
+              'keep-running-toggle',
+              AppPlatform.isMacOS
+                  ? 'Keep running in the menu bar'
+                  : 'Keep running in the tray',
+              AppPlatform.isMacOS
+                  ? 'Open, write or quit from the menu bar'
+                  : 'Shortcuts keep working after the window closes',
+              value: prefs.keepRunningInBackground,
+              onChanged: _setKeepRunning,
+              byDefault: true,
+              keywords: ['background', 'menu bar', 'tray', 'close', 'quit'],
+            ),
           // Absent rather than disabled where the OS has no mechanism this
           // app is allowed to use: macOS 12 predates the one the sandbox
           // permits.
@@ -2133,9 +2138,13 @@ class _SettingsDialogState extends State<SettingsDialog>
         (filter.isEmpty ||
             _shortcutLabel(action).toLowerCase().contains(filter) ||
             _keys(action).toLowerCase() == filter);
+    final systemShortcuts =
+        widget.desktopIntegration?.systemShortcutsSupported ?? true;
     return [
       for (final group in _ShortcutGroup.values)
-        if (ShortcutAction.values
+        if (group == _ShortcutGroup.fromAnywhere && !systemShortcuts) ...[
+          if (filter.isEmpty) _Group(group.title, [_systemShortcut()]),
+        ] else if (ShortcutAction.values
                 .where((action) => action.group == group && shows(action))
                 .toList()
             case final actions when actions.isNotEmpty)
@@ -2147,6 +2156,35 @@ class _SettingsDialogState extends State<SettingsDialog>
                 : null,
           ),
     ];
+  }
+
+  /// Wayland keeps keys pressed in other apps for the desktop itself, so the
+  /// shortcuts that work from anywhere are the desktop's own, set to run the
+  /// app. A launch while it is running hands over to the running copy.
+  _Setting _systemShortcut() {
+    final command = LinuxDesktop.shortcutCommand();
+    return _Setting(
+      'system-shortcut-setting',
+      'Use a system shortcut',
+      subtitle:
+          'Add one in your system’s keyboard settings that runs $command, '
+          'or $command --new-note for a new note',
+      keywords: ['shortcut', 'hotkey', 'keyboard', 'wayland', 'global'],
+      control: SettingsRowButton(
+        key: const ValueKey('copy-system-shortcut'),
+        label: 'Copy',
+        onPressed: () {
+          unawaited(
+            Clipboard.setData(ClipboardData(text: '$command --new-note')),
+          );
+          Toast.show(
+            context,
+            'Copied the new note command',
+            icon: KapyIcons.checkRounded,
+          );
+        },
+      ),
+    );
   }
 
   _Setting _shortcut(ShortcutAction action) {
@@ -2206,15 +2244,16 @@ class _SettingsDialogState extends State<SettingsDialog>
             keywords: ['update', 'upgrade', 'new version'],
             row: _UpdateRow(updates: updates),
           ),
-          _toggle(
-            'update-auto-download',
-            'Download updates automatically',
-            'So updating takes one click',
-            value: updates.autoDownload,
-            onChanged: (value) => updates.autoDownload = value,
-            byDefault: true,
-            keywords: ['auto update', 'automatic', 'background', 'restart'],
-          ),
+          if (AppPlatform.hasAutoUpdate)
+            _toggle(
+              'update-auto-download',
+              'Download updates automatically',
+              'So updating takes one click',
+              value: updates.autoDownload,
+              onChanged: (value) => updates.autoDownload = value,
+              byDefault: true,
+              keywords: ['auto update', 'automatic', 'background', 'restart'],
+            ),
         ],
         after: [SettingsNote(_updatesNote(updates))],
       ),
@@ -2225,6 +2264,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// platforms: Sparkle installs a downloaded release whenever the app quits,
   /// and the Windows installer only runs when asked.
   static String _updatesNote(UpdateChecker updates) {
+    if (AppPlatform.isLinux) {
+      return 'Checks for updates daily. Download opens the new version in '
+          'your browser, to install the same way as this one.';
+    }
     if (!updates.autoDownload) {
       return 'Checks for updates daily. Nothing downloads until you choose '
           'Download.';
@@ -4377,8 +4420,7 @@ class _UpdateRow extends StatelessWidget {
     };
   }
 
-  Future<void> _openNotes(BuildContext context) async {
-    final raw = updates.available?.notesUrl ?? '';
+  Future<void> _openLink(BuildContext context, String raw) async {
     final url = Uri.tryParse(raw);
     if (url == null || raw.isEmpty) return;
     var opened = false;
@@ -4403,7 +4445,11 @@ class _UpdateRow extends StatelessWidget {
       await updates.installAndRestart();
       return;
     }
-    if (updates.available != null) {
+    if (updates.available case final available?) {
+      if (AppPlatform.isLinux) {
+        await _openLink(context, available.downloadPage);
+        return;
+      }
       await updates.download();
       return;
     }
@@ -4448,7 +4494,7 @@ class _UpdateRow extends StatelessWidget {
                 const SizedBox(width: 4),
                 IconButton(
                   key: const ValueKey('update-release-notes'),
-                  onPressed: () => _openNotes(context),
+                  onPressed: () => _openLink(context, available.notesUrl),
                   icon: const KapyIcon(KapyIcons.openExternalRounded, size: 15),
                   color: palette.textTertiary,
                   tooltip: "What's new",

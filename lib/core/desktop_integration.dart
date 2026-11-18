@@ -8,9 +8,13 @@ import 'package:window_manager/window_manager.dart';
 import '../data/layout_prefs.dart';
 import '../data/shortcut_prefs.dart';
 import 'app_tray.dart';
+import 'linux_autostart.dart';
+import 'linux_desktop.dart';
 import 'login_item.dart';
+import 'platform.dart';
 import 'system_shutdown.dart';
 import 'window_pin.dart';
+import 'window_placement.dart';
 
 /// Native desktop behavior that has no useful mobile equivalent: remembering
 /// the window size and position; summoning an already-running app from
@@ -68,6 +72,8 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   bool _hidesOnClose = false;
   bool _loginItemSupported = false;
   bool _loginItemEnabled = false;
+  bool _wayland = false;
+  bool _trayHost = !AppPlatform.isLinux;
 
   String? get registrationError => _registrationError;
 
@@ -76,6 +82,17 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// leaves the row out entirely rather than offer a switch that does nothing.
   bool get loginItemSupported => _loginItemSupported;
   bool get loginItemEnabled => _loginItemEnabled;
+
+  /// False on Wayland, where an app cannot hear keys pressed in other apps.
+  /// There the summon shortcuts are system shortcuts that run the app, and
+  /// the settings pane says how to add one.
+  bool get systemShortcutsSupported => !_wayland;
+
+  /// Whether closing the window can leave the app running in the tray. On
+  /// Linux only while something on the desktop will show the icon: stock
+  /// GNOME accepts one and never draws it, and a hidden window with no icon
+  /// is an app with no way back.
+  bool get canKeepRunningInBackground => _trayHost;
 
   Future<void> initialize(ShortcutPrefs shortcuts) async {
     windowManager.addListener(this);
@@ -87,6 +104,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     // level, so it asks for the pin before it puts one up rather than let it
     // arrive underneath this one. See [releaseAlwaysOnTop].
     WindowPin.listen(releaseAlwaysOnTop);
+    if (AppPlatform.isLinux) await _initializeLinux();
     for (final action in _globalActions) {
       // The first refusal is the one worth reporting: it names a shortcut the
       // user can go and change, and the later ones may well be fine.
@@ -132,10 +150,28 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     await setLoginItemEnabled(true);
   }
 
+  /// What this Linux session allows, which decides whether the summon
+  /// shortcuts are registered and whether a close can hide to the tray.
+  Future<void> _initializeLinux() async {
+    LinuxDesktop.listen(onNewNote: () => unawaited(_summonForNewNote()));
+    _wayland = await LinuxDesktop.isWayland();
+    _trayHost = await LinuxDesktop.hasTrayHost();
+    try {
+      await LinuxAutostart().refresh();
+    } catch (error) {
+      debugPrint('KapyNotes: could not update the autostart entry: $error');
+    }
+  }
+
   /// Re-reads the login item from the OS. Worth doing whenever the settings
   /// pane opens: System Settings and the Task Manager can both remove it
-  /// behind the app's back.
+  /// behind the app's back. On Linux it also asks again whether a tray icon
+  /// would be shown, which an extension or a panel can change at any time.
   Future<void> refreshLoginItem() async {
+    if (AppPlatform.isLinux) {
+      _trayHost = await LinuxDesktop.hasTrayHost();
+      await _applyBackgroundBehavior();
+    }
     _loginItemSupported = await LoginItem.isSupported();
     _loginItemEnabled = _loginItemSupported && await LoginItem.isEnabled();
     notifyListeners();
@@ -205,7 +241,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// every dragged pixel of the sidebar, and re-registering a tray icon on
   /// each one would be visible.
   Future<void> _applyBackgroundBehavior() async {
-    final keepRunning = layoutPrefs.keepRunningInBackground;
+    final keepRunning = layoutPrefs.keepRunningInBackground && _trayHost;
     if (keepRunning == _appliedKeepRunning) return;
     _appliedKeepRunning = keepRunning;
 
@@ -281,6 +317,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     ShortcutAction action,
     ShortcutBinding? binding,
   ) async {
+    if (_wayland) return null;
     final previous = _hotKeys.remove(action);
     if (previous != null) await hotKeyManager.unregister(previous);
     if (binding == null) return null;
@@ -484,7 +521,9 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
           await windowManager.isFullScreen()) {
         return;
       }
-      layoutPrefs.rememberWindowBounds(await windowManager.getBounds());
+      layoutPrefs.rememberWindowBounds(
+        await rememberedWindowBounds(layoutPrefs, wayland: _wayland),
+      );
     } catch (error) {
       // Window events must never become unhandled async errors because an
       // older runner omitted one of the geometry methods.
@@ -498,6 +537,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     windowManager.removeListener(this);
     SystemShutdown.stopListening();
     WindowPin.stopListening();
+    LinuxDesktop.stopListening();
     layoutPrefs.removeListener(_onPrefsChanged);
     unawaited(_tray.dispose());
     onNewNoteRequested = null;
