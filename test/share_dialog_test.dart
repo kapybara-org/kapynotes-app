@@ -1110,4 +1110,48 @@ void main() {
     expect(field.autofocus, isFalse);
     expect(tester.testTextInput.isVisible, isFalse);
   });
+
+  // The server lets only a team space's owner move a note out of it. A
+  // 1.32.0 editor still offers "Move to my notes"; this is what their
+  // device does when the server refuses that move. Sync and the move path
+  // here are unchanged since v1.32.0.
+  test('an old editor whose move out is refused keeps everything', () async {
+    await alice.boot();
+    await bob.boot();
+    final note = alice.notes.create(body: 'Trip budget');
+    await alice.sync.syncNow();
+    await alice.sharing.shareNoteWith(note.id, email: bob.email);
+    await bob.sharing.acceptInvite(server.outbox.single.token);
+    await alice.sync.syncNow();
+    await bob.sync.syncNow();
+    final theirs = bob.notes.notes.single;
+    final spaceId = theirs.spaceId!;
+
+    // 1.32.0's unshareNote, which let any editor do this.
+    bob.notes.moveToSpace(theirs.id, spaceId: null, contentKey: null);
+    await bob.sync.syncNow();
+    final other = bob.notes.create(body: 'Groceries');
+    for (var pass = 0; pass < 3; pass++) {
+      await bob.sync.syncNow();
+      expect(bob.sync.status, SyncStatus.idle);
+      expect(bob.sync.lastError, isNull);
+    }
+    await alice.sync.syncNow();
+
+    // At most one refused push per sync pass: no loop.
+    final refusals = server.refusals.where((code) => code == 'owner-only');
+    expect(refusals, isNotEmpty);
+    expect(refusals.length, lessThanOrEqualTo(4));
+    // The editor keeps the text, in their own notes, unsynced.
+    final kept = bob.notes.byId(theirs.id)!;
+    expect(kept.spaceId, isNull);
+    expect(kept.body, 'Trip budget');
+    // Their other notes still sync.
+    expect(server.rows.containsKey(other.id), isTrue);
+    // The owner keeps the note where it was.
+    expect(server.rowsIn(spaceId).containsKey(note.id), isTrue);
+    final ours = alice.notes.byId(note.id)!;
+    expect(ours.spaceId, spaceId);
+    expect(ours.body, 'Trip budget');
+  });
 }

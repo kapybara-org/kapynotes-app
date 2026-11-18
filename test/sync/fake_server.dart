@@ -489,6 +489,13 @@ class FakeServer {
     }
     final space = spaces[push.spaceId]!;
     final source = push.from == null ? null : spaces[push.from!]!;
+    // Moving a note out of a team space takes it from everyone in it, so the
+    // server lets only that space's owner do it. Mirrors `applyOps`.
+    if (source != null &&
+        source.kind == SpaceKind.team &&
+        source.members[userId] != SpaceRole.owner) {
+      _refuse(403, 'owner-only', {'spaceId': source.id});
+    }
     final at = now();
 
     final prior = space.notes[push.noteId];
