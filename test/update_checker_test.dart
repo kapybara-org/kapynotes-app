@@ -400,6 +400,25 @@ void main() {
     checker.dispose();
   });
 
+  test('the Flatpak leaves updates to Flatpak and asks for nothing', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    AppPlatform.debugIsFlatpakOverride = true;
+    addTearDown(() => AppPlatform.debugIsFlatpakOverride = null);
+    final asked = <Uri>[];
+    final checker = _checker(
+      _MemoryStore(),
+      client: MockClient((request) async {
+        asked.add(request.url);
+        return http.Response(_manifest(), 200);
+      }),
+    );
+
+    expect(await checker.check(), isFalse);
+    expect(asked, isEmpty);
+    expect(checker.hasUpdate, isFalse);
+    checker.dispose();
+  });
+
   test(
     'Linux reads a manifest of its own and keeps its download page',
     () async {

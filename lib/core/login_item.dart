@@ -27,9 +27,12 @@ class LoginItem {
   /// Whether this host can register the app at all.
   ///
   /// False on macOS 12, where the only mechanism is the one the sandbox
-  /// forbids: the API that replaced it arrived in 13.
-  static Future<bool> isSupported() async =>
-      AppPlatform.isLinux || (await _ask('isSupported') ?? false);
+  /// forbids: the API that replaced it arrived in 13. False in the Flatpak
+  /// too, whose autostart entry would land in its own sandboxed config, where
+  /// no desktop looks.
+  static Future<bool> isSupported() async => AppPlatform.isLinux
+      ? !AppPlatform.isFlatpak
+      : await _ask('isSupported') ?? false;
 
   /// Read from the OS every time. A login item can also be removed from
   /// System Settings or the Task Manager's Startup tab, and a remembered

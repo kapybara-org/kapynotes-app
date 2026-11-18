@@ -1,0 +1,49 @@
+# Kapy Notes as a Flatpak, made from the portable tarball that
+# packaging/linux/package.sh builds, so it runs the same release build,
+# bundled libraries and ffmpeg as the tar.gz, .deb and AppImage. README.md
+# beside this file covers building it and what Flathub still needs.
+id: com.kapybara.kapynotes
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: kapynotes
+finish-args:
+  # The window: Wayland, X11 where the session has no Wayland, the shared
+  # memory X11 needs, and the GPU.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Voice notes record and play through the bundled ffmpeg.
+  - --socket=pulseaudio
+  # Sync, and the MCP server on 127.0.0.1 that apps on this computer reach.
+  - --share=network
+  # The tray icon.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # The session token and MCP tokens. flutter_secure_storage unlocks the
+  # keyring through libsecret's Secret Service API, which libsecret never
+  # routes through the Secret portal.
+  - --talk-name=org.freedesktop.secrets
+modules:
+  - name: kapynotes
+    buildsystem: simple
+    # The bundle is a release build with its symbols already split out.
+    # Splitting debuginfo would rewrite every ELF in it, libapp.so included,
+    # which package.sh never touches.
+    build-options:
+      no-debuginfo: true
+    sources:
+      # KapyNotes-<version>-linux-<arch>.tar.gz for the arch being built,
+      # copied to this name.
+      - type: archive
+        path: ../../../build/flatpak/kapynotes-linux.tar.gz
+    # Laid out as the .deb lays it out: the bundle in lib/, its desktop
+    # entry, metainfo and icons in share/ where Flatpak exports them, and a
+    # link back to share/ so the runner finds its icon beside it.
+    build-commands:
+      - mkdir -p /app/lib /app/bin /app/share
+      - cp -a . /app/lib/kapynotes
+      - cp -a /app/lib/kapynotes/share/. /app/share/
+      - rm -rf /app/lib/kapynotes/share
+      - ln -s ../../share /app/lib/kapynotes/share
+      - ln -s ../lib/kapynotes/kapynotes /app/bin/kapynotes

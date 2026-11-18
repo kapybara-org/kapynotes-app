@@ -2253,12 +2253,13 @@ class _SettingsDialogState extends State<SettingsDialog>
             value: updates.currentVersion,
             row: _VersionRow(updates: updates),
           ),
-          _Setting(
-            'update-row',
-            'Check for updates',
-            keywords: ['update', 'upgrade', 'new version'],
-            row: _UpdateRow(updates: updates),
-          ),
+          if (!AppPlatform.isFlatpak)
+            _Setting(
+              'update-row',
+              'Check for updates',
+              keywords: ['update', 'upgrade', 'new version'],
+              row: _UpdateRow(updates: updates),
+            ),
           if (AppPlatform.hasAutoUpdate)
             _toggle(
               'update-auto-download',
@@ -2279,6 +2280,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// platforms: Sparkle installs a downloaded release whenever the app quits,
   /// and the Windows installer only runs when asked.
   static String _updatesNote(UpdateChecker updates) {
+    if (AppPlatform.isFlatpak) {
+      return 'Flatpak keeps Kapy Notes up to date, through your software '
+          'center or flatpak update.';
+    }
     if (AppPlatform.isLinux) {
       return 'Checks for updates daily. Download opens the new version in '
           'your browser, to install the same way as this one.';

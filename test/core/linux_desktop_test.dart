@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/linux_desktop.dart';
+import 'package:kapy_notes/core/platform.dart';
 
 void main() {
   test('an AppImage starts from the file, not from where it is mounted', () {
@@ -57,6 +59,24 @@ void main() {
     expect(
       LinuxDesktop.shortcutCommand("/home/o'neil/kapynotes/kapynotes"),
       "'/home/o'\\''neil/kapynotes/kapynotes'",
+    );
+  });
+
+  test('the Flatpak is started by its ID, not by a path in its sandbox', () {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    AppPlatform.debugIsFlatpakOverride = true;
+    addTearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      AppPlatform.debugIsFlatpakOverride = null;
+    });
+
+    expect(
+      LinuxDesktop.shortcutCommand(),
+      'flatpak run com.kapybara.kapynotes',
+    );
+    expect(
+      LinuxDesktop.shortcutCommand('/app/lib/kapynotes/kapynotes'),
+      'flatpak run com.kapybara.kapynotes',
     );
   });
 }

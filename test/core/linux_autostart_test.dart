@@ -1,7 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/linux_autostart.dart';
+import 'package:kapy_notes/core/login_item.dart';
+import 'package:kapy_notes/core/platform.dart';
 
 void main() {
   late Directory home;
@@ -54,9 +57,9 @@ void main() {
       '/srv/config/autostart/com.kapybara.kapynotes.desktop',
     );
     expect(
-      autostart(environment: {'HOME': home.path, 'XDG_CONFIG_HOME': 'relative'})
-          .entry
-          .path,
+      autostart(
+        environment: {'HOME': home.path, 'XDG_CONFIG_HOME': 'relative'},
+      ).entry.path,
       '${home.path}/.config/autostart/com.kapybara.kapynotes.desktop',
     );
   });
@@ -111,5 +114,18 @@ void main() {
       r'"/x/\\$HOME/\\"q\\""',
     );
     expect(LinuxAutostart.execArgument(r'/a\b'), r'"/a\\\\b"');
+  });
+
+  test('the Flatpak offers no entry, where no desktop would look', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    AppPlatform.debugIsFlatpakOverride = false;
+    addTearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      AppPlatform.debugIsFlatpakOverride = null;
+    });
+    expect(await LoginItem.isSupported(), isTrue);
+
+    AppPlatform.debugIsFlatpakOverride = true;
+    expect(await LoginItem.isSupported(), isFalse);
   });
 }

@@ -73,8 +73,10 @@ class LinuxDesktop {
 
   /// [launchCommand] as a person would type it into a shortcut's command
   /// field: the bare name where it is on PATH, and otherwise the path, in
-  /// single quotes when a shell would read anything in it as syntax.
+  /// single quotes when a shell would read anything in it as syntax. The
+  /// Flatpak's own path is inside its sandbox, so the host starts it by ID.
   static String shortcutCommand([String? command]) {
+    if (AppPlatform.isFlatpak) return 'flatpak run com.kapybara.kapynotes';
     final launch = command ?? launchCommand();
     if (launch == '/usr/bin/kapynotes') return 'kapynotes';
     return RegExp(r'^[\w./+@%:,=-]+$').hasMatch(launch)

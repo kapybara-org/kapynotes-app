@@ -138,6 +138,11 @@ The LiteRT-LM runtime behind the on-device summary model is left out, since
 Linux does not offer the model, and `package.sh` refuses any library that
 calls into glibc's private ABI, which would tie the .deb to one exact glibc.
 
+`packaging/linux/flatpak/` holds a Flatpak manifest that repackages the same
+tarball on the GNOME runtime. Neither `release.sh` nor CI builds it yet; the
+README beside it covers building it, what its sandbox allows, and what
+Flathub still needs.
+
 ### The DMG window layout
 
 Finder writes the installer window's background and icon positions into a
@@ -229,7 +234,8 @@ platform half is an `UpdateInstaller`:
   it the same way as the last one. Nothing downloads, so there is no
   automatic-download switch and no **Update and restart**. `latest.json` and
   the appcasts never carry a Linux entry, so no released build has to be
-  trusted to ignore one.
+  trusted to ignore one. The Flatpak does not check at all: Flatpak updates
+  it, and Settings says so.
 
 There are two appcasts because the two frameworks disagree about what
 `sparkle:version` means — Sparkle compares it against `CFBundleVersion` (the

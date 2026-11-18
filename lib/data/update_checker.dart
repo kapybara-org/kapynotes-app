@@ -260,7 +260,12 @@ class UpdateChecker extends ChangeNotifier {
   }
 
   Future<bool> check() async {
-    if (_disposed || _checking || !AppPlatform.isDesktop) return false;
+    if (_disposed ||
+        _checking ||
+        !AppPlatform.isDesktop ||
+        AppPlatform.isFlatpak) {
+      return false;
+    }
     _timer?.cancel();
     _checking = true;
     notifyListeners();
