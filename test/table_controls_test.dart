@@ -157,6 +157,18 @@ void main() {
     expect(find.byKey(const ValueKey('table-row-grip-99')), findsOneWidget);
   }, variant: _mac);
 
+  testWidgets('a click outside the table closes the open cell', (tester) async {
+    final (desk, frame) = await open(tester);
+    await desk.click(cell(frame, 2, 0));
+    await desk.settle();
+    const editor = ValueKey('table-cell-editor');
+    expect(find.byKey(editor), findsOneWidget);
+    await desk.click(Offset(frame.grid.left + 10, frame.grid.bottom + 40));
+    await desk.settle();
+    expect(find.byKey(editor), findsNothing);
+    expect(desk.text, _body);
+  }, variant: _mac);
+
   group('the "+" controls', () {
     testWidgets('past the last row adds one, and one undo takes it away', (
       tester,
@@ -705,10 +717,51 @@ void main() {
       );
     }, variant: _phone);
 
+    testWidgets('a tap below the table still closes the cell', (tester) async {
+      final desk = await editCell(tester);
+      final frame = frameOf(desk);
+      const editor = ValueKey('table-cell-editor');
+      expect(find.byKey(editor), findsOneWidget);
+      final gesture = await tester.startGesture(
+        Offset(frame.grid.left + 10, frame.grid.bottom + 40),
+      );
+      await tester.pump(const Duration(milliseconds: 120));
+      await gesture.up();
+      await desk.settle();
+      expect(find.byKey(editor), findsNothing);
+      expect(desk.text, _body);
+    }, variant: _phone);
+
     testWidgets('a slow tap on a grip still opens its actions', (tester) async {
       final desk = await editCell(tester);
       final gesture = await tester.startGesture(
         tester.getCenter(find.byKey(const ValueKey('table-row-grip-2'))),
+      );
+      await tester.pump(const Duration(milliseconds: 120));
+      await gesture.up();
+      await desk.settle();
+      expect(
+        find.byKey(ValueKey('table-menu-${TableCommand.deleteRow.name}')),
+        findsOneWidget,
+      );
+    }, variant: _phone);
+
+    testWidgets('a row grip stays on screen and wins over the open cell', (
+      tester,
+    ) async {
+      final desk = await editCell(tester);
+      final frame = frameOf(desk);
+      final grip = tester.getRect(
+        find.byKey(const ValueKey('table-row-grip-2')),
+      );
+      expect(grip.left, greaterThanOrEqualTo(0));
+      expect(grip.right, lessThanOrEqualTo(390));
+      expect(grip.width, greaterThanOrEqualTo(44));
+      expect(grip.right, greaterThan(frame.grid.left), reason: 'it overlaps');
+
+      // A press where the grip reaches over the cell is the grip's.
+      final gesture = await tester.startGesture(
+        Offset(frame.grid.left + 6, grip.center.dy),
       );
       await tester.pump(const Duration(milliseconds: 120));
       await gesture.up();

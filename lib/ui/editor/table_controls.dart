@@ -802,6 +802,7 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
     final children = <Widget>[];
     final handles = <Rect>[];
     widget.controller._handles = handles;
+    _left = origin.dx;
     Rect local(Rect rect) => rect.shift(-origin);
     Rect handle(Rect rect) {
       handles.add(rect);
@@ -834,6 +835,15 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
         key: ValueKey('table-${axis.name}-grip-$index'),
         rect: handle(rect),
         child: _Grip(
+          chip: widget.touch
+              ? Alignment(
+                  (_chipCenter(frame, axis, band).dx - rect.left) /
+                          rect.width *
+                          2 -
+                      1,
+                  0,
+                )
+              : Alignment.center,
           axis: axis,
           selected: _isPicked(frame, axis, index) || drag?.from == index,
           touch: widget.touch,
@@ -1070,17 +1080,16 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
   Rect _gripRect(TableFrame frame, TableAxis axis, Rect band) {
     final grid = frame.grid;
     if (widget.touch) {
-      return axis == TableAxis.row
-          ? Rect.fromCenter(
-              center: Offset(grid.left - _touchOutset, band.center.dy),
-              width: 44,
-              height: 44,
-            )
-          : Rect.fromCenter(
-              center: Offset(band.center.dx, grid.top - _touchOutset),
-              width: 44,
-              height: 44,
-            );
+      final target = Rect.fromCenter(
+        center: _chipCenter(frame, axis, band),
+        width: 44,
+        height: 44,
+      );
+      // Never past the screen's edge, where a finger finds only half of it
+      // and the system's back swipe the rest.
+      return target.left >= _left
+          ? target
+          : target.shift(Offset(_left - target.left, 0));
     }
     return axis == TableAxis.row
         ? Rect.fromCenter(
@@ -1096,6 +1105,16 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
   }
 
   static const double _touchOutset = 11;
+
+  /// Where a phone grip's chip is drawn: just outside the grid, clear of the
+  /// open cell's field.
+  static Offset _chipCenter(TableFrame frame, TableAxis axis, Rect band) =>
+      axis == TableAxis.row
+      ? Offset(frame.grid.left - _touchOutset, band.center.dy)
+      : Offset(band.center.dx, frame.grid.top - _touchOutset);
+
+  /// The left edge of the layer, in global coordinates, as of its last build.
+  double _left = 0;
 
   /// The border to the right of column [edge] - 1, which drags its width and
   /// fits it to its words again on a double click.
@@ -1150,6 +1169,7 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
 class _Grip extends StatefulWidget {
   const _Grip({
     required this.axis,
+    required this.chip,
     required this.selected,
     required this.touch,
     required this.label,
@@ -1161,6 +1181,10 @@ class _Grip extends StatefulWidget {
   });
 
   final TableAxis axis;
+
+  /// Where the chip sits inside the grip's target, which on a phone is kept
+  /// on screen while the chip stays beside the grid.
+  final Alignment chip;
   final bool selected;
   final bool touch;
   final String label;
@@ -1252,7 +1276,7 @@ class _GripState extends State<_Grip> {
           onLongPressCancel: !widget.touch || start == null
               ? null
               : widget.onDragCancel,
-          child: Center(child: chip),
+          child: Align(alignment: widget.chip, child: chip),
         ),
       ),
     );

@@ -3,7 +3,8 @@ import 'dart:ui' show BoxHeightStyle, BoxWidthStyle;
 
 // Needed for the key types the Tab handling below reads: material_ui does not
 // re-export KeyDownEvent, LogicalKeyboardKey or HardwareKeyboard.
-import 'package:flutter/rendering.dart' show RenderEditable;
+import 'package:flutter/rendering.dart'
+    show BoxHitTestResult, RenderEditable, RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -51,6 +52,10 @@ class TableCellEditor extends ChangeNotifier {
   ValueChanged<String>? _onChanged;
   VoidCallback? _onDone;
   ValueChanged<Offset>? _onTapOutside;
+
+  /// Presses the field lets through to what is under it: a phone's table
+  /// grips, whose finger-sized targets reach over the cell's edge.
+  bool Function(Offset global)? _passThrough;
   ValueChanged<bool>? _onTab;
   VoidCallback? _onEnter;
   ValueChanged<AxisDirection>? _onArrow;
@@ -200,10 +205,12 @@ class TableCellEditor extends ChangeNotifier {
     onContextMenu,
     required VoidCallback onUndo,
     required VoidCallback onRedo,
+    bool Function(Offset global)? passThrough,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
 
+    _passThrough = passThrough;
     _anchor = anchor;
     _style = style;
     _textAlign = textAlign;
@@ -349,39 +356,43 @@ class _TableCellEditorBody extends StatelessWidget {
           // Deliberately no height. The cell is at least as tall as its
           // painted row, and grows with its words rather than scrolling them
           // away, exactly as the row itself will once they reach the note.
-          child: TapRegion(
-            groupId: editor,
-            // This remains active even while the field briefly loses
-            // focus during a note rebuild. Unlike a full-screen Listener,
-            // it observes the press without blocking the note underneath.
-            onTapOutside: (event) => editor._onTapOutside?.call(event.position),
-            child: Material(
-              // A TextField requires a Material ancestor, and the root
-              // overlay sits above the one the Scaffold provides. Opaque:
-              // the painted words under it must not show through.
-              color: editor._background,
-              child: DecoratedBox(
-                // In front of the words rather than around them, so the
-                // outline takes no room and moves nothing.
-                position: DecorationPosition.foreground,
-                decoration: BoxDecoration(
-                  border: Border.all(color: border, width: 1.5),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: anchor.height),
-                  child: Align(
-                    // Centred in the row, as the grid centres its words.
-                    alignment: Alignment.centerLeft,
-                    heightFactor: 1,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        editor._padding,
-                        0,
-                        math.max(0, editor._padding - _caretMargin),
-                        0,
+          child: _PassThrough(
+            test: editor._passThrough,
+            child: TapRegion(
+              groupId: editor,
+              // This remains active even while the field briefly loses
+              // focus during a note rebuild. Unlike a full-screen Listener,
+              // it observes the press without blocking the note underneath.
+              onTapOutside: (event) =>
+                  editor._onTapOutside?.call(event.position),
+              child: Material(
+                // A TextField requires a Material ancestor, and the root
+                // overlay sits above the one the Scaffold provides. Opaque:
+                // the painted words under it must not show through.
+                color: editor._background,
+                child: DecoratedBox(
+                  // In front of the words rather than around them, so the
+                  // outline takes no room and moves nothing.
+                  position: DecorationPosition.foreground,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: border, width: 1.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: anchor.height),
+                    child: Align(
+                      // Centred in the row, as the grid centres its words.
+                      alignment: Alignment.centerLeft,
+                      heightFactor: 1,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          editor._padding,
+                          0,
+                          math.max(0, editor._padding - _caretMargin),
+                          0,
+                        ),
+                        child: _field(),
                       ),
-                      child: _field(),
                     ),
                   ),
                 ),
@@ -445,4 +456,31 @@ class _TableCellEditorBody extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
     ),
   );
+}
+
+/// Its child, except where [test] says a press belongs to what is under it.
+class _PassThrough extends SingleChildRenderObjectWidget {
+  const _PassThrough({required this.test, required super.child});
+
+  final bool Function(Offset global)? test;
+
+  @override
+  _RenderPassThrough createRenderObject(BuildContext context) =>
+      _RenderPassThrough(test);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderPassThrough render) =>
+      render.test = test;
+}
+
+class _RenderPassThrough extends RenderProxyBox {
+  _RenderPassThrough(this.test);
+
+  bool Function(Offset global)? test;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (test?.call(localToGlobal(position)) ?? false) return false;
+    return super.hitTest(result, position: position);
+  }
 }

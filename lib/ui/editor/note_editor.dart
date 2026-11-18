@@ -6914,6 +6914,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       onChanged: _commitCellText,
       onDone: _closeCellEditor,
       onTapOutside: _cellTappedOutside,
+      passThrough: AppPlatform.isMobile ? _tableControls.claims : null,
       onTab: (backwards) => _moveToCell(backwards: backwards),
       onEnter: _moveDownTable,
       onArrow: _moveByArrow,

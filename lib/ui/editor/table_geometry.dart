@@ -251,17 +251,30 @@ class TableGeometry {
     List<({double natural, double longestWord})> widths,
   })?
   _take(String words, {required bool header}) {
-    for (final row in table.rows) {
-      if (row.header != header || _rowWords[row] != words) continue;
-      final painters = _cells.remove(row);
-      final sources = _sources.remove(row);
-      final widths = _widths.remove(row);
-      _rowWords.remove(row);
-      if (painters == null || sources == null || widths == null) return null;
-      return (painters: painters, sources: sources, widths: widths);
-    }
-    return null;
+    final index = _rowsByWords ??= () {
+      final index = <({bool header, String words}), List<MarkdownTableRow>>{};
+      // Reversed, so that a row's duplicates are taken top first.
+      for (final row in table.rows.reversed) {
+        final words = _rowWords[row];
+        if (words == null) continue;
+        (index[(header: row.header, words: words)] ??= []).add(row);
+      }
+      return index;
+    }();
+    final rows = index[(header: header, words: words)];
+    if (rows == null || rows.isEmpty) return null;
+    final row = rows.removeLast();
+    final painters = _cells.remove(row);
+    final sources = _sources.remove(row);
+    final widths = _widths.remove(row);
+    _rowWords.remove(row);
+    if (painters == null || sources == null || widths == null) return null;
+    return (painters: painters, sources: sources, widths: widths);
   }
+
+  /// This grid's rows by their source, built the first time a new grid asks
+  /// for one, so keeping rows costs one lookup each.
+  Map<({bool header, String words}), List<MarkdownTableRow>>? _rowsByWords;
 
   final Map<MarkdownTableRow, double> _rowHeights = {};
 
@@ -600,6 +613,7 @@ class TableGeometry {
     _sources.clear();
     _widths.clear();
     _rowWords.clear();
+    _rowsByWords = null;
     _rowHeights.clear();
   }
 }
