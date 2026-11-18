@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
@@ -293,6 +294,33 @@ void main() {
     expect(WritingFont.mixed.fontFamily, 'Figtree');
     expect(WritingFont.mixed.fontFamilyFallback, AppPlatform.uiFontFallback);
     expect(WritingFont.mixed.editorSize, 16);
+  });
+
+  test('muted text holds 4.5:1 on every surface it sits on', () {
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance(), lb = b.computeLuminance();
+      return (max(la, lb) + 0.05) / (min(la, lb) + 0.05);
+    }
+
+    for (final palette in [KapyTheme.darkPalette, KapyTheme.lightPalette]) {
+      for (final surface in [
+        palette.editorBackground,
+        palette.sidebarBackground,
+        palette.railBackground,
+        palette.controlBackground,
+        palette.cardBackground,
+        palette.wellBackground,
+        palette.keycapBackground,
+        palette.selectedBackground,
+        palette.hover,
+      ]) {
+        expect(
+          contrast(palette.textTertiary, surface),
+          greaterThanOrEqualTo(4.5),
+          reason: '${palette.textTertiary} on $surface',
+        );
+      }
+    }
   });
 
   testWidgets('a hairline is one physical pixel at every display scale', (
