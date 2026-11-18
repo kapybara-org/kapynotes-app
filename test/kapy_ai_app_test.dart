@@ -311,6 +311,64 @@ void main() {
       expect(ai.calls, ['newChat', 'ask:sintra:$id']);
     });
 
+    testWidgets('asked while Kapy AI is answering, the question waits in the '
+        'composer', (tester) async {
+      await openMenuOverNote(tester);
+      ai.set(answering: true);
+
+      await type(tester, 'sintra');
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(_panel, findsOneWidget);
+      expect(ai.calls, isNot(contains('newChat')));
+      expect(ai.calls.where((call) => call.startsWith('ask:')), isEmpty);
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('kapy-ai-field')),
+      );
+      expect(field.controller!.text, 'sintra');
+      expect(find.text('Kapy AI is still answering'), findsOneWidget);
+
+      ai.set(answering: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Kapy AI is still answering'), findsNothing);
+      expect(
+        ai.calls.where((call) => call.startsWith('ask:')),
+        isEmpty,
+        reason: 'it never sends by itself',
+      );
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-send')));
+      await tester.pumpAndSettle();
+      expect(ai.calls.last, startsWith('ask:sintra:'));
+    });
+
+    testWidgets('a question asked while answering goes after what is typed', (
+      tester,
+    ) async {
+      await openMenuOverNote(tester);
+      ai.set(answering: true);
+      await type(tester, 'sintra');
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      final composer = find.byKey(const ValueKey('kapy-ai-field'));
+      await tester.enterText(composer, 'my own words');
+      await tester.pumpAndSettle();
+      await _chord(tester, LogicalKeyboardKey.keyK);
+      expect(menu, findsOneWidget);
+      await type(tester, 'lisbon');
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      final field = tester.widget<TextField>(composer).controller!;
+      expect(field.text, 'my own words\nlisbon');
+      expect(
+        field.selection,
+        TextSelection.collapsed(offset: field.text.length),
+      );
+      expect(ai.calls.where((call) => call.startsWith('ask:')), isEmpty);
+    });
+
     testWidgets('the row asks with a click', (tester) async {
       final id = await openMenuOverNote(tester);
 

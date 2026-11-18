@@ -18,17 +18,29 @@ import 'kapy_ai_picker.dart';
 class KapyAiPanelController extends ChangeNotifier {
   bool _open = false;
   String? _noteId;
+  String? _draft;
 
   bool get isOpen => _open;
 
   /// The note the next question searches first, or null for all notes.
   String? get noteId => _noteId;
 
-  /// Opens from [noteId]'s page, or from nowhere in particular.
-  void open({String? noteId}) {
+  /// Opens from [noteId]'s page, or from nowhere in particular. A [draft]
+  /// waits in the composer, for a question asked while Kapy AI was still
+  /// answering.
+  void open({String? noteId, String? draft}) {
     _open = true;
     _noteId = noteId;
+    _draft = draft ?? _draft;
     notifyListeners();
+  }
+
+  /// The draft for the composer, once. It goes after anything already typed
+  /// there, on a line of its own.
+  String? takeDraft() {
+    final draft = _draft;
+    _draft = null;
+    return draft;
   }
 
   void close() {
@@ -102,7 +114,9 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   @override
   void initState() {
     super.initState();
+    _takeDraft();
     _field.addListener(() => setState(() {}));
+    widget.controller.addListener(_takeDraft);
     // Asked for rather than autofocused, which yields to whatever already
     // holds focus, and beside a note that is its editor. Esc and typing both
     // need the field.
@@ -113,9 +127,21 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
 
   @override
   void dispose() {
+    widget.controller.removeListener(_takeDraft);
     _field.dispose();
     _fieldFocus.dispose();
     super.dispose();
+  }
+
+  void _takeDraft() {
+    final draft = widget.controller.takeDraft();
+    if (draft == null) return;
+    final typed = _field.text.trimRight();
+    final text = typed.trim().isEmpty ? draft : '$typed\n$draft';
+    _field.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 
   void _ask(String text) {
@@ -324,7 +350,13 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     final noteId = _noteId;
     final empty = _ai.current?.messages.isEmpty ?? true;
     final shortcut = widget.shortcut;
-    final canSend = _field.text.trim().isNotEmpty && !_ai.answering;
+    final typed = _field.text.trim().isNotEmpty;
+    final canSend = typed && !_ai.answering;
+    final line = typed && _ai.answering
+        ? 'Kapy AI is still answering'
+        : empty && shortcut != null
+        ? '$shortcut opens and closes Kapy AI'
+        : null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
       child: Column(
@@ -412,11 +444,11 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
               ),
             ),
           ),
-          if (empty && shortcut != null)
+          if (line != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                '$shortcut opens and closes Kapy AI',
+                line,
                 textAlign: TextAlign.center,
                 style: kapyText(11.5, 16, palette.textTertiary),
               ),
