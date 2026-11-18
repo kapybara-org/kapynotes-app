@@ -1037,6 +1037,39 @@ void main() {
       laptop.dispose();
     }
 
+    test("the server's own 404 on stopping counts as done", () async {
+      final note = await shareWithBob('Gone already');
+      final space = alice.sharing.teams.single;
+      server.failStop = const SyncRefusedException(404, 'no such space', {
+        'error': 'no such space',
+      });
+      alice.tick();
+
+      await alice.sharing.stopSharing(space.id);
+
+      expect(alice.notes.byId(note.id)!.spaceId, isNull);
+      expect(alice.notes.byId(note.id)!.body, 'Gone already');
+    });
+
+    test('any other 404 on stopping leaves the space followed', () async {
+      final note = await shareWithBob('Still shared');
+      final space = alice.sharing.teams.single;
+      server.failStop = const SyncRefusedException(
+        404,
+        'server returned 404',
+        {},
+      );
+      alice.tick();
+
+      await expectLater(
+        alice.sharing.stopSharing(space.id),
+        throwsA(isA<SyncRefusedException>()),
+      );
+
+      expect(alice.notes.byId(note.id)!.spaceId, space.id);
+      expect(alice.sharing.teams.map((s) => s.id), contains(space.id));
+    });
+
     test(
       "stopping sharing keeps the note on every one of the owner's devices",
       () => keptOnEveryDevice((space) => alice.sharing.stopSharing(space.id)),
