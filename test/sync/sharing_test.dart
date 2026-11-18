@@ -822,6 +822,33 @@ void main() {
       expect(copy.id, isNot('hidden-1'));
     });
 
+    test('leaving again after rejoining copies the newer text', () async {
+      final note = await shareWithBob('First');
+      final spaceId = alice.notes.byId(note.id)!.spaceId!;
+      bob.tick();
+      await bob.sharing.leave(spaceId);
+
+      alice.tick(2);
+      await alice.sharing.invite(spaceId, bob.email);
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      alice.tick(3);
+      alice.notes.updateBody(note.id, 'Second');
+      await alice.sync.syncNow();
+      bob.tick(4);
+      await bob.sync.syncNow();
+      expect(bob.notes.byId(note.id)!.body, 'Second');
+
+      bob.tick(5);
+      await bob.sharing.leave(spaceId);
+      bob.tick(6);
+      await bob.sync.syncNow();
+      expect(bob.notes.notes.map((n) => n.body).toList()..sort(), [
+        'First',
+        'Second',
+      ]);
+      expect(bob.notes.notes.every((n) => !n.isShared), isTrue);
+    });
+
     test('leaving without copies keeps nothing of the space', () async {
       final note = await shareWithBob('Gone');
       final spaceId = bob.notes.byId(note.id)!.spaceId!;
