@@ -272,7 +272,7 @@ class _ReportDialogState extends State<_ReportDialog> {
                   filled: true,
                   fillColor: palette.controlBackground,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                     borderSide: BorderSide(
                       color: palette.controlBorder,
                       width: AppHairline.of(context),

@@ -638,7 +638,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   ? palette.controlBackground
                   : palette.surfaceBackground,
               border: Border.all(color: palette.separator),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppRadii.dialog),
               boxShadow: [
                 BoxShadow(
                   color: dark
@@ -721,7 +721,7 @@ class _CommandMenuState extends State<CommandMenu> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: palette.separator,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(AppRadii.compact),
               ),
               child: Text(
                 'Tag note · ${widget.tagNote!.title}',
@@ -810,7 +810,7 @@ class _CommandMenuState extends State<CommandMenu> {
             color: lit
                 ? (dark ? palette.separator : palette.controlBackground)
                 : null,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Row(
             spacing: 12,
@@ -982,7 +982,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   color: index == picker.at
                       ? (dark ? palette.separator : palette.controlBackground)
                       : null,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   spacing: 12,

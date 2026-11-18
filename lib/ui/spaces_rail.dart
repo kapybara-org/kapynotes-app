@@ -297,7 +297,7 @@ class _RailItemState extends State<_RailItem> {
         color: selected
             ? palette.tonalBackground
             : palette.hover.withValues(alpha: lit ? 1 : 0),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -380,7 +380,7 @@ class _Badge extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: palette.clay,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         // The rail's own colour, so the badge reads as cut out of the tile.
         border: Border.all(color: palette.railBackground, width: 2),
       ),

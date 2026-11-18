@@ -179,7 +179,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
             : active
             ? palette.kapyMenu
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: ValueKey('kapy-ai-chat-${chat.id}'),
@@ -247,7 +247,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.selectedBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         children: [
@@ -302,7 +302,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,7 +349,7 @@ class _SearchField extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         children: [

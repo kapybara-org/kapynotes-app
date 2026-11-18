@@ -146,7 +146,7 @@ class NoteGlance {
 const _selectedTilt = -math.pi / 180;
 
 const _cardRadius = BorderRadius.only(
-  topLeft: Radius.circular(6),
+  topLeft: Radius.circular(AppRadii.compact),
   topRight: Radius.circular(6),
   bottomLeft: Radius.circular(6),
   bottomRight: Radius.circular(14),
@@ -237,7 +237,7 @@ class _PickBox extends StatelessWidget {
         border: checked
             ? null
             : Border.all(color: palette.textTertiary, width: 1.5),
-        borderRadius: BorderRadius.circular(4.5),
+        borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       child: checked
           ? KapyIcon(
@@ -603,7 +603,7 @@ class NoteListRowFace extends StatelessWidget {
             : hovering
             ? palette.hover
             : null,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(
           color: marked
               ? palette.selectedBorder
@@ -829,7 +829,7 @@ class DrawingCardFace extends StatelessWidget {
             children: [
               Expanded(
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(AppRadii.small),
                   child: ColoredBox(
                     color: palette.sidebarBackground,
                     child: DrawingThumbnail(drawing: note.drawing),
@@ -917,7 +917,7 @@ class DrawingListRowFace extends StatelessWidget {
             : hovering
             ? palette.hover
             : null,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(
           color: marked
               ? palette.selectedBorder
@@ -940,7 +940,7 @@ class DrawingListRowFace extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.editorBackground,
               border: Border.all(color: palette.separator),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: DrawingThumbnail(drawing: note.drawing),
           ),
@@ -1212,7 +1212,7 @@ class NotesListControls extends StatelessWidget {
                 decoration: on
                     ? BoxDecoration(
                         color: palette.selectedBackground,
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: BorderRadius.circular(AppRadii.compact),
                         boxShadow: [
                           BoxShadow(
                             color: palette.shadowAt(0x4D),
@@ -1289,7 +1289,7 @@ class NotesListControls extends StatelessWidget {
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               color: palette.cardBackground,
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [
@@ -1527,7 +1527,7 @@ class _NotesFilterState extends State<_NotesFilter> {
                         ? palette.tonalKeyBackground
                         : palette.controlBorder,
                   ),
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1697,7 +1697,7 @@ class _FilterMenu extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.controlBackground,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         boxShadow: [
           BoxShadow(
             color: palette.shadowAt(0x80),
@@ -1881,7 +1881,7 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
                   : _hovering
                   ? palette.hover
                   : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -1956,7 +1956,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -2038,7 +2038,7 @@ class _TagsMenuState extends State<_TagsMenu> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: on ? palette.segmentSelected : null,
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Text(
             all ? 'all' : 'any',
@@ -2100,7 +2100,7 @@ class _TagsMenuState extends State<_TagsMenu> {
                     padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       color: palette.cardBackground,
-                      borderRadius: BorderRadius.circular(7),
+                      borderRadius: BorderRadius.circular(AppRadii.compact),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -2118,7 +2118,7 @@ class _TagsMenuState extends State<_TagsMenu> {
               decoration: BoxDecoration(
                 color: palette.wellBackground,
                 border: Border.all(color: palette.controlBorder),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: Row(
                 children: [
@@ -2253,7 +2253,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -2407,7 +2407,7 @@ class _FilterSheetState extends State<_FilterSheet> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: chosen ? palette.separator : null,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Row(
             spacing: 12,
@@ -2493,7 +2493,7 @@ class _FilterSheetState extends State<_FilterSheet> {
           border: Border.all(
             color: on ? palette.tonalKeyBackground : palette.controlBorder,
           ),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadii.dialog),
         ),
         child: Center(
           widthFactor: 1,
@@ -2626,7 +2626,7 @@ class _FilterSheetState extends State<_FilterSheet> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: on ? palette.segmentSelected : null,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Text(
             all ? 'all' : 'any',
@@ -2677,7 +2677,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     color: palette.cardBackground,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,

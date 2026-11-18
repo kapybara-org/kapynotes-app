@@ -289,7 +289,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                         ),
                         decoration: BoxDecoration(
                           color: surfaceColor,
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
                           border: Border.all(
                             color: palette.controlBorder.withValues(
                               alpha: dark ? 0.95 : 0.72,

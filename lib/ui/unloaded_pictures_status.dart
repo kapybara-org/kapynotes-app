@@ -30,7 +30,7 @@ class UnloadedPicturesStatus extends StatelessWidget {
         ),
         shape: const WidgetStatePropertyAll(
           RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(9)),
+            borderRadius: BorderRadius.all(Radius.circular(AppRadii.control)),
           ),
         ),
         padding: const WidgetStatePropertyAll(

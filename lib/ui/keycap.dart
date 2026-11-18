@@ -57,7 +57,7 @@ class Keycap extends StatelessWidget {
       decoration: BoxDecoration(
         color: tonal ? palette.tonalKeyBackground : palette.keycapBackground,
         border: tonal ? null : Border.all(color: palette.keycapBorder),
-        borderRadius: const BorderRadius.all(Radius.circular(5)),
+        borderRadius: const BorderRadius.all(Radius.circular(AppRadii.small)),
       ),
       child: Center(
         widthFactor: 1,

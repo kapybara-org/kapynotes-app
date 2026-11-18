@@ -204,7 +204,7 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.kapyHighlight,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,

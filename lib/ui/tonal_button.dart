@@ -60,7 +60,9 @@ class TonalButton extends StatelessWidget {
         shape: tall
             ? const WidgetStatePropertyAll(
                 RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(10)),
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(AppRadii.control),
+                  ),
                 ),
               )
             : null,

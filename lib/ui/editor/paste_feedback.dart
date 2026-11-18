@@ -270,7 +270,7 @@ class _Chip extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.controlBackground,
               border: Border.all(color: palette.selectedBorder),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -431,7 +431,7 @@ class _MenuRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: lit ? palette.selectedBackground : null,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               spacing: 9,

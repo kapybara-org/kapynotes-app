@@ -131,7 +131,7 @@ class KapyAiPicker extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.kapyMenu,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         boxShadow: [
           BoxShadow(
             color: palette.shadowAt(0x80),
@@ -222,7 +222,7 @@ class _Row extends StatelessWidget {
     final trailing = this.trailing;
     return Material(
       color: selected ? palette.kapyHighlight : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         hoverColor: palette.kapyHighlight,
@@ -327,7 +327,7 @@ class KapyAiModelButton extends StatelessWidget {
         model.kind == KapyModelKind.cloud && kapyAi.cloudUsage?.remaining == 0;
     return Material(
       color: open ? palette.kapyHighlight : Colors.transparent,
-      borderRadius: BorderRadius.circular(7),
+      borderRadius: BorderRadius.circular(AppRadii.compact),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: const ValueKey('kapy-ai-model-button'),

@@ -142,7 +142,7 @@ class TagPopover extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.controlBackground,
           border: Border.all(color: palette.separator),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
           boxShadow: [
             BoxShadow(
               color: palette.shadowAt(0x80),
@@ -312,7 +312,7 @@ class _TagPickerState extends State<TagPicker> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: index == _picker.at ? palette.hover : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -409,7 +409,7 @@ class _TagPickerState extends State<TagPicker> {
                 decoration: BoxDecoration(
                   color: palette.wellBackground,
                   border: Border.all(color: palette.selectedBorder),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   children: [
@@ -678,7 +678,7 @@ class _TagChipState extends State<_TagChip> {
       padding: const EdgeInsets.only(left: 7, right: 8),
       decoration: BoxDecoration(
         color: colour?.card(palette) ?? palette.cardBackground,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

@@ -591,7 +591,7 @@ class _AddRow extends StatelessWidget {
           palette.controlBackground,
           0.5,
         ),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         children: [
@@ -673,7 +673,7 @@ class _NotePicker extends StatelessWidget {
       child: InkWell(
         key: const ValueKey('tasks-note-picker'),
         canRequestFocus: false,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         onTap: () => _open(context),
         child: Container(
           height: 28,
@@ -681,7 +681,7 @@ class _NotePicker extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
             border: Border.all(color: palette.controlBorder),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -776,7 +776,7 @@ class _DoNowCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.controlBorder),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
       ),
       child: IntrinsicHeight(
         child: Row(
@@ -837,7 +837,9 @@ class _DoNowCard extends StatelessWidget {
                             minimumSize: const Size(0, 32),
                             padding: const EdgeInsets.symmetric(horizontal: 11),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9),
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.control,
+                              ),
                             ),
                             foregroundColor: palette.textSecondary,
                             textStyle: uiStyle(
@@ -892,7 +894,7 @@ class _PickCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.pageBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
         boxShadow: [
           BoxShadow(
             color: palette.shadow.withAlpha(0x66),
@@ -946,7 +948,7 @@ class _PickButton extends StatelessWidget {
             : palette.controlBackground,
         foregroundColor: ink,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           side: tonal
               ? BorderSide.none
               : BorderSide(color: palette.controlBorder),
@@ -997,7 +999,7 @@ class _ReadyCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             border: Border.all(color: palette.controlBorder),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadii.surface),
           ),
           child: Row(
             children: [
@@ -1166,7 +1168,7 @@ class _CandidateRowState extends State<_CandidateRow> {
     return InkWell(
       onTap: widget.onPick,
       onHover: (value) => setState(() => _hovered = value),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       hoverColor: palette.controlBackground,
       child: SizedBox(
         height: 40,
@@ -1208,7 +1210,7 @@ class _CandidateRowState extends State<_CandidateRow> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: palette.tonalBackground,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                   ),
                   child: Text(
                     'Pick',
@@ -1243,7 +1245,7 @@ class _Dot extends StatelessWidget {
     height: 8,
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.primary,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(AppRadii.small),
     ),
   );
 }
@@ -1314,7 +1316,7 @@ class _Box extends StatelessWidget {
             border: done
                 ? null
                 : Border.all(color: palette.checkboxBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(AppRadii.compact),
           ),
           child: done
               ? KapyIcon(
@@ -1412,7 +1414,7 @@ class _TaskRowState extends State<_TaskRow> {
                 child: InkWell(
                   key: ValueKey('task-mark-${item.id}'),
                   onTap: widget.onMark,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(AppRadii.compact),
                   hoverColor: Colors.transparent,
                   splashColor: Colors.transparent,
                   highlightColor: Colors.transparent,
@@ -1507,7 +1509,7 @@ class _TaskRowState extends State<_TaskRow> {
                 : _hovered
                 ? palette.controlBackground
                 : null,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: child,
         ),
@@ -1540,7 +1542,9 @@ class _RowButton extends StatelessWidget {
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         backgroundColor: strong ? palette.controlBackground : null,
         foregroundColor: ink,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.compact),
+        ),
         textStyle: uiStyle(12, 16, FontWeight.w600, ink),
       ),
       child: Text(label),

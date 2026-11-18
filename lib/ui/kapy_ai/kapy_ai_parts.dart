@@ -132,7 +132,9 @@ class KapyAiButton extends StatelessWidget {
         side: filled || destructive
             ? null
             : BorderSide(color: palette.separator),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
       ),
       child: Text(
         label,

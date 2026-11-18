@@ -99,7 +99,7 @@ class _NoteVideoViewState extends State<NoteVideoView> {
     final palette = context.palette;
     final progress = widget.uploadProgress;
     final media = ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Colors.black,
@@ -107,7 +107,7 @@ class _NoteVideoViewState extends State<NoteVideoView> {
             color: palette.separator,
             width: AppHairline.of(context),
           ),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
         child: Stack(
           fit: StackFit.expand,

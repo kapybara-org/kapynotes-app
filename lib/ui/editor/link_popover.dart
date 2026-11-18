@@ -156,7 +156,9 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                           backgroundColor: palette.selectedBackground,
                           foregroundColor: palette.textPrimary,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.compact,
+                            ),
                           ),
                         ),
                         child: Text(

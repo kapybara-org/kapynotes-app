@@ -207,7 +207,7 @@ class NoteVoiceChip extends StatelessWidget {
           padding: EdgeInsets.only(left: 6, right: onRemove == null ? 16 : 6),
           decoration: BoxDecoration(
             color: palette.controlBackground,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
             border: Border.all(color: palette.controlBorder, width: 1.5),
           ),
           child: Row(
@@ -312,7 +312,7 @@ class NoteVoiceChip extends StatelessWidget {
             height: noteVoiceChipHeight,
             decoration: BoxDecoration(
               color: palette.controlBackground,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadii.control),
               border: Border.all(color: palette.controlBorder),
             ),
             padding: EdgeInsets.only(left: 8, right: onRemove == null ? 8 : 34),

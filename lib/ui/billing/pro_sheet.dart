@@ -536,14 +536,16 @@ BoxDecoration _panelDecoration(BuildContext context, CalcPalette palette) =>
         color: palette.controlBorder,
         width: AppHairline.of(context),
       ),
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(AppRadii.dialog),
     );
 
 ButtonStyle _primaryActionStyle(BuildContext context) => FilledButton.styleFrom(
   minimumSize: Size(0, AppPlatform.hasPointer ? 44 : 52),
   elevation: 0,
   shadowColor: Colors.transparent,
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(AppRadii.surface),
+  ),
   textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
     fontSize: AppTypeScale.control,
     fontWeight: FontWeight.w400,
@@ -701,7 +703,7 @@ class _Owned extends StatelessWidget {
           color: accent.withValues(alpha: 0.22),
           width: AppHairline.of(context),
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
       ),
       child: Row(
         children: [
@@ -775,7 +777,7 @@ class _Trying extends StatelessWidget {
           color: accent.withValues(alpha: 0.22),
           width: AppHairline.of(context),
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -831,7 +833,7 @@ class _OwnedHere extends StatelessWidget {
           color: accent.withValues(alpha: 0.22),
           width: AppHairline.of(context),
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
       ),
       child: Row(
         children: [
@@ -1177,7 +1179,7 @@ class _Notice extends StatelessWidget {
           color: palette.controlBorder,
           width: AppHairline.of(context),
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
       ),
       child: Text(
         text,

@@ -487,7 +487,7 @@ class _ImageTransferCover extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.62),
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -623,7 +623,7 @@ class _RemoteImage extends StatelessWidget {
                   key: const ValueKey('image-downloading'),
                   decoration: BoxDecoration(
                     color: palette.editorBackground.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(AppRadii.dialog),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(

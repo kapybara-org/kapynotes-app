@@ -8665,7 +8665,7 @@ class _UnknownChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: palette.controlBackground,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
           border: Border.all(color: palette.controlBorder),
         ),
         child: Text(

@@ -249,7 +249,7 @@ class _LiveWaveform extends StatelessWidget {
         color: active
             ? recording.withValues(alpha: 0.055)
             : palette.controlBackground.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(
           color: active
               ? recording.withValues(alpha: 0.12)
@@ -416,7 +416,9 @@ class _StopButton extends StatelessWidget {
             }),
             overlayColor: const WidgetStatePropertyAll(Colors.transparent),
             shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.control),
+              ),
             ),
           ),
         ),

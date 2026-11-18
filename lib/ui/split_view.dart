@@ -162,7 +162,9 @@ class _SplitViewState extends State<SplitView> {
                               color: _dragging || _hovering
                                   ? Theme.of(context).colorScheme.primary
                                   : Colors.transparent,
-                              borderRadius: BorderRadius.circular(999),
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.pill,
+                              ),
                             ),
                           ),
                         ),

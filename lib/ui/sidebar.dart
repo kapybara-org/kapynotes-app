@@ -1285,7 +1285,7 @@ class _NoteCount extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
             color: palette.hover,
-            borderRadius: BorderRadius.circular(99),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
           ),
           child: Text(
             '$count',
@@ -1525,7 +1525,7 @@ class _SettingsEntry extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: palette.selectedBackground,
-                        borderRadius: BorderRadius.circular(99),
+                        borderRadius: BorderRadius.circular(AppRadii.pill),
                         border: Border.all(
                           color: palette.chipCurrency.withValues(alpha: 0.35),
                           width: AppHairline.of(context),
@@ -1788,7 +1788,7 @@ class _SidebarTabs extends StatelessWidget {
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: palette.hover,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
         child: Row(
           children: [
@@ -1859,7 +1859,7 @@ class _SidebarTabButton extends StatelessWidget {
                 color: selected
                     ? palette.surfaceBackground
                     : palette.surfaceBackground.withValues(alpha: 0),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(AppRadii.compact),
                 border: Border.all(
                   color: selected
                       ? palette.controlBorder
@@ -2088,7 +2088,7 @@ class _InvitationCard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(10, 8, 4, 6),
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           border: Border.all(
             color: palette.controlBorder,
             width: AppHairline.of(context),
@@ -2315,7 +2315,7 @@ class SidebarSearchField extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: palette.surfaceBackground,
                   border: Border.all(color: palette.controlBorder, width: 1.5),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadii.surface),
                   boxShadow: [
                     BoxShadow(
                       color: palette.shadowAt(0x4D),
@@ -2898,7 +2898,7 @@ class _NoteRowState extends State<NoteRow> {
               color: widget.selected || (widget.selecting && widget.checked)
                   ? palette.selectedBackground
                   : (_hovering ? palette.hover : Colors.transparent),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             // Open in another pane: ringed rather than filled, so it reads
             // as on screen without competing with the focused note's row.
@@ -2906,7 +2906,7 @@ class _NoteRowState extends State<NoteRow> {
             foregroundDecoration: widget.openElsewhere && !widget.selected
                 ? BoxDecoration(
                     border: Border.all(color: palette.selectedBorder),
-                    borderRadius: BorderRadius.circular(7),
+                    borderRadius: BorderRadius.circular(AppRadii.compact),
                   )
                 : null,
             child: Row(
@@ -3364,7 +3364,7 @@ class _SpaceHeader extends StatelessWidget {
         child: ExcludeSemantics(
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(AppRadii.compact),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 4, 6, 3),
               child: heading,
@@ -3400,7 +3400,7 @@ class _DrawingsEmpty extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.editorBackground,
                 border: Border.all(color: palette.separator),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(AppRadii.dialog),
               ),
               alignment: Alignment.center,
               child: KapyIcon(

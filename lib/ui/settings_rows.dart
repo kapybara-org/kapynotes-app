@@ -534,7 +534,9 @@ class SettingsRowButton extends StatelessWidget {
                 color: border,
                 width: pointer ? 1 : AppHairline.of(context),
               ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
       ),
       child: Text(
         label,
@@ -574,7 +576,9 @@ class SettingsMenuButton extends StatelessWidget {
           backgroundColor: palette.wellBackground,
           foregroundColor: palette.textPrimary,
           side: BorderSide(color: palette.controlBorder),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -658,7 +662,9 @@ class SettingsResetButton extends StatelessWidget {
       constraints: BoxConstraints.tightFor(width: extent, height: extent),
       style: IconButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.compact),
+        ),
       ),
     );
   }
@@ -708,7 +714,7 @@ class SettingsSegmented<T> extends StatelessWidget {
         child: InkWell(
           key: keyFor(option),
           onTap: enabled && !chosen ? () => onSelected(option) : null,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
@@ -717,7 +723,7 @@ class SettingsSegmented<T> extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: chosen ? palette.segmentSelected : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
               boxShadow: chosen
                   ? [
                       BoxShadow(
@@ -751,7 +757,7 @@ class SettingsSegmented<T> extends StatelessWidget {
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: palette.wellBackground,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(color: palette.controlBorder),
       ),
       child: Row(
@@ -799,7 +805,7 @@ class SettingsStepper extends StatelessWidget {
       child: InkWell(
         key: key,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: SizedBox(
           width: 30,
           height: height - 2,
@@ -820,7 +826,7 @@ class SettingsStepper extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: palette.wellBackground,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(color: palette.controlBorder),
       ),
       child: Row(
@@ -954,7 +960,7 @@ class SettingsSwitch extends StatelessWidget {
               : pointer
               ? palette.switchTrackOff
               : palette.controlBackground,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           border: pointer
               ? null
               : Border.all(

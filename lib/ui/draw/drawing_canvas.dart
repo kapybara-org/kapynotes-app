@@ -1099,14 +1099,14 @@ class DrawingCanvasState extends State<DrawingCanvas> {
             child: InkWell(
               key: const ValueKey('draw-style'),
               onTap: () => setState(() => _styleOpen = !_styleOpen),
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(AppRadii.control),
               child: Container(
                 height: extent,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: _styleOpen
                     ? BoxDecoration(
                         color: palette.selectedBackground,
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(AppRadii.control),
                       )
                     : null,
                 child: Row(
@@ -1249,7 +1249,7 @@ class _DockSurface extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.controlBackground,
         border: Border.all(color: palette.controlBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         boxShadow: [
           BoxShadow(
             color: palette.shadowAt(0x80),
@@ -1353,7 +1353,7 @@ class _StylePanel extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.editorBackground,
                 border: Border.all(color: palette.controlBorder),
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: Row(
                 spacing: 4,
@@ -1363,13 +1363,15 @@ class _StylePanel extends StatelessWidget {
                       child: InkWell(
                         key: ValueKey('draw-width-${option.round()}'),
                         onTap: () => onWidth(option),
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: BorderRadius.circular(AppRadii.compact),
                         child: Container(
                           height: 30,
                           decoration: option == width
                               ? BoxDecoration(
                                   color: palette.tonalBackground,
-                                  borderRadius: BorderRadius.circular(7),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.compact,
+                                  ),
                                 )
                               : null,
                           child: Row(

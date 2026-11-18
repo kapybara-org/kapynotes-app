@@ -57,7 +57,7 @@ class NoteDragFeedback extends StatelessWidget {
         color: palette.surfaceBackground,
         elevation: 6,
         shadowColor: Colors.black.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
           child: Row(
@@ -288,7 +288,7 @@ class _EditorPaneFrameState extends State<EditorPaneFrame> {
                       color: scheme.primary.withValues(alpha: 0.55),
                       width: 1.5,
                     ),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                   ),
                   child: Center(
                     child: Padding(
@@ -296,7 +296,7 @@ class _EditorPaneFrameState extends State<EditorPaneFrame> {
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: scheme.primary,
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -771,7 +771,7 @@ class _PaneSplitViewState extends State<PaneSplitView> {
                   color: lit
                       ? Theme.of(context).colorScheme.primary
                       : palette.separator,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(AppRadii.pill),
                 ),
               ),
             ),

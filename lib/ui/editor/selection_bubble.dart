@@ -384,10 +384,10 @@ class _BlockButton extends StatelessWidget {
       onTap: controller.toggleBlocks,
       child: Material(
         color: open ? palette.selectedBackground : Colors.transparent,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
         child: InkWell(
           key: const ValueKey('selection-block'),
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
           hoverColor: palette.hover,
           onTap: controller.toggleBlocks,
           child: Container(
@@ -449,9 +449,9 @@ class _BubbleIconButton extends StatelessWidget {
         message: shortcut == null ? label : '$label  $shortcut',
         child: Material(
           color: active ? palette.selectedBackground : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
           child: InkWell(
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(AppRadii.compact),
             hoverColor: palette.hover,
             onTap: onPressed,
             child: SizedBox.square(
@@ -507,7 +507,7 @@ class _LinkField extends StatelessWidget {
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
             color: palette.surfaceBackground,
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(AppRadii.compact),
             border: Border.all(color: palette.controlBorder),
           ),
           child: Material(
@@ -540,10 +540,10 @@ class _LinkField extends StatelessWidget {
           onTap: controller._submitLink,
           child: Material(
             color: palette.tonalBackground,
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(AppRadii.compact),
             child: InkWell(
               key: const ValueKey('selection-link-apply'),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
               onTap: controller._submitLink,
               child: Container(
                 height: 30,
@@ -641,10 +641,10 @@ class _BlockMenu extends StatelessWidget {
                       color: current
                           ? palette.selectedBackground
                           : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadii.control),
                       child: InkWell(
                         key: ValueKey('selection-block-${block.label}'),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadii.control),
                         hoverColor: palette.hover,
                         onTap: () => controller._choose(block),
                         child: Container(

@@ -705,9 +705,12 @@ class EditorMetrics {
 class AppRadii {
   const AppRadii._();
 
+  static const double small = 4;
+  static const double compact = 6;
   static const double control = 9;
   static const double surface = 12;
   static const double dialog = 18;
+  static const double pill = 999;
 }
 
 class AppHairline {

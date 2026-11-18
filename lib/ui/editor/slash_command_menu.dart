@@ -870,9 +870,9 @@ class _CommandRow extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         child: Material(
           color: selected ? palette.selectedBackground : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             onTap: onPressed,
             child: SizedBox(
               height: _CommandList.rowHeight,
@@ -983,9 +983,9 @@ class _InsertButtonState extends State<_InsertButton> {
             color: widget.selected
                 ? palette.selectedBackground
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             child: InkWell(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadii.control),
               onTap: widget.onPressed,
               child: SizedBox(
                 height: 34,
@@ -1156,7 +1156,9 @@ class _TableSizePicker extends StatelessWidget {
                                 color: selected
                                     ? Theme.of(context).colorScheme.primary
                                     : palette.controlBackground,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.small,
+                                ),
                                 border: Border.all(
                                   color: selected
                                       ? Theme.of(context).colorScheme.primary
