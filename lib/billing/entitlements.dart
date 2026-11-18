@@ -88,7 +88,7 @@ class Entitlements {
     summaryGenerationsUsedThisMonth: 0,
     sync: false,
     sharing: false,
-    noteLimit: 5,
+    noteLimit: 20,
   );
 
   /// Trying Pro rather than owning it.
