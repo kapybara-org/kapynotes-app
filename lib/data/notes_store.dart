@@ -37,6 +37,7 @@ class NotesStore extends ChangeNotifier {
   static const String _writingDaysKey = 'writingDays.v1';
   static const String _nameHereKey = 'nameHereNoteIds.v1';
   static const String _privateCopiesKey = 'privateCopies.v1';
+  static const String _dismissedKey = 'dismissed.v1';
   static const int _nameHereLimit = 200;
 
   final LocalStore _store;
@@ -116,10 +117,12 @@ class NotesStore extends ChangeNotifier {
   List<Note> notesIn(String? spaceId) =>
       _notes.where((note) => note.spaceId == spaceId).toList(growable: false);
 
-  /// Every shared space that has a note in it locally.
+  /// Every shared space this device holds something of: a note in it, or a
+  /// note taken out of this account's own notes there.
   Set<String> get spaceIds => {
     for (final note in _notes)
       if (note.spaceId != null) note.spaceId!,
+    ..._dismissed.values,
   };
 
   Future<void> load() => _loadFuture ??= _load();
@@ -839,8 +842,47 @@ class NotesStore extends ChangeNotifier {
     _tombstones = List.unmodifiable(
       _tombstones.where((stone) => stone.spaceId != spaceId),
     );
+    _undismiss((_, dismissedIn) => dismissedIn == spaceId);
     _persist();
     return kept;
+  }
+
+  /// Shared notes this account took out of its own notes without deleting
+  /// them for everyone, by id, with the space each was in.
+  Map<String, String> get _dismissed => {
+    if (_store.data[_dismissedKey] case final Map raw)
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (key is String && value is String) key: value,
+  };
+
+  /// Whether this account took the note with [id] in [spaceId] out of its own
+  /// notes. Nothing that arrives for it there brings it back.
+  bool isDismissed(String id, String? spaceId) =>
+      spaceId != null && _dismissed[id] == spaceId;
+
+  /// Turns a deletion of a note in somebody else's shared space into taking
+  /// it out of this account's own notes. Only a space's owner deletes a note
+  /// for everyone, so [stone] is dropped unsent, and the note stays away
+  /// however it changes in that space.
+  void dismiss(Tombstone stone) {
+    final spaceId = stone.spaceId;
+    if (spaceId == null) return;
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => !(s.id == stone.id && s.spaceId == spaceId)),
+    );
+    _store.put(_dismissedKey, {..._dismissed, stone.id: spaceId});
+    _persist();
+  }
+
+  /// Drops the dismissals [gone] matches: the note was deleted for everyone,
+  /// or this account left its space, so there is nothing left to keep away.
+  void _undismiss(bool Function(String id, String spaceId) gone) {
+    final dismissed = _dismissed;
+    if (!dismissed.entries.any((e) => gone(e.key, e.value))) return;
+    _store.put(_dismissedKey, {
+      for (final MapEntry(:key, :value) in dismissed.entries)
+        if (!gone(key, value)) key: value,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -921,6 +963,7 @@ class NotesStore extends ChangeNotifier {
     final now = _now();
 
     for (final incoming in notes) {
+      if (isDismissed(incoming.id, incoming.spaceId)) continue;
       final index = byIdIndex[incoming.id];
       final stoneKey = _stoneKey(incoming.spaceId, incoming.id);
       final localStone = stones[stoneKey];
@@ -965,6 +1008,10 @@ class NotesStore extends ChangeNotifier {
       written.addAll(_daysWrittenElsewhere(incoming));
     }
 
+    _undismiss(
+      (id, spaceId) =>
+          tombstones.any((stone) => stone.id == id && stone.spaceId == spaceId),
+    );
     for (final incoming in tombstones) {
       final index = byIdIndex[incoming.id];
       if (index != null) {
@@ -1012,6 +1059,7 @@ class NotesStore extends ChangeNotifier {
   /// here does. A tombstone the server has confirmed for this note in this
   /// space is dropped: the log says the note is live, and the log is later.
   void applyDoc(Note note) {
+    if (isDismissed(note.id, note.spaceId)) return;
     final index = indexOf(note.id);
     final remaining = index < 0
         ? List<Note>.of(_notes)
