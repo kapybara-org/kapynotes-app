@@ -191,9 +191,6 @@ void main() {
       await desk.copy();
       expect(desk.clipboard['text'], 'dog');
       await desk.click(desk.on('bird', 1), times: 2);
-      debugPrint(
-        'SEL ${desk.selection} ${desk.selection.textInside(desk.text)}',
-      );
       await desk.paste();
       expect(desk.text, 'cat dog dog');
       await desk.click(desk.on('cat', 1), times: 2);
@@ -202,7 +199,7 @@ void main() {
       expect(desk.text, ' dog dog');
       desk.clipboard = {'text': 'one\ntwo\nthree'};
       await desk.paste();
-      expect(desk.text, 'one\ntwo\nthree dog dog');
+      expect(desk.text, ' one\n two\n threedog dog');
       desk.clipboard = {'text': 'big news', 'html': '<p><b>big</b> news</p>'};
       await desk.key(LogicalKeyboardKey.keyA, primary: true);
       await desk.paste();

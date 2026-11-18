@@ -54,12 +54,34 @@ void main() {
     expect(paste('  - |', '- one\n  - two'), '  - one\n    - two|');
   });
 
-  test("a paste in front of a line's structure goes in as written", () {
-    expect(paste('| dog', 'one\ntwo'), 'one\ntwo| dog');
-    expect(paste('|# Heading', 'one\ntwo'), 'one\ntwo|# Heading');
-    expect(paste('|- item', 'one\ntwo'), 'one\ntwo|- item');
-    expect(paste('  |- item', 'one\ntwo'), '  one\ntwo|- item');
-    expect(paste('|> quote', 'one'), 'one|> quote');
+  test("a caret in front of a line's structure pastes after it", () {
+    expect(paste('|- item', 'one\ntwo'), '- one\n- two|item');
+    expect(paste('|# Heading', 'one\ntwo'), '# one\ntwo|Heading');
+    expect(paste('|> quote', 'one'), '> one|quote');
+    expect(paste('|  - nested', 'one\ntwo'), '  - one\n  - two|nested');
+  });
+
+  test("a caret anywhere in a line's structure pastes as at its words", () {
+    for (final (marker, words) in [
+      ('# ', 'Heading'),
+      ('- ', 'item'),
+      ('> ', 'quote'),
+      ('  - ', 'nested'),
+      (' ', 'indented'),
+    ]) {
+      for (final pasted in ['one', 'one\ntwo', '**big** news\n- more']) {
+        final expected = paste('$marker|$words', pasted);
+        for (var at = 0; at < marker.length; at++) {
+          final note =
+              '${marker.substring(0, at)}|${marker.substring(at)}$words';
+          expect(paste(note, pasted), expected, reason: '$note + $pasted');
+        }
+      }
+    }
+  });
+
+  test('a selection that takes in a line\'s structure is replaced as '
+      'written', () {
     expect(paste('|  - a\n- b|', 'x\ny'), 'x\ny|');
   });
 
