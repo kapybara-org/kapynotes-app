@@ -1,25 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../calc/engine.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
-
-/// The column a phone keeps beside its text for live results. Each result
-/// is part of its own line, which reaches across this column and puts the
-/// result at its right, [rightInset] in; everywhere else results sit at the
-/// ends of their lines.
-class ResultsGutter extends StatelessWidget {
-  const ResultsGutter({super.key});
-
-  /// The room a result keeps from the column's left and right edges.
-  static const double leftInset = 8;
-  static const double rightInset = 16;
-
-  @override
-  Widget build(BuildContext context) =>
-      ColoredBox(color: context.palette.gutterColor);
-}
 
 /// The faint rule a line runs from where its writing stops to its result:
 /// square dots a dot apart, across the middle of the row.
@@ -55,7 +41,8 @@ class _LeaderPainter extends CustomPainter {
 
 /// How a result is drawn.
 enum ResultChipLook {
-  /// A quiet annotation in the phone's results column.
+  /// A quiet annotation at the right of a phone's line, which its writing
+  /// wraps short of.
   rail,
 
   /// A pill at the end of its line. A total's pill is the strongest.
@@ -78,6 +65,53 @@ class ResultChip extends StatefulWidget {
   final double collapsedWidth;
 
   final ResultChipLook look;
+
+  /// How wide a [ResultChipLook.rail] chip shows [result] whole in
+  /// [context], for a line to keep that much room for it.
+  static double widthOf(BuildContext context, LineResult result) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: result.text,
+        style: DefaultTextStyle.of(
+          context,
+        ).style.merge(_textStyle(pill: false)),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return math.max(
+      _railTarget,
+      width.ceilToDouble() + _railPadding.horizontal,
+    );
+  }
+
+  static const _railPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 3);
+
+  /// The least a finger gets to tap on the rail. Only the part inside its
+  /// line takes a tap, so the lines above and below keep theirs.
+  static const double _railTarget = 44;
+
+  static TextStyle _textStyle({
+    required bool pill,
+    bool total = false,
+    Color? color,
+  }) => TextStyle(
+    fontFamily: AppFonts.mono,
+    fontFamilyFallback: AppFonts.monoFallback,
+    fontSize: AppTypeScale.result,
+    fontWeight: !pill
+        ? null
+        : total
+        ? FontWeight.w600
+        : FontWeight.w500,
+    height: pill ? 16 / 13 : 1.2,
+    leadingDistribution: TextLeadingDistribution.even,
+    color: color,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
 
   @override
   State<ResultChip> createState() => _ResultChipState();
@@ -137,7 +171,7 @@ class _ResultChipState extends State<ResultChip> {
       curve: Curves.easeOutCubic,
       padding: pill
           ? const EdgeInsets.symmetric(horizontal: 10, vertical: 5)
-          : const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          : ResultChip._railPadding,
       decoration: BoxDecoration(
         color: fill,
         borderRadius: BorderRadius.circular(pill ? 999 : 5),
@@ -162,19 +196,10 @@ class _ResultChipState extends State<ResultChip> {
               // the unit — the parts you actually read — stay visible.
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
-              style: TextStyle(
-                fontFamily: AppFonts.mono,
-                fontFamilyFallback: AppFonts.monoFallback,
-                fontSize: AppTypeScale.result,
-                fontWeight: !pill
-                    ? null
-                    : total
-                    ? FontWeight.w600
-                    : FontWeight.w500,
-                height: pill ? 16 / 13 : 1.2,
-                leadingDistribution: TextLeadingDistribution.even,
+              style: ResultChip._textStyle(
+                pill: pill,
+                total: total,
                 color: ink,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -195,11 +220,22 @@ class _ResultChipState extends State<ResultChip> {
           child: ConstrainedBox(
             // Hovering lets a truncated result grow leftward over the text.
             constraints: BoxConstraints(
+              minWidth: pill
+                  ? 0
+                  : math.min(ResultChip._railTarget, widget.collapsedWidth),
+              minHeight: pill ? 0 : ResultChip._railTarget,
               maxWidth: _hovering
                   ? widget.collapsedWidth + 340
                   : widget.collapsedWidth,
             ),
-            child: chip,
+            child: pill
+                ? chip
+                : Align(
+                    alignment: Alignment.centerRight,
+                    widthFactor: 1,
+                    heightFactor: 1,
+                    child: chip,
+                  ),
           ),
         ),
       ),
