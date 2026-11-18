@@ -3702,7 +3702,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               topRight: Radius.circular(22),
               bottomRight: Radius.circular(22),
             ),
-            side: BorderSide(color: palette.separator, width: 0.5),
+            side: BorderSide(
+              color: palette.separator,
+              width: AppHairline.of(context),
+            ),
           ),
           child: _drawerContentReady
               ? Builder(

@@ -1323,7 +1323,12 @@ class _SidebarFooter extends StatelessWidget {
         AppControlMetrics.footerHeight,
       ),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
+        border: Border(
+          top: BorderSide(
+            color: palette.separator,
+            width: AppHairline.of(context),
+          ),
+        ),
       ),
       child: InstalledVersion(
         updates: updates,
