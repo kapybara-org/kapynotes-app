@@ -12,11 +12,13 @@ import 'package:material_ui/material_ui.dart';
 /// edge, stays [stay], and slides out again, then comes back at random
 /// intervals between [minInterval] and [maxInterval] while nothing is touched.
 /// Any input sends it away at once, on the same motion, and starts the wait
-/// again. It holds back while a pointer is down, while a dialog or menu route
-/// is over the page, and while [held] says so. With Reduce Motion on it fades
-/// where it would slide.
+/// again. [activity] counts as input too, for text that arrives without a key
+/// or pointer event, such as dictation or the character viewer. It holds back
+/// while a pointer is down, while a dialog or menu route is over the page, and
+/// while [held] says so, and it keeps no timer while the app is hidden or
+/// paused. With Reduce Motion on it fades where it would slide.
 class KapyPagePeek extends StatefulWidget {
-  const KapyPagePeek({super.key, this.held, this.random});
+  const KapyPagePeek({super.key, this.held, this.activity, this.random});
 
   static const assetPath = 'assets/mascot/kapy_cursor_peek.webp';
   static const imageKey = ValueKey('page-kapy');
@@ -43,6 +45,9 @@ class KapyPagePeek extends StatefulWidget {
   /// Kapy AI answering.
   final bool Function()? held;
 
+  /// Changes to this, the note's text and selection, are input.
+  final Listenable? activity;
+
   /// Chooses the wait between peeks; a test passes a seeded one.
   final math.Random? random;
 
@@ -51,7 +56,7 @@ class KapyPagePeek extends StatefulWidget {
 }
 
 class _KapyPagePeekState extends State<KapyPagePeek>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _motion = AnimationController(
     vsync: this,
     duration: KapyPagePeek.slide,
@@ -63,14 +68,39 @@ class _KapyPagePeekState extends State<KapyPagePeek>
   );
   late final math.Random _random = widget.random ?? math.Random();
   Timer? _timer;
-  int _pointersDown = 0;
+  final Set<int> _pointersDown = {};
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_onKey);
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
+    widget.activity?.addListener(_input);
     _timer = Timer(KapyPagePeek.idleBeforePeek, _peek);
+  }
+
+  @override
+  void didUpdateWidget(KapyPagePeek oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activity == widget.activity) return;
+    oldWidget.activity?.removeListener(_input);
+    widget.activity?.addListener(_input);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        _timer?.cancel();
+        _timer = null;
+        if (!_motion.isDismissed) _motion.reverse();
+      case AppLifecycleState.resumed:
+        _input();
+      case AppLifecycleState.inactive:
+    }
   }
 
   @override
@@ -81,6 +111,8 @@ class _KapyPagePeekState extends State<KapyPagePeek>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.activity?.removeListener(_input);
     HardwareKeyboard.instance.removeHandler(_onKey);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
     _timer?.cancel();
@@ -89,14 +121,22 @@ class _KapyPagePeekState extends State<KapyPagePeek>
   }
 
   bool _onKey(KeyEvent event) {
+    _pointersDown.clear();
     _input();
     return false;
   }
 
+  /// A pointer whose release was lost would hold Kapy back for good, so any
+  /// event from another pointer, a hover, or a key says it is no longer down.
   void _onPointer(PointerEvent event) {
-    if (event is PointerDownEvent) _pointersDown++;
+    if (event is PointerHoverEvent) {
+      _pointersDown.clear();
+    } else {
+      _pointersDown.removeWhere((pointer) => pointer != event.pointer);
+    }
+    if (event is PointerDownEvent) _pointersDown.add(event.pointer);
     if (event is PointerUpEvent || event is PointerCancelEvent) {
-      _pointersDown = math.max(0, _pointersDown - 1);
+      _pointersDown.remove(event.pointer);
     }
     _input();
   }
@@ -109,7 +149,7 @@ class _KapyPagePeekState extends State<KapyPagePeek>
 
   void _peek() {
     if (!mounted) return;
-    if (_pointersDown > 0 ||
+    if (_pointersDown.isNotEmpty ||
         (ModalRoute.of(context)?.isCurrent ?? true) == false ||
         (widget.held?.call() ?? false)) {
       _timer = Timer(KapyPagePeek.retryWhenHeld, _peek);

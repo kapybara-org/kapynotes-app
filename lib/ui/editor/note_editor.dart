@@ -7271,7 +7271,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         Positioned(
                           right: -6,
                           bottom: 0,
-                          child: KapyPagePeek(held: widget.idlePeekHeld),
+                          child: KapyPagePeek(
+                            held: widget.idlePeekHeld,
+                            activity: _controller,
+                          ),
                         ),
                       if (_pasteChipShown)
                         Positioned.fill(

@@ -10,6 +10,7 @@ final _kapy = find.byKey(KapyPagePeek.imageKey);
 
 Widget _host({
   bool Function()? held,
+  Listenable? activity,
   math.Random? random,
   bool disableAnimations = false,
 }) => MaterialApp(
@@ -23,7 +24,11 @@ Widget _host({
         Positioned(
           right: -6,
           bottom: 0,
-          child: KapyPagePeek(held: held, random: random),
+          child: KapyPagePeek(
+            held: held,
+            activity: activity,
+            random: random ?? math.Random(1),
+          ),
         ),
       ],
     ),
@@ -239,5 +244,94 @@ void main() {
           .opacity,
       1,
     );
+  });
+
+  testWidgets('text arriving without a key or pointer event is input too', (
+    tester,
+  ) async {
+    final dictation = ValueNotifier('');
+    addTearDown(dictation.dispose);
+    await tester.pumpWidget(_host(activity: dictation));
+
+    await _wait(
+      tester,
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 5),
+    );
+    dictation.value = 'hello';
+    await _wait(
+      tester,
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 5),
+    );
+    expect(_kapy, findsNothing, reason: 'the wait started again');
+    await _wait(tester, const Duration(seconds: 6));
+    expect(_kapy, findsOneWidget);
+    await _slide(tester);
+
+    dictation.value = 'hello again';
+    await _slide(tester);
+    expect(_kapy, findsNothing, reason: 'dictation sends it away');
+
+    for (var i = 0; i < 10; i++) {
+      await _wait(tester, const Duration(seconds: 30));
+      dictation.value = i.toString();
+      expect(_kapy, findsNothing);
+    }
+  });
+
+  testWidgets('keeps no timer while the app is hidden, and waits again when '
+      'it comes back', (tester) async {
+    await tester.pumpWidget(_host());
+    await _wait(
+      tester,
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 5),
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    await _wait(tester, KapyPagePeek.maxInterval * 2);
+    expect(_kapy, findsNothing);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _wait(tester, const Duration(seconds: 6));
+    expect(_kapy, findsNothing, reason: 'no peek as the window comes back');
+    await _wait(
+      tester,
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 5),
+    );
+    expect(_kapy, findsOneWidget);
+    await _slide(tester);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _slide(tester);
+    expect(_kapy, findsNothing, reason: 'it was sent away on hiding');
+    await _wait(
+      tester,
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 5),
+    );
+    expect(_kapy, findsNothing);
+    await _wait(tester, const Duration(seconds: 6));
+    expect(_kapy, findsOneWidget);
+  });
+
+  testWidgets('a pointer whose release was lost does not hold it back for '
+      'good', (tester) async {
+    await tester.pumpWidget(_host());
+    await tester.startGesture(const Offset(100, 100));
+    await _wait(tester, KapyPagePeek.idleBeforePeek * 2);
+    expect(_kapy, findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    expect(_kapy, findsOneWidget);
+    await _slide(tester);
+    await _wait(tester, KapyPagePeek.stay + KapyPagePeek.slide);
+    await _slide(tester);
+
+    await tester.startGesture(const Offset(100, 100), pointer: 7);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(10, 10));
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(const Offset(20, 20));
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    expect(_kapy, findsOneWidget, reason: 'a hover says nothing is down');
   });
 }
