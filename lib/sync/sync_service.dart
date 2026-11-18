@@ -130,11 +130,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _notes.addListener(_onNotesChanged);
     _docs.beforeFlush = () {
       final saveCursors = _state.cursorsToSave();
-      final absorbed = _absorbed.toList();
+      final absorbed = {..._absorbed};
       _absorbed.clear();
       return () {
         saveCursors();
-        _notes.markSynced(notes: absorbed);
+        _notes.outboxWritten(absorbed.difference(_absorbed));
       };
     };
     tasks?.onRefusal = () {
@@ -172,10 +172,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// take one document instead of replaying a year of keystrokes.
   final int snapshotEvery;
 
-  /// Notes absorbed into an outbox that is not on disk yet. Each is marked
-  /// synced once the flush that writes its record lands, and only if it has
-  /// not changed since.
-  final List<Note> _absorbed = [];
+  /// Notes absorbed into an outbox that is not on disk yet. A flush that
+  /// writes their records tells the notes store, unless a note was absorbed
+  /// again after that flush began.
+  final Set<String> _absorbed = {};
 
   Vault? _vault;
   SyncSocket? _socket;
@@ -640,7 +640,6 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
       _reconcileDirty();
       await _drain();
-      await _docs.flush();
       await _tasks?.run();
       _failures = 0;
       _state.recordSync(_now());
@@ -1142,7 +1141,8 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       } else {
         _reconcileInto(record, current, spaceId);
       }
-      _absorbed.add(current);
+      _notes.markAbsorbed([current]);
+      _absorbed.add(current.id);
       _docs.markDirty(current.id);
       _tasks?.schedule();
     }

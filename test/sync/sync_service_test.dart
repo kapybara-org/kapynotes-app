@@ -85,11 +85,18 @@ class Device {
   /// sync state as saved, and the documents read back from [docStorage].
   /// [whileDown] runs once nothing of the old run can write any more, for a
   /// test that wants the disk to say something else.
-  Future<void> relaunch({void Function()? whileDown}) async {
+  Future<void> relaunch({
+    void Function()? whileDown,
+    bool notesFromDisk = false,
+  }) async {
     sync.dispose();
     docs.dispose();
     await settle(server);
     whileDown?.call();
+    if (notesFromDisk) {
+      notes = NotesStore(store, now: tick);
+      await notes.load();
+    }
     state.load();
     docs = DocStore(docStorage, replica: name);
     sync = _service();
@@ -105,7 +112,7 @@ class Device {
   DateTime tick() => clock = clock.add(const Duration(milliseconds: 1));
 
   late final MemoryStore store;
-  late final NotesStore notes;
+  late NotesStore notes;
   late final SyncState state;
   late final FakeApi api;
   late final SpaceKeyring keyring;
@@ -541,13 +548,9 @@ void main() {
       await settle(server);
       one.notes.updateBody(note.id, 'Start, then this');
       await Future<void>.delayed(Duration.zero);
-      expect(
-        one.notes.byId(note.id)!.isDirty,
-        isTrue,
-        reason: 'marked synced while its outbox was only in memory',
-      );
 
       await one.relaunch(
+        notesFromDisk: true,
         whileDown: () => one.docStorage.files
           ..clear()
           ..addAll(records),
@@ -588,14 +591,10 @@ void main() {
       storage.hold = null;
       hold.complete();
       await writing;
-      expect(
-        one.notes.byId(note.id)!.isDirty,
-        isTrue,
-        reason: 'the first write marked the later edit synced',
-      );
 
       final written = Map.of(storage.files);
       await one.relaunch(
+        notesFromDisk: true,
         whileDown: () => storage.files
           ..clear()
           ..addAll(written),
