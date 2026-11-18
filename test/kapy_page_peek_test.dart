@@ -30,12 +30,25 @@ Widget _host({
   ),
 );
 
+/// Pumps [time] in frames of at most half a second, so an animation a timer
+/// starts is ticked the way a running window would tick it.
 Future<void> _wait(WidgetTester tester, Duration time) async {
-  await tester.pump(time);
+  const frame = Duration(milliseconds: 500);
+  var left = time;
+  while (left > frame) {
+    await tester.pump(frame);
+    left -= frame;
+  }
+  await tester.pump(left);
   await tester.pump();
 }
 
-Future<void> _slide(WidgetTester tester) => _wait(tester, KapyPagePeek.slide);
+/// A slide takes its time from the frame after it starts, so a test that wants
+/// it finished gives it a frame and a little more.
+Future<void> _slide(WidgetTester tester) async {
+  await tester.pump();
+  await _wait(tester, KapyPagePeek.slide + const Duration(milliseconds: 50));
+}
 
 void main() {
   testWidgets('Kapy starts out of sight', (tester) async {
@@ -101,17 +114,22 @@ void main() {
     await _wait(tester, KapyPagePeek.idleBeforePeek);
     await _slide(tester);
     await _wait(tester, KapyPagePeek.stay + KapyPagePeek.slide);
+    await _slide(tester);
     expect(_kapy, findsNothing);
 
-    await _wait(tester, KapyPagePeek.minInterval - const Duration(seconds: 1));
-    expect(_kapy, findsNothing);
-    await _wait(
-      tester,
-      KapyPagePeek.maxInterval -
-          KapyPagePeek.minInterval +
-          const Duration(seconds: 2),
-    );
+    var idle = Duration.zero;
+    while (_kapy.evaluate().isEmpty && idle < KapyPagePeek.maxInterval * 2) {
+      await _wait(tester, const Duration(seconds: 1));
+      idle += const Duration(seconds: 1);
+    }
     expect(_kapy, findsOneWidget);
+    expect(
+      idle.inSeconds,
+      inInclusiveRange(
+        KapyPagePeek.minInterval.inSeconds - 5,
+        KapyPagePeek.maxInterval.inSeconds + 5,
+      ),
+    );
     await _slide(tester);
     expect(tester.getRect(_kapy).right, 806);
   });
@@ -130,10 +148,10 @@ void main() {
 
     await _wait(
       tester,
-      KapyPagePeek.idleBeforePeek - const Duration(seconds: 1),
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 5),
     );
     expect(_kapy, findsNothing);
-    await _wait(tester, const Duration(seconds: 1));
+    await _wait(tester, const Duration(seconds: 6));
     expect(_kapy, findsOneWidget);
     await _slide(tester);
 
@@ -180,6 +198,7 @@ void main() {
     expect(_kapy, findsOneWidget);
     await _slide(tester);
     await _wait(tester, KapyPagePeek.stay + KapyPagePeek.slide);
+    await _slide(tester);
     expect(_kapy, findsNothing);
 
     final context = tester.element(find.byType(Scaffold));

@@ -74,6 +74,12 @@ class _KapyPagePeekState extends State<KapyPagePeek>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    unawaited(precacheImage(const AssetImage(KapyPagePeek.assetPath), context));
+  }
+
+  @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
@@ -133,7 +139,9 @@ class _KapyPagePeekState extends State<KapyPagePeek>
       animation: _slide,
       builder: (context, _) {
         final shown = _slide.value;
-        if (shown == 0) return const SizedBox.shrink();
+        if (shown == 0 && _motion.status != AnimationStatus.forward) {
+          return const SizedBox.shrink();
+        }
         return IgnorePointer(
           child: Transform.translate(
             offset: Offset(fades ? 0 : (1 - shown) * KapyPagePeek.width, 0),
