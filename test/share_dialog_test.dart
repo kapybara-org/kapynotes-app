@@ -1,16 +1,23 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/image_sync.dart';
 import 'package:kapy_notes/sync/joining.dart';
 import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/spaces.dart';
+import 'package:kapy_notes/sync/sync_api.dart' show SyncProtocolException;
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
@@ -37,11 +44,21 @@ class MemoryStore extends LocalStore {
 /// One unlocked account against the fake server, with everything the share
 /// sheet talks to.
 class Device {
-  Device(this.server, {required this.userId, required this.device}) {
+  Device(
+    this.server, {
+    required this.userId,
+    required this.device,
+    Directory? media,
+  }) {
     server.seedBundle(userId);
     store = MemoryStore();
-    notes = NotesStore(store);
+    notes = media == null
+        ? NotesStore(store)
+        : NotesStore(store, blobs: BlobStore(directory: media));
     final api = FakeApi(server, device: device, userId: userId);
+    images = media == null
+        ? null
+        : ImageSync(api: api, store: notes.blobs, notes: notes);
     final vault = vaultFor(userId);
     keyring = SpaceKeyring(
       userId: userId,
@@ -54,6 +71,7 @@ class Device {
       api: api,
       keyring: keyring,
       docs: DocStore(MemoryDocStorage(), replica: device),
+      images: images,
       vault: vault,
       sendDelay: const Duration(hours: 1),
     );
@@ -63,6 +81,7 @@ class Device {
       keyring: keyring,
       notes: notes,
       sync: sync,
+      images: images,
     );
   }
 
@@ -74,6 +93,7 @@ class Device {
   late final SpaceKeyring keyring;
   late final SyncService sync;
   late final Sharing sharing;
+  late final ImageSync? images;
 
   String get email => server.user(userId).email;
 
@@ -91,6 +111,7 @@ class Device {
     _disposed = true;
     sharing.dispose();
     sync.dispose();
+    images?.dispose();
   }
 }
 
@@ -306,6 +327,10 @@ void main() {
     expect(find.byKey(const ValueKey('stop-sharing')), findsNothing);
     expect(find.byKey(const ValueKey('leave-space')), findsOneWidget);
     expect(find.text('Add someone'), findsNothing);
+    // Taking the note out would take it from its owner too, so a member gets
+    // a copy of their own instead.
+    expect(find.byKey(const ValueKey('unshare-note')), findsNothing);
+    expect(find.byKey(const ValueKey('copy-note')), findsOneWidget);
 
     // A member can still report and block the owner — those are not
     // privileges — but cannot remove them.
@@ -358,8 +383,294 @@ void main() {
 
     expect(find.text('View only'), findsOneWidget);
     expect(find.byKey(const ValueKey('unshare-note')), findsNothing);
+    expect(find.byKey(const ValueKey('copy-note')), findsOneWidget);
     expect(find.byKey(const ValueKey('leave-space')), findsOneWidget);
     expect(find.byKey(const ValueKey('report-note')), findsOneWidget);
+  });
+
+  testWidgets('a member makes a private copy and the shared note stays put', (
+    tester,
+  ) async {
+    late Note theirs;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      final note = alice.notes.create(body: 'Trip budget');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+      theirs = bob.notes.notes.single;
+    });
+
+    await tester.pumpWidget(opener(theirs, bob.sharing));
+    await tester.tap(find.text('open'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('copy-note')));
+    await tester.pumpAndSettle();
+
+    final copies = bob.notes.notes.where((n) => !n.isShared).toList();
+    expect(copies, hasLength(1));
+    expect(copies.single.body, 'Trip budget');
+    expect(copies.single.id, isNot(theirs.id));
+    await tester.runAsync(() async {
+      await bob.sync.syncNow();
+      await alice.sync.syncNow();
+    });
+    expect(bob.notes.byId(theirs.id)!.isShared, isTrue);
+    expect(alice.notes.notes.single.isShared, isTrue);
+    expect(alice.notes.notes.single.body, 'Trip budget');
+    expect(find.text('Copied to my notes'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    // The copy asks for a push on the device's send delay; it must not
+    // outlive the test.
+    bob.dispose();
+  });
+
+  test('a private copy is only made of a shared note', () async {
+    await alice.boot();
+    final mine = alice.notes.create(body: 'Mine');
+    await expectLater(
+      alice.sharing.makePrivateCopy(mine.id),
+      throwsA(isA<SyncProtocolException>()),
+    );
+    await expectLater(
+      alice.sharing.makePrivateCopy('missing'),
+      throwsA(anything),
+    );
+    expect(alice.notes.notes, hasLength(1));
+  });
+
+  test(
+    'a private copy keeps its attachments after leaving the space',
+    () async {
+      final root = await Directory.systemTemp.createTemp('kapy-copy-');
+      addTearDown(() => root.delete(recursive: true));
+      Device on(String user, String name) {
+        final device = Device(
+          server,
+          userId: user,
+          device: name,
+          media: Directory('${root.path}/$name')..createSync(),
+        );
+        addTearDown(device.dispose);
+        return device;
+      }
+
+      Future<void> settle(Device device) async {
+        for (var pass = 0; pass < 5; pass++) {
+          await device.sync.syncNow();
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      }
+
+      final owner = on('user-4', 'owner');
+      final laptop = on('user-5', 'laptop');
+      await owner.boot();
+      await laptop.boot();
+      final bytes = Uint8List.fromList(List.generate(4096, (i) => i % 251));
+      final hash = await owner.notes.blobs.put(bytes, extension: '.pdf');
+      final note = owner.notes.create(body: 'Plan');
+      owner.notes.updateDocument(
+        note.id,
+        'Plan\n${NoteAttachmentRef.placeholder}',
+        const [],
+        [
+          NoteFileRef(
+            offset: 5,
+            hash: hash,
+            key: Uint8List(32)..fillRange(0, 32, 7),
+            mime: 'application/pdf',
+            bytes: bytes.length,
+            name: 'plan.pdf',
+          ),
+        ],
+      );
+      await settle(owner);
+      await owner.sharing.shareNoteWith(note.id, email: laptop.email);
+      await laptop.sharing.acceptInvite(server.outbox.single.token);
+      await settle(owner);
+      await settle(laptop);
+      final theirs = laptop.notes.notes.single;
+      expect(theirs.attachments.single.isUploaded, isTrue);
+
+      await laptop.sharing.makePrivateCopy(theirs.id);
+      await settle(laptop);
+      await laptop.sharing.leave(theirs.spaceId!);
+      await settle(laptop);
+
+      final phone = on('user-5', 'phone');
+      await phone.boot();
+      await settle(phone);
+      final copy = phone.notes.notes.single;
+      expect(copy.isShared, isFalse);
+      expect(copy.attachments.single.isUploaded, isTrue);
+      expect(await phone.images!.fetch(hash), bytes);
+      expect(owner.notes.byId(note.id)!.attachments.single.isUploaded, isTrue);
+    },
+  );
+
+  testWidgets('removing a member says the notes leave their devices', (
+    tester,
+  ) async {
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      note = alice.notes.create(body: 'Ours');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+    });
+
+    await tester.pumpWidget(opener(note, alice.sharing));
+    await tester.tap(find.text('open'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('the notes leave their devices'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Downloaded copies'), findsNothing);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Block…'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('they lose access'), findsOneWidget);
+    expect(find.textContaining('Downloaded copies'), findsNothing);
+  });
+
+  group('inviting from a note in a space with other notes', () {
+    late Device carol;
+    late Note first;
+    late Note second;
+
+    setUp(() => carol = Device(server, userId: 'user-3', device: 'c'));
+    tearDown(() => carol.dispose());
+
+    Future<void> shareTwo(WidgetTester tester, {required bool both}) =>
+        tester.runAsync(() async {
+          await alice.boot();
+          await carol.boot();
+          first = alice.notes.create(body: 'Goa trip budget');
+          second = alice.notes.create(body: 'Groceries this week');
+          await alice.sync.syncNow();
+          final space = await alice.sharing.shareNoteWith(
+            first.id,
+            email: bob.email,
+          );
+          if (both) {
+            await alice.sharing.shareNote(second.id, spaceId: space.id);
+          }
+        });
+
+    Future<void> invite(WidgetTester tester, String address) async {
+      await tester.pumpWidget(
+        opener(alice.notes.byId(first.id)!, alice.sharing),
+      );
+      await tester.tap(find.text('open'));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('share-email')),
+        address,
+      );
+      await tester.tap(find.byKey(const ValueKey('share-submit-Invite')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('lists every note and sends nothing on Cancel', (tester) async {
+      await shareTwo(tester, both: true);
+      await invite(tester, carol.email);
+
+      expect(find.byKey(const ValueKey('share-all-confirm')), findsOneWidget);
+      expect(
+        find.text('Share all 2 notes with ${carol.email}?'),
+        findsOneWidget,
+      );
+      expect(find.text('• Goa trip budget'), findsOneWidget);
+      expect(find.text('• Groceries this week'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(server.outbox, hasLength(1), reason: 'only the first invitation');
+      expect(find.byKey(const ValueKey('share-all-confirm')), findsNothing);
+    });
+
+    testWidgets('counts archived and hidden notes, naming only the archived', (
+      tester,
+    ) async {
+      await shareTwo(tester, both: true);
+      final spaceId = alice.notes.byId(first.id)!.spaceId;
+      alice.notes.archive(second.id);
+      final at = DateTime.utc(2026, 11, 1);
+      alice.notes.importNotes([
+        Note(
+          id: 'hidden-1',
+          body: 'Secret plans',
+          createdAt: at,
+          updatedAt: at,
+          hiddenAt: at,
+          spaceId: spaceId,
+        ),
+      ]);
+      await invite(tester, carol.email);
+
+      expect(find.byKey(const ValueKey('share-all-confirm')), findsOneWidget);
+      expect(
+        find.text('Share all 3 notes with ${carol.email}?'),
+        findsOneWidget,
+      );
+      expect(find.text('• Goa trip budget'), findsOneWidget);
+      expect(find.text('• Groceries this week (archived)'), findsOneWidget);
+      expect(find.text('and 1 hidden note'), findsOneWidget);
+      expect(find.textContaining('Secret'), findsNothing);
+    });
+
+    testWidgets('invites to the whole space on Share all', (tester) async {
+      await shareTwo(tester, both: true);
+      await invite(tester, carol.email);
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('share-all')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+      expect(server.outbox, hasLength(2));
+      expect(server.outbox.last.to, carol.email);
+    });
+
+    testWidgets('asks nothing when the note is the only one', (tester) async {
+      await shareTwo(tester, both: false);
+      await invite(tester, carol.email);
+
+      expect(find.byKey(const ValueKey('share-all-confirm')), findsNothing);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pumpAndSettle();
+      expect(server.outbox, hasLength(2));
+      expect(server.outbox.last.to, carol.email);
+    });
   });
 
   testWidgets('the sidebar groups shared notes under their space', (
@@ -925,5 +1236,49 @@ void main() {
     );
     expect(field.autofocus, isFalse);
     expect(tester.testTextInput.isVisible, isFalse);
+  });
+
+  // The server lets only a team space's owner move a note out of it. A
+  // 1.32.0 editor still offers "Move to my notes"; this is what their
+  // device does when the server refuses that move. Sync and the move path
+  // here are unchanged since v1.32.0.
+  test('an old editor whose move out is refused keeps everything', () async {
+    await alice.boot();
+    await bob.boot();
+    final note = alice.notes.create(body: 'Trip budget');
+    await alice.sync.syncNow();
+    await alice.sharing.shareNoteWith(note.id, email: bob.email);
+    await bob.sharing.acceptInvite(server.outbox.single.token);
+    await alice.sync.syncNow();
+    await bob.sync.syncNow();
+    final theirs = bob.notes.notes.single;
+    final spaceId = theirs.spaceId!;
+
+    // 1.32.0's unshareNote, which let any editor do this.
+    bob.notes.moveToSpace(theirs.id, spaceId: null, contentKey: null);
+    await bob.sync.syncNow();
+    final other = bob.notes.create(body: 'Groceries');
+    for (var pass = 0; pass < 3; pass++) {
+      await bob.sync.syncNow();
+      expect(bob.sync.status, SyncStatus.idle);
+      expect(bob.sync.lastError, isNull);
+    }
+    await alice.sync.syncNow();
+
+    // At most one refused push per sync pass: no loop.
+    final refusals = server.refusals.where((code) => code == 'owner-only');
+    expect(refusals, isNotEmpty);
+    expect(refusals.length, lessThanOrEqualTo(4));
+    // The editor keeps the text, in their own notes, unsynced.
+    final kept = bob.notes.byId(theirs.id)!;
+    expect(kept.spaceId, isNull);
+    expect(kept.body, 'Trip budget');
+    // Their other notes still sync.
+    expect(server.rows.containsKey(other.id), isTrue);
+    // The owner keeps the note where it was.
+    expect(server.rowsIn(spaceId).containsKey(note.id), isTrue);
+    final ours = alice.notes.byId(note.id)!;
+    expect(ours.spaceId, spaceId);
+    expect(ours.body, 'Trip budget');
   });
 }

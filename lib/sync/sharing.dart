@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../data/note.dart';
+import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
 import 'aead.dart';
 import 'config.dart';
+import 'image_sync.dart';
 import 'key_wrap.dart';
 import 'presence.dart';
 import 'safety.dart';
@@ -33,11 +35,13 @@ class Sharing extends ChangeNotifier {
     required SpaceKeyring keyring,
     required NotesStore notes,
     required SyncService sync,
+    ImageSync? images,
   }) : _api = api,
        _vault = vault,
        _keyring = keyring,
        _notes = notes,
-       _sync = sync {
+       _sync = sync,
+       _images = images {
     _keyring.addListener(notifyListeners);
     _keyring.trust.addListener(notifyListeners);
   }
@@ -47,6 +51,7 @@ class Sharing extends ChangeNotifier {
   final SpaceKeyring _keyring;
   final NotesStore _notes;
   final SyncService _sync;
+  final ImageSync? _images;
 
   /// Whether sync is holding [spaceId] back until somebody in it has Pro.
   bool needsPro(String spaceId) => _sync.spacesNeedingPro.contains(spaceId);
@@ -231,15 +236,53 @@ class Sharing extends ChangeNotifier {
   }
 
   /// Takes a note out of a shared space and back into the personal one, under
-  /// a new key. Any member may do this: they could copy the text and delete
-  /// the original anyway, so it is not a privilege.
+  /// a new key. Only the space's owner may: it takes the note away from
+  /// everyone else in it, and the server refuses anyone else.
   Future<void> unshareNote(String noteId) async {
     final note = _notes.byId(noteId);
-    if (note == null || !canEdit(note)) {
-      throw const SyncRefusedException(403, 'view-only', {});
+    if (note == null || !(spaceOf(note)?.isOwner ?? false)) {
+      throw const SyncRefusedException(403, 'owner-only', {});
     }
     _notes.moveToSpace(noteId, spaceId: null, contentKey: null);
     await _sync.syncNow();
+  }
+
+  /// Every note in a shared space as this device holds it, archived and
+  /// hidden ones included: an invitation opens all of them.
+  List<Note> notesIn(String spaceId) => _notes.notesIn(spaceId);
+
+  /// A copy of a shared note in this account's own notes. The shared note is
+  /// untouched, for everyone in the space.
+  ///
+  /// The server hands out the space's attachments only to its members, so the
+  /// copy's go up again under the copy. Their bytes are fetched first; without
+  /// them nothing is copied.
+  Future<void> makePrivateCopy(String noteId) async {
+    final note = _notes.byId(noteId);
+    if (note == null || !note.isShared) {
+      throw const SyncProtocolException('no such shared note');
+    }
+    final attachments = <NoteAttachmentRef>[];
+    for (final ref in note.attachments) {
+      final hashes = [
+        ref.hash,
+        if (ref case NoteImageRef(:final thumbHash?)) thumbHash,
+      ];
+      for (final hash in hashes) {
+        if (await _notes.blobs.has(hash)) continue;
+        if (await _images?.fetch(hash) == null) {
+          throw SyncTransientException('could not fetch attachment $hash');
+        }
+      }
+      attachments.add(
+        NoteAttachmentRef.fromJson(
+          {...ref.toJson()}
+            ..remove('attachmentId')
+            ..remove('thumbId'),
+        )!,
+      );
+    }
+    _notes.keepCopy(note.copyWith(attachments: attachments));
   }
 
   /// A new note straight into a shared space.

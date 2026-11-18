@@ -197,8 +197,10 @@ class _ShareDialogState extends State<_ShareDialog> {
       return;
     }
     final noteId = widget.noteId;
+    final space = _space;
+    if (space != null && !await _confirmWholeSpace(space, email)) return;
     await _run(() async {
-      if (noteId != null && _space == null) {
+      if (noteId != null && space == null) {
         final space = await widget.sharing.shareNoteWith(
           noteId,
           email: email,
@@ -209,9 +211,8 @@ class _ShareDialogState extends State<_ShareDialog> {
         );
         _lastInviteToken = invite.isEmpty ? null : invite.first.token;
       } else {
-        final space = _space!;
         final result = await widget.sharing.invite(
-          space.id,
+          space!.id,
           email,
           role: _inviteRole,
         );
@@ -253,9 +254,13 @@ class _ShareDialogState extends State<_ShareDialog> {
       setState(() => _error = 'None of those look like email addresses.');
       return;
     }
+    final existing = _space;
+    if (existing != null &&
+        !await _confirmWholeSpace(existing, '${addresses.length} people')) {
+      return;
+    }
     var results = const <BatchInviteResult>[];
     await _run(() async {
-      final existing = _space;
       if (existing != null) {
         results = await joining.inviteMany(
           existing.id,
@@ -341,6 +346,72 @@ class _ShareDialogState extends State<_ShareDialog> {
       ClipboardData(text: widget.sharing.inviteLink(token).toString()),
     );
     if (mounted) Toast.show(context, 'Invitation link copied');
+  }
+
+  /// From inside one note, an invitation is to its whole space. When the
+  /// space holds other notes, the owner sees exactly which ones the person
+  /// will get before anything is sent.
+  Future<bool> _confirmWholeSpace(Space space, String who) async {
+    final noteId = widget.noteId;
+    if (noteId == null) return true;
+    final notes = widget.sharing.notesIn(space.id);
+    if (notes.every((note) => note.id == noteId)) return true;
+    final hidden = notes.where((note) => note.isHidden).length;
+    final style = TextStyle(
+      fontSize: AppTypeScale.control,
+      color: context.palette.textPrimary,
+      height: 1.4,
+    );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('share-all-confirm'),
+        title: Text('Share all ${notes.length} notes with $who?'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380, maxHeight: 320),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'An invitation from here opens every note shared '
+                  '${sharedPhrase(space, widget.sharing.userId)}, not only '
+                  'this one:',
+                  style: style,
+                ),
+                const SizedBox(height: 10),
+                for (final note in notes)
+                  if (!note.isHidden)
+                    Text(
+                      '• ${note.title}${note.isArchived ? ' (archived)' : ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: style,
+                    ),
+                if (hidden > 0)
+                  Text(
+                    'and $hidden hidden note${hidden == 1 ? '' : 's'}',
+                    style: style,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('share-all'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Share all'),
+          ),
+        ],
+      ),
+    );
+    return ok == true && mounted;
   }
 
   Future<void> _confirm({
@@ -483,17 +554,21 @@ class _ShareDialogState extends State<_ShareDialog> {
                   onRemove: (member) => _confirm(
                     title: 'Remove ${member.displayName}?',
                     body:
-                        'They stop receiving updates immediately. Downloaded '
-                        'copies stay on their devices.',
+                        'They lose access right away, and the notes leave '
+                        'their devices. Anything they copied before stays '
+                        'with them.',
                     action: 'Remove',
                     destructive: true,
                     run: () => sharing.removeMember(space.id, member.userId),
                   ),
                   onBlock: (member) => _confirm(
                     title: 'Block ${member.displayName}?',
-                    body:
-                        'They can no longer invite you, and you leave this '
-                        'space. Downloaded copies stay on their devices.',
+                    body: space.isOwner
+                        ? 'They can no longer invite you, and they lose '
+                              'access to this space. Anything they copied '
+                              'before stays with them.'
+                        : 'They can no longer invite you, and you leave this '
+                              'space.',
                     action: 'Block',
                     destructive: true,
                     run: () async {
@@ -583,17 +658,23 @@ class _ShareDialogState extends State<_ShareDialog> {
                 const SizedBox(height: 10),
                 _ManagementActions(
                   enabled: !_busy,
-                  onMoveToMine: note != null && space.canEdit
+                  onMoveToMine: note != null && space.isOwner
                       ? () => _confirm(
                           title: 'Move to my notes?',
                           body:
                               'This note leaves the shared space and becomes '
-                              'private. Others keep downloaded copies.',
+                              'private. The others lose access to it.',
                           action: 'Move note',
                           run: () async {
                             await sharing.unshareNote(note.id);
                             if (context.mounted) Navigator.of(context).pop();
                           },
+                        )
+                      : null,
+                  onCopy: note != null && !space.isOwner
+                      ? () => _run(
+                          () => sharing.makePrivateCopy(note.id),
+                          success: 'Copied to my notes',
                         )
                       : null,
                   onStopSharing: space.isOwner
@@ -742,12 +823,14 @@ class _ManagementActions extends StatelessWidget {
   const _ManagementActions({
     required this.enabled,
     this.onMoveToMine,
+    this.onCopy,
     this.onStopSharing,
     this.onLeave,
   });
 
   final bool enabled;
   final VoidCallback? onMoveToMine;
+  final VoidCallback? onCopy;
   final VoidCallback? onStopSharing;
   final VoidCallback? onLeave;
 
@@ -755,6 +838,7 @@ class _ManagementActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final danger = Theme.of(context).colorScheme.error;
     final move = onMoveToMine;
+    final copy = onCopy;
     final stop = onStopSharing;
     final leave = onLeave;
     return Align(
@@ -773,6 +857,16 @@ class _ManagementActions extends StatelessWidget {
                 size: AppControlMetrics.iconControl,
               ),
               label: const Text('Move to my notes'),
+            ),
+          if (copy != null)
+            OutlinedButton.icon(
+              key: const ValueKey('copy-note'),
+              onPressed: enabled ? copy : null,
+              icon: KapyIcon(
+                KapyIcons.copyRounded,
+                size: AppControlMetrics.iconControl,
+              ),
+              label: const Text('Make a private copy'),
             ),
           if (stop != null)
             TextButton.icon(
