@@ -1243,6 +1243,110 @@ void main() {
     );
   });
 
+  group('deleting a shared note', () {
+    late Person carol;
+
+    setUp(() async {
+      carol = Person(server, userId: 'user-3', device: 'carol-pad');
+      await carol.boot();
+    });
+
+    tearDown(() => carol.dispose());
+
+    /// Alice's note with Bob and Carol in it, everyone holding the key.
+    Future<(Note, String)> sharedWithBoth() async {
+      final note = await shareWithBob('Ours');
+      final spaceId = alice.notes.byId(note.id)!.spaceId!;
+      final invite = await alice.sharing.invite(spaceId, carol.email);
+      await carol.sharing.acceptInvite(invite.token);
+      await alice.sync.syncNow();
+      await carol.sync.syncNow();
+      expect(carol.bodyOf(note.id), 'Ours');
+      return (note, spaceId);
+    }
+
+    test(
+      'a guest\'s delete takes it out of their notes only, and is never sent',
+      () async {
+        final (note, spaceId) = await sharedWithBoth();
+        bob.tick();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+
+        expect(bob.notes.byId(note.id), isNull);
+        expect(bob.notes.hasPendingChanges, isFalse);
+        expect(server.guestDeletes, 0, reason: 'nothing went up');
+        expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+        await alice.syncAndSettle();
+        await carol.syncAndSettle();
+        expect(alice.bodyOf(note.id), 'Ours');
+        expect(carol.bodyOf(note.id), 'Ours');
+
+        // However it changes afterwards, it stays out of Bob's notes, here
+        // and after a restart.
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Ours, edited');
+        await alice.syncAndSettle();
+        await carol.syncAndSettle();
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ours, edited again');
+        await carol.syncAndSettle();
+        await bob.syncAndSettle();
+        expect(bob.notes.byId(note.id), isNull);
+        final restarted = NotesStore(bob.store, now: () => now);
+        await restarted.load();
+        expect(restarted.isDismissed(note.id, spaceId), isTrue);
+        expect(restarted.byId(note.id), isNull);
+        await alice.syncAndSettle();
+        expect(alice.bodyOf(note.id), 'Ours, edited again');
+      },
+    );
+
+    test('the owner still deletes it for everyone', () async {
+      final (note, spaceId) = await sharedWithBoth();
+      bob.notes.delete(note.id);
+      await bob.syncAndSettle();
+      expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+
+      alice.tick();
+      alice.notes.delete(note.id);
+      await alice.syncAndSettle();
+      await bob.syncAndSettle();
+      await carol.syncAndSettle();
+      expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isTrue);
+      expect(carol.notes.byId(note.id), isNull);
+      expect(alice.notes.byId(note.id), isNull);
+      expect(
+        bob.notes.isDismissed(note.id, spaceId),
+        isFalse,
+        reason: 'gone for everyone, so nothing is left to keep away',
+      );
+    });
+
+    test('leaving the space forgets what was taken out of it', () async {
+      final (note, spaceId) = await sharedWithBoth();
+      bob.notes.delete(note.id);
+      await bob.syncAndSettle();
+      await bob.sharing.leave(spaceId, keepCopies: false);
+      await bob.syncAndSettle();
+      expect(bob.notes.isDismissed(note.id, spaceId), isFalse);
+      expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+    });
+
+    test('a delete in your own space, shared or not, is as before', () async {
+      final mine = alice.notes.create(body: 'Mine');
+      await alice.sync.syncNow();
+      alice.tick();
+      alice.notes.delete(mine.id);
+      await alice.syncAndSettle();
+      expect(
+        server.rowsIn(alice.keyring.personal!.id)[mine.id]!.isTombstone,
+        isTrue,
+      );
+      expect(server.guestDeletes, 0);
+    });
+  });
+
   group('content keys', () {
     test(
       'a write under a retired epoch is refused, adopts the server\'s key, and lands',

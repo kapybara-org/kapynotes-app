@@ -122,6 +122,10 @@ class FakeServer {
   /// catch-up alike, mirroring the real limit being smaller than the corpus.
   int pageSize = 200;
 
+  /// Deletes by somebody other than a team space's owner, answered as done
+  /// and not applied, as `applyOps` answers them.
+  int guestDeletes = 0;
+
   /// How many task records one pull returns.
   int taskPageSize = 1 << 30;
 
@@ -523,6 +527,14 @@ class FakeServer {
 
     final prior = space.notes[push.noteId];
     final wasDeleted = prior != null && prior.deletedAt != null;
+    // Only the owner deletes a team note for everyone; a guest's delete is
+    // answered as done and writes nothing. Mirrors `applyOps`.
+    final guestDelete =
+        push.deleted == true &&
+        !wasDeleted &&
+        space.kind == SpaceKind.team &&
+        space.members[userId] != SpaceRole.owner;
+    final deleted = guestDelete ? null : push.deleted;
 
     // --- keys and epochs ----------------------------------------------------
     var epoch = 1;
@@ -647,13 +659,21 @@ class FakeServer {
       _refuse(400, 'snapshot covers seqs that do not exist');
     }
 
+    if (guestDelete) guestDeletes++;
+    if (guestDelete && fresh.isEmpty && push.snapshot == null) {
+      return OpsPushResult(
+        seqs: [for (final op in push.ops) known[op.deviceSeq]!],
+        snapshotSeq: null,
+        serverTime: at,
+      );
+    }
+
     // Nothing below can refuse: apply.
     if (pendingKey != null) space.noteKeys[push.noteId] = pendingKey;
     if (dropHistory) _forgetHistory(space, push.noteId);
 
     // --- the note row -------------------------------------------------------
-    final deletedAfter =
-        push.deleted ?? (push.from != null ? false : wasDeleted);
+    final deletedAfter = deleted ?? (push.from != null ? false : wasDeleted);
     final deletedAt = deletedAfter ? (prior?.deletedAt ?? at) : null;
     space.notes[push.noteId] = FakeNoteRow(
       id: push.noteId,
@@ -664,8 +684,8 @@ class FakeServer {
     );
 
     final marker =
-        push.deleted != null &&
-        push.deleted != wasDeleted &&
+        deleted != null &&
+        deleted != wasDeleted &&
         fresh.isEmpty &&
         push.snapshot == null;
     final count =
