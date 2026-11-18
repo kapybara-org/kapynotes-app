@@ -114,7 +114,10 @@ void main() {
     expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
     expect(find.text('Free plan'), findsOneWidget);
     expect(
-      find.text('Voice notes run on this device. Pro runs them in the cloud'),
+      find.text(
+        'Voice notes and summaries run on this device. Cloud transcription '
+        'only for languages it has no engine for: 15 min a month.',
+      ),
       findsOneWidget,
     );
     // The store was told whose purchases these will be as soon as the
