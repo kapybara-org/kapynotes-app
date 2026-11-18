@@ -72,12 +72,13 @@ class LinuxDesktop {
   }
 
   /// [launchCommand] as a person would type it into a shortcut's command
-  /// field: the bare name where it is on PATH, quoted where it has a space.
+  /// field: the bare name where it is on PATH, and otherwise the path, in
+  /// single quotes when a shell would read anything in it as syntax.
   static String shortcutCommand([String? command]) {
     final launch = command ?? launchCommand();
     if (launch == '/usr/bin/kapynotes') return 'kapynotes';
-    return launch.contains(' ')
-        ? "'${launch.replaceAll("'", r"'\''")}'"
-        : launch;
+    return RegExp(r'^[\w./+@%:,=-]+$').hasMatch(launch)
+        ? launch
+        : "'${launch.replaceAll("'", r"'\''")}'";
   }
 }

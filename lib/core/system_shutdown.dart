@@ -1,7 +1,9 @@
 import 'package:flutter/services.dart';
 
-/// The one thing the Windows runner says without being asked: Windows — or,
-/// far more often, the installer's Restart Manager — wants this process gone.
+/// The one thing the Windows and Linux runners say without being asked: the
+/// session is ending, or — on Windows far more often — the installer's
+/// Restart Manager wants this process gone. On Linux it is also SIGTERM,
+/// SIGINT or SIGHUP, which a logout or `kill` sends.
 ///
 /// It exists because a shutdown is not a close. "Keep running in the
 /// background" turns the close button into a hide, and the runner's window
@@ -10,7 +12,7 @@ import 'package:flutter/services.dart';
 /// that went on holding every file it had open. That is an update that cannot
 /// replace the app it is updating.
 ///
-/// Nothing on the other platforms sends this. macOS hands its updates to
+/// Nothing on the phones or macOS sends this. macOS hands its updates to
 /// Sparkle, which asks the app to quit the ordinary way.
 class SystemShutdown {
   const SystemShutdown._();
