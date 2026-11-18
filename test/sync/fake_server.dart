@@ -2034,8 +2034,9 @@ class FakeApi implements SyncApi {
     server.beforeKeyChange = null;
     hook?.call(server.user(userId));
     final bundle = server.user(userId).bundle;
-    if (bundle == null)
+    if (bundle == null) {
       throw const SyncRefusedException(404, 'no key bundle', {});
+    }
     if (bundle.version != expectedVersion) {
       throw SyncRefusedException(409, 'bundle-changed', {
         'version': bundle.version,
