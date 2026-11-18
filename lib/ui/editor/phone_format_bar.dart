@@ -12,14 +12,18 @@ class FormatBarAction {
   const FormatBarAction({
     required this.key,
     required this.label,
-    required this.icon,
+    this.icon,
+    this.glyph,
     required this.onPressed,
     this.active = false,
-  });
+  }) : assert((icon == null) != (glyph == null));
 
   final String key;
   final String label;
-  final KapyIconData icon;
+  final KapyIconData? icon;
+
+  /// A character drawn in place of an icon: the "/" that Commands is known by.
+  final String? glyph;
   final VoidCallback? onPressed;
 
   /// The caret or selection is already in what this button makes.
@@ -150,6 +154,9 @@ class _BarButton extends StatelessWidget {
     final foreground = action.active
         ? palette.tonalForeground
         : palette.textSecondary;
+    final color = action.onPressed == null
+        ? foreground.withValues(alpha: 0.32)
+        : foreground;
     return Semantics(
       button: true,
       selected: action.active,
@@ -174,13 +181,17 @@ class _BarButton extends StatelessWidget {
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(11),
               ),
-              child: KapyIcon(
-                action.icon,
-                size: 21,
-                color: action.onPressed == null
-                    ? foreground.withValues(alpha: 0.32)
-                    : foreground,
-              ),
+              child: action.icon == null
+                  ? Text(
+                      action.glyph!,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w500,
+                        height: 1,
+                      ),
+                    )
+                  : KapyIcon(action.icon!, size: 21, color: color),
             ),
           ),
         ),

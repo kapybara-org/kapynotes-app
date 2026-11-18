@@ -5573,14 +5573,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     FormatBarAction action(
       String key,
       String label,
-      KapyIconData icon,
+      KapyIconData? icon,
       VoidCallback? press, {
       bool active = false,
       bool plain = true,
+      String? glyph,
     }) => FormatBarAction(
       key: key,
       label: label,
       icon: icon,
+      glyph: glyph,
       active: active,
       onPressed: plain && inCode ? null : press,
     );
@@ -5672,6 +5674,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         KapyIcons.imageOutlined,
         widget.images == null ? null : () => unawaited(_attachFromBar()),
       ),
+      action('format-commands', 'Commands', null, _showInsertMenu, glyph: '/'),
     ];
   }
 
@@ -5724,24 +5727,48 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   /// Link: asks for the address, then wraps the selection in it, or writes
   /// the address as its own link at a caret.
+  ///
+  /// The note can change while the prompt is open, from another device. The
+  /// link still goes in when the same words are at the selection, and when
+  /// they are not it says so rather than vanish. The keyboard comes back
+  /// either way.
   Future<void> _linkFromBar() async {
     final before = _controller.value;
     final selection = before.selection;
     if (widget.readOnly || !selection.isValid) return;
-    if (!widget.markdownEnabled && !await _confirmMarkdown('Links')) return;
-    if (!mounted || _controller.text != before.text) return;
+    void resumeWriting() {
+      _focusNode.requestFocus();
+      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+    }
+
+    if (!widget.markdownEnabled && !await _confirmMarkdown('Links')) {
+      if (mounted) resumeWriting();
+      return;
+    }
+    if (!mounted) return;
     final address = await askLinkAddress(context);
-    if (!mounted || _controller.text != before.text) return;
-    _controller.selection = selection;
-    _focusNode.requestFocus();
+    if (!mounted) return;
+    resumeWriting();
     if (address == null) return;
+    final now = _controller.value;
+    if (selection.end > now.text.length ||
+        now.text.substring(selection.start, selection.end) !=
+            before.text.substring(selection.start, selection.end)) {
+      Toast.show(
+        context,
+        'Link not added, the note changed',
+        icon: KapyIcons.errorOutlined,
+      );
+      return;
+    }
+    _controller.selection = selection;
     if (!selection.isCollapsed) {
       _linkSelection(address);
       return;
     }
     _replaceCommandValue(
       replaceSlashCommandRange(
-        before,
+        now,
         TextRange.collapsed(selection.start),
         '[$address]($address)',
         selection: TextSelection(

@@ -368,9 +368,14 @@ void main() {
           'format-numbered',
           'format-quote',
           'format-link',
+          'format-commands',
           'format-code',
         ]) {
           await _tap(tester, key);
+          expect(
+            find.byKey(const ValueKey('slash-command-menu')),
+            findsNothing,
+          );
           expect(_text(tester), body, reason: key);
           expect(_selection(tester), const TextSelection.collapsed(offset: 6));
           _expectStillWriting(tester);
@@ -409,6 +414,67 @@ void main() {
         );
         await _tap(tester, 'link-add');
         expect(_text(tester), 'Trip [a.co](a.co)');
+      });
+
+      testWidgets('a link still goes in when the note changed elsewhere', (
+        tester,
+      ) async {
+        await _open(tester, platform, 'Trip budget', word(0, 4));
+        await _tap(tester, 'format-link');
+        _field(tester).controller.text = 'Trip budget!';
+        await tester.enterText(
+          find.byKey(const ValueKey('link-address')),
+          'a.co',
+        );
+        await _tap(tester, 'link-add');
+
+        expect(_text(tester), '[Trip](a.co) budget!');
+        _expectStillWriting(tester);
+      });
+
+      testWidgets('a link that cannot go in says so and keeps the keyboard', (
+        tester,
+      ) async {
+        await _open(tester, platform, 'Trip budget', word(0, 4));
+        await _tap(tester, 'format-link');
+        _field(tester).controller.text = 'Flip budget';
+        await tester.enterText(
+          find.byKey(const ValueKey('link-address')),
+          'a.co',
+        );
+        await _tap(tester, 'link-add');
+
+        expect(_text(tester), 'Flip budget');
+        expect(find.text('Link not added, the note changed'), findsOneWidget);
+        _expectStillWriting(tester);
+      });
+
+      testWidgets('Commands opens the menu and a choice returns to the note', (
+        tester,
+      ) async {
+        await _open(
+          tester,
+          platform,
+          'Trip',
+          const TextSelection.collapsed(offset: 4),
+        );
+        await _tap(tester, 'format-commands');
+        expect(
+          find.byKey(const ValueKey('slash-command-menu')),
+          findsOneWidget,
+        );
+        expect(_text(tester), 'Trip');
+
+        final divider = find.byKey(const ValueKey('slash-command-divider'));
+        await tester.ensureVisible(divider);
+        await tester.pumpAndSettle();
+        await tester.tap(divider);
+        await tester.pumpAndSettle();
+
+        expect(_text(tester), contains('---'));
+        expect(_field(tester).focusNode.hasFocus, isTrue);
+        expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+        expect(find.byKey(_bar), findsOneWidget);
       });
 
       testWidgets('cancelling the link leaves the note and its selection', (

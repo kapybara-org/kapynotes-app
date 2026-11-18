@@ -178,6 +178,32 @@ void main() {
     expectStillWriting(tester, reason: 'outdent');
   });
 
+  testWidgets('Commands opens the menu and Divider goes into the note', (
+    tester,
+  ) async {
+    await open(tester, 'Trip budget');
+    field(tester).controller.selection = const TextSelection.collapsed(
+      offset: 11,
+    );
+    await tester.pump();
+    await tap(tester, 'format-commands');
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+
+    final divider = find.byKey(const ValueKey('slash-command-divider'));
+    await tester.ensureVisible(divider);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(divider);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(field(tester).controller.text, contains('---'));
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+    expect(
+      field(tester).focusNode.hasFocus,
+      isTrue,
+      reason: 'the note did not get focus back after the menu',
+    );
+  });
+
   testWidgets('Hide keyboard puts the keyboard and the bar away', (
     tester,
   ) async {
