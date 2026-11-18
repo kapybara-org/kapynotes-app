@@ -81,7 +81,7 @@ class PlanTerms extends ChangeNotifier {
 
   /// `TRIAL_DAYS` and `FREE_NOTE_LIMIT`, until the server has said otherwise.
   static const int defaultTrialDays = 14;
-  static const int defaultFreeNoteLimit = 5;
+  static const int defaultFreeNoteLimit = 20;
 
   final LocalStore _store;
   final PlanTermsApi _api;
