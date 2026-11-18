@@ -378,30 +378,22 @@ void main() {
     expect(window.calls, contains('destroy'));
   });
 
-  test('Linux quits through the engine and leaves the window up', () async {
+  test('Linux quits through the runner and leaves the window up', () async {
     // GTK destroying the window under a running isolate crashes the process
     // on its way out: the window calls already queued still run, and there is
     // no window left for them.
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
-    final exits = <Object?>[];
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-      if (call.method == 'System.exitApplication') exits.add(call.arguments);
-      return null;
-    });
-    addTearDown(
-      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
-    );
+    final runner = _NativeRecorder(
+      'kapynotes/system_shutdown',
+      sequence: sequence,
+    )..install();
 
     var flushed = false;
     integration.onBeforeQuit = () async => flushed = true;
     await integration.quit();
 
     expect(flushed, isTrue, reason: 'notes must reach disk before the exit');
-    expect(exits, [
-      {'type': 'required', 'exitCode': 0},
-    ]);
+    expect(runner.calls, ['quit']);
     expect(window.calls, isNot(contains('destroy')));
   });
 

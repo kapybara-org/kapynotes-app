@@ -36,4 +36,14 @@ class SystemShutdown {
   }
 
   static void stopListening() => channel.setMethodCallHandler(null);
+
+  /// Ends the process on Linux, once the app has done what it does before
+  /// quitting.
+  ///
+  /// The runner stops its main loop with the window still up. Destroying the
+  /// window first, the way the other desktops leave, would leave this isolate
+  /// running against a window that is gone while GTK still dispatches the
+  /// calls already queued for it, and the first of those crashes the process
+  /// on its way out.
+  static Future<void> quit() => channel.invokeMethod<void>('quit');
 }

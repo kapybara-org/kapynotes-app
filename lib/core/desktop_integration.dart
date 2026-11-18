@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'dart:ui' show AppExitType, Rect, Size;
+import 'dart:ui' show Rect, Size;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show ServicesBinding;
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -291,12 +290,8 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     } catch (error) {
       debugPrint('KapyNotes: could not release close interception: $error');
     }
-    // Linux leaves through the engine's own exit, which stops the main loop
-    // with the window still up. Destroying it would leave this isolate
-    // running against a window that is gone, while GTK still dispatches the
-    // calls already queued for it on the way out; the first one crashes.
     if (AppPlatform.isLinux) {
-      await ServicesBinding.instance.exitApplication(AppExitType.required);
+      await SystemShutdown.quit();
       return;
     }
     await windowManager.destroy();
