@@ -539,12 +539,14 @@ class EditorMetrics {
   static const double columnWidth = 680;
 
   /// The note's first line, its title, on the page: Paper's 40/48, and the
-  /// meta row that sits under it, 10 below the title and 22 above the body.
+  /// meta row that sits under it, 10 below the title and 20 above the body:
+  /// Paper has 10 there, and Sanjay asked for more room between the details
+  /// and the writing.
   static const double titleFontSize = 40;
   static const double titleRow = 48;
   static const double metaGap = 10;
   static const double metaRow = 16;
-  static const double metaBottom = 10;
+  static const double metaBottom = 20;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
   /// A heading on the page, Paper's p-5-0: 22, 19 and 17 over 16px writing,
