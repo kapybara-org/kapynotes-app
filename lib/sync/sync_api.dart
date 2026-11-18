@@ -673,8 +673,8 @@ abstract class SyncApi {
     required String? device,
   });
 
-  /// Replaces the recovery key's seal, or adds the first one. A proof is
-  /// needed only to replace one.
+  /// Replaces the recovery key's seal, or adds the first one. Either needs a
+  /// proof.
   Future<int> changeRecoveryKey({
     required int expectedVersion,
     required String? proof,

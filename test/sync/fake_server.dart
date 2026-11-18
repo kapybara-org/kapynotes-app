@@ -2219,9 +2219,7 @@ class FakeApi implements SyncApi {
     _gate(keys: true);
     _record('changeRecoveryKey:$expectedVersion');
     final bundle = _changeable(expectedVersion);
-    if (bundle.recoveryWrappedMasterKey != null) {
-      _useProof(proof, KeyProofAction.recoveryKey);
-    }
+    _useProof(proof, KeyProofAction.recoveryKey);
     server.user(userId).bundle = KeyBundle(
       wrappedMasterKey: bundle.wrappedMasterKey,
       kdf: bundle.kdf,
