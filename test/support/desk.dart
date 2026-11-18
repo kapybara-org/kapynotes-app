@@ -74,6 +74,7 @@ class Desk {
     TagStore? tags,
     bool readOnly = false,
     Widget? below,
+    ThemeData? theme,
   }) async {
     attachments = initialAttachments;
     AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
@@ -102,7 +103,7 @@ class Desk {
     );
     await tester.pumpWidget(
       MaterialApp(
-        theme: KapyTheme.dark(),
+        theme: theme ?? KapyTheme.dark(),
         home: Scaffold(
           bottomNavigationBar: below,
           body: Padding(

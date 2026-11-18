@@ -148,6 +148,18 @@ class KapyIcons {
     0xE06A,
     HugeIcons.strokeRoundedArrowDown01,
   );
+  static const chevronUpRounded = KapyIconData(
+    0xE0E4,
+    HugeIcons.strokeRoundedArrowUp01,
+  );
+  static const cutRounded = KapyIconData(
+    0xE0E5,
+    HugeIcons.strokeRoundedScissor01,
+  );
+  static const pasteRounded = KapyIconData(
+    0xE0E6,
+    HugeIcons.strokeRoundedClipboardPaste,
+  );
   static const circleOutlined = KapyIconData(
     0xE015,
     HugeIcons.strokeRoundedCircle,
