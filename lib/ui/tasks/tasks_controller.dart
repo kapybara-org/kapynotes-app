@@ -228,7 +228,7 @@ class TasksController extends ChangeNotifier {
   void doNow(TaskItem item, Iterable<TaskItem> open) {
     final at = _stamp();
     for (final other in open) {
-      if (other.doNow && other.id != item.id) {
+      if (other.entry.doNow.v && other.id != item.id) {
         _change(other, (entry) => entry.copyWith(doNow: Stamped(false, at)));
       }
     }
@@ -237,6 +237,26 @@ class TasksController extends ChangeNotifier {
       (entry) => entry.copyWith(
         dot: Stamped(true, at),
         doNow: Stamped(true, at),
+        touchedAt: at,
+      ),
+    );
+  }
+
+  /// One task's pick taken back: neither dotted nor Do now. The others stay
+  /// picked, but a Do now another device left on one of them is cleared too,
+  /// or it would show again the moment this one went.
+  void clearPick(TaskItem item) {
+    final at = _stamp();
+    for (final other in read().open) {
+      if (other.entry.doNow.v && other.id != item.id) {
+        _change(other, (entry) => entry.copyWith(doNow: Stamped(false, at)));
+      }
+    }
+    _change(
+      item,
+      (entry) => entry.copyWith(
+        dot: Stamped(false, at),
+        doNow: Stamped(false, at),
         touchedAt: at,
       ),
     );

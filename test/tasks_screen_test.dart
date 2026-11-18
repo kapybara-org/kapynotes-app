@@ -1,9 +1,12 @@
+import 'package:flutter/gestures.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
@@ -40,12 +43,13 @@ void main() {
   Future<void> pumpScreen(
     WidgetTester tester, {
     TaskFilter filter = const TaskFilter.all(),
+    ThemeData? theme,
   }) async {
     await tester.binding.setSurfaceSize(const Size(900, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
-        theme: KapyTheme.dark(),
+        theme: theme ?? KapyTheme.dark(),
         home: Scaffold(
           body: TasksScreen(
             controller: tasks,
@@ -190,7 +194,7 @@ void main() {
       );
       expect(card.right - done.right, lessThan(24));
       expect(note.left - card.left, lessThan(60));
-    await settle(tester);
+      await settle(tester);
     },
   );
 
@@ -260,5 +264,209 @@ void main() {
     await tester.tap(box('One'));
     await settle(tester);
     expect([for (final i in tasks.read().open) i.words], ['Two', 'One']);
+  });
+
+  group('picking by clicking the mark', () {
+    Finder markOf(TaskItem item) =>
+        find.byKey(ValueKey('task-mark-${item.id}'));
+
+    /// The mark's drawing: the hollow hint, the dot or the ring, told apart
+    /// by their decoration.
+    Finder shape({bool hollow = false, bool ring = false}) =>
+        find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          if (decoration is! BoxDecoration) return false;
+          if (decoration.shape != BoxShape.circle &&
+              decoration.borderRadius == null) {
+            return false;
+          }
+          final hasShadow = decoration.boxShadow != null;
+          if (hollow) {
+            return decoration.color == null && decoration.border != null;
+          }
+          if (ring) return decoration.color != null && hasShadow;
+          return decoration.color != null && !hasShadow;
+        });
+
+    Finder tip(String message) =>
+        find.byWidgetPredicate((w) => w is Tooltip && w.message == message);
+
+    TaskItem row(String words) =>
+        tasks.read().open.firstWhere((item) => item.words == words);
+
+    Future<void> hover(WidgetTester tester, String words) async {
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(markOf(row(words))));
+      await tester.pump();
+    }
+
+    testWidgets('a hovered row with no pick shows a hollow dot, and only '
+        'that row', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester);
+      for (final words in ['One', 'Two']) {
+        expect(
+          find.descendant(
+            of: markOf(row(words)),
+            matching: shape(hollow: true),
+          ),
+          findsNothing,
+        );
+      }
+
+      await hover(tester, 'Two');
+      expect(
+        find.descendant(of: markOf(row('Two')), matching: shape(hollow: true)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: markOf(row('One')), matching: shape(hollow: true)),
+        findsNothing,
+      );
+      expect(tip('Pick to do next'), findsNWidgets(2));
+      await settle(tester);
+    });
+
+    testWidgets('each click goes one step: picked, then Do now, then clear; '
+        'a tap works without hover', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two\n☐ Three');
+      await pumpScreen(tester);
+
+      await tester.tap(markOf(row('Two')));
+      await settle(tester);
+      expect(row('Two').dotted, isTrue);
+      expect(row('Two').doNow, isFalse);
+      expect(
+        find.descendant(of: markOf(row('Two')), matching: shape()),
+        findsOneWidget,
+      );
+      expect(tip('Picked to do next · click for Do now'), findsOneWidget);
+
+      await tester.tap(markOf(row('Two')));
+      await settle(tester);
+      expect(row('Two').doNow, isTrue);
+      expect(row('Two').dotted, isTrue);
+      expect(
+        find.descendant(of: markOf(row('Two')), matching: shape(ring: true)),
+        findsOneWidget,
+      );
+      expect(tip('Do now · click to clear'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+
+      await tester.tap(markOf(row('Two')));
+      await settle(tester);
+      expect(row('Two').dotted, isFalse);
+      expect(row('Two').doNow, isFalse);
+      expect(find.text('Ready to do this now?'), findsOneWidget);
+    });
+
+    testWidgets('a task picked last stays picked until it is clicked again', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester);
+
+      await tester.tap(markOf(row('Two')));
+      await settle(tester);
+      expect(row('Two').dotted, isTrue);
+      expect(row('Two').doNow, isFalse);
+
+      await tester.tap(markOf(row('Two')));
+      await settle(tester);
+      expect(row('Two').doNow, isTrue);
+    });
+
+    testWidgets('making another task Do now leaves the first one picked', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two\n☐ Three');
+      await pumpScreen(tester);
+
+      for (final words in ['One', 'One', 'Two', 'Two']) {
+        await tester.tap(markOf(row(words)));
+        await settle(tester);
+        if (words == 'One' && row('One').doNow) {
+          expect(row('Two').doNow, isFalse);
+        }
+      }
+
+      expect(row('Two').doNow, isTrue);
+      expect(row('One').doNow, isFalse);
+      expect(row('One').dotted, isTrue);
+      expect(row('Three').dotted, isFalse);
+    });
+
+    testWidgets('the questions follow a pick made by hand', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two\n☐ Three');
+      await pumpScreen(tester);
+      expect(find.text('Ready to do this now?'), findsOneWidget);
+
+      await tester.tap(markOf(row('Two')));
+      await settle(tester);
+
+      expect(find.text('Ready to do this now?'), findsNothing);
+      expect(
+        find.textContaining('What do you want to do more than'),
+        findsOneWidget,
+      );
+      expect(find.text('None. Do “Two”'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('tasks-candidate-${row('Three').id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('tasks-candidate-${row('One').id}')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the mark is a button that says what a click does and which '
+        'task it is on', (tester) async {
+      final handle = tester.ensureSemantics();
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester);
+
+      SemanticsNode node(String words) =>
+          tester.getSemantics(markOf(row(words)));
+
+      expect(node('One').label, 'Pick: One');
+      expect(node('One').flagsCollection.isButton, isTrue);
+
+      await tester.tap(markOf(row('One')));
+      await settle(tester);
+      expect(node('One').label, 'Make Do now: One');
+
+      await tester.tap(markOf(row('One')));
+      await settle(tester);
+      expect(node('One').label, 'Clear pick: One');
+      handle.dispose();
+    });
+
+    testWidgets('the Done view has no marks', (tester) async {
+      await setUpTasks(tester, 'Errands\n☑ One\n☐ Two');
+      await pumpScreen(tester, filter: const TaskFilter.done());
+      await settle(tester);
+      expect(tip('Pick to do next'), findsNothing);
+    });
+
+    for (final (name, theme) in [
+      ('dark', KapyTheme.dark()),
+      ('light', KapyTheme.light()),
+    ]) {
+      testWidgets('hover hint, $name', (tester) async {
+        await setUpTasks(tester, 'Errands\n☐ One\n☐ Two\n☐ Three');
+        tasks.dot(tasks.read().open.first);
+        await pumpScreen(tester, theme: theme);
+        await hover(tester, 'Two');
+        await settle(tester);
+        await expectLater(
+          find.byType(TasksScreen),
+          matchesGoldenFile('goldens/tasks_pick_hover_$name.png'),
+        );
+      });
+    }
   });
 }

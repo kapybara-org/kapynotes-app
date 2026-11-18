@@ -353,6 +353,7 @@ class _MethodCard extends StatelessWidget {
     'One list, always today. New tasks go to the end.',
     'To pick, ask “What do I want to do more than this?” Dots mark the '
         'tasks you picked; the last one is Do now.',
+    "Or click a task's dot yourself: once picks it, again makes it Do now.",
     "Anything you don't finish goes back to the end.",
   ];
 

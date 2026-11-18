@@ -122,6 +122,21 @@ class TasksScreenState extends State<TasksScreen> {
     unawaited(_tasks.setDone(item, done: true));
   }
 
+  /// A click on a row's mark: none, then picked, then Do now, then none
+  /// again. Picking by hand ends the questions about that task, so a task
+  /// picked last stays picked until it is clicked again.
+  void _cycleMark(TaskItem item) {
+    if (item.doNow) {
+      _autoPicked = null;
+      _tasks.clearPick(item);
+    } else if (item.dotted) {
+      _tasks.doNow(item, _open(_tasks.read()));
+    } else {
+      _autoPicked = item.id;
+      _tasks.dot(item);
+    }
+  }
+
   void _notFinished(TaskItem item) {
     setState(() => _resumeAfter = item.entry.position);
     _tasks.sendToEnd(item);
@@ -311,6 +326,7 @@ class TasksScreenState extends State<TasksScreen> {
             now: _tasks.now(),
             label: board.isHome(item) ? null : widget.labelOf(item.note),
             wash: item.id == _washId,
+            onMark: () => _cycleMark(item),
             onTick: () => unawaited(_tasks.setDone(item, done: true)),
             onOpenNote: () => widget.onOpenNote(item.note.id),
             onKeep: () => _tasks.keep(item),
@@ -1196,6 +1212,21 @@ class _Dot extends StatelessWidget {
   );
 }
 
+/// What a click on a hovered row would pick: the dot, hollow and faint.
+class _HollowDot extends StatelessWidget {
+  const _HollowDot();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: context.palette.textTertiary, width: 1.2),
+    ),
+  );
+}
+
 /// Do now's mark in the gutter: the dot, ringed.
 class _Ring extends StatelessWidget {
   const _Ring();
@@ -1272,6 +1303,7 @@ class _TaskRow extends StatefulWidget {
     required this.now,
     required this.label,
     required this.wash,
+    required this.onMark,
     required this.onTick,
     required this.onOpenNote,
     required this.onKeep,
@@ -1286,6 +1318,9 @@ class _TaskRow extends StatefulWidget {
 
   /// Just added: a sage wash that fades.
   final bool wash;
+
+  /// A click on the mark: picks the task, makes it Do now, or clears it.
+  final VoidCallback onMark;
   final VoidCallback onTick;
   final VoidCallback onOpenNote;
   final VoidCallback onKeep;
@@ -1308,21 +1343,44 @@ class _TaskRowState extends State<_TaskRow> {
         widget.now.millisecondsSinceEpoch - item.lastTouched >=
             TaskBoard.staleAfter.inMilliseconds;
     final quiet = uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary);
-    Widget mark;
-    if (item.doNow) {
-      mark = const Tooltip(message: 'Do now: your last pick', child: _Ring());
-    } else if (item.dotted) {
-      mark = const Tooltip(message: 'Picked to do next', child: _Dot());
-    } else {
-      mark = const SizedBox.shrink();
-    }
+    final (Widget mark, String tip, String action) = item.doNow
+        ? (const _Ring(), 'Do now · click to clear', 'Clear pick')
+        : item.dotted
+        ? (const _Dot(), 'Picked to do next · click for Do now', 'Make Do now')
+        : (
+            _hovered ? const _HollowDot() : const SizedBox.shrink(),
+            'Pick to do next',
+            'Pick',
+          );
     final row = SizedBox(
       height: 38,
       child: Padding(
         padding: const EdgeInsets.only(right: 10),
         child: Row(
           children: [
-            SizedBox.square(dimension: 20, child: Center(child: mark)),
+            Tooltip(
+              message: tip,
+              excludeFromSemantics: true,
+              child: Semantics(
+                button: true,
+                label: '$action: ${item.words}',
+                onTap: widget.onMark,
+                excludeSemantics: true,
+                child: InkWell(
+                  key: ValueKey('task-mark-${item.id}'),
+                  onTap: widget.onMark,
+                  borderRadius: BorderRadius.circular(6),
+                  hoverColor: Colors.transparent,
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                  child: SizedBox(
+                    width: 20,
+                    height: 38,
+                    child: Center(child: mark),
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(width: 10),
             _Box(done: false, onPressed: widget.onTick, label: item.words),
             const SizedBox(width: 10),

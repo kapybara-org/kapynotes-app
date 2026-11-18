@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
@@ -140,6 +141,45 @@ void main() {
       expect(board.open.any((i) => i.dotted || i.doNow), isFalse);
     },
   );
+
+  test('when two devices each made a different task Do now, the newer Do now '
+      'wins and the other task reads as picked', () async {
+    notes.create(body: 'List\n☐ One\n☐ Two\n☐ Three');
+    await tasks.reconcileNow();
+    final board = tasks.read();
+    final far = clock.millisecondsSinceEpoch + 100000;
+    void stored(int i, int at) => tasks.index.update(
+      tasks.index
+          .byId(board.open[i].id)!
+          .copyWith(dot: Stamped(true, at), doNow: Stamped(true, at)),
+    );
+    stored(0, far + 50);
+    stored(2, far);
+
+    var now = tasks.read();
+    expect([for (final i in now.open) i.doNow], [true, false, false]);
+    expect([for (final i in now.open) i.dotted], [true, false, true]);
+
+    tasks.clearPick(now.open[0]);
+    now = tasks.read();
+    expect([for (final i in now.open) i.doNow], [false, false, false]);
+    expect([for (final i in now.open) i.dotted], [false, false, true]);
+  });
+
+  test('clearing one pick leaves every other pick as it is', () async {
+    notes.create(body: 'List\n☐ One\n☐ Two\n☐ Three');
+    await tasks.reconcileNow();
+    var board = tasks.read();
+    tasks.dot(board.open[0]);
+    later();
+    tasks.doNow(board.open[1], board.open);
+    later();
+    tasks.clearPick(tasks.read().open[1]);
+
+    board = tasks.read();
+    expect([for (final i in board.open) i.doNow], [false, false, false]);
+    expect([for (final i in board.open) i.dotted], [true, false, false]);
+  });
 
   test('Remove takes the line out, and undo puts it back in its place in '
       'the list', () async {
