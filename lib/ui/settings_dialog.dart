@@ -12,6 +12,7 @@ import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
 import '../core/editor_font.dart';
+import '../core/mobile_data.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -44,6 +45,7 @@ import 'hidden_notes_gate.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
 import 'mcp_pane.dart';
+import 'mobile_data_sheet.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
 import 'settings_rows.dart';
@@ -839,6 +841,19 @@ class _SettingsDialogState extends State<SettingsDialog>
       final accepted = await showModelTermsSheet(context, model: model);
       if (accepted != true || !mounted) return;
       prefs.acceptTerms(model.id, terms.version);
+    }
+    if (model.bytes > MobileData.askAboveBytes &&
+        await store.mobileData.inUse()) {
+      if (!mounted) return;
+      final choice = await showMobileDataSheet(
+        context,
+        name: model.name,
+        bytes: model.bytes,
+      );
+      if (choice == MobileDataChoice.onWifi) {
+        unawaited(store.downloadOnWifi(model));
+      }
+      if (choice != MobileDataChoice.now) return;
     }
     unawaited(store.download(model));
   }
@@ -3285,7 +3300,8 @@ class _DeviceEngineLine extends StatelessWidget {
         ? null
         : switch (state.status) {
             LocalModelStatus.fetchingRuntime ||
-            LocalModelStatus.downloading => SettingsRowButton(
+            LocalModelStatus.downloading ||
+            LocalModelStatus.waitingForWifi => SettingsRowButton(
               key: ValueKey('local-cancel-${model.id}'),
               label: 'Cancel',
               onPressed: () => store.cancel(model),
@@ -3305,9 +3321,15 @@ class _DeviceEngineLine extends StatelessWidget {
               onPressed: onDownload,
             ),
           };
-    final line = here
-        ? '${model.name} · on this device'
-        : blocked ?? '${model.name} · ${fileSize(model.bytes)} download';
+    // A copy downloaded under an older, lower gate stays removable, but the
+    // line says why nothing uses it.
+    final line =
+        blocked ??
+        (here
+            ? '${model.name} · on this device'
+            : state.status == LocalModelStatus.waitingForWifi
+            ? '${model.name} · waiting for Wi-Fi'
+            : '${model.name} · ${fileSize(model.bytes)} download');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

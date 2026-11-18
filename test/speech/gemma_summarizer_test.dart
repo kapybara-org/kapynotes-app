@@ -77,6 +77,18 @@ void main() {
       expect(await enoughWith(2 * 1000 * 1000 * 1000), isFalse);
     });
 
+    test('a machine without it is not ready, whatever is on disk', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      final meminfo = File('${temp.path}/meminfo')
+        ..writeAsStringSync('MemTotal: ${4 * 1000 * 1000} kB\n');
+      final summarizer = GemmaSummarizer(
+        models: models,
+        memory: DeviceMemory(procMeminfo: meminfo),
+      );
+
+      expect(await summarizer.readiness(), SummarizerReadiness.unsupported);
+    });
+
     test('an unmeasurable machine is allowed to try', () async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
       final summarizer = GemmaSummarizer(models: models);

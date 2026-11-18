@@ -305,6 +305,13 @@ abstract class KapyAi extends ChangeNotifier {
   DeviceModelState get device;
   void downloadDeviceModel();
   void cancelDeviceDownload();
+
+  /// Whether downloading the device model now would spend mobile data.
+  Future<bool> deviceDownloadOnMobileData();
+
+  /// Downloads the device model once on Wi-Fi, and drops the question
+  /// waiting for it: asking again answers it.
+  void downloadDeviceModelOnWifi();
   Future<void> removeDeviceModel();
 
   /// Null on Free, and until the server has answered once.
