@@ -759,9 +759,6 @@ class AppControlMetrics {
   /// A pointer has enough width for a visible 4pt beat between hover surfaces.
   static double get footerButtonGap => _touch ? 0 : 4;
 
-  static double get footerButtonSlotExtent =>
-      footerButtonExtent + footerButtonGap;
-
   static MaterialTapTargetSize get iconButtonTapTargetSize =>
       AppPlatform.hasPointer
       ? MaterialTapTargetSize.shrinkWrap

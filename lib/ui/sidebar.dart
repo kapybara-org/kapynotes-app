@@ -23,7 +23,7 @@ import 'collaborator_colors.dart';
 import 'compact_icon_button.dart';
 import 'control_surface.dart';
 import 'context_menu.dart';
-import 'editor/note_footer.dart';
+import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'installed_version.dart';
 import 'keycap.dart';
@@ -1318,7 +1318,10 @@ class _SidebarFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      height: AppControlMetrics.scaleBar(context, NoteFooter.height),
+      height: AppControlMetrics.scaleBar(
+        context,
+        AppControlMetrics.footerHeight,
+      ),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
       ),
