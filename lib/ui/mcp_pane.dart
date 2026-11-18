@@ -27,8 +27,7 @@ class McpScope extends InheritedNotifier<McpService> {
 const String mcpSectionLabel = 'MCP';
 const KapyIconData mcpSectionIcon = KapyIcons.mcpServer;
 const String mcpSectionSummary =
-    'Let the AI apps you already use read your notes and tasks, and add to '
-    'them. It runs inside Kapy Notes on this computer; nothing goes online';
+    'Let the AI apps you use read and add to your notes, on this computer only';
 
 String get _computer => AppPlatform.isWindows ? 'this PC' : 'this Mac';
 
