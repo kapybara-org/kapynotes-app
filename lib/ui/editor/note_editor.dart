@@ -31,6 +31,7 @@ import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
+import '../../data/note.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../compact_icon_button.dart';
@@ -192,6 +193,8 @@ class NoteEditor extends StatefulWidget {
     this.onMarkdownEnabledChanged,
     this.autofocus = false,
     this.startAtEnd = false,
+    this.namedByPerson = true,
+    this.onDefaultTitleEntered,
     this.initialCaret,
     this.onCaretChanged,
     this.ensureKeyboardVisible = false,
@@ -368,6 +371,16 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<bool>? onMarkdownEnabledChanged;
   final bool autofocus;
   final bool startAtEnd;
+
+  /// Whether the person names this note rather than the model on the
+  /// device. A new note they name opens with its title selected, so the
+  /// first thing typed names it; one the model names opens on the line
+  /// below, for the note itself.
+  final bool namedByPerson;
+
+  /// The person put the caret or a selection in the title while it is still
+  /// [Note.untitled], to name the note themselves.
+  final VoidCallback? onDefaultTitleEntered;
 
   /// Where the caret was left in this note earlier today, if it was.
   ///
@@ -900,9 +913,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _scheduleKeyboardRetry();
   }
 
-  /// Places the caret after the note's final character and brings it on screen.
+  /// Places the caret after the note's final character and brings it on
+  /// screen. A new note the person names opens with its title selected.
   void focusAtEnd() {
     if (!mounted || widget.readOnly) return;
+    if (widget.namedByPerson && _controller.text == Note.blankBody) {
+      _controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: Note.untitled.length,
+      );
+      _focusNode.requestFocus();
+      _recordKapyPeekActivity();
+      _scheduleKeyboardRetry();
+      return;
+    }
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
@@ -1229,6 +1253,50 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   @visibleForTesting
   List<NoteFormatRange> get formatsForTest => _formats;
 
+  /// Whether the caret or a selection is in the first line, where the title
+  /// is written, while the person is in the note.
+  bool get selectionInTitle {
+    final selection = _controller.selection;
+    if (!_focusNode.hasFocus || !selection.isValid) return false;
+    final text = _controller.text;
+    final newline = text.indexOf('\n');
+    return selection.start <= (newline < 0 ? text.length : newline);
+  }
+
+  void _reportDefaultTitleEntered() {
+    final report = widget.onDefaultTitleEntered;
+    if (report == null || widget.readOnly || !selectionInTitle) return;
+    final text = _controller.text;
+    if (text == Note.untitled || text.startsWith(Note.blankBody)) report();
+  }
+
+  /// A caret put in a new note's [Note.untitled] takes the whole title, so
+  /// what is typed replaces it rather than adding to it. Leaving the taken
+  /// title to the right goes on to the line below it.
+  bool _takeDefaultTitle(TextSelection previous, TextEditingValue value) {
+    const title = Note.untitled;
+    final text = value.text;
+    final selection = value.selection;
+    if (widget.readOnly ||
+        !selection.isValid ||
+        !selection.isCollapsed ||
+        selection.baseOffset > title.length ||
+        _composingOpen(value) ||
+        !text.startsWith(title) ||
+        (text.length > title.length && text[title.length] != '\n')) {
+      return false;
+    }
+    const taken = TextSelection(baseOffset: 0, extentOffset: title.length);
+    final leaving =
+        previous == taken &&
+        selection.baseOffset == title.length &&
+        text.length > title.length;
+    _controller.selection = leaving
+        ? const TextSelection.collapsed(offset: title.length + 1)
+        : taken;
+    return true;
+  }
+
   void _onControllerChanged() {
     _recordKapyPeekActivity();
     final value = _controller.value;
@@ -1245,6 +1313,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       return;
     }
+    _reportDefaultTitleEntered();
     // The composition that held the store's text back has ended, with a
     // keystroke or without one. The keystroke is written below; the store's
     // text is taken after it.
@@ -1255,6 +1324,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       if (!selectionChanged) return;
       if (_collapseLineTerminatorSelection(value.selection)) return;
+      if (_takeDefaultTitle(previous.selection, value)) return;
       // Tables draw as a grid with the setting off too, so this is not
       // inside the markdown branch below.
       if (_keepCaretOutOfTable(previous.selection, value.selection)) return;
@@ -4223,6 +4293,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (_focusNode.hasFocus) {
       widget.onFocus?.call();
+      _reportDefaultTitleEntered();
       _recordKapyPeekActivity();
       _reportActivity(edited: false);
       _scheduleSlashCommandMenuSync();

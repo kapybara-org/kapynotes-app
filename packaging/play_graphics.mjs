@@ -10,10 +10,9 @@
 //   icon-512.png        512 x 512, 32-bit PNG, alpha channel required
 //   feature-graphic.png 1024 x 500, 24-bit PNG, no alpha
 //
-// The icon is the shipped launcher icon downscaled, not a new drawing. The
-// Android adaptive icon is a coral squircle on cream (values/colors.xml sets
-// ic_launcher_background to #FCF6EA), so keeping the cream frame is what makes
-// the store tile match the icon a user sees after installing.
+// The icon is the app icon master downscaled, not a new drawing: the Fold mark,
+// cream on the same full-bleed orange as the adaptive icon's background
+// (values/colors.xml, ic_launcher_background), which Play masks itself.
 //
 // The feature graphic is drawn here rather than exported by hand so a brand
 // change is one edit and one rerun, the same arrangement store_screenshots.mjs

@@ -261,6 +261,45 @@ void main() {
       expect(phone.merge(tie).dot, tie.merge(phone).dot);
     });
 
+    test('one task cycled on two devices ends in the later device\'s step, with '
+        'its dot and Do now agreeing', () {
+      final picked = base().copyWith(
+        dot: const Stamped(true, 200),
+        touchedAt: 200,
+      );
+      final doNowLater = picked.copyWith(
+        dot: const Stamped(true, 300),
+        doNow: const Stamped(true, 300),
+        touchedAt: 300,
+      );
+      final clearedLater = doNowLater.copyWith(
+        dot: const Stamped(false, 400),
+        doNow: const Stamped(false, 400),
+        touchedAt: 400,
+      );
+
+      // A device that only picked, against one that went on to Do now.
+      expect(picked.merge(doNowLater), doNowLater.merge(picked));
+      expect(picked.merge(doNowLater).doNow.v, isTrue);
+      expect(picked.merge(doNowLater).dot.v, isTrue);
+
+      // A clear after both beats a pick and a Do now it has not seen.
+      final merged = picked.merge(doNowLater).merge(clearedLater);
+      expect(merged, clearedLater.merge(doNowLater).merge(picked));
+      expect(merged.dot.v, isFalse);
+      expect(merged.doNow.v, isFalse);
+
+      // A pick made after a clear on another device keeps the pick only.
+      final pickedAfter = clearedLater.copyWith(
+        dot: const Stamped(true, 500),
+        touchedAt: 500,
+      );
+      final both = clearedLater.merge(pickedAfter);
+      expect(both, pickedAfter.merge(clearedLater));
+      expect(both.dot.v, isTrue);
+      expect(both.doNow.v, isFalse);
+    });
+
     test('keeps fields a later build wrote, through a round trip and a merge', () {
       final later = base(extra: {'snoozeUntil': 9});
       final payload = later.toPayload();
