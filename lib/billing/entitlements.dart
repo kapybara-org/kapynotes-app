@@ -71,8 +71,11 @@ class Entitlements {
 
   bool get isPro => plan == 'pro';
 
-  static const int freeSummaryGenerationsPerMonth = 100;
   static const int proSummaryGenerationsPerMonth = 1000;
+
+  /// Free's cloud transcription, only for a language no engine on the device
+  /// covers: the server's `FREE_UNLISTED_LANGUAGE_SPEECH_SECONDS`.
+  static const int freeUnlistedLanguageSpeechSeconds = 15 * 60;
 
   /// Published Free limits for Settings before there is an account to ask.
   /// Entitlement decisions are still made only from the server once signed in.
@@ -81,11 +84,9 @@ class Entitlements {
     storageBytes: 100 * 1024 * 1024,
     storageUsedBytes: 0,
     attachmentMaxBytes: freeAttachmentMaxBytes,
-    speechSecondsPerMonth: 15 * 60,
+    speechSecondsPerMonth: freeUnlistedLanguageSpeechSeconds,
     speechSecondsUsedThisMonth: 0,
     speechCreditSeconds: 0,
-    summaryGenerationsPerMonth: freeSummaryGenerationsPerMonth,
-    summaryGenerationsUsedThisMonth: 0,
     sync: false,
     sharing: false,
     noteLimit: 20,
@@ -108,7 +109,7 @@ class Entitlements {
         ? count('summaryGenerationsPerMonth')
         : plan == 'pro'
         ? proSummaryGenerationsPerMonth
-        : freeSummaryGenerationsPerMonth;
+        : 0;
     return Entitlements(
       plan: plan,
       storageBytes: count('storageBytes'),
