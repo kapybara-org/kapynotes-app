@@ -146,7 +146,7 @@ class NoteGlance {
 const _selectedTilt = -math.pi / 180;
 
 const _cardRadius = BorderRadius.only(
-  topLeft: Radius.circular(6),
+  topLeft: Radius.circular(AppRadii.compact),
   topRight: Radius.circular(6),
   bottomLeft: Radius.circular(6),
   bottomRight: Radius.circular(14),
@@ -237,7 +237,7 @@ class _PickBox extends StatelessWidget {
         border: checked
             ? null
             : Border.all(color: palette.textTertiary, width: 1.5),
-        borderRadius: BorderRadius.circular(4.5),
+        borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       child: checked
           ? KapyIcon(
@@ -377,13 +377,13 @@ class NoteCardFace extends StatelessWidget {
                                   height: 15 / 12,
                                   leadingDistribution:
                                       TextLeadingDistribution.even,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w500,
                                   color: palette.resultPillText,
                                 )
                               : _figtree(
                                   12,
                                   15,
-                                  FontWeight.w500,
+                                  FontWeight.w400,
                                   palette.textMuted,
                                 ).copyWith(
                                   fontStyle: text == null
@@ -458,7 +458,7 @@ class _MetaRow extends StatelessWidget {
     final palette = context.palette;
     final style = DefaultTextStyle.of(
       context,
-    ).style.merge(_figtree(11.5, 14, FontWeight.w600, palette.textMuted));
+    ).style.merge(_figtree(12, 16, FontWeight.w500, palette.textMuted));
     final direction = Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     final first = tags.firstOrNull;
@@ -603,7 +603,7 @@ class NoteListRowFace extends StatelessWidget {
             : hovering
             ? palette.hover
             : null,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(
           color: marked
               ? palette.selectedBorder
@@ -645,7 +645,7 @@ class NoteListRowFace extends StatelessWidget {
                         style: _figtree(
                           14,
                           18,
-                          FontWeight.w600,
+                          FontWeight.w500,
                           palette.cardTitle,
                         ),
                       ),
@@ -657,7 +657,7 @@ class NoteListRowFace extends StatelessWidget {
                       style: _figtree(
                         AppTypeScale.small,
                         16,
-                        FontWeight.w500,
+                        FontWeight.w400,
                         palette.textTertiary,
                       ),
                     ),
@@ -829,7 +829,7 @@ class DrawingCardFace extends StatelessWidget {
             children: [
               Expanded(
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(AppRadii.small),
                   child: ColoredBox(
                     color: palette.sidebarBackground,
                     child: DrawingThumbnail(drawing: note.drawing),
@@ -917,7 +917,7 @@ class DrawingListRowFace extends StatelessWidget {
             : hovering
             ? palette.hover
             : null,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(
           color: marked
               ? palette.selectedBorder
@@ -940,7 +940,7 @@ class DrawingListRowFace extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.editorBackground,
               border: Border.all(color: palette.separator),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: DrawingThumbnail(drawing: note.drawing),
           ),
@@ -954,7 +954,7 @@ class DrawingListRowFace extends StatelessWidget {
                   note.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _figtree(14, 18, FontWeight.w600, palette.cardTitle),
+                  style: _figtree(14, 18, FontWeight.w500, palette.cardTitle),
                 ),
                 const SizedBox(height: 3),
                 Row(
@@ -976,7 +976,7 @@ class DrawingListRowFace extends StatelessWidget {
                         style: _figtree(
                           AppTypeScale.small,
                           16,
-                          FontWeight.w500,
+                          FontWeight.w400,
                           palette.textTertiary,
                         ),
                       ),
@@ -1038,7 +1038,7 @@ class NotesListHeading extends StatelessWidget {
                       style: _handwritten(
                         14,
                         20,
-                        FontWeight.w600,
+                        FontWeight.w500,
                         palette.textSubheading,
                       ),
                     ),
@@ -1053,7 +1053,7 @@ class NotesListHeading extends StatelessWidget {
                         _figtree(
                           AppTypeScale.small,
                           16,
-                          FontWeight.w600,
+                          FontWeight.w500,
                           palette.textTertiary,
                         ).copyWith(
                           fontFeatures: const [FontFeature.tabularFigures()],
@@ -1098,7 +1098,7 @@ class SeeAllLink extends StatelessWidget {
                 style: _figtree(
                   AppTypeScale.small,
                   16,
-                  FontWeight.w600,
+                  FontWeight.w500,
                   palette.accentText,
                 ),
               ),
@@ -1212,7 +1212,7 @@ class NotesListControls extends StatelessWidget {
                 decoration: on
                     ? BoxDecoration(
                         color: palette.selectedBackground,
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: BorderRadius.circular(AppRadii.compact),
                         boxShadow: [
                           BoxShadow(
                             color: palette.shadowAt(0x4D),
@@ -1289,7 +1289,7 @@ class NotesListControls extends StatelessWidget {
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               color: palette.cardBackground,
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [
@@ -1481,7 +1481,7 @@ class _NotesFilterState extends State<_NotesFilter> {
       _figtree(
         AppTypeScale.body,
         16,
-        FontWeight.w600,
+        FontWeight.w500,
         narrowed ? palette.tonalForeground : palette.textSubheading,
       ),
     );
@@ -1510,6 +1510,9 @@ class _NotesFilterState extends State<_NotesFilter> {
               behavior: HitTestBehavior.opaque,
               child: Container(
                 height: 28,
+                margin: AppPlatform.hasPointer
+                    ? null
+                    : const EdgeInsets.symmetric(vertical: 8),
                 padding: roomy
                     ? const EdgeInsets.only(left: 9, right: 8)
                     : const EdgeInsets.symmetric(horizontal: 6),
@@ -1524,7 +1527,7 @@ class _NotesFilterState extends State<_NotesFilter> {
                         ? palette.tonalKeyBackground
                         : palette.controlBorder,
                   ),
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1694,7 +1697,7 @@ class _FilterMenu extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.controlBackground,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         boxShadow: [
           BoxShadow(
             color: palette.shadowAt(0x80),
@@ -1878,7 +1881,7 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
                   : _hovering
                   ? palette.hover
                   : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -1897,7 +1900,7 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
                     style: _figtree(
                       AppTypeScale.control,
                       16,
-                      chosen ? FontWeight.w600 : FontWeight.w500,
+                      chosen ? FontWeight.w500 : FontWeight.w400,
                       chosen ? palette.textPrimary : palette.textSubheading,
                     ),
                   ),
@@ -1953,7 +1956,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -1973,7 +1976,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
                   style: _figtree(
                     AppTypeScale.control,
                     16,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     palette.textSubheading,
                   ),
                 ),
@@ -2035,14 +2038,14 @@ class _TagsMenuState extends State<_TagsMenu> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: on ? palette.segmentSelected : null,
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Text(
             all ? 'all' : 'any',
             style: _figtree(
               AppTypeScale.small,
               16,
-              on ? FontWeight.w600 : FontWeight.w500,
+              on ? FontWeight.w500 : FontWeight.w400,
               on ? palette.textPrimary : palette.textSecondary,
             ),
           ),
@@ -2065,7 +2068,7 @@ class _TagsMenuState extends State<_TagsMenu> {
                 style: _figtree(
                   AppTypeScale.control,
                   16,
-                  FontWeight.w600,
+                  FontWeight.w500,
                   palette.textPrimary,
                 ),
               ),
@@ -2097,7 +2100,7 @@ class _TagsMenuState extends State<_TagsMenu> {
                     padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       color: palette.cardBackground,
-                      borderRadius: BorderRadius.circular(7),
+                      borderRadius: BorderRadius.circular(AppRadii.compact),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -2115,7 +2118,7 @@ class _TagsMenuState extends State<_TagsMenu> {
               decoration: BoxDecoration(
                 color: palette.wellBackground,
                 border: Border.all(color: palette.controlBorder),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: Row(
                 children: [
@@ -2250,7 +2253,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -2274,7 +2277,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                           style: _figtree(
                             AppTypeScale.control,
                             16,
-                            FontWeight.w500,
+                            FontWeight.w400,
                             palette.textSubheading,
                           ),
                         ),
@@ -2404,7 +2407,7 @@ class _FilterSheetState extends State<_FilterSheet> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: chosen ? palette.separator : null,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Row(
             spacing: 12,
@@ -2418,7 +2421,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                   style: _figtree(
                     AppTypeScale.control,
                     20,
-                    chosen ? FontWeight.w600 : FontWeight.w500,
+                    chosen ? FontWeight.w500 : FontWeight.w400,
                     chosen ? palette.textPrimary : palette.textSubheading,
                   ),
                 ),
@@ -2447,7 +2450,7 @@ class _FilterSheetState extends State<_FilterSheet> {
     padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
     child: Text(
       text,
-      style: _figtree(12, 16, FontWeight.w600, context.palette.textTertiary),
+      style: _figtree(12, 16, FontWeight.w500, context.palette.textTertiary),
     ),
   );
 
@@ -2490,7 +2493,7 @@ class _FilterSheetState extends State<_FilterSheet> {
           border: Border.all(
             color: on ? palette.tonalKeyBackground : palette.controlBorder,
           ),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadii.dialog),
         ),
         child: Center(
           widthFactor: 1,
@@ -2499,7 +2502,7 @@ class _FilterSheetState extends State<_FilterSheet> {
             style: _figtree(
               AppTypeScale.control,
               18,
-              FontWeight.w500,
+              FontWeight.w400,
               on ? palette.tonalForeground : palette.textSubheading,
             ),
           ),
@@ -2623,14 +2626,14 @@ class _FilterSheetState extends State<_FilterSheet> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: on ? palette.segmentSelected : null,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Text(
             all ? 'all' : 'any',
             style: _figtree(
               AppTypeScale.control,
               18,
-              on ? FontWeight.w600 : FontWeight.w500,
+              on ? FontWeight.w500 : FontWeight.w400,
               on ? palette.textPrimary : palette.textSecondary,
             ),
           ),
@@ -2674,7 +2677,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     color: palette.cardBackground,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -2722,13 +2725,13 @@ class _FilterSheetState extends State<_FilterSheet> {
     final title = _figtree(
       AppTypeScale.control,
       20,
-      FontWeight.w600,
+      FontWeight.w500,
       palette.textPrimary,
     );
     final link = _figtree(
       AppTypeScale.control,
       20,
-      FontWeight.w600,
+      FontWeight.w500,
       palette.accentText,
     );
     return DecoratedBox(

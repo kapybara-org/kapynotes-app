@@ -545,13 +545,13 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
       _scroll.animateTo(
         top,
         duration: const Duration(milliseconds: 100),
-        curve: Curves.easeOut,
+        curve: Curves.easeOutCubic,
       );
     } else if (bottom > position.pixels + position.viewportDimension) {
       _scroll.animateTo(
         bottom - position.viewportDimension,
         duration: const Duration(milliseconds: 100),
-        curve: Curves.easeOut,
+        curve: Curves.easeOutCubic,
       );
     }
   }
@@ -567,7 +567,10 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final curve = CurvedAnimation(parent: _animation, curve: Curves.easeOut);
+    final curve = CurvedAnimation(
+      parent: _animation,
+      curve: Curves.easeOutCubic,
+    );
     return Stack(
       children: [
         Positioned.fill(
@@ -700,7 +703,7 @@ class _CommandList extends StatelessWidget {
                             style: TextStyle(
                               color: palette.textTertiary,
                               fontSize: AppTypeScale.badge,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w500,
                               letterSpacing: 0.44,
                             ),
                           ),
@@ -775,7 +778,7 @@ class _SearchField extends StatelessWidget {
     final style = TextStyle(
       color: palette.textPrimary,
       fontSize: AppTypeScale.body,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return Container(
       height: 36,
@@ -853,7 +856,7 @@ class _CommandRow extends StatelessWidget {
     final quiet = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return Semantics(
       button: true,
@@ -867,9 +870,9 @@ class _CommandRow extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         child: Material(
           color: selected ? palette.selectedBackground : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             onTap: onPressed,
             child: SizedBox(
               height: _CommandList.rowHeight,
@@ -897,7 +900,7 @@ class _CommandRow extends StatelessWidget {
                               style: TextStyle(
                                 color: palette.textPrimary,
                                 fontSize: AppTypeScale.body,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                           ),
@@ -980,9 +983,9 @@ class _InsertButtonState extends State<_InsertButton> {
             color: widget.selected
                 ? palette.selectedBackground
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             child: InkWell(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadii.control),
               onTap: widget.onPressed,
               child: SizedBox(
                 height: 34,
@@ -1017,7 +1020,7 @@ class _KeyHints extends StatelessWidget {
     final style = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return ExcludeSemantics(
       child: Container(
@@ -1100,7 +1103,7 @@ class _TableSizePicker extends StatelessWidget {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: AppTypeScale.control,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -1153,7 +1156,9 @@ class _TableSizePicker extends StatelessWidget {
                                 color: selected
                                     ? Theme.of(context).colorScheme.primary
                                     : palette.controlBackground,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.small,
+                                ),
                                 border: Border.all(
                                   color: selected
                                       ? Theme.of(context).colorScheme.primary

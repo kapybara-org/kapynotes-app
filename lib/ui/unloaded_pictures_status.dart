@@ -30,7 +30,7 @@ class UnloadedPicturesStatus extends StatelessWidget {
         ),
         shape: const WidgetStatePropertyAll(
           RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(9)),
+            borderRadius: BorderRadius.all(Radius.circular(AppRadii.control)),
           ),
         ),
         padding: const WidgetStatePropertyAll(
@@ -45,7 +45,7 @@ class UnloadedPicturesStatus extends StatelessWidget {
         textStyle: WidgetStatePropertyAll(
           Theme.of(context).textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.body,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),

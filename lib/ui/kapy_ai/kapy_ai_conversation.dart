@@ -63,7 +63,7 @@ class KapyAiEmpty extends StatelessWidget {
                         14.5,
                         20,
                         palette.textPrimary,
-                        weight: FontWeight.w600,
+                        weight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -110,7 +110,7 @@ class _Suggestion extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       side: BorderSide(color: palette.separator),
     );
     return Material(
@@ -142,7 +142,7 @@ class _Suggestion extends StatelessWidget {
                       13,
                       16,
                       palette.textSubheading,
-                      weight: FontWeight.w500,
+                      weight: FontWeight.w400,
                     ),
                   ),
                 ),
@@ -236,7 +236,7 @@ class _Question extends StatelessWidget {
           decoration: BoxDecoration(
             color: palette.kapyHighlight,
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(14),
+              topLeft: Radius.circular(AppRadii.surface),
               topRight: Radius.circular(14),
               bottomLeft: Radius.circular(14),
               bottomRight: Radius.circular(4),
@@ -250,7 +250,7 @@ class _Question extends StatelessWidget {
                 13.5,
                 20,
                 palette.textPrimary,
-                weight: FontWeight.w500,
+                weight: FontWeight.w400,
               ),
             ),
           ),
@@ -348,7 +348,7 @@ class _NotesRead extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
@@ -363,7 +363,7 @@ class _NotesRead extends StatelessWidget {
                   12,
                   16,
                   palette.textTertiary,
-                  weight: FontWeight.w500,
+                  weight: FontWeight.w400,
                 ),
               ),
             ),
@@ -405,7 +405,7 @@ class _NoteRow extends StatelessWidget {
     final title = this.title;
     return Material(
       type: MaterialType.transparency,
-      borderRadius: BorderRadius.circular(7),
+      borderRadius: BorderRadius.circular(AppRadii.compact),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: ValueKey('kapy-ai-read-$noteId'),
@@ -645,7 +645,7 @@ class KapyAiNotice extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.editorBackground,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -668,7 +668,7 @@ class KapyAiNotice extends StatelessWidget {
                       13.5,
                       16,
                       palette.textPrimary,
-                      weight: FontWeight.w600,
+                      weight: FontWeight.w500,
                     ),
                   ),
                 ),

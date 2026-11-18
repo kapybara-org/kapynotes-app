@@ -562,7 +562,7 @@ class _CameraBottomBar extends StatelessWidget {
               child: InkWell(
                 key: const ValueKey('camera-library'),
                 onTap: openingLibrary ? null : onLibrary,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(AppRadii.dialog),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
