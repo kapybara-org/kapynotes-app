@@ -85,6 +85,11 @@ class McpService extends ChangeNotifier {
   String? _problem;
   Map<McpClientKind, McpConnection> _connections = {};
   List<McpActivity> _activity = [];
+
+  /// How to take back this session's changes, by their activity line. Kept
+  /// in memory only: an old title is all some of them hold, and that stays
+  /// on this device for as long as the app is open.
+  final Map<McpActivity, McpUndo> _undos = {};
   File? _extension;
   Timer? _extensionExpiry;
   Future<void> _stopped = Future<void>.value();
@@ -231,7 +236,19 @@ class McpService extends ChangeNotifier {
     }
   }
 
+  /// Whether [entry]'s change can still be taken back: it was made this
+  /// session, and nothing has changed it since.
+  bool canUndo(McpActivity entry) => _undos[entry]?.possible() ?? false;
+
+  /// Takes [entry]'s change back, once.
+  void undo(McpActivity entry) {
+    final undo = _undos.remove(entry);
+    if (undo != null && undo.possible()) undo.run();
+    notifyListeners();
+  }
+
   void clearActivity() {
+    _undos.clear();
     _activity = [];
     _store.putNow(_activityKey, const <Object?>[]);
     notifyListeners();
@@ -267,7 +284,12 @@ class McpService extends ChangeNotifier {
     return found;
   }
 
-  void _onCall(String client, {String? activity, bool refused = false}) {
+  void _onCall(
+    String client, {
+    String? activity,
+    bool refused = false,
+    McpUndo? undo,
+  }) {
     final kind = McpClientKind.named(client);
     final connection = _connections[kind];
     if (kind == null || connection == null) return;
@@ -282,10 +304,10 @@ class McpService extends ChangeNotifier {
       ),
     };
     if (activity != null) {
-      _activity = [
-        (client: kind, text: activity, at: at, refused: refused),
-        ..._activity.take(activityLimit - 1),
-      ];
+      final entry = (client: kind, text: activity, at: at, refused: refused);
+      _activity = [entry, ..._activity.take(activityLimit - 1)];
+      _undos.removeWhere((each, _) => !_activity.contains(each));
+      if (undo != null) _undos[entry] = undo;
       _store.put(_activityKey, [
         for (final entry in _activity)
           {

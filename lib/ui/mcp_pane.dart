@@ -25,7 +25,7 @@ class McpScope extends InheritedNotifier<McpService> {
 const String mcpSectionLabel = 'MCP';
 const KapyIconData mcpSectionIcon = KapyIcons.mcpServer;
 const String mcpSectionSummary =
-    'Let the AI apps you use read and add to your notes, on this computer only';
+    'Let the AI apps you use read and change your notes, on this computer only';
 
 String get _computer => AppPlatform.isWindows ? 'this PC' : 'this Mac';
 
@@ -79,7 +79,17 @@ List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
       'Allow changes',
       target: 'mcp-allow-changes',
       value: service.allowWrites ? 'On' : 'Off',
-      keywords: const ['assistants', 'AI', 'MCP', 'write', 'edit', 'create'],
+      keywords: const [
+        'assistants',
+        'AI',
+        'MCP',
+        'write',
+        'edit',
+        'create',
+        'tag',
+        'archive',
+        'draw',
+      ],
     ),
     entry(
       'Connect an app',
@@ -140,8 +150,8 @@ class _McpPaneState extends State<McpPane> {
               key: const ValueKey('mcp-allow-changes'),
               title: 'Allow changes',
               subtitle:
-                  'Create notes, append, add and tick off tasks. Never '
-                  'delete',
+                  'Write and edit notes, tag, pin, archive, change tasks and '
+                  'draw. Never deletes notes or touches Hidden Notes',
               value: service.allowWrites,
               onChanged: service.enabled ? service.setAllowWrites : null,
             ),
@@ -184,7 +194,13 @@ class _McpPaneState extends State<McpPane> {
           ),
           SettingsGroup(
             children: [
-              for (final entry in activity.take(8)) _ActivityRow(entry: entry),
+              for (final entry in activity.take(8))
+                _ActivityRow(
+                  entry: entry,
+                  onUndo: service.canUndo(entry)
+                      ? () => service.undo(entry)
+                      : null,
+                ),
             ],
           ),
         ],
@@ -370,9 +386,10 @@ class _Well extends StatelessWidget {
 }
 
 class _ActivityRow extends StatelessWidget {
-  const _ActivityRow({required this.entry});
+  const _ActivityRow({required this.entry, this.onUndo});
 
   final McpActivity entry;
+  final VoidCallback? onUndo;
 
   @override
   Widget build(BuildContext context) {
@@ -411,6 +428,17 @@ class _ActivityRow extends StatelessWidget {
               style: TextStyle(fontSize: 12.5, color: palette.textDescription),
             ),
           ),
+          if (onUndo != null)
+            TextButton(
+              onPressed: onUndo,
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: palette.textPrimary,
+              ),
+              child: const Text('Undo', style: TextStyle(fontSize: 12)),
+            ),
           const SizedBox(width: 10),
           Text(
             _McpPaneState._ago(entry.at),
