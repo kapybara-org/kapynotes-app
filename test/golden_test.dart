@@ -72,7 +72,7 @@ late TagStore goldenTags;
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
 
-/// A model on the device that is never asked, so Settings shows the row on.
+/// A model on the device that is never asked, so Settings shows its row.
 class _GoldenTitles implements TitleModel {
   @override
   Future<String?> unavailableReason() async => null;
