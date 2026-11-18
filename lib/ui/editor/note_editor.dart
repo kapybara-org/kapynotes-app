@@ -6999,6 +6999,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// note the keyboard only for the next cell to take it back, and on a phone
   /// the keyboard went down in that exchange and stayed down.
   void _cellTappedOutside(Offset position) {
+    if (_tableControls.claims(position)) return;
     final active = _activeTableCell();
     final field = _field;
     final box = field?.box;

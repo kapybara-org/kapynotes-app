@@ -711,7 +711,18 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
   }
 
   void _endGesture() {
-    if (mounted) setState(_clearGesture);
+    if (!mounted) return;
+    // A grip let go of while the layer rebuilds without it ends its gesture
+    // from inside the build, where only clearing it is allowed.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      _clearGesture();
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(_clearGesture);
   }
 
   void _clearGesture() {

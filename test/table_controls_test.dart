@@ -145,6 +145,18 @@ void main() {
     expect(desk.text, before);
   }
 
+  testWidgets('a table taller than the window has grips', (tester) async {
+    final long = [
+      '| Day | Item |',
+      '| --- | --- |',
+      for (var i = 1; i <= 100; i++) '| $i | Item $i |',
+    ].join('\n');
+    final (desk, frame) = await open(tester, body: 'Trip\n\n$long\n\nafter');
+    expect(frame.grid.top, lessThan(0), reason: 'the note opens at its end');
+    await hover(tester, cell(frame, 99, 0));
+    expect(find.byKey(const ValueKey('table-row-grip-99')), findsOneWidget);
+  }, variant: _mac);
+
   group('the "+" controls', () {
     testWidgets('past the last row adds one, and one undo takes it away', (
       tester,
@@ -662,6 +674,48 @@ void main() {
           '| Hotel | Sanjay | 896 |\n| Taxi | Ana | 38 |',
           '| Taxi | Ana | 38 |\n| Hotel | Sanjay | 896 |',
         ),
+      );
+    }, variant: _phone);
+
+    testWidgets('a finger held on a grip keeps the cell open, frame by frame', (
+      tester,
+    ) async {
+      final desk = await editCell(tester);
+      final frame = frameOf(desk);
+      final grip = tester.getCenter(
+        find.byKey(const ValueKey('table-row-grip-2')),
+      );
+      final gesture = await tester.startGesture(grip);
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final to = Offset(grip.dx, cell(frame, 3, 0).dy);
+      for (var i = 1; i <= 6; i++) {
+        await gesture.moveTo(Offset.lerp(grip, to, i / 6)!);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.up();
+      await desk.settle();
+      expect(
+        desk.text,
+        _body.replaceFirst(
+          '| Hotel | Sanjay | 896 |\n| Taxi | Ana | 38 |',
+          '| Taxi | Ana | 38 |\n| Hotel | Sanjay | 896 |',
+        ),
+      );
+    }, variant: _phone);
+
+    testWidgets('a slow tap on a grip still opens its actions', (tester) async {
+      final desk = await editCell(tester);
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('table-row-grip-2'))),
+      );
+      await tester.pump(const Duration(milliseconds: 120));
+      await gesture.up();
+      await desk.settle();
+      expect(
+        find.byKey(ValueKey('table-menu-${TableCommand.deleteRow.name}')),
+        findsOneWidget,
       );
     }, variant: _phone);
 
