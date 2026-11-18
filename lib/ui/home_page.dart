@@ -805,7 +805,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Switched to a drawing while recording, or taken for one elsewhere: the
     // recording goes into a note of its own rather than into a title.
     if (widget.notes.byId(noteId)?.isDrawing ?? false) {
-      noteId = widget.notes.create().id;
+      noteId = widget.notes.create(body: Note.blankBody, authored: false).id;
     }
     final blobs = widget.notes.blobs;
     final hash = await blobs.adoptFile(
@@ -2339,9 +2339,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   NoteNamer? _namer;
 
   /// Whether the namer may give [note] a title: this device may write it,
-  /// and nobody else is in it.
+  /// nobody else is in it, and the person is not in its title themselves.
   bool _mayNameNote(Note note) =>
       _canWriteNote(note) &&
+      !(_mountedEditorFor(note.id)?.selectionInTitle ?? false) &&
       (!note.isShared ||
           (widget.account?.sync?.caretsFor(note.id).isEmpty ?? true));
 
@@ -3872,6 +3873,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
           namedByPerson: !(_namer?.willName(note) ?? false),
+          onDefaultTitleEntered: () => _namer?.personNaming(note.id),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),
@@ -3965,6 +3967,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               active && !_selectionAutofocusSuppressed && _readyToTypeIn(note),
           startAtEnd: active && _readyToTypeIn(note),
           namedByPerson: !(_namer?.willName(note) ?? false),
+          onDefaultTitleEntered: () => _namer?.personNaming(note.id),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),

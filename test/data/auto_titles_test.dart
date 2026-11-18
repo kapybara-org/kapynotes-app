@@ -93,6 +93,36 @@ void main() {
       expect(cleanTitle('“…”'), isNull);
       expect(cleanTitle('x' * 200), isNull);
     });
+
+    test('takes invisible and direction characters out', () {
+      expect(cleanTitle('Trip\u202Egpj.exe'), 'Tripgpj.exe');
+      expect(cleanTitle('\u2066Lisbon\u2069 trip\u200F'), 'Lisbon trip');
+      expect(cleanTitle('Lis\u200Bbon\u200C trip\uFEFF\u2060'), 'Lisbon trip');
+      expect(cleanTitle('Gym\tplan\u0000\u0007'), 'Gym plan');
+      expect(cleanTitle('Gym \u202A\u202B\u202C\u202D   plan'), 'Gym plan');
+      expect(cleanTitle('\u200B\u202E\u2067'), isNull);
+    });
+
+    test('nothing for a link, an address or markdown link syntax', () {
+      for (final hostile in [
+        'https://evil.example/login',
+        'Read this http://evil.example',
+        'Visit www.evil.example now',
+        'Click [here](https://evil.example)',
+        '[Lisbon trip] (https://evil.example)',
+        'Lisbon trip](javascript:alert(1))',
+        'ftp://files.example/notes',
+        'mailto:someone',
+        'Write to someone@evil.example',
+        'Trip ht\u200Btps://evil.example',
+        'Trip w\u200Bww.evil.example',
+        '<https://evil.example>',
+      ]) {
+        expect(cleanTitle(hostile), isNull, reason: hostile);
+      }
+      expect(cleanTitle('Meeting with @sam'), 'Meeting with @sam');
+      expect(cleanTitle('Notes on Node.js'), 'Notes on Node.js');
+    });
   });
 
   group('when a note has enough to name', () {
@@ -149,6 +179,27 @@ void main() {
       expect(notes.byId(note.id)!.title, 'Drawing');
     });
   });
+
+  test(
+    'which notes this device may name is kept here, across launches',
+    () async {
+      final store = _MemoryStore();
+      final notes = NotesStore(store);
+      await notes.load();
+      final made = notes.create(body: Note.blankBody, authored: false);
+      final named = notes.create(body: Note.blankBody, authored: false);
+      notes.stopNamingHere(named.id);
+      final gone = notes.create(body: Note.blankBody, authored: false);
+      notes.delete(gone.id);
+
+      final again = NotesStore(store);
+      await again.load();
+      expect(again.namesHere(made.id), isTrue);
+      expect(again.namesHere(named.id), isFalse);
+      expect(again.namesHere(gone.id), isFalse);
+      expect(store.data['notes.v2'].toString(), isNot(contains('nameHere')));
+    },
+  );
 
   test('retitle moves the formats and attachments after the title', () {
     final notes = NotesStore(_MemoryStore());
@@ -306,13 +357,82 @@ void main() {
       });
     });
 
-    test('names only notes typed in here, so one device names each note', () {
+    test('names a note only on the device that made it', () {
       fakeAsync((async) {
         start(async);
-        final synced = notes.create(body: 'New Note\n$_trip');
-        namer.left(synced.id);
+        final at = DateTime(2026, 11, 18);
+        notes.applyDoc(
+          Note(
+            id: 'from-the-phone',
+            body: 'New Note\n$_trip',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+        final synced = notes.byId('from-the-phone')!;
+        expect(namer.willName(synced), isFalse);
+        namer.typed(synced.id);
         async.elapse(const Duration(seconds: 5));
+        namer.left(synced.id);
         expect(model.prompts, isEmpty);
+        expect(notes.byId(synced.id)!.title, 'New Note');
+
+        final mine = write(_trip);
+        expect(namer.willName(mine), isTrue);
+        namer.left(mine.id);
+        expect(model.prompts, [_trip]);
+      });
+    });
+
+    test('the person in the title names it, for good', () {
+      fakeAsync((async) {
+        start(async);
+        final note = write(_trip);
+        namer.left(note.id);
+        expect(model.prompts, hasLength(1));
+        namer.personNaming(note.id);
+        model.answer('Lisbon trip');
+        async.flushMicrotasks();
+        expect(notes.byId(note.id)!.title, 'New Note');
+        expect(namer.willName(note), isFalse);
+
+        namer.typed(note.id);
+        async.elapse(const Duration(seconds: 5));
+        namer.left(note.id);
+        expect(model.prompts, hasLength(1));
+      });
+    });
+
+    test(
+      'a pause running out while the person is in the title names nothing',
+      () {
+        fakeAsync((async) {
+          start(async);
+          final note = write(_trip);
+          async.elapse(const Duration(seconds: 2));
+          namer.personNaming(note.id);
+          async.elapse(const Duration(seconds: 5));
+          expect(model.prompts, isEmpty);
+          expect(notes.byId(note.id)!.title, 'New Note');
+        });
+      },
+    );
+
+    test('never writes a title while it may not, even with one ready', () {
+      fakeAsync((async) {
+        start(async);
+        final note = write(_trip);
+        namer.left(note.id);
+        mayName = false;
+        model.answer('Lisbon trip');
+        async.flushMicrotasks();
+        expect(notes.byId(note.id)!.title, 'New Note');
+
+        mayName = true;
+        namer.left(note.id);
+        model.answer('Lisbon trip');
+        async.flushMicrotasks();
+        expect(notes.byId(note.id)!.title, 'Lisbon trip');
       });
     });
 

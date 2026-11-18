@@ -114,9 +114,10 @@ class NoTitleModel implements TitleModel {
 /// enough to name, after a pause in typing or when the person leaves it. A
 /// title it wrote is refreshed once, on leaving, if the note has since
 /// changed a lot. It never touches a title the person wrote, a Hidden note,
-/// a note this device may not write, or one someone else is in. Only notes
-/// typed in on this device are named here, so one device names each note.
-/// Anything that goes wrong leaves the title as it was, without a word.
+/// a note this device may not write, or one someone else is in. A note is
+/// named only on the device that made it, and never once the person has put
+/// the caret in its title. Anything that goes wrong leaves the title as it
+/// was, without a word.
 class NoteNamer extends ChangeNotifier {
   NoteNamer({
     required this.notes,
@@ -170,7 +171,6 @@ class NoteNamer extends ChangeNotifier {
     notifyListeners();
   }
 
-  final Set<String> _typedHere = {};
   final Map<String, _Named> _named = {};
   Timer? _timer;
   String? _running;
@@ -179,7 +179,6 @@ class NoteNamer extends ChangeNotifier {
 
   /// The person typed in [noteId]: it is named after they pause.
   void typed(String noteId) {
-    _typedHere.add(noteId);
     _timer?.cancel();
     if (!isOn) return;
     _timer = Timer(pause, () => _consider(noteId, leaving: false));
@@ -191,6 +190,12 @@ class NoteNamer extends ChangeNotifier {
     if (noteId != null) _consider(noteId, leaving: true);
   }
 
+  /// The person put the caret or a selection in [noteId]'s title while it
+  /// was still [Note.untitled]: they are naming it, so it is theirs for good,
+  /// and a pause still counting or an answer still on its way comes to
+  /// nothing.
+  void personNaming(String noteId) => notes.stopNamingHere(noteId);
+
   void _prefsChanged() {
     if (isOn == _wasOn) return;
     _wasOn = isOn;
@@ -199,7 +204,7 @@ class NoteNamer extends ChangeNotifier {
   }
 
   void _consider(String id, {required bool leaving}) {
-    if (!isOn || !_typedHere.contains(id)) return;
+    if (!isOn) return;
     final note = notes.byId(id);
     if (note == null || !_mayTouch(note)) return;
     final words = textToName(note);
@@ -222,14 +227,16 @@ class NoteNamer extends ChangeNotifier {
     unawaited(_name(id));
   }
 
-  bool _mayTouch(Note note) => _kindToName(note) && mayName(note);
+  bool _mayTouch(Note note) =>
+      _kindToName(note) && notes.namesHere(note.id) && mayName(note);
 
   bool _kindToName(Note note) =>
       !note.isHidden && !note.isDrawing && !note.isArchived;
 
   /// Whether [note], new, will be named here as it is written. Where it
   /// will not, the person names it, so it opens on its title.
-  bool willName(Note note) => isOn && _kindToName(note);
+  bool willName(Note note) =>
+      isOn && _kindToName(note) && notes.namesHere(note.id);
 
   Future<void> _name(String id) async {
     _running = id;
@@ -340,10 +347,19 @@ const int titleMaxLength = 48;
 /// punctuation, and starting with a capital.
 String? cleanTitle(String raw) {
   final line = raw
-      .split('\n')
-      .map((line) => line.trim())
+      .split(RegExp(r'[\n\r\u2028\u2029]'))
+      .map(
+        (line) => line
+            .replaceAll(_control, ' ')
+            .replaceAll(_invisible, '')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim(),
+      )
       .firstWhere((line) => line.isNotEmpty, orElse: () => '');
-  if (line.isEmpty || line.length > 120 || _refusal.hasMatch(line)) {
+  if (line.isEmpty ||
+      line.length > 120 ||
+      _refusal.hasMatch(line) ||
+      _link.hasMatch(line)) {
     return null;
   }
   var text =
@@ -370,6 +386,20 @@ String? cleanTitle(String raw) {
   }
   return text[0].toUpperCase() + text.substring(1);
 }
+
+/// Control characters, tabs among them, which stand for a space at most.
+final RegExp _control = RegExp(r'\p{Cc}', unicode: true);
+
+/// Characters that draw nothing themselves: direction overrides and
+/// isolates, zero-width spaces and joiners, the byte order mark.
+final RegExp _invisible = RegExp(r'\p{Cf}', unicode: true);
+
+/// A web address, an email address or a markdown link: a title
+/// with one of these would draw as a link the note never had.
+final RegExp _link = RegExp(
+  r'[a-z][a-z0-9+.-]*://|\bwww\.|\]\s*\(|\bmailto:|[^\s@]+@[^\s@]+\.[a-z]{2,}',
+  caseSensitive: false,
+);
 
 final RegExp _edgeStart = RegExp(r'^[\p{P}\s]+', unicode: true);
 final RegExp _edgeEnd = RegExp(r'[\p{P}\s]+$', unicode: true);

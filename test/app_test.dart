@@ -177,6 +177,20 @@ class _InstantTitles implements TitleModel {
   }
 }
 
+/// A model whose answer arrives when the test gives it.
+class _LaterTitles implements TitleModel {
+  final List<Completer<String>> asked = [];
+
+  @override
+  Future<String?> unavailableReason() async => null;
+
+  @override
+  Future<String> name({required String instructions, required String prompt}) {
+    asked.add(Completer<String>());
+    return asked.last.future;
+  }
+}
+
 class _HiddenGate implements HiddenNotesGate {
   _HiddenGate({this.allowConfigure = true, this.allowUnlock = true});
 
@@ -1143,6 +1157,72 @@ void main() {
       expect(model.asked, 1);
       expect(notes.notes.first.title, 'Lisbon trip budget');
       expect(field.text, 'Lisbon trip budget\n$trip');
+    });
+
+    testWidgets('a title the model sends once the person is in New Note '
+        'loses to what they type', (tester) async {
+      final model = _LaterTitles();
+      await pumpApp(tester, titleModel: model);
+      final field = await newNote(tester);
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(model.asked, hasLength(1));
+      final editor = tester.state<NoteEditorState>(find.byType(NoteEditor));
+      expect(editor.selectionInTitle, isFalse);
+
+      field.selection = const TextSelection.collapsed(offset: 3);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+      expect(editor.selectionInTitle, isTrue);
+
+      model.asked.single.complete('Lisbon trip budget');
+      await tester.pumpAndSettle();
+      expect(field.text, 'New Note\n$trip');
+      expect(notes.notes.first.title, 'New Note');
+
+      field.value = const TextEditingValue(
+        text: 'Holiday\n$trip',
+        selection: TextSelection.collapsed(offset: 7),
+      );
+      await tester.pumpAndSettle();
+      expect(field.text, 'Holiday\n$trip');
+      expect(notes.notes.first.body, 'Holiday\n$trip');
+
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(
+        model.asked,
+        hasLength(1),
+        reason: 'named by the person for good, even put back to New Note',
+      );
+    });
+
+    testWidgets('a note from another device is not named here', (tester) async {
+      store.data['notes.v1'] = [
+        {
+          'id': 'from-the-phone',
+          'body': 'New Note\n',
+          'createdAt': 1000,
+          'updatedAt': 2000,
+        },
+      ];
+      final model = _InstantTitles('Lisbon trip');
+      await pumpApp(tester, titleModel: model);
+      await tester.enterNote('New Note\n$trip');
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(model.asked, 0);
+      expect(notes.byId('from-the-phone')!.title, 'New Note');
     });
 
     testWidgets('with the setting off it stays New Note', (tester) async {

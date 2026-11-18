@@ -35,6 +35,8 @@ class NotesStore extends ChangeNotifier {
   static const String _legacyKey = 'notes.v1';
   static const String _pinnedKey = 'pinnedNoteIds.v1';
   static const String _writingDaysKey = 'writingDays.v1';
+  static const String _nameHereKey = 'nameHereNoteIds.v1';
+  static const int _nameHereLimit = 200;
 
   final LocalStore _store;
   final DateTime Function() _now;
@@ -144,6 +146,7 @@ class NotesStore extends ChangeNotifier {
     }
 
     _loadPinnedNoteIds();
+    _loadNameHere();
     _loadWritingDays();
     _refreshViews();
     _loaded = true;
@@ -241,7 +244,36 @@ class NotesStore extends ChangeNotifier {
     _notes = [note, ..._notes];
     if (authored && !note.isEmpty) _recordWriting([WritingStreak.dayOf(now)]);
     _persist();
+    final nameHere = [..._nameHere, note.id];
+    if (nameHere.length > _nameHereLimit) nameHere.removeAt(0);
+    _nameHere = List.unmodifiable(nameHere);
+    _store.put(_nameHereKey, _nameHere);
     return note;
+  }
+
+  /// Notes made on this device that it may still name, oldest first. Kept
+  /// on this device and never synced, so each note is named only by the
+  /// device that made it, and a note from another device never is.
+  List<String> _nameHere = const [];
+
+  /// Whether [id] was made on this device and may still be named here.
+  bool namesHere(String id) => _nameHere.contains(id);
+
+  /// [id] is not to be named on this device again: its title is the
+  /// person's.
+  void stopNamingHere(String id) {
+    if (!_nameHere.contains(id)) return;
+    _nameHere = List.unmodifiable(_nameHere.where((each) => each != id));
+    _store.put(_nameHereKey, _nameHere);
+  }
+
+  void _loadNameHere() {
+    final raw = _store.data[_nameHereKey];
+    if (raw is! List) return;
+    final liveIds = _notes.map((note) => note.id).toSet();
+    _nameHere = List.unmodifiable(
+      raw.whereType<String>().where(liveIds.contains),
+    );
   }
 
   void updateBody(String id, String body) {
