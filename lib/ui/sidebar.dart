@@ -1523,7 +1523,7 @@ class _SettingsEntry extends StatelessWidget {
                         borderRadius: BorderRadius.circular(99),
                         border: Border.all(
                           color: palette.chipCurrency.withValues(alpha: 0.35),
-                          width: 0.5,
+                          width: AppHairline.of(context),
                         ),
                       ),
                       child: Text(
@@ -1850,7 +1850,7 @@ class _SidebarTabButton extends StatelessWidget {
                   color: selected
                       ? palette.controlBorder
                       : palette.controlBorder.withValues(alpha: 0),
-                  width: 0.5,
+                  width: AppHairline.of(context),
                 ),
               ),
               child: Row(
@@ -2075,7 +2075,10 @@ class _InvitationCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
           borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: palette.controlBorder, width: 0.5),
+          border: Border.all(
+            color: palette.controlBorder,
+            width: AppHairline.of(context),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

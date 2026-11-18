@@ -379,7 +379,10 @@ class _PaneHeaderState extends State<_PaneHeader> {
           decoration: BoxDecoration(
             color: palette.paperColor,
             border: Border(
-              bottom: BorderSide(color: palette.separator, width: 0.5),
+              bottom: BorderSide(
+                color: palette.separator,
+                width: AppHairline.of(context),
+              ),
             ),
           ),
           child: Stack(

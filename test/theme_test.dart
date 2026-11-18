@@ -294,4 +294,24 @@ void main() {
     expect(WritingFont.mixed.fontFamilyFallback, AppPlatform.uiFontFallback);
     expect(WritingFont.mixed.editorSize, 16);
   });
+
+  testWidgets('a hairline is one physical pixel at every display scale', (
+    tester,
+  ) async {
+    for (final scale in [1.0, 1.25, 1.5, 2.0, 3.0]) {
+      late double width;
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(devicePixelRatio: scale),
+          child: Builder(
+            builder: (context) {
+              width = AppHairline.of(context);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      expect(width * scale, 1, reason: 'at ${scale}x');
+    }
+  });
 }

@@ -710,6 +710,15 @@ class AppRadii {
   static const double dialog = 18;
 }
 
+class AppHairline {
+  const AppHairline._();
+
+  /// One physical pixel at every display scale. A fixed 0.5 is crisp only at
+  /// 2x and blurs to grey at 1x, 125% and 150%.
+  static double of(BuildContext context) =>
+      1 / MediaQuery.devicePixelRatioOf(context);
+}
+
 /// Control geometry shared by every app surface, resolved per input device.
 ///
 /// This is two apps wearing one codebase: a dense desktop tool whose controls

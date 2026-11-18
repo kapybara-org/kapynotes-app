@@ -198,7 +198,7 @@ class _SplitViewState extends State<SplitView> {
                         border: Border(
                           right: BorderSide(
                             color: palette.separator,
-                            width: 0.5,
+                            width: AppHairline.of(context),
                           ),
                         ),
                       ),

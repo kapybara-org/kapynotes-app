@@ -333,7 +333,10 @@ class _NoteImageViewState extends State<NoteImageView> {
           decoration: BoxDecoration(
             color: palette.controlBackground,
             borderRadius: radius,
-            border: Border.all(color: palette.separator, width: 0.5),
+            border: Border.all(
+              color: palette.separator,
+              width: AppHairline.of(context),
+            ),
           ),
           child: Stack(
             fit: StackFit.expand,

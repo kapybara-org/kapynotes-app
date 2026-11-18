@@ -419,7 +419,10 @@ class _PageSwipeCue extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: palette.surfaceBackground,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: palette.controlBorder, width: 0.5),
+                  border: Border.all(
+                    color: palette.controlBorder,
+                    width: AppHairline.of(context),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

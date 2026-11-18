@@ -530,7 +530,10 @@ class SettingsRowButton extends StatelessWidget {
         disabledForegroundColor: palette.textTertiary,
         side: border == null
             ? null
-            : BorderSide(color: border, width: pointer ? 1 : 0.5),
+            : BorderSide(
+                color: border,
+                width: pointer ? 1 : AppHairline.of(context),
+              ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       child: Text(
@@ -956,7 +959,7 @@ class SettingsSwitch extends StatelessWidget {
               ? null
               : Border.all(
                   color: value ? Colors.transparent : palette.controlBorder,
-                  width: 0.5,
+                  width: AppHairline.of(context),
                 ),
         ),
         child: AnimatedAlign(

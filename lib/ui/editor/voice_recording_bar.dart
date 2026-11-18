@@ -119,7 +119,10 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
           decoration: BoxDecoration(
             color: palette.surfaceBackground.withMultipliedAlpha(0.98),
             border: Border(
-              top: BorderSide(color: palette.separator, width: 0.5),
+              top: BorderSide(
+                color: palette.separator,
+                width: AppHairline.of(context),
+              ),
             ),
           ),
           child: LayoutBuilder(
@@ -251,7 +254,7 @@ class _LiveWaveform extends StatelessWidget {
           color: active
               ? recording.withValues(alpha: 0.12)
               : palette.controlBorder.withValues(alpha: 0.72),
-          width: 0.5,
+          width: AppHairline.of(context),
         ),
       ),
       clipBehavior: Clip.antiAlias,

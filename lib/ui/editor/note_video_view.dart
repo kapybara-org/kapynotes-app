@@ -103,7 +103,10 @@ class _NoteVideoViewState extends State<NoteVideoView> {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Colors.black,
-          border: Border.all(color: palette.separator, width: 0.5),
+          border: Border.all(
+            color: palette.separator,
+            width: AppHairline.of(context),
+          ),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Stack(
