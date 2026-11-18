@@ -309,7 +309,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'encoder.int8.onnx',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/encoder.int8.onnx',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx',
       bytes: 652184281,
       sha256:
           'acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247',
@@ -317,7 +317,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'decoder.int8.onnx',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/decoder.int8.onnx',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx',
       bytes: 11845275,
       sha256:
           '179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e',
@@ -325,7 +325,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'joiner.int8.onnx',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/joiner.int8.onnx',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx',
       bytes: 6355277,
       sha256:
           '3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3',
@@ -333,7 +333,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'tokens.txt',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/tokens.txt',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt',
       bytes: 93939,
       sha256:
           'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d',
@@ -484,7 +484,7 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
     LocalModelFile(
       name: 'gemma-4-E2B-it.litertlm',
       url:
-          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/2d74ac41a33d7da82f39f7d5720a04c68514a103/gemma-4-E2B-it.litertlm',
       bytes: 2588147712,
       sha256:
           '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
