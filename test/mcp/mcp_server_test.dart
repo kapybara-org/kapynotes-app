@@ -133,6 +133,15 @@ void main() {
     test('keeps its address across launches, and moves when it is taken', () async {
       final first = port();
       service.dispose();
+      // The next launch comes after this one has let go of the port.
+      for (var i = 0; i < 40; i++) {
+        try {
+          await (await ServerSocket.bind(InternetAddress.loopbackIPv4, first)).close();
+          break;
+        } on SocketException {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+      }
       final again = serviceOver(f);
       await again.load();
       expect(again.address, '127.0.0.1:$first');
