@@ -69,8 +69,11 @@ class KapyContextMenuSurface extends StatelessWidget {
           elevation: 0,
           shadowColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(9),
-            side: BorderSide(color: palette.controlBorder, width: 0.5),
+            borderRadius: BorderRadius.circular(AppRadii.control),
+            side: BorderSide(
+              color: palette.controlBorder,
+              width: AppHairline.of(context),
+            ),
           ),
           clipBehavior: Clip.antiAlias,
           child: Padding(padding: padding, child: child),

@@ -57,6 +57,15 @@ class FakeServer {
   /// paths.
   SyncException? failNext;
 
+  /// Thrown by the next stop-sharing call alone, after its moves went up.
+  SyncException? failStop;
+
+  /// Calls to let through before [failNext] is thrown.
+  int failAfter = 0;
+
+  /// Thrown after the next removal is applied, as when its answer is lost.
+  SyncException? loseRemovalAnswer;
+
   /// Set to refuse every op push with this code, as a server refuses an op or
   /// a snapshot past its size.
   String? refusePushes;
@@ -103,6 +112,10 @@ class FakeServer {
   /// [announceUsers], the way a purchase or a refund announces itself.
   final Set<String> needsPro = {};
 
+  /// Addresses an invitation to is refused, as the real server refuses one
+  /// past the daily cap.
+  final Set<String> refuseInvitesTo = {};
+
   void _covered(String spaceId) {
     if (needsPro.contains(spaceId)) {
       _refuse(402, 'pro-required', {'spaceId': spaceId});
@@ -112,6 +125,10 @@ class FakeServer {
   /// Rows returned per page of the log, over HTTP and on the socket's
   /// catch-up alike, mirroring the real limit being smaller than the corpus.
   int pageSize = 200;
+
+  /// Deletes by somebody other than a team space's owner, answered as done
+  /// and not applied, as `applyOps` answers them.
+  int guestDeletes = 0;
 
   /// How many task records one pull returns.
   int taskPageSize = 1 << 30;
@@ -333,6 +350,9 @@ class FakeServer {
   /// anyone who asks after one.
   bool tasksServed = true;
 
+  /// False is a server from before members' roles could change: a 404.
+  bool roleChangeServed = true;
+
   /// Set to refuse task pushes as an account at the row cap is refused.
   bool tasksFull = false;
 
@@ -511,6 +531,14 @@ class FakeServer {
 
     final prior = space.notes[push.noteId];
     final wasDeleted = prior != null && prior.deletedAt != null;
+    // Only the owner deletes a team note for everyone; a guest's delete is
+    // answered as done and writes nothing. Mirrors `applyOps`.
+    final guestDelete =
+        push.deleted == true &&
+        !wasDeleted &&
+        space.kind == SpaceKind.team &&
+        space.members[userId] != SpaceRole.owner;
+    final deleted = guestDelete ? null : push.deleted;
 
     // --- keys and epochs ----------------------------------------------------
     var epoch = 1;
@@ -635,12 +663,21 @@ class FakeServer {
       _refuse(400, 'snapshot covers seqs that do not exist');
     }
 
+    if (guestDelete) guestDeletes++;
+    if (guestDelete && fresh.isEmpty && push.snapshot == null) {
+      return OpsPushResult(
+        seqs: [for (final op in push.ops) known[op.deviceSeq]!],
+        snapshotSeq: null,
+        serverTime: at,
+      );
+    }
+
     // Nothing below can refuse: apply.
     if (pendingKey != null) space.noteKeys[push.noteId] = pendingKey;
     if (dropHistory) _forgetHistory(space, push.noteId);
 
     // --- the note row -------------------------------------------------------
-    final deletedAfter = push.deleted ?? wasDeleted;
+    final deletedAfter = deleted ?? (push.from != null ? false : wasDeleted);
     final deletedAt = deletedAfter ? (prior?.deletedAt ?? at) : null;
     space.notes[push.noteId] = FakeNoteRow(
       id: push.noteId,
@@ -651,8 +688,8 @@ class FakeServer {
     );
 
     final marker =
-        push.deleted != null &&
-        push.deleted != wasDeleted &&
+        deleted != null &&
+        deleted != wasDeleted &&
         fresh.isEmpty &&
         push.snapshot == null;
     final count =
@@ -969,6 +1006,7 @@ class FakeServer {
     if (space.members[userId] != SpaceRole.owner) {
       _refuse(403, 'only the owner can do this');
     }
+    if (refuseInvitesTo.contains(email)) _refuse(429, 'invite-limit');
     for (final member in space.members.keys) {
       if (user(member).email.toLowerCase() == email) {
         _refuse(409, 'already a member');
@@ -1157,6 +1195,31 @@ class FakeServer {
     space.keyGeneration = generation;
     space.rotationPending = false;
     announceSpace(spaceId);
+  }
+
+  /// Like `PUT /spaces/:id/members/:userId`.
+  Space changeRole(
+    String userId,
+    String spaceId,
+    String target,
+    SpaceRole role,
+  ) {
+    if (!roleChangeServed) {
+      throw const SyncRefusedException(404, 'server returned 404', {});
+    }
+    final space = _member(userId, spaceId);
+    if (space.members[userId] != SpaceRole.owner) {
+      _refuse(403, 'only the owner can do this');
+    }
+    if (target == userId) _refuse(400, 'already the owner');
+    if (role == SpaceRole.owner) _refuse(400, 'invalid request');
+    final theirs = space.members[target];
+    if (theirs == null) _refuse(404, 'not a member');
+    if (theirs != role) {
+      space.members[target] = role;
+      announceSpace(spaceId);
+    }
+    return _wire(space, userId);
   }
 
   Space transfer(String userId, String spaceId, String target) {
@@ -1893,7 +1956,9 @@ class FakeApi implements SyncApi {
 
   void _gate() {
     final failure = server.failNext;
-    if (failure != null) {
+    if (failure != null && server.failAfter > 0) {
+      server.failAfter--;
+    } else if (failure != null) {
       server.failNext = null;
       throw failure;
     }
@@ -2068,6 +2133,21 @@ class FakeApi implements SyncApi {
   Future<void> removeMember(String spaceId, String userId) async {
     _gate();
     server.removeMember(this.userId, spaceId, userId);
+    final lost = server.loseRemovalAnswer;
+    if (lost != null) {
+      server.loseRemovalAnswer = null;
+      throw lost;
+    }
+  }
+
+  @override
+  Future<Space> changeRole(
+    String spaceId,
+    String userId,
+    SpaceRole role,
+  ) async {
+    _gate();
+    return server.changeRole(this.userId, spaceId, userId, role);
   }
 
   @override
@@ -2096,6 +2176,11 @@ class FakeApi implements SyncApi {
   @override
   Future<void> stopSharing(String spaceId, List<WireNote> notes) async {
     _gate();
+    final failure = server.failStop;
+    if (failure != null) {
+      server.failStop = null;
+      throw failure;
+    }
     server.stopSharing(userId, spaceId, notes);
   }
 

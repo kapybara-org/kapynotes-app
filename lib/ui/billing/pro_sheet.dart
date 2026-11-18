@@ -301,7 +301,7 @@ class _ProSheetState extends State<ProSheet> {
     return Container(
       key: const ValueKey('pro-offer'),
       padding: const EdgeInsets.all(18),
-      decoration: _panelDecoration(palette),
+      decoration: _panelDecoration(context, palette),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -430,7 +430,7 @@ class _ProSheetState extends State<ProSheet> {
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: _panelDecoration(palette),
+          decoration: _panelDecoration(context, palette),
           child: Column(
             children: [
               _Pack(
@@ -529,17 +529,23 @@ class _ProSheetState extends State<ProSheet> {
   }
 }
 
-BoxDecoration _panelDecoration(CalcPalette palette) => BoxDecoration(
-  color: palette.controlBackground,
-  border: Border.all(color: palette.controlBorder, width: 0.5),
-  borderRadius: BorderRadius.circular(18),
-);
+BoxDecoration _panelDecoration(BuildContext context, CalcPalette palette) =>
+    BoxDecoration(
+      color: palette.controlBackground,
+      border: Border.all(
+        color: palette.controlBorder,
+        width: AppHairline.of(context),
+      ),
+      borderRadius: BorderRadius.circular(AppRadii.dialog),
+    );
 
 ButtonStyle _primaryActionStyle(BuildContext context) => FilledButton.styleFrom(
   minimumSize: Size(0, AppPlatform.hasPointer ? 44 : 52),
   elevation: 0,
   shadowColor: Colors.transparent,
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(AppRadii.surface),
+  ),
   textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
     fontSize: AppTypeScale.control,
     fontWeight: FontWeight.w400,
@@ -693,8 +699,11 @@ class _Owned extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.07),
-        border: Border.all(color: accent.withValues(alpha: 0.22), width: 0.5),
-        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.22),
+          width: AppHairline.of(context),
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
       ),
       child: Row(
         children: [
@@ -764,8 +773,11 @@ class _Trying extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.07),
-        border: Border.all(color: accent.withValues(alpha: 0.22), width: 0.5),
-        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.22),
+          width: AppHairline.of(context),
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -817,8 +829,11 @@ class _OwnedHere extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.07),
-        border: Border.all(color: accent.withValues(alpha: 0.22), width: 0.5),
-        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.22),
+          width: AppHairline.of(context),
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
       ),
       child: Row(
         children: [
@@ -879,7 +894,7 @@ class _Benefits extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      decoration: _panelDecoration(palette),
+      decoration: _panelDecoration(context, palette),
       child: Column(
         children: [
           _BenefitRow(
@@ -1160,8 +1175,11 @@ class _Notice extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: palette.controlBackground,
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: palette.controlBorder,
+          width: AppHairline.of(context),
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
       ),
       child: Text(
         text,

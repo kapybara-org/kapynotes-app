@@ -90,7 +90,7 @@ import 'note_video_view.dart';
 import 'paste_feedback.dart';
 import 'remote_carets.dart';
 import 'note_field.dart';
-import 'note_sliver.dart' show LineTrailing;
+import 'note_sliver.dart' show LineTrailing, lineTrailingGap;
 import 'results_gutter.dart';
 import 'editor_context_menu.dart';
 import 'selection_bubble.dart';
@@ -181,7 +181,7 @@ class NoteEditor extends StatefulWidget {
     this.idlePeekHeld,
     required this.engine,
     required this.highlighter,
-    this.gutterWidth,
+    this.keepResultRoom = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -336,9 +336,10 @@ class NoteEditor extends StatefulWidget {
   final CalcEngine engine;
   final Highlighter highlighter;
 
-  /// How wide a phone's results gutter is. Null puts each result at the end
-  /// of its own line instead, which takes no width from the writing.
-  final double? gutterWidth;
+  /// Whether a line with a result wraps its writing short of it and shows it
+  /// at the right of its first row, as a phone does. Otherwise the result
+  /// follows the writing at the end of its line, on a leader.
+  final bool keepResultRoom;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -6137,6 +6138,61 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// Where the selection shows on a line of a table, which the grid draws
+  /// in place of its hidden text: across a row while all of it is selected,
+  /// over each cell selected whole, and over the words selected in a cell.
+  /// Null on a line outside a table.
+  List<Rect>? _tableSelectionOf(int line, TextRange selected) {
+    final field = _field;
+    if (field == null) return null;
+    final lineStart = field.lines.startOf(line);
+    final table = markdownTableAt(
+      _controller.markdownFor(_controller.text),
+      lineStart,
+    );
+    final geometry = table == null ? null : _tableGrids[table];
+    if (table == null || geometry == null) return null;
+    final row = table.rows.where((row) => row.start == lineStart).firstOrNull;
+    // The `|---|` line: its header's band covers it.
+    if (row == null) return const [];
+    final start = lineStart + selected.start;
+    final end = lineStart + selected.end;
+    final lines = field.lines;
+    final heights = field.layout.heights!;
+    final last = lines.lineAt(
+      math.max(row.start, (row.header ? table.delimiterEnd : row.end) - 1),
+    );
+    final height = heights.topOf(last + 1) - heights.topOf(line);
+    final words = Offset(0, (height - geometry.rowHeight(row)) / 2);
+    if (start <= row.start && end >= row.end) {
+      return [Rect.fromLTWH(0, 0, geometry.width, height)];
+    }
+    return [
+      for (
+        var column = 0;
+        column < row.cells.length && column < geometry.columns.length;
+        column++
+      )
+        if (row.cells[column] case final cell
+            when start < cell.end && end > cell.start)
+          if (start <= cell.start && end >= cell.end)
+            Rect.fromLTWH(
+              geometry.columnLeft(column),
+              0,
+              geometry.columns[column],
+              height,
+            )
+          else
+            for (final rect in geometry.selectionInCell(
+              row,
+              column,
+              math.max(start, cell.start),
+              math.min(end, cell.end),
+            ))
+              rect.shift(words + Offset(geometry.columnLeft(column), 0)),
+    ];
+  }
+
   ({MarkdownTable table, int row, int column})? _activeTableCell() {
     final cell = _editingCell;
     if (cell == null) return null;
@@ -7308,19 +7364,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Results sit at the ends of their lines and take no width
-                // from the writing. A phone reserves its gutter only when a
-                // line calculates, so prose, checklists, and journals keep the
-                // full writing width.
+                // Results take width only from their own lines, so prose,
+                // checklists, and journals keep the full writing width.
                 final resultsVisible =
                     widget.resultsVisible && _results.isNotEmpty;
-                final gutterWidth = resultsVisible
-                    ? (widget.gutterWidth ?? 0).clamp(
-                        0.0,
-                        (constraints.maxWidth - 160).clamp(0.0, 480.0),
-                      )
-                    : 0.0;
-                final textPaneWidth = constraints.maxWidth - gutterWidth;
+                final textPaneWidth = constraints.maxWidth;
 
                 // The page centres a column of [EditorMetrics.columnWidth].
                 final side = EditorMetrics.page
@@ -7540,9 +7588,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 final chips = EditorMetrics.page
                     ? _controller.linkChips(_controller.text)
                     : const <TextRange>[];
-                // The field reaches across the results column, which is where
-                // each line puts its result on a phone.
-                final fieldWidth = constraints.maxWidth - padding.left;
                 final leaderColor = palette.textTertiary.withValues(alpha: 0.3);
 
                 // The chip follows the paste's caret once the field has laid
@@ -7652,11 +7697,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
-                            if (gutterWidth > 0)
-                              SizedBox(
-                                width: gutterWidth,
-                                child: const ResultsGutter(),
-                              ),
                           ],
                         ),
                       ),
@@ -7669,18 +7709,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           trailingOf: resultsVisible
                               ? (line) => switch (_results[line]) {
                                   null => null,
-                                  final result when gutterWidth > 0 => (
+                                  final result when widget.keepResultRoom => (
                                     child: ResultChip(
                                       result: result,
-                                      collapsedWidth:
-                                          gutterWidth -
-                                          ResultsGutter.leftInset -
-                                          ResultsGutter.rightInset,
+                                      collapsedWidth: contentWidth / 2,
                                     ),
                                     leader: null,
-                                    right:
-                                        fieldWidth - ResultsGutter.rightInset,
+                                    right: contentWidth,
                                     firstRow: true,
+                                    room:
+                                        math.min(
+                                          ResultChip.widthOf(context, result),
+                                          contentWidth / 2,
+                                        ) +
+                                        lineTrailingGap,
                                   ),
                                   final result => (
                                     child: ResultChip(
@@ -7694,6 +7736,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     ),
                                     right: contentWidth,
                                     firstRow: false,
+                                    room: 0.0,
                                   ),
                                 }
                               : null,
@@ -7972,6 +8015,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 strut: strut,
                 columnWidth: columnWidth,
                 trailingOf: trailingOf,
+                selectionOf: _tableSelectionOf,
                 cursorWidth: EditorMetrics.cursorWidth,
                 cursorHeight: EditorMetrics.cursorHeight(
                   widget.writingFont,
@@ -8677,7 +8721,7 @@ class _UnknownChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: palette.controlBackground,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
           border: Border.all(color: palette.controlBorder),
         ),
         child: Text(

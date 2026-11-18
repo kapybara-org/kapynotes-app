@@ -117,8 +117,8 @@ class _Segment extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: touch ? 14 : 12.5,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: touch ? 14 : 13,
+                    fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
                     color: color,
                   ),
                 ),

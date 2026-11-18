@@ -45,13 +45,17 @@ import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
 import 'data/update_checker.dart';
 import 'images/image_picker.dart';
+import 'mcp/mcp_library.dart';
+import 'mcp/mcp_service.dart';
 import 'sync/account.dart';
+import 'sync/key_store.dart';
 import 'ui/app_logo.dart';
 import 'ui/home_page.dart';
 import 'ui/hidden_notes_gate.dart';
 import 'ui/join/join_link_listener.dart';
 import 'ui/join/joining_ui.dart';
 import 'ui/instant_capture.dart';
+import 'ui/mcp_pane.dart';
 import 'ui/menu_bar_panel.dart';
 import 'ui/tasks/tasks_controller.dart';
 
@@ -199,6 +203,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// [_localModels] is: closing the panel must not drop a chat mid-answer.
   KapyAi? _kapyAi;
   late final TitleModel _titleModel = widget.titleModel ?? platformTitleModel();
+
+  /// The MCP server and its settings, on the Mac and Windows only: the
+  /// computers an assistant runs on, and where the app can listen locally.
+  McpService? _mcp;
 
   /// The speech models on this device. Held here rather than in the settings
   /// dialog so that closing settings does not abandon a download of two
@@ -417,6 +425,21 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     }
     widget.rates.loadCache();
     _engines = EngineProvider(widget.rates, widget.prefs, widget.notes.now);
+    if ((AppPlatform.isMacOS || AppPlatform.isWindows) &&
+        !AppPlatform.isFlutterTest) {
+      final engines = _engines!;
+      _mcp = McpService(
+        store: widget.store,
+        secrets: defaultSecureStore(),
+        library: McpLibrary(
+          notes: widget.notes,
+          engine: () => engines.engine,
+          canCreate: () => widget.account?.noteLimit?.canCreate ?? true,
+          isLocked: (note) =>
+              widget.account?.noteLimit?.isLocked(note) ?? false,
+        ),
+      );
+    }
     _ready = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -426,6 +449,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       // are. Nothing on screen at that moment needs either answer, and every
       // platform message sent before the frame is one the frame waits behind.
       widget.updates?.loadCache();
+      unawaited(_mcp?.load());
       final account = widget.account;
       if (account != null) {
         account.planTerms?.loadCache();
@@ -527,6 +551,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // Not the injected one: whoever passed it in owns it.
     if (widget.kapyAi == null) _kapyAi?.dispose();
     _localModels?.dispose();
+    _mcp?.dispose();
     unawaited(_gemma?.unload() ?? Future<void>.value());
     _launchController.dispose();
     // Not the injected one: whoever passed it in owns it.
@@ -687,7 +712,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         ),
       ),
     );
-    if (integration == null || panelTasks == null) return app;
+    final mcp = _mcp;
+    final scoped = mcp == null ? app : McpScope(service: mcp, child: app);
+    if (integration == null || panelTasks == null) return scoped;
     return ViewAnchor(
       view: MenuBarPanelView(
         controller: integration.panel,
@@ -705,7 +732,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           now: widget.notes.now,
         ),
       ),
-      child: app,
+      child: scoped,
     );
   }
 }

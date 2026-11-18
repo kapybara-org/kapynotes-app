@@ -1041,6 +1041,9 @@ void main() {
         'Flights to Lisbon are 900 for two, the hotel near Alfama is 120 a '
         'night, and the train to Sintra is cheap';
 
+    // Naming is off by default; these speak for someone who turned it on.
+    setUp(() => prefs.autoTitlesEnabled = true);
+
     Future<TextEditingController> newNote(WidgetTester tester) async {
       await tester.tap(findKapyIcon(KapyIcons.addRounded).first);
       await tester.pumpAndSettle();
@@ -1612,7 +1615,8 @@ void main() {
           .widget<Text>(find.byKey(const ValueKey('note-total')))
           .textSpan!
           .toPlainText(),
-      'Total: 256',
+      'Total: 64',
+      reason: 'dinner * 3 is worked out from dinner, so it is not added again',
     );
     expect(settingsAffordance(), findsOneWidget);
     // Note identity stays in the note list instead of being repeated in the
@@ -2498,7 +2502,7 @@ void main() {
 
       expect(openNoteBody(tester), 'alpha');
       expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(sidebarOrder(), ['alpha', 'charlie', 'bravo']);
+      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
 
       // The first session has no usage history yet, so it falls back to the
       // visible list after the note already open. Further Tabs preview against
@@ -2507,12 +2511,12 @@ void main() {
       await tabWhileControlIsDown();
       expect(openNoteBody(tester), 'charlie');
       expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      expect(sidebarOrder(), ['alpha', 'charlie', 'bravo']);
+      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
       await tabWhileControlIsDown();
       expect(openNoteBody(tester), 'bravo');
       expect(openNoteField(tester).focusNode.hasFocus, isFalse);
       expect(prefs.lastOpenedNoteId, openedBeforeSwitch);
-      expect(sidebarOrder(), ['alpha', 'charlie', 'bravo']);
+      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
 
       // Releasing the switching modifier is the commit: the previewed editor
       // gets focus, and this note becomes the most recently used one without
@@ -2529,7 +2533,7 @@ void main() {
       expect({
         for (final note in notes.notes) note.id: note.updatedAt,
       }, updatedAt);
-      expect(sidebarOrder(), ['bravo', 'alpha', 'charlie']);
+      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
 
       // The note just left is now second in MRU order, so one more Ctrl+Tab is
       // a true two-note toggle rather than another step through the sidebar.
@@ -2537,13 +2541,13 @@ void main() {
       await tabWhileControlIsDown();
       expect(openNoteBody(tester), 'alpha');
       expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      expect(sidebarOrder(), ['bravo', 'alpha', 'charlie']);
+      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
       expect(openNoteBody(tester), 'alpha');
       expect(openNoteField(tester).focusNode.hasFocus, isTrue);
       expect(prefs.lastOpenedNoteId, alpha.id);
-      expect(sidebarOrder(), ['alpha', 'bravo', 'charlie']);
+      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
 
       // Shift only reverses direction. Letting go of it must not accidentally
       // commit a Ctrl+Shift+Tab session while Control is still held.
@@ -2560,7 +2564,7 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
       expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(sidebarOrder(), ['charlie', 'alpha', 'bravo']);
+      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
     },
   );
 
@@ -3675,6 +3679,7 @@ void main() {
       store.data['notes.v1'] = [
         {'id': 'old-blank', 'body': '', 'createdAt': 1000, 'updatedAt': 2000},
       ];
+      prefs.autoTitlesEnabled = true;
       await pumpApp(tester, titleModel: _InstantTitles('Unused'));
       await tester.tap(plus());
       await tester.pumpAndSettle();
@@ -3918,10 +3923,104 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Pinned'), findsNothing);
-    // Removing the section does not erase open recency: Reference is still
-    // the note the user most recently opened, so it remains first.
-    expect(rowTitles(), ['Reference', 'Today']);
+    // Back in the list, Reference takes its last-edited place again: opening
+    // it does not lift it above Today.
+    expect(rowTitles(), ['Today', 'Reference']);
     expect(notes.isPinned(reference.id), isFalse);
+  });
+
+  group('the notes list stays in last-edited order', () {
+    final base = DateTime(2026, 11, 1, 9);
+
+    Future<void> pumpSyncedNotes(WidgetTester tester) async {
+      store = MemoryStore();
+      store.data['notes.v1'] = [
+        for (final (index, body) in ['Oldest', 'Middle', 'Newest'].indexed)
+          {
+            'id': body.toLowerCase(),
+            'body': body,
+            'createdAt': base.millisecondsSinceEpoch,
+            'updatedAt': base
+                .add(Duration(hours: index))
+                .millisecondsSinceEpoch,
+            'syncedAt': base.add(Duration(hours: index)).millisecondsSinceEpoch,
+          },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 18, 12));
+      prefs = LayoutPrefs(store);
+      rates = RatesRepository(store);
+      shortcuts = ShortcutPrefs(store);
+      await pumpApp(tester);
+    }
+
+    List<String> rowTitles(WidgetTester tester) => tester
+        .widgetList<NoteRow>(find.byType(NoteRow))
+        .map((row) => row.note.title)
+        .toList();
+
+    Map<String, DateTime> stamps() => {
+      for (final note in notes.notes) note.id: note.updatedAt,
+    };
+
+    Future<void> open(WidgetTester tester, String title) async {
+      await tester.tap(find.widgetWithText(NoteRow, title));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith(title));
+    }
+
+    testWidgets('opening and leaving notes neither moves nor syncs them', (
+      tester,
+    ) async {
+      await pumpSyncedNotes(tester);
+      final before = stamps();
+      expect(rowTitles(tester), ['Newest', 'Middle', 'Oldest']);
+      expect(notes.dirtyNotes, isEmpty);
+
+      for (final title in ['Oldest', 'Middle', 'Newest', 'Oldest']) {
+        await open(tester, title);
+        expect(rowTitles(tester), ['Newest', 'Middle', 'Oldest']);
+      }
+      await open(tester, 'Newest');
+
+      expect(stamps(), before);
+      expect(notes.dirtyNotes, isEmpty);
+    });
+
+    testWidgets('switching between two notes keeps their places', (
+      tester,
+    ) async {
+      await pumpSyncedNotes(tester);
+
+      for (var round = 0; round < 3; round++) {
+        await open(tester, 'Oldest');
+        expect(rowTitles(tester), ['Newest', 'Middle', 'Oldest']);
+        await open(tester, 'Middle');
+        expect(rowTitles(tester), ['Newest', 'Middle', 'Oldest']);
+      }
+      expect(notes.dirtyNotes, isEmpty);
+    });
+
+    testWidgets('a real edit moves the note to the top, and only that', (
+      tester,
+    ) async {
+      await pumpSyncedNotes(tester);
+      await open(tester, 'Oldest');
+
+      final field = openNoteField(tester);
+      final edited = '${field.controller.text.trimRight()}\nmore';
+      field.controller.value = TextEditingValue(
+        text: edited,
+        selection: TextSelection.collapsed(offset: edited.length),
+      );
+      await tester.pumpAndSettle();
+
+      expect(rowTitles(tester), ['Oldest', 'Newest', 'Middle']);
+      expect(notes.dirtyNotes.map((note) => note.id), ['oldest']);
+
+      await open(tester, 'Middle');
+      expect(rowTitles(tester), ['Oldest', 'Newest', 'Middle']);
+      expect(notes.dirtyNotes.map((note) => note.id), ['oldest']);
+    });
   });
 
   testWidgets('archives a note, then restores it from the archive', (
@@ -4718,13 +4817,13 @@ void main() {
     await tester.tap(find.widgetWithText(NoteRow, 'Second'));
     await tester.pumpAndSettle();
     expect(selectedTitle(), 'Second');
-    expect(rowTitles(), ['Second', 'First', 'Third']);
+    expect(rowTitles(), ['Third', 'Second', 'First']);
     expect(openNoteField(tester).focusNode.hasFocus, isFalse);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
     expect(selectedTitle(), 'Third');
-    expect(rowTitles(), ['Second', 'First', 'Third']);
+    expect(rowTitles(), ['Third', 'Second', 'First']);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -4964,7 +5063,6 @@ void main() {
 
         expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
         expect(find.byType(ResultLeader), findsWidgets);
-        expect(find.byType(ResultsGutter), findsNothing);
         // The writing keeps the whole pane: nothing beside it but its margin.
         final field = tester.getRect(noteField);
         final pane = tester.getRect(find.byType(NoteEditor));
@@ -5007,7 +5105,7 @@ void main() {
       },
     );
 
-    testWidgets('keeps the results column on phones', (tester) async {
+    testWidgets('keeps results beside their lines on phones', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       store.data['notes.v1'] = [
@@ -5022,8 +5120,19 @@ void main() {
       await pumpApp(tester, size: const Size(420, 800));
 
       expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
-      expect(find.byType(ResultsGutter), findsOneWidget);
       expect(find.byType(ResultLeader), findsNothing);
+    });
+
+    testWidgets('the phone notes filter is a 44 pt target', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester, size: const Size(390, 844));
+      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.pumpAndSettle();
+
+      final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
+      expect(filter, findsOneWidget);
+      expect(tester.getSize(filter).height, greaterThanOrEqualTo(44));
     });
 
     testWidgets('gives prose-only phone notes the full writing width', (
@@ -5042,7 +5151,6 @@ void main() {
 
       await pumpApp(tester, size: const Size(420, 800));
 
-      expect(find.byType(ResultsGutter), findsNothing);
       final editable = tester.getRect(noteField);
       expect(
         editable.width,
@@ -5067,7 +5175,6 @@ void main() {
 
       await pumpApp(tester, size: const Size(1100, 760));
 
-      expect(find.byType(ResultsGutter), findsNothing);
       expect(find.byType(ResultLeader), findsNothing);
       final field = tester.widget<NoteField>(
         find.descendant(of: find.byType(NoteEditor), matching: noteField),

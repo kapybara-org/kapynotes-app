@@ -43,10 +43,12 @@ import 'export_import.dart';
 import 'hidden_notes_gate.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
+import 'mcp_pane.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
 import 'settings_rows.dart';
 import 'settings_search.dart';
+import 'settings_update_card.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart';
 import 'tonal_button.dart';
@@ -57,11 +59,12 @@ import 'voice_note_dialog.dart';
 ///
 /// Adding a section is meant to be the whole job of adding a category of
 /// options: name it here, give it its groups in [_SettingsDialogState], and
-/// every layout, the search and the count of changed settings pick it up.
+/// every layout and the search pick it up.
 enum SettingsSection {
   appearance,
   notes,
   voice,
+  mcp,
   window,
   shortcuts,
   account,
@@ -79,6 +82,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => 'Appearance',
     SettingsSection.notes => 'Notes',
     SettingsSection.voice => 'Voice & AI',
+    SettingsSection.mcp => mcpSectionLabel,
     SettingsSection.window => 'Window',
     SettingsSection.shortcuts => 'Shortcuts',
     SettingsSection.account => 'Account & sync',
@@ -89,6 +93,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => KapyIcons.paintBoardOutlined,
     SettingsSection.notes => KapyIcons.noteOutlined,
     SettingsSection.voice => KapyIcons.micRounded,
+    SettingsSection.mcp => mcpSectionIcon,
     SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
     SettingsSection.account => KapyIcons.accountCircleOutlined,
@@ -108,6 +113,7 @@ extension SettingsSectionCopy on SettingsSection {
           ? 'Voice notes, transcripts, summaries and Kapy AI, and where each '
                 'one runs'
           : 'Voice notes, transcripts and summaries, and where each one runs',
+    SettingsSection.mcp => mcpSectionSummary,
     SettingsSection.window =>
       'What the window shows, and what happens when it closes',
     SettingsSection.shortcuts =>
@@ -341,7 +347,7 @@ class _Setting {
   /// The other words people use for it — "dark mode" for the theme.
   final List<String> keywords;
 
-  /// What it is set to, in a word, for a search result or the changed list.
+  /// What it is set to, in a word, for a search result.
   final String? value;
   final bool changed;
   final VoidCallback? onReset;
@@ -414,10 +420,6 @@ class _SettingsDialogState extends State<SettingsDialog>
   String? _shortcutError;
   String? _loginItemError;
   SettingsSection _section = SettingsSection.appearance;
-
-  /// Whether the pane is the list of everything off its default, opened from
-  /// the foot of the rail, rather than a category.
-  bool _showingChanged = false;
 
   /// Which section the sheet has pushed, or null while it is showing the
   /// list of categories. Kept apart from [_section] because the dialog always
@@ -645,7 +647,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     // recording works without an account, and the pane says so rather than
     // hiding and leaving the user to wonder where the setting went.
     SettingsSection.voice => widget.voicePrefs != null,
-    SettingsSection.appearance || SettingsSection.notes => true,
+    SettingsSection.appearance ||
+    SettingsSection.notes ||
+    SettingsSection.mcp => true,
   };
 
   List<SettingsSection> get _sections =>
@@ -865,10 +869,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   }
 
   void _showSection(SettingsSection section) {
-    if (section == _section && !_showingChanged) return;
+    if (section == _section) return;
     setState(() {
       _section = section;
-      _showingChanged = false;
       _recording = null;
       _swap = null;
     });
@@ -882,16 +885,6 @@ class _SettingsDialogState extends State<SettingsDialog>
   void _selectFromRail(SettingsSection section) {
     _search.clear();
     _showSection(section);
-  }
-
-  void _showChanged() {
-    _search.clear();
-    setState(() {
-      _showingChanged = true;
-      _recording = null;
-      _swap = null;
-    });
-    if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
 
   /// Where a search result goes: its category, scrolled to its row, with the
@@ -1379,7 +1372,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     SettingsSection.window => _windowGroups(),
     SettingsSection.shortcuts => _shortcutGroups(),
     SettingsSection.about => _aboutGroups(),
-    SettingsSection.account => const [],
+    SettingsSection.account || SettingsSection.mcp => const [],
   };
 
   /// The slider's left end is Off, and the rest of it is the amount from its
@@ -1589,7 +1582,9 @@ class _SettingsDialogState extends State<SettingsDialog>
               onChanged: namer.available
                   ? (value) => prefs.autoTitlesEnabled = value
                   : null,
-              byDefault: namer.available ? true : null,
+              byDefault: namer.available
+                  ? LayoutPrefs.autoTitlesByDefault
+                  : null,
               keywords: [
                 'title',
                 'name',
@@ -2278,7 +2273,6 @@ class _SettingsDialogState extends State<SettingsDialog>
     description: setting.subtitle,
     value: setting.value,
     changed: setting.changed,
-    onReset: setting.onReset,
   );
 
   /// Everything a search can reach: every row of every pane, read from the
@@ -2325,6 +2319,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
       if (sections.contains(SettingsSection.account))
         ..._accountSearchEntries(widget.account!),
+      ...mcpSearchEntries(McpScope.maybeOf(context)),
       // Settings that live where they are used. Found here, and said where.
       SettingsSearchEntry(
         section: SettingsSection.notes,
@@ -2655,7 +2650,10 @@ class _SettingsDialogState extends State<SettingsDialog>
           decoration: BoxDecoration(
             color: palette.surfaceBackground,
             borderRadius: _sheetCorners,
-            border: Border.all(color: palette.controlBorder, width: 0.5),
+            border: Border.all(
+              color: palette.controlBorder,
+              width: AppHairline.of(context),
+            ),
           ),
           child: ClipRRect(
             borderRadius: _sheetCorners,
@@ -2688,6 +2686,9 @@ class _SettingsDialogState extends State<SettingsDialog>
                               title: 'Settings',
                               bottomInset: bottomInset,
                               children: [
+                                if (widget.updates case final updates?)
+                                  if (!_searching)
+                                    SettingsWhatsNewRow(updates: updates),
                                 // No autofocus: a keyboard that rises the
                                 // moment settings opens would cover the very
                                 // list it is there to search.
@@ -2752,16 +2753,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   Widget _buildPaned(BuildContext context) {
     final palette = context.palette;
     final section = _section;
-    final changed = _changedEntries;
     final (title, summary) = _searching
         ? (
             '${_count(_results.length, 'setting')} for “$_query”',
             'Found by name, by everyday words and by what each one changes',
-          )
-        : _showingChanged
-        ? (
-            '${_count(changed.length, 'setting')} changed',
-            'Everything set differently from how Kapy Notes came',
           )
         : (section.label, section.summary);
     return Row(
@@ -2798,27 +2793,38 @@ class _SettingsDialogState extends State<SettingsDialog>
               _searchField(autofocus: widget.section == null),
               const SizedBox(height: 14),
               Expanded(
-                child: _SettingsRail(
-                  sections: _sections,
-                  changed: {for (final entry in changed) entry.section},
-                  // No category is the one on show while results are.
-                  selected: _searching || _showingChanged ? null : section,
-                  onSelect: _selectFromRail,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final updates = widget.updates;
+                    // Every category stays in view, so the card gets only
+                    // what the rail leaves: its rows, a gap and the version.
+                    final left =
+                        constraints.maxHeight -
+                        _sections.length * _SettingsRail.itemHeight -
+                        (updates == null ? 0 : 28);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _SettingsRail(
+                            sections: _sections,
+                            changed: _changedSections,
+                            // No category is the one on show while results
+                            // are.
+                            selected: _searching ? null : section,
+                            onSelect: _selectFromRail,
+                          ),
+                        ),
+                        if (updates != null) ...[
+                          SettingsUpdateCard(updates: updates, maxHeight: left),
+                          const SizedBox(height: 10),
+                          _VersionStatus(updates: updates),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
-              if (changed.isNotEmpty)
-                _RailItem(
-                  key: const ValueKey('settings-changed'),
-                  icon: KapyIcons.undoRounded,
-                  label: 'Changed from default',
-                  count: changed.length,
-                  selected: _showingChanged && !_searching,
-                  onTap: _showChanged,
-                ),
-              if (widget.updates case final updates?) ...[
-                const SizedBox(height: 8),
-                _VersionStatus(updates: updates),
-              ],
             ],
           ),
         ),
@@ -2831,33 +2837,16 @@ class _SettingsDialogState extends State<SettingsDialog>
               controller: _scrollController,
               flashTarget: _flashTarget,
               flash: _flash,
-              children: _searching
-                  ? [_searchResults()]
-                  : _showingChanged
-                  ? [_changedList(changed)]
-                  : _paneFor(section),
+              children: _searching ? [_searchResults()] : _paneFor(section),
             ),
             footer: _searching
                 ? const _SearchHints()
-                : !_showingChanged && section == SettingsSection.shortcuts
+                : section == SettingsSection.shortcuts
                 ? _shortcutsFooter()
                 : null,
           ),
         ),
       ],
-    );
-  }
-
-  Widget _changedList(List<SettingsSearchEntry<SettingsSection>> changed) {
-    if (changed.isEmpty) {
-      return const SettingsNote('Everything is as Kapy Notes came.');
-    }
-    return SettingsSearchResults<SettingsSection>(
-      key: const ValueKey('settings-changed-list'),
-      query: '',
-      results: changed,
-      onOpen: _openResult,
-      resets: true,
     );
   }
 
@@ -2916,6 +2905,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ..._fromGroups(_appearanceGroups()),
     ],
     SettingsSection.shortcuts => _shortcutsPane(),
+    SettingsSection.mcp => const [McpPane()],
     SettingsSection.account => [
       SyncPane(
         account: widget.account!,
@@ -3899,6 +3889,9 @@ class _SettingsRail extends StatelessWidget {
   final SettingsSection? selected;
   final ValueChanged<SettingsSection> onSelect;
 
+  /// One row and the gap under it.
+  static const double itemHeight = 34;
+
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     child: Column(
@@ -3926,7 +3919,6 @@ class _RailItem extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.changed = false,
-    this.count,
   });
 
   final KapyIconData icon;
@@ -3935,15 +3927,10 @@ class _RailItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool changed;
 
-  /// A number at the end in place of the dot: how many are changed.
-  final int? count;
-
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     const corners = BorderRadius.all(Radius.circular(9));
-    final count = this.count;
-    final quiet = count != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Semantics(
@@ -3974,27 +3961,16 @@ class _RailItem extends StatelessWidget {
                     child: Text(
                       label,
                       style: TextStyle(
-                        fontSize: quiet ? 13 : 13.5,
+                        fontSize: 13.5,
                         height: 16 / 13.5,
                         color: selected
                             ? palette.tonalForeground
-                            : quiet
-                            ? palette.textDescription
                             : palette.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (count != null)
-                    Text(
-                      '$count',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: palette.textTertiary,
-                      ),
-                    )
-                  else if (changed)
-                    const SettingsChangedDot(),
+                  if (changed) const SettingsChangedDot(),
                 ],
               ),
             ),
@@ -4809,24 +4785,6 @@ class _ReleaseRow extends StatelessWidget {
 class _ChangelogLinkRow extends StatelessWidget {
   const _ChangelogLinkRow();
 
-  static final Uri _url = Uri.parse('https://kapynotes.com/changelog');
-
-  Future<void> _open(BuildContext context) async {
-    var opened = false;
-    try {
-      opened = await launchUrl(_url, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      opened = false;
-    }
-    if (opened || !context.mounted) return;
-    Toast.show(
-      context,
-      'Could not open ${_url.host}',
-      icon: KapyIcons.errorOutlined,
-      isError: true,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -4834,7 +4792,7 @@ class _ChangelogLinkRow extends StatelessWidget {
       link: true,
       child: InkWell(
         key: const ValueKey('changelog-page'),
-        onTap: () => _open(context),
+        onTap: () => unawaited(openChangelogPage(context)),
         child: Padding(
           padding: SettingsMetrics.padding,
           child: Row(

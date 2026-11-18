@@ -72,7 +72,7 @@ late TagStore goldenTags;
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
 
-/// A model on the device that is never asked, so Settings shows the row on.
+/// A model on the device that is never asked, so Settings shows its row.
 class _GoldenTitles implements TitleModel {
   @override
   Future<String?> unavailableReason() async => null;
@@ -1136,6 +1136,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-section-about')));
     await tester.pumpAndSettle();
+    expect(
+      find.text('The version you have, updates and what changed'),
+      findsOneWidget,
+      reason: 'the tap reached About, so the golden shows its pane',
+    );
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_settings_about.png'),

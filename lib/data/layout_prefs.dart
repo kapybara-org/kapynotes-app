@@ -154,7 +154,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   bool _spellCheckEnabled = true;
-  bool _autoTitlesEnabled = true;
+  bool _autoTitlesEnabled = autoTitlesByDefault;
   bool _markdownEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.clean;
@@ -214,6 +214,11 @@ class LayoutPrefs extends ChangeNotifier {
 
   /// Name new notes from what is in them, where a model on the device can.
   bool get autoTitlesEnabled => _autoTitlesEnabled;
+
+  /// Whether new notes are named until the person says otherwise. Off
+  /// everywhere until a model on the device has named a note in a real run:
+  /// Gemini Nano on a phone, Apple Intelligence on a Mac.
+  static const bool autoTitlesByDefault = false;
 
   /// Whether notes are written in markdown: `# `, `**`, `- ` and the rest
   /// drawn as what they mean, and the formatting controls writing them.
@@ -372,7 +377,8 @@ class LayoutPrefs extends ChangeNotifier {
     _readyToTypeOnOpen = _store.read<bool>(_readyToTypeOnOpenKey) ?? true;
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
-    _autoTitlesEnabled = _store.read<bool>(_autoTitlesKey) ?? true;
+    _autoTitlesEnabled =
+        _store.read<bool>(_autoTitlesKey) ?? autoTitlesByDefault;
     _markdownEnabled = _store.read<bool>(_markdownKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();

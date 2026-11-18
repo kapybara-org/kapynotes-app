@@ -154,9 +154,7 @@ class Sharing extends ChangeNotifier {
   /// Moves a note into a shared space under a freshly minted content key,
   /// and pushes it so the other members receive it.
   Future<void> shareNote(String noteId, {required String spaceId}) async {
-    if (_notes.byId(noteId)?.isHidden ?? false) {
-      throw const SyncRefusedException(409, 'hidden-note', {});
-    }
+    _checkMovable(noteId);
     final space = _keyring.byId(spaceId);
     if (space == null || !space.isTeam) {
       throw const SyncProtocolException('no such shared space');
@@ -176,58 +174,83 @@ class Sharing extends ChangeNotifier {
     await _sync.syncNow();
   }
 
-  /// Shares a note with one person: finds a space that is exactly the two of
-  /// you, or makes one and invites them, then moves the note into it.
+  /// Refuses a move of [noteId] into a shared space before anything is
+  /// created or sent: Hidden notes are never shared, and only the owner of a
+  /// shared space may take a note out of it.
+  void _checkMovable(String noteId) {
+    final note = _notes.byId(noteId);
+    if (note?.isHidden ?? false) {
+      throw const SyncRefusedException(409, 'hidden-note', {});
+    }
+    final from = note == null ? null : spaceOf(note);
+    if (from != null && from.isTeam && !from.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
+    }
+  }
+
+  /// Shares a private note with one person: the space that is exactly the two
+  /// of you at that access, or a new one they are invited to.
   Future<Space> shareNoteWith(
     String noteId, {
     required String email,
     SpaceRole role = SpaceRole.member,
-  }) async {
-    // Refuse before creating the pair space or sending its invitation. The
-    // lower-level [shareNote] guard is still needed for callers that already
-    // have a space, but it is too late to prevent those external side effects.
-    if (_notes.byId(noteId)?.isHidden ?? false) {
-      throw const SyncRefusedException(409, 'hidden-note', {});
+  }) => _moveTo(noteId, {_address(email): _access(role)});
+
+  /// Moves a note to the space whose people other than this account are
+  /// exactly [audience], at those accesses. One this account owns is reused;
+  /// otherwise a new one is made and everyone in [audience] invited to it.
+  ///
+  /// Everything that can be refused is asked before the note moves. A new
+  /// space whose invitations fail is deleted again, so a failure leaves no
+  /// space and no invitation behind. Invitations go out in [audience]'s
+  /// order, so a caller puts the address most likely to be refused first.
+  Future<Space> _moveTo(String noteId, Map<String, SpaceRole> audience) async {
+    _checkMovable(noteId);
+    final existing = _spaceFor(audience);
+    if (existing != null) {
+      await shareNote(noteId, spaceId: existing.id);
+      return _keyring.byId(existing.id) ?? existing;
     }
-    final address = email.trim().toLowerCase();
-    final access = role == SpaceRole.viewer
-        ? SpaceRole.viewer
-        : SpaceRole.member;
-    final existing = _pairSpace(address, access);
-    final space = existing ?? await createSpace(_pairName(address));
-    if (existing == null) {
-      await _api.invite(space.id, address, role: access);
+    final space = await createSpace(_pairName(audience.keys.first));
+    try {
+      for (final MapEntry(key: email, value: role) in audience.entries) {
+        await _api.invite(space.id, email, role: role);
+      }
+    } on SyncException {
+      try {
+        await _api.stopSharing(space.id, const []);
+        await refresh();
+      } on SyncException {
+        // The failure worth reporting is the first one.
+      }
+      rethrow;
     }
     await shareNote(noteId, spaceId: space.id);
+    await refresh();
     return _keyring.byId(space.id) ?? space;
   }
 
-  /// A team space whose members and invitations are exactly this account and
-  /// [email], if one exists.
-  Space? _pairSpace(String email, SpaceRole role) {
+  /// A team space this account owns, without a link, whose other members and
+  /// invitations are exactly [audience].
+  Space? _spaceFor(Map<String, SpaceRole> audience) {
     for (final space in teams) {
-      final otherMembers = space.othersThan(userId);
-      final otherInvites = space.invites;
-      final others = otherMembers.map((m) => m.email.toLowerCase());
-      final invited = otherInvites.map((i) => i.email.toLowerCase());
-      final people = {...others, ...invited};
-      if (people.length != 1 || !people.contains(email)) continue;
-      final memberMatches =
-          otherMembers.isEmpty ||
-          otherMembers.every(
-            (member) =>
-                member.email.toLowerCase() == email && member.role == role,
-          );
-      final inviteMatches =
-          otherInvites.isEmpty ||
-          otherInvites.every(
-            (invite) =>
-                invite.email.toLowerCase() == email && invite.role == role,
-          );
-      if (memberMatches && inviteMatches) return space;
+      if (!space.isOwner || space.hasLink) continue;
+      if (mapEquals(_audienceOf(space), audience)) return space;
     }
     return null;
   }
+
+  /// Everyone but this account in [space], by address, at their access.
+  Map<String, SpaceRole> _audienceOf(Space space) => {
+    for (final member in space.othersThan(userId))
+      member.email.toLowerCase(): member.role,
+    for (final invite in space.invites) invite.email.toLowerCase(): invite.role,
+  };
+
+  static String _address(String email) => email.trim().toLowerCase();
+
+  static SpaceRole _access(SpaceRole role) =>
+      role == SpaceRole.viewer ? SpaceRole.viewer : SpaceRole.member;
 
   static String _pairName(String email) {
     final local = email.split('@').first;
@@ -262,6 +285,13 @@ class Sharing extends ChangeNotifier {
     if (note == null || !note.isShared) {
       throw const SyncProtocolException('no such shared note');
     }
+    _notes.keepCopy(await _detached(note));
+  }
+
+  /// [note] with its attachments' bytes on this device and their server ids
+  /// dropped, so a copy uploads them again under itself. Throws when a
+  /// download fails.
+  Future<Note> _detached(Note note) async {
     final attachments = <NoteAttachmentRef>[];
     for (final ref in note.attachments) {
       final hashes = [
@@ -282,7 +312,7 @@ class Sharing extends ChangeNotifier {
         )!,
       );
     }
-    _notes.keepCopy(note.copyWith(attachments: attachments));
+    return note.copyWith(attachments: attachments);
   }
 
   /// A new note straight into a shared space.
@@ -304,6 +334,194 @@ class Sharing extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------------------
+  // People
+  // -------------------------------------------------------------------------
+
+  /// Everyone this account shares notes with or receives notes from: the
+  /// others in the shared spaces it owns, invited or joined, and the owners
+  /// of the ones it belongs to. Somebody who is only another guest in a space
+  /// owned by a third person is neither, and is not listed.
+  List<SharePerson> get people {
+    final found = <String, SharePerson>{};
+    void add(SpaceMember member) {
+      final email = member.email.toLowerCase();
+      found[email] = SharePerson(
+        email: email,
+        name: member.displayName,
+        userId: member.userId,
+        image: member.image,
+      );
+    }
+
+    for (final space in teams) {
+      if (!space.isOwner) {
+        if (space.member(space.ownerId) case final owner?) add(owner);
+        continue;
+      }
+      space.othersThan(userId).forEach(add);
+      for (final invite in space.invites) {
+        final email = invite.email.toLowerCase();
+        found.putIfAbsent(
+          email,
+          () => SharePerson(email: email, name: invite.displayName),
+        );
+      }
+    }
+    return found.values.toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
+  /// The notes this account shares with [email], in the spaces it owns,
+  /// whether or not they have accepted yet.
+  List<Note> notesSharedWith(String email) {
+    final address = _address(email);
+    return [
+      for (final space in teams)
+        if (space.isOwner && _audienceOf(space).containsKey(address))
+          ...notesIn(space.id),
+    ];
+  }
+
+  /// The notes [email] shares with this account, in the spaces they own.
+  List<Note> notesSharedFrom(String email) {
+    final address = _address(email);
+    return [
+      for (final space in teams)
+        if (!space.isOwner &&
+            space.member(space.ownerId)?.email.toLowerCase() == address)
+          ...notesIn(space.id),
+    ];
+  }
+
+  /// Gives [email] access to a note. Owner only for a note that is shared
+  /// already.
+  ///
+  /// A private note goes to the space for exactly this person. A shared note
+  /// that has its space to itself, or with [allNotes], takes them into its
+  /// space, so they get every note in it. Otherwise only this note moves, to
+  /// the space for its current people plus them, and the people already on
+  /// it get an invitation to that space.
+  Future<void> addPerson(
+    String noteId,
+    String email, {
+    SpaceRole role = SpaceRole.member,
+    bool allNotes = false,
+  }) async {
+    final note = _notes.byId(noteId);
+    if (note == null) throw const SyncProtocolException('no such note');
+    final address = _address(email);
+    final access = _access(role);
+    final space = spaceOf(note);
+    if (space == null || !space.isTeam) {
+      await shareNoteWith(noteId, email: address, role: access);
+      return;
+    }
+    _checkMovable(noteId);
+    if (!space.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
+    }
+    final audience = _audienceOf(space);
+    if (audience.containsKey(address)) {
+      throw const SyncRefusedException(409, 'already a member', {});
+    }
+    if (allNotes || notesIn(space.id).length == 1) {
+      await _api.invite(space.id, address, role: access);
+      await refresh();
+      return;
+    }
+    await _moveTo(noteId, {address: access, ...audience});
+  }
+
+  /// Changes what [email] may do with a note, Editor or View only. Access
+  /// belongs to the note's space, so it changes for every note in it.
+  Future<void> changeAccessTo(String noteId, String email, SpaceRole role) {
+    final member = _memberOn(noteId, email);
+    if (member == null) {
+      throw const SyncProtocolException('not a member of this note');
+    }
+    return changeAccess(_notes.byId(noteId)!.spaceId!, member.userId, role);
+  }
+
+  /// Takes [email] off one note. Owner only.
+  ///
+  /// When the note has its space to itself, they leave the space, or the
+  /// space ends when they were the last one in it. Otherwise the note moves
+  /// to the space for the people who stay, or home when nobody does.
+  Future<void> removeFromNote(String noteId, String email) async {
+    final note = _notes.byId(noteId);
+    final space = note == null ? null : spaceOf(note);
+    if (space == null || !space.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
+    }
+    final address = _address(email);
+    final audience = _audienceOf(space);
+    if (!audience.containsKey(address)) {
+      throw const SyncProtocolException('not on this note');
+    }
+    final remaining = {...audience}..remove(address);
+    if (notesIn(space.id).length > 1) {
+      if (remaining.isEmpty) return unshareNote(noteId);
+      await _moveTo(noteId, remaining);
+      return;
+    }
+    if (remaining.isEmpty) return stopSharing(space.id);
+    await _removeFrom(space, address);
+    await refresh();
+    _sync.requestSync();
+  }
+
+  /// Ends [email]'s access to everything this account shares with them. The
+  /// notes stay with this account: a space that was only for them ends and
+  /// its notes come home, and they leave every other.
+  ///
+  /// Each space is one step, so a failure part of the way leaves the spaces
+  /// before it done and the rest untouched, and a retry finishes the job.
+  Future<void> stopSharingWith(String email) async {
+    final address = _address(email);
+    final spaces = [
+      for (final space in teams)
+        if (space.isOwner && _audienceOf(space).containsKey(address)) space,
+    ];
+    for (final space in spaces) {
+      if (_audienceOf(space).length == 1) {
+        await stopSharing(space.id);
+      } else {
+        await _removeFrom(space, address);
+      }
+    }
+    await refresh();
+    _sync.requestSync();
+  }
+
+  /// Takes [address] out of [space], as a member or an invitation. A member
+  /// the server no longer has, as after a lost answer, is out already.
+  Future<void> _removeFrom(Space space, String address) async {
+    for (final member in space.othersThan(userId)) {
+      if (member.email.toLowerCase() != address) continue;
+      try {
+        await _api.removeMember(space.id, member.userId);
+      } on SyncRefusedException catch (error) {
+        if (error.status != 404 || error.code != 'not a member') rethrow;
+      }
+    }
+    for (final invite in space.invites) {
+      if (invite.email.toLowerCase() == address) {
+        await _api.revokeInvite(space.id, invite.token);
+      }
+    }
+  }
+
+  SpaceMember? _memberOn(String noteId, String email) {
+    final note = _notes.byId(noteId);
+    final space = note == null ? null : spaceOf(note);
+    final address = _address(email);
+    for (final member in space?.othersThan(userId) ?? const <SpaceMember>[]) {
+      if (member.email.toLowerCase() == address) return member;
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
   // Membership
   // -------------------------------------------------------------------------
 
@@ -312,13 +530,10 @@ class Sharing extends ChangeNotifier {
     String email, {
     SpaceRole role = SpaceRole.member,
   }) async {
-    final access = role == SpaceRole.viewer
-        ? SpaceRole.viewer
-        : SpaceRole.member;
     final result = await _api.invite(
       spaceId,
-      email.trim().toLowerCase(),
-      role: access,
+      _address(email),
+      role: _access(role),
     );
     await refresh();
     return result;
@@ -358,10 +573,73 @@ class Sharing extends ChangeNotifier {
     _sync.requestSync();
   }
 
-  /// Leaving a space. The notes already on this device are the user's to
-  /// keep; nothing here pretends otherwise.
-  Future<void> leave(String spaceId) async {
-    await _api.removeMember(spaceId, userId);
+  /// Changes what a member may do, Editor or View only. Owner only.
+  ///
+  /// A server from before this has no such route, which answers a plain 404.
+  /// With one other person in the space, the notes then move to the pair
+  /// space for them at the new access, which they join from a fresh
+  /// invitation, and they leave this one.
+  Future<void> changeAccess(
+    String spaceId,
+    String userId,
+    SpaceRole role,
+  ) async {
+    final space = _keyring.byId(spaceId);
+    if (space == null || !space.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
+    }
+    if (role == SpaceRole.owner) {
+      throw const SyncProtocolException('ownership moves by transfer');
+    }
+    try {
+      await _api.changeRole(spaceId, userId, role);
+    } on SyncRefusedException catch (error) {
+      final others = space.othersThan(this.userId);
+      final notes = notesIn(spaceId);
+      if (error.status != 404 ||
+          error.code != 'server returned 404' ||
+          others.length != 1 ||
+          space.invites.isNotEmpty ||
+          notes.any((note) => note.isHidden)) {
+        rethrow;
+      }
+      for (final note in notes) {
+        await _moveTo(note.id, {others.single.email.toLowerCase(): role});
+      }
+      await _api.removeMember(spaceId, userId);
+    }
+    await refresh();
+  }
+
+  /// Leaving a space. By default each of its notes stays as a private copy,
+  /// attachments included, hidden ones still hidden. The copies are written
+  /// to disk before the server is asked, so nothing is ever lost. A retry
+  /// reuses the copies an earlier attempt made, until one succeeds. Only a
+  /// refusal, which means nothing changed, takes back the copies this attempt
+  /// made; a timeout may have left the space all the same, so they stay.
+  Future<void> leave(String spaceId, {bool keepCopies = true}) async {
+    final sources = keepCopies ? notesIn(spaceId) : const <Note>[];
+    final detached = [for (final note in sources) await _detached(note)];
+    final made = [
+      for (final note in detached)
+        if (_notes.privateCopyOf(note) case (:final note, made: true)) note,
+    ];
+    await _notes.flush();
+    try {
+      await _api.removeMember(spaceId, userId);
+    } on SyncRefusedException catch (error) {
+      final alreadyGone =
+          error.status == 404 &&
+          (error.code == 'not a member' || error.code == 'no such space');
+      if (!alreadyGone) {
+        for (final copy in made) {
+          _notes.delete(copy.id);
+        }
+        rethrow;
+      }
+    }
+    _sync.left(spaceId);
+    _notes.forgetPrivateCopies(sources.map((note) => note.id));
     await refresh();
     _sync.requestSync();
   }
@@ -464,4 +742,25 @@ class Sharing extends ChangeNotifier {
     _keyring.trust.removeListener(notifyListeners);
     super.dispose();
   }
+}
+
+/// Somebody this account shares notes with or receives them from, across
+/// every space: a member of one, or an address with an invitation waiting.
+class SharePerson {
+  const SharePerson({
+    required this.email,
+    required this.name,
+    this.userId,
+    this.image,
+  });
+
+  /// Lower-cased. What identifies them from one space to the next.
+  final String email;
+  final String name;
+
+  /// Null while they have only been invited.
+  final String? userId;
+  final String? image;
+
+  bool get isInvited => userId == null;
 }

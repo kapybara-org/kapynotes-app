@@ -36,6 +36,8 @@ class NotesStore extends ChangeNotifier {
   static const String _pinnedKey = 'pinnedNoteIds.v1';
   static const String _writingDaysKey = 'writingDays.v1';
   static const String _nameHereKey = 'nameHereNoteIds.v1';
+  static const String _privateCopiesKey = 'privateCopies.v1';
+  static const String _dismissedKey = 'dismissed.v1';
   static const int _nameHereLimit = 200;
 
   final LocalStore _store;
@@ -115,10 +117,12 @@ class NotesStore extends ChangeNotifier {
   List<Note> notesIn(String? spaceId) =>
       _notes.where((note) => note.spaceId == spaceId).toList(growable: false);
 
-  /// Every shared space that has a note in it locally.
+  /// Every shared space this device holds something of: a note in it, or a
+  /// note taken out of this account's own notes there.
   Set<String> get spaceIds => {
     for (final note in _notes)
       if (note.spaceId != null) note.spaceId!,
+    ..._dismissed.values,
   };
 
   Future<void> load() => _loadFuture ??= _load();
@@ -293,7 +297,27 @@ class NotesStore extends ChangeNotifier {
     List<NoteFormatRange> formats, [
     List<NoteAttachmentRef>? attachments,
     TextEdit? edit,
-  ]) {
+  ]) => _writeDocument(id, body, formats, attachments, edit, authored: true);
+
+  /// Writes [body] on the person's behalf, as an assistant connected over MCP
+  /// does: saved and synced exactly as typing is, but not counted towards the
+  /// writing streak, which is the person's own. [edit] must leave existing
+  /// formats and attachments where they were, as an append or a same-length
+  /// swap does.
+  void updateForAssistant(String id, String body, TextEdit edit) {
+    final existing = byId(id);
+    if (existing == null) return;
+    _writeDocument(id, body, existing.formats, null, edit, authored: false);
+  }
+
+  void _writeDocument(
+    String id,
+    String body,
+    List<NoteFormatRange> formats,
+    List<NoteAttachmentRef>? attachments,
+    TextEdit? edit, {
+    required bool authored,
+  }) {
     final index = indexOf(id);
     if (index < 0) return;
     final existing = _notes[index];
@@ -323,7 +347,7 @@ class NotesStore extends ChangeNotifier {
       attachments: images,
       updatedAt: at,
     );
-    _recordWriting([WritingStreak.dayOf(at)]);
+    if (authored) _recordWriting([WritingStreak.dayOf(at)]);
     _replace(index, updatedNote, toFront: true);
   }
 
@@ -799,8 +823,47 @@ class NotesStore extends ChangeNotifier {
     _tombstones = List.unmodifiable(
       _tombstones.where((stone) => stone.spaceId != spaceId),
     );
+    _undismiss((_, dismissedIn) => dismissedIn == spaceId);
     _persist();
     return kept;
+  }
+
+  /// Shared notes this account took out of its own notes without deleting
+  /// them for everyone, by id, with the space each was in.
+  Map<String, String> get _dismissed => {
+    if (_store.data[_dismissedKey] case final Map raw)
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (key is String && value is String) key: value,
+  };
+
+  /// Whether this account took the note with [id] in [spaceId] out of its own
+  /// notes. Nothing that arrives for it there brings it back.
+  bool isDismissed(String id, String? spaceId) =>
+      spaceId != null && _dismissed[id] == spaceId;
+
+  /// Turns a deletion of a note in somebody else's shared space into taking
+  /// it out of this account's own notes. Only a space's owner deletes a note
+  /// for everyone, so [stone] is dropped unsent, and the note stays away
+  /// however it changes in that space.
+  void dismiss(Tombstone stone) {
+    final spaceId = stone.spaceId;
+    if (spaceId == null) return;
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => !(s.id == stone.id && s.spaceId == spaceId)),
+    );
+    _store.put(_dismissedKey, {..._dismissed, stone.id: spaceId});
+    _persist();
+  }
+
+  /// Drops the dismissals [gone] matches: the note was deleted for everyone,
+  /// or this account left its space, so there is nothing left to keep away.
+  void _undismiss(bool Function(String id, String spaceId) gone) {
+    final dismissed = _dismissed;
+    if (!dismissed.entries.any((e) => gone(e.key, e.value))) return;
+    _store.put(_dismissedKey, {
+      for (final MapEntry(:key, :value) in dismissed.entries)
+        if (!gone(key, value)) key: value,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -881,6 +944,7 @@ class NotesStore extends ChangeNotifier {
     final now = _now();
 
     for (final incoming in notes) {
+      if (isDismissed(incoming.id, incoming.spaceId)) continue;
       final index = byIdIndex[incoming.id];
       final stoneKey = _stoneKey(incoming.spaceId, incoming.id);
       final localStone = stones[stoneKey];
@@ -925,6 +989,10 @@ class NotesStore extends ChangeNotifier {
       written.addAll(_daysWrittenElsewhere(incoming));
     }
 
+    _undismiss(
+      (id, spaceId) =>
+          tombstones.any((stone) => stone.id == id && stone.spaceId == spaceId),
+    );
     for (final incoming in tombstones) {
       final index = byIdIndex[incoming.id];
       if (index != null) {
@@ -972,6 +1040,7 @@ class NotesStore extends ChangeNotifier {
   /// here does. A tombstone the server has confirmed for this note in this
   /// space is dropped: the log says the note is live, and the log is later.
   void applyDoc(Note note) {
+    if (isDismissed(note.id, note.spaceId)) return;
     final index = indexOf(note.id);
     final remaining = index < 0
         ? List<Note>.of(_notes)
@@ -1009,22 +1078,50 @@ class NotesStore extends ChangeNotifier {
   /// Only for the one moment a note's history first reaches a device that
   /// holds an older copy with edits of its own: those words are not lost,
   /// and they are not merged over newer ones either.
-  void keepCopy(Note local) {
-    _notes = List.unmodifiable([
-      Note(
-        id: newId(),
-        body: local.body,
-        formats: local.formats,
-        attachments: local.attachments,
-        drawing: local.drawing,
-        createdAt: local.createdAt,
-        updatedAt: _now(),
-        archivedAt: local.archivedAt,
-        hiddenAt: local.hiddenAt,
-      ),
-      ..._notes,
-    ]);
+  Note keepCopy(Note local) {
+    final copy = Note(
+      id: newId(),
+      body: local.body,
+      formats: local.formats,
+      attachments: local.attachments,
+      drawing: local.drawing,
+      createdAt: local.createdAt,
+      updatedAt: _now(),
+      archivedAt: local.archivedAt,
+      hiddenAt: local.hiddenAt,
+    );
+    _notes = List.unmodifiable([copy, ..._notes]);
     _persist();
+    return copy;
+  }
+
+  /// A private copy of [source] for leaving its space: the one an earlier
+  /// attempt made, while it is still here, or a new one. [made] says which.
+  ({Note note, bool made}) privateCopyOf(Note source) {
+    final raw = _store.data[_privateCopiesKey];
+    final copies = <String, String>{
+      if (raw is Map)
+        for (final MapEntry(:key, :value) in raw.entries)
+          if (key is String && value is String && indexOf(value) >= 0)
+            key: value,
+    };
+    final existing = byId(copies[source.id]);
+    if (existing != null) return (note: existing, made: false);
+    final copy = keepCopy(source);
+    _store.put(_privateCopiesKey, {...copies, source.id: copy.id});
+    return (note: copy, made: true);
+  }
+
+  /// Forgets the copies made of [sourceIds] once their leave is done, so a
+  /// later leave copies whatever those notes say by then.
+  void forgetPrivateCopies(Iterable<String> sourceIds) {
+    final raw = _store.data[_privateCopiesKey];
+    if (raw is! Map) return;
+    final done = sourceIds.toSet();
+    _store.put(_privateCopiesKey, {
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (!done.contains(key)) key: value,
+    });
   }
 
   /// Writes notes an import decided to apply.

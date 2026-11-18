@@ -55,11 +55,14 @@ typedef NoteMarks = ({
 /// runs too near, the child moves out past [right] after it, as far as the
 /// line reaches, and covers the writing only once there's no room left.
 /// [leader], when given, fills the space between the writing and the child.
+/// Every row of the writing stops [room] short of the line's end, so that
+/// the child never covers it; with none, the writing runs the full width.
 typedef LineTrailing = ({
   Widget child,
   Widget? leader,
   double right,
   bool firstRow,
+  double room,
 });
 
 /// The space a line keeps between its writing, the leader of what it shows
@@ -201,6 +204,12 @@ class NoteLayout {
   /// What a line shows past its writing, built for the lines in view.
   LineTrailing? Function(int line)? trailingOf;
 
+  /// Where the selection shows on a line that something other than its
+  /// writing draws, such as a table's row: rects in the line's coordinates
+  /// for the part of the selection it holds, [selected], in the line's own
+  /// offsets. Null, or null for a line, to fill the writing's own boxes.
+  List<Rect>? Function(int line, TextRange selected)? selectionOf;
+
   /// Paragraphs of lines shown before, by what they draw, so that a line
   /// scrolled back into view, or moved by an edit above it, isn't laid out
   /// again. The least recently used go first.
@@ -313,7 +322,14 @@ class NoteLayout {
 
   TextPainter _paragraphFor(int line) {
     final drawn = spanAt(line);
-    final key = _Drawn(drawn.span, drawn.placeholders, drawn.row, drawn.inset);
+    final width = math.max(0.0, _width! - (trailingOf?.call(line)?.room ?? 0));
+    final key = _Drawn(
+      drawn.span,
+      drawn.placeholders,
+      drawn.row,
+      drawn.inset,
+      width,
+    );
     final kept = _kept.remove(key);
     if (kept != null) return _kept[key] = kept;
     // In one paragraph of the whole note, an empty line takes its height
@@ -346,7 +362,7 @@ class NoteLayout {
                   textScaler: scaler,
                 ))
           ..setPlaceholderDimensions(drawn.placeholders)
-          ..layout(maxWidth: _width!);
+          ..layout(maxWidth: width);
     _kept[key] = painter;
     if (_kept.length > _keep) _kept.remove(_kept.keys.first);
     return painter;
@@ -395,12 +411,13 @@ class NoteLayout {
 /// What a line draws, as the key its paragraph is kept under.
 @immutable
 class _Drawn {
-  const _Drawn(this.span, this.placeholders, this.row, this.inset);
+  const _Drawn(this.span, this.placeholders, this.row, this.inset, this.width);
 
   final InlineSpan span;
   final List<PlaceholderDimensions> placeholders;
   final double? row;
   final double inset;
+  final double width;
 
   @override
   bool operator ==(Object other) =>
@@ -408,11 +425,12 @@ class _Drawn {
       other.span == span &&
       other.row == row &&
       other.inset == inset &&
+      other.width == width &&
       listEquals(other.placeholders, placeholders);
 
   @override
   int get hashCode =>
-      Object.hash(span, row, inset, Object.hashAll(placeholders));
+      Object.hash(span, row, inset, width, Object.hashAll(placeholders));
 }
 
 /// A line's paragraph set [inset] in from both edges of its column: it wraps
@@ -787,8 +805,27 @@ class RenderNoteLine extends RenderBox
   set span(LineSpan value) {
     if (identical(value, _span)) return;
     _span = value;
+    _widgets = null;
     markNeedsLayout();
   }
+
+  /// Where each widget set in the line sits among its characters, in the
+  /// order they come.
+  List<int> get _widgetOffsets => _widgets ??= () {
+    if (_span.placeholders.isEmpty) return const <int>[];
+    final offsets = <int>[];
+    var at = 0;
+    _span.span.visitChildren((span) {
+      if (span is PlaceholderSpan) {
+        offsets.add(at++);
+      } else if (span is TextSpan) {
+        at += span.text?.length ?? 0;
+      }
+      return true;
+    });
+    return offsets;
+  }();
+  List<int>? _widgets;
 
   LineTrailingPlacement? _trailing;
   set trailing(LineTrailingPlacement? value) {
@@ -886,29 +923,22 @@ class RenderNoteLine extends RenderBox
     final end = start + layout.lines[_line].length;
     final selection = marks.selection;
     final selectionColor = marks.selectionColor;
-    if (selectionColor != null &&
-        selection.isValid &&
-        selection.start <= end &&
-        selection.end > start) {
-      final from = math.max(selection.start, start) - start;
-      final to = math.min(selection.end, end) - start;
-      // A blank line shows its line break selected as a selected space,
-      // which is how its paragraph is laid out.
-      final range = from < to
-          ? TextSelection(baseOffset: from, extentOffset: to)
-          : start == end && _line < layout.length - 1
-          ? const TextSelection(baseOffset: 0, extentOffset: 1)
-          : null;
-      if (range != null) {
-        final fill = Paint()..color = selectionColor;
-        for (final box in paragraph.getBoxesForSelection(
-          range,
-          boxHeightStyle: BoxHeightStyle.strut,
-        )) {
-          context.canvas.drawRect(box.toRect().shift(offset), fill);
-        }
-      }
-    }
+    final fill =
+        selectionColor != null &&
+            selection.isValid &&
+            selection.start <= end &&
+            selection.end > start
+        ? (Paint()..color = selectionColor)
+        : null;
+    final selectedWidgets = fill == null
+        ? const <({int widget, Rect? row})>[]
+        : _paintSelection(
+            context.canvas,
+            offset,
+            math.max(selection.start, start) - start,
+            math.min(selection.end, end) - start,
+            fill,
+          );
     final caretColor = marks.caretColor;
     final extent = selection.extentOffset;
     final caret =
@@ -929,6 +959,31 @@ class RenderNoteLine extends RenderBox
     }
     paragraph.paint(context.canvas, offset);
     paintInlineChildren(context, offset);
+    // A widget draws over whatever is under it, so the selection over one
+    // is drawn after it, as far as the widget reaches: no taller than its
+    // row when it shares the line with writing.
+    var child = firstChild;
+    var index = 0;
+    for (final (:widget, :row) in selectedWidgets) {
+      for (; index < widget; index++) {
+        child = childAfter(child!);
+      }
+      final at = (child!.parentData! as TextParentData).offset;
+      if (at == null) continue;
+      final drawn = at & child.size;
+      context.canvas.drawRect(
+        (row == null
+                ? drawn
+                : Rect.fromLTRB(
+                    math.min(row.left, drawn.left),
+                    row.top,
+                    math.max(row.right, drawn.right),
+                    row.bottom,
+                  ))
+            .shift(offset),
+        fill!,
+      );
+    }
     if (caret != null && marks.caret.aboveText) {
       _paintCaret(context.canvas, caret, offset, marks.caret, caretColor!);
     }
@@ -969,6 +1024,94 @@ class RenderNoteLine extends RenderBox
     if (selection.end >= start && selection.end <= end) {
       lead(handles.end, first: false);
     }
+  }
+
+  /// Fills the selection under the line's writing, from [from] to [to] in
+  /// the line's own offsets, and answers which of the widgets set in the line
+  /// it holds, by their place among them, and the row each stands on where
+  /// the line holds writing as well.
+  List<({int widget, Rect? row})> _paintSelection(
+    Canvas canvas,
+    Offset offset,
+    int from,
+    int to,
+    Paint fill,
+  ) {
+    final layout = _noteLayout;
+    final paragraph = _paragraph!;
+    final length = layout.lines[_line].length;
+    if (from == to) {
+      // A blank line shows its line break selected as a selected space,
+      // which is how its paragraph is laid out.
+      if (length == 0 && _line < layout.length - 1) {
+        for (final box in paragraph.getBoxesForSelection(
+          const TextSelection(baseOffset: 0, extentOffset: 1),
+          boxHeightStyle: BoxHeightStyle.strut,
+        )) {
+          canvas.drawRect(box.toRect().shift(offset), fill);
+        }
+      }
+      return const [];
+    }
+    final drawn = layout.selectionOf?.call(
+      _line,
+      TextRange(start: from, end: to),
+    );
+    if (drawn != null) {
+      for (final rect in drawn) {
+        canvas.drawRect(rect.shift(offset), fill);
+      }
+      return const [];
+    }
+    final widgets = _widgetOffsets;
+    final held = <({int widget, Rect? row})>[];
+    final alone = widgets.length == length;
+    var shown = false;
+    var at = from;
+    void fillWriting(int until) {
+      if (at >= until) return;
+      for (final box in paragraph.getBoxesForSelection(
+        TextSelection(baseOffset: at, extentOffset: until),
+        boxHeightStyle: BoxHeightStyle.strut,
+      )) {
+        final rect = box.toRect();
+        shown |= rect.width >= 1;
+        canvas.drawRect(rect.shift(offset), fill);
+      }
+    }
+
+    for (var i = 0; i < widgets.length && widgets[i] < to; i++) {
+      if (widgets[i] < from) continue;
+      fillWriting(widgets[i]);
+      final boxes = alone
+          ? const <TextBox>[]
+          : paragraph.getBoxesForSelection(
+              TextSelection(
+                baseOffset: widgets[i],
+                extentOffset: widgets[i] + 1,
+              ),
+              boxHeightStyle: BoxHeightStyle.strut,
+            );
+      held.add((
+        widget: i,
+        row: boxes.isEmpty
+            ? null
+            : boxes
+                  .map((box) => box.toRect())
+                  .reduce((a, b) => a.expandToInclude(b)),
+      ));
+      at = widgets[i] + 1;
+    }
+    fillWriting(to);
+    // A line whose writing is all hidden, such as a rule drawn in its place,
+    // shows selected across the column once the whole of it is.
+    if (!shown && held.isEmpty && from == 0 && to == length) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, layout.width!, size.height).shift(offset),
+        fill,
+      );
+    }
+    return held;
   }
 
   /// Draws the caret at [rect], snapped to the screen's pixels as
