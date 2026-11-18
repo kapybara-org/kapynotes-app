@@ -237,6 +237,11 @@ jobs:
           desktop-file-validate linux/runner/resources/com.kapybara.kapynotes.desktop
           appstreamcli validate --no-net --pedantic linux/runner/resources/com.kapybara.kapynotes.metainfo.xml
           dpkg-deb -I "$deb"
+          # dlopened rather than linked, so package.sh names them itself.
+          for lib in libgl1 libegl1 libgles2; do
+            dpkg-deb -f "$deb" Depends | tr ',' '\n' | awk '{print $1}' | grep -qx "$lib" \
+              || { echo "::error::$lib missing from the Depends of $deb"; exit 1; }
+          done
           dpkg-deb -c "$deb" > deb-contents.txt
           for path in ./usr/bin/kapynotes ./usr/lib/kapynotes/kapynotes ./usr/lib/kapynotes/lib/libapp.so \
             ./usr/lib/kapynotes/libexec/ffmpeg ./usr/lib/kapynotes/libexec/parecord \

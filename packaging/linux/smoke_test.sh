@@ -18,7 +18,7 @@
 #      packaging/linux/smoke_test.sh all build/release smoke-out'
 #
 # "baseline" installs only what every GNOME or KDE desktop has (GTK 3,
-# libpulse, Mesa's GL, a font) plus the test's own tools (Xvfb, D-Bus,
+# libpulse, Mesa's GL and GLES, a font) plus the test's own tools (Xvfb, D-Bus,
 # xwininfo, xwd), and never the libraries the portable packages bundle, so a
 # missing one shows up. The .deb is installed with apt and without
 # Recommends, which proves its Depends alone are enough.
@@ -53,11 +53,11 @@ install_baseline() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -q
     apt-get install -y -q --no-install-recommends \
-      ca-certificates libgtk-3-0 libpulse0 libegl1 libgl1 libgl1-mesa-dri fonts-dejavu-core \
+      ca-certificates libgtk-3-0 libpulse0 libegl1 libgl1 libgles2 libgl1-mesa-dri fonts-dejavu-core \
       xvfb xauth x11-utils x11-apps dbus
   elif command -v dnf >/dev/null; then
     dnf -y -q install --setopt=install_weak_deps=False \
-      gtk3 pulseaudio-libs mesa-dri-drivers mesa-libEGL mesa-libGL dejavu-sans-fonts \
+      gtk3 pulseaudio-libs mesa-dri-drivers mesa-libEGL mesa-libGL libglvnd-gles dejavu-sans-fonts \
       xorg-x11-server-Xvfb /usr/bin/xwininfo /usr/bin/xwd /usr/bin/dbus-daemon /usr/bin/ldd findutils
   else
     fail "no apt-get or dnf here"

@@ -348,6 +348,13 @@ depends="$(cd "$DEBROOT" && dpkg-shlibdeps -O -l"$PKG/usr/lib/kapynotes/lib" "${
   sed -n 's/^shlibs:Depends=//p')" || { cat "$WORK/shlibdeps.log" >&2; die "dpkg-shlibdeps failed"; }
 grep -v 'is not used by any binary\|was not linked against\|could avoid a useless dependency' "$WORK/shlibdeps.log" >&2 || true
 [[ -n "$depends" ]] || die "dpkg-shlibdeps produced no Depends"
+# GTK and the Flutter engine draw through libepoxy, which dlopens libGL (GTK's
+# GLX context on X11), libEGL and libGLESv2 (the engine's own context) instead
+# of linking them, so dpkg-shlibdeps sees none of the three.
+for lib in libgl1 libegl1 libgles2; do
+  re=", $lib( |,)"
+  [[ ", $depends," =~ $re ]] || depends="$depends, $lib"
+done
 
 cat >"$PKG/DEBIAN/control" <<EOF
 Package: kapynotes

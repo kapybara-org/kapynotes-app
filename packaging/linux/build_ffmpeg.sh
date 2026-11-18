@@ -105,9 +105,10 @@ src="$WORK/ffmpeg-$FFMPEG_VERSION"
 
 # The components the commands above use, by configure's names, which are not
 # always the names -f takes: raw s16le is the pcm_s16le demuxer and muxer,
-# .m4a is written by the ipod muxer, and since ffmpeg 7.1 `-` for stdin or
-# stdout is the fd protocol rather than pipe. `./configure --list-demuxers` (and
-# --list-muxers, --list-filters, ...) shows the names. Add to these lists when
+# .m4a is written by the ipod muxer, and the ffmpeg program opens an input of
+# `-` with the fd protocol but an output of `-` with pipe (fftools/
+# ffmpeg_demux.c and ffmpeg_mux_init.c in 9.0.2). `./configure --list-demuxers`
+# (and --list-muxers, --list-filters, ...) shows the names. Add to these lists when
 # the app starts using another piece of ffmpeg.
 protocols=(file pipe fd)
 demuxers=(pcm_s16le mov wav)
