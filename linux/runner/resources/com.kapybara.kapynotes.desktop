@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Kapy Notes
+GenericName=Notes
+Comment=Notes where every line is a live calculator
+Keywords=notes;notepad;calculator;math;budget;currency;converter;units;percent;lists;tasks;journal;markdown;
+Exec=kapynotes %u
+Icon=com.kapybara.kapynotes
+Terminal=false
+Categories=Office;
+MimeType=x-scheme-handler/kapynotes;
+StartupNotify=true
+StartupWMClass=com.kapybara.kapynotes
+X-GNOME-SingleWindow=true
+Actions=new-note;
+
+[Desktop Action new-note]
+Name=New Note
+Exec=kapynotes --new-note
