@@ -26,6 +26,7 @@ import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -651,6 +652,48 @@ void main() {
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_note_pinned.png'),
     );
+  });
+
+  for (final brightness in [Brightness.dark, Brightness.light]) {
+    for (final on in [false, true]) {
+      testWidgets(
+        'toolbar, Keep on top ${on ? 'on' : 'off'}, ${brightness.name}',
+        (tester) async {
+          await pumpForGolden(
+            tester,
+            size: const Size(760, 520),
+            brightness: brightness,
+            withPinnedNote: true,
+          );
+          if (on) goldenPrefs.alwaysOnTop = true;
+          await tester.pumpAndSettle();
+          await expectLater(
+            find.byKey(const ValueKey('page-toolbar')),
+            matchesGoldenFile(
+              'goldens/keep_on_top_${brightness.name}_${on ? 'on' : 'off'}.png',
+            ),
+          );
+        },
+      );
+    }
+  }
+
+  testWidgets('Tasks carries Keep on top too', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1000, 640),
+      brightness: Brightness.dark,
+      withTasks: true,
+    );
+    await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey('page-keep-on-top'));
+    expect(button, findsOneWidget);
+    expect(find.byKey(const ValueKey('page-more')), findsNothing);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(goldenPrefs.alwaysOnTop, isTrue);
+    expect(tester.widget<CompactIconButton>(button).selected, isTrue);
   });
 
   testWidgets('desktop dark narrow, results at line ends', (tester) async {

@@ -1439,8 +1439,103 @@ void main() {
       await pumpApp(tester, size: const Size(420, 800));
       expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
       expect(findKapyIcon(KapyIcons.pinRounded), findsNothing);
+      expect(find.byKey(const ValueKey('page-keep-on-top')), findsNothing);
     },
   );
+
+  group('Keep on top button', () {
+    final button = find.byKey(const ValueKey('page-keep-on-top'));
+    bool lit(WidgetTester tester) =>
+        tester.widget<CompactIconButton>(button).selected;
+
+    testWidgets('stands left of More in Notes and Drawings, at every desktop '
+        'width and with the list hidden', (tester) async {
+      for (final size in [
+        const Size(1100, 760),
+        const Size(700, 620),
+        LayoutPrefs.minimumWindowSize,
+      ]) {
+        for (final sidebarVisible in [true, false]) {
+          await pumpApp(tester, size: size, sidebarVisible: sidebarVisible);
+          for (final space in ['notes', 'drawings']) {
+            await tester.tap(find.byKey(ValueKey('rail-$space')));
+            await tester.pumpAndSettle();
+            final reason = 'missing in $space at $size, list $sidebarVisible';
+            expect(button, findsOneWidget, reason: reason);
+            expect(
+              tester.getRect(button).right,
+              lessThan(
+                tester.getRect(find.byKey(const ValueKey('page-more'))).left,
+              ),
+              reason: reason,
+            );
+          }
+        }
+      }
+    });
+
+    testWidgets('floats the window, says so, and keeps More in step', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'alpha');
+      await tester.pumpAndSettle();
+      final chord = shortcuts
+          .bindingFor(ShortcutAction.toggleAlwaysOnTop)!
+          .displayLabel;
+      expect(find.byTooltip('Keep on top  $chord'), findsOneWidget);
+      expect(lit(tester), isFalse);
+      expect(prefs.alwaysOnTop, isFalse);
+
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(prefs.alwaysOnTop, isTrue);
+      expect(lit(tester), isTrue);
+      expect(find.byTooltip('Keep on top: on  $chord'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('Stop keeping on top'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('page-more-on-top')));
+      await tester.pumpAndSettle();
+      expect(prefs.alwaysOnTop, isFalse);
+      expect(lit(tester), isFalse);
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('Keep on top'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(prefs.alwaysOnTop, isFalse);
+      expect(lit(tester), isFalse);
+    });
+
+    testWidgets('leaves the editor focused, so typing carries on', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'alpha');
+      await tester.pumpAndSettle();
+      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
+
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      expect(prefs.alwaysOnTop, isTrue);
+      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
+    });
+
+    testWidgets('the setting set elsewhere lights it', (tester) async {
+      await pumpApp(tester);
+      prefs.alwaysOnTop = true;
+      await tester.pumpAndSettle();
+      expect(lit(tester), isTrue);
+    });
+  });
 
   testWidgets('keeps exchange-rate status out of the toolbar', (tester) async {
     await pumpApp(tester);
