@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart'
     show Color, FontStyle, FontWeight, TextLeadingDistribution, TextStyle;
 
 import '../../core/editor_font.dart';
-import '../../core/theme.dart' show EditorMetrics;
+import '../../core/theme.dart' show AppFonts, EditorMetrics;
 import '../../data/note_format.dart';
 
 /// The bullet each nesting level is drawn with, cycling once it runs out.
@@ -88,7 +88,7 @@ TextStyle paragraphTextStyle(
   if (paragraphStyle == NoteParagraphStyle.heading) {
     return _headingStyle(
       base,
-      EditorMetrics.page ? _pageHeadingScale(1) : 1.28,
+      _headingScale(1),
       1,
       writingFont,
     ).copyWith(color: primaryColor);
@@ -101,33 +101,50 @@ TextStyle paragraphTextStyle(
     fontSize: base.fontSize == null ? null : base.fontSize! * scale,
     // Keep the row the line sits in while changing visual size.
     height: base.height == null ? null : base.height! / scale,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontStyle: paragraphStyle == NoteParagraphStyle.subtitle
         ? FontStyle.italic
         : FontStyle.normal,
   );
 }
 
-/// The note's first line on the page, its title: Paper's 40/48 in bold, in
-/// the handwritten face when the writing font is mixed. Emphasis in it
-/// stays.
-TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
-  final face = writingFont == WritingFont.mixed
-      ? WritingFont.handwritten
-      : null;
+/// The note's first line, its title, at [EditorMetrics.titleFontSize]: in
+/// [AppFonts.title] over the default writing font, falling back to the
+/// writing face for scripts it lacks, and in the person's own face when they
+/// chose another, the handwritten one when it is mixed. Emphasis in it stays.
+TextStyle noteTitleStyle(
+  TextStyle base, {
+  WritingFont? writingFont,
+  bool strong = false,
+}) {
   final size = base.fontSize == null
       ? null
       : _pageScale(base) * EditorMetrics.titleFontSize;
+  final height = size == null
+      ? null
+      : EditorMetrics.titleRow / EditorMetrics.titleFontSize;
+  if (writingFont == WritingFont.clean) {
+    return base.copyWith(
+      fontFamily: AppFonts.title,
+      fontFamilyFallback: [?base.fontFamily, ...?base.fontFamilyFallback],
+      fontVariations: const [],
+      fontSize: size,
+      height: height,
+      leadingDistribution: TextLeadingDistribution.even,
+      fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
+    );
+  }
+  final face = writingFont == WritingFont.mixed
+      ? WritingFont.handwritten
+      : null;
   return base.copyWith(
     fontFamily: face?.fontFamily,
     fontFamilyFallback: face?.fontFamilyFallback,
-    fontVariations: face?.fontVariations,
+    fontVariations: (face ?? writingFont)?.faceVariations ?? const [],
     fontSize: size,
-    height: size == null
-        ? null
-        : EditorMetrics.titleRow / EditorMetrics.titleFontSize,
+    height: height,
     leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: FontWeight.w700,
+    fontWeight: strong ? FontWeight.w600 : EditorMetrics.titleWeight,
   );
 }
 
@@ -137,9 +154,8 @@ double _pageScale(TextStyle base) =>
     ? 1
     : base.fontSize! * base.height! / EditorMetrics.lineHeight;
 
-/// A heading's size on the page against 16px writing.
-double _pageHeadingScale(int level) =>
-    EditorMetrics.headingFontSize(level) / 16;
+/// A heading's size against 16px writing.
+double _headingScale(int level) => EditorMetrics.headingFontSize(level) / 16;
 
 /// The least room a markdown list marker takes, before scaling: a task's
 /// box, and a gap between it and the words. See
@@ -164,14 +180,7 @@ TextStyle markdownHeadingStyle(
   Color? primaryColor,
   Color? secondaryColor,
 }) {
-  final scale = EditorMetrics.page
-      ? _pageHeadingScale(level)
-      : switch (level) {
-          <= 1 => 1.28,
-          2 => 1.18,
-          3 => 1.08,
-          _ => 1.0,
-        };
+  final scale = _headingScale(level);
   return _headingStyle(
     base,
     scale,
@@ -204,13 +213,13 @@ TextStyle _headingStyle(
   return base.copyWith(
     fontFamily: face?.fontFamily,
     fontFamilyFallback: face?.fontFamilyFallback,
-    fontVariations: face?.fontVariations,
+    fontVariations: (face ?? writingFont)?.faceVariations ?? const [],
     fontSize: size,
     height: row == null || size == null ? null : row / size,
     leadingDistribution: EditorMetrics.page
         ? TextLeadingDistribution.proportional
         : null,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w600,
     fontStyle: FontStyle.normal,
   );
 }

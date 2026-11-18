@@ -236,7 +236,10 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
-    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    final curve = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
     final dark = Theme.of(context).brightness == Brightness.dark;
     final compact = AppPlatform.hasPointer;
     final statusColor = widget.isError ? scheme.error : scheme.primary;
@@ -286,7 +289,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                         ),
                         decoration: BoxDecoration(
                           color: surfaceColor,
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
                           border: Border.all(
                             color: palette.controlBorder.withValues(
                               alpha: dark ? 0.95 : 0.72,
@@ -358,7 +361,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                                       MaterialTapTargetSize.shrinkWrap,
                                   textStyle: TextStyle(
                                     fontSize: AppTypeScale.body,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                                 child: Text(label),

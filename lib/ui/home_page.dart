@@ -1892,22 +1892,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Throws one archived note away for good.
   ///
   /// Guarded by a question, because nothing here can undo it: the note leaves
-  /// this device and, through the tombstone, every other one it syncs to.
+  /// this device and, through the tombstone, every other one it syncs to. A
+  /// note somebody else shares with this account only leaves its own notes.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
     if (note == null || !_canEditNote(note)) return;
     _recordKapyActivity();
     final title = note.title.trim();
+    final name = title.isEmpty ? 'this note' : '"$title"';
+    final owner = _sharedBy(note);
     final confirmed = await _confirmDelete(
-      title: 'Delete note?',
-      body: title.isEmpty
-          ? 'Permanently deletes this note from every synced device.'
-          : 'Permanently deletes "$title" from every synced device.',
-      action: 'Delete',
+      title: owner == null ? 'Delete note?' : 'Remove from your notes?',
+      body: owner == null
+          ? 'Permanently deletes $name from every synced device.'
+          : 'Removes $name from your notes on this device. $owner and '
+                "everyone it's shared with keep it.",
+      action: owner == null ? 'Delete' : 'Remove',
     );
     if (!confirmed || !mounted) return;
     _forget([id]);
-    _announceDeleted(1);
+    if (owner == null) {
+      _announceDeleted(1);
+    } else {
+      Toast.show(context, 'Removed from your notes', icon: deleteIcon);
+    }
+  }
+
+  /// Who owns [note]'s shared space, when that is somebody else. Only they
+  /// delete it for everyone; here it only leaves this account's notes.
+  String? _sharedBy(Note? note) {
+    final space = note == null ? null : widget.account?.sharing?.spaceOf(note);
+    if (space == null || !space.isTeam || space.isOwner) return null;
+    return space.shortNameOf(space.ownerId);
+  }
+
+  /// What deleting [ids] from the archive does, said before it happens.
+  String _deleteBody(List<String> ids) {
+    final theirs = ids
+        .where((id) => _sharedBy(widget.notes.byId(id)) != null)
+        .length;
+    const shared =
+        'Notes shared with you are removed from your notes on this device '
+        'only, and their owners keep them.';
+    if (theirs == 0) {
+      return 'Permanently deletes ${_noteCount(ids.length).toLowerCase()} '
+          'from every synced device.';
+    }
+    if (theirs == ids.length) return shared;
+    return 'Permanently deletes your own notes from every synced device. '
+        '$shared';
   }
 
   /// Empties the archive.
@@ -1920,9 +1953,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _recordKapyActivity();
     final confirmed = await _confirmDelete(
       title: 'Empty Archived Notes?',
-      body:
-          'Permanently deletes ${_noteCount(ids.length).toLowerCase()} from '
-          'every synced device.',
+      body: _deleteBody(ids),
       action: 'Delete all',
     );
     if (!confirmed || !mounted) return;
@@ -1936,9 +1967,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _recordKapyActivity();
     final confirmed = await _confirmDelete(
       title: ids.length == 1 ? 'Delete note?' : 'Delete ${ids.length} notes?',
-      body:
-          'Permanently deletes ${_noteCount(ids.length).toLowerCase()} from '
-          'every synced device.',
+      body: _deleteBody(ids),
       action: 'Delete',
     );
     if (!confirmed || !mounted) return;
@@ -3579,7 +3608,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 foregroundColor: palette.textTertiary,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 textStyle: uiStyle(
                   12.5,
@@ -3723,7 +3752,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               topRight: Radius.circular(22),
               bottomRight: Radius.circular(22),
             ),
-            side: BorderSide(color: palette.separator, width: 0.5),
+            side: BorderSide(
+              color: palette.separator,
+              width: AppHairline.of(context),
+            ),
           ),
           child: _drawerContentReady
               ? Builder(
@@ -3889,9 +3921,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
-          // A phone keeps a fixed results column, and a wide phone gets
-          // enough of one for a grouped currency and its three-letter code.
-          gutterWidth: MediaQuery.sizeOf(context).width >= 400 ? 152 : 132,
+          keepResultRoom: true,
           resultsVisible: true,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),

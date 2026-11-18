@@ -173,8 +173,11 @@ class _Field extends StatelessWidget {
           filled: true,
           fillColor: palette.controlBackground,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
+            borderRadius: BorderRadius.circular(AppRadii.control),
+            borderSide: BorderSide(
+              color: palette.controlBorder,
+              width: AppHairline.of(context),
+            ),
           ),
         ),
       ),
@@ -633,7 +636,9 @@ class _ProfileEditorState extends State<_ProfileEditor> {
             helperText: 'Shown to people you share notes with',
             filled: true,
             fillColor: palette.controlBackground,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadii.control),
+            ),
           ),
           onSubmitted: (_) => _save(),
         ),

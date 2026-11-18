@@ -449,7 +449,7 @@ const List<LocalSummaryModel> localSummaryModels = <LocalSummaryModel>[
 /// four-times larger download and a better summariser by a wide margin, and —
 /// the part that decides it — its *runtime* cost is lower, not higher: the
 /// embedding parameters are memory-mapped rather than resident, so peak RAM is
-/// around 600–800 MB on a phone against the gigabyte-plus a naive 1B int4
+/// under 2 GB on a phone against the gigabyte-plus a naive 1B int4
 /// would hold. It is also Apache-2.0 and ungated, where Gemma 3 1B is behind
 /// a licence gate that would have made us a redistributor with terms to pass
 /// on. The one thing it costs is 2.6 GB of somebody's disk and data.
@@ -470,16 +470,18 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
       'notes with no account and no network at all.',
   detail:
       'Quantisation-aware trained at a mixture of 2, 4 and 8 bits. Its '
-      'embeddings are read from disk rather than held in memory, which is why '
-      'a 2.6 GB model needs well under a gigabyte to run. Loaded only while a '
-      'summary is being written, then unloaded again.',
+      'embeddings are read from disk rather than held in memory, which keeps '
+      'it under 3.5 GB while it runs. Loaded only while a summary is being '
+      'written, then unloaded again.',
   // Apache-2.0 asks nothing of a user, so there is nothing to agree to. The
   // mechanism stays for a model that does.
   terms: null,
-  // Peak measured by the publisher at 607 MB on an iPhone 17 Pro and 1.5 GB
-  // on a Raspberry Pi 5. Three gigabytes of device memory leaves room for
-  // that and for the rest of the app.
-  minimumMemoryBytes: 3 * 1000 * 1000 * 1000,
+  // Peak on the CPU in LiteRT-LM's own table: 736 MB on an M4 Max, 1.7 GB on
+  // a Galaxy S26 Ultra and 3.5 GB on an Intel Lunar Lake laptop. Five
+  // gigabytes covers the worst of those with room for the system and the rest
+  // of the app, and still admits a "6 GB" phone, whose kernel reports nearer
+  // 5.5 once its own reservations are taken.
+  minimumMemoryBytes: 5 * 1000 * 1000 * 1000,
   files: [
     LocalModelFile(
       name: 'gemma-4-E2B-it.litertlm',

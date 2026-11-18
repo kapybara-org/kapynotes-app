@@ -181,7 +181,7 @@ class _NoteFileChipState extends State<NoteFileChip> {
                     height: noteFileChipHeight,
                     decoration: BoxDecoration(
                       color: palette.controlBackground,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(AppRadii.control),
                       border: Border.all(color: palette.controlBorder),
                     ),
                     padding: EdgeInsets.only(

@@ -237,12 +237,12 @@ void main() {
     testWidgets('a heading is large and bold, its marker hidden', (
       tester,
     ) async {
-      await tester.pumpWidget(harness('# Title\nbody'));
+      await tester.pumpWidget(harness('Note\n# Title\nbody'));
       await tester.pumpAndSettle();
 
       final title = styleOf(tester, 'Title');
       final body = styleOf(tester, 'body');
-      expect(title.fontWeight, FontWeight.w700);
+      expect(title.fontWeight, FontWeight.w600);
       expect(title.fontSize, greaterThan(body.fontSize!));
       expect(isHidden(tester, '#'), isTrue);
       expect(isHidden(tester, 'Title'), isFalse);
@@ -290,7 +290,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w600);
       expect(styleOf(tester, 'it').fontStyle, FontStyle.italic);
       expect(
         styleOf(tester, 'code').fontFamily,
@@ -338,7 +338,7 @@ void main() {
 
       await tester.pumpWidget(harness('Note\n**bold**'));
       await tester.pumpAndSettle();
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w600);
     });
   });
 
@@ -490,7 +490,7 @@ void main() {
 
       expect(styleOf(tester, 'one').fontStyle, FontStyle.italic);
       expect(styleOf(tester, 'two').fontStyle, FontStyle.italic);
-      expect(styleOf(tester, 'three').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'three').fontWeight, FontWeight.w600);
       expect(styleOf(tester, 'four').decoration, TextDecoration.lineThrough);
       expect(
         styleOf(tester, 'five').fontFamily,
@@ -1906,7 +1906,7 @@ void main() {
       await typeAtCaret(tester, 'h');
       await typeAtCaret(tester, 'i');
       expect(controllerOf(tester).text, 'say **hi**');
-      expect(styleOf(tester, 'hi').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'hi').fontWeight, FontWeight.w600);
 
       // A space, then the key again: the next word is plain.
       await typeAtCaret(tester, ' ');
@@ -2054,7 +2054,7 @@ void main() {
       expect(styleOf(tester, 'return').color, palette.codeKeyword);
       expect(styleOf(tester, 'sum').color, palette.codeBuiltIn);
       expect(styleOf(tester, 'total').color, palette.textPrimary);
-      expect(styleOf(tester, 'total').fontWeight, FontWeight.w600);
+      expect(styleOf(tester, 'total').fontWeight, FontWeight.w500);
       expect(styleOf(tester, '# all').color, palette.textTertiary);
       expect(styleOf(tester, '# all').fontStyle, FontStyle.italic);
       // A language it does not know is left as it is written.
@@ -2495,5 +2495,50 @@ void main() {
         );
       });
     });
+  });
+
+  group('the note title', () {
+    const note =
+        'Lisbon trip budget\n'
+        'Flights for two, in April.\n'
+        '# Days\n'
+        '## Getting there\n'
+        '### Trains\n'
+        'flights = 412 eur';
+
+    for (final light in [true, false]) {
+      final theme = light ? 'light' : 'dark';
+
+      for (final (view, readOnly, phone) in [
+        ('editor', false, false),
+        ('read_only', true, false),
+        ('phone', false, true),
+      ]) {
+        testWidgets('in Newsreader, $view, $theme', (tester) async {
+          if (phone) {
+            AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+            addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          }
+          tester.view.physicalSize = phone
+              ? const Size(390, 420)
+              : const Size(720, 460);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            harness(
+              note,
+              light: light,
+              readOnly: readOnly,
+              writingFont: WritingFont.clean,
+            ),
+          );
+          await settleWithPageKapy(tester);
+          await expectLater(
+            find.byType(NoteEditor),
+            matchesGoldenFile('goldens/note_title_${view}_$theme.png'),
+          );
+        });
+      }
+    }
   });
 }

@@ -131,7 +131,7 @@ class KapyAiPicker extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.kapyMenu,
         border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         boxShadow: [
           BoxShadow(
             color: palette.shadowAt(0x80),
@@ -180,7 +180,7 @@ class _Label extends StatelessWidget {
         11,
         14,
         context.palette.textTertiary,
-        weight: FontWeight.w600,
+        weight: FontWeight.w500,
       ).copyWith(letterSpacing: 0.44),
     ),
   );
@@ -222,7 +222,7 @@ class _Row extends StatelessWidget {
     final trailing = this.trailing;
     return Material(
       color: selected ? palette.kapyHighlight : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         hoverColor: palette.kapyHighlight,
@@ -257,7 +257,7 @@ class _Row extends StatelessWidget {
                           13,
                           16,
                           enabled ? palette.textPrimary : palette.textTertiary,
-                          weight: FontWeight.w600,
+                          weight: FontWeight.w500,
                         ),
                       ),
                       if (subline != null) ...[
@@ -279,7 +279,7 @@ class _Row extends StatelessWidget {
                       12,
                       16,
                       palette.textTertiary,
-                      weight: FontWeight.w500,
+                      weight: FontWeight.w400,
                     ),
                   ),
                 if (selected)
@@ -327,7 +327,7 @@ class KapyAiModelButton extends StatelessWidget {
         model.kind == KapyModelKind.cloud && kapyAi.cloudUsage?.remaining == 0;
     return Material(
       color: open ? palette.kapyHighlight : Colors.transparent,
-      borderRadius: BorderRadius.circular(7),
+      borderRadius: BorderRadius.circular(AppRadii.compact),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: const ValueKey('kapy-ai-model-button'),
@@ -356,7 +356,7 @@ class KapyAiModelButton extends StatelessWidget {
                       12.5,
                       16,
                       palette.textSecondary,
-                      weight: FontWeight.w600,
+                      weight: FontWeight.w500,
                     ),
                   ),
                 ),
