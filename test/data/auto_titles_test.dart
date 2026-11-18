@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -604,6 +605,24 @@ void main() {
         async.elapse(const Duration(seconds: 5));
         namer.left(note.id);
         expect(model.prompts, isEmpty);
+      });
+    });
+
+    test('off by default on Android, and can be turned on', () {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      fakeAsync((async) {
+        start(async);
+        expect(prefs.autoTitlesEnabled, isFalse);
+        expect(namer.isOn, isFalse);
+        final note = write(_trip);
+        expect(namer.willName(note), isFalse);
+        namer.left(note.id);
+        expect(model.prompts, isEmpty);
+
+        prefs.autoTitlesEnabled = true;
+        namer.left(note.id);
+        expect(model.prompts, [_trip]);
       });
     });
 

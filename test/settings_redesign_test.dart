@@ -224,6 +224,20 @@ void main() {
       expect(switchIn(tester).value, isFalse);
     });
 
+    testWidgets('is off by default on Android, and turns on', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      prefs.load();
+      await open(tester, _Titles());
+      expect(switchIn(tester).value, isFalse);
+      expect(switchIn(tester).enabled, isTrue);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(prefs.autoTitlesEnabled, isTrue);
+      expect(switchIn(tester).value, isTrue);
+    });
+
     testWidgets('without a model it is off and disabled, and says why', (
       tester,
     ) async {
