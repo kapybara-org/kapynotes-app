@@ -22,6 +22,9 @@
 # release/** still build on push, since no pull request covers a direct push or
 # the commit a merge creates.
 #
+# Linux builds here too, on x86_64 and aarch64. Its jobs are not required
+# checks yet.
+#
 # Pull requests from forks run with no secrets — GitHub withholds them — so
 # untrusted code cannot reach the signing keys this repository holds for
 # desktop-release.yml.
@@ -133,4 +136,129 @@ jobs:
         with:
           name: macos-dmg-unsigned
           path: build/release/KapyNotes-*-unsigned.dmg
+          if-no-files-found: error
+
+  # The tar.gz, .deb and AppImage, built natively on each arch rather than
+  # cross-compiled: GitHub's arm64 runners are free for public repositories,
+  # and a native build runs the same packaging/release.sh a developer does.
+  # ubuntu-22.04 because it is the oldest LTS that Flutter 3.47 and the
+  # plugins accept, and its glibc (2.35) is the floor every package inherits:
+  # build on a newer one and the app stops starting on 22.04 and Debian 12.
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Flutter's own Linux toolchain (clang, cmake, ninja, GTK 3), the
+      # libraries the plugins link (the tray's ayatana-appindicator3, the X11
+      # shortcut's keybinder, secure storage's libsecret), libpulse for the
+      # ffmpeg that voice notes use, and the packaging and validation tools.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libayatana-appindicator3-dev libkeybinder-3.0-dev libsecret-1-dev \
+            libpulse-dev make xz-utils curl \
+            patchelf dpkg-dev file desktop-file-utils appstream lintian
+
+      # `jni` arrives transitively and its CMake looks for a JVM even though
+      # the library it builds is Android-only and never ships; 17 matches the
+      # Windows job.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # flutter-action installs from Flutter's release archives, which exist
+      # for x64 Linux only. On arm64 the SDK is a clone of the release tag,
+      # which downloads its own arm64 Dart SDK and engine on first run.
+      - if: matrix.arch == 'x86_64'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - if: matrix.arch == 'aarch64'
+        uses: actions/cache@v4
+        with:
+          path: ~/flutter
+          key: flutter-${{ env.FLUTTER_VERSION }}-linux-arm64
+
+      - name: Install Flutter from its release tag
+        if: matrix.arch == 'aarch64'
+        run: |
+          if [ ! -x "$HOME/flutter/bin/flutter" ]; then
+            git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$HOME/flutter"
+          fi
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          "$HOME/flutter/bin/flutter" --disable-analytics
+          "$HOME/flutter/bin/flutter" precache --linux
+
+      - run: flutter --version
+
+      - run: flutter pub get
+
+      # The LGPL ffmpeg that every package ships in libexec/. It changes only
+      # with its script, so a cache keyed on the script's hash skips the
+      # build on almost every run.
+      - uses: actions/cache@v4
+        with:
+          path: build/linux/ffmpeg/${{ matrix.arch }}
+          key: linux-ffmpeg-${{ matrix.runner }}-${{ hashFiles('packaging/linux/build_ffmpeg.sh') }}
+
+      # Builds ffmpeg if the cache missed, then the obfuscated release bundle
+      # with its symbols split out (as on every other platform), then the
+      # three packages. FLUTTER overrides the script's default SDK path.
+      - name: Build Linux packages
+        env:
+          FLUTTER: flutter
+        run: packaging/release.sh linux
+
+      - name: Validate packages
+        run: |
+          set -x
+          version="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
+          case "${{ matrix.arch }}" in x86_64) debarch=amd64 ;; aarch64) debarch=arm64 ;; esac
+          deb="build/release/KapyNotes-$version-$debarch.deb"
+          appimage="build/release/KapyNotes-$version-${{ matrix.arch }}.AppImage"
+          tarball="build/release/KapyNotes-$version-linux-${{ matrix.arch }}.tar.gz"
+          ls -l "$deb" "$appimage" "$tarball"
+          desktop-file-validate linux/runner/resources/com.kapybara.kapynotes.desktop
+          appstreamcli validate --no-net --pedantic linux/runner/resources/com.kapybara.kapynotes.metainfo.xml
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb" > deb-contents.txt
+          for path in ./usr/bin/kapynotes ./usr/lib/kapynotes/kapynotes ./usr/lib/kapynotes/lib/libapp.so \
+            ./usr/lib/kapynotes/libexec/ffmpeg ./usr/lib/kapynotes/libexec/parecord \
+            ./usr/share/applications/com.kapybara.kapynotes.desktop \
+            ./usr/share/metainfo/com.kapybara.kapynotes.metainfo.xml \
+            ./usr/share/icons/hicolor/256x256/apps/com.kapybara.kapynotes.png \
+            ./usr/share/doc/kapynotes/copyright; do
+            grep -q " $path" deb-contents.txt || { echo "::error::$path missing from $deb"; exit 1; }
+          done
+          ! grep -q 'libdartjni.so' deb-contents.txt
+          tar -tzf "$tarball" | grep -qx 'kapynotes/kapynotes'
+          tar -tzf "$tarball" | grep -qx 'kapynotes/libexec/ffmpeg'
+          # Lintian's verdict is shown but does not fail the build: a few of
+          # its tags (a bundled Flutter engine, a private RUNPATH) are the
+          # nature of a Flutter app rather than something to fix.
+          lintian --no-tag-display-limit "$deb" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-unsigned
+          path: |
+            build/release/KapyNotes-*.tar.gz
+            build/release/KapyNotes-*.deb
+            build/release/KapyNotes-*.AppImage
           if-no-files-found: error

@@ -7,8 +7,12 @@
 #   ios           → build/release/kapy-ios.ipa       for App Store Connect
 #   mac-store     → build/release/kapy-macos.pkg     Mac App Store (not in use yet)
 #   android       → build/release/kapy-android.aab   for Google Play
+#   linux         → build/release/KapyNotes-<version>-linux-<arch>.tar.gz,
+#                   KapyNotes-<version>-<debarch>.deb and
+#                   KapyNotes-<version>-<arch>.AppImage, unsigned, for the
+#                   arch of the Linux machine it runs on
 #
-# Usage:  packaging/release.sh [mac-direct|mac-unsigned|ios|mac-store|android]
+# Usage:  packaging/release.sh [mac-direct|mac-unsigned|ios|mac-store|android|linux]
 #
 # `dmg-template` regenerates the committed DMG window layout; see
 # build_dmg_template. It is a maintenance command, not a build.
@@ -461,6 +465,26 @@ build_mac_unsigned() {
   echo "  → $dmg (unsigned — will not open on another Mac)"
 }
 
+# The three Linux downloads for this machine's arch. ffmpeg is built first
+# (or reused from build/linux/ffmpeg) because every package ships it in
+# libexec/ for voice notes; packaging/linux/package.sh explains the layout and
+# which libraries the portable packages carry.
+build_linux() {
+  local arch flutter_arch
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) flutter_arch=x64 ;;
+    aarch64) flutter_arch=arm64 ;;
+    *) echo "error: no Linux build for $arch" >&2; exit 1 ;;
+  esac
+  info "Linux $VERSION ($BUILD_NUMBER) → tar.gz, .deb and AppImage for $arch, unsigned"
+  "$ROOT/packaging/linux/build_ffmpeg.sh"
+  # shellcheck disable=SC2046
+  "$FLUTTER" build linux --release $(dart_size_flags "linux-$arch")
+  "$ROOT/packaging/linux/package.sh" \
+    "$ROOT/build/linux/$flutter_arch/release/bundle" "$VERSION" "$OUT"
+}
+
 case "${1:-mac-direct}" in
   mac-direct)   build_mac_direct ;;
   ios)          build_ios ;;
@@ -468,7 +492,8 @@ case "${1:-mac-direct}" in
   mac-unsigned) build_mac_unsigned ;;
   android)      build_android ;;
   dmg-template) build_dmg_template ;;
-  *)            echo "Usage: $0 [mac-direct|mac-unsigned|ios|mac-store|android|dmg-template]" >&2; exit 1 ;;
+  linux)        build_linux ;;
+  *)            echo "Usage: $0 [mac-direct|mac-unsigned|ios|mac-store|android|linux|dmg-template]" >&2; exit 1 ;;
 esac
 
 info "Done"

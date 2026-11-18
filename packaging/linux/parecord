@@ -1,0 +1,63 @@
+#!/bin/sh
+#
+# parecord, as far as Kapy Notes needs one, on top of the ffmpeg beside it.
+#
+# The record package's Linux side (record_linux) captures the microphone by
+# running `parecord --raw --format=s16le --rate=R --channels=C
+# --latency-msec=100 [--device=X] [--property=...]` from PATH and reading raw
+# PCM from its stdout. parecord is in pulseaudio-utils, which Fedora, KDE
+# desktops and plenty of minimal installs leave out. The app's runner puts
+# this directory first on PATH, so this script answers instead, by capturing
+# from PulseAudio (or PipeWire's PulseAudio server) with the bundled ffmpeg.
+#
+# It execs rather than forking, so ffmpeg keeps this process id and the
+# SIGSTOP, SIGCONT and SIGTERM that record_linux sends to pause, resume and
+# stop a recording reach ffmpeg itself. ffmpeg flushes and exits on SIGTERM.
+#
+# Only the arguments record_linux passes are accepted; anything else is an
+# error, so a change in record_linux shows up as a failed recording rather
+# than a silently different one. --property (automatic gain, echo
+# cancellation, noise suppression) is accepted and ignored: PulseAudio applies
+# those only through modules a desktop rarely loads.
+
+rate=
+channels=
+latency=100
+device=default
+
+for arg in "$@"; do
+  case "$arg" in
+    --raw) ;;
+    --format=s16le) ;;
+    --rate=*) rate=${arg#--rate=} ;;
+    --channels=*) channels=${arg#--channels=} ;;
+    --latency-msec=*) latency=${arg#--latency-msec=} ;;
+    --device=*) device=${arg#--device=} ;;
+    --property=*) ;;
+    *)
+      echo "parecord (Kapy Notes): unsupported argument: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$rate$channels$latency" in
+  *[!0-9]*|'')
+    echo "parecord (Kapy Notes): --rate, --channels and --latency-msec must be numbers" >&2
+    exit 2
+    ;;
+esac
+if [ -z "$rate" ] || [ -z "$channels" ]; then
+  echo "parecord (Kapy Notes): --rate and --channels are required" >&2
+  exit 2
+fi
+
+# PulseAudio's fragment size is in bytes: rate x channels x 2 bytes per
+# sample, over the latency in milliseconds.
+fragment=$((rate * channels * 2 * latency / 1000))
+
+exec "$(dirname "$0")/ffmpeg" -nostdin -v error \
+  -f pulse -name "Kapy Notes" -stream_name "Voice note" \
+  -sample_rate "$rate" -channels "$channels" -fragment_size "$fragment" \
+  -i "$device" \
+  -f s16le -ar "$rate" -ac "$channels" pipe:1
