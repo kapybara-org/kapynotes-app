@@ -99,7 +99,10 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    final curve = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
 
     return Stack(
       children: [
@@ -153,7 +156,9 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                           backgroundColor: palette.selectedBackground,
                           foregroundColor: palette.textPrimary,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.compact,
+                            ),
                           ),
                         ),
                         child: Text(

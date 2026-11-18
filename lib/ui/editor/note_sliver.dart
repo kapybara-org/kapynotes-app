@@ -55,11 +55,14 @@ typedef NoteMarks = ({
 /// runs too near, the child moves out past [right] after it, as far as the
 /// line reaches, and covers the writing only once there's no room left.
 /// [leader], when given, fills the space between the writing and the child.
+/// Every row of the writing stops [room] short of the line's end, so that
+/// the child never covers it; with none, the writing runs the full width.
 typedef LineTrailing = ({
   Widget child,
   Widget? leader,
   double right,
   bool firstRow,
+  double room,
 });
 
 /// The space a line keeps between its writing, the leader of what it shows
@@ -319,7 +322,14 @@ class NoteLayout {
 
   TextPainter _paragraphFor(int line) {
     final drawn = spanAt(line);
-    final key = _Drawn(drawn.span, drawn.placeholders, drawn.row, drawn.inset);
+    final width = math.max(0.0, _width! - (trailingOf?.call(line)?.room ?? 0));
+    final key = _Drawn(
+      drawn.span,
+      drawn.placeholders,
+      drawn.row,
+      drawn.inset,
+      width,
+    );
     final kept = _kept.remove(key);
     if (kept != null) return _kept[key] = kept;
     // In one paragraph of the whole note, an empty line takes its height
@@ -352,7 +362,7 @@ class NoteLayout {
                   textScaler: scaler,
                 ))
           ..setPlaceholderDimensions(drawn.placeholders)
-          ..layout(maxWidth: _width!);
+          ..layout(maxWidth: width);
     _kept[key] = painter;
     if (_kept.length > _keep) _kept.remove(_kept.keys.first);
     return painter;
@@ -401,12 +411,13 @@ class NoteLayout {
 /// What a line draws, as the key its paragraph is kept under.
 @immutable
 class _Drawn {
-  const _Drawn(this.span, this.placeholders, this.row, this.inset);
+  const _Drawn(this.span, this.placeholders, this.row, this.inset, this.width);
 
   final InlineSpan span;
   final List<PlaceholderDimensions> placeholders;
   final double? row;
   final double inset;
+  final double width;
 
   @override
   bool operator ==(Object other) =>
@@ -414,11 +425,12 @@ class _Drawn {
       other.span == span &&
       other.row == row &&
       other.inset == inset &&
+      other.width == width &&
       listEquals(other.placeholders, placeholders);
 
   @override
   int get hashCode =>
-      Object.hash(span, row, inset, Object.hashAll(placeholders));
+      Object.hash(span, row, inset, width, Object.hashAll(placeholders));
 }
 
 /// A line's paragraph set [inset] in from both edges of its column: it wraps

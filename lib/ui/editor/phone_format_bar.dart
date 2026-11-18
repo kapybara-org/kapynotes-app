@@ -179,7 +179,7 @@ class _BarButton extends StatelessWidget {
                 color: action.active
                     ? palette.tonalBackground
                     : Colors.transparent,
-                borderRadius: BorderRadius.circular(11),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: action.icon == null
                   ? Text(

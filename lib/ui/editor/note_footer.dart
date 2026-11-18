@@ -63,7 +63,12 @@ class NoteFooter extends StatelessWidget {
           bottomInset,
       child: GlassSurface(
         color: palette.surfaceBackground.withMultipliedAlpha(0.94),
-        border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
+        border: Border(
+          top: BorderSide(
+            color: palette.separator,
+            width: AppHairline.of(context),
+          ),
+        ),
         child: Padding(
           padding: EdgeInsets.only(bottom: bottomInset, right: _edgeInset),
           child: Align(

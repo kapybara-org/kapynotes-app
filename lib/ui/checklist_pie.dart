@@ -35,7 +35,7 @@ class ChecklistPie extends StatelessWidget {
     child: TweenAnimationBuilder<double>(
       tween: Tween(end: total == 0 ? 0 : done / total),
       duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
+      curve: Curves.easeOutCubic,
       builder: (context, share, _) => CustomPaint(
         size: Size.square(size),
         painter: _PiePainter(
