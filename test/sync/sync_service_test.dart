@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -35,7 +38,9 @@ class Device {
     DateTime? startAt,
     Duration pollInterval = const Duration(seconds: 60),
     int snapshotEvery = 150,
+    MemoryDocStorage? docStorage,
   }) : clock = startAt ?? DateTime.utc(2026, 9, 1),
+       docStorage = docStorage ?? MemoryDocStorage(),
        _pollInterval = pollInterval,
        _snapshotEvery = snapshotEvery {
     store = MemoryStore();
@@ -51,7 +56,7 @@ class Device {
       store: store,
       trust: TrustStore(store),
     );
-    docs = DocStore(docStorage, replica: name);
+    docs = DocStore(this.docStorage, replica: name);
     sync = _service();
   }
 
@@ -74,17 +79,24 @@ class Device {
   );
 
   /// Where the documents are written, which outlives a [relaunch].
-  final MemoryDocStorage docStorage = MemoryDocStorage();
+  final MemoryDocStorage docStorage;
 
   /// Quits and starts again over what this device had written down: the
   /// sync state as saved, and the documents read back from [docStorage].
   /// [whileDown] runs once nothing of the old run can write any more, for a
   /// test that wants the disk to say something else.
-  Future<void> relaunch({void Function()? whileDown}) async {
+  Future<void> relaunch({
+    void Function()? whileDown,
+    bool notesFromDisk = false,
+  }) async {
     sync.dispose();
     docs.dispose();
     await settle(server);
     whileDown?.call();
+    if (notesFromDisk) {
+      notes = NotesStore(store, now: tick);
+      await notes.load();
+    }
     state.load();
     docs = DocStore(docStorage, replica: name);
     sync = _service();
@@ -100,7 +112,7 @@ class Device {
   DateTime tick() => clock = clock.add(const Duration(milliseconds: 1));
 
   late final MemoryStore store;
-  late final NotesStore notes;
+  late NotesStore notes;
   late final SyncState state;
   late final FakeApi api;
   late final SpaceKeyring keyring;
@@ -136,6 +148,18 @@ class Device {
   String bodyOf(String id) => notes.byId(id)?.body ?? '<gone>';
 
   void dispose() => sync.dispose();
+}
+
+/// Writes nothing while [hold] is pending, as a slow disk does.
+class _HeldDocStorage extends MemoryDocStorage {
+  Completer<void>? hold;
+
+  @override
+  Future<void> write(String noteId, Map<String, Object?> json) async {
+    final copy = jsonDecode(jsonEncode(json)) as Map<String, Object?>;
+    await hold?.future;
+    files[noteId] = copy;
+  }
 }
 
 void main() {
@@ -527,6 +551,84 @@ void main() {
       expect(two.bodyOf(note.id), 'Start, edited later', reason: 'the stale delete won');
       expect(one.bodyOf(note.id), 'Start, edited later');
       expect(two.notes.tombstones.where((s) => s.id == note.id), isEmpty);
+      one.dispose();
+      two.dispose();
+    });
+
+    test('a crash before the outbox is written loses no edit', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+      await one.docs.flush();
+      final records = Map.of(one.docStorage.files);
+
+      server.socketsAllowed = false;
+      one.socket.drop();
+      await settle(server);
+      one.notes.updateBody(note.id, 'Start, then this');
+      await Future<void>.delayed(Duration.zero);
+
+      await one.relaunch(
+        notesFromDisk: true,
+        whileDown: () => one.docStorage.files
+          ..clear()
+          ..addAll(records),
+      );
+      server.socketsAllowed = true;
+      await one.goLive();
+      await until(
+        () => two.bodyOf(note.id) == 'Start, then this',
+        reason: 'the edit died with the record that was never written',
+      );
+      await until(() => !one.notes.byId(note.id)!.isDirty);
+      one.dispose();
+      two.dispose();
+    });
+
+    test('an edit typed during the write stays unsynced', () async {
+      final storage = _HeldDocStorage();
+      final one = Device(server, name: 'one', docStorage: storage);
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+      await one.docs.flush();
+
+      server.socketsAllowed = false;
+      one.socket.drop();
+      await settle(server);
+      one.notes.updateBody(note.id, 'Start, then this');
+      await Future<void>.delayed(Duration.zero);
+      final hold = storage.hold = Completer<void>();
+      final writing = one.docs.flush();
+      await Future<void>.delayed(Duration.zero);
+      one.notes.updateBody(note.id, 'Start, then this, and more');
+      await Future<void>.delayed(Duration.zero);
+      storage.hold = null;
+      hold.complete();
+      await writing;
+
+      final written = Map.of(storage.files);
+      await one.relaunch(
+        notesFromDisk: true,
+        whileDown: () => storage.files
+          ..clear()
+          ..addAll(written),
+      );
+      server.socketsAllowed = true;
+      await one.goLive();
+      await until(
+        () => two.bodyOf(note.id) == 'Start, then this, and more',
+        reason: 'the edit typed during the write never went up',
+      );
       one.dispose();
       two.dispose();
     });

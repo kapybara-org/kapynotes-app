@@ -66,6 +66,12 @@ class NotesStore extends ChangeNotifier {
   /// owns; with it, only the note actually edited is re-encoded.
   final Map<String, ({Note note, Map<String, Object?> json})> _encoded = {};
 
+  /// Notes marked synced whose edit is still only in an outbox in memory.
+  /// They are written down as unsynced until [outboxWritten], so a crash
+  /// between the two writes leaves the edit to be absorbed again on the next
+  /// launch rather than lost.
+  final Set<String> _unwritten = {};
+
   /// Where image bytes live.
   ///
   /// Held here because the store is the only thing that knows the whole set of
@@ -899,6 +905,20 @@ class NotesStore extends ChangeNotifier {
   // Sync
   // -------------------------------------------------------------------------
 
+  /// Marks [notes] synced once sync has taken their edits into an outbox that
+  /// is not on disk yet.
+  void markAbsorbed(List<Note> notes) {
+    _unwritten.addAll(notes.map((note) => note.id));
+    markSynced(notes: notes);
+  }
+
+  /// The outbox holding these notes' edits is on disk.
+  void outboxWritten(Set<String> ids) {
+    final before = _unwritten.length;
+    _unwritten.removeAll(ids);
+    if (_unwritten.length != before) _persist();
+  }
+
   /// Records that the server accepted these exact revisions.
   ///
   /// Matching on the pushed [Note] instance rather than just the id is what
@@ -1311,6 +1331,10 @@ class NotesStore extends ChangeNotifier {
     final encoded = List<Object?>.filled(_notes.length, null);
     for (var i = 0; i < _notes.length; i++) {
       final note = _notes[i];
+      if (_unwritten.contains(note.id)) {
+        encoded[i] = note.toJson()..remove('syncedAt');
+        continue;
+      }
       final cached = _encoded[note.id];
       if (cached != null && identical(cached.note, note)) {
         encoded[i] = cached.json;
