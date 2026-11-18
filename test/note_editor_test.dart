@@ -2992,6 +2992,76 @@ void main() {
     expect(target.height, greaterThanOrEqualTo(44));
   });
 
+  testWidgets('a phone result takes a tap only inside its own line', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    const body = 'Sums\n1 + 1\n2 + 2\n3 + 3';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    final target = tester.getRect(chipWithText('4'));
+    final line = lineRect(tester, body, 2);
+    // The 44 pt target is taller than its line, so it reaches into the
+    // lines on either side of it.
+    expect(target.height, greaterThanOrEqualTo(44));
+    expect(target.top, lessThan(line.top));
+    expect(target.bottom, greaterThan(line.bottom));
+
+    for (final y in [target.top + 1, line.top - 1, line.bottom + 1]) {
+      await tester.tapAt(Offset(target.center.dx, y));
+      await tester.pump(const Duration(seconds: 3));
+    }
+    expect(copied, isNot(contains('4')));
+
+    await tester.tapAt(Offset(target.center.dx, line.center.dy));
+    await tester.pump(const Duration(seconds: 3));
+    expect(copied.last, '4');
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a phone keeps room for a result at each text size', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const body =
+        'Trip\nFlights for the two of us to Lisbon in October = 2 * 1147.50 eur';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    // The same result, measured once already, at a larger size.
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+
+    final pill = tester.getRect(chipWithText('2,295.00 EUR'));
+    final editable = NoteDriver(tester);
+    final calculation = editable.boxesFor(
+      TextSelection(
+        baseOffset: body.indexOf('\n') + 1,
+        extentOffset: body.length,
+      ),
+    );
+    for (final box in calculation) {
+      expect(
+        editable.toGlobal(Offset(box.right, 0)).dx,
+        lessThanOrEqualTo(pill.left),
+      );
+    }
+  });
+
   testWidgets('on a 390 pt phone, prose reaches the right margin and a '
       'result line keeps its value whole at the right', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
