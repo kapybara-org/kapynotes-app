@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_service.dart' show SyncStatus;
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/page_card.dart';
@@ -15,8 +16,12 @@ void main() {
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-  Widget harness(PageToolbar toolbar, {double width = 1016}) => MaterialApp(
-    theme: KapyTheme.dark(),
+  Widget harness(
+    PageToolbar toolbar, {
+    double width = 1016,
+    Brightness brightness = Brightness.dark,
+  }) => MaterialApp(
+    theme: brightness == Brightness.dark ? KapyTheme.dark() : KapyTheme.light(),
     home: Scaffold(
       body: Align(
         alignment: Alignment.topLeft,
@@ -35,10 +40,13 @@ void main() {
     SyncStatus? syncStatus,
     int unloadedPictures = 0,
     String? section = 'Pinned',
+    List<SpaceMember> members = const [],
     List<KapyMenuAction> moreActions = const [],
     ValueChanged<String>? onMore,
     VoidCallback? onShowList,
     VoidCallback? onCreate,
+    Widget? assistant,
+    bool keepOnTop = false,
   }) => PageToolbar(
     space: 'My notes',
     section: section,
@@ -50,9 +58,13 @@ void main() {
     noteOpen: noteOpen,
     syncStatus: syncStatus,
     unloadedPictures: unloadedPictures,
+    members: members,
+    currentUserId: 'me',
     onShare: () {},
     pinned: true,
     onTogglePin: () {},
+    onToggleKeepOnTop: keepOnTop ? () {} : null,
+    assistant: assistant,
     moreActions: moreActions,
     onMore: onMore ?? (_) {},
   );
@@ -225,5 +237,112 @@ void main() {
       ),
     );
     expect(more.onPressed, isNull);
+  });
+
+  group('a shared note', () {
+    final members = [
+      for (final (id, name) in [('me', 'Sanjay'), ('pankaj', 'Pankaj')])
+        SpaceMember(
+          userId: id,
+          email: '$id@example.com',
+          name: name,
+          role: SpaceRole.member,
+          joinedAt: DateTime(2026),
+          hasKey: true,
+        ),
+    ];
+
+    testWidgets('keeps its collaborators with the rest on the right', (
+      tester,
+    ) async {
+      addTearDown(tester.view.reset);
+      tester.view.devicePixelRatio = 1;
+      for (final width in [1440.0, 480.0]) {
+        tester.view.physicalSize = Size(width, 300);
+        await tester.pumpWidget(
+          harness(
+            toolbar(listVisible: width > 600, members: members),
+            width: width,
+          ),
+        );
+
+        final avatars = find.byKey(const ValueKey('toolbar-members'));
+        expect(avatars, findsOneWidget);
+        final share = find.byKey(const ValueKey('page-share'));
+        // Straight after the breadcrumb's empty stretch, never half way
+        // across it: the cluster is one group flush with the right edge.
+        expect(
+          tester.getTopLeft(share).dx - tester.getTopRight(avatars).dx,
+          lessThan(160),
+        );
+        expect(
+          tester.getTopRight(find.byKey(const ValueKey('page-more'))).dx,
+          closeTo(width - 1.5 - 16, 0.01),
+        );
+        expect(tester.takeException(), isNull);
+      }
+    });
+
+    testWidgets('give way before More leaves the bar', (tester) async {
+      addTearDown(tester.view.reset);
+      tester.view.devicePixelRatio = 1;
+      final crowd = [
+        ...members,
+        for (final id in ['a', 'b', 'c'])
+          SpaceMember(
+            userId: id,
+            email: '$id@example.com',
+            name: id,
+            role: SpaceRole.member,
+            joinedAt: DateTime(2026),
+            hasKey: true,
+          ),
+      ];
+      for (final (width, listVisible) in [(260.0, true), (420.0, false)]) {
+        tester.view.physicalSize = Size(width, 300);
+        await tester.pumpWidget(
+          harness(
+            toolbar(
+              listVisible: listVisible,
+              members: crowd,
+              assistant: const SizedBox(width: 38, height: 32),
+              keepOnTop: true,
+            ),
+            width: width,
+          ),
+        );
+
+        expect(tester.takeException(), isNull, reason: 'at $width');
+        expect(
+          tester.getTopRight(find.byKey(const ValueKey('page-more'))).dx,
+          lessThanOrEqualTo(width),
+          reason: 'More left the bar at $width',
+        );
+      }
+    });
+
+    for (final brightness in [Brightness.dark, Brightness.light]) {
+      for (final (label, width) in [('wide', 1440.0), ('narrow', 480.0)]) {
+        testWidgets('header, $label, ${brightness.name}', (tester) async {
+          tester.view.physicalSize = Size(width, 300);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            harness(
+              toolbar(listVisible: width > 600, members: members),
+              width: width,
+              brightness: brightness,
+            ),
+          );
+          await tester.pumpAndSettle();
+          await expectLater(
+            find.byType(PageCard),
+            matchesGoldenFile(
+              'goldens/page_toolbar_shared_${label}_${brightness.name}.png',
+            ),
+          );
+        });
+      }
+    }
   });
 }
