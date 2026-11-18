@@ -57,6 +57,9 @@ class FakeServer {
   /// paths.
   SyncException? failNext;
 
+  /// Thrown by the next stop-sharing call alone, after its moves went up.
+  SyncException? failStop;
+
   /// Set to refuse every op push with this code, as a server refuses an op or
   /// a snapshot past its size.
   String? refusePushes;
@@ -2097,6 +2100,11 @@ class FakeApi implements SyncApi {
   @override
   Future<void> stopSharing(String spaceId, List<WireNote> notes) async {
     _gate();
+    final failure = server.failStop;
+    if (failure != null) {
+      server.failStop = null;
+      throw failure;
+    }
     server.stopSharing(userId, spaceId, notes);
   }
 
