@@ -3283,9 +3283,13 @@ class _DeviceEngineLine extends StatelessWidget {
               onPressed: onDownload,
             ),
           };
-    final line = here
-        ? '${model.name} · on this device'
-        : blocked ?? '${model.name} · ${fileSize(model.bytes)} download';
+    // A copy downloaded under an older, lower gate stays removable, but the
+    // line says why nothing uses it.
+    final line =
+        blocked ??
+        (here
+            ? '${model.name} · on this device'
+            : '${model.name} · ${fileSize(model.bytes)} download');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
