@@ -5024,6 +5024,18 @@ void main() {
       expect(find.byType(ResultLeader), findsNothing);
     });
 
+    testWidgets('the phone notes filter is a 44 pt target', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester, size: const Size(390, 844));
+      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.pumpAndSettle();
+
+      final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
+      expect(filter, findsOneWidget);
+      expect(tester.getSize(filter).height, greaterThanOrEqualTo(44));
+    });
+
     testWidgets('gives prose-only phone notes the full writing width', (
       tester,
     ) async {

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
@@ -80,10 +82,17 @@ class ResultChip extends StatefulWidget {
     )..layout();
     final width = painter.width;
     painter.dispose();
-    return width.ceilToDouble() + _railPadding.horizontal;
+    return math.max(
+      _railTarget,
+      width.ceilToDouble() + _railPadding.horizontal,
+    );
   }
 
   static const _railPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 3);
+
+  /// The least a finger gets to tap on the rail. Only the part inside its
+  /// line takes a tap, so the lines above and below keep theirs.
+  static const double _railTarget = 44;
 
   static TextStyle _textStyle({
     required bool pill,
@@ -211,11 +220,22 @@ class _ResultChipState extends State<ResultChip> {
           child: ConstrainedBox(
             // Hovering lets a truncated result grow leftward over the text.
             constraints: BoxConstraints(
+              minWidth: pill
+                  ? 0
+                  : math.min(ResultChip._railTarget, widget.collapsedWidth),
+              minHeight: pill ? 0 : ResultChip._railTarget,
               maxWidth: _hovering
                   ? widget.collapsedWidth + 340
                   : widget.collapsedWidth,
             ),
-            child: chip,
+            child: pill
+                ? chip
+                : Align(
+                    alignment: Alignment.centerRight,
+                    widthFactor: 1,
+                    heightFactor: 1,
+                    child: chip,
+                  ),
           ),
         ),
       ),

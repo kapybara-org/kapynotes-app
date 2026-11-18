@@ -1510,6 +1510,9 @@ class _NotesFilterState extends State<_NotesFilter> {
               behavior: HitTestBehavior.opaque,
               child: Container(
                 height: 28,
+                margin: AppPlatform.hasPointer
+                    ? null
+                    : const EdgeInsets.symmetric(vertical: 8),
                 padding: roomy
                     ? const EdgeInsets.only(left: 9, right: 8)
                     : const EdgeInsets.symmetric(horizontal: 6),

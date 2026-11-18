@@ -3018,6 +3018,9 @@ void main() {
       tester.getCenter(chipWithText('42')).dy,
       closeTo(lineRect(tester, 'Budget\n6 * 7', 1).center.dy, 1.5),
     );
+    final target = tester.getSize(chipWithText('42'));
+    expect(target.width, greaterThanOrEqualTo(44));
+    expect(target.height, greaterThanOrEqualTo(44));
   });
 
   testWidgets('on a 390 pt phone, prose reaches the right margin and a '
