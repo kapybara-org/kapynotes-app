@@ -1851,11 +1851,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (!item.isMarker && item.epoch > record.serverEpoch) {
         record.serverEpoch = item.epoch;
       }
-      if (record.spaceId != batch.spaceId && !(item.isMarker && item.deleted)) {
+      if (record.spaceId != batch.spaceId &&
+          !(item.isMarker && item.deleted) &&
+          !record.outbox.any((entry) => entry.from == batch.spaceId)) {
         // The log says the note is here now, wherever the local copy sits.
         // Not a tombstone marker, which says the opposite: the note left this
         // space, and the record already points wherever it went. Taking the
         // old space back would make the next edit a move the server refuses.
+        // Nor the note's history read back while its move out of this space
+        // is still on its way: the record already points where it is going,
+        // and taking it back would leave the next move unsent.
         record.spaceId = batch.spaceId;
       }
 
