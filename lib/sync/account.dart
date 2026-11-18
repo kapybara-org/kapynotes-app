@@ -234,7 +234,7 @@ class Account extends ChangeNotifier {
       return _moveTo(AccountState.signedOut);
     }
 
-    switch (await _auth.checkSession(token)) {
+    switch (await _checkSession(token)) {
       case SessionActive(:final user):
         _token = token;
         _user = user;
@@ -245,9 +245,8 @@ class Account extends ChangeNotifier {
           await _resume();
         }
       case SessionRejected():
-        // Asked, and told no: expired, revoked, or signed out on another
-        // device. Only the session is gone. The notes and the key stay, so
-        // signing back in to the same account picks up where it was.
+        // Asked twice, and told no both times: expired, revoked, or signed
+        // out on another device.
         await _endSession();
       case SessionUnreachable():
         // Not asked. Nothing has been revoked, so nothing is thrown away —
@@ -606,25 +605,38 @@ class Account extends ChangeNotifier {
   Future<void> _confirmSession() async {
     final token = _token;
     if (token == null) return;
-    if (await _auth.checkSession(token) is! SessionRejected) return;
+    if (await _checkSession(token) is! SessionRejected) return;
     if (_token == token) await _endSession();
   }
 
-  /// The server ended this device's session: signed out with the reason, the
-  /// notes and the key kept.
+  /// Asks again before believing a no, since ending a session wipes the key.
+  Future<SessionCheck> _checkSession(String token) async {
+    final check = await _auth.checkSession(token);
+    return check is SessionRejected ? _auth.checkSession(token) : check;
+  }
+
+  /// The server ended this device's session: signed out with the reason and
+  /// the notes kept. The key goes, because a session ended from another
+  /// device may be ending this one for being lost, and whoever holds it then
+  /// should need the passphrase as well as the password.
   Future<void> _endSession() async {
     _teardownSync();
     _token = null;
     _user = null;
     await _keys.forgetToken();
+    await _keys.forgetMasterKey();
     _signedOutReason = sessionEndedReason;
     _moveTo(AccountState.signedOut);
   }
 
-  /// Ends every other device's session. This one stays signed in.
-  Future<bool> signOutOtherDevices() async {
+  /// Ends every other device's session. This one stays signed in, unless
+  /// the server says its own session has already ended.
+  Future<RevokeOthers> signOutOtherDevices() async {
     final token = _token;
-    return token != null && await _auth.revokeOtherSessions(token);
+    if (token == null) return RevokeOthers.sessionEnded;
+    final result = await _auth.revokeOtherSessions(token);
+    if (result == RevokeOthers.sessionEnded) unawaited(_confirmSession());
+    return result;
   }
 
   /// What is kept for the account rather than for the device.

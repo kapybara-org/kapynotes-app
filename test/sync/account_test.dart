@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -6,6 +8,7 @@ import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/auth_api.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
@@ -345,10 +348,10 @@ void main() {
   });
 
   group('a session the server ended', () {
-    Account relaunch(Device d) {
+    Account relaunch(Device d, {AuthApi? auth}) {
       final syncState = SyncState(d.store);
       return Account(
-        auth: d.auth,
+        auth: auth ?? d.auth,
         syncApi: (_) => FakeApi(server),
         keys: d.keys,
         notes: d.notes,
@@ -375,7 +378,7 @@ void main() {
       return d;
     }
 
-    test('drops the session, says why, and keeps the key', () async {
+    test('drops the session and the key, says why, keeps the notes', () async {
       final d = await endedSession();
       final restarted = relaunch(d);
       await restarted.restore();
@@ -383,7 +386,7 @@ void main() {
       expect(restarted.state, AccountState.signedOut);
       expect(restarted.signedOutReason, Account.sessionEndedReason);
       expect(await d.keys.readToken(), isNull);
-      expect(await d.keys.readMasterKey(), isNotNull);
+      expect(await d.keys.readMasterKey(), isNull);
       expect(d.notes.notes, hasLength(1));
       restarted.dispose();
 
@@ -397,18 +400,57 @@ void main() {
       again.dispose();
     });
 
-    test('signing back in to the same account needs no passphrase', () async {
+    test(
+      'signing back in asks for the passphrase and keeps the notes',
+      () async {
+        final d = await endedSession();
+        final restarted = relaunch(d);
+        await restarted.restore();
+
+        d.auth.sessionValid = true;
+        await restarted.signIn(email: 'a@b.co', password: 'x');
+
+        expect(restarted.state, AccountState.locked);
+        expect(restarted.signedOutReason, isNull);
+        expect(await restarted.unlock('a good passphrase'), isTrue);
+        expect(restarted.state, AccountState.ready);
+        expect(d.notes.notes, hasLength(1));
+        restarted.dispose();
+      },
+    );
+
+    test('one no is asked again before anything is wiped', () async {
       final d = await endedSession();
+      d.auth
+        ..sessionValid = true
+        ..spuriousRejections = 1;
       final restarted = relaunch(d);
       await restarted.restore();
 
-      d.auth.sessionValid = true;
-      await restarted.signIn(email: 'a@b.co', password: 'x');
-
+      expect(d.auth.sessionChecks, 2);
       expect(restarted.state, AccountState.ready);
-      expect(restarted.signedOutReason, isNull);
-      expect(d.notes.notes, hasLength(1));
+      expect(await d.keys.readMasterKey(), isNotNull);
       restarted.dispose();
+    });
+
+    test('a 401 that is not the server keeps everything', () async {
+      final d = await endedSession();
+      for (final body in ['<html>Sign in to the Wi-Fi</html>', '{"x":1}']) {
+        final restarted = relaunch(
+          d,
+          auth: HttpAuthApi(
+            baseUrl: Uri.parse('https://sync.test/'),
+            client: MockClient((_) async => http.Response(body, 401)),
+          ),
+        );
+        await restarted.restore();
+
+        expect(restarted.state, AccountState.ready, reason: body);
+        expect(restarted.signedOutReason, isNull);
+        expect(await d.keys.readToken(), isNotNull);
+        expect(await d.keys.readMasterKey(), isNotNull);
+        restarted.dispose();
+      }
     });
 
     test('another account signing in starts without the key', () async {
@@ -461,8 +503,16 @@ void main() {
 
       expect(d.account.state, AccountState.signedOut);
       expect(d.account.signedOutReason, Account.sessionEndedReason);
-      expect(await d.keys.readMasterKey(), isNotNull);
+      expect(await d.keys.readMasterKey(), isNull);
       expect(d.notes.notes, hasLength(1));
+
+      d.auth.sessionValid = true;
+      await d.account.signIn(email: 'a@b.co', password: 'x');
+      expect(
+        d.account.state,
+        AccountState.locked,
+        reason: 'a revoked device needs the passphrase as well',
+      );
       d.dispose();
     });
 
@@ -501,12 +551,21 @@ void main() {
     await d.account.signIn(email: 'a@b.co', password: 'x');
     await d.account.createPassphrase('a good passphrase');
 
-    expect(await d.account.signOutOtherDevices(), isTrue);
+    expect(await d.account.signOutOtherDevices(), RevokeOthers.done);
     expect(d.auth.revokeOthersCalls, 1);
     expect(d.account.state, AccountState.ready);
 
     d.auth.reachable = false;
-    expect(await d.account.signOutOtherDevices(), isFalse);
+    expect(await d.account.signOutOtherDevices(), RevokeOthers.failed);
+    expect(d.account.state, AccountState.ready);
+
+    d.auth
+      ..reachable = true
+      ..sessionValid = false;
+    expect(await d.account.signOutOtherDevices(), RevokeOthers.sessionEnded);
+    await pumpEventQueue();
+    expect(d.account.state, AccountState.signedOut);
+    expect(d.account.signedOutReason, Account.sessionEndedReason);
     d.dispose();
   });
 

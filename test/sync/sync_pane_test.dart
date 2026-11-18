@@ -560,6 +560,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(auth.revokeOthersCalls, 1);
     expect(app.account.state, AccountState.ready);
+
+    auth.sessionValid = false;
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('sign-out-others-confirm')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+    expect(
+      find.text("This device's session has ended. Sign in again."),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
     app.account.dispose();
   }, timeout: const Timeout(Duration(minutes: 2)));
 

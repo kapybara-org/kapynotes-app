@@ -34,11 +34,27 @@ void main() {
       );
     });
 
-    test('a 401 is the session rejected', () async {
-      expect(
-        await _answering(401, '').checkSession('t'),
-        isA<SessionRejected>(),
-      );
+    test("a 401 in the server's words is the session rejected", () async {
+      for (final body in [
+        '{"message":"Unauthorized","code":"UNAUTHORIZED"}',
+        '{"error":"unauthorized"}',
+      ]) {
+        expect(
+          await _answering(401, body).checkSession('t'),
+          isA<SessionRejected>(),
+          reason: body,
+        );
+      }
+    });
+
+    test('a 401 from anything else revokes nothing', () async {
+      for (final body in ['', '<html>Log in</html>', '{"error":"denied"}']) {
+        expect(
+          await _answering(401, body).checkSession('t'),
+          isA<SessionUnreachable>(),
+          reason: body,
+        );
+      }
     });
 
     test('a 403 from something in between revokes nothing', () async {
@@ -74,14 +90,26 @@ void main() {
       final seen = <http.Request>[];
       final api = _answering(200, '{"status":true}', seen: seen);
 
-      expect(await api.revokeOtherSessions('tok'), isTrue);
+      expect(await api.revokeOtherSessions('tok'), RevokeOthers.done);
       expect(seen.single.url.path, '/api/auth/revoke-other-sessions');
       expect(seen.single.headers['authorization'], 'Bearer tok');
     });
 
-    test('anything but 200 is a failure', () async {
-      expect(await _answering(401, '').revokeOtherSessions('tok'), isFalse);
-      expect(await _answering(503, '').revokeOtherSessions('tok'), isFalse);
+    test("only the server's 401 says this session has ended", () async {
+      expect(
+        await _answering(
+          401,
+          '{"message":"Unauthorized","code":"UNAUTHORIZED"}',
+        ).revokeOtherSessions('tok'),
+        RevokeOthers.sessionEnded,
+      );
+      for (final (status, body) in [(401, '<html/>'), (503, ''), (403, '')]) {
+        expect(
+          await _answering(status, body).revokeOtherSessions('tok'),
+          RevokeOthers.failed,
+          reason: '$status',
+        );
+      }
     });
   });
 }

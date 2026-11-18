@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/toast.dart';
 import '../../sync/account.dart';
+import '../../sync/auth_api.dart';
 import '../settings_rows.dart';
 
 /// Ends the session of every other device on the account, after asking.
@@ -50,10 +51,13 @@ class SignOutOthersRow extends StatelessWidget {
     );
     if (confirmed != true || !context.mounted) return;
     final progress = Toast.showProgress(context, 'Signing out other devices…');
-    if (await account.signOutOtherDevices()) {
-      progress.success('Other devices signed out');
-    } else {
-      progress.error('Could not reach the server. Try again.');
+    switch (await account.signOutOtherDevices()) {
+      case RevokeOthers.done:
+        progress.success('Other devices signed out');
+      case RevokeOthers.sessionEnded:
+        progress.error("This device's session has ended. Sign in again.");
+      case RevokeOthers.failed:
+        progress.error('Could not reach the server. Try again.');
     }
   }
 }

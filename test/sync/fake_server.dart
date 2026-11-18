@@ -2363,10 +2363,18 @@ class FakeAuth implements AuthApi {
 
   int sessionChecks = 0;
 
+  /// Checks answered no before the server's real answer, as a server mid
+  /// deploy or a stale replica might.
+  int spuriousRejections = 0;
+
   @override
   Future<SessionCheck> checkSession(String token) async {
     sessionChecks++;
     if (!reachable) return const SessionUnreachable();
+    if (spuriousRejections > 0) {
+      spuriousRejections--;
+      return const SessionRejected();
+    }
     if (!sessionValid) return const SessionRejected();
     return SessionActive(_user);
   }
@@ -2374,10 +2382,11 @@ class FakeAuth implements AuthApi {
   int revokeOthersCalls = 0;
 
   @override
-  Future<bool> revokeOtherSessions(String token) async {
-    if (!reachable) return false;
+  Future<RevokeOthers> revokeOtherSessions(String token) async {
+    if (!reachable) return RevokeOthers.failed;
+    if (!sessionValid) return RevokeOthers.sessionEnded;
     revokeOthersCalls++;
-    return true;
+    return RevokeOthers.done;
   }
 }
 

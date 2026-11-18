@@ -136,6 +136,24 @@ class SessionUnreachable extends SessionCheck {
   const SessionUnreachable();
 }
 
+/// How asking to end every other device's session went.
+enum RevokeOthers { done, sessionEnded, failed }
+
+/// A 401 in the server's own words: Better Auth's `{"code":"UNAUTHORIZED"}`
+/// or the sync API's `{"error":"unauthorized"}`. A 401 from a proxy or a
+/// captive portal says nothing about the session, and ending one over it
+/// would wipe the key for a bad Wi-Fi network.
+bool _serverSaysUnauthorized(http.Response response) {
+  if (response.statusCode != 401) return false;
+  try {
+    final body = jsonDecode(response.body);
+    return body is Map &&
+        (body['code'] == 'UNAUTHORIZED' || body['error'] == 'unauthorized');
+  } on FormatException {
+    return false;
+  }
+}
+
 abstract class AuthApi {
   Future<AuthResult> signIn({required String email, required String password});
 
@@ -176,8 +194,7 @@ abstract class AuthApi {
   Future<SessionCheck> checkSession(String token);
 
   /// Ends every session of this account except the one holding [token].
-  /// False when the server could not be reached or did not do it.
-  Future<bool> revokeOtherSessions(String token);
+  Future<RevokeOthers> revokeOtherSessions(String token);
 }
 
 class HttpAuthApi implements AuthApi {
@@ -329,7 +346,7 @@ class HttpAuthApi implements AuthApi {
     // server having a bad minute — which a release, of all times, is when it
     // is most likely to be having one — and a 403 or a page that is not JSON
     // is a proxy or a captive portal speaking, not the server.
-    if (response.statusCode == 401) return const SessionRejected();
+    if (_serverSaysUnauthorized(response)) return const SessionRejected();
     if (response.statusCode != 200) return const SessionUnreachable();
     final Object? body;
     try {
@@ -346,7 +363,7 @@ class HttpAuthApi implements AuthApi {
   }
 
   @override
-  Future<bool> revokeOtherSessions(String token) async {
+  Future<RevokeOthers> revokeOtherSessions(String token) async {
     try {
       final response = await _client
           .post(
@@ -358,9 +375,12 @@ class HttpAuthApi implements AuthApi {
             body: '{}',
           )
           .timeout(timeout);
-      return response.statusCode == 200;
+      if (response.statusCode == 200) return RevokeOthers.done;
+      return _serverSaysUnauthorized(response)
+          ? RevokeOthers.sessionEnded
+          : RevokeOthers.failed;
     } catch (_) {
-      return false;
+      return RevokeOthers.failed;
     }
   }
 

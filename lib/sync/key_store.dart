@@ -321,8 +321,8 @@ class KeyStore {
     );
   }
 
-  /// A session the server has ended. Only the token goes: the key and whose
-  /// it is stay, so signing back in to the same account needs no passphrase.
+  /// A session the server has ended. Whose it was stays, so the next launch
+  /// still says why it is signed out and the same account keeps its notes.
   Future<void> forgetToken() async {
     _token = null;
     _tokenRead = true;
