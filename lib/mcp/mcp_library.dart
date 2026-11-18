@@ -1,9 +1,14 @@
 import '../calc/engine.dart';
 import '../crdt/text_diff.dart';
 import '../data/note.dart';
+import '../data/note_attachment.dart';
+import '../data/note_drawing.dart';
+import '../data/note_format.dart';
 import '../data/notes_store.dart';
 import '../data/task_index.dart';
+import '../data/tags.dart';
 import '../data/task_lines.dart';
+import 'mcp_drawing.dart';
 
 /// Something an assistant asked for that it can't have, in one sentence it
 /// can show the person.
@@ -25,6 +30,44 @@ typedef McpTask = ({
   TaskLine line,
 });
 
+/// One change [McpLibrary.edit] makes.
+sealed class McpEdit {
+  const McpEdit();
+}
+
+/// Puts [replacement] in place of [find]: its only occurrence, the
+/// [occurrence]th from 1, or every one when [occurrence] is 0.
+class McpReplace extends McpEdit {
+  const McpReplace({
+    required this.find,
+    required this.replacement,
+    this.occurrence,
+  });
+
+  final String find;
+  final String replacement;
+  final int? occurrence;
+}
+
+/// Puts [text] between [start] and [end], offsets in the text read_note
+/// gives, or at [start] when [end] is null. [expected], when given, must be
+/// what is there now.
+class McpSplice extends McpEdit {
+  const McpSplice({
+    required this.start,
+    this.end,
+    required this.text,
+    this.expected,
+  });
+
+  final int start;
+  final int? end;
+  final String text;
+  final String? expected;
+}
+
+typedef _Region = ({int start, int end, String text});
+
 /// Everything an assistant can reach, and the only way it reaches anything.
 ///
 /// The rules live here rather than in the tools so no tool can step around
@@ -38,6 +81,7 @@ class McpLibrary {
   McpLibrary({
     required this.notes,
     required CalcEngine Function() engine,
+    this.tags,
     bool Function()? canCreate,
     bool Function(Note note)? isLocked,
   }) : _engine = engine,
@@ -45,6 +89,9 @@ class McpLibrary {
        _isLocked = isLocked ?? ((_) => false);
 
   final NotesStore notes;
+
+  /// The person's tags, or null in a build without them.
+  final TagStore? tags;
   final CalcEngine Function() _engine;
   final bool Function() _canCreate;
   final bool Function(Note note) _isLocked;
@@ -56,18 +103,33 @@ class McpLibrary {
   static const int maxAppend = 20000;
   static const int maxTaskText = 500;
   static const int maxNoteLength = 1000000;
+  static const int maxEdits = 50;
 
   /// The most of a note one read returns; the rest follows from its offset.
   static const int pageSize = 50000;
 
   /// Notes in the order the app lists them: pinned first, then the most
-  /// recently changed. Archived ones only when asked for.
-  List<Note> list({String query = '', bool includeArchived = false}) {
+  /// recently changed. Archived ones only when asked for, or only them.
+  /// [tag] and [pinned] narrow it further.
+  List<Note> list({
+    String query = '',
+    bool includeArchived = false,
+    bool archivedOnly = false,
+    String? tag,
+    bool? pinned,
+  }) {
     final trimmed = query.trim();
+    final tagged = tag == null ? null : _tag(tag).id;
     final pool = [
-      ...notes.notes,
-      if (includeArchived) ...notes.archivedNotes,
-    ].where((note) => !note.isHidden);
+      if (!archivedOnly) ...notes.notes,
+      if (includeArchived || archivedOnly) ...notes.archivedNotes,
+    ].where(
+      (note) =>
+          !note.isHidden &&
+          (pinned == null || notes.isPinned(note.id) == pinned) &&
+          (tagged == null ||
+              tags!.tagsOf(note.id).any((each) => each.id == tagged)),
+    );
     final matches = trimmed.isEmpty
         ? pool.toList()
         : pool.where((note) => note.matches(trimmed)).toList();
@@ -154,13 +216,17 @@ class McpLibrary {
     final heading = _clean(title, maxTitle, 'title').trim();
     if (heading.isEmpty) throw const McpRefusal('A note needs a title.');
     final rest = _clean(body, maxNoteText, 'body');
+    _checkCreate();
+    final text = rest.isEmpty ? heading : '$heading\n$rest';
+    return notes.create(body: text, authored: false);
+  }
+
+  void _checkCreate() {
     if (!_canCreate()) {
       throw const McpRefusal(
         'This account is at its note limit, so Kapy Notes can’t add another.',
       );
     }
-    final text = rest.isEmpty ? heading : '$heading\n$rest';
-    return notes.create(body: text, authored: false);
   }
 
   Note append(String id, String text) {
@@ -177,18 +243,9 @@ class McpLibrary {
   }
 
   McpTask addTask(String noteId, String text) {
-    final words = _clean(text, maxTaskText, 'text').trim();
-    if (words.isEmpty || words.contains('\n')) {
-      throw const McpRefusal('A task is one line of text.');
-    }
+    final words = _taskWords(text);
     final note = _writable(noteId);
-    final existing = taskLines(note.body);
-    final markdown =
-        existing.isNotEmpty &&
-        !_glyphBox.hasMatch(
-          note.body.substring(existing.first.start, existing.first.textStart),
-        );
-    final line = markdown ? '- [ ] $words' : '☐ $words';
+    final line = '${_box(note)}$words';
     final body = note.body;
     final joined = body.isEmpty || body.endsWith('\n')
         ? '$body$line'
@@ -198,14 +255,9 @@ class McpLibrary {
   }
 
   McpTask setTaskDone(String taskId, {required bool done}) {
-    final split = taskId.indexOf('~');
-    if (split <= 0) throw const McpRefusal('No task with that id.');
-    final note = _writable(taskId.substring(0, split));
-    final task = tasksIn(note).where((task) => task.id == taskId).firstOrNull;
-    if (task == null) {
-      throw const McpRefusal('That task changed; list the tasks again.');
-    }
+    final task = _taskAt(taskId);
     if (task.done == done) return task;
+    final note = task.note;
     final body = note.body;
     final boxed = body.substring(task.line.start, task.line.textStart);
     final box = _glyphBox.hasMatch(boxed)
@@ -221,30 +273,564 @@ class McpLibrary {
     return tasksIn(written).firstWhere((each) => each.id == taskId);
   }
 
-  /// The note with [id] if an assistant may change it. Read again at the
-  /// moment of writing, so a note hidden since it was listed is refused.
-  Note _writable(String id) {
+  /// Why an assistant may not change what [note] says, its title or its
+  /// drawing, or null when it may.
+  String? readOnlyReason(Note note) {
+    if (note.isArchived) return 'Archived notes are read-only.';
+    if (note.isShared) return 'Notes in shared spaces are read-only here.';
+    if (_isLocked(note)) return 'Read-only on Free.';
+    return null;
+  }
+
+  /// The note with [id] if an assistant may change its content. Read again
+  /// at the moment of writing, so a note hidden since it was listed is
+  /// refused.
+  Note _changeable(String id) {
     final note = read(id);
-    if (note.isArchived) {
-      throw const McpRefusal('Archived notes are read-only.');
-    }
-    if (note.isShared) {
-      throw const McpRefusal('Notes in shared spaces are read-only here.');
-    }
-    if (note.isDrawing) {
-      throw const McpRefusal('Drawings can’t be changed from an assistant.');
-    }
-    if (_isLocked(note)) throw const McpRefusal('Read-only on Free.');
+    final reason = readOnlyReason(note);
+    if (reason != null) throw McpRefusal(reason);
     return note;
   }
 
-  Note _write(Note note, String body) {
+  /// [_changeable], and a note with text rather than a drawing.
+  Note _writable(String id) {
+    final note = _changeable(id);
+    if (note.isDrawing) {
+      throw const McpRefusal('A drawing has no text. Use draw to change it.');
+    }
+    return note;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Titles, pins and the archive
+
+  /// Puts [title] in place of the note's first line, or a drawing's title.
+  Note rename(String id, String title) {
+    final heading = _clean(title, maxTitle, 'title').trim();
+    if (heading.isEmpty || heading.contains('\n')) {
+      throw const McpRefusal('A title is one line of text.');
+    }
+    final note = _changeable(id);
+    if (note.isDrawing) {
+      notes.updateDrawing(id, note.drawing!, title: heading, authored: false);
+    } else {
+      if (note.firstLine.contains(_anchor)) {
+        throw const McpRefusal(
+          'This note’s first line holds an attachment, so it can’t be renamed '
+          'from here.',
+        );
+      }
+      notes.retitle(id, heading);
+    }
+    return notes.byId(id)!;
+  }
+
+  /// Pins or unpins a note; false when it already was. Pins are the
+  /// person's own and reach nobody else, so a shared note can be pinned.
+  bool setPinned(String id, {required bool pinned}) {
+    final note = read(id);
+    if (note.isArchived) {
+      throw const McpRefusal('Archived notes can’t be pinned.');
+    }
+    if (notes.isPinned(id) == pinned) return false;
+    notes.togglePinned(id);
+    return true;
+  }
+
+  /// Archives a note or brings it back; false when it already was. Never on
+  /// a shared note, which would leave everyone's list.
+  bool setArchived(String id, {required bool archived}) {
+    final note = read(id);
+    if (note.isShared) {
+      throw const McpRefusal(
+        'Notes in shared spaces can’t be archived from here.',
+      );
+    }
+    if (note.isArchived == archived) return false;
+    archived ? notes.archive(id) : notes.restore(id);
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Editing text
+
+  /// Makes every edit in [edits] to the note as it stands now: offsets and
+  /// matches all refer to that one text, and no two may overlap. An edit
+  /// can't cut an attachment out. Styles and attachments move with the text
+  /// around them.
+  Note edit(String id, List<McpEdit> edits) {
+    if (edits.isEmpty) throw const McpRefusal('There are no edits.');
+    if (edits.length > maxEdits) {
+      throw const McpRefusal('That’s more than $maxEdits edits at once.');
+    }
+    final note = _writable(id);
+    final body = note.body;
+    final regions = <_Region>[];
+    for (final edit in edits) {
+      switch (edit) {
+        case McpReplace(:final find, :final replacement, :final occurrence):
+          final needle = _clean(find, maxAppend, 'find');
+          final text = _clean(replacement, maxAppend, 'replacement');
+          if (needle.isEmpty) throw const McpRefusal('find can’t be empty.');
+          final found = <int>[];
+          for (var at = body.indexOf(needle); at >= 0;) {
+            found.add(at);
+            at = body.indexOf(needle, at + needle.length);
+          }
+          final quoted = '“${_clipped(needle)}”';
+          if (found.isEmpty) throw McpRefusal('$quoted isn’t in the note.');
+          final List<int> chosen;
+          if (occurrence == null) {
+            if (found.length > 1) {
+              throw McpRefusal(
+                '$quoted is in the note ${found.length} times. Say which '
+                'occurrence, or all.',
+              );
+            }
+            chosen = found;
+          } else if (occurrence == 0) {
+            chosen = found;
+          } else if (occurrence > found.length) {
+            throw McpRefusal(
+              '$quoted is in the note only ${found.length} times.',
+            );
+          } else {
+            chosen = [found[occurrence - 1]];
+          }
+          for (final at in chosen) {
+            regions.add((start: at, end: at + needle.length, text: text));
+          }
+        case McpSplice(:final start, :final end, :final text, :final expected):
+          final from = _realOffset(note, start);
+          final to = _realOffset(note, end ?? start);
+          if (to < from) {
+            throw const McpRefusal('end comes before start.');
+          }
+          final there = body.substring(from, to);
+          if (expected != null && there != expected) {
+            throw const McpRefusal('That note changed; read it again.');
+          }
+          if (there.contains(_anchor)) {
+            throw const McpRefusal(
+              'That would remove an attachment, and assistants can’t.',
+            );
+          }
+          regions.add((
+            start: from,
+            end: to,
+            text: _clean(text, maxAppend, 'text'),
+          ));
+      }
+    }
+    regions.sort((a, b) => a.start.compareTo(b.start));
+    for (var i = 1; i < regions.length; i++) {
+      if (regions[i].start < regions[i - 1].end ||
+          regions[i].start == regions[i - 1].start) {
+        throw const McpRefusal('Two of those edits overlap.');
+      }
+    }
+    return _splice(note, regions);
+  }
+
+  /// Writes [regions], sorted and apart, into [note], moving styles and
+  /// attachments along. None of them holds an attachment's anchor.
+  Note _splice(Note note, List<_Region> regions) {
+    var text = note.body;
+    var formats = note.formats;
+    var attachments = note.attachments;
+    for (final region in regions.reversed) {
+      final newEnd = region.start + region.text.length;
+      final delta = newEnd - region.end;
+      int moved(int at) => at <= region.start
+          ? at
+          : at >= region.end
+          ? at + delta
+          : newEnd;
+      text = text.replaceRange(region.start, region.end, region.text);
+      formats = [
+        for (final range in formats)
+          NoteFormatRange(
+            start: moved(range.start),
+            end: moved(range.end),
+            format: range.format,
+          ),
+      ];
+      attachments = [
+        for (final ref in attachments)
+          ref.offset >= region.end ? ref.copyWith(offset: ref.offset + delta) : ref,
+      ];
+    }
+    return _write(
+      note,
+      text,
+      formats: normalizeNoteFormats(formats, text.length),
+      attachments: attachments,
+    );
+  }
+
+  /// Where [view], an offset in [bodyOf]'s text, is in the note's own text.
+  int _realOffset(Note note, int view) {
+    var shift = 0;
+    for (final ref in note.attachments) {
+      final at = ref.offset + shift;
+      if (view <= at) break;
+      final width = _placeholder(ref.mime).length;
+      if (view < at + width) {
+        throw const McpRefusal('That offset is inside an attachment.');
+      }
+      shift += width - 1;
+    }
+    final real = view - shift;
+    if (real < 0 || real > note.body.length) {
+      throw const McpRefusal('That offset is past the end of the note.');
+    }
+    return real;
+  }
+
+  static const String _anchor = '\uFFFC';
+
+  static String _clipped(String text) =>
+      text.length <= 40 ? text : '${text.substring(0, 39)}…';
+
+  // ---------------------------------------------------------------------------
+  // Tags
+
+  TagStore get _tags =>
+      tags ?? (throw const McpRefusal('Tags aren’t available here.'));
+
+  Tag _tag(String name) =>
+      _tags.named(name) ??
+      (throw McpRefusal('There’s no tag called “${name.trim()}”.'));
+
+  /// The live tag called [name], ignoring case.
+  Tag tagNamed(String name) => _tag(name);
+
+  /// The tags on [note], in its order. Read by every summary.
+  List<Tag> tagsOf(Note note) => tags?.tagsOf(note.id) ?? const [];
+
+  /// Every tag, with how many notes an assistant can see carry it.
+  List<({Tag tag, int notes})> allTags() {
+    final store = _tags;
+    final counts = <String, int>{};
+    for (final note in list(includeArchived: true)) {
+      for (final tag in store.tagsOf(note.id)) {
+        counts[tag.id] = (counts[tag.id] ?? 0) + 1;
+      }
+    }
+    return [
+      for (final tag in store.tags) (tag: tag, notes: counts[tag.id] ?? 0),
+    ];
+  }
+
+  /// Adds and takes off tags by name. Tags are the person's own, so a shared
+  /// or archived note can carry them too. Returns which tags it actually
+  /// added, took off and created, for Recent activity and Undo.
+  ({List<Tag> added, List<Tag> removed, List<Tag> created}) retag(
+    String id, {
+    List<String> add = const [],
+    List<String> remove = const [],
+    bool createMissing = false,
+  }) {
+    read(id);
+    final store = _tags;
+    final current = [for (final tag in store.tagsOf(id)) tag.id];
+    final off = {for (final name in remove) _tag(name).id};
+    final existing = <Tag>[];
+    final missing = <String>[];
+    for (final name in add) {
+      final tag = store.named(name);
+      if (tag != null) {
+        existing.add(tag);
+      } else if (!createMissing) {
+        throw McpRefusal(
+          'There’s no tag called “${name.trim()}”. Set create_missing to '
+          'make it.',
+        );
+      } else if (!missing.any((m) => m.toLowerCase() == name.trim().toLowerCase())) {
+        _clean(name, tagNameMax * 2, 'tag name');
+        if (name.trim().isEmpty || name.trim().runes.length > tagNameMax) {
+          throw const McpRefusal(
+            'A tag’s name is 1 to $tagNameMax characters.',
+          );
+        }
+        missing.add(name.trim());
+      }
+    }
+    final keep = [for (final tagId in current) if (!off.contains(tagId)) tagId];
+    final adding = {
+      for (final tag in existing)
+        if (!keep.contains(tag.id)) tag.id,
+    }.toList();
+    if (keep.length + adding.length + missing.length > noteTagsMax) {
+      throw const McpRefusal('A note carries at most $noteTagsMax tags.');
+    }
+    final created = [for (final name in missing) store.create(name)!];
+    store.setTags(id, [...keep, ...adding, for (final tag in created) tag.id]);
+    return (
+      added: [
+        ...existing.where((tag) => adding.contains(tag.id)),
+        ...created,
+      ],
+      removed: [
+        for (final tagId in current)
+          if (off.contains(tagId)) store.byId(tagId)!,
+      ],
+      created: created,
+    );
+  }
+
+  /// A new tag. Refused if one has that name already.
+  Tag createTag(String name, {String? colour}) {
+    final store = _tags;
+    _clean(name, tagNameMax * 2, 'name');
+    if (store.named(name) != null) {
+      throw McpRefusal('There’s already a tag called “${name.trim()}”.');
+    }
+    if (colour != null) _colour(colour);
+    final tag = store.create(name) ??
+        (throw const McpRefusal(
+          'A tag’s name is 1 to $tagNameMax characters.',
+        ));
+    if (colour != null) store.recolour(tag.id, colour);
+    return store.byId(tag.id)!;
+  }
+
+  Tag renameTag(String name, String to) {
+    final tag = _tag(name);
+    _clean(to, tagNameMax * 2, 'name');
+    if (!_tags.rename(tag.id, to)) {
+      throw McpRefusal(
+        _tags.named(to) != null
+            ? 'There’s already a tag called “${to.trim()}”.'
+            : 'A tag’s name is 1 to $tagNameMax characters.',
+      );
+    }
+    return _tags.byId(tag.id)!;
+  }
+
+  Tag recolourTag(String name, String colour) {
+    final tag = _tag(name);
+    _tags.recolour(tag.id, _colour(colour));
+    return _tags.byId(tag.id)!;
+  }
+
+  /// Deletes a tag and nothing else: every note stays, and Undo puts it
+  /// back on them.
+  Tag deleteTag(String name) {
+    final tag = _tag(name);
+    _tags.delete(tag.id);
+    return tag;
+  }
+
+  static String _colour(String colour) {
+    if (colour == noTagColour || tagColours.contains(colour)) return colour;
+    throw McpRefusal(
+      'A tag’s colour is one of ${tagColours.join(', ')}, or $noTagColour.',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tasks
+
+  /// The task [taskId] names, in a note an assistant may change.
+  McpTask _taskAt(String taskId) {
+    final split = taskId.indexOf('~');
+    if (split <= 0) throw const McpRefusal('No task with that id.');
+    final note = _writable(taskId.substring(0, split));
+    final task = tasksIn(note).where((task) => task.id == taskId).firstOrNull;
+    if (task == null) {
+      throw const McpRefusal('That task changed; list the tasks again.');
+    }
+    return task;
+  }
+
+  /// Changes a task's words.
+  McpTask rewordTask(String taskId, String text) {
+    final words = _taskWords(text);
+    final task = _taskAt(taskId);
+    final note = _splice(task.note, [
+      (start: task.line.textStart, end: task.line.end, text: words),
+    ]);
+    return tasksIn(note).firstWhere(
+      (each) => each.line.start == task.line.start,
+    );
+  }
+
+  /// Takes a task's line out of its note. The note stays.
+  Note removeTask(String taskId) {
+    final task = _taskAt(taskId);
+    return _splice(task.note, [_lineOf(task)]);
+  }
+
+  /// Moves a task to the end of [noteId], or before [beforeTaskId] there,
+  /// ticked or not as it was, and in the style that note's tasks use.
+  McpTask moveTask(String taskId, {required String noteId, String? beforeTaskId}) {
+    final task = _taskAt(taskId);
+    _writable(noteId);
+    if (beforeTaskId == taskId) return task;
+    final before = beforeTaskId == null ? null : _taskAt(beforeTaskId);
+    if (before != null && before.note.id != noteId) {
+      throw const McpRefusal('before_task_id is a task in that note.');
+    }
+    final anchorText = before?.text;
+    _splice(task.note, [_lineOf(task)]);
+    final target = notes.byId(noteId)!;
+    final line = '${_box(target, done: task.done)}${task.text}';
+    final McpTask? anchor = anchorText == null
+        ? null
+        : tasksIn(target).where((each) => each.text == anchorText).firstOrNull;
+    final body = target.body;
+    final _Region region;
+    if (anchor != null) {
+      region = (start: anchor.line.start, end: anchor.line.start, text: '$line\n');
+    } else {
+      final joined = body.isEmpty || body.endsWith('\n') ? line : '\n$line';
+      region = (start: body.length, end: body.length, text: joined);
+    }
+    final written = _splice(target, [region]);
+    return tasksIn(written).firstWhere(
+      (each) =>
+          each.text == task.text &&
+          each.line.start >= region.start &&
+          each.line.start <= region.start + region.text.length,
+    );
+  }
+
+  /// The whole line [task] is on, with the line break that ends it, or the
+  /// one before it at the end of a note.
+  _Region _lineOf(McpTask task) {
+    final body = task.note.body;
+    final line = body.substring(task.line.start, task.line.end);
+    if (line.contains(_anchor)) {
+      throw const McpRefusal(
+        'That task holds an attachment, and assistants can’t remove those.',
+      );
+    }
+    if (task.line.end < body.length) {
+      return (start: task.line.start, end: task.line.end + 1, text: '');
+    }
+    final start = task.line.start > 0 ? task.line.start - 1 : 0;
+    return (start: start, end: task.line.end, text: '');
+  }
+
+  String _taskWords(String text) {
+    final words = _clean(text, maxTaskText, 'text').trim();
+    if (words.isEmpty || words.contains('\n')) {
+      throw const McpRefusal('A task is one line of text.');
+    }
+    return words;
+  }
+
+  /// A task box in the style [note]'s tasks already use.
+  String _box(Note note, {bool done = false}) {
+    final existing = taskLines(note.body);
+    final markdown = existing.isNotEmpty &&
+        !_glyphBox.hasMatch(
+          note.body.substring(existing.first.start, existing.first.textStart),
+        );
+    return markdown ? (done ? '- [x] ' : '- [ ] ') : (done ? '☑ ' : '☐ ');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Drawings
+
+  /// Adds [add] to the drawing [id] and takes [remove] off it, or starts a
+  /// new drawing called [title] when [id] is null. Returns the drawing and
+  /// the ids its new elements were given.
+  ({Note note, List<String> added}) draw({
+    String? id,
+    String? title,
+    List<Object?> add = const [],
+    List<String> remove = const [],
+  }) {
+    if (add.length > McpDrawing.maxPerCall) {
+      throw const McpRefusal(
+        'That’s more than ${McpDrawing.maxPerCall} elements at once.',
+      );
+    }
+    String? heading;
+    Note? existing;
+    if (id == null) {
+      heading = _clean(title ?? '', maxTitle, 'title').trim();
+      if (heading.isEmpty || heading.contains('\n')) {
+        throw const McpRefusal('A new drawing needs a one-line title.');
+      }
+      if (remove.isNotEmpty) {
+        throw const McpRefusal('A new drawing has nothing to remove.');
+      }
+      _checkCreate();
+    } else {
+      existing = _changeable(id);
+      if (!existing.isDrawing) {
+        throw const McpRefusal(
+          'That note has text, not a drawing. Leave out note_id to start a '
+          'drawing.',
+        );
+      }
+    }
+    var drawing = existing?.drawing ?? NoteDrawing.empty;
+    final unknown = remove.where((each) => drawing.byId(each) == null);
+    if (unknown.isNotEmpty) {
+      throw McpRefusal('There’s no element ${unknown.first} in that drawing.');
+    }
+    final z = drawing.nextZ;
+    final elements = [
+      for (final (i, raw) in add.indexed)
+        McpDrawing.parse(raw, id: NotesStore.newId(), z: z + i),
+    ];
+    drawing = drawing.remove(remove).upsert(elements);
+    if (drawing.elements.length > McpDrawing.maxElements) {
+      throw const McpRefusal(
+        'A drawing holds at most ${McpDrawing.maxElements} elements.',
+      );
+    }
+    final noteId = existing?.id ?? notes.create(authored: false).id;
+    if (existing == null) notes.setDrawingMode(noteId, drawing: true);
+    notes.updateDrawing(noteId, drawing, title: heading, authored: false);
+    return (
+      note: notes.byId(noteId)!,
+      added: [for (final element in elements) element.id],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Voice notes
+
+  /// What an assistant calls a voice note within its note.
+  static String voiceIdOf(NoteAttachmentRef ref) =>
+      ref.hash.length > 12 ? ref.hash.substring(0, 12) : ref.hash;
+
+  NoteVoiceRef voice(String noteId, String voiceId) {
+    final note = read(noteId);
+    for (final ref in note.attachments) {
+      if (ref is NoteVoiceRef && voiceIdOf(ref) == voiceId) return ref;
+    }
+    throw const McpRefusal('No voice note with that id in this note.');
+  }
+
+  Note _write(
+    Note note,
+    String body, {
+    List<NoteFormatRange>? formats,
+    List<NoteAttachmentRef>? attachments,
+  }) {
     if (body.length > maxNoteLength) {
       throw const McpRefusal('That would make the note too long.');
     }
-    notes.updateForAssistant(note.id, body, diffTexts(note.body, body));
+    if (body == note.body) return note;
+    notes.updateForAssistant(
+      note.id,
+      body,
+      diffTexts(note.body, body),
+      formats: formats,
+      attachments: attachments,
+    );
     return notes.byId(note.id)!;
   }
+
+  /// Refuses [text] that has characters a note can't hold.
+  static void checkText(String text, String field) =>
+      _clean(text, text.length, field);
 
   /// [text] as it may be written into a note: line breaks as `\n`, and no
   /// control characters or attachment anchors, which would fake a picture.
