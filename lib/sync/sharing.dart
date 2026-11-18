@@ -436,6 +436,7 @@ class Sharing extends ChangeNotifier {
         rethrow;
       }
     }
+    _sync.left(spaceId);
     _notes.forgetPrivateCopies(sources.map((note) => note.id));
     await refresh();
     _sync.requestSync();

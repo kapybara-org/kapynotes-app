@@ -1164,11 +1164,36 @@ void main() {
         expect(kept.isDirty, isFalse);
         expect(server.rowsIn(bob.keyring.personal!.id)[kept.id], isNotNull);
       },
-      skip:
-          'SyncService._forgetDepartedSpaces keeps only notes that are '
-          'dirty, but an edit is absorbed into the document and marked synced '
-          'the moment it is made; one still waiting in the outbox is dropped '
-          'with the space',
+    );
+
+    test(
+      'leaving with an unsent edit keeps one copy with it, and leaving without copies keeps none',
+      () async {
+        final note = await shareWithBob('Ours');
+        final space = alice.sharing.teams.single;
+        bob.tick();
+        bob.notes.updateBody(note.id, 'Ours, with my additions');
+        server.failNext = const SyncTransientException('no route');
+        await settle(server);
+        expect(bob.sync.pendingCount, 1);
+
+        await bob.sharing.leave(space.id);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.bodies, ['Ours, with my additions']);
+        expect(bob.notes.notes.single.spaceId, isNull);
+
+        final second = await shareWithBob('Theirs');
+        final again = alice.sharing.teams.single;
+        bob.tick();
+        bob.notes.updateBody(second.id, 'Theirs, edited');
+        server.failNext = const SyncTransientException('no route');
+        await settle(server);
+        await bob.sharing.leave(again.id, keepCopies: false);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.bodies, ['Ours, with my additions']);
+      },
     );
 
     test(
