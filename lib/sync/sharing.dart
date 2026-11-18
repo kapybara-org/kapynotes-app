@@ -410,20 +410,30 @@ class Sharing extends ChangeNotifier {
 
   /// Leaving a space. By default each of its notes stays as a private copy,
   /// attachments included, hidden ones still hidden. The copies are written
-  /// to disk before the server is asked, so nothing is ever lost; if leaving
-  /// then fails, they are deleted again, so a retry makes one set.
+  /// to disk before the server is asked, so nothing is ever lost. A retry
+  /// reuses the copies an earlier attempt made. Only a refusal, which means
+  /// nothing changed, takes back the copies this attempt made; a timeout may
+  /// have left the space all the same, so they stay.
   Future<void> leave(String spaceId, {bool keepCopies = true}) async {
     final sources = keepCopies ? notesIn(spaceId) : const <Note>[];
     final detached = [for (final note in sources) await _detached(note)];
-    final copies = [for (final note in detached) _notes.keepCopy(note)];
+    final made = [
+      for (final note in detached)
+        if (_notes.privateCopyOf(note) case (:final note, made: true)) note,
+    ];
     await _notes.flush();
     try {
       await _api.removeMember(spaceId, userId);
-    } catch (_) {
-      for (final copy in copies) {
-        _notes.delete(copy.id);
+    } on SyncRefusedException catch (error) {
+      final alreadyGone =
+          error.status == 404 &&
+          (error.code == 'not a member' || error.code == 'no such space');
+      if (!alreadyGone) {
+        for (final copy in made) {
+          _notes.delete(copy.id);
+        }
+        rethrow;
       }
-      rethrow;
     }
     await refresh();
     _sync.requestSync();

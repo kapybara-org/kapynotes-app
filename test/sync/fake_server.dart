@@ -60,6 +60,9 @@ class FakeServer {
   /// Calls to let through before [failNext] is thrown.
   int failAfter = 0;
 
+  /// Thrown after the next removal is applied, as when its answer is lost.
+  SyncException? loseRemovalAnswer;
+
   /// Set to refuse every op push with this code, as a server refuses an op or
   /// a snapshot past its size.
   String? refusePushes;
@@ -2101,6 +2104,11 @@ class FakeApi implements SyncApi {
   Future<void> removeMember(String spaceId, String userId) async {
     _gate();
     server.removeMember(this.userId, spaceId, userId);
+    final lost = server.loseRemovalAnswer;
+    if (lost != null) {
+      server.loseRemovalAnswer = null;
+      throw lost;
+    }
   }
 
   @override

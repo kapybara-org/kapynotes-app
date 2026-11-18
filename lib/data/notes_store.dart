@@ -36,6 +36,7 @@ class NotesStore extends ChangeNotifier {
   static const String _pinnedKey = 'pinnedNoteIds.v1';
   static const String _writingDaysKey = 'writingDays.v1';
   static const String _nameHereKey = 'nameHereNoteIds.v1';
+  static const String _privateCopiesKey = 'privateCopies.v1';
   static const int _nameHereLimit = 200;
 
   final LocalStore _store;
@@ -1024,6 +1025,23 @@ class NotesStore extends ChangeNotifier {
     _notes = List.unmodifiable([copy, ..._notes]);
     _persist();
     return copy;
+  }
+
+  /// A private copy of [source] for leaving its space: the one an earlier
+  /// attempt made, while it is still here, or a new one. [made] says which.
+  ({Note note, bool made}) privateCopyOf(Note source) {
+    final raw = _store.data[_privateCopiesKey];
+    final copies = <String, String>{
+      if (raw is Map)
+        for (final MapEntry(:key, :value) in raw.entries)
+          if (key is String && value is String && indexOf(value) >= 0)
+            key: value,
+    };
+    final existing = byId(copies[source.id]);
+    if (existing != null) return (note: existing, made: false);
+    final copy = keepCopy(source);
+    _store.put(_privateCopiesKey, {...copies, source.id: copy.id});
+    return (note: copy, made: true);
   }
 
   /// Writes notes an import decided to apply.

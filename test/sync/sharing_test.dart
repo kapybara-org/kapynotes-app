@@ -745,15 +745,15 @@ void main() {
     );
 
     test(
-      'a leave that fails copies nothing, so a retry makes one set',
+      'a refused leave takes its copies back, so a retry makes one set',
       () async {
         final note = await shareWithBob('Once');
         final spaceId = bob.notes.byId(note.id)!.spaceId!;
         bob.tick();
-        server.failNext = const SyncTransientException('offline');
+        server.failNext = const SyncRefusedException(403, 'refused', {});
         await expectLater(
           bob.sharing.leave(spaceId),
-          throwsA(isA<SyncTransientException>()),
+          throwsA(isA<SyncRefusedException>()),
         );
         expect(bob.notes.notes.where((n) => !n.isShared), isEmpty);
         expect(bob.notes.byId(note.id)!.spaceId, spaceId);
@@ -762,6 +762,32 @@ void main() {
         bob.tick(2);
         await bob.sync.syncNow();
         expect(bob.notes.notes.single.body, 'Once');
+        expect(bob.notes.notes.single.isShared, isFalse);
+      },
+    );
+
+    test(
+      'a leave whose answer is lost keeps its copies, and a retry adds none',
+      () async {
+        final note = await shareWithBob('Lost');
+        final spaceId = bob.notes.byId(note.id)!.spaceId!;
+        bob.tick();
+        server.loseRemovalAnswer = const SyncTransientException('timed out');
+        await expectLater(
+          bob.sharing.leave(spaceId),
+          throwsA(isA<SyncTransientException>()),
+        );
+        expect(
+          server.spaces[spaceId]?.members.containsKey(bob.userId),
+          isNot(true),
+        );
+        final copies = bob.notes.notes.where((n) => !n.isShared).toList();
+        expect(copies.single.body, 'Lost');
+
+        await bob.sharing.leave(spaceId);
+        bob.tick(2);
+        await bob.sync.syncNow();
+        expect(bob.notes.notes.single.id, copies.single.id);
         expect(bob.notes.notes.single.isShared, isFalse);
       },
     );
