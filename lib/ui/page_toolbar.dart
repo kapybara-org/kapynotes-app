@@ -452,6 +452,11 @@ class _SaveStatus extends StatelessWidget {
         'Offline',
         'Saved on this device. It syncs once you are back online.',
       ),
+      SyncStatus.keysChanged => (
+        KapyIcons.cloudRounded,
+        'Saved',
+        'Saved on this device. It syncs once you enter your new passphrase.',
+      ),
       _ => (KapyIcons.cloudRounded, 'Saved', null),
     };
     final row = Padding(

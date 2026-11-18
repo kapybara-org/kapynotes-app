@@ -9,6 +9,7 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/account/encryption_pane.dart';
 import 'package:kapy_notes/ui/account/sync_pane.dart';
@@ -33,7 +34,7 @@ Account device(FakeServer server, {String? name = 'Sanjay’s MacBook'}) {
   final state = SyncState(store);
   return Account(
     auth: FakeAuth(),
-    syncApi: (_) => FakeApi(server),
+    syncApi: (_) => FakeApi(server)..keyGeneration = () => state.keyGeneration,
     keys: KeyStore(InMemorySecureStore()),
     notes: notes,
     state: state,
@@ -304,6 +305,163 @@ void main() {
     account.dispose();
     other.dispose();
   });
+
+  /// Signed in on a device that never unlocked, holding a note of its own.
+  Future<Account> locked(WidgetTester tester, FakeServer server) async {
+    final other = device(server, name: 'Office iMac');
+    await tester.runAsync(() async {
+      await other.restore();
+      await other.signIn(email: 'a@b.co', password: 'x');
+    });
+    return other;
+  }
+
+  Future<void> resetFrom(WidgetTester tester, Account account) async {
+    await tester.runAsync(() async {
+      final prepared = await account.prepareReset('new passphrase');
+      await account.sendKeyCode(KeyProofAction.reset);
+      final proof = await account.verifyKeyCode(KeyProofAction.reset, '123456');
+      await account.commitReset(prepared, proof: proof.proof!);
+    });
+  }
+
+  testWidgets('a locked device resets only after saying what stays, and '
+      'shows the new recovery key once', (tester) async {
+    await size(tester, const Size(640, 900));
+    final server = FakeServer();
+    final account = await unlocked(tester, server);
+    final other = await locked(tester, server);
+    await tester.pumpWidget(pane(other));
+    await tester.pumpAndSettle();
+
+    await openFromSettings(tester, 'reset-encryption');
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Try these first'), findsOneWidget);
+    expect(
+      find.textContaining('Resetting is the last resort.'),
+      findsOneWidget,
+    );
+    await tester.tap(byKey('key-change-continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('What a reset does'), findsOneWidget);
+    expect(find.textContaining('every note stays'), findsOneWidget);
+    expect(
+      find.textContaining('Your account, plan and purchases'),
+      findsOneWidget,
+    );
+    expect(server.user('user-1').bundle!.generation, 1);
+
+    await tester.tap(byKey('key-change-continue'));
+    await tester.pumpAndSettle();
+    await enterCode(tester, '123456');
+    expect(find.text('Reset encryption'), findsOneWidget);
+    await tapAndFinish(tester, find.text('Reset encryption'));
+    expect(find.text('Save your new recovery key'), findsOneWidget);
+    expect(server.user('user-1').bundle!.generation, 2);
+    expect(other.state, AccountState.ready);
+    account.dispose();
+    other.dispose();
+  });
+
+  testWidgets('a device left behind by a reset asks once, calmly, and knows '
+      'the old passphrase when it sees it', (tester) async {
+    await size(tester, const Size(640, 700));
+    final server = FakeServer();
+    final account = await unlocked(tester, server);
+    final other = await locked(tester, server);
+    await resetFrom(tester, other);
+    await tester.runAsync(() async {
+      await account.sync!.syncNow();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    expect(account.state, AccountState.keysChanged);
+    expect(account.syncStatus, SyncStatus.keysChanged);
+
+    await tester.pumpWidget(pane(account));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your new passphrase'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Encryption was reset on ${changeDate(DateTime.now())} from Office iMac.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextField), 'first passphrase');
+    await tapAndFinish(tester, find.widgetWithText(FilledButton, 'Unlock'));
+    expect(
+      find.text(
+        "That's your passphrase from before the reset. Enter the one set on "
+        '${changeDate(DateTime.now())}.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextField), 'new passphrase');
+    await tapAndFinish(tester, find.widgetWithText(FilledButton, 'Unlock'));
+    expect(account.state, AccountState.ready);
+    account.dispose();
+    other.dispose();
+  });
+
+  test('a device that has not synced since a reset says what it needs', () {
+    final now = DateTime(2026, 11, 18, 12);
+    const release = '1.34.0';
+    expect(
+      resetDeviceLine(
+        ResetDevice(
+          lastSeenAt: now.subtract(const Duration(hours: 2)),
+          protocol: 6,
+        ),
+        release,
+        now: now,
+      ),
+      'synced 2 hours ago · needs Kapy Notes 1.34.0 to sync after a reset',
+    );
+    expect(
+      resetDeviceLine(
+        ResetDevice(
+          lastSeenAt: now.subtract(const Duration(days: 3)),
+          protocol: 7,
+        ),
+        release,
+        now: now,
+      ),
+      'synced 3 days ago',
+    );
+    expect(
+      resetDeviceName(ResetDevice(lastSeenAt: now, platform: 'ios')),
+      'An iPhone or iPad',
+    );
+  });
+
+  for (final dark in [false, true]) {
+    final theme = dark ? 'dark' : 'light';
+    testWidgets('what a reset does golden $theme', (tester) async {
+      await size(tester, const Size(560, 760));
+      final server = FakeServer();
+      final account = await unlocked(tester, server);
+      final other = await locked(tester, server);
+      await tester.pumpWidget(pane(other, dark: dark));
+      await tester.pumpAndSettle();
+      await openFromSettings(tester, 'reset-encryption');
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(byKey('key-change-continue'));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(AlertDialog),
+        matchesGoldenFile('goldens/reset_explain_$theme.png'),
+      );
+      account.dispose();
+      other.dispose();
+    });
+  }
 
   for (final dark in [false, true]) {
     final theme = dark ? 'dark' : 'light';

@@ -2813,9 +2813,7 @@ class _SettingsDialogState extends State<SettingsDialog>
               controller: _scrollController,
               flashTarget: _flashTarget,
               flash: _flash,
-              children: _searching
-                  ? [_searchResults()]
-                  : _paneFor(section),
+              children: _searching ? [_searchResults()] : _paneFor(section),
             ),
             footer: _searching
                 ? const _SearchHints()
@@ -3740,6 +3738,7 @@ class _CategoryList extends StatelessWidget {
       AccountState.needsProfile => 'Choose the name people will see',
       AccountState.needsPassphrase => 'Save your passphrase to start syncing',
       AccountState.locked => 'Unlock to read these notes here',
+      AccountState.keysChanged => 'Waiting for your new passphrase',
       AccountState.needsAccountDecision => 'Choose what happens to local notes',
       AccountState.ready => account.user?.displayName ?? 'Signed in',
     };

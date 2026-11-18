@@ -11,6 +11,7 @@ import '../../images/image_ingest.dart';
 import '../../images/image_picker.dart';
 import '../../sync/account.dart';
 import '../../sync/device_name.dart';
+import '../../sync/key_bundle.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'encryption_pane.dart';
@@ -55,7 +56,11 @@ class SyncPane extends StatelessWidget {
           saveTextFile: saveTextFile ?? TextFileExport.save,
           passphraseGenerator: passphraseGenerator ?? generatePassphrase,
         ),
-        AccountState.locked => _UnlockForm(account: account),
+        AccountState.locked || AccountState.keysChanged => _UnlockForm(
+          account: account,
+          saveTextFile: saveTextFile,
+          passphraseGenerator: passphraseGenerator,
+        ),
         AccountState.needsAccountDecision => _AccountSwitch(account: account),
         AccountState.ready => _Ready(
           account: account,
@@ -744,8 +749,14 @@ class _PassphraseFormState extends State<_PassphraseForm> {
 // ---------------------------------------------------------------------------
 
 class _UnlockForm extends StatefulWidget {
-  const _UnlockForm({required this.account});
+  const _UnlockForm({
+    required this.account,
+    required this.saveTextFile,
+    required this.passphraseGenerator,
+  });
   final Account account;
+  final TextFileSaver? saveTextFile;
+  final String Function()? passphraseGenerator;
 
   @override
   State<_UnlockForm> createState() => _UnlockFormState();
@@ -768,21 +779,34 @@ class _UnlockFormState extends State<_UnlockForm> {
       _busy = true;
       _problem = null;
     });
+    final afterReset = widget.account.state == AccountState.keysChanged;
+    final unlocked = afterReset
+        ? 'Unlocked. Adding this $thisDeviceKind’s notes back…'
+        : 'Notes unlocked';
     final progress = Toast.showProgress(context, 'Unlocking notes…');
     final opened = _usingRecoveryKey
         ? await widget.account.unlockWithRecoveryKey(_input.text)
         : await widget.account.unlock(_input.text);
     if (!mounted) {
       if (opened) {
-        progress.success('Notes unlocked');
+        progress.success(unlocked);
       } else {
         progress.dismiss();
       }
       return;
     }
     final changes = widget.account.keyBundle?.changes;
+    final reset = changes?.reset;
     final problem = opened
         ? null
+        : widget.account.typedOldKey
+        ? _usingRecoveryKey
+              ? "That's your recovery key from before the reset. Use the new "
+                    'one, or the new passphrase.'
+              : "That's your passphrase from before the reset. Enter the one "
+                    'set on ${changeDate(reset?.at ?? DateTime.now())}.'
+        : reset != null
+        ? "That doesn't match. Check it and try again."
         : _usingRecoveryKey
         ? switch (changes?.recoveryKey) {
             final change? =>
@@ -803,78 +827,104 @@ class _UnlockFormState extends State<_UnlockForm> {
       _problem = problem;
     });
     if (opened) {
-      progress.success('Notes unlocked');
+      progress.success(unlocked);
     } else {
       progress.error('Could not unlock notes');
     }
   }
 
-  @override
-  Widget build(BuildContext context) => _Panel(
-    title: 'Unlock your notes',
-    blurb: _usingRecoveryKey
-        ? 'Paste the recovery key saved for this account.'
-        : switch (widget.account.passphraseChangedSinceUnlock) {
-            final change? =>
-              'Your passphrase was changed on ${changeDate(change.at)} from '
-                  '${changeDevice(change)}. The notes on this '
-                  '$thisDeviceKind are safe. Enter the new passphrase to '
-                  'keep syncing.',
-            null => 'Enter your passphrase to unlock notes on this device.',
-          },
-    children: [
-      _Field(
-        key: ValueKey(_usingRecoveryKey),
-        controller: _input,
-        hint: _usingRecoveryKey ? 'Recovery key' : 'Passphrase',
-        obscure: !_usingRecoveryKey,
-        autofocus: true,
-        onSubmitted: _busy ? null : _unlock,
-      ),
-      const SizedBox(height: 4),
-      FilledButton(
-        onPressed: _busy ? null : _unlock,
-        child: const Text('Unlock'),
-      ),
-      const SizedBox(height: 6),
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          TextButton(
-            onPressed: _busy
-                ? null
-                : () => setState(() {
-                    _usingRecoveryKey = !_usingRecoveryKey;
-                    _input.clear();
-                    _problem = null;
-                  }),
-            child: Text(
-              _usingRecoveryKey ? 'Use my passphrase' : 'Use my recovery key',
-            ),
-          ),
-          TextButton(
-            onPressed: _busy
-                ? null
-                : () => unawaited(
-                    _runAccountAction(
-                      context,
-                      waiting: 'Signing out…',
-                      done: 'Signed out',
-                      action: widget.account.signOut,
-                    ),
-                  ),
-            child: const Text('Sign out'),
-          ),
-        ],
-      ),
-      // Reachable from here on purpose. Someone who has lost the passphrase
-      // and the recovery key can do nothing else with this account, and a
-      // delete that first demanded the key would be withheld from precisely
-      // the person with no other way out.
-      _DeleteAccount(account: widget.account, enabled: !_busy),
-      if (_problem != null) _Message(_problem!),
-    ],
+  void _reset() => unawaited(
+    showKeyChangeDialog(
+      context,
+      widget.account,
+      KeyProofAction.reset,
+      saveTextFile: widget.saveTextFile,
+      passphraseGenerator: widget.passphraseGenerator,
+    ),
   );
+
+  @override
+  Widget build(BuildContext context) {
+    final reset = widget.account.state == AccountState.keysChanged
+        ? widget.account.resetElsewhere
+        : null;
+    return _Panel(
+      title: reset != null ? 'Enter your new passphrase' : 'Unlock your notes',
+      blurb: reset != null
+          ? 'Encryption was reset on ${changeDate(reset.at)} from '
+                '${changeDevice(reset)}. The notes on this $thisDeviceKind are '
+                'safe and stay here. Enter the new passphrase or recovery key, '
+                'and this $thisDeviceKind adds its notes back.'
+          : _usingRecoveryKey
+          ? 'Paste the recovery key saved for this account.'
+          : switch (widget.account.passphraseChangedSinceUnlock) {
+              final change? =>
+                'Your passphrase was changed on ${changeDate(change.at)} from '
+                    '${changeDevice(change)}. The notes on this '
+                    '$thisDeviceKind are safe. Enter the new passphrase to '
+                    'keep syncing.',
+              null => 'Enter your passphrase to unlock notes on this device.',
+            },
+      children: [
+        _Field(
+          key: ValueKey(_usingRecoveryKey),
+          controller: _input,
+          hint: _usingRecoveryKey ? 'Recovery key' : 'Passphrase',
+          obscure: !_usingRecoveryKey,
+          autofocus: true,
+          onSubmitted: _busy ? null : _unlock,
+        ),
+        const SizedBox(height: 4),
+        FilledButton(
+          onPressed: _busy ? null : _unlock,
+          child: const Text('Unlock'),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _usingRecoveryKey = !_usingRecoveryKey;
+                      _input.clear();
+                      _problem = null;
+                    }),
+              child: Text(
+                _usingRecoveryKey ? 'Use my passphrase' : 'Use my recovery key',
+              ),
+            ),
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => unawaited(
+                      _runAccountAction(
+                        context,
+                        waiting: 'Signing out…',
+                        done: 'Signed out',
+                        action: widget.account.signOut,
+                      ),
+                    ),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            key: const ValueKey('reset-encryption'),
+            onPressed: _busy ? null : _reset,
+            child: const Text('Lost both? Reset encryption'),
+          ),
+        ),
+        if (_problem != null) _Message(_problem!),
+        // Still here whatever the lock state, as the stores require: closing
+        // an account never needs the key.
+        _DeleteAccount(account: widget.account, enabled: !_busy),
+      ],
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
