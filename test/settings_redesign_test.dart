@@ -19,6 +19,7 @@ import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'billing/billing_fakes.dart';

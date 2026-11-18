@@ -154,6 +154,19 @@ Future<void> pumpSettings(
   await tester.pumpAndSettle();
 }
 
+/// What the server sends a Free account: 100 MB, fifteen cloud minutes for a
+/// language the device cannot transcribe, no cloud summaries, no sync.
+const _freePlan = Entitlements(
+  plan: 'free',
+  storageBytes: 100 * 1024 * 1024,
+  storageUsedBytes: 0,
+  speechSecondsPerMonth: 15 * 60,
+  speechCreditSeconds: 0,
+  sync: false,
+  sharing: false,
+  noteLimit: 20,
+);
+
 void main() {
   testWidgets('a free plan shows only the allowance it can use', (
     tester,
@@ -163,7 +176,7 @@ void main() {
       size: const Size(880, 640),
       asSheet: false,
       section: SettingsSection.account,
-      entitlements: Entitlements.freePreview,
+      entitlements: _freePlan,
       withCloudAccess: true,
     );
 
@@ -178,12 +191,17 @@ void main() {
     );
     // Free runs voice on the device, so its cloud minutes and summaries are
     // nothing it can spend, and are not shown.
-    expect(find.byKey(const ValueKey('plan-transcription-usage')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('plan-transcription-usage')),
+      findsNothing,
+    );
     expect(find.byKey(const ValueKey('plan-summary-usage')), findsNothing);
     expect(find.text('0 / 100 MB'), findsOneWidget);
   });
 
-  testWidgets('the free line says only what the plan restricts', (tester) async {
+  testWidgets('the free line says only what the plan restricts', (
+    tester,
+  ) async {
     await pumpSettings(
       tester,
       size: const Size(880, 640),
