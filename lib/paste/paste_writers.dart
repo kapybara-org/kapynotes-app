@@ -348,7 +348,7 @@ String _renderInlines(List<PasteInline> inlines, {bool table = false}) {
   void closeLink() {
     closeStyles(0);
     if (link != null) {
-      out.write('](${_destination(link!)})');
+      out.write('](${linkDestination(link!)})');
       link = null;
     }
   }
@@ -429,7 +429,9 @@ String _renderInlines(List<PasteInline> inlines, {bool table = false}) {
 bool _isWebAddress(String href) =>
     href.startsWith('https://') || href.startsWith('http://');
 
-String _destination(String href) {
+/// [href] as a markdown link's destination: spaces encoded, and wrapped in
+/// angle brackets when it holds a bracket that would end the link early.
+String linkDestination(String href) {
   final spaced = href.replaceAll(' ', '%20');
   if (!RegExp(r'[()<>]').hasMatch(spaced)) return spaced;
   return '<${spaced.replaceAll('<', '%3C').replaceAll('>', '%3E')}>';

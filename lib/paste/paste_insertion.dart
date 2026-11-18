@@ -4,6 +4,7 @@ import '../ui/editor/markdown_editing.dart'
     show MarkdownLinePrefix, markdownLinePrefix;
 import 'markdown_text.dart' show cleanPastedText;
 import 'paste_tree.dart';
+import 'paste_writers.dart' show linkDestination;
 
 /// What the note holds where a paste lands, as far as it changes what the
 /// paste may write there.
@@ -87,8 +88,7 @@ PasteInsertion planPaste({
     return PasteInsertion(
       start: start,
       end: end,
-      text:
-          '[${note.substring(start, end)}](${address.replaceAll(' ', '%20')})',
+      text: '[${note.substring(start, end)}](${linkDestination(address)})',
     );
   }
 

@@ -11,6 +11,7 @@ import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/kapy_page_peek.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/note_header.dart';
@@ -416,18 +417,23 @@ void main() {
     expect(find.byKey(const ValueKey('view-only-status')), findsOneWidget);
   });
 
-  testWidgets('Kapy peeks from the page corner, clipped by its edge', (
-    tester,
-  ) async {
-    window(tester);
-    await tester.pumpWidget(_page(_body));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'Kapy peeks from the page corner once idle, clipped by its edge',
+    (tester) async {
+      window(tester);
+      await tester.pumpWidget(_page(_body));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('page-kapy')), findsNothing);
 
-    final kapy = tester.getRect(find.byKey(const ValueKey('page-kapy')));
-    expect(kapy.size, const Size(60, 113));
-    expect(kapy.right, 1206);
-    expect(kapy.bottom, 800);
-  });
+      await tester.pump(KapyPagePeek.idleBeforePeek);
+      await tester.pump();
+      await tester.pump(KapyPagePeek.slide + const Duration(milliseconds: 50));
+      final kapy = tester.getRect(find.byKey(const ValueKey('page-kapy')));
+      expect(kapy.size, const Size(60, 113));
+      expect(kapy.right, 1206);
+      expect(kapy.bottom, 800);
+    },
+  );
 
   testWidgets('a phone has no footer under its own rows', (tester) async {
     window(tester);

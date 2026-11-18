@@ -682,7 +682,6 @@ TextEditingValue toggleCheckboxAt(TextEditingValue value, int start) {
   if (current != '☐' && current != '☑') return value;
   return value.copyWith(
     text: value.text.replaceRange(start, start + 1, current == '☐' ? '☑' : '☐'),
-    selection: TextSelection.collapsed(offset: start + 2),
     composing: TextRange.empty,
   );
 }

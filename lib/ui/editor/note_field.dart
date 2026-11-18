@@ -265,6 +265,7 @@ class NoteFieldState extends State<NoteField>
     _blink.dispose();
     _overlay?.dispose();
     _words?.painter.dispose();
+    _words = null;
     clipboardStatus.dispose();
     _startHandleShows.dispose();
     _endHandleShows.dispose();
@@ -1614,7 +1615,8 @@ class NoteFieldState extends State<NoteField>
   /// Scrolls the least distance that shows the caret at [position] and a
   /// row's height around it, or centres it when it is taller than the view,
   /// as [EditableText] does, and says whether it scrolled. The end of the
-  /// note is landed on exactly, measuring the last screenful first.
+  /// note is landed on exactly, measuring the last screenful first, and the
+  /// title brings the page's top margin with it.
   bool bringIntoView(TextPosition position) {
     final scroll = widget.scrollController;
     if (!scroll.hasClients) return false;
@@ -1624,6 +1626,11 @@ class NoteFieldState extends State<NoteField>
         return false;
       }
       layout.jumpToEnd(scrollPosition);
+      return true;
+    }
+    if (_lines.lineAt(position.offset) == 0) {
+      if (scrollPosition.pixels <= scrollPosition.minScrollExtent) return false;
+      scroll.jumpTo(scrollPosition.minScrollExtent);
       return true;
     }
     final caret = caretRectAt(position);
