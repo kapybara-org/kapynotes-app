@@ -237,7 +237,7 @@ void main() {
     testWidgets('a heading is large and bold, its marker hidden', (
       tester,
     ) async {
-      await tester.pumpWidget(harness('# Title\nbody'));
+      await tester.pumpWidget(harness('Note\n# Title\nbody'));
       await tester.pumpAndSettle();
 
       final title = styleOf(tester, 'Title');

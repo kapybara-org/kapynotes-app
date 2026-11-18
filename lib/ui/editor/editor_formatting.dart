@@ -112,7 +112,11 @@ TextStyle paragraphTextStyle(
 /// [AppFonts.title] over the default writing font, falling back to the
 /// writing face for scripts it lacks, and in the person's own face when they
 /// chose another, the handwritten one when it is mixed. Emphasis in it stays.
-TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
+TextStyle noteTitleStyle(
+  TextStyle base, {
+  WritingFont? writingFont,
+  bool strong = false,
+}) {
   final size = base.fontSize == null
       ? null
       : _pageScale(base) * EditorMetrics.titleFontSize;
@@ -127,7 +131,7 @@ TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
       fontSize: size,
       height: height,
       leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: FontWeight.w400,
+      fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
     );
   }
   final face = writingFont == WritingFont.mixed
@@ -140,7 +144,7 @@ TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
     fontSize: size,
     height: height,
     leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: EditorMetrics.titleWeight,
+    fontWeight: strong ? FontWeight.w600 : EditorMetrics.titleWeight,
   );
 }
 

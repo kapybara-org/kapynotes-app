@@ -1306,7 +1306,7 @@ void main() {
     // A phone's look: on the page a link is a chip and the first line a
     // title, both of which editor_page_test covers.
     _onPhone();
-    const body = 'Read https://example.com/docs?q=notes.';
+    const body = 'Links\nRead https://example.com/docs?q=notes.';
     const linkText = 'https://example.com/docs?q=notes';
     final linkStart = body.indexOf(linkText);
     final linkEnd = linkStart + linkText.length;
@@ -1419,15 +1419,15 @@ void main() {
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
-        'Project title\nA supporting thought',
+        'Note\nProject title\nA supporting thought',
         onFormatsChanged: changes.add,
       ),
     );
     await tester.pumpAndSettle();
     final field = tester.widget<NoteField>(noteField);
     field.controller.selection = const TextSelection(
-      baseOffset: 2,
-      extentOffset: 7,
+      baseOffset: 7,
+      extentOffset: 12,
     );
     await tester.pump();
     await revealFormatting(tester);
@@ -1436,7 +1436,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 13, format: NoteFormat.heading),
+      NoteFormatRange(start: 5, end: 18, format: NoteFormat.heading),
     ]);
     final rendered = NoteDriver(tester).span;
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
@@ -1456,7 +1456,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('format-style')));
     await tester.pumpAndSettle();
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 13, format: NoteFormat.subtitle),
+      NoteFormatRange(start: 5, end: 18, format: NoteFormat.subtitle),
     ]);
 
     await tester.tap(find.byKey(const ValueKey('format-style')));

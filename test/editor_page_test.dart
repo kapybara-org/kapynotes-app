@@ -126,7 +126,7 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('the title is set in Shantell at 40/48 with the meta row under '
+  testWidgets('the title is set in Shantell at 30/38 with the meta row under '
       'it', (tester) async {
     window(tester);
     await tester.pumpWidget(_page(_body));
@@ -134,8 +134,8 @@ void main() {
 
     final title = (_spanAt(tester, 2) as TextSpan).style!;
     expect(title.fontFamily, 'Shantell Sans');
-    expect(title.fontSize, 40);
-    expect(title.fontWeight, FontWeight.w600);
+    expect(title.fontSize, 30);
+    expect(title.fontWeight, EditorMetrics.titleWeight);
     final (firstLine, secondLine) = _rows(tester, 1);
     expect(secondLine - firstLine, moreOrLessEquals(EditorMetrics.lineHeight));
     expect(find.text('Edited today, 15:38'), findsOneWidget);
