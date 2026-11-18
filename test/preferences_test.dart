@@ -797,10 +797,11 @@ void main() {
     }
   });
 
-  test('only the summon and new-note shortcuts reach the OS', () {
+  test('only the summon, new-note and menu bar panel shortcuts reach the OS', () {
     expect(ShortcutAction.values.where((action) => action.isGlobal), [
       ShortcutAction.openApp,
       ShortcutAction.newNoteAnywhere,
+      ShortcutAction.openMenuBarPanel,
     ]);
   });
 

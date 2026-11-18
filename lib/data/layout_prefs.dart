@@ -115,6 +115,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _keepRunningKey = 'keepRunningInBackground.v1';
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
+  static const String _menuBarTasksKey = 'menuBarOpensTasks.v1';
   static const String _slashCommandUsesKey = 'slashCommandUses.v1';
   static const String _lastSlashCommandKey = 'lastSlashCommand.v1';
 
@@ -172,6 +173,7 @@ class LayoutPrefs extends ChangeNotifier {
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
   bool _loginItemDefaultApplied = false;
+  bool _menuBarOpensTasks = false;
   int _slashCommandUses = 0;
   String? _lastSlashCommand;
   bool _alwaysOnTop = false;
@@ -296,6 +298,17 @@ class LayoutPrefs extends ChangeNotifier {
   /// close it into.
   bool get keepRunningInBackground => _keepRunningInBackground;
 
+  /// Whether the menu bar panel opens on Tasks, the tab used last, rather
+  /// than on Notes, where a first run opens. Nothing else shows it, so
+  /// nothing is told when it changes.
+  bool get menuBarOpensTasks => _menuBarOpensTasks;
+
+  set menuBarOpensTasks(bool value) {
+    if (value == _menuBarOpensTasks) return;
+    _menuBarOpensTasks = value;
+    _store.putNow(_menuBarTasksKey, value);
+  }
+
   /// Whether this install has already introduced itself to the login items.
   ///
   /// "Open at login" is not a preference this class stores — it lives in the
@@ -391,6 +404,7 @@ class LayoutPrefs extends ChangeNotifier {
     _keepRunningInBackground =
         _store.read<bool>(_keepRunningKey) ?? AppPlatform.isDesktop;
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
+    _menuBarOpensTasks = _store.read<bool>(_menuBarTasksKey) ?? false;
     _slashCommandUses = _store.read<int>(_slashCommandUsesKey) ?? 0;
     _lastSlashCommand = _store.read<String>(_lastSlashCommandKey);
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;

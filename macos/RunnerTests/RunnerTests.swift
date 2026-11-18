@@ -2,6 +2,8 @@ import Cocoa
 import FlutterMacOS
 import XCTest
 
+@testable import Kapy_Notes
+
 class RunnerTests: XCTestCase {
 
   /// Reading `spellingPanel` makes AppKit create the Spelling and Grammar,
@@ -21,6 +23,13 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(handled, true)
     XCTAssertFalse(spellChecker.spellingPanel.isVisible)
     XCTAssertFalse(spellChecker.substitutionsPanel.isVisible)
+  }
+
+  /// The menu bar panel stands on a private engine switch. An engine without
+  /// it must get no panel, so the icon's click falls back to the menu.
+  func testMenuBarPanelNeedsTheEnginesMultiViewSwitch() {
+    XCTAssertTrue(MenuBarPanel.isSupported(by: FlutterEngine.self))
+    XCTAssertFalse(MenuBarPanel.isSupported(by: NSObject.self))
   }
 
 }
