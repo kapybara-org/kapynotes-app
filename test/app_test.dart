@@ -1680,6 +1680,9 @@ void main() {
   testWidgets('spell check is native, subtle, and can be turned off', (
     tester,
   ) async {
+    // Linux has no system spell checker, so the switch is left out there.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpApp(tester);
     await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
@@ -2177,6 +2180,9 @@ void main() {
   testWidgets('desktop can keep the app running and open it at login', (
     tester,
   ) async {
+    // Linux offers the first only where a tray host answers its runner.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     // Stands in for the runners, which a widget test has none of.
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -2241,6 +2247,9 @@ void main() {
   testWidgets('the startup row is absent where the OS has no mechanism', (
     tester,
   ) async {
+    // Linux offers the tray row only where a tray host answers its runner.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     final channel = const MethodChannel('kapynotes/login_item');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);

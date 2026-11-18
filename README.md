@@ -18,13 +18,13 @@ daily * 7                      385.00 EUR
 total                        2,288.00 EUR
 ```
 
-One Flutter codebase, four platforms: **macOS, Windows, iOS, Android.**
+One Flutter codebase, five platforms: **macOS, Windows, Linux, iOS, Android.**
 
 ## Running it
 
 ```bash
 flutter pub get
-flutter run -d macos      # or: windows, <ios device>, <android device>
+flutter run -d macos      # or: windows, linux, <ios device>, <android device>
 flutter test
 ```
 
@@ -42,6 +42,16 @@ and SDK platform 36; iOS needs Xcode's iOS platform installed
 with macOS system fonts — regenerate them on macOS with
 `flutter test --update-goldens`.
 
+Linux builds on Ubuntu 22.04 or newer. Beyond Flutter's own toolchain it needs
+the libraries the plugins link, and a JDK, because `jni` (transitive, and
+Android-only) runs a CMake that looks for one:
+
+```bash
+sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+  libstdc++-12-dev libayatana-appindicator3-dev libkeybinder-3.0-dev \
+  libsecret-1-dev libpulse-dev openjdk-17-jdk-headless
+```
+
 ## Releasing
 
 Desktop releases are cut by tagging. The tag must match `version:` in
@@ -53,7 +63,11 @@ git tag v1.0.1 && git push origin v1.0.1
 
 `.github/workflows/desktop-release.yml` then builds a notarised DMG on a macOS
 runner and the Inno Setup installer on a Windows one, uploads both to the
-`kapynotes` R2 bucket under `downloads/`, and cuts a GitHub Release. Before
+`kapynotes` R2 bucket under `downloads/`, and cuts a GitHub Release. It builds the Linux packages too, on
+Ubuntu 22.04 for x86_64 and aarch64, and after the release is cut uploads them
+beside the others, attaches them and their Dart symbols to the release, and
+writes `latest-linux.json`. Nothing on the Mac and Windows path waits for
+Linux, so a broken Linux build costs only the Linux downloads. Before
 tagging, add the version to `website/src/data/releases.ts` in the
 `kapybara-org/kapynotes` repository and deploy the site: the download links,
 the changelog and the page the updater shows all come from that one entry, and
@@ -70,7 +84,11 @@ edges serving the old bytes indefinitely.
 desktop platforms unsigned and keeping them as artifacts. Windows has to be
 built there — `flutter build windows` needs a Windows host with Visual Studio's
 C++ workload, and macOS does not offer the subcommand at all. Note the billing
-multipliers on a private repo: Windows 2x, macOS 10x.
+multipliers on a private repo: Windows 2x, macOS 10x. It builds the Linux
+packages on both arches as well, then starts the x86_64 ones on clean Ubuntu
+22.04, Ubuntu 24.04, Debian 12 and Fedora containers, and the AppImage through
+FUSE on a 24.04 host without libfuse2 (`packaging/linux/smoke_test.sh`, which
+runs the same way under Docker locally). Neither Linux job is required yet.
 
 Local builds still work exactly as before:
 
@@ -79,12 +97,46 @@ packaging/release.sh mac-direct    # notarised DMG, using the keychain profile
 packaging/release.sh mac-unsigned  # same image, no certificate; what CI builds
 packaging/release.sh ios           # .ipa for App Store Connect
 packaging/preflight_ios.sh --submission  # complete iOS readiness check
+packaging/release.sh linux         # tar.gz, .deb and AppImage for this arch
 ```
+
+The Linux target also needs `patchelf dpkg-dev file desktop-file-utils
+appstream make xz-utils curl` beside the build packages above.
 
 The app ships as `Kapy Notes` under bundle ID `com.kapybara.kapynotes`, signed
 by Kapybara LLC (team `96V66447C6`). `SKIP_NOTARIZE=1` builds a DMG without
 contacting Apple, for local testing. `packaging/SUBMISSION.md` covers the
 certificates, the notarisation credential and the App Store metadata.
+
+### The Linux packages
+
+`packaging/linux/package.sh` turns the release bundle into three downloads,
+built on Ubuntu 22.04 so that they run on its glibc (2.35) and anything newer:
+
+- **`KapyNotes-<version>-linux-<arch>.tar.gz`**: the bundle in `kapynotes/`,
+  run in place.
+- **`KapyNotes-<version>-<debarch>.deb`**: installs to `/usr/lib/kapynotes`,
+  with `kapynotes` on PATH, the desktop entry, the hicolor icons and the
+  AppStream metainfo. dpkg-shlibdeps writes Depends from every ELF in it, and
+  the script adds `libgl1`, `libegl1` and `libgles2` itself, because
+  libepoxy dlopens them where dpkg-shlibdeps cannot see.
+- **`KapyNotes-<version>-<arch>.AppImage`**: the same bundle behind the static
+  type-2 runtime, so it mounts without libfuse2, which Ubuntu 24.04 no longer
+  installs, and runs with `APPIMAGE_EXTRACT_AND_RUN=1` where there is no FUSE
+  at all.
+
+The tarball and the AppImage have no package manager behind them, so they
+carry the libraries a stock GNOME or KDE desktop may lack (the tray's
+appindicator stack, keybinder and libsecret) with `$ORIGIN` RUNPATHs, and take
+everything ABI-stable from the system: glibc, GTK 3, GL and the rest of the
+list at the top of the script. Every package also has, in `libexec/`, an LGPL
+`ffmpeg` built by `packaging/linux/build_ffmpeg.sh` with only the parts voice
+notes use: on Linux they record, play back and decode for transcription
+through it, talking to PulseAudio or PipeWire's PulseAudio server. The runner
+puts that directory first on PATH, so voice notes need no ffmpeg installed.
+The LiteRT-LM runtime behind the on-device summary model is left out, since
+Linux does not offer the model, and `package.sh` refuses any library that
+calls into glibc's private ABI, which would tie the .deb to one exact glibc.
 
 ### The DMG window layout
 
@@ -169,6 +221,15 @@ platform half is an `UpdateInstaller`:
   that was cut off), checks the same DSA signature WinSparkle checked against
   the key compiled into the app (`lib/data/update_signature.dart`), and on
   the click runs it with WinSparkle's arguments and quits.
+- **Linux: none.** A .deb belongs to the package manager, and an AppImage or a
+  tarball to wherever its owner put it, so the app only says that a release
+  exists. It reads `latest-linux.json` rather than `latest.json`, and
+  Settings → Updates shows a newer version with **Download**, which opens the
+  page the feed's `downloadUrl` names (the GitHub release, for now) to install
+  it the same way as the last one. Nothing downloads, so there is no
+  automatic-download switch and no **Update and restart**. `latest.json` and
+  the appcasts never carry a Linux entry, so no released build has to be
+  trusted to ignore one.
 
 There are two appcasts because the two frameworks disagree about what
 `sparkle:version` means — Sparkle compares it against `CFBundleVersion` (the
@@ -538,6 +599,20 @@ The spec described an Electron build. These changed for Flutter:
   the toolbar's inert stretch is the window drag region. Sandboxed, with
   `network.client` added for the rate refresh.
 - **Windows / Linux** — native caption retained.
+- **Linux** — a GTK 3 runner (`linux/runner/`) under the app ID
+  `com.kapybara.kapynotes`, which is also the window's WM_CLASS and the name of
+  the desktop entry and the icon. One instance per session: a second launch,
+  `kapynotes --new-note` or a `kapynotes://` link goes to the one already
+  running. On X11 the two system-wide shortcuts work as on Windows, through
+  keybinder. Wayland lets no app take a key outside its own windows, so there
+  Settings › Shortcuts replaces the two recorders with a row that copies
+  `kapynotes --new-note` for the desktop's own keyboard settings, and since
+  Wayland also keeps a window's position from the app, only its size comes
+  back. *Keep running in the tray* is offered only where something hosts tray
+  icons (a StatusNotifierWatcher: KDE, Ubuntu's GNOME, most others through an
+  extension); elsewhere closing the window quits. *Open at login* is an XDG
+  autostart entry. Spell check, transparency and the on-device summary model
+  are not offered, and a video opens in the system's player.
 - **iOS / Android:** accepts text on the first Flutter frame, then opens the
   most recently edited note when no launch text was entered. A launch draft
   becomes a new note, unless the app was opened from a widget, which carries
@@ -586,14 +661,15 @@ The spec described an Electron build. These changed for Flutter:
   little else uses: `⇧⌥⌘X` / `Alt+Shift+X` summons the window, `⇧⌥⌘N` /
   `Alt+Shift+N` summons it onto a blank note. All of them are rebindable in
   Settings › Shortcuts.
-- Closing the window quits on Windows and leaves the process running on macOS,
-  each platform's own convention. *Keep running in the tray* (Settings ›
-  General, off by default) makes both hide to a tray icon instead, so the
-  system-wide shortcuts go on answering. The icon carries Open, New Note and
-  Quit — the only way out of an app whose close button no longer closes it —
-  and exists only while the setting does. Windows takes a single-instance lock
-  to go with it: an app that looks shut is one whose desktop icon gets clicked
-  a second time, and two copies share one notes file.
+- Closing the window quits on Windows and Linux and leaves the process
+  running on macOS, each platform's own convention. *Keep running in the tray*
+  (Settings › General, off by default) makes all three hide to a tray icon
+  instead, so the system-wide shortcuts go on answering. The icon carries Open,
+  New Note and Quit — the only way out of an app whose close button no longer
+  closes it — and exists only while the setting does. Windows takes a
+  single-instance lock to go with it: an app that looks shut is one whose
+  desktop icon gets clicked a second time, and two copies share one notes
+  file. Linux is single-instance through GApplication whatever the setting.
 
 ## Window chrome
 
