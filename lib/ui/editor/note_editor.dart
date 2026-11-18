@@ -3791,10 +3791,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       if (fences == null) continue;
       final code = TextRange(
         start: fences.open.end + 1,
-        end: fences.close?.start ?? block.end,
+        end: fences.close == null ? block.end : fences.close!.start - 1,
       );
-      if (selection.start < code.start || selection.end > code.end) continue;
-      if (widget.readOnly) return true;
+      if (code.end < code.start ||
+          selection.start < code.start ||
+          selection.end > code.end) {
+        continue;
+      }
       var text = value.text;
       var start = selection.start;
       var end = selection.end;
@@ -3861,6 +3864,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       wasTouch: touch,
       menuWasOpen: touch && _editMenus > 0,
       selection: _controller.selection,
+      text: _controller.text,
     );
     _stillPress = event.pointer;
   }
@@ -4042,9 +4046,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
 
     final offset = field.positionAt(event.position).offset;
-    final unmoved = down.selection.isValid
-        ? _controller.value.copyWith(selection: down.selection)
-        : _controller.value;
+    final pressed = down.selection;
+    final length = _controller.text.length;
+    final unmoved = !pressed.isValid
+        ? _controller.value
+        : _controller.value.copyWith(
+            selection: down.text == _controller.text
+                ? pressed
+                : TextSelection(
+                    baseOffset: math.min(pressed.baseOffset, length),
+                    extentOffset: math.min(pressed.extentOffset, length),
+                  ),
+          );
     final task = _markdownTaskAt(field, event.position, offset);
     if (!widget.readOnly && task != null) {
       _nextInsertedFormats = const {};
@@ -7549,6 +7562,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     .bindingFor(ShortcutAction.pasteAsPlainText)
                     ?.activator: () =>
                     unawaited(_pastePlainText(SelectionChangedCause.keyboard)),
+                if (widget.readOnly && AppPlatform.isMacOS) ...{
+                  const SingleActivator(LogicalKeyboardKey.tab): () =>
+                      _focusNode.nextFocus(),
+                  const SingleActivator(
+                    LogicalKeyboardKey.tab,
+                    shift: true,
+                  ): () =>
+                      _focusNode.previousFocus(),
+                },
                 if (AppPlatform.isWindows || AppPlatform.isLinux)
                   const SingleActivator(
                     LogicalKeyboardKey.keyY,
@@ -7719,6 +7741,7 @@ class _PointerDownDetails {
     required this.wasTouch,
     required this.menuWasOpen,
     required this.selection,
+    required this.text,
   });
 
   final Offset position;
@@ -7734,6 +7757,9 @@ class _PointerDownDetails {
 
   /// The selection the press began with.
   final TextSelection selection;
+
+  /// The text the press began with, which [selection] belongs to.
+  final String text;
 }
 
 /// Reports an edit menu arriving on screen and leaving it.

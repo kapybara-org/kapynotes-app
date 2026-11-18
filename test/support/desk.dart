@@ -72,6 +72,8 @@ class Desk {
     BlobStore? images,
     List<NoteAttachmentRef> initialAttachments = const [],
     TagStore? tags,
+    bool readOnly = false,
+    Widget? below,
   }) async {
     attachments = initialAttachments;
     AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
@@ -91,6 +93,7 @@ class Desk {
       highlighter: Highlighter(engine.registry),
       resultsVisible: results,
       markdownEnabled: true,
+      readOnly: readOnly,
       autofocus: true,
       onDocumentChanged: (_, _, refs, _) => attachments = refs,
       onSettingsPressed: () {},
@@ -101,6 +104,7 @@ class Desk {
       MaterialApp(
         theme: KapyTheme.dark(),
         home: Scaffold(
+          bottomNavigationBar: below,
           body: Padding(
             padding: const EdgeInsets.only(top: 80),
             child: tags == null

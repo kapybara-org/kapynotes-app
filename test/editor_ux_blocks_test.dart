@@ -120,6 +120,57 @@ void main() {
       await desk.key(LogicalKeyboardKey.tab);
       expect(desk.text, body);
     }, variant: desktopPlatforms);
+
+    testWidgets('Tab at the start of the closing fence leaves the fence', (
+      tester,
+    ) async {
+      final desk = Desk(tester);
+      await desk.open(body);
+      desk.place(body.lastIndexOf('```'));
+      await desk.settle();
+      await desk.key(LogicalKeyboardKey.tab);
+      await desk.settle();
+      expect(desk.text, body);
+    }, variant: desktopPlatforms);
+
+    testWidgets('Tab in an empty code block leaves its fences', (tester) async {
+      const empty = 'Title\n```\n```\nafter';
+      final desk = Desk(tester);
+      await desk.open(empty);
+      for (final at in [empty.indexOf('```') + 3, empty.lastIndexOf('```')]) {
+        desk.place(at);
+        await desk.settle();
+        await desk.key(LogicalKeyboardKey.tab);
+        await desk.settle();
+        expect(desk.text, empty, reason: 'at $at');
+      }
+    }, variant: desktopPlatforms);
+
+    testWidgets('in a read-only note, Tab in a code block moves focus on', (
+      tester,
+    ) async {
+      final desk = Desk(tester);
+      final next = FocusNode();
+      addTearDown(next.dispose);
+      await desk.open(
+        body,
+        readOnly: true,
+        below: TextButton(
+          focusNode: next,
+          onPressed: () {},
+          child: const Text('Next'),
+        ),
+      );
+      final focus = desk.note.state.widget.focusNode;
+      desk.place(body.indexOf('foo') + 1);
+      focus.requestFocus();
+      await desk.settle();
+      expect(focus.hasFocus, isTrue);
+      await desk.key(LogicalKeyboardKey.tab);
+      await desk.settle();
+      expect(desk.text, body);
+      expect(next.hasFocus, isTrue);
+    }, variant: desktopPlatforms);
   });
 
   group('tables', () {

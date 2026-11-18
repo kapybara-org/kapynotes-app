@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -351,6 +352,44 @@ void main() {
       }, variant: desktopPlatforms);
     }
 
+    testWidgets('a link whose address holds * keeps it', (tester) async {
+      final desk = Desk(tester);
+      await desk.open(
+        'Title\nRead [docs](https://example.com/a*b*c) and '
+        '<https://example.com/x*y>',
+      );
+      final links = desk.note.controller.markdownFor(desk.text).links;
+      expect(links.map((link) => link.destination), [
+        'https://example.com/a*b*c',
+        'https://example.com/x*y',
+      ]);
+    }, variant: desktopPlatforms);
+
+    testWidgets('a checkbox click after the text changed under the press '
+        'keeps a caret inside the text', (tester) async {
+      final desk = Desk(tester);
+      const body = 'Title\n- [ ] milk\nnotes here and more';
+      await desk.open(body);
+      await desk.click(desk.at(body.length - 1));
+      desk.place(body.length);
+      await desk.settle();
+      final press = await tester.startGesture(
+        desk.on('[ ]', 1),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      desk.note.controller.value = const TextEditingValue(
+        text: 'Title\n- [ ] milk\nx',
+        selection: TextSelection.collapsed(offset: 18),
+      );
+      await tester.pump();
+      await press.up();
+      await desk.settle();
+      expect(desk.text, 'Title\n- [x] milk\nx');
+      expect(desk.selection.isValid, isTrue);
+      expect(desk.selection.end, lessThanOrEqualTo(desk.text.length));
+    }, variant: desktopPlatforms);
+
     testWidgets('a formula shows its result as it is typed', (tester) async {
       final desk = Desk(tester);
       await desk.open('Sums\n', results: true);
@@ -434,6 +473,32 @@ void main() {
       expect(desk.text, 'Title\n- one\n- ');
       await desk.redo();
       expect(desk.text, 'Title\n- one\n- two\n- three');
+    }, variant: desktopPlatforms);
+
+    testWidgets('Tab and Shift+Tab move focus out of a read-only note', (
+      tester,
+    ) async {
+      final next = FocusNode();
+      addTearDown(next.dispose);
+      final desk = Desk(tester);
+      await desk.open(
+        'Title\nplain words',
+        readOnly: true,
+        below: TextButton(
+          focusNode: next,
+          onPressed: () {},
+          child: const Text('Next'),
+        ),
+      );
+      final focus = desk.note.state.widget.focusNode;
+      focus.requestFocus();
+      await desk.settle();
+      await desk.key(LogicalKeyboardKey.tab);
+      await desk.settle();
+      expect(next.hasFocus, isTrue);
+      await desk.key(LogicalKeyboardKey.tab, shift: true);
+      await desk.settle();
+      expect(focus.hasFocus, isTrue);
     }, variant: desktopPlatforms);
 
     testWidgets('redo is also Ctrl+Y on Windows', (tester) async {
