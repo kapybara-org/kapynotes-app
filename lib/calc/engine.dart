@@ -72,16 +72,20 @@ class DocumentEvaluation {
   /// a total the writer wrote.
   final CalcValue? total;
 
-  /// What the total counted and how, for its hover.
-  final String? totalDetail;
+  /// Writes what the total counted and how, for its hover: null when it
+  /// counted nothing. It is worked out only when asked, since a note is read
+  /// on every keystroke and the hover is seen rarely.
+  final String Function()? describeTotal;
   final DigitGrouping grouping;
 
   const DocumentEvaluation({
     required this.results,
     required this.total,
-    this.totalDetail,
+    this.describeTotal,
     this.grouping = DigitGrouping.international,
   });
+
+  String? get totalDetail => describeTotal?.call();
 
   /// Null when the note holds no calculations at all, so the footer can omit
   /// the readout rather than claim a total of zero, and when it has a `total`
@@ -213,15 +217,18 @@ class CalcEngine {
     }
     _memo.end(pass);
     final notes = scope.notes();
-    final detail = scope.counted.isEmpty ? null : _describeTotal(scope, notes);
+    final describe = scope.runningSum == null
+        ? null
+        : () => _describeTotal(scope, notes);
     notes.forEach((line, note) {
       final result = results[line];
       if (result != null) results[line] = result.withCount(note);
     });
-    if (detail != null) {
+    if (describe != null) {
       results.updateAll(
-        (_, result) =>
-            result.isTotal ? result.withCount(CountNote(detail)) : result,
+        (_, result) => result.isTotal
+            ? result.withCount(CountNote.lazy(describe))
+            : result,
       );
     }
     return DocumentEvaluation(
@@ -229,10 +236,14 @@ class CalcEngine {
       total: results.values.any((result) => result.isTotal)
           ? null
           : scope.runningSum,
-      totalDetail: detail,
+      describeTotal: describe,
       grouping: grouping,
     );
   }
+
+  /// The amounts, and the lines left out, that a total's hover names before it
+  /// says how many more there are.
+  static const _describedAmounts = 20;
 
   /// What the total counted and how: how many amounts, in what unit, at
   /// which rates, then each amount, then the lines it could not join.
@@ -264,19 +275,24 @@ class CalcEngine {
               '${ratesAsOf == null ? '' : ' (rates of $ratesAsOf)'}';
 
     String label(CountedAmount entry) => entry.name ?? 'line ${entry.line + 1}';
-    final left = [
+    final marked = [
       for (final MapEntry(key: line, value: note) in notes.entries)
         if (note.mark)
           'line ${line + 1} (${note.text.replaceFirst('Not in the total: ', '')})',
     ];
+    final left = [
+      ...marked.take(_describedAmounts),
+      if (marked.length > _describedAmounts)
+        'and ${marked.length - _describedAmounts} more',
+    ];
     return [
       [headline, ?conversion].join(' · '),
-      counted
-          .map(
-            (entry) =>
-                '${label(entry)} ${ResultFormatter.display(entry.amount, grouping: grouping)}',
-          )
-          .join(', '),
+      [
+        for (final entry in counted.take(_describedAmounts))
+          '${label(entry)} ${ResultFormatter.display(entry.amount, grouping: grouping)}',
+        if (counted.length > _describedAmounts)
+          'and ${counted.length - _describedAmounts} more',
+      ].join(', '),
       if (left.isNotEmpty) 'Not in the total: ${left.join(', ')}',
     ].join('\n');
   }

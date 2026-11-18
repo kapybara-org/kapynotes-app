@@ -3,14 +3,19 @@ import 'value.dart';
 
 /// What a note's total says about one line it left out, or could not join.
 class CountNote {
-  final String text;
+  CountNote(String text, {this.mark = false}) : _build = (() => text);
+
+  /// A note whose text is worked out only when it is first read.
+  CountNote.lazy(this._build) : mark = false;
+
+  final String Function() _build;
+
+  late final String text = _build();
 
   /// Whether the line is one the writer might have expected in the total, as
   /// against one the total leaves out by its own rule. A mark shows on the
   /// line's chip; the rest only on hover.
   final bool mark;
-
-  const CountNote(this.text, {this.mark = false});
 }
 
 /// One amount a line added to the note's total.
@@ -49,6 +54,10 @@ class Contribution {
   /// part it plays there: their contributions come off the total.
   final Map<String, String> consumes;
 
+  /// The names whose amounts the line's own name now stands for, because it
+  /// restates them (`monthly = rent + utilities`) or builds on them.
+  final List<String> stands;
+
   /// What the total says of a line that adds nothing the writer might have
   /// expected it to.
   final String? skipped;
@@ -58,6 +67,7 @@ class Contribution {
     this.defines,
     this.replaces = false,
     this.consumes = const {},
+    this.stands = const [],
     this.skipped,
   });
 
@@ -70,7 +80,7 @@ class Contribution {
     Node? node,
     CalcValue value, {
     required bool readsAggregate,
-    required CountedAmount? Function(String name) owner,
+    required List<CountedAmount> Function(String name) owner,
     required bool Function(String name) isVariable,
   }) {
     var expression = node;
@@ -86,11 +96,13 @@ class Contribution {
       CalcValue? amount,
       String? skipped,
       Map<String, String> consumes = const {},
+      List<String> stands = const [],
     }) => Contribution(
       amount: amount,
       defines: name,
       replaces: replaces,
       consumes: consumes,
+      stands: stands,
       skipped: skipped,
     );
 
@@ -100,9 +112,15 @@ class Contribution {
     if (!_isAmount(value)) return claim();
     switch (expression) {
       case ConvertNode(value: final inner):
-        return claim(skipped: _restates(inner));
+        return claim(
+          skipped: _restates(inner),
+          stands: [if (inner is IdentifierNode) inner.name],
+        );
       case IdentifierNode() when isVariable(expression.name):
-        return claim(skipped: 'Not added again: restates ${expression.name}');
+        return claim(
+          skipped: 'Not added again: restates ${expression.name}',
+          stands: [expression.name],
+        );
       case BinaryNode(op: '+' || '-'):
         return _additive(expression, value, owner, claim);
       case BinaryNode(op: '*' || '/'):
@@ -118,11 +136,12 @@ class Contribution {
   static Contribution _additive(
     BinaryNode expression,
     CalcValue value,
-    CountedAmount? Function(String name) owner,
+    List<CountedAmount> Function(String name) owner,
     Contribution Function({
       CalcValue? amount,
       String? skipped,
       Map<String, String> consumes,
+      List<String> stands,
     })
     claim,
   ) {
@@ -144,11 +163,15 @@ class Contribution {
           IdentifierNode() => term.name,
           _ => null,
         };
-        final counted = reference == null ? null : owner(reference);
-        if (counted == null) continue;
-        rest = sign > 0
-            ? Arith.subtract(rest, counted.amount)
-            : Arith.add(rest, counted.amount);
+        final counted = reference == null
+            ? const <CountedAmount>[]
+            : owner(reference);
+        if (counted.isEmpty) continue;
+        for (final entry in counted) {
+          rest = sign > 0
+              ? Arith.subtract(rest, entry.amount)
+              : Arith.add(rest, entry.amount);
+        }
         names.add(reference!);
       }
     } on CalcError {
@@ -156,9 +179,12 @@ class Contribution {
     }
     if (names.isEmpty) return claim(amount: value);
     if (_isNothing(rest, value)) {
-      return claim(skipped: 'Not added again: restates ${names.join(' and ')}');
+      return claim(
+        skipped: 'Not added again: restates ${names.join(' and ')}',
+        stands: names,
+      );
     }
-    return claim(amount: rest);
+    return claim(amount: rest, stands: names);
   }
 
   /// The earlier amounts a product or quotient takes as its input, and the
@@ -169,10 +195,10 @@ class Contribution {
   /// of their own.
   static Map<String, String> _consumed(
     BinaryNode expression,
-    CountedAmount? Function(String name) owner,
+    List<CountedAmount> Function(String name) owner,
     bool Function(String name) isVariable,
   ) {
-    final references = <String, CountedAmount>{};
+    final references = <String, List<CountedAmount>>{};
     var multiplies = false;
     var usable = true;
 
@@ -189,7 +215,7 @@ class Contribution {
           break;
         case IdentifierNode():
           final counted = owner(node.name);
-          if (counted != null) {
+          if (counted.isNotEmpty) {
             if (denominator || references.containsKey(node.name)) {
               usable = false;
             }
@@ -206,7 +232,7 @@ class Contribution {
     if (!usable || references.isEmpty) return const {};
     final withUnit = [
       for (final entry in references.entries)
-        if (entry.value.amount is QuantityValue) entry.key,
+        if (entry.value.any((held) => held.amount is QuantityValue)) entry.key,
     ];
     if (withUnit.length > 1) return const {};
     if (withUnit.isEmpty && references.length > 1) return const {};

@@ -23,7 +23,7 @@ class CalcScope {
   final List<CountedAmount> _entries = [];
 
   /// The entry that last defined each name an amount was counted under.
-  final Map<String, CountedAmount> _owners = {};
+  final Map<String, List<CountedAmount>> _owners = {};
 
   /// What the total says about the lines that added nothing, by line.
   final Map<int, CountNote> _skipped = {};
@@ -115,37 +115,53 @@ class CalcScope {
     return trace._readsPrev || trace._readsSum || trace._readsCount;
   }
 
-  /// The amount an earlier line is still counting under [name].
-  CountedAmount? liveOwner(String name) {
-    final entry = _owners[name];
-    return entry != null && entry.live ? entry : null;
-  }
+  /// The amounts an earlier line is still counting under [name]: the ones it
+  /// gave it, and the ones the name was built on, as `rent + utilities` is.
+  List<CountedAmount> liveOwner(String name) => [
+    for (final entry in _owners[name] ?? const <CountedAmount>[])
+      if (entry.live) entry,
+  ];
 
   /// Folds line [line], which gave [value], into the total as [claim] says.
   /// A line that adds nothing still updates `prev`; one that redefines a
-  /// name, or takes an earlier amount as its input, takes that amount's
-  /// place in the total.
+  /// name, or takes earlier amounts as its input, takes their place in the
+  /// total, and a name stands for every amount it was built from.
   void record(int line, CalcValue value, Contribution claim) {
     _prev = value;
     if (claim.skipped case final reason?) _skipped[line] = CountNote(reason);
     final name = claim.defines;
+    final standsFor = <CountedAmount>{
+      for (final stands in claim.stands) ...liveOwner(stands),
+    };
     claim.consumes.forEach((consumed, role) {
-      final entry = liveOwner(consumed);
-      if (entry != null) {
-        _retire(entry, 'used as a $role by ${name ?? 'line ${line + 1}'}');
+      final entries = liveOwner(consumed);
+      final part = entries.length > 1 ? 'base' : role;
+      for (final entry in entries) {
+        _retire(entry, 'used as a $part by ${name ?? 'line ${line + 1}'}');
       }
     });
-    if (name != null) {
-      final entry = claim.replaces ? liveOwner(name) : null;
-      if (entry != null) _retire(entry, 'replaced by a later $name');
-      _owners.remove(name);
+    if (name != null && claim.replaces) {
+      for (final entry in liveOwner(name)) {
+        _retire(entry, 'replaced by a later $name');
+      }
     }
     final amount = claim.amount;
-    if (amount == null) return;
-    final entry = CountedAmount(line, amount, name);
-    _entries.add(entry);
-    if (name != null) _owners[name] = entry;
-    if (!_stale) _join(entry);
+    final entry = amount == null ? null : CountedAmount(line, amount, name);
+    if (entry != null) {
+      _entries.add(entry);
+      if (!_stale) _join(entry);
+    }
+    if (name == null) return;
+    final holds = [
+      for (final held in standsFor)
+        if (held.live) held,
+      ?entry,
+    ];
+    if (holds.isEmpty) {
+      _owners.remove(name);
+    } else {
+      _owners[name] = holds;
+    }
   }
 
   void _retire(CountedAmount entry, String reason) {
@@ -163,9 +179,27 @@ class CalcScope {
     _unitCount = 0;
     _bareSum = null;
     _bareCount = 0;
+    // Money first: the total is in the first currency amount, and only a
+    // note with no money totals in the first unit it has.
+    QuantityValue? first;
+    for (final entry in _entries) {
+      final amount = entry.amount;
+      if (!entry.live || amount is! QuantityValue) continue;
+      first ??= amount;
+      if (amount.unit.isCurrency) {
+        first = amount;
+        break;
+      }
+    }
     for (final entry in _entries) {
       if (!entry.live) continue;
       entry.joined = true;
+      final amount = entry.amount;
+      if (amount is QuantityValue &&
+          amount.unit.dimension != first!.unit.dimension) {
+        entry.joined = false;
+        continue;
+      }
       _join(entry);
     }
   }
@@ -184,6 +218,8 @@ class CalcScope {
     } else if (sum.unit.dimension == amount.unit.dimension) {
       _unitSum = Arith.add(sum, amount);
       _unitCount++;
+    } else if (amount.unit.isCurrency && !sum.unit.isCurrency) {
+      _stale = true;
     } else {
       entry.joined = false;
     }

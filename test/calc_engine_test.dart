@@ -739,6 +739,49 @@ void main() {
       expect(total('x = 5\nx = x + 1'), '6', reason: 'it builds on the old x');
     });
 
+    test('retires the amounts a budget total was built from', () {
+      const budget =
+          'rent = 1000 eur\nutilities = 200 eur\nmonthly = rent + utilities\n'
+          'yearly = monthly * 12';
+      expect(total(budget), '14,400.00 EUR');
+      expect(hover(budget, 0), 'Not in the total: used as a base by yearly');
+      expect(total('a = 10\nb = a + 5\nc = b * 2'), '30');
+      expect(total('a = 10\nb = a + 5\nb'), '15', reason: 'b only restates');
+    });
+
+    test('retires a name built up by its own redefinitions', () {
+      expect(total('x = 5\nx = x + 1\nx = x * 2'), '12');
+      expect(total('x = 5\nx = x + 1\ny = x / 2'), '3');
+    });
+
+    test('retires a running balance when it is multiplied', () {
+      const balance =
+          'balance = 100 eur\nbalance = balance - 20 eur\nbalance = balance * 2';
+      expect(total(balance), '160.00 EUR');
+    });
+
+    test('totals in money when any line has a currency amount', () {
+      const grocery = 'Flour 2 kg \$3\nSugar 1 kg \$2';
+      expect(total(grocery), '5.00 USD');
+      const mixed = '2 kg\n\$3\n1 kg\n\$2';
+      expect(total(mixed), '5.00 USD');
+      expect(marked(mixed, 0), isTrue);
+      expect(hover(mixed, 0), "Not in the total: kg doesn't add to USD");
+      expect(total('2 kg\n3 kg'), '5 kg', reason: 'no money, first unit');
+      expect(total('2 kg\n3 km'), '2 kg');
+    });
+
+    test('names a bounded number of amounts in the total hover', () {
+      final body = [for (var i = 1; i <= 25; i++) 'a$i = $i'].join('\n');
+      final detail = read(body).totalDetail!;
+      expect(detail, startsWith('25 amounts\n'));
+      expect(detail, contains('a20 20, and 5 more'));
+      expect(detail, isNot(contains('a21')));
+      final unjoined = [for (var i = 1; i <= 25; i++) '$i kg'].join('\n');
+      final left = read('\$1\n$unjoined').totalDetail!;
+      expect(left, contains('and 5 more'));
+    });
+
     test('counts a labelled redefinition once', () {
       const body = 'Lunch = \$10\nLunch = Burger \$12';
       expect(total(body), '12.00 USD');
@@ -879,6 +922,8 @@ void main() {
         'a = 12 eur\nb = 5 kg\nc = 7\ntotal',
         'price = 100 usd\nprice in eur\nprice',
         'dinner = 80\nshare = dinner / 2\ntip = dinner * 15%',
+        'rent = 1000 eur\nutilities = 200 eur\nmonthly = rent + utilities\nyearly = monthly * 12',
+        'balance = 100 eur\nbalance = balance - 20 eur\nbalance = balance * 2',
       ]) {
         final fresh = read(body, CalcEngine(ratesPerUsd: _rates));
         final again = read(body);

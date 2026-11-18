@@ -63,7 +63,7 @@ class NoteMetaRow extends StatelessWidget {
     this.done = 0,
     this.tasks = 0,
     this.total,
-    this.totalDetail,
+    this.describeTotal,
     this.typing = const [],
     this.readOnlyLabel,
     this.readOnlyIcon,
@@ -84,8 +84,9 @@ class NoteMetaRow extends StatelessWidget {
 
   final String? total;
 
-  /// What the total counted and how, for the hover on it.
-  final String? totalDetail;
+  /// Writes what the total counted and how, for the hover on it; called only
+  /// once someone hovers, since the note is read on every keystroke.
+  final String Function()? describeTotal;
   final List<Collaborator> typing;
 
   /// Set only when the note cannot be changed: what that is called here.
@@ -138,8 +139,8 @@ class NoteMetaRow extends StatelessWidget {
           ),
         ),
       if (total case final total?)
-        Tooltip(
-          message: totalDetail ?? '',
+        _TotalHover(
+          describe: describeTotal,
           child: Text.rich(
             key: const ValueKey('note-total'),
             TextSpan(
@@ -246,4 +247,41 @@ class _ReadOnly extends StatelessWidget {
             ),
     );
   }
+}
+
+/// A tooltip whose text is worked out when the pointer arrives or a press
+/// begins, not on every rebuild.
+class _TotalHover extends StatefulWidget {
+  const _TotalHover({required this.describe, required this.child});
+
+  final String Function()? describe;
+  final Widget child;
+
+  @override
+  State<_TotalHover> createState() => _TotalHoverState();
+}
+
+class _TotalHoverState extends State<_TotalHover> {
+  String? _detail;
+
+  @override
+  void didUpdateWidget(_TotalHover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.describe != oldWidget.describe) _detail = null;
+  }
+
+  void _describe() {
+    if (_detail != null) return;
+    setState(() => _detail = widget.describe?.call() ?? '');
+  }
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    onEnter: (_) => _describe(),
+    child: Tooltip(
+      message: _detail ?? '',
+      onTriggered: _describe,
+      child: widget.child,
+    ),
+  );
 }

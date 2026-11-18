@@ -3202,6 +3202,25 @@ total to usd''';
     );
   });
 
+  testWidgets('writes the total hover only once the total is hovered', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('rent = 1200\nfood = 300'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsNothing);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('note-total'))),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsOneWidget);
+  });
+
   testWidgets('hides the running total until the note has a calculation', (
     tester,
   ) async {
