@@ -424,27 +424,39 @@ void main() {
       await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
       await pumpScreen(tester);
 
+      tasks.dot(row('One'));
+      Finder dotOf(String words) =>
+          find.descendant(of: markOf(row(words)), matching: shape());
+      double heading() => tester.getTopLeft(find.text('The list')).dx;
+      (double, double, double) offsets() => (
+        tester.getTopLeft(dotOf('One')).dx - heading(),
+        tester.getTopLeft(box('One')).dx - heading(),
+        tester.getTopLeft(find.text('One')).dx - heading(),
+      );
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      await pumpScreen(tester);
+      final onDesktop = offsets();
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await pumpScreen(tester);
+      expect(offsets(), onDesktop, reason: 'the dot, box and words stay put');
+
       final slot = tester.getRect(markOf(row('Two')));
       expect(slot.width, greaterThanOrEqualTo(44));
       expect(slot.height, greaterThanOrEqualTo(44));
+      expect(slot.left, greaterThanOrEqualTo(0), reason: 'inside the screen');
       expect(slot.right, lessThanOrEqualTo(tester.getTopLeft(box('Two')).dx));
-      expect(
-        slot.right,
-        lessThanOrEqualTo(tester.getTopLeft(find.text('Two')).dx),
-      );
       expect(
         find.descendant(of: markOf(row('Two')), matching: shape(hollow: true)),
         findsNothing,
       );
 
-      await tester.tapAt(slot.center + const Offset(-18, 16));
+      await tester.tapAt(Offset(slot.left + 34 - 18, slot.center.dy + 16));
       await settle(tester);
       expect(row('Two').dotted, isTrue);
-      expect(row('One').dotted, isFalse);
-      expect(
-        find.descendant(of: markOf(row('Two')), matching: shape()),
-        findsOneWidget,
-      );
+      expect(row('One').doNow, isFalse);
+      expect(dotOf('Two'), findsOneWidget);
     });
 
     testWidgets('on desktop the mark keeps its 20 by 38 slot', (tester) async {

@@ -209,12 +209,23 @@ class TasksScreenState extends State<TasksScreen> {
       return LayoutBuilder(
         builder: (context, constraints) {
           final width = math.min(700.0, constraints.maxWidth - 48);
+          final reach = widget.filter.done || AppPlatform.hasPointer
+              ? 0.0
+              : _markReach;
           return SingleChildScrollView(
             padding: const EdgeInsets.only(top: 20, bottom: 48),
-            child: Center(
-              child: SizedBox(
-                width: width,
-                child: widget.filter.done ? _done(board) : _today(board),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: (constraints.maxWidth - width) / 2 - reach,
+                ),
+                child: SizedBox(
+                  width: width + reach,
+                  child: widget.filter.done
+                      ? _done(board)
+                      : _today(board, reach),
+                ),
               ),
             ),
           );
@@ -223,7 +234,7 @@ class TasksScreenState extends State<TasksScreen> {
     },
   );
 
-  Widget _today(TaskBoard board) {
+  Widget _today(TaskBoard board, double reach) {
     final palette = context.palette;
     final now = _tasks.now();
     final open = _open(board);
@@ -236,89 +247,114 @@ class TasksScreenState extends State<TasksScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 10, bottom: 18),
+          padding: EdgeInsets.only(left: reach),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _TodayTitle(),
-              const SizedBox(height: 10),
-              NoteMetaRow(
-                edited: SidebarTimestamp.fullDay(now),
-                done: doneToday,
-                tasks: doneToday + open.length,
-                today: true,
-              ),
-            ],
-          ),
-        ),
-        _AddRow(
-          controller: _words,
-          focus: widget.addFocus,
-          shortcut: widget.newTaskShortcut,
-          target: _addInto == null ? null : _tasks.notes.byId(_addInto),
-          labelOf: widget.labelOf,
-          choices: _pickerNotes(board),
-          onChoose: (noteId) => setState(() {
-            _target = noteId;
-            _targetChosen = true;
-          }),
-          onSubmit: () => unawaited(_add()),
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 160),
-          child: _notice
-              ? Padding(
-                  padding: const EdgeInsets.only(left: 36, top: 8),
-                  child: Text(
-                    'Added to the end of the list',
-                    key: const ValueKey('tasks-added-notice'),
-                    style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-        const SizedBox(height: 14),
-        if (doNow != null)
-          _DoNowCard(
-            item: doNow,
-            label: board.isHome(doNow) ? null : widget.labelOf(doNow.note),
-            onOpenNote: () => widget.onOpenNote(doNow.note.id),
-            onNotFinished: () => _notFinished(doNow),
-            onDone: completeDoNow,
-          )
-        else if (open.isNotEmpty)
-          _picker(board, open),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                'The list',
-                style: handStyle(
-                  15,
-                  22,
-                  FontWeight.w600,
-                  palette.textSubheading,
+              Padding(
+                padding: const EdgeInsets.only(left: 10, bottom: 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _TodayTitle(),
+                    const SizedBox(height: 10),
+                    NoteMetaRow(
+                      edited: SidebarTimestamp.fullDay(now),
+                      done: doneToday,
+                      tasks: doneToday + open.length,
+                      today: true,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${open.length}',
-                style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+              _AddRow(
+                controller: _words,
+                focus: widget.addFocus,
+                shortcut: widget.newTaskShortcut,
+                target: _addInto == null ? null : _tasks.notes.byId(_addInto),
+                labelOf: widget.labelOf,
+                choices: _pickerNotes(board),
+                onChoose: (noteId) => setState(() {
+                  _target = noteId;
+                  _targetChosen = true;
+                }),
+                onSubmit: () => unawaited(_add()),
               ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 160),
+                child: _notice
+                    ? Padding(
+                        padding: const EdgeInsets.only(left: 36, top: 8),
+                        child: Text(
+                          'Added to the end of the list',
+                          key: const ValueKey('tasks-added-notice'),
+                          style: uiStyle(
+                            13,
+                            16,
+                            FontWeight.w500,
+                            palette.accentText,
+                          ),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+              const SizedBox(height: 14),
+              if (doNow != null)
+                _DoNowCard(
+                  item: doNow,
+                  label: board.isHome(doNow)
+                      ? null
+                      : widget.labelOf(doNow.note),
+                  onOpenNote: () => widget.onOpenNote(doNow.note.id),
+                  onNotFinished: () => _notFinished(doNow),
+                  onDone: completeDoNow,
+                )
+              else if (open.isNotEmpty)
+                _picker(board, open),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      'The list',
+                      style: handStyle(
+                        15,
+                        22,
+                        FontWeight.w600,
+                        palette.textSubheading,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${open.length}',
+                      style: uiStyle(
+                        12,
+                        16,
+                        FontWeight.w600,
+                        palette.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (open.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                  child: Text(
+                    'Nothing on the list.',
+                    style: uiStyle(
+                      14,
+                      20,
+                      FontWeight.w500,
+                      palette.textTertiary,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
-        if (open.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-            child: Text(
-              'Nothing on the list.',
-              style: uiStyle(14, 20, FontWeight.w500, palette.textTertiary),
-            ),
-          ),
         for (final item in open)
           _TaskRow(
             key: ValueKey(item.id),
@@ -1294,6 +1330,10 @@ class _Box extends StatelessWidget {
   }
 }
 
+/// How far a touch row's mark reaches into the page margin, so the target is
+/// 44 points wide while the dot and the words stay where the desktop has them.
+const double _markReach = 24;
+
 /// One task in the list: its mark in the gutter, its box and words, and at
 /// the end what is worth knowing about it.
 class _TaskRow extends StatefulWidget {
@@ -1354,6 +1394,7 @@ class _TaskRowState extends State<_TaskRow> {
             'Pick',
           );
     final rowHeight = touch ? 44.0 : 38.0;
+    final reach = touch ? _markReach : 0.0;
     final row = SizedBox(
       height: rowHeight,
       child: Padding(
@@ -1376,14 +1417,17 @@ class _TaskRowState extends State<_TaskRow> {
                   splashColor: Colors.transparent,
                   highlightColor: Colors.transparent,
                   child: SizedBox(
-                    width: touch ? 44 : 20,
+                    width: 20 + reach,
                     height: rowHeight,
-                    child: Center(child: mark),
+                    child: Padding(
+                      padding: EdgeInsets.only(left: reach),
+                      child: Center(child: mark),
+                    ),
                   ),
                 ),
               ),
             ),
-            SizedBox(width: touch ? 0 : 10),
+            const SizedBox(width: 10),
             _Box(done: false, onPressed: widget.onTick, label: item.words),
             const SizedBox(width: 10),
             Expanded(
