@@ -72,6 +72,8 @@ class Desk {
     BlobStore? images,
     List<NoteAttachmentRef> initialAttachments = const [],
     TagStore? tags,
+    bool readOnly = false,
+    Widget? below,
   }) async {
     attachments = initialAttachments;
     AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
@@ -91,6 +93,7 @@ class Desk {
       highlighter: Highlighter(engine.registry),
       resultsVisible: results,
       markdownEnabled: true,
+      readOnly: readOnly,
       autofocus: true,
       onDocumentChanged: (_, _, refs, _) => attachments = refs,
       onSettingsPressed: () {},
@@ -101,6 +104,7 @@ class Desk {
       MaterialApp(
         theme: KapyTheme.dark(),
         home: Scaffold(
+          bottomNavigationBar: below,
           body: Padding(
             padding: const EdgeInsets.only(top: 80),
             child: tags == null
@@ -265,6 +269,29 @@ class Desk {
   Future<void> type(String characters) async {
     for (final character in characters.split('')) {
       await input.insertText(character);
+      await tester.pump();
+    }
+    await settle();
+  }
+
+  /// Typing into a plain field, as a table cell or the tag picker is: the
+  /// platform sends it the whole editing state rather than deltas.
+  Future<void> typeInField(String characters) async {
+    final state = tester.testTextInput.editingState!;
+    var text = state['text'] as String;
+    final base = state['selectionBase'] as int;
+    final extent = state['selectionExtent'] as int;
+    var caret = base < extent ? base : extent;
+    text = text.replaceRange(caret, base < extent ? extent : base, '');
+    for (final character in characters.split('')) {
+      text = text.replaceRange(caret, caret, character);
+      caret++;
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: caret),
+        ),
+      );
       await tester.pump();
     }
     await settle();
