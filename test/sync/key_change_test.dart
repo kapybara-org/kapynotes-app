@@ -182,7 +182,7 @@ void main() {
     },
   );
 
-  test('a first recovery key needs no code; replacing one does', () async {
+  test('a first recovery key needs a code, like replacing one', () async {
     final a = await unlocked('first passphrase', create: true);
     final user = server.user('user-1');
     final bundle = user.bundle!;
@@ -194,8 +194,15 @@ void main() {
     await a.account.sync!.syncNow();
 
     final first = await a.account.prepareRecoveryKey();
-    expect(await a.account.commitKeyChange(first!), isA<KeyChangeDone>());
+    expect(await a.account.commitKeyChange(first!), isA<KeyChangeNeedsCode>());
+    expect(a.account.hasRecoveryKey, isFalse);
+    final code = await proof(a, KeyProofAction.recoveryKey);
+    expect(
+      await a.account.commitKeyChange(first, proof: code),
+      isA<KeyChangeDone>(),
+    );
     expect(a.account.hasRecoveryKey, isTrue);
+    expect(server.user('user-1').proofs, isEmpty);
 
     final second = await a.account.prepareRecoveryKey();
     expect(await a.account.commitKeyChange(second!), isA<KeyChangeNeedsCode>());

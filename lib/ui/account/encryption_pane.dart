@@ -139,8 +139,9 @@ const String _offline =
 const String _refused = "Kapy Notes couldn't make that change. Try again.";
 
 /// Changes the passphrase, or makes a recovery key, from this unlocked
-/// device. A first recovery key on an older account needs no code: whoever
-/// holds this device already holds the key it seals.
+/// device. Each needs an emailed code, the first recovery key included: a
+/// stolen session alone must not be able to put a key in place that its
+/// owner never saw.
 Future<void> showKeyChangeDialog(
   BuildContext context,
   Account account,
@@ -346,7 +347,6 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
   );
 
   (String, List<Widget>, List<Widget>) _intro() {
-    final sendsCode = !_firstKey;
     return (
       _changesPassphrase
           ? 'Change your passphrase'
@@ -367,29 +367,20 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
           const _Line(
             'If you forget your passphrase, this key gets you back in. '
             'Nothing else changes.',
-            last: true,
           )
         else
           const _Line(
             'Your current recovery key will stop working. Your passphrase, '
             "your notes and your other devices aren't affected.",
           ),
-        if (sendsCode)
-          _Line(
-            "To check it's you, we'll email a code to $_email.",
-            last: true,
-          ),
+        _Line("To check it's you, we'll email a code to $_email.", last: true),
       ],
       [
         _cancel(),
         FilledButton(
           key: const ValueKey('key-change-continue'),
-          onPressed: _busy
-              ? null
-              : sendsCode
-              ? _sendCode
-              : () => _run(_commit),
-          child: Text(sendsCode ? 'Send code' : 'Continue'),
+          onPressed: _busy ? null : _sendCode,
+          child: const Text('Send code'),
         ),
       ],
     );

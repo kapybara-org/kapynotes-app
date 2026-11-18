@@ -202,7 +202,7 @@ void main() {
   });
 
   testWidgets(
-    'an older account sets up its first recovery key without a code',
+    'an older account sets up its first recovery key after an emailed code',
     (tester) async {
       await size(tester, const Size(640, 900));
       final server = FakeServer();
@@ -214,12 +214,15 @@ void main() {
       expect(find.text('Set up…'), findsOneWidget);
       await openFromSettings(tester, 'recovery-key');
       expect(find.text('Set up a recovery key'), findsOneWidget);
-      expect(find.textContaining('email a code'), findsNothing);
+      expect(find.textContaining('email a code'), findsOneWidget);
 
-      await tapAndFinish(tester, byKey('key-change-continue'));
+      await tester.tap(byKey('key-change-continue'));
+      await tester.pumpAndSettle();
+      await tester.enterText(byKey('key-change-code'), '123456');
+      await tapAndFinish(tester, byKey('key-change-confirm-code'));
       expect(find.text('Save your new recovery key'), findsOneWidget);
       expect(find.textContaining('no longer works'), findsNothing);
-      expect(server.user('user-1').codes, isEmpty);
+      expect(server.user('user-1').proofs, isEmpty);
       await tester.tap(byKey('confirm-recovery-key-saved'));
       await tester.pumpAndSettle();
       expect(find.text('Not set up yet'), findsNothing);
