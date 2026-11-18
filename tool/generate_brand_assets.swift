@@ -1,3 +1,13 @@
+// Draws the Fold mark for the assets the app builds from it: the in-app logo,
+// the app-icon master, the lockups, the iOS launch image and the two
+// notification-area icons. The macOS, iOS, Android and Windows app icons come
+// from the designer's production pack instead (see assets/branding/README.md),
+// because its 16 and 32 px sizes are tuned by hand.
+//
+//   swift tool/generate_brand_assets.swift
+//
+// Run from the app root.
+
 import AppKit
 import CoreText
 import Foundation
@@ -7,12 +17,7 @@ import UniformTypeIdentifiers
 private let fileManager = FileManager.default
 private let root = URL(fileURLWithPath: fileManager.currentDirectoryPath)
 private let branding = root.appendingPathComponent("assets/branding")
-private let sourceURL = branding.appendingPathComponent("kapynotes_mark_square.png")
 private let fontURL = root.appendingPathComponent("assets/fonts/OdinRounded-Bold.otf")
-
-guard let source = NSImage(contentsOf: sourceURL) else {
-  fatalError("Could not load \(sourceURL.path)")
-}
 
 let fontRegistrationError = CTFontManagerRegisterFontsForURL(
   fontURL as CFURL,
@@ -29,44 +34,26 @@ else {
   fatalError("Odin Rounded registered without a usable PostScript name")
 }
 
-private let ivory = NSColor(
-  srgbRed: 0.988,
-  green: 0.965,
-  blue: 0.918,
-  alpha: 1
-)
-private let charcoal = NSColor(
-  srgbRed: 0.105,
-  green: 0.098,
-  blue: 0.094,
-  alpha: 1
-)
+// Device components, so the bytes written are exactly the hex values in the
+// brand spec rather than a colour-managed approximation of them.
+private func hex(_ value: Int) -> NSColor {
+  NSColor(
+    deviceRed: CGFloat((value >> 16) & 0xFF) / 255,
+    green: CGFloat((value >> 8) & 0xFF) / 255,
+    blue: CGFloat(value & 0xFF) / 255,
+    alpha: 1
+  )
+}
 
-/// The tile colour sampled from the artwork itself. Opaque app icons use it
-/// outside the inset mark so a circular or squircle system mask never reveals
-/// a contrasting paper-coloured ring.
-private let sampledTileColor: NSColor = {
-  guard
-    let data = source.tiffRepresentation,
-    let rep = NSBitmapImageRep(data: data),
-    let corner = rep.colorAt(x: 3, y: 3)
-  else {
-    fatalError("Could not read the mark's tile colour")
-  }
-  return corner
-}()
-private let tileColor: NSColor = {
-  guard let color = sampledTileColor.usingColorSpace(.deviceRGB) else {
-    fatalError("Could not resolve the mark's tile colour")
-  }
-  return color
-}()
+private let orange = hex(0xE8772E)
+private let cream = hex(0xFBF1E3)
+private let charcoal = hex(0x1B1918)
 
 private func png(
   width: Int,
   height: Int,
   hasAlpha: Bool,
-  draw: () -> Void
+  draw: (CGContext) -> Void
 ) -> Data {
   let alphaInfo: CGImageAlphaInfo = hasAlpha ? .premultipliedLast : .noneSkipLast
   guard let context = CGContext(
@@ -80,32 +67,8 @@ private func png(
   ) else {
     fatalError("Could not create a \(width)x\(height) bitmap")
   }
-  let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
-
-  NSGraphicsContext.saveGraphicsState()
-  NSGraphicsContext.current = graphicsContext
-  graphicsContext.imageInterpolation = .high
-
-  let canvas = NSRect(x: 0, y: 0, width: width, height: height)
-  if hasAlpha {
-    NSColor.clear.setFill()
-    canvas.fill(using: .copy)
-  } else {
-    // Set the bitmap components directly. NSColor.setFill color-converts the
-    // sampled values a second time and makes this field visibly lighter than
-    // the source edge it is meant to continue.
-    context.setFillColor(
-      red: sampledTileColor.redComponent,
-      green: sampledTileColor.greenComponent,
-      blue: sampledTileColor.blueComponent,
-      alpha: 1
-    )
-    context.fill(canvas)
-  }
-  draw()
-  graphicsContext.flushGraphics()
-  NSGraphicsContext.restoreGraphicsState()
-
+  context.interpolationQuality = .high
+  draw(context)
   guard let image = context.makeImage() else {
     fatalError("Could not snapshot a \(width)x\(height) bitmap")
   }
@@ -137,38 +100,197 @@ private func write(_ data: Data, to url: URL) {
   }
 }
 
-private func drawRoundedMark(in rect: NSRect, radiusRatio: CGFloat = 0.17) {
-  NSGraphicsContext.saveGraphicsState()
-  NSBezierPath(
-    roundedRect: rect,
-    xRadius: rect.width * radiusRatio,
-    yRadius: rect.height * radiusRatio
-  ).addClip()
-  source.draw(
-    in: rect,
-    from: NSRect(origin: .zero, size: source.size),
-    operation: .sourceOver,
-    fraction: 1,
-    respectFlipped: false,
-    hints: [.interpolation: NSImageInterpolation.high]
+
+// The Fold mark, drawn from the designer's v5-4 geometry in a 100-unit box
+// (the SVGs under handoffs/KAPY-14/logo-svg/v5-4-fold-*): two ears, a head
+// with its bottom-right corner folded over, and two bean eyes. The eyes and
+// the fold line are cut out of the shape rather than painted over it, so the
+// same drawing works on a tile, on a transparent layer and as a menu bar
+// template.
+//
+// The layer is rendered at the pixel size it is placed at and snapped to
+// whole pixels, which keeps the eyes and the fold crisp at 16 px instead of
+// resampling a larger drawing down.
+private let markBounds = CGRect(x: 12, y: 24.5, width: 76, height: 57.5)
+
+private func markLayer(side: Int, color: NSColor) -> CGImage {
+  guard let context = CGContext(
+    data: nil,
+    width: side,
+    height: side,
+    bitsPerComponent: 8,
+    bytesPerRow: side * 4,
+    space: CGColorSpaceCreateDeviceRGB(),
+    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      | CGBitmapInfo.byteOrder32Big.rawValue
+  ) else {
+    fatalError("Could not create a \(side)x\(side) mark layer")
+  }
+  let scale = CGFloat(side) / 100
+  context.translateBy(x: 0, y: CGFloat(side))
+  context.scaleBy(x: scale, y: -scale)
+
+  guard let paint = color.usingColorSpace(.deviceRGB) else {
+    fatalError("Could not resolve the mark colour")
+  }
+  context.setFillColor(
+    red: paint.redComponent,
+    green: paint.greenComponent,
+    blue: paint.blueComponent,
+    alpha: 1
   )
-  NSGraphicsContext.restoreGraphicsState()
+  context.fillEllipse(in: CGRect(x: 21.5, y: 24.5, width: 13, height: 13))
+  context.fillEllipse(in: CGRect(x: 65.5, y: 24.5, width: 13, height: 13))
+
+  let head = CGMutablePath()
+  head.move(to: CGPoint(x: 32, y: 28))
+  head.addArc(
+    tangent1End: CGPoint(x: 88, y: 28),
+    tangent2End: CGPoint(x: 88, y: 48),
+    radius: 20
+  )
+  head.addLine(to: CGPoint(x: 88, y: 62))
+  head.addLine(to: CGPoint(x: 68, y: 82))
+  head.addArc(
+    tangent1End: CGPoint(x: 12, y: 82),
+    tangent2End: CGPoint(x: 12, y: 62),
+    radius: 20
+  )
+  head.addLine(to: CGPoint(x: 12, y: 48))
+  head.addArc(
+    tangent1End: CGPoint(x: 12, y: 28),
+    tangent2End: CGPoint(x: 32, y: 28),
+    radius: 20
+  )
+  head.closeSubpath()
+  context.addPath(head)
+  context.fillPath()
+
+  context.setBlendMode(.clear)
+  context.fillEllipse(in: CGRect(x: 33.8, y: 46.2, width: 8.4, height: 11.6))
+  context.fillEllipse(in: CGRect(x: 57.8, y: 46.2, width: 8.4, height: 11.6))
+  let fold = CGMutablePath()
+  fold.move(to: CGPoint(x: 68, y: 85))
+  fold.addLine(to: CGPoint(x: 68, y: 65))
+  fold.addQuadCurve(to: CGPoint(x: 71, y: 62), control: CGPoint(x: 68, y: 62))
+  fold.addLine(to: CGPoint(x: 91, y: 62))
+  context.addPath(fold)
+  context.setLineWidth(3.6)
+  context.setLineCap(.butt)
+  context.strokePath()
+
+  guard let image = context.makeImage() else {
+    fatalError("Could not snapshot the mark layer")
+  }
+  return image
 }
 
-private func markPNG(
+/// Draws the mark with its 100-unit box mapped onto [box] (bottom-left origin).
+private func drawMark(in context: CGContext, box: CGRect, color: NSColor) {
+  let side = max(Int(box.width.rounded()), 1)
+  context.draw(
+    markLayer(side: side, color: color),
+    in: CGRect(
+      x: box.minX.rounded(),
+      y: box.minY.rounded(),
+      width: CGFloat(side),
+      height: CGFloat(side)
+    )
+  )
+}
+
+/// Centres the mark's visible shape in [canvas], its widest edge [fraction] of
+/// the canvas. The capybara is wider than it is tall, and every slot this
+/// draws into is square.
+private func drawMarkFitted(
+  in context: CGContext,
+  canvas: CGRect,
+  fraction: CGFloat,
+  color: NSColor
+) {
+  let scale = (min(canvas.width, canvas.height) * fraction) / markBounds.width
+  drawMark(
+    in: context,
+    box: CGRect(
+      x: canvas.midX - (markBounds.midX * scale),
+      y: canvas.midY - ((100 - markBounds.midY) * scale),
+      width: 100 * scale,
+      height: 100 * scale
+    ),
+    color: color
+  )
+}
+
+private let tileRadiusRatio: CGFloat = 0.224
+
+private func fillTile(
+  in context: CGContext,
+  tile: CGRect,
+  field: NSColor,
+  rounded: Bool
+) {
+  guard let paint = field.usingColorSpace(.deviceRGB) else {
+    fatalError("Could not resolve the tile colour")
+  }
+  context.setFillColor(
+    red: paint.redComponent,
+    green: paint.greenComponent,
+    blue: paint.blueComponent,
+    alpha: 1
+  )
+  if rounded {
+    let radius = tile.width * tileRadiusRatio
+    context.addPath(
+      CGPath(roundedRect: tile, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    )
+    context.fillPath()
+  } else {
+    context.fill(tile)
+  }
+}
+
+/// The app tile: [tile] filled with [field] and the mark in [ink], placed as
+/// the designer's icon places it, 76% of the tile and a touch above centre.
+/// [rounded] false fills the rectangle square, for platforms that mask it.
+private func drawTile(
+  in context: CGContext,
+  tile: CGRect,
+  field: NSColor,
+  ink: NSColor,
+  rounded: Bool = true
+) {
+  fillTile(in: context, tile: tile, field: field, rounded: rounded)
+  let size = tile.width * 0.76
+  drawMark(
+    in: context,
+    box: CGRect(
+      x: tile.minX + (tile.width * 0.12),
+      y: tile.maxY - (tile.height * 0.082) - size,
+      width: size,
+      height: size
+    ),
+    color: ink
+  )
+}
+
+private func tilePNG(
   side: Int,
   insetRatio: CGFloat,
-  opaque: Bool
+  opaque: Bool = false
 ) -> Data {
-  png(width: side, height: side, hasAlpha: !opaque) {
+  png(width: side, height: side, hasAlpha: !opaque) { context in
     let inset = CGFloat(side) * insetRatio
-    drawRoundedMark(
-      in: NSRect(
+    drawTile(
+      in: context,
+      tile: CGRect(
         x: inset,
         y: inset,
         width: CGFloat(side) - (inset * 2),
         height: CGFloat(side) - (inset * 2)
-      )
+      ),
+      field: orange,
+      ink: cream,
+      rounded: !opaque
     )
   }
 }
@@ -187,28 +309,41 @@ private func lockupPNG(textColor: NSColor) -> Data {
   let gap: CGFloat = 34
   let canvasWidth = Int(ceil(padding + markSide + gap + textSize.width + padding))
 
-  return png(width: canvasWidth, height: canvasHeight, hasAlpha: true) {
+  return png(width: canvasWidth, height: canvasHeight, hasAlpha: true) { context in
     let markY = (CGFloat(canvasHeight) - markSide) / 2
-    drawRoundedMark(in: NSRect(x: padding, y: markY, width: markSide, height: markSide))
+    drawTile(
+      in: context,
+      tile: CGRect(x: padding, y: markY, width: markSide, height: markSide),
+      field: orange,
+      ink: cream
+    )
+    let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = graphicsContext
     let textY = (CGFloat(canvasHeight) - textSize.height) / 2 + 2
     text.draw(
       at: NSPoint(x: padding + markSide + gap, y: textY),
       withAttributes: attributes
     )
+    graphicsContext.flushGraphics()
+    NSGraphicsContext.restoreGraphicsState()
   }
 }
 
-let softMark = markPNG(side: 1024, insetRatio: 0, opaque: false)
-write(softMark, to: branding.appendingPathComponent("kapynotes_mark_soft.png"))
+write(
+  tilePNG(side: 1024, insetRatio: 0),
+  to: branding.appendingPathComponent("kapynotes_mark_soft.png")
+)
 // The mark the app ships and draws itself, at most a few dozen points across
 // on the densest screen. Half the side is still several times what it needs
 // and a fifth of the bytes in every install.
 write(
-  markPNG(side: 512, insetRatio: 0, opaque: false),
+  tilePNG(side: 512, insetRatio: 0),
   to: branding.appendingPathComponent("kapy_notes_logo.png")
 )
+// Full bleed and opaque: the platforms that mask an icon draw the corners.
 write(
-  markPNG(side: 1024, insetRatio: 0.072, opaque: true),
+  tilePNG(side: 1024, insetRatio: 0, opaque: true),
   to: branding.appendingPathComponent("kapynotes_app_icon.png")
 )
 write(
@@ -216,36 +351,9 @@ write(
   to: branding.appendingPathComponent("kapynotes_lockup_light.png")
 )
 write(
-  lockupPNG(textColor: ivory),
+  lockupPNG(textColor: cream),
   to: branding.appendingPathComponent("kapynotes_lockup_dark.png")
 )
-
-private let iosIcons: [String: Int] = [
-  "Icon-App-20x20@1x.png": 20,
-  "Icon-App-20x20@2x.png": 40,
-  "Icon-App-20x20@3x.png": 60,
-  "Icon-App-29x29@1x.png": 29,
-  "Icon-App-29x29@2x.png": 58,
-  "Icon-App-29x29@3x.png": 87,
-  "Icon-App-40x40@1x.png": 40,
-  "Icon-App-40x40@2x.png": 80,
-  "Icon-App-40x40@3x.png": 120,
-  "Icon-App-60x60@2x.png": 120,
-  "Icon-App-60x60@3x.png": 180,
-  "Icon-App-76x76@1x.png": 76,
-  "Icon-App-76x76@2x.png": 152,
-  "Icon-App-83.5x83.5@2x.png": 167,
-  "Icon-App-1024x1024@1x.png": 1024,
-]
-let iosDirectory = root.appendingPathComponent(
-  "ios/Runner/Assets.xcassets/AppIcon.appiconset"
-)
-for (name, side) in iosIcons {
-  write(
-    markPNG(side: side, insetRatio: 0.072, opaque: true),
-    to: iosDirectory.appendingPathComponent(name)
-  )
-}
 
 // The native launch screen uses the same soft mark as the website header and
 // hands directly into the editor's warm paper or charcoal surface. Keeping the
@@ -261,181 +369,8 @@ let iosLaunchDirectory = root.appendingPathComponent(
 )
 for (name, side) in iosLaunchMarks {
   write(
-    markPNG(side: side, insetRatio: 0, opaque: false),
+    tilePNG(side: side, insetRatio: 0),
     to: iosLaunchDirectory.appendingPathComponent(name)
-  )
-}
-
-private let macIcons: [String: Int] = [
-  "app_icon_16.png": 16,
-  "app_icon_32.png": 32,
-  "app_icon_64.png": 64,
-  "app_icon_128.png": 128,
-  "app_icon_256.png": 256,
-  "app_icon_512.png": 512,
-  "app_icon_1024.png": 1024,
-]
-let macDirectory = root.appendingPathComponent(
-  "macos/Runner/Assets.xcassets/AppIcon.appiconset"
-)
-for (name, side) in macIcons {
-  write(
-    markPNG(side: side, insetRatio: 0.045, opaque: false),
-    to: macDirectory.appendingPathComponent(name)
-  )
-}
-
-/// The capybara and its page, lifted off the tile and cropped to their own
-/// edges, painted in [color].
-///
-/// The mark is cream on terracotta, so luminance alone separates the two. The
-/// ramp rather than a hard cutoff is what stops the outline crawling once it
-/// is scaled down to a menu bar or a notification area, and the crop is what
-/// stops the tile's generous margin coming with it — at sixteen pixels that
-/// margin is most of the icon.
-private func markSilhouette(color: NSColor) -> CGImage {
-  guard let paint = color.usingColorSpace(.deviceRGB) else {
-    fatalError("Could not resolve the silhouette colour")
-  }
-
-  // Thresholded well above any size this is used at, so the crop has real
-  // edges to find and the downscale does the antialiasing.
-  let working = 512
-  let bytesPerRow = working * 4
-  guard let context = CGContext(
-    data: nil,
-    width: working,
-    height: working,
-    bitsPerComponent: 8,
-    bytesPerRow: bytesPerRow,
-    space: CGColorSpaceCreateDeviceRGB(),
-    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-      | CGBitmapInfo.byteOrder32Big.rawValue
-  ) else {
-    fatalError("Could not create a \(working)x\(working) bitmap")
-  }
-
-  let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
-  NSGraphicsContext.saveGraphicsState()
-  NSGraphicsContext.current = graphicsContext
-  graphicsContext.imageInterpolation = .high
-  source.draw(
-    in: NSRect(x: 0, y: 0, width: working, height: working),
-    from: NSRect(origin: .zero, size: source.size),
-    operation: .sourceOver,
-    fraction: 1,
-    respectFlipped: false,
-    hints: [.interpolation: NSImageInterpolation.high]
-  )
-  graphicsContext.flushGraphics()
-  NSGraphicsContext.restoreGraphicsState()
-
-  guard let pixels = context.data else {
-    fatalError("Could not read back the \(working)x\(working) bitmap")
-  }
-  let buffer = pixels.bindMemory(to: UInt8.self, capacity: bytesPerRow * working)
-  let floor: CGFloat = 0.55
-  let ceiling: CGFloat = 0.75
-
-  // Row 0 of a bitmap context's buffer is the top of the image it makes,
-  // which is also what CGImage.cropping measures from. Everything here stays
-  // in that one space.
-  var minX = working
-  var minY = working
-  var maxX = -1
-  var maxY = -1
-
-  for row in 0..<working {
-    for column in 0..<working {
-      let index = (row * bytesPerRow) + (column * 4)
-      let red = CGFloat(buffer[index]) / 255
-      let green = CGFloat(buffer[index + 1]) / 255
-      let blue = CGFloat(buffer[index + 2]) / 255
-      let luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
-      let coverage = min(max((luminance - floor) / (ceiling - floor), 0), 1)
-
-      // Premultiplied, so the colour is scaled by its own coverage.
-      buffer[index] = UInt8((paint.redComponent * coverage * 255).rounded())
-      buffer[index + 1] = UInt8((paint.greenComponent * coverage * 255).rounded())
-      buffer[index + 2] = UInt8((paint.blueComponent * coverage * 255).rounded())
-      buffer[index + 3] = UInt8((coverage * 255).rounded())
-
-      // Half coverage or better, so a faint antialiased fringe cannot push
-      // the crop outwards by a pixel or two.
-      if coverage >= 0.5 {
-        minX = min(minX, column)
-        maxX = max(maxX, column)
-        minY = min(minY, row)
-        maxY = max(maxY, row)
-      }
-    }
-  }
-
-  guard
-    maxX >= minX, maxY >= minY,
-    let rendered = context.makeImage(),
-    let cropped = rendered.cropping(
-      to: CGRect(
-        x: minX,
-        y: minY,
-        width: maxX - minX + 1,
-        height: maxY - minY + 1
-      )
-    )
-  else {
-    fatalError("The mark did not separate from its tile")
-  }
-  return cropped
-}
-
-/// Centres [shape] in [canvas] at [fraction] of it, keeping its proportions.
-///
-/// It fills whichever way it runs longest, because both slots this draws into
-/// are square and the capybara is not.
-private func drawFitted(_ shape: CGImage, in canvas: NSRect, fraction: CGFloat) {
-  let width = CGFloat(shape.width)
-  let height = CGFloat(shape.height)
-  let scale = (min(canvas.width, canvas.height) * fraction) / max(width, height)
-  NSGraphicsContext.current?.cgContext.draw(
-    shape,
-    in: NSRect(
-      x: canvas.midX - (width * scale / 2),
-      y: canvas.midY - (height * scale / 2),
-      width: width * scale,
-      height: height * scale
-    )
-  )
-}
-
-// Android owns the outer shape of an adaptive icon. Give it a full-bleed
-// terracotta background and only the cream mark in front, instead of putting a
-// rounded square inside another system-provided circle. The longest edge is
-// 54dp in Android's 108dp layer, comfortably inside its documented 66dp safe
-// zone while staying close to the legacy icon's visual weight.
-private let androidScales: [(String, Int, Int)] = [
-  ("mipmap-mdpi", 48, 108),
-  ("mipmap-hdpi", 72, 162),
-  ("mipmap-xhdpi", 96, 216),
-  ("mipmap-xxhdpi", 144, 324),
-  ("mipmap-xxxhdpi", 192, 432),
-]
-let androidDirectory = root.appendingPathComponent("android/app/src/main/res")
-let androidForeground = markSilhouette(color: ivory)
-for (directory, legacySide, foregroundSide) in androidScales {
-  let destination = androidDirectory.appendingPathComponent(directory)
-  write(
-    markPNG(side: legacySide, insetRatio: 0.072, opaque: true),
-    to: destination.appendingPathComponent("ic_launcher.png")
-  )
-  write(
-    png(width: foregroundSide, height: foregroundSide, hasAlpha: true) {
-      drawFitted(
-        androidForeground,
-        in: NSRect(x: 0, y: 0, width: foregroundSide, height: foregroundSide),
-        fraction: 0.50
-      )
-    },
-    to: destination.appendingPathComponent("ic_launcher_foreground.png")
   )
 }
 
@@ -444,36 +379,18 @@ for (directory, legacySide, foregroundSide) in androidScales {
 /// one, and white again while the item is held open. Shipping the brand
 /// palette up there instead would fight all three.
 private func trayTemplatePNG(side: Int) -> Data {
-  let shape = markSilhouette(color: .black)
   let bytesPerRow = side * 4
-  guard let context = CGContext(
-    data: nil,
-    width: side,
-    height: side,
-    bitsPerComponent: 8,
-    bytesPerRow: bytesPerRow,
-    space: CGColorSpaceCreateDeviceRGB(),
-    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-      | CGBitmapInfo.byteOrder32Big.rawValue
-  ) else {
-    fatalError("Could not create a \(side)x\(side) bitmap")
+  let data = png(width: side, height: side, hasAlpha: true) { context in
+    // A hair of margin, so the outline never touches its neighbours.
+    drawMarkFitted(
+      in: context,
+      canvas: CGRect(x: 0, y: 0, width: side, height: side),
+      fraction: 0.94,
+      color: .black
+    )
+    firmUpAlpha(context, side: side, bytesPerRow: bytesPerRow)
   }
-
-  let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
-  NSGraphicsContext.saveGraphicsState()
-  NSGraphicsContext.current = graphicsContext
-  graphicsContext.imageInterpolation = .high
-  // A hair of margin, so the outline never touches its neighbours.
-  drawFitted(shape, in: NSRect(x: 0, y: 0, width: side, height: side), fraction: 0.94)
-  graphicsContext.flushGraphics()
-  NSGraphicsContext.restoreGraphicsState()
-
-  firmUpAlpha(context, side: side, bytesPerRow: bytesPerRow)
-
-  guard let image = context.makeImage() else {
-    fatalError("Could not snapshot the \(side)x\(side) template")
-  }
-  return encodePNG(image)
+  return data
 }
 
 /// Pulls a template's edges back towards solid, without hardening them.
@@ -505,42 +422,13 @@ private func firmUpAlpha(_ context: CGContext, side: Int, bytesPerRow: Int) {
 /// larger inside that tile than the mark itself draws it: sixteen pixels is
 /// the size that matters, and the artwork has none to spare.
 private func trayTilePNG(side: Int) -> Data {
-  let shape = markSilhouette(color: ivory)
   let bytesPerRow = side * 4
-  guard let context = CGContext(
-    data: nil,
-    width: side,
-    height: side,
-    bitsPerComponent: 8,
-    bytesPerRow: bytesPerRow,
-    space: CGColorSpaceCreateDeviceRGB(),
-    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-      | CGBitmapInfo.byteOrder32Big.rawValue
-  ) else {
-    fatalError("Could not create a \(side)x\(side) bitmap")
+  return png(width: side, height: side, hasAlpha: true) { context in
+    let canvas = CGRect(x: 0, y: 0, width: side, height: side)
+    fillTile(in: context, tile: canvas, field: orange, rounded: true)
+    drawMarkFitted(in: context, canvas: canvas, fraction: 0.84, color: cream)
+    sharpenAgainstTile(context, side: side, bytesPerRow: bytesPerRow)
   }
-
-  let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
-  NSGraphicsContext.saveGraphicsState()
-  NSGraphicsContext.current = graphicsContext
-  graphicsContext.imageInterpolation = .high
-  let canvas = NSRect(x: 0, y: 0, width: side, height: side)
-  tileColor.setFill()
-  NSBezierPath(
-    roundedRect: canvas,
-    xRadius: CGFloat(side) * 0.17,
-    yRadius: CGFloat(side) * 0.17
-  ).fill()
-  drawFitted(shape, in: canvas, fraction: 0.84)
-  graphicsContext.flushGraphics()
-  NSGraphicsContext.restoreGraphicsState()
-
-  sharpenAgainstTile(context, side: side, bytesPerRow: bytesPerRow)
-
-  guard let image = context.makeImage() else {
-    fatalError("Could not snapshot the \(side)x\(side) tile")
-  }
-  return encodePNG(image)
 }
 
 /// Firms up the cream against the terracotta after the downscale.
@@ -562,8 +450,8 @@ private func sharpenAgainstTile(
 ) {
   guard
     let pixels = context.data,
-    let tile = tileColor.usingColorSpace(.deviceRGB),
-    let cream = ivory.usingColorSpace(.deviceRGB)
+    let tile = orange.usingColorSpace(.deviceRGB),
+    let cream = cream.usingColorSpace(.deviceRGB)
   else {
     return
   }
@@ -635,13 +523,6 @@ private func iconData(sizes: [Int], image: (Int) -> Data) -> Data {
   return result
 }
 
-write(
-  iconData(
-    sizes: [16, 24, 32, 48, 64, 128, 256],
-    image: { markPNG(side: $0, insetRatio: 0.045, opaque: false) }
-  ),
-  to: root.appendingPathComponent("windows/runner/resources/app_icon.ico")
-)
 
 // The tray copy stops at 48: nothing in the notification area asks for more,
 // and it travels inside the app bundle as a Flutter asset. No inset either —
@@ -660,4 +541,4 @@ write(
   to: branding.appendingPathComponent("kapynotes_tray_macos.png")
 )
 
-print("Generated KapyNotes brand assets and platform icons.")
+print("Generated KapyNotes brand assets.")
