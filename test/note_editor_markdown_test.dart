@@ -2496,4 +2496,49 @@ void main() {
       });
     });
   });
+
+  group('the note title', () {
+    const note =
+        'Lisbon trip budget\n'
+        'Flights for two, in April.\n'
+        '# Days\n'
+        '## Getting there\n'
+        '### Trains\n'
+        'flights = 412 eur';
+
+    for (final light in [true, false]) {
+      final theme = light ? 'light' : 'dark';
+
+      for (final (view, readOnly, phone) in [
+        ('editor', false, false),
+        ('read_only', true, false),
+        ('phone', false, true),
+      ]) {
+        testWidgets('in Newsreader, $view, $theme', (tester) async {
+          if (phone) {
+            AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+            addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          }
+          tester.view.physicalSize = phone
+              ? const Size(390, 420)
+              : const Size(720, 460);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            harness(
+              note,
+              light: light,
+              readOnly: readOnly,
+              writingFont: WritingFont.clean,
+            ),
+          );
+          await settleWithPageKapy(tester);
+          await expectLater(
+            find.byType(NoteEditor),
+            matchesGoldenFile('goldens/note_title_${view}_$theme.png'),
+          );
+        });
+      }
+    }
+  });
 }
