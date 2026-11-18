@@ -290,6 +290,79 @@ void main() {
     });
   });
 
+  group('a formatted cell', () {
+    /// Where [painted] sits in the cell's painted words, as the grid draws it.
+    List<Rect> painted(
+      TableGeometry geometry,
+      MarkdownTableRow row,
+      String words,
+    ) {
+      final cell = geometry.cell(row, 0)!;
+      final at = cell.plainText.indexOf(words);
+      final caret = geometry.caretRectInCell(row, 0, row.cells.first.start)!;
+      return [
+        for (final box in cell.getBoxesForSelection(
+          TextSelection(baseOffset: at, extentOffset: at + words.length),
+        ))
+          box.toRect().shift(
+            Offset(caret.left, caret.top) -
+                cell.getOffsetForCaret(
+                  const TextPosition(offset: 0),
+                  Rect.zero,
+                ),
+          ),
+      ];
+    }
+
+    for (final (source, words) in [
+      ('**ab** cd', 'cd'),
+      ('*ab* cd', 'cd'),
+      ('`ab` cd', 'cd'),
+      ('[ab](https://example.com/a/long/path) cd', 'cd'),
+      ('ab **cd** ef', 'cd'),
+      ('~~ab~~ 東京 🍵', '東京'),
+    ]) {
+      test('selecting "$words" in `$source` covers exactly those glyphs', () {
+        final note = '| a |\n| --- |\n| $source |';
+        final geometry = geometryFor(note);
+        final row = geometry.table.rows.last;
+        final start = note.lastIndexOf(words);
+        final selected = geometry.selectionInCell(
+          row,
+          0,
+          start,
+          start + words.length,
+        );
+        expect(selected, painted(geometry, row, words));
+      });
+
+      test(
+        'the caret before "$words" in `$source` stands at its first glyph',
+        () {
+          final note = '| a |\n| --- |\n| $source |';
+          final geometry = geometryFor(note);
+          final row = geometry.table.rows.last;
+          final caret = geometry.caretRectInCell(
+            row,
+            0,
+            note.lastIndexOf(words),
+          )!;
+          expect(caret.left, painted(geometry, row, words).first.left);
+        },
+      );
+    }
+
+    test('a caret on a hidden marker stands where the words meet', () {
+      const note = '| a |\n| --- |\n| **ab** cd |';
+      final geometry = geometryFor(note);
+      final row = geometry.table.rows.last;
+      final closing = note.indexOf('** cd');
+      final afterB = geometry.caretRectInCell(row, 0, closing)!;
+      expect(afterB.left, painted(geometry, row, 'b').first.right);
+      expect(geometry.caretRectInCell(row, 0, closing + 2)!.left, afterB.left);
+    });
+  });
+
   group('the cache', () {
     TableGeometry ask(
       TableGeometryCache cache,
@@ -304,6 +377,33 @@ void main() {
       runStyle: (base, styles, words) => base,
       fitToWidth: fitToWidth,
     );
+
+    test('typing in one cell measures only that row again', () {
+      final cache = TableGeometryCache();
+      addTearDown(cache.dispose);
+      const before = '| Item | Cost |\n| --- | --- |\n| Tea | 4 |\n| Cake | 5 |';
+      final first = ask(cache, MarkdownAnalyzer.analyzeWhole(before));
+      final tea = first.cell(first.table.rows[1], 0);
+      final cake = first.cell(first.table.rows[2], 0);
+
+      final after = MarkdownAnalyzer.analyzeWhole(
+        before.replaceFirst('Tea', 'Green tea'),
+      );
+      final second = ask(cache, after);
+      final rows = second.table.rows;
+      expect(identical(second.cell(rows[2], 0), cake), isTrue);
+      expect(identical(second.cell(rows[1], 0), tea), isFalse);
+      expect(second.cell(rows[1], 0)!.plainText, 'Green tea');
+      expect(second.cell(rows[2], 0)!.plainText, 'Cake');
+      expect(
+        second.columns.first,
+        greaterThan(first.columns.first),
+        reason: 'the longer words widen their column',
+      );
+      // The grid it kept them from is disposed, and they still lay out.
+      second.cell(rows[2], 0)!.layout(maxWidth: 200);
+      expect(second.cell(rows[2], 0)!.width, greaterThan(0));
+    });
 
     test('measures one table once', () {
       final cache = TableGeometryCache();
