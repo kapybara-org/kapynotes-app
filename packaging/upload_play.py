@@ -55,6 +55,7 @@
 # permanent from that moment on.
 
 import base64
+import http.client
 import json
 import os
 import subprocess
@@ -476,20 +477,79 @@ def validate(bundle):
         die("bundle preflight failed; nothing was uploaded")
 
 
+UPLOAD_CHUNK = 16 * 1024 * 1024
+
+
+def upload_bundle(edit_id, bundle):
+    """Send the bundle as a resumable upload, 16 MB at a time.
+
+    Google's front end drops a single-request upload of a bundle this size
+    (190 MB for 1.32.0) without a response. A resumable session survives that:
+    after a dropped chunk, Play reports how many bytes it holds and the upload
+    carries on from there.
+    """
+    size = os.path.getsize(bundle)
+
+    def send(url, method, data, headers):
+        request = urllib.request.Request(url, data=data, method=method)
+        request.add_header("Authorization", "Bearer " + TOKEN)
+        for name, value in headers.items():
+            request.add_header(name, value)
+        return urllib.request.urlopen(request, timeout=300)
+
+    def held(error):
+        span = error.headers.get("Range")
+        return int(span.split("-")[1]) + 1 if span else 0
+
+    session = send(
+        f"{UPLOAD_API}/applications/{PACKAGE_NAME}/edits/{edit_id}/bundles?uploadType=resumable",
+        "POST", b"",
+        {"X-Upload-Content-Type": "application/octet-stream",
+         "X-Upload-Content-Length": str(size),
+         "Content-Type": "application/json; charset=UTF-8"},
+    ).headers["Location"]
+
+    offset = 0
+    with open(bundle, "rb") as handle:
+        while True:
+            handle.seek(offset)
+            chunk = handle.read(UPLOAD_CHUNK)
+            span = f"bytes {offset}-{offset + len(chunk) - 1}/{size}"
+            for attempt in range(6):
+                try:
+                    with send(session, "PUT", chunk,
+                              {"Content-Range": span,
+                               "Content-Type": "application/octet-stream"}) as response:
+                        return json.loads(response.read().decode())
+                except urllib.error.HTTPError as error:
+                    if error.code != 308:
+                        die(f"bundle upload failed: HTTP {error.code} {error.read().decode()[:400]}")
+                    offset = held(error)
+                    break
+                except (OSError, http.client.HTTPException) as error:
+                    print(f"  chunk at byte {offset} dropped ({type(error).__name__}), retrying")
+                    time.sleep(5 * (attempt + 1))
+                    try:
+                        with send(session, "PUT", b"", {"Content-Range": f"bytes */{size}"}) as response:
+                            return json.loads(response.read().decode())
+                    except urllib.error.HTTPError as status:
+                        if status.code == 308:
+                            offset = held(status)
+                            break
+                    except (OSError, http.client.HTTPException):
+                        pass
+            else:
+                die(f"bundle upload stalled at byte {offset} of {size}")
+            print(f"  {offset * 100 // size}% sent")
+
+
 def upload(bundle, track):
     name, _ = pubspec_version()
     info(f"Uploading {os.path.basename(bundle)} to '{track}'")
     edit = call("POST", f"{API}/applications/{PACKAGE_NAME}/edits", body={})
     edit_id = edit["id"]
 
-    with open(bundle, "rb") as handle:
-        blob = handle.read()
-    uploaded = call(
-        "POST",
-        f"{UPLOAD_API}/applications/{PACKAGE_NAME}/edits/{edit_id}/bundles?uploadType=media",
-        data=blob, content_type="application/octet-stream",
-    )
-    version_code = uploaded["versionCode"]
+    version_code = upload_bundle(edit_id, bundle)["versionCode"]
     print(f"  bundle accepted as versionCode {version_code}")
 
     call(
