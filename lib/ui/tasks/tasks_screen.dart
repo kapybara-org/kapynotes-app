@@ -130,7 +130,7 @@ class TasksScreenState extends State<TasksScreen> {
       _autoPicked = null;
       _tasks.clearPick(item);
     } else if (item.dotted) {
-      _tasks.doNow(item, _open(_tasks.read()));
+      _tasks.doNow(item);
     } else {
       _autoPicked = item.id;
       _tasks.dot(item);
@@ -362,7 +362,7 @@ class TasksScreenState extends State<TasksScreen> {
       return _ReadyCard(
         item: first,
         label: labelOf(first),
-        onYes: () => _tasks.doNow(first, open),
+        onYes: () => _tasks.doNow(first),
         onNotYet: () => _tasks.dot(first),
       );
     }
@@ -376,7 +376,7 @@ class TasksScreenState extends State<TasksScreen> {
       if (_autoPicked != benchmark.id) {
         _autoPicked = benchmark.id;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _tasks.doNow(benchmark, _open(_tasks.read()));
+          if (mounted) _tasks.doNow(benchmark);
         });
       }
       return const SizedBox.shrink();
@@ -391,7 +391,7 @@ class TasksScreenState extends State<TasksScreen> {
         setState(() => _allCandidates = false);
         _tasks.dot(item);
       },
-      onNone: () => _tasks.doNow(benchmark, open),
+      onNone: () => _tasks.doNow(benchmark),
     );
   }
 
@@ -1343,17 +1343,19 @@ class _TaskRowState extends State<_TaskRow> {
         widget.now.millisecondsSinceEpoch - item.lastTouched >=
             TaskBoard.staleAfter.inMilliseconds;
     final quiet = uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary);
+    final touch = !AppPlatform.hasPointer;
     final (Widget mark, String tip, String action) = item.doNow
         ? (const _Ring(), 'Do now · click to clear', 'Clear pick')
         : item.dotted
         ? (const _Dot(), 'Picked to do next · click for Do now', 'Make Do now')
         : (
-            _hovered ? const _HollowDot() : const SizedBox.shrink(),
+            _hovered && !touch ? const _HollowDot() : const SizedBox.shrink(),
             'Pick to do next',
             'Pick',
           );
+    final rowHeight = touch ? 44.0 : 38.0;
     final row = SizedBox(
-      height: 38,
+      height: rowHeight,
       child: Padding(
         padding: const EdgeInsets.only(right: 10),
         child: Row(
@@ -1374,14 +1376,14 @@ class _TaskRowState extends State<_TaskRow> {
                   splashColor: Colors.transparent,
                   highlightColor: Colors.transparent,
                   child: SizedBox(
-                    width: 20,
-                    height: 38,
+                    width: touch ? 44 : 20,
+                    height: rowHeight,
                     child: Center(child: mark),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: touch ? 0 : 10),
             _Box(done: false, onPressed: widget.onTick, label: item.words),
             const SizedBox(width: 10),
             Expanded(

@@ -111,7 +111,7 @@ void main() {
     notes.create(body: 'List\n☐ One\n☐ Two\n☐ Three');
     await tasks.reconcileNow();
     final one = tasks.read().open.first;
-    tasks.doNow(one, tasks.read().open);
+    tasks.doNow(one);
     expect(tasks.read().open.first.doNow, isTrue);
 
     later();
@@ -121,6 +121,21 @@ void main() {
     expect(board.open.last.dotted || board.open.last.doNow, isFalse);
   });
 
+  test('Do now clears the one in another note too', () async {
+    notes.create(body: 'List\n☐ One\n☐ Two');
+    notes.create(body: 'Home\n☐ Sweep\n☐ Mop');
+    await tasks.reconcileNow();
+    TaskItem item(String words) =>
+        tasks.read().open.firstWhere((i) => i.words == words);
+
+    tasks.doNow(item('Sweep'));
+    tasks.doNow(item('One'));
+
+    expect(item('One').entry.doNow.v, isTrue);
+    expect(item('Sweep').entry.doNow.v, isFalse);
+    expect(item('Sweep').dotted, isTrue);
+  });
+
   test(
     'one task is Do now at a time, and Pick again clears every dot',
     () async {
@@ -128,9 +143,9 @@ void main() {
       await tasks.reconcileNow();
       var board = tasks.read();
       tasks.dot(board.open[0]);
-      tasks.doNow(board.open[1], board.open);
+      tasks.doNow(board.open[1]);
       board = tasks.read();
-      tasks.doNow(board.open[2], board.open);
+      tasks.doNow(board.open[2]);
 
       board = tasks.read();
       expect([for (final i in board.open) i.doNow], [false, false, true]);
@@ -172,7 +187,7 @@ void main() {
     var board = tasks.read();
     tasks.dot(board.open[0]);
     later();
-    tasks.doNow(board.open[1], board.open);
+    tasks.doNow(board.open[1]);
     later();
     tasks.clearPick(tasks.read().open[1]);
 

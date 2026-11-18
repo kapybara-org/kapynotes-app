@@ -145,7 +145,7 @@ void main() {
     await setUpTasks(tester, 'Errands\n☐ One\n☐ Two\n☐ Three');
     final open = tasks.read().open;
     tasks.dot(open[0]);
-    tasks.doNow(open[1], open);
+    tasks.doNow(open[1]);
     await pumpScreen(tester);
 
     await tester.tap(find.byKey(const ValueKey('tasks-done')));
@@ -165,7 +165,7 @@ void main() {
     await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
     final open = tasks.read().open;
     tasks.dot(open[0]);
-    tasks.doNow(open[1], open);
+    tasks.doNow(open[1]);
     await pumpScreen(tester);
 
     await tester.tap(find.byKey(const ValueKey('tasks-done')));
@@ -181,7 +181,7 @@ void main() {
     (tester) async {
       await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
       final open = tasks.read().open;
-      tasks.doNow(open[0], open);
+      tasks.doNow(open[0]);
       await pumpScreen(tester);
 
       final card = tester.getRect(find.byKey(const ValueKey('tasks-do-now')));
@@ -203,7 +203,7 @@ void main() {
   ) async {
     await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
     final open = tasks.read().open;
-    tasks.doNow(open[0], open);
+    tasks.doNow(open[0]);
     await pumpScreen(tester);
 
     await tester.tap(find.byKey(const ValueKey('tasks-not-finished')));
@@ -397,6 +397,62 @@ void main() {
       expect(row('One').doNow, isFalse);
       expect(row('One').dotted, isTrue);
       expect(row('Three').dotted, isFalse);
+    });
+
+    testWidgets('Do now in a filtered view clears the one in another note', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      notes.create(body: 'Home\n☐ Sweep\n☐ Mop');
+      await tasks.reconcileNow();
+      tasks.doNow(row('Sweep'));
+      await pumpScreen(tester, filter: TaskFilter.note(row('One').note.id));
+
+      await tester.tap(markOf(row('One')));
+      await settle(tester);
+      await tester.tap(markOf(row('One')));
+      await settle(tester);
+
+      expect(row('One').doNow, isTrue);
+      expect(row('Sweep').entry.doNow.v, isFalse);
+      expect(row('Sweep').dotted, isTrue);
+    });
+
+    testWidgets('on a phone the mark is a 44 point target beside the text, '
+        'and a tap near the dot picks', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester);
+
+      final slot = tester.getRect(markOf(row('Two')));
+      expect(slot.width, greaterThanOrEqualTo(44));
+      expect(slot.height, greaterThanOrEqualTo(44));
+      expect(slot.right, lessThanOrEqualTo(tester.getTopLeft(box('Two')).dx));
+      expect(
+        slot.right,
+        lessThanOrEqualTo(tester.getTopLeft(find.text('Two')).dx),
+      );
+      expect(
+        find.descendant(of: markOf(row('Two')), matching: shape(hollow: true)),
+        findsNothing,
+      );
+
+      await tester.tapAt(slot.center + const Offset(-18, 16));
+      await settle(tester);
+      expect(row('Two').dotted, isTrue);
+      expect(row('One').dotted, isFalse);
+      expect(
+        find.descendant(of: markOf(row('Two')), matching: shape()),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('on desktop the mark keeps its 20 by 38 slot', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One');
+      await pumpScreen(tester);
+
+      expect(tester.getSize(markOf(row('One'))), const Size(20, 38));
+      await settle(tester);
     });
 
     testWidgets('the questions follow a pick made by hand', (tester) async {

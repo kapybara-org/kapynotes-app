@@ -224,10 +224,11 @@ class TasksController extends ChangeNotifier {
     );
   }
 
-  /// The end of a pass: [item] is Do now, with its dot.
-  void doNow(TaskItem item, Iterable<TaskItem> open) {
+  /// The end of a pass: [item] is Do now, with its dot. Any other task left
+  /// as Do now, in whichever note, is cleared, whatever the view shows.
+  void doNow(TaskItem item) {
     final at = _stamp();
-    for (final other in open) {
+    for (final other in read().open) {
       if (other.entry.doNow.v && other.id != item.id) {
         _change(other, (entry) => entry.copyWith(doNow: Stamped(false, at)));
       }
