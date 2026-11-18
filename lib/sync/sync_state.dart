@@ -263,6 +263,7 @@ class SyncState {
     _personalSpaceId = null;
     _keyGeneration = 1;
     _rejoinOwed = false;
+    _savedRejoinOwed = false;
     _rewriteSaved();
   }
 
@@ -287,7 +288,9 @@ class SyncState {
     _savedRepairOwed
       ..clear()
       ..addAll(_repairOwed);
-    _savedRejoinOwed = _rejoinOwed;
+    // Set here by [beginRejoin], but cleared only by [cursorsToSave], once
+    // the outboxes the rejoin queued are on disk.
+    if (_rejoinOwed) _savedRejoinOwed = true;
     _save();
   }
 

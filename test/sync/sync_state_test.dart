@@ -135,6 +135,26 @@ void main() {
     },
   );
 
+  for (final (name, rewrite) in <(String, void Function(SyncState))>[
+    ('a log repair', (s) => s.beginLogRepair()),
+    ('a cursor clear', (s) => s.clearCursor()),
+  ]) {
+    test('$name before the flush leaves the rejoin owed on disk', () async {
+      state.adoptPersonalSpace('space');
+      state.recordCursor('space', 4);
+      state.beginRejoin(2);
+      docs.create('note', 'space');
+      state.rejoinDone();
+
+      rewrite(state);
+      expect((SyncState(store)..load()).owesRejoin, isTrue);
+
+      storage.gate.complete();
+      await docs.flush();
+      expect((SyncState(store)..load()).owesRejoin, isFalse);
+    });
+  }
+
   test('the repair starts once, from the beginning of every log followed', () {
     store.data['sync.v1'] = {
       'deviceId': 'device',
