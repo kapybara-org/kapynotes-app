@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -29,7 +30,6 @@ class PageToolbar extends StatelessWidget {
     required this.listVisible,
     required this.onShowList,
     required this.onCreate,
-    required this.onMore,
     this.section,
     this.showListShortcut,
     this.noun = 'note',
@@ -50,6 +50,7 @@ class PageToolbar extends StatelessWidget {
     this.keepOnTopShortcut,
     this.assistant,
     this.moreActions = const [],
+    this.onMore,
     this.updates,
     this.center,
     this.actions,
@@ -104,9 +105,10 @@ class PageToolbar extends StatelessWidget {
   /// it can hide while Kapy AI is off without leaving one behind.
   final Widget? assistant;
 
-  /// Everything else the page offers, under More.
+  /// Everything else the page offers, under More. A page with no onMore has
+  /// nothing to put there and shows no More at all.
   final List<KapyMenuAction> moreActions;
-  final ValueChanged<String> onMore;
+  final ValueChanged<String>? onMore;
 
   /// Offers "Update and restart" once a release has downloaded. Null where
   /// the app does not update itself.
@@ -117,7 +119,7 @@ class PageToolbar extends StatelessWidget {
   final Widget? center;
 
   /// A page that is not a note puts its own actions where a note's saved
-  /// state, Share and Pin go. More stays.
+  /// state, Share and Pin go, and has no More.
   final List<Widget>? actions;
 
   static const double height = 56;
@@ -131,7 +133,7 @@ class PageToolbar extends StatelessWidget {
 
   /// Narrower than this, Share is its icon alone, so the window's own buttons
   /// (Keep on top, More) still fit beside it.
-  static const double _shareLabelWidth = 300;
+  static const double _shareLabelWidth = 420;
 
   /// Narrower than this, "Update and restart" shortens to "Update".
   static const double _updateLabelWidth = 680;
@@ -146,6 +148,9 @@ class PageToolbar extends StatelessWidget {
     final newNoteShortcut = this.newNoteShortcut;
     final updates = this.updates;
     final center = this.center;
+    // The window's own button takes room from Saved, so Saved gives way
+    // that much sooner.
+    final onTop = onToggleKeepOnTop == null ? 0.0 : actionExtent + 6;
 
     return Container(
       key: const ValueKey('page-toolbar'),
@@ -190,10 +195,42 @@ class PageToolbar extends StatelessWidget {
                     const SizedBox(width: 8),
                   ],
                   Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: WindowDragArea(
-                        child: _Breadcrumb(space: space, section: section),
+                    child: LayoutBuilder(
+                      builder: (context, slot) => Row(
+                        children: [
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: WindowDragArea(
+                                child: _Breadcrumb(
+                                  space: space,
+                                  section: section,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (actions == null && members.isNotEmpty)
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: math.min(
+                                  slot.maxWidth,
+                                  constraints.maxWidth / 3,
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 8,
+                                  right: 6,
+                                ),
+                                child: MemberAvatars(
+                                  members: members,
+                                  present: present,
+                                  currentUserId: currentUserId,
+                                  onPressed: onShare,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -201,35 +238,21 @@ class PageToolbar extends StatelessWidget {
                     if (updates != null)
                       UpdateRestartButton(
                         updates: updates,
-                        wide: constraints.maxWidth >= _updateLabelWidth,
+                        wide: constraints.maxWidth >= _updateLabelWidth + onTop,
                       ),
                     ...actions,
                   ] else ...[
-                    if (members.isNotEmpty)
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: constraints.maxWidth / 3,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 8, right: 6),
-                          child: MemberAvatars(
-                            members: members,
-                            present: present,
-                            currentUserId: currentUserId,
-                            onPressed: onShare,
-                          ),
-                        ),
-                      ),
                     if (updates != null)
                       UpdateRestartButton(
                         updates: updates,
-                        wide: constraints.maxWidth >= _updateLabelWidth,
+                        wide: constraints.maxWidth >= _updateLabelWidth + onTop,
                       ),
                     if (noteOpen &&
                         constraints.maxWidth >=
-                            (unloadedPictures > 0
-                                ? _unloadedPicturesWidth
-                                : _savedWidth)) ...[
+                            onTop +
+                                (unloadedPictures > 0
+                                    ? _unloadedPicturesWidth
+                                    : _savedWidth)) ...[
                       if (unloadedPictures > 0)
                         UnloadedPicturesStatus(
                           count: unloadedPictures,
@@ -292,23 +315,25 @@ class PageToolbar extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(width: 6),
-                  Builder(
-                    builder: (buttonContext) => CompactIconButton(
-                      key: const ValueKey('page-more'),
-                      tooltip: 'More',
-                      extent: actionExtent,
-                      radius: 10,
-                      onPressed: moreActions.isEmpty
-                          ? null
-                          : () => _showMore(buttonContext),
-                      icon: KapyIcon(
-                        KapyIcons.moreRounded,
-                        size: AppControlMetrics.iconAction,
-                        strokeWidth: 2.2,
+                  if (onMore case final onMore?) ...[
+                    const SizedBox(width: 6),
+                    Builder(
+                      builder: (buttonContext) => CompactIconButton(
+                        key: const ValueKey('page-more'),
+                        tooltip: 'More',
+                        extent: actionExtent,
+                        radius: 10,
+                        onPressed: moreActions.isEmpty
+                            ? null
+                            : () => _showMore(buttonContext, onMore),
+                        icon: KapyIcon(
+                          KapyIcons.moreRounded,
+                          size: AppControlMetrics.iconAction,
+                          strokeWidth: 2.2,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -320,7 +345,7 @@ class PageToolbar extends StatelessWidget {
   }
 
   /// Opens under More, its right edge on the button's.
-  void _showMore(BuildContext context) {
+  void _showMore(BuildContext context, ValueChanged<String> onMore) {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     unawaited(
@@ -361,6 +386,17 @@ class _Breadcrumb extends StatelessWidget {
       color: palette.textTertiary,
     );
     final section = this.section;
+    // Too narrow to read, it steps aside rather than overflow.
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < _minWidth
+          ? const SizedBox.shrink()
+          : _row(style, palette, section),
+    );
+  }
+
+  static const double _minWidth = 48;
+
+  Widget _row(TextStyle style, CalcPalette palette, String? section) {
     return Row(
       key: const ValueKey('page-breadcrumb'),
       mainAxisSize: MainAxisSize.min,

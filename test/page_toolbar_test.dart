@@ -45,6 +45,8 @@ void main() {
     ValueChanged<String>? onMore,
     VoidCallback? onShowList,
     VoidCallback? onCreate,
+    Widget? assistant,
+    bool keepOnTop = false,
   }) => PageToolbar(
     space: 'My notes',
     section: section,
@@ -61,6 +63,8 @@ void main() {
     onShare: () {},
     pinned: true,
     onTogglePin: () {},
+    onToggleKeepOnTop: keepOnTop ? () {} : null,
+    assistant: assistant,
     moreActions: moreActions,
     onMore: onMore ?? (_) {},
   );
@@ -275,8 +279,45 @@ void main() {
           tester.getTopRight(find.byKey(const ValueKey('page-more'))).dx,
           closeTo(width - 1.5 - 16, 0.01),
         );
-        expect(tester.getTopLeft(avatars).dx, greaterThan(width * 0.5));
         expect(tester.takeException(), isNull);
+      }
+    });
+
+    testWidgets('give way before More leaves the bar', (tester) async {
+      addTearDown(tester.view.reset);
+      tester.view.devicePixelRatio = 1;
+      final crowd = [
+        ...members,
+        for (final id in ['a', 'b', 'c'])
+          SpaceMember(
+            userId: id,
+            email: '$id@example.com',
+            name: id,
+            role: SpaceRole.member,
+            joinedAt: DateTime(2026),
+            hasKey: true,
+          ),
+      ];
+      for (final (width, listVisible) in [(260.0, true), (420.0, false)]) {
+        tester.view.physicalSize = Size(width, 300);
+        await tester.pumpWidget(
+          harness(
+            toolbar(
+              listVisible: listVisible,
+              members: crowd,
+              assistant: const SizedBox(width: 38, height: 32),
+              keepOnTop: true,
+            ),
+            width: width,
+          ),
+        );
+
+        expect(tester.takeException(), isNull, reason: 'at $width');
+        expect(
+          tester.getTopRight(find.byKey(const ValueKey('page-more'))).dx,
+          lessThanOrEqualTo(width),
+          reason: 'More left the bar at $width',
+        );
       }
     });
 

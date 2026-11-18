@@ -1514,6 +1514,21 @@ void main() {
       expect(lit(tester), isFalse);
     });
 
+    testWidgets('leaves the editor focused, so typing carries on', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'alpha');
+      await tester.pumpAndSettle();
+      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
+
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      expect(prefs.alwaysOnTop, isTrue);
+      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
+    });
+
     testWidgets('the setting set elsewhere lights it', (tester) async {
       await pumpApp(tester);
       prefs.alwaysOnTop = true;

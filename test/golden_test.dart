@@ -688,6 +688,7 @@ void main() {
     await tester.pumpAndSettle();
     final button = find.byKey(const ValueKey('page-keep-on-top'));
     expect(button, findsOneWidget);
+    expect(find.byKey(const ValueKey('page-more')), findsNothing);
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(goldenPrefs.alwaysOnTop, isTrue);

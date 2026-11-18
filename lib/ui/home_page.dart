@@ -3547,11 +3547,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         keepOnTop: widget.prefs.alwaysOnTop,
         onToggleKeepOnTop: _pinToggle,
         keepOnTopShortcut: _pinShortcut,
-        moreActions: [
-          for (final action in _pageActions(null))
-            if (action.value == 'on-top') action,
-        ],
-        onMore: (action) => _runPageAction(action, null),
         updates: widget.updates,
         actions: [
           if (!filter.done)
