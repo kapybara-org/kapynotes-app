@@ -1615,7 +1615,8 @@ void main() {
           .widget<Text>(find.byKey(const ValueKey('note-total')))
           .textSpan!
           .toPlainText(),
-      'Total: 256',
+      'Total: 64',
+      reason: 'dinner * 3 is worked out from dinner, so it is not added again',
     );
     expect(settingsAffordance(), findsOneWidget);
     // Note identity stays in the note list instead of being repeated in the
@@ -5872,14 +5873,16 @@ void main() {
         ),
         findsOneWidget,
       );
-      // Drawn the way the design draws it: 30pt square, rounded to 8.
+      // Drawn the way the design draws it: 30pt square, at the control radius.
       expect(tester.getSize(hide), const Size.square(30));
       final button = tester.widget<IconButton>(
         find.descendant(of: hide, matching: find.byType(IconButton)),
       );
       expect(
         button.style!.shape!.resolve({}),
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
       );
 
       await tester.tap(hide);
