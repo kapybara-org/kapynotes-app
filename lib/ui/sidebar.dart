@@ -1748,7 +1748,7 @@ class SidebarWindowBar extends StatelessWidget {
                             ? 'Hide notes'
                             : 'Hide notes  ${hideShortcut.displayLabel}',
                         extent: AppControlMetrics.tonalButtonHeight,
-                        radius: 8,
+                        radius: AppRadii.control,
                         onPressed: onHide,
                         icon: KapyIcon(
                           KapyIcons.menuOpenRounded,
@@ -2666,7 +2666,9 @@ class _NoteRowState extends State<NoteRow> {
       return DecoratedBox(
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.dialog),
+          ),
         ),
         child: SafeArea(
           top: false,
