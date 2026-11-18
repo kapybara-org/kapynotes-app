@@ -1122,6 +1122,31 @@ void main() {
       device.dispose();
     });
 
+    test('a refused push shows as failed and waits for the next edit', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      await device.sync.syncNow();
+      final note = device.notes.create(body: 'Too big to go');
+      server.refusePushes = 'snapshot too large';
+
+      await device.sync.syncNow();
+      expect(device.sync.status, SyncStatus.failed, reason: 'not "synced"');
+      expect(device.sync.lastError, contains('too large to sync'));
+      final refused = server.refusals.length;
+
+      await device.sync.syncNow();
+      expect(server.refusals, hasLength(refused), reason: 'not sent again');
+      expect(device.sync.status, SyncStatus.failed);
+
+      server.refusePushes = null;
+      device.notes.updateBody(note.id, 'Short now');
+      await device.sync.syncNow();
+      expect(device.sync.status, SyncStatus.idle);
+      expect(device.sync.lastError, isNull);
+      expect(server.rows, hasLength(1));
+      device.dispose();
+    });
+
     test('a network failure goes offline and retries later', () async {
       final device = Device(server, name: 'a');
       await device.boot();

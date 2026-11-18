@@ -136,6 +136,24 @@ class SessionUnreachable extends SessionCheck {
   const SessionUnreachable();
 }
 
+/// How asking to end every other device's session went.
+enum RevokeOthers { done, sessionEnded, failed }
+
+/// A 401 in the server's own words: Better Auth's `{"code":"UNAUTHORIZED"}`
+/// or the sync API's `{"error":"unauthorized"}`. A 401 from a proxy or a
+/// captive portal says nothing about the session, and ending one over it
+/// would wipe the key for a bad Wi-Fi network.
+bool _serverSaysUnauthorized(http.Response response) {
+  if (response.statusCode != 401) return false;
+  try {
+    final body = jsonDecode(response.body);
+    return body is Map &&
+        (body['code'] == 'UNAUTHORIZED' || body['error'] == 'unauthorized');
+  } on FormatException {
+    return false;
+  }
+}
+
 abstract class AuthApi {
   Future<AuthResult> signIn({required String email, required String password});
 
@@ -174,6 +192,9 @@ abstract class AuthApi {
 
   /// Whether a stored token is still a session, and whose.
   Future<SessionCheck> checkSession(String token);
+
+  /// Ends every session of this account except the one holding [token].
+  Future<RevokeOthers> revokeOtherSessions(String token);
 }
 
 class HttpAuthApi implements AuthApi {
@@ -323,15 +344,44 @@ class HttpAuthApi implements AuthApi {
     }
     // Only the server saying so revokes anything. A 500 or a 502 is the
     // server having a bad minute — which a release, of all times, is when it
-    // is most likely to be having one.
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      return const SessionRejected();
-    }
+    // is most likely to be having one — and a 403 or a page that is not JSON
+    // is a proxy or a captive portal speaking, not the server.
+    if (_serverSaysUnauthorized(response)) return const SessionRejected();
     if (response.statusCode != 200) return const SessionUnreachable();
-    final body = jsonDecode(response.body);
+    final Object? body;
+    try {
+      body = jsonDecode(response.body);
+    } on FormatException {
+      return const SessionUnreachable();
+    }
+    // Better Auth's answer for a session that has expired or was revoked: 200
+    // and `null`, never a 401.
+    if (body == null) return const SessionRejected();
     if (body is! Map) return const SessionUnreachable();
     final user = AccountUser.fromJson(body['user']);
     return user == null ? const SessionUnreachable() : SessionActive(user);
+  }
+
+  @override
+  Future<RevokeOthers> revokeOtherSessions(String token) async {
+    try {
+      final response = await _client
+          .post(
+            _baseUrl.resolve('api/auth/revoke-other-sessions'),
+            headers: {
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+            },
+            body: '{}',
+          )
+          .timeout(timeout);
+      if (response.statusCode == 200) return RevokeOthers.done;
+      return _serverSaysUnauthorized(response)
+          ? RevokeOthers.sessionEnded
+          : RevokeOthers.failed;
+    } catch (_) {
+      return RevokeOthers.failed;
+    }
   }
 
   /// Sign-in and sign-up differ only in the path: both answer with a session
