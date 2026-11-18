@@ -73,25 +73,6 @@ class Entitlements {
 
   static const int proSummaryGenerationsPerMonth = 1000;
 
-  /// Free's cloud transcription, only for a language no engine on the device
-  /// covers: the server's `FREE_UNLISTED_LANGUAGE_SPEECH_SECONDS`.
-  static const int freeUnlistedLanguageSpeechSeconds = 15 * 60;
-
-  /// Published Free limits for Settings before there is an account to ask.
-  /// Entitlement decisions are still made only from the server once signed in.
-  static const freePreview = Entitlements(
-    plan: 'free',
-    storageBytes: 100 * 1024 * 1024,
-    storageUsedBytes: 0,
-    attachmentMaxBytes: freeAttachmentMaxBytes,
-    speechSecondsPerMonth: freeUnlistedLanguageSpeechSeconds,
-    speechSecondsUsedThisMonth: 0,
-    speechCreditSeconds: 0,
-    sync: false,
-    sharing: false,
-    noteLimit: 20,
-  );
-
   /// Trying Pro rather than owning it.
   bool trialRunningAt(DateTime now) =>
       !isPro && (trialEndsAt?.isAfter(now) ?? false);
