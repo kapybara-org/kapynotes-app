@@ -119,7 +119,10 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
           decoration: BoxDecoration(
             color: palette.surfaceBackground.withMultipliedAlpha(0.98),
             border: Border(
-              top: BorderSide(color: palette.separator, width: 0.5),
+              top: BorderSide(
+                color: palette.separator,
+                width: AppHairline.of(context),
+              ),
             ),
           ),
           child: LayoutBuilder(
@@ -206,7 +209,7 @@ class _RecordingDot extends StatelessWidget {
       child: Center(
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
+          curve: Curves.easeOutCubic,
           width: 8 + response * 3,
           height: 8 + response * 3,
           decoration: BoxDecoration(
@@ -246,12 +249,12 @@ class _LiveWaveform extends StatelessWidget {
         color: active
             ? recording.withValues(alpha: 0.055)
             : palette.controlBackground.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(
           color: active
               ? recording.withValues(alpha: 0.12)
               : palette.controlBorder.withValues(alpha: 0.72),
-          width: 0.5,
+          width: AppHairline.of(context),
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -413,7 +416,9 @@ class _StopButton extends StatelessWidget {
             }),
             overlayColor: const WidgetStatePropertyAll(Colors.transparent),
             shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.control),
+              ),
             ),
           ),
         ),

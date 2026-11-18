@@ -74,14 +74,14 @@ class _DropHint extends StatelessWidget {
       margin: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(color: accent.withValues(alpha: 0.55), width: 1.5),
       ),
       child: Center(
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: palette.surfaceBackground,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             border: Border.all(color: palette.separator),
           ),
           child: Padding(

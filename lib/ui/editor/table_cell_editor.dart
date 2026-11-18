@@ -597,7 +597,7 @@ class _TableToolbar extends StatelessWidget {
       elevation: 3,
       shadowColor: Colors.black26,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         side: BorderSide(color: palette.controlBorder),
       ),
       clipBehavior: Clip.antiAlias,

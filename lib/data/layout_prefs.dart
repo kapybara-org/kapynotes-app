@@ -213,9 +213,10 @@ class LayoutPrefs extends ChangeNotifier {
   /// Name new notes from what is in them, where a model on the device can.
   bool get autoTitlesEnabled => _autoTitlesEnabled;
 
-  /// Whether new notes are named until the person says otherwise. Off on
-  /// Android until Gemini Nano has named a note on a real phone.
-  static bool get autoTitlesByDefault => !AppPlatform.isAndroid;
+  /// Whether new notes are named until the person says otherwise. Off
+  /// everywhere until a model on the device has named a note in a real run:
+  /// Gemini Nano on a phone, Apple Intelligence on a Mac.
+  static const bool autoTitlesByDefault = false;
 
   /// Whether notes are written in markdown: `# `, `**`, `- ` and the rest
   /// drawn as what they mean, and the formatting controls writing them.

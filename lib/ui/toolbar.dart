@@ -109,7 +109,12 @@ class NoteToolbar extends StatelessWidget {
 
     return GlassSurface(
       color: palette.surfaceBackground.withMultipliedAlpha(0.94),
-      border: Border(bottom: BorderSide(color: palette.separator, width: 0.5)),
+      border: Border(
+        bottom: BorderSide(
+          color: palette.separator,
+          width: AppHairline.of(context),
+        ),
+      ),
       child: SizedBox(
         height: barHeight + topInset,
         child: LayoutBuilder(
@@ -348,7 +353,7 @@ class UpdateRestartButton extends StatelessWidget {
               shape: StadiumBorder(
                 side: BorderSide(
                   color: palette.chipCurrency.withValues(alpha: 0.35),
-                  width: 0.5,
+                  width: AppHairline.of(context),
                 ),
               ),
             ),
