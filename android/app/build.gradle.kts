@@ -79,6 +79,7 @@ android {
             // The plugin still adds its own keep rules alongside these.
             isMinifyEnabled = true
             isShrinkResources = true
+            proguardFiles("proguard-rules.pro")
             // Function names for a native crash in the Play console, without
             // the full debug info of every speech library: FULL puts 220 MB
             // of symbols in the bundle for a 14 MB download and slows every

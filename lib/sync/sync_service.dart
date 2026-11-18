@@ -2189,8 +2189,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       await _api.stopSharing(spaceId, const []);
     } on SyncRefusedException catch (error) {
       // Moving the last note out of a space nobody else is in reaps it on
-      // the server, so there is nothing left to stop.
-      if (error.status != 404) rethrow;
+      // the server, so there is nothing left to stop. Only the server saying
+      // so: a 404 from anything in between leaves the space followed.
+      if (error.status != 404 || error.code != 'no such space') rethrow;
     }
     _notes.bringHome(mine.map((note) => note.id), at: at);
     _state.forgetSpace(spaceId);

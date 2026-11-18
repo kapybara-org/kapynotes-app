@@ -1582,7 +1582,9 @@ class _SettingsDialogState extends State<SettingsDialog>
               onChanged: namer.available
                   ? (value) => prefs.autoTitlesEnabled = value
                   : null,
-              byDefault: namer.available ? true : null,
+              byDefault: namer.available
+                  ? LayoutPrefs.autoTitlesByDefault
+                  : null,
               keywords: [
                 'title',
                 'name',
@@ -2813,9 +2815,7 @@ class _SettingsDialogState extends State<SettingsDialog>
               controller: _scrollController,
               flashTarget: _flashTarget,
               flash: _flash,
-              children: _searching
-                  ? [_searchResults()]
-                  : _paneFor(section),
+              children: _searching ? [_searchResults()] : _paneFor(section),
             ),
             footer: _searching
                 ? const _SearchHints()
