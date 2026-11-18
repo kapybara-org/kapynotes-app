@@ -39,9 +39,8 @@ class _SpeechConsentSheet extends StatelessWidget {
             children: [
               Text(
                 'To transcribe a recording, Kapy Notes sends its audio through '
-                'our server to the cloud model you select: Soniox directly, or '
-                'Microsoft and NVIDIA models through OpenRouter. Kapy Notes '
-                'does not store the uploaded audio on its server.',
+                'our server to Soniox. Kapy Notes does not store the uploaded '
+                'audio on its server.',
                 style: TextStyle(color: palette.textPrimary, height: 1.45),
               ),
               const SizedBox(height: 12),

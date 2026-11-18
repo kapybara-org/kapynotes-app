@@ -153,7 +153,7 @@ class FakeSpeechApi implements SpeechApi {
     return TranscribeResult(
       jobId: '11111111-1111-4111-8111-111111111111',
       lang: 'en',
-      engine: 'soniox/stt-async-v5',
+      engine: 'soniox/stt-async-v6',
       segments: const [TranscriptSegment(s: 0, e: 900, t: 'hello there')],
       usage: SpeechUsage(
         usedSeconds: 12,
@@ -459,7 +459,7 @@ void main() {
   test('cloud transcription defaults to Soniox', () async {
     queue.enqueue(noteId, 'v1');
     await queue.drain();
-    expect(api.modelSent, 'stt-async-v5');
+    expect(api.modelSent, 'stt-async-v6');
   });
 
   test('offline shows waiting, not transcribing', () async {

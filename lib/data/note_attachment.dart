@@ -781,7 +781,7 @@ class VoiceTranscript {
   /// lowercased. Not an enum: providers invent labels.
   final String lang;
 
-  /// e.g. `soniox/stt-async-v5`, or `sherpa/...` for a local model.
+  /// e.g. `soniox/stt-async-v6`, or `sherpa/...` for a local model.
   final String engine;
 
   /// Epoch milliseconds.

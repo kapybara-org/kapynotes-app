@@ -32,6 +32,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('DeepSeek'), findsNothing);
+    expect(find.textContaining('NVIDIA'), findsNothing);
+    expect(find.textContaining('our server to Soniox.'), findsOneWidget);
     expect(find.textContaining('Settings › Voice & AI'), findsOneWidget);
   });
 
