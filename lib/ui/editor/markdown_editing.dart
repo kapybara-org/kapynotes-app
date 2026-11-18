@@ -953,18 +953,15 @@ MarkdownEdit toggleMarkdownEmphasis(
   );
 }
 
-/// Ticks or unticks the task whose `[` is at [box].
+/// Ticks or unticks the task whose `[` is at [box], leaving the caret where
+/// it was.
 TextEditingValue toggleMarkdownTask(TextEditingValue value, int box) {
   final text = value.text;
   if (box < 0 || box + 3 > text.length || text[box] != '[') return value;
   final mark = text[box + 1];
   if (mark != ' ' && mark != 'x' && mark != 'X') return value;
-  final after = box + 3 < text.length && text[box + 3] == ' '
-      ? box + 4
-      : box + 3;
   return value.copyWith(
     text: text.replaceRange(box + 1, box + 2, mark == ' ' ? 'x' : ' '),
-    selection: TextSelection.collapsed(offset: after),
     composing: TextRange.empty,
   );
 }

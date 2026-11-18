@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -205,5 +206,312 @@ void main() {
       await desk.paste();
       expect(desk.text, '**big** news');
     }, variant: desktopPlatforms);
+  });
+
+  group('caret and selection', () {
+    testWidgets('to the start and end of the note', (tester) async {
+      final desk = Desk(tester);
+      await desk.open('one\ntwo\nthree');
+      await desk.click(desk.on('two', 1));
+      final mac = desk.mac;
+      await desk.key(
+        mac ? LogicalKeyboardKey.arrowDown : LogicalKeyboardKey.end,
+        primary: true,
+      );
+      expect(
+        desk.selection,
+        isA<TextSelection>().having((s) => s.baseOffset, 'offset', 13),
+      );
+      await desk.key(
+        mac ? LogicalKeyboardKey.arrowUp : LogicalKeyboardKey.home,
+        primary: true,
+        shift: true,
+      );
+      expect(desk.selection.textInside(desk.text), desk.text);
+    }, variant: desktopPlatforms);
+
+    testWidgets('a drag across a heading and a list takes both, and the '
+        'bubble formats each line', (tester) async {
+      final desk = Desk(tester);
+      await desk.open('Title\n## Plan\n- milk\n- eggs');
+      await desk.drag(desk.on('Plan'), desk.on('eggs', 4));
+      expect(desk.selection.textInside(desk.text), 'Plan\n- milk\n- eggs');
+      expect(find.byKey(const ValueKey('selection-bubble')), findsOneWidget);
+      await desk.clickKey('selection-bold');
+      expect(desk.text, 'Title\n## **Plan**\n- **milk**\n- **eggs**');
+      await desk.clickKey('selection-bold');
+      expect(desk.text, 'Title\n## Plan\n- milk\n- eggs');
+    }, variant: desktopPlatforms);
+  });
+
+  group('blocks', () {
+    testWidgets('numbered lists and quotes continue, and an empty one ends', (
+      tester,
+    ) async {
+      final desk = Desk(tester);
+      await desk.open('Title\n1. a');
+      await desk.click(desk.on('a', 1));
+      await desk.enter();
+      expect(desk.text, 'Title\n1. a\n2. ');
+      await desk.enter();
+      expect(desk.text, 'Title\n1. a\n');
+      await desk.type('> q');
+      await desk.enter();
+      expect(desk.text, 'Title\n1. a\n> q\n> ');
+      await desk.enter();
+      expect(desk.text, 'Title\n1. a\n> q\n');
+    }, variant: desktopPlatforms);
+
+    testWidgets(
+      'a heading ends at Enter, and a divider typed under words keeps a blank line above it',
+      (tester) async {
+        final desk = Desk(tester);
+        await desk.open('Title\n');
+        await desk.key(
+          desk.mac ? LogicalKeyboardKey.arrowDown : LogicalKeyboardKey.end,
+          primary: true,
+        );
+        await desk.type('## Plan');
+        await desk.enter();
+        await desk.type('body');
+        expect(desk.text, 'Title\n## Plan\nbody');
+        await desk.enter();
+        await desk.type('---');
+        await desk.enter();
+        await desk.type('after');
+        expect(desk.text, 'Title\n## Plan\nbody\n\n---\nafter');
+      },
+      variant: desktopPlatforms,
+    );
+
+    testWidgets('clicking a checkbox ticks it and leaves the caret', (
+      tester,
+    ) async {
+      final desk = Desk(tester);
+      await desk.open('Title\n- [ ] milk\nnotes here');
+      await desk.click(desk.on('here', 2));
+      final caret = desk.selection;
+      await desk.click(desk.on('[ ]', 1));
+      expect(desk.text, 'Title\n- [x] milk\nnotes here');
+      expect(desk.selection, caret);
+      await desk.click(desk.on('[x]', 1));
+      expect(desk.text, 'Title\n- [ ] milk\nnotes here');
+      expect(desk.selection, caret);
+    }, variant: desktopPlatforms);
+
+    testWidgets('the link shortcut links the selection', (tester) async {
+      final desk = Desk(tester);
+      await desk.open('Read the docs today');
+      await desk.click(desk.on('docs', 1), times: 2);
+      await desk.chord(ShortcutAction.formatLink);
+      expect(
+        find.byKey(const ValueKey('selection-link-field')),
+        findsOneWidget,
+      );
+      await desk.tester.enterText(
+        find.byKey(const ValueKey('selection-link-field')),
+        'https://kapynotes.app',
+      );
+      await desk.tester.testTextInput.receiveAction(TextInputAction.done);
+      await desk.settle();
+      expect(desk.text, 'Read the [docs](https://kapynotes.app) today');
+    }, variant: desktopPlatforms);
+
+    for (final (address, written, destination) in [
+      (
+        'https://kapynotes.app/docs',
+        'https://kapynotes.app/docs',
+        'https://kapynotes.app/docs',
+      ),
+      (
+        'https://example.com/my notes',
+        'https://example.com/my%20notes',
+        'https://example.com/my%20notes',
+      ),
+      (
+        'https://en.wikipedia.org/wiki/Foo_(bar)',
+        '<https://en.wikipedia.org/wiki/Foo_(bar)>',
+        'https://en.wikipedia.org/wiki/Foo_(bar)',
+      ),
+      ('https://x.com/a)b', '<https://x.com/a)b>', 'https://x.com/a)b'),
+    ]) {
+      testWidgets('a link to $address stays one link', (tester) async {
+        final desk = Desk(tester);
+        await desk.open('Read the docs today');
+        await desk.click(desk.on('docs', 1), times: 2);
+        await desk.chord(ShortcutAction.formatLink);
+        await desk.tester.enterText(
+          find.byKey(const ValueKey('selection-link-field')),
+          address,
+        );
+        await desk.tester.testTextInput.receiveAction(TextInputAction.done);
+        await desk.settle();
+        expect(desk.text, 'Read the [docs]($written) today');
+        final links = desk.note.controller.markdownFor(desk.text).links;
+        expect(links.single.destination, destination);
+      }, variant: desktopPlatforms);
+    }
+
+    testWidgets('a link whose address holds * keeps it', (tester) async {
+      final desk = Desk(tester);
+      await desk.open(
+        'Title\nRead [docs](https://example.com/a*b*c) and '
+        '<https://example.com/x*y>',
+      );
+      final links = desk.note.controller.markdownFor(desk.text).links;
+      expect(links.map((link) => link.destination), [
+        'https://example.com/a*b*c',
+        'https://example.com/x*y',
+      ]);
+    }, variant: desktopPlatforms);
+
+    testWidgets('a checkbox click after the text changed under the press '
+        'keeps a caret inside the text', (tester) async {
+      final desk = Desk(tester);
+      const body = 'Title\n- [ ] milk\nnotes here and more';
+      await desk.open(body);
+      await desk.click(desk.at(body.length - 1));
+      desk.place(body.length);
+      await desk.settle();
+      final press = await tester.startGesture(
+        desk.on('[ ]', 1),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      desk.note.controller.value = const TextEditingValue(
+        text: 'Title\n- [ ] milk\nx',
+        selection: TextSelection.collapsed(offset: 18),
+      );
+      await tester.pump();
+      await press.up();
+      await desk.settle();
+      expect(desk.text, 'Title\n- [x] milk\nx');
+      expect(desk.selection.isValid, isTrue);
+      expect(desk.selection.end, lessThanOrEqualTo(desk.text.length));
+    }, variant: desktopPlatforms);
+
+    testWidgets('a formula shows its result as it is typed', (tester) async {
+      final desk = Desk(tester);
+      await desk.open('Sums\n', results: true);
+      await desk.key(
+        desk.mac ? LogicalKeyboardKey.arrowDown : LogicalKeyboardKey.end,
+        primary: true,
+      );
+      await desk.type('12 + 30');
+      expect(find.textContaining('42'), findsWidgets);
+      await desk.key(LogicalKeyboardKey.backspace);
+      await desk.settle();
+      expect(find.textContaining('15'), findsWidgets);
+    }, variant: desktopPlatforms);
+  });
+
+  group('a caret in front of a hidden marker', () {
+    for (final (line, typed) in [
+      ('- item', '- xitem'),
+      ('## Heading', '## xHeading'),
+      ('> quote', '> xquote'),
+      ('- [ ] task', '- [ ] xtask'),
+      ('  - nested', '  - xnested'),
+    ]) {
+      testWidgets('typing at the start of $line goes in after its marker', (
+        tester,
+      ) async {
+        final desk = Desk(tester);
+        await desk.open('Title\n$line');
+        await desk.click(desk.on(line.trim().split(' ').last, 2));
+        await desk.lineKey(end: false);
+        await desk.type('x');
+        expect(desk.text, 'Title\n$typed', reason: 'from the line key');
+        await desk.open('Title\n$line\n');
+        desk.place(6);
+        await desk.settle();
+        await desk.type('x');
+        expect(desk.text, 'Title\n$typed\n', reason: 'from offset 0');
+      }, variant: desktopPlatforms);
+    }
+  });
+
+  group('shortcuts and undo', () {
+    testWidgets('the text-style, bullet and checklist shortcuts', (
+      tester,
+    ) async {
+      final desk = Desk(tester);
+      await desk.open('Title\nmilk');
+      await desk.click(desk.on('milk', 2));
+      await desk.chord(ShortcutAction.formatBullets);
+      expect(desk.text, 'Title\n- milk');
+      await desk.chord(ShortcutAction.formatBullets);
+      expect(desk.text, 'Title\nmilk');
+      await desk.chord(ShortcutAction.formatChecklist);
+      expect(desk.text, 'Title\n- [ ] milk');
+      await desk.chord(ShortcutAction.formatChecklist);
+      expect(desk.text, 'Title\nmilk');
+      final styles = <String>[];
+      for (var i = 0; i < 4; i++) {
+        await desk.chord(ShortcutAction.cycleTextStyle);
+        styles.add(desk.text);
+      }
+      expect(styles.first, startsWith('Title\n#'));
+      expect(styles.toSet().length, greaterThan(1));
+    }, variant: desktopPlatforms);
+
+    testWidgets('undo steps back over list continuation and a multi-line '
+        'paste', (tester) async {
+      final desk = Desk(tester);
+      await desk.open('Title\n- one');
+      await desk.click(desk.on('one', 3));
+      await desk.enter();
+      expect(desk.text, 'Title\n- one\n- ');
+      await desk.undo();
+      expect(desk.text, 'Title\n- one');
+      await desk.redo();
+      expect(desk.text, 'Title\n- one\n- ');
+      desk.clipboard = {'text': 'two\nthree'};
+      await desk.paste();
+      expect(desk.text, 'Title\n- one\n- two\n- three');
+      await desk.undo();
+      expect(desk.text, 'Title\n- one\n- ');
+      await desk.redo();
+      expect(desk.text, 'Title\n- one\n- two\n- three');
+    }, variant: desktopPlatforms);
+
+    testWidgets('Tab and Shift+Tab move focus out of a read-only note', (
+      tester,
+    ) async {
+      final next = FocusNode();
+      addTearDown(next.dispose);
+      final desk = Desk(tester);
+      await desk.open(
+        'Title\nplain words',
+        readOnly: true,
+        below: TextButton(
+          focusNode: next,
+          onPressed: () {},
+          child: const Text('Next'),
+        ),
+      );
+      final focus = desk.note.state.widget.focusNode;
+      focus.requestFocus();
+      await desk.settle();
+      await desk.key(LogicalKeyboardKey.tab);
+      await desk.settle();
+      expect(next.hasFocus, isTrue);
+      await desk.key(LogicalKeyboardKey.tab, shift: true);
+      await desk.settle();
+      expect(focus.hasFocus, isTrue);
+    }, variant: desktopPlatforms);
+
+    testWidgets('redo is also Ctrl+Y on Windows', (tester) async {
+      final desk = Desk(tester);
+      await desk.open('hello');
+      await desk.click(desk.on('hello', 4));
+      await desk.lineKey(end: true);
+      await desk.type('!');
+      await desk.undo();
+      expect(desk.text, 'hello');
+      await desk.key(LogicalKeyboardKey.keyY, primary: true);
+      await desk.settle();
+      expect(desk.text, 'hello!');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
   });
 }
