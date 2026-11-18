@@ -89,7 +89,7 @@ class TonalButton extends StatelessWidget {
         textStyle: WidgetStatePropertyAll(
           Theme.of(context).textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),

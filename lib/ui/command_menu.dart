@@ -728,7 +728,7 @@ class _CommandMenuState extends State<CommandMenu> {
                 style: TextStyle(
                   fontSize: 12,
                   height: 16 / 12,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: palette.textPrimary,
                 ),
               ),
@@ -778,7 +778,7 @@ class _CommandMenuState extends State<CommandMenu> {
           style: TextStyle(
             fontSize: 12,
             height: 16 / 12,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: palette.textTertiary,
           ),
         ),
@@ -842,8 +842,8 @@ class _CommandMenuState extends State<CommandMenu> {
                                 fontSize: 14,
                                 height: 18 / 14,
                                 fontWeight: lit
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
+                                    ? FontWeight.w500
+                                    : FontWeight.w400,
                                 color: line.muted
                                     ? palette.textSecondary
                                     : palette.textPrimary,
@@ -996,7 +996,7 @@ class _CommandMenuState extends State<CommandMenu> {
                         style: TextStyle(
                           fontSize: 14,
                           height: 18 / 14,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w400,
                           color: palette.textPrimary,
                         ),
                       ),
@@ -1075,7 +1075,7 @@ class _CommandMenuState extends State<CommandMenu> {
                       style: TextStyle(
                         fontSize: 12,
                         height: 16 / 12,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w400,
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),

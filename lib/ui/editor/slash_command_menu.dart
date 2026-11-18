@@ -700,7 +700,7 @@ class _CommandList extends StatelessWidget {
                             style: TextStyle(
                               color: palette.textTertiary,
                               fontSize: AppTypeScale.badge,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w500,
                               letterSpacing: 0.44,
                             ),
                           ),
@@ -775,7 +775,7 @@ class _SearchField extends StatelessWidget {
     final style = TextStyle(
       color: palette.textPrimary,
       fontSize: AppTypeScale.body,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return Container(
       height: 36,
@@ -853,7 +853,7 @@ class _CommandRow extends StatelessWidget {
     final quiet = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return Semantics(
       button: true,
@@ -897,7 +897,7 @@ class _CommandRow extends StatelessWidget {
                               style: TextStyle(
                                 color: palette.textPrimary,
                                 fontSize: AppTypeScale.body,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                           ),
@@ -1017,7 +1017,7 @@ class _KeyHints extends StatelessWidget {
     final style = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return ExcludeSemantics(
       child: Container(
@@ -1100,7 +1100,7 @@ class _TableSizePicker extends StatelessWidget {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: AppTypeScale.control,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),

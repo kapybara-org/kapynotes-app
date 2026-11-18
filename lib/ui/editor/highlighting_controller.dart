@@ -740,7 +740,10 @@ class HighlightingController extends TextEditingController {
         // The title is set as one whatever paragraph style its line had.
         if (start < titleEnd && format.format.isParagraph) continue;
         segmentStyle = switch (format.format) {
-          NoteFormat.bold => segmentStyle.copyWith(fontWeight: FontWeight.w700),
+          NoteFormat.bold => segmentStyle.copyWith(
+            fontWeight: FontWeight.w600,
+            fontVariations: _writingFont.faceVariations,
+          ),
           NoteFormat.italic => segmentStyle.copyWith(
             fontStyle: FontStyle.italic,
           ),
@@ -1142,7 +1145,8 @@ class HighlightingController extends TextEditingController {
     ),
     CodeTokenKind.title => TextStyle(
       color: _palette.textPrimary,
-      fontWeight: FontWeight.w600,
+      fontWeight: FontWeight.w500,
+      fontVariations: const [],
     ),
     CodeTokenKind.type ||
     CodeTokenKind.attribute => TextStyle(color: _palette.codeBuiltIn),
@@ -1389,7 +1393,10 @@ class HighlightingController extends TextEditingController {
   ) {
     var result = style;
     if (marked(MarkdownStyle.strong) || marked(MarkdownStyle.tableHeader)) {
-      result = result.copyWith(fontWeight: FontWeight.w700);
+      result = result.copyWith(
+        fontWeight: FontWeight.w600,
+        fontVariations: _writingFont.faceVariations,
+      );
     }
     if (marked(MarkdownStyle.emphasis)) {
       result = result.copyWith(fontStyle: FontStyle.italic);
@@ -1418,6 +1425,7 @@ class HighlightingController extends TextEditingController {
       result = result.copyWith(
         color: _palette.textSecondary,
         fontWeight: FontWeight.w600,
+        fontVariations: _writingFont.faceVariations,
       );
     }
     if (marked(MarkdownStyle.taskBox)) {

@@ -286,7 +286,7 @@ class _Chip extends StatelessWidget {
                   'Formatted',
                   style: _type(
                     AppTypeScale.small,
-                    FontWeight.w600,
+                    FontWeight.w500,
                     palette.textSubheading,
                   ),
                 ),
@@ -380,7 +380,7 @@ class _MenuState extends State<_Menu> {
                     'Next time, paste plain with',
                     style: _type(
                       AppTypeScale.small,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textTertiary,
                     ),
                   ),
@@ -449,7 +449,7 @@ class _MenuRow extends StatelessWidget {
                 ),
                 Text(
                   label,
-                  style: _type(13.5, FontWeight.w500, palette.textPrimary),
+                  style: _type(14, FontWeight.w400, palette.textPrimary),
                 ),
               ],
             ),

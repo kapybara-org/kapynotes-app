@@ -101,7 +101,7 @@ TextStyle paragraphTextStyle(
     fontSize: base.fontSize == null ? null : base.fontSize! * scale,
     // Keep the row the line sits in while changing visual size.
     height: base.height == null ? null : base.height! / scale,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontStyle: paragraphStyle == NoteParagraphStyle.subtitle
         ? FontStyle.italic
         : FontStyle.normal,
@@ -121,13 +121,13 @@ TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
   return base.copyWith(
     fontFamily: face?.fontFamily,
     fontFamilyFallback: face?.fontFamilyFallback,
-    fontVariations: face?.fontVariations,
+    fontVariations: (face ?? writingFont)?.faceVariations ?? const [],
     fontSize: size,
     height: size == null
         ? null
         : EditorMetrics.titleRow / EditorMetrics.titleFontSize,
     leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w600,
   );
 }
 
@@ -204,13 +204,13 @@ TextStyle _headingStyle(
   return base.copyWith(
     fontFamily: face?.fontFamily,
     fontFamilyFallback: face?.fontFamilyFallback,
-    fontVariations: face?.fontVariations,
+    fontVariations: (face ?? writingFont)?.faceVariations ?? const [],
     fontSize: size,
     height: row == null || size == null ? null : row / size,
     leadingDistribution: EditorMetrics.page
         ? TextLeadingDistribution.proportional
         : null,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w600,
     fontStyle: FontStyle.normal,
   );
 }

@@ -402,7 +402,7 @@ class _BlockButton extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: AppTypeScale.small,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 KapyIcon(
@@ -483,7 +483,7 @@ class _LinkField extends StatelessWidget {
     final style = TextStyle(
       color: palette.textPrimary,
       fontSize: AppTypeScale.small,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -557,7 +557,7 @@ class _LinkField extends StatelessWidget {
                       style: TextStyle(
                         color: palette.tonalForeground,
                         fontSize: AppTypeScale.caption,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const Keycap('↵'),
@@ -593,7 +593,7 @@ class _BlockMenu extends StatelessWidget {
     final quiet = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
     );
     return Material(
       type: MaterialType.transparency,
@@ -617,7 +617,7 @@ class _BlockMenu extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textTertiary,
                     fontSize: AppTypeScale.badge,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     letterSpacing: 0.44,
                   ),
                 ),
@@ -668,7 +668,7 @@ class _BlockMenu extends StatelessWidget {
                                   style: TextStyle(
                                     color: palette.textPrimary,
                                     fontSize: AppTypeScale.body,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w400,
                                   ),
                                 ),
                               ),

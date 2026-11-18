@@ -358,7 +358,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                                       MaterialTapTargetSize.shrinkWrap,
                                   textStyle: TextStyle(
                                     fontSize: AppTypeScale.body,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                                 child: Text(label),

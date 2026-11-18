@@ -1662,7 +1662,7 @@ class SidebarWindowBar extends StatelessWidget {
                                           handwritten.fontVariations,
                                       fontSize: AppTypeScale.spaceTitle,
                                       height: 1.3,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w500,
                                       color: palette.textPrimary,
                                     ),
                                   ),
@@ -1684,7 +1684,7 @@ class SidebarWindowBar extends StatelessWidget {
                                     maxLines: 1,
                                     style: TextStyle(
                                       fontSize: AppTypeScale.small,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w400,
                                       color: palette.textTertiary,
                                       fontFeatures: const [
                                         FontFeature.tabularFigures(),
@@ -3404,7 +3404,7 @@ class _DrawingsEmpty extends StatelessWidget {
               fontVariations: handwritten.fontVariations,
               fontSize: 16,
               height: 22 / 16,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
               color: palette.textSubheading,
             ),
           ),
@@ -3418,7 +3418,7 @@ class _DrawingsEmpty extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 18 / 13,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
                 color: palette.textTertiary,
               ),
             ),

@@ -151,7 +151,7 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
             TextSpan(
               children: _spans(
                 heading[1]!,
-                body.copyWith(fontWeight: FontWeight.w700),
+                body.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -249,7 +249,7 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
           ),
         );
       } else if (match[2] ?? match[3] case final bold?) {
-        spans.addAll(_spans(bold, style.copyWith(fontWeight: FontWeight.w700)));
+        spans.addAll(_spans(bold, style.copyWith(fontWeight: FontWeight.w600)));
       } else if (match[4] ?? match[5] case final italic?) {
         spans.addAll(
           _spans(italic, style.copyWith(fontStyle: FontStyle.italic)),

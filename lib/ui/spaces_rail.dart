@@ -241,7 +241,7 @@ class SpacesRail extends StatelessWidget {
 TextStyle _railLabel(Color color, {required bool strong}) => TextStyle(
   fontSize: AppTypeScale.railLabel,
   height: 14 / 11,
-  fontWeight: strong ? FontWeight.w600 : FontWeight.w500,
+  fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
   color: color,
   fontFeatures: const [FontFeature.tabularFigures()],
 );
@@ -390,7 +390,7 @@ class _Badge extends StatelessWidget {
         style: TextStyle(
           fontSize: AppTypeScale.badge,
           height: 1,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -593,7 +593,7 @@ class _RailAccount extends StatelessWidget {
                 style: TextStyle(
                   fontSize: AppTypeScale.control,
                   height: 1,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: palette.textPrimary,
                 ),
               ),

@@ -59,7 +59,7 @@ void main() {
     expect(filled.minimumSize!.resolve({})!.height, 36);
     expect(filled.visualDensity, VisualDensity.standard);
     expect(filled.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
-    expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w600);
+    expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w500);
     expect(
       (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
       BorderRadius.circular(AppRadii.control),
@@ -95,13 +95,13 @@ void main() {
     expect(theme.textTheme.bodyMedium?.fontFamilyFallback?.first, 'Segoe UI');
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
     expect(theme.textTheme.bodySmall?.fontWeight, FontWeight.w400);
-    expect(theme.textTheme.bodySmall?.fontSize, 12.5);
-    expect(theme.textTheme.labelMedium?.fontSize, 12.5);
-    expect(theme.textTheme.labelSmall?.fontSize, 11.5);
-    expect(AppTypeScale.micro, 11.5);
-    expect(AppTypeScale.caption, 12.5);
+    expect(theme.textTheme.bodySmall?.fontSize, 13);
+    expect(theme.textTheme.labelMedium?.fontSize, 13);
+    expect(theme.textTheme.labelSmall?.fontSize, 12);
+    expect(AppTypeScale.micro, 12);
+    expect(AppTypeScale.caption, 13);
     expect(AppTypeScale.small, 13);
-    expect(AppTypeScale.body, 13.5);
+    expect(AppTypeScale.body, 14);
     expect(AppTypeScale.control, 14);
   });
 
@@ -280,7 +280,7 @@ void main() {
 
   test('handwritten editor face stays restrained', () {
     expect(WritingFont.handwritten.fontFamily, 'Shantell Sans');
-    expect(WritingFont.handwritten.editorSize, 16.5);
+    expect(WritingFont.handwritten.editorSize, 16);
     expect(WritingFont.handwritten.fontVariations, const [
       FontVariation('INFM', 16),
       FontVariation('BNCE', 0),

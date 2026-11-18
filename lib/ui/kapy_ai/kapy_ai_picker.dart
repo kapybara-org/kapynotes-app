@@ -180,7 +180,7 @@ class _Label extends StatelessWidget {
         11,
         14,
         context.palette.textTertiary,
-        weight: FontWeight.w600,
+        weight: FontWeight.w500,
       ).copyWith(letterSpacing: 0.44),
     ),
   );
@@ -257,7 +257,7 @@ class _Row extends StatelessWidget {
                           13,
                           16,
                           enabled ? palette.textPrimary : palette.textTertiary,
-                          weight: FontWeight.w600,
+                          weight: FontWeight.w500,
                         ),
                       ),
                       if (subline != null) ...[
@@ -279,7 +279,7 @@ class _Row extends StatelessWidget {
                       12,
                       16,
                       palette.textTertiary,
-                      weight: FontWeight.w500,
+                      weight: FontWeight.w400,
                     ),
                   ),
                 if (selected)
@@ -356,7 +356,7 @@ class KapyAiModelButton extends StatelessWidget {
                       12.5,
                       16,
                       palette.textSecondary,
-                      weight: FontWeight.w600,
+                      weight: FontWeight.w500,
                     ),
                   ),
                 ),

@@ -323,7 +323,7 @@ class _TagPickerState extends State<TagPicker> {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _text(13, FontWeight.w500, palette.textPrimary),
+                    style: _text(13, FontWeight.w400, palette.textPrimary),
                   ),
                 ),
                 if (count != null) ...[
@@ -460,7 +460,7 @@ class _TagPickerState extends State<TagPicker> {
                   key: const ValueKey('tag-picker-problem'),
                   style: _text(
                     12,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     Theme.of(context).colorScheme.error,
                   ),
                 ),
@@ -596,7 +596,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
                     const SizedBox(width: 4),
                     Text(
                       'Tag',
-                      style: _text(12.5, FontWeight.w500, palette.textTertiary),
+                      style: _text(13, FontWeight.w400, palette.textTertiary),
                     ),
                   ],
                 ),
@@ -663,7 +663,7 @@ class _TagChipState extends State<_TagChip> {
     final palette = context.palette;
     final tag = widget.tag;
     final colour = tagColourOf(tag.colour.v);
-    final style = _text(12, FontWeight.w600, palette.textPrimary);
+    final style = _text(12, FontWeight.w500, palette.textPrimary);
     final painter = TextPainter(
       text: TextSpan(text: tag.name.v, style: style),
       textDirection: Directionality.of(context),
@@ -796,7 +796,7 @@ class _TagNameFieldState extends State<TagNameField> {
                   },
                   style: _text(
                     13,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     _refused
                         ? Theme.of(context).colorScheme.error
                         : palette.textPrimary,
@@ -812,7 +812,7 @@ class _TagNameFieldState extends State<TagNameField> {
                   key: const ValueKey('tag-name-refused'),
                   style: _text(
                     12,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     Theme.of(context).colorScheme.error,
                   ),
                 ),
@@ -893,7 +893,7 @@ Future<void> showTagActions(
                       key == noTagColour
                           ? 'No colour'
                           : '${key[0].toUpperCase()}${key.substring(1)}',
-                      style: _text(13, FontWeight.w500, palette.textPrimary),
+                      style: _text(13, FontWeight.w400, palette.textPrimary),
                     ),
                   ),
                   if (key == current)
@@ -1054,7 +1054,7 @@ class _TagSettingsState extends State<TagSettings> {
                               overflow: TextOverflow.ellipsis,
                               style: _text(
                                 13,
-                                FontWeight.w500,
+                                FontWeight.w400,
                                 palette.textPrimary,
                               ),
                             ),

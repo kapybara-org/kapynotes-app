@@ -990,7 +990,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 16 / 13,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
                 color: palette.textTertiary,
               ),
             ),
@@ -1174,8 +1174,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
             textStyle: TextStyle(
               fontFamily: AppFonts.mono,
               fontFamilyFallback: AppFonts.monoFallback,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -1283,7 +1283,7 @@ class _StylePanel extends StatelessWidget {
     final label = TextStyle(
       fontSize: 12,
       height: 16 / 12,
-      fontWeight: FontWeight.w600,
+      fontWeight: FontWeight.w500,
       color: palette.textTertiary,
     );
     return _DockSurface(
@@ -1392,8 +1392,8 @@ class _StylePanel extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
                                     color: option == width
                                         ? palette.tonalForeground
                                         : palette.textPrimary,

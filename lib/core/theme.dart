@@ -624,9 +624,12 @@ class EditorMetrics {
       color: color,
       letterSpacing: 0,
       wordSpacing: 0,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
       fontStyle: FontStyle.normal,
-      fontVariations: font.fontVariations,
+      fontVariations: [
+        ...font.faceVariations,
+        if (color.computeLuminance() > 0.5) const FontVariation('wght', 370),
+      ],
       textBaseline: TextBaseline.alphabetic,
       // A calculator column only lines up with tabular figures.
       fontFeatures: const [FontFeature.tabularFigures()],
@@ -901,8 +904,8 @@ class AppTypeScale {
   static double get micro => _touch
       ? 13
       : _windows
-      ? 11.5
-      : 10.5;
+      ? 12
+      : 11;
 
   /// A keycap's legend: ⌘F, esc. Mono, and a half point over [micro] on a
   /// Mac, where the keycap sits beside 13pt controls and has to read as a
@@ -910,7 +913,7 @@ class AppTypeScale {
   static double get keycap => _touch
       ? 13
       : _windows
-      ? 11.5
+      ? 12
       : 11;
 
   /// The names under the spaces rail's tiles, and the streak's run of days.
@@ -928,19 +931,19 @@ class AppTypeScale {
   static double get badge => _touch
       ? 11
       : _windows
-      ? 10.5
-      : 9.5;
+      ? 11
+      : 10;
 
   /// Metadata, list snippets, the helper line under a control.
   static double get caption => _touch
       ? 13
       : _windows
-      ? 12.5
-      : 11.5;
+      ? 13
+      : 12;
 
   /// Dense secondary copy that is still read as a sentence.
   static double get small => _touch
-      ? 13.5
+      ? 14
       : _windows
       ? 13
       : 12;
@@ -949,8 +952,8 @@ class AppTypeScale {
   static double get body => _touch
       ? 15
       : _windows
-      ? 13.5
-      : 12.5;
+      ? 14
+      : 13;
 
   /// A calculation's result: its pill at the end of the line, or a figure in
   /// a phone's results column.
@@ -994,11 +997,11 @@ class AppTypeScale {
   static double get wordmark => _touch
       ? 17
       : _windows
-      ? 15.5
-      : 14.5;
+      ? 16
+      : 15;
 
   /// The lockup on the empty state, the one display-sized thing in the app.
-  static double get display => _touch ? 34 : 31;
+  static double get display => _touch ? 34 : 32;
 }
 
 /// The two faces the interface is set in, bundled so that every platform
@@ -1505,7 +1508,7 @@ class KapyTheme {
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ).copyWith(
               backgroundColor: fillStates(
@@ -1536,7 +1539,7 @@ class KapyTheme {
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ).copyWith(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -1580,7 +1583,7 @@ class KapyTheme {
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ).copyWith(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -1622,7 +1625,7 @@ class KapyTheme {
           tapTargetSize: tapTarget,
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
           overlayColor: Colors.transparent,
           animationDuration: const Duration(milliseconds: 120),

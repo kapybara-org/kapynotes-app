@@ -496,7 +496,7 @@ class _NoteChip extends StatelessWidget {
                 12,
                 16,
                 palette.textSubheading,
-                weight: FontWeight.w500,
+                weight: FontWeight.w400,
               ),
             ),
           ),
