@@ -332,8 +332,7 @@ class FakeServer {
   /// Each account's task records by id, with the seq each was last written
   /// at. Mirrors `server/src/tasks.ts`: last writer wins on `updatedAt`,
   /// the pull pages by seq.
-  final Map<String, Map<String, ({WireTaskRecord record, int seq})>> tasks =
-      {};
+  final Map<String, Map<String, ({WireTaskRecord record, int seq})>> tasks = {};
   final Map<String, int> _taskClocks = {};
 
   /// The record ids of each push to the task stream, in order.
@@ -351,7 +350,8 @@ class FakeServer {
     final conflicts = <WireTaskRecord>[];
     for (final record in records) {
       final stored = mine[record.id];
-      if (stored != null && !stored.record.updatedAt.isBefore(record.updatedAt)) {
+      if (stored != null &&
+          !stored.record.updatedAt.isBefore(record.updatedAt)) {
         conflicts.add(stored.record);
         continue;
       }
@@ -371,10 +371,11 @@ class FakeServer {
 
   TasksPage pullTasks(String userId, int after) {
     if (!tasksServed) _refuse(404, 'not found');
-    final rows = (tasks[userId]?.values ?? const <({WireTaskRecord record, int seq})>[])
-        .where((row) => row.seq > after)
-        .toList()
-      ..sort((a, b) => a.seq.compareTo(b.seq));
+    final rows =
+        (tasks[userId]?.values ?? const <({WireTaskRecord record, int seq})>[])
+            .where((row) => row.seq > after)
+            .toList()
+          ..sort((a, b) => a.seq.compareTo(b.seq));
     final page = rows.take(taskPageSize).toList();
     return TasksPage(
       records: [for (final row in page) row.record],
@@ -2207,9 +2208,15 @@ class FakeApi implements SyncApi {
   @override
   Future<Map<String, Uri>> attachmentUrls(List<String> ids) async {
     _gate();
+    // Like the server, only for members of the space an attachment is in.
+    bool member(String id) =>
+        server.spaces[server.attachments[id]?.spaceId]?.members.containsKey(
+          userId,
+        ) ??
+        false;
     return {
       for (final id in ids)
-        if (server.blobs.containsKey(id))
+        if (server.blobs.containsKey(id) && member(id))
           id: Uri.parse('https://blobs.test/get/$id'),
     };
   }

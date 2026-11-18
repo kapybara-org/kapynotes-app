@@ -356,6 +356,7 @@ class _ShareDialogState extends State<_ShareDialog> {
     if (noteId == null) return true;
     final notes = widget.sharing.notesIn(space.id);
     if (notes.every((note) => note.id == noteId)) return true;
+    final hidden = notes.where((note) => note.isHidden).length;
     final style = TextStyle(
       fontSize: AppTypeScale.control,
       color: context.palette.textPrimary,
@@ -381,10 +382,16 @@ class _ShareDialogState extends State<_ShareDialog> {
                 ),
                 const SizedBox(height: 10),
                 for (final note in notes)
+                  if (!note.isHidden)
+                    Text(
+                      '• ${note.title}${note.isArchived ? ' (archived)' : ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: style,
+                    ),
+                if (hidden > 0)
                   Text(
-                    '• ${note.title}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    'and $hidden hidden note${hidden == 1 ? '' : 's'}',
                     style: style,
                   ),
               ],
@@ -666,7 +673,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                       : null,
                   onCopy: note != null && !space.isOwner
                       ? () => _run(
-                          () async => sharing.makePrivateCopy(note.id),
+                          () => sharing.makePrivateCopy(note.id),
                           success: 'Copied to my notes',
                         )
                       : null,

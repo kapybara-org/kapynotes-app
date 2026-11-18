@@ -536,6 +536,7 @@ class Account extends ChangeNotifier {
       keyring: keyring,
       notes: _notes,
       sync: service,
+      images: images,
     )..addListener(notifyListeners);
     final sharing = _sharing!;
     _joining = api is HttpSyncApi
