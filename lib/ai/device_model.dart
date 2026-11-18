@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../speech/apple_summarizer.dart';
@@ -25,6 +27,12 @@ abstract class DeviceModel extends ChangeNotifier implements AnswerEngine {
   void download();
   void cancel();
   Future<void> remove();
+
+  /// Whether a download now would spend mobile data.
+  Future<bool> onMobileData();
+
+  /// Downloads once the phone is on Wi-Fi.
+  void downloadOnWifi();
 }
 
 /// Apple Intelligence where the platform has it, and Gemma everywhere else.
@@ -93,8 +101,11 @@ class PlatformDeviceModel extends DeviceModel {
         LocalModelStatus.fetchingRuntime ||
         LocalModelStatus.downloading ||
         LocalModelStatus.verifying => DeviceModelStatus.downloading,
+        // Waiting for Wi-Fi is still not here: asking again offers the
+        // download again, now or later.
         LocalModelStatus.absent ||
-        LocalModelStatus.failed => DeviceModelStatus.notDownloaded,
+        LocalModelStatus.failed ||
+        LocalModelStatus.waitingForWifi => DeviceModelStatus.notDownloaded,
       },
       model: gemma,
       receivedBytes: local.receivedBytes,
@@ -118,6 +129,12 @@ class PlatformDeviceModel extends DeviceModel {
 
   @override
   void download() => _models.download(_model);
+
+  @override
+  Future<bool> onMobileData() => _models.mobileData.inUse();
+
+  @override
+  void downloadOnWifi() => unawaited(_models.downloadOnWifi(_model));
 
   @override
   void cancel() => _models.cancel(_model);

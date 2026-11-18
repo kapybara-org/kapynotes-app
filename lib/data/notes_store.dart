@@ -301,13 +301,26 @@ class NotesStore extends ChangeNotifier {
 
   /// Writes [body] on the person's behalf, as an assistant connected over MCP
   /// does: saved and synced exactly as typing is, but not counted towards the
-  /// writing streak, which is the person's own. [edit] must leave existing
-  /// formats and attachments where they were, as an append or a same-length
-  /// swap does.
-  void updateForAssistant(String id, String body, TextEdit edit) {
+  /// writing streak, which is the person's own. [formats] and [attachments]
+  /// are where they land after [edit]; left out, they stay where they were,
+  /// as after an append.
+  void updateForAssistant(
+    String id,
+    String body,
+    TextEdit edit, {
+    List<NoteFormatRange>? formats,
+    List<NoteAttachmentRef>? attachments,
+  }) {
     final existing = byId(id);
     if (existing == null) return;
-    _writeDocument(id, body, existing.formats, null, edit, authored: false);
+    _writeDocument(
+      id,
+      body,
+      formats ?? existing.formats,
+      attachments,
+      edit,
+      authored: false,
+    );
   }
 
   void _writeDocument(
@@ -447,8 +460,14 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Writes a drawing's canvas and title. A no-op for a written note: a
-  /// canvas cannot appear on a note that already has words in it.
-  void updateDrawing(String id, NoteDrawing drawing, {String? title}) {
+  /// canvas cannot appear on a note that already has words in it. An
+  /// assistant's drawing is not [authored], so the streak stays the person's.
+  void updateDrawing(
+    String id,
+    NoteDrawing drawing, {
+    String? title,
+    bool authored = true,
+  }) {
     final index = indexOf(id);
     if (index < 0) return;
     final existing = _notes[index];
@@ -456,7 +475,7 @@ class NotesStore extends ChangeNotifier {
     final body = title ?? existing.body;
     if (existing.drawing == drawing && existing.body == body) return;
     final at = _now();
-    _recordWriting([WritingStreak.dayOf(at)]);
+    if (authored) _recordWriting([WritingStreak.dayOf(at)]);
     _replace(
       index,
       existing.copyWith(drawing: drawing, body: body, updatedAt: at),
