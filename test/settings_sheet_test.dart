@@ -337,10 +337,10 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
 
     expect(SettingsMetrics.titleSize, 14);
-    expect(SettingsMetrics.subtitleSize, 12.5);
+    expect(SettingsMetrics.subtitleSize, 13);
     expect(
       SettingsMetrics.titleSize - SettingsMetrics.subtitleSize,
-      1.5,
+      1,
       reason: 'the hierarchy should be clear without miniaturising subtitles',
     );
   });

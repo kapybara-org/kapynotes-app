@@ -1296,7 +1296,7 @@ void main() {
     final formatted = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Format',
     );
-    expect(formatted.style!.fontWeight, FontWeight.w700);
+    expect(formatted.style!.fontWeight, FontWeight.w600);
     expect(formatted.style!.fontStyle, FontStyle.italic);
   });
 
@@ -1442,7 +1442,7 @@ void main() {
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Project title',
     );
-    expect(heading.style!.fontWeight, FontWeight.w700);
+    expect(heading.style!.fontWeight, FontWeight.w600);
     expect(
       heading.style!.fontSize,
       greaterThan(
@@ -1495,7 +1495,7 @@ void main() {
       (span) => span.text?.contains('Body') ?? false,
     );
     // The page's writing weight, in italic.
-    expect(body.style!.fontWeight, FontWeight.w500);
+    expect(body.style!.fontWeight, FontWeight.w400);
     expect(body.style!.fontStyle, FontStyle.italic);
 
     field.controller.value = const TextEditingValue(
@@ -2156,7 +2156,7 @@ void main() {
     final italic = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'emphasis',
     );
-    expect(bold.style!.fontWeight, FontWeight.w700);
+    expect(bold.style!.fontWeight, FontWeight.w600);
     expect(italic.style!.fontStyle, FontStyle.italic);
   });
 
@@ -2659,7 +2659,7 @@ void main() {
 
     final rendered = NoteDriver(tester).span.style!;
     final expected = EditorMetrics.textStyle(
-      const Color(0xFF000000),
+      KapyTheme.darkPalette.textPrimary,
       WritingFont.handwritten,
     );
 
@@ -2860,11 +2860,11 @@ void main() {
     final advance = probe.width;
     probe.dispose();
 
-    // A calculating line that stops 40px short of the column's edge: too
+    // A calculating line that stops 24px short of the column's edge: too
     // close for its pill to sit there with a gap before it, with room enough
     // in the margin to step out into.
     const tail = ' = 6 * 7';
-    final chars = ((width - 40) / advance).floor() - tail.length;
+    final chars = ((width - 24) / advance).floor() - tail.length;
     // Under a blank first line, so this is not the note's title.
     final body = '\n${'x' * chars}$tail';
     await tester.pumpWidget(harness(body, writingFont: WritingFont.monospace));
@@ -3244,7 +3244,7 @@ total to usd''';
     final subtitle = sampleSpans.firstWhere(
       (span) => span.text?.startsWith('Notes and quick') ?? false,
     );
-    expect(heading.style!.fontWeight, FontWeight.w700);
+    expect(heading.style!.fontWeight, FontWeight.w600);
     expect(subtitle.style!.fontStyle, FontStyle.italic);
     expect(find.byKey(const ValueKey('note-total')), findsNothing);
 

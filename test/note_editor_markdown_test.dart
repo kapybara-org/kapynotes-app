@@ -242,7 +242,7 @@ void main() {
 
       final title = styleOf(tester, 'Title');
       final body = styleOf(tester, 'body');
-      expect(title.fontWeight, FontWeight.w700);
+      expect(title.fontWeight, FontWeight.w600);
       expect(title.fontSize, greaterThan(body.fontSize!));
       expect(isHidden(tester, '#'), isTrue);
       expect(isHidden(tester, 'Title'), isFalse);
@@ -290,7 +290,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w600);
       expect(styleOf(tester, 'it').fontStyle, FontStyle.italic);
       expect(
         styleOf(tester, 'code').fontFamily,
@@ -338,7 +338,7 @@ void main() {
 
       await tester.pumpWidget(harness('Note\n**bold**'));
       await tester.pumpAndSettle();
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w600);
     });
   });
 
@@ -490,7 +490,7 @@ void main() {
 
       expect(styleOf(tester, 'one').fontStyle, FontStyle.italic);
       expect(styleOf(tester, 'two').fontStyle, FontStyle.italic);
-      expect(styleOf(tester, 'three').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'three').fontWeight, FontWeight.w600);
       expect(styleOf(tester, 'four').decoration, TextDecoration.lineThrough);
       expect(
         styleOf(tester, 'five').fontFamily,
@@ -1906,7 +1906,7 @@ void main() {
       await typeAtCaret(tester, 'h');
       await typeAtCaret(tester, 'i');
       expect(controllerOf(tester).text, 'say **hi**');
-      expect(styleOf(tester, 'hi').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'hi').fontWeight, FontWeight.w600);
 
       // A space, then the key again: the next word is plain.
       await typeAtCaret(tester, ' ');
@@ -2054,7 +2054,7 @@ void main() {
       expect(styleOf(tester, 'return').color, palette.codeKeyword);
       expect(styleOf(tester, 'sum').color, palette.codeBuiltIn);
       expect(styleOf(tester, 'total').color, palette.textPrimary);
-      expect(styleOf(tester, 'total').fontWeight, FontWeight.w600);
+      expect(styleOf(tester, 'total').fontWeight, FontWeight.w500);
       expect(styleOf(tester, '# all').color, palette.textTertiary);
       expect(styleOf(tester, '# all').fontStyle, FontStyle.italic);
       // A language it does not know is left as it is written.
