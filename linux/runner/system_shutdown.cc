@@ -6,10 +6,12 @@
 struct _SystemShutdown {
   FlMethodChannel* channel;
   GApplication* application;
+  GtkWindow* window;
   gboolean requested;
   guint signal_sources[3];
   guint deadline;
   gulong query_end;
+  gulong delete_event;
 };
 
 static gboolean quit_now(gpointer user_data) {
@@ -39,8 +41,24 @@ static void query_end_cb(GtkApplication* application, gpointer user_data) {
   request(static_cast<SystemShutdown*>(user_data));
 }
 
+// A close the app has not taken over. window_manager's handler runs first and
+// stops the signal when the app hides to the tray instead, so arriving here
+// means the app is to quit, and it does that the way it does for a logout.
+// Letting GTK destroy the window would leave the isolate running against a
+// window that is gone, and GApplication still dispatches what is queued once
+// its last window has closed: the app's next window call then reaches
+// window_manager with no window, and the process crashes on its way out.
+// Closing again while the app saves just waits for it.
+static gboolean delete_event_cb(GtkWidget* window, GdkEvent* event,
+                                gpointer user_data) {
+  SystemShutdown* shutdown = static_cast<SystemShutdown*>(user_data);
+  if (!shutdown->requested) request(shutdown);
+  return TRUE;
+}
+
 SystemShutdown* system_shutdown_new(FlBinaryMessenger* messenger,
-                                    GApplication* application) {
+                                    GApplication* application,
+                                    GtkWindow* window) {
   SystemShutdown* shutdown = g_new0(SystemShutdown, 1);
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   shutdown->channel = fl_method_channel_new(
@@ -52,6 +70,9 @@ SystemShutdown* system_shutdown_new(FlBinaryMessenger* messenger,
   }
   shutdown->query_end = g_signal_connect(application, "query-end",
                                          G_CALLBACK(query_end_cb), shutdown);
+  shutdown->window = GTK_WINDOW(g_object_ref(window));
+  shutdown->delete_event = g_signal_connect(
+      window, "delete-event", G_CALLBACK(delete_event_cb), shutdown);
   return shutdown;
 }
 
@@ -63,6 +84,8 @@ void system_shutdown_free(SystemShutdown* shutdown) {
   if (shutdown->query_end != 0) {
     g_signal_handler_disconnect(shutdown->application, shutdown->query_end);
   }
+  g_signal_handler_disconnect(shutdown->window, shutdown->delete_event);
+  g_clear_object(&shutdown->window);
   g_clear_object(&shutdown->channel);
   g_free(shutdown);
 }

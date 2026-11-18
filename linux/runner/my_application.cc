@@ -124,7 +124,7 @@ static void my_application_activate(GApplication* application) {
   self->session = desktop_session_new(messenger);
   self->clipboard = rich_clipboard_new(messenger);
   self->region = system_region_new(messenger);
-  self->shutdown = system_shutdown_new(messenger, application);
+  self->shutdown = system_shutdown_new(messenger, application, window);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

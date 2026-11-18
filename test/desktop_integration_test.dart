@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/system_shutdown.dart';
 import 'package:kapy_notes/core/window_pin.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -75,6 +76,11 @@ void main() {
   late DesktopIntegration integration;
 
   setUp(() {
+    // The tray, close button and login item here are the macOS and Windows
+    // ones. Linux offers the tray only where a tray host answers, and keeps
+    // its login item in XDG autostart.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     sequence = [];
     window = _NativeRecorder('window_manager', sequence: sequence)
       ..answers['isVisible'] = true
@@ -370,6 +376,33 @@ void main() {
 
     expect(window.calls, contains('setPreventClose'));
     expect(window.calls, contains('destroy'));
+  });
+
+  test('Linux quits through the engine and leaves the window up', () async {
+    // GTK destroying the window under a running isolate crashes the process
+    // on its way out: the window calls already queued still run, and there is
+    // no window left for them.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    final exits = <Object?>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'System.exitApplication') exits.add(call.arguments);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    var flushed = false;
+    integration.onBeforeQuit = () async => flushed = true;
+    await integration.quit();
+
+    expect(flushed, isTrue, reason: 'notes must reach disk before the exit');
+    expect(exits, [
+      {'type': 'required', 'exitCode': 0},
+    ]);
+    expect(window.calls, isNot(contains('destroy')));
   });
 
   test(

@@ -18,9 +18,9 @@
 #      packaging/linux/smoke_test.sh all build/release smoke-out'
 #
 # "baseline" installs only what every GNOME or KDE desktop has (GTK 3,
-# libpulse, Mesa's GL and GLES, a font) plus the test's own tools (Xvfb, D-Bus,
-# xwininfo, xwd), and never the libraries the portable packages bundle, so a
-# missing one shows up. The .deb is installed with apt and without
+# libpulse, Mesa's GL and GLES, a font, Python) plus the test's own tools
+# (Xvfb, D-Bus, xwininfo, xwd), and never the libraries the portable packages
+# bundle, so a missing one shows up. The .deb is installed with apt and without
 # Recommends, which proves its Depends alone are enough.
 #
 # Each run gets a fresh HOME, its own Xvfb and its own session bus (started
@@ -30,8 +30,12 @@
 #   - have a top-level X window whose WM_CLASS is com.kapybara.kapynotes,
 #   - leave no "not found" from ldd for any ELF it ships,
 #   - run its libexec/ffmpeg, which voice notes depend on,
-#   - log no MissingPluginException and no "not found",
-#   - exit 0 on SIGTERM within 10 seconds.
+#   - log no MissingPluginException, no "not found" and no library that failed
+#     to load,
+#   - exit 0 within 5 seconds of being asked to quit, half the runner's own
+#     deadline, so an app that never answered does not pass: the tarball by
+#     closing its window, the way a user does, the others by SIGTERM, the way
+#     a logout or `kill` does.
 # A screenshot of the screen goes to <out-dir>/<kind>.xwd (and .png when
 # ImageMagick is there), the app's output to <out-dir>/<kind>.log.
 #
@@ -45,6 +49,12 @@ APP_ID="com.kapybara.kapynotes"
 SMOKE_SECONDS="${SMOKE_SECONDS:-20}"
 display_number=90
 
+# What a run started, so a failure partway does not leave an app, an Xvfb and
+# a bus running on the machine.
+started=()
+cleanup() { if ((${#started[@]})); then kill -KILL "${started[@]}" 2>/dev/null || true; fi; }
+trap cleanup EXIT
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
 
@@ -54,10 +64,10 @@ install_baseline() {
     apt-get update -q
     apt-get install -y -q --no-install-recommends \
       ca-certificates libgtk-3-0 libpulse0 libegl1 libgl1 libgles2 libgl1-mesa-dri fonts-dejavu-core \
-      xvfb xauth x11-utils x11-apps dbus
+      python3 xvfb xauth x11-utils x11-apps dbus
   elif command -v dnf >/dev/null; then
     dnf -y -q install --setopt=install_weak_deps=False \
-      gtk3 pulseaudio-libs mesa-dri-drivers mesa-libEGL mesa-libGL libglvnd-gles dejavu-sans-fonts \
+      gtk3 pulseaudio-libs mesa-dri-drivers mesa-libEGL mesa-libGL libglvnd-gles dejavu-sans-fonts python3 \
       xorg-x11-server-Xvfb /usr/bin/xwininfo /usr/bin/xwd /usr/bin/dbus-daemon /usr/bin/ldd findutils
   else
     fail "no apt-get or dnf here"
@@ -89,6 +99,65 @@ check_ffmpeg() {
     fail "libexec/ffmpeg could not decode a voice note"
   rm -rf "$tmp"
   echo "  libexec/ffmpeg encodes and decodes"
+}
+
+# Closes the app's window the way a window manager's close button does, with a
+# WM_DELETE_WINDOW message. Only the mapped window: GDK gives its unmapped
+# client-leader window the app's WM_CLASS too.
+close_window() {
+  local display="$1" tree="$2" id
+  for id in $(grep -F "\"$APP_ID\")" <<<"$tree" | awk '{print $1}'); do
+    [[ "$(DISPLAY="$display" xwininfo -id "$id")" == *IsViewable* ]] || continue
+    DISPLAY="$display" python3 - "$id" <<'PY'
+import ctypes
+import sys
+
+
+class XClientMessageEvent(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("serial", ctypes.c_ulong),
+        ("send_event", ctypes.c_int),
+        ("display", ctypes.c_void_p),
+        ("window", ctypes.c_ulong),
+        ("message_type", ctypes.c_ulong),
+        ("format", ctypes.c_int),
+        ("data", ctypes.c_long * 5),
+    ]
+
+
+class XEvent(ctypes.Union):
+    _fields_ = [("xclient", XClientMessageEvent), ("pad", ctypes.c_long * 24)]
+
+
+x11 = ctypes.CDLL("libX11.so.6")
+x11.XOpenDisplay.restype = ctypes.c_void_p
+x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+x11.XInternAtom.restype = ctypes.c_ulong
+x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+x11.XSendEvent.argtypes = [
+    ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long,
+    ctypes.POINTER(XEvent),
+]
+x11.XFlush.argtypes = [ctypes.c_void_p]
+
+display = x11.XOpenDisplay(None)
+if not display:
+    sys.exit("cannot open the display")
+window = int(sys.argv[1], 16)
+event = XEvent()
+event.xclient.type = 33  # ClientMessage
+event.xclient.window = window
+event.xclient.message_type = x11.XInternAtom(display, b"WM_PROTOCOLS", 0)
+event.xclient.format = 32
+event.xclient.data[0] = x11.XInternAtom(display, b"WM_DELETE_WINDOW", 0)
+if not x11.XSendEvent(display, window, 0, 0, ctypes.byref(event)):
+    sys.exit("XSendEvent failed")
+x11.XFlush(display)
+PY
+    return
+  done
+  fail "no mapped window with WM_CLASS $APP_ID to close"
 }
 
 # Every process descended from $1, including itself.
@@ -137,11 +206,13 @@ run_app() {
 
   Xvfb "$display" -screen 0 1280x800x24 -nolisten tcp >"$out/$kind.xvfb.log" 2>&1 &
   local xvfb=$!
+  started+=("$xvfb")
   for _ in $(seq 50); do [[ -S "/tmp/.X11-unix/X${display#:}" ]] && break; sleep 0.1; done
   [[ -S "/tmp/.X11-unix/X${display#:}" ]] || fail "Xvfb did not start on $display"
 
   dbus-daemon --session --nofork --address="unix:path=$runtime/bus" >/dev/null 2>&1 &
   local bus=$!
+  started+=("$bus")
   for _ in $(seq 50); do [[ -S "$runtime/bus" ]] && break; sleep 0.1; done
 
   say "$kind: starting $*"
@@ -150,6 +221,7 @@ run_app() {
     DISPLAY="$display" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
     "$@" >"$log" 2>&1 &
   local launcher=$!
+  started+=("$launcher")
 
   local waited=0
   while ((waited < SMOKE_SECONDS)); do
@@ -160,6 +232,7 @@ run_app() {
   local pid
   pid="$(app_pid "$launcher")"
   [[ -n "$pid" ]] || { cat "$log" >&2; fail "$kind: no process is running the kapynotes binary"; }
+  started+=("$pid")
   echo "  alive after $SMOKE_SECONDS s (pid $pid)"
 
   local tree
@@ -177,9 +250,15 @@ run_app() {
   check_libraries "$root"
   check_ffmpeg "$root"
 
-  kill -TERM "$pid"
+  local quit=SIGTERM
+  if [[ "$kind" == tar ]]; then
+    quit="closing the window"
+    close_window "$display" "$tree"
+  else
+    kill -TERM "$pid"
+  fi
   local status=
-  for _ in $(seq 100); do
+  for _ in $(seq 50); do
     if ! kill -0 "$launcher" 2>/dev/null; then
       status=0
       wait "$launcher" || status=$?
@@ -189,16 +268,16 @@ run_app() {
   done
   if [[ -z "$status" ]]; then
     kill -KILL "$pid" "$launcher" 2>/dev/null || true
-    fail "$kind ignored SIGTERM for 10 s"
+    fail "$kind was still running 5 s after $quit"
   fi
-  [[ "$status" == 0 ]] || { cat "$log" >&2; fail "$kind exited $status on SIGTERM"; }
-  echo "  SIGTERM: clean exit"
+  [[ "$status" == 0 ]] || { cat "$log" >&2; fail "$kind exited $status on $quit"; }
+  echo "  $quit: clean exit"
 
   kill "$bus" "$xvfb" 2>/dev/null || true
   wait "$bus" "$xvfb" 2>/dev/null || true
   rm -rf "$home" "$runtime"
 
-  if grep -nE 'MissingPluginException|not found' "$log" >&2; then
+  if grep -nE 'MissingPluginException|not found|Failed to load dynamic library' "$log" >&2; then
     fail "$kind logged a missing plugin or library (above; full log in $log)"
   fi
   echo "PASS: $kind"

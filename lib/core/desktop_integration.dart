@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'dart:ui' show Rect, Size;
+import 'dart:ui' show AppExitType, Rect, Size;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show ServicesBinding;
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -290,6 +291,14 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     } catch (error) {
       debugPrint('KapyNotes: could not release close interception: $error');
     }
+    // Linux leaves through the engine's own exit, which stops the main loop
+    // with the window still up. Destroying it would leave this isolate
+    // running against a window that is gone, while GTK still dispatches the
+    // calls already queued for it on the way out; the first one crashes.
+    if (AppPlatform.isLinux) {
+      await ServicesBinding.instance.exitApplication(AppExitType.required);
+      return;
+    }
     await windowManager.destroy();
   }
 
@@ -439,10 +448,11 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     }
   }
 
-  /// Both platforms report the close before honouring it, whether or not it
+  /// Every platform reports the close before honouring it, whether or not it
   /// was prevented. Doing nothing is therefore the correct response to a
   /// close the app did not ask to intercept: Windows quits, macOS keeps the
-  /// process alive for the summon shortcut, and both are what should happen.
+  /// process alive for the summon shortcut, the Linux runner asks for the
+  /// same [quit] a logout does, and each is what should happen.
   @override
   void onWindowClose() {
     if (!_hidesOnClose) {
