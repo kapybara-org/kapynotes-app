@@ -12,6 +12,7 @@ import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -119,6 +120,7 @@ Future<void> pumpApp(
   ImageFileAcquirer? imageAcquirer,
   Account? account,
   TagStore? tags,
+  TitleModel titleModel = const NoTitleModel('Not in tests'),
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -149,9 +151,30 @@ Future<void> pumpApp(
       imageAcquirer: imageAcquirer,
       account: account,
       tags: tags,
+      titleModel: titleModel,
     ),
   );
   await tester.pumpAndSettle();
+}
+
+/// Names every note the same, at once.
+class _InstantTitles implements TitleModel {
+  _InstantTitles(this.title);
+
+  final String title;
+  int asked = 0;
+
+  @override
+  Future<String?> unavailableReason() async => null;
+
+  @override
+  Future<String> name({
+    required String instructions,
+    required String prompt,
+  }) async {
+    asked++;
+    return title;
+  }
 }
 
 class _HiddenGate implements HiddenNotesGate {
@@ -995,8 +1018,107 @@ void main() {
     final newNoteField = tester.widget<NoteField>(
       find.descendant(of: find.byType(NoteEditor), matching: noteField),
     );
-    expect(newNoteField.controller.text, isEmpty);
+    expect(newNoteField.controller.text, Note.blankBody);
     expect(newNoteField.focusNode.hasFocus, isTrue);
+  });
+
+  group('a new note', () {
+    const trip =
+        'Flights to Lisbon are 900 for two, the hotel near Alfama is 120 a '
+        'night, and the train to Sintra is cheap';
+
+    Future<TextEditingController> newNote(WidgetTester tester) async {
+      await tester.tap(findKapyIcon(KapyIcons.addRounded).first);
+      await tester.pumpAndSettle();
+      return tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+    }
+
+    testWidgets('is New Note, and a caret in the title takes all of it', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      final field = await newNote(tester);
+      expect(field.text, Note.blankBody);
+      expect(field.selection, const TextSelection.collapsed(offset: 9));
+      expect(notes.notes.first.title, 'New Note');
+
+      field.selection = const TextSelection.collapsed(offset: 3);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+
+      field.selection = const TextSelection.collapsed(offset: 8);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection.collapsed(offset: 9),
+        reason: 'right out of the title goes to the line below',
+      );
+
+      field.selection = const TextSelection(baseOffset: 0, extentOffset: 8);
+      field.value = const TextEditingValue(
+        text: 'Trip\n',
+        selection: TextSelection.collapsed(offset: 4),
+      );
+      await tester.pumpAndSettle();
+      expect(notes.notes.first.title, 'Trip');
+      field.selection = const TextSelection.collapsed(offset: 2);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection.collapsed(offset: 2),
+        reason: 'a title they wrote is edited like any line',
+      );
+    });
+
+    testWidgets('left alone, it is let go like any blank note', (tester) async {
+      await pumpApp(tester);
+      final before = notes.notes.length;
+      await newNote(tester);
+      expect(notes.notes.length, before + 1);
+      await newNote(tester);
+      expect(notes.notes.length, before + 1, reason: 'the blank one is reused');
+    });
+
+    testWidgets('is named by the model on this device after a pause', (
+      tester,
+    ) async {
+      final model = _InstantTitles('lisbon trip budget.');
+      await pumpApp(tester, titleModel: model);
+      final field = await newNote(tester);
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump();
+      expect(model.asked, 0);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(model.asked, 1);
+      expect(notes.notes.first.title, 'Lisbon trip budget');
+      expect(field.text, 'Lisbon trip budget\n$trip');
+    });
+
+    testWidgets('with the setting off it stays New Note', (tester) async {
+      final model = _InstantTitles('Lisbon trip');
+      prefs.autoTitlesEnabled = false;
+      await pumpApp(tester, titleModel: model);
+      final field = await newNote(tester);
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(model.asked, 0);
+      expect(notes.notes.first.title, 'New Note');
+    });
   });
 
   testWidgets('coming back the same day leaves the caret where it was', (
@@ -1940,7 +2062,7 @@ void main() {
     final editor = tester.widget<NoteField>(
       find.descendant(of: find.byType(NoteEditor), matching: noteField),
     );
-    expect(editor.controller.text, isEmpty);
+    expect(editor.controller.text, Note.blankBody);
     expect(notes.notes.last.body, startsWith('petrol 40'));
   });
 
@@ -5220,7 +5342,7 @@ void main() {
       await tester.pump();
 
       expect(notes.notes, hasLength(2));
-      expect(openNoteBody(tester), isEmpty);
+      expect(openNoteBody(tester), Note.untitled);
       expect(find.text('New note created'), findsOneWidget);
     });
 
@@ -5234,7 +5356,7 @@ void main() {
       expect(notes.notes, hasLength(1));
       expect(find.byType(NoteEditor), findsOneWidget);
       final field = tester.widget<NoteField>(noteField);
-      expect(field.controller.text, isEmpty);
+      expect(field.controller.text, Note.blankBody);
       expect(field.focusNode.hasFocus, isTrue);
       expect(tester.testTextInput.isVisible, isTrue);
     });

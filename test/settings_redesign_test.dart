@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/semantics.dart';
@@ -6,6 +7,7 @@ import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/calc/format.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -35,6 +37,19 @@ class _Store extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
   @override
   void putNow(String key, Object? value) => data[key] = value;
+}
+
+class _Titles implements TitleModel {
+  _Titles([this.reason]);
+
+  final String? reason;
+
+  @override
+  Future<String?> unavailableReason() async => reason;
+
+  @override
+  Future<String> name({required String instructions, required String prompt}) =>
+      Completer<String>().future;
 }
 
 class _Gate implements HiddenNotesGate {
@@ -88,6 +103,7 @@ Future<void> _open(
   HiddenNotesGate? hiddenNotes,
   VoicePrefs? voicePrefs,
   CloudAccess? cloudAccess,
+  NoteNamer? namer,
 }) async {
   tester.view.physicalSize = const Size(1000, 820);
   tester.view.devicePixelRatio = 1;
@@ -104,6 +120,7 @@ Future<void> _open(
           voicePrefs: voicePrefs,
           cloudAccess: cloudAccess,
           hiddenNotes: hiddenNotes,
+          namer: namer,
           section: section,
         ),
       ),
@@ -160,6 +177,74 @@ void main() {
     notes = NotesStore(store);
     await notes.load();
     prefs = LayoutPrefs(store)..load();
+  });
+
+  group('Name new notes automatically', () {
+    final row = find.byKey(const ValueKey('auto-titles-toggle'));
+
+    Future<NoteNamer> open(WidgetTester tester, TitleModel model) async {
+      final namer = NoteNamer(
+        notes: notes,
+        prefs: prefs,
+        model: model,
+        mayName: (_) => true,
+      );
+      addTearDown(namer.dispose);
+      await _open(tester, section: SettingsSection.notes, namer: namer);
+      await tester.scrollUntilVisible(
+        row,
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      return namer;
+    }
+
+    SettingsSwitch switchIn(WidgetTester tester) =>
+        tester.widget<SettingsSwitch>(
+          find.descendant(of: row, matching: find.byType(SettingsSwitch)),
+        );
+
+    testWidgets('is on by default with a model on the device, and turns off', (
+      tester,
+    ) async {
+      await open(tester, _Titles());
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text('Name new notes automatically'),
+        ),
+        findsOneWidget,
+      );
+      expect(switchIn(tester).value, isTrue);
+      expect(switchIn(tester).enabled, isTrue);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(prefs.autoTitlesEnabled, isFalse);
+      expect(switchIn(tester).value, isFalse);
+    });
+
+    testWidgets('without a model it is off and disabled, and says why', (
+      tester,
+    ) async {
+      const why = 'Turn on Apple Intelligence in System Settings to use this';
+      await open(tester, _Titles(why));
+      expect(
+        find.descendant(of: row, matching: find.text(why)),
+        findsOneWidget,
+      );
+      expect(switchIn(tester).value, isFalse);
+      expect(switchIn(tester).enabled, isFalse);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(prefs.autoTitlesEnabled, isTrue, reason: 'nothing to turn off');
+    });
+
+    testWidgets('is left out where nothing names notes', (tester) async {
+      await _open(tester, section: SettingsSection.notes);
+      expect(row, findsNothing);
+    });
   });
 
   group('Hidden Notes', () {

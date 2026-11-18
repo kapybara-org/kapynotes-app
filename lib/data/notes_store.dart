@@ -317,9 +317,49 @@ class NotesStore extends ChangeNotifier {
     _replace(
       index,
       existing.copyWith(
+        body: drawing ? '' : null,
         drawing: drawing ? NoteDrawing.empty : null,
         updatedAt: _now(),
       ),
+    );
+    return true;
+  }
+
+  /// Puts [title] in place of [id]'s first line, moving the formats and
+  /// attachments after it along. The app's own words, so not writing.
+  /// Returns whether the note changed.
+  bool retitle(String id, String title) {
+    final index = indexOf(id);
+    if (index < 0) return false;
+    final existing = _notes[index];
+    final old = existing.firstLine.length;
+    if (existing.firstLine == title) return false;
+    final body = '$title${existing.body.substring(old)}';
+    final shift = title.length - old;
+    int moved(int offset) => offset < old ? 0 : offset + shift;
+    final edit = (start: 0, oldEnd: old, newEnd: title.length);
+    final earlier = _edits[id];
+    _edits[id] = earlier == null ? edit : composeEdits(earlier, edit);
+    _replace(
+      index,
+      existing.copyWith(
+        body: body,
+        formats: normalizeNoteFormats([
+          for (final range in existing.formats)
+            if (range.end > old)
+              NoteFormatRange(
+                start: moved(range.start),
+                end: range.end + shift,
+                format: range.format,
+              ),
+        ], body.length),
+        attachments: normalizeNoteAttachments([
+          for (final ref in existing.attachments)
+            if (ref.offset >= old) ref.copyWith(offset: ref.offset + shift),
+        ], body),
+        updatedAt: _now(),
+      ),
+      toFront: true,
     );
     return true;
   }

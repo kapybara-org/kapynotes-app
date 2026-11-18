@@ -102,6 +102,11 @@ class Note {
 
   static const String untitled = 'New Note';
   static const String untitledDrawing = 'Drawing';
+
+  /// A new note as the person starts it: titled [untitled] on a first line
+  /// of its own, with the caret on the line below. The title is ordinary
+  /// text, so every surface, device and older build lists it the same way.
+  static const String blankBody = '$untitled\n';
   static const int _titleLimit = 60;
 
   /// True when this note is in a shared space rather than the personal one.
@@ -250,7 +255,18 @@ class Note {
 
   /// No words, and no strokes if it is a drawing. A blank canvas is as empty
   /// as a blank page.
-  bool get isEmpty => body.trim().isEmpty && (drawing?.isEmpty ?? true);
+  bool get isEmpty =>
+      (body.trim().isEmpty || body.trim() == untitled) &&
+      (drawing?.isEmpty ?? true);
+
+  /// Whether the first line is still the title a new note starts with.
+  bool get hasDefaultTitle => firstLine == untitled;
+
+  /// The first line exactly as written, without its line break.
+  String get firstLine {
+    final end = body.indexOf('\n');
+    return end < 0 ? body : body.substring(0, end);
+  }
 
   /// Case-insensitive match across every piece of searchable note content.
   ///

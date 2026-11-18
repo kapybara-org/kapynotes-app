@@ -31,6 +31,7 @@ import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
+import '../../data/note.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../compact_icon_button.dart';
@@ -1222,6 +1223,33 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   @visibleForTesting
   List<NoteFormatRange> get formatsForTest => _formats;
 
+  /// A caret put in a new note's [Note.untitled] takes the whole title, so
+  /// what is typed replaces it rather than adding to it. Leaving the taken
+  /// title to the right goes on to the line below it.
+  bool _takeDefaultTitle(TextSelection previous, TextEditingValue value) {
+    const title = Note.untitled;
+    final text = value.text;
+    final selection = value.selection;
+    if (widget.readOnly ||
+        !selection.isValid ||
+        !selection.isCollapsed ||
+        selection.baseOffset > title.length ||
+        _composingOpen(value) ||
+        !text.startsWith(title) ||
+        (text.length > title.length && text[title.length] != '\n')) {
+      return false;
+    }
+    const taken = TextSelection(baseOffset: 0, extentOffset: title.length);
+    final leaving =
+        previous == taken &&
+        selection.baseOffset == title.length &&
+        text.length > title.length;
+    _controller.selection = leaving
+        ? const TextSelection.collapsed(offset: title.length + 1)
+        : taken;
+    return true;
+  }
+
   void _onControllerChanged() {
     _recordKapyPeekActivity();
     final value = _controller.value;
@@ -1248,6 +1276,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       if (!selectionChanged) return;
       if (_collapseLineTerminatorSelection(value.selection)) return;
+      if (_takeDefaultTitle(previous.selection, value)) return;
       // Tables draw as a grid with the setting off too, so this is not
       // inside the markdown branch below.
       if (_keepCaretOutOfTable(previous.selection, value.selection)) return;
