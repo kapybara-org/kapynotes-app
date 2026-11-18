@@ -3349,6 +3349,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             : () => _togglePinnedNote(
                                                 selected.id,
                                               ),
+                                        keepOnTop: widget.prefs.alwaysOnTop,
+                                        onToggleKeepOnTop: _pinToggle,
+                                        keepOnTopShortcut: _pinShortcut,
                                         moreActions: _pageActions(selected),
                                         onMore: (action) =>
                                             _runPageAction(action, selected),
@@ -3501,6 +3504,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         newNoteShortcut: widget.shortcuts
             .bindingFor(ShortcutAction.newNote)
             ?.displayLabel,
+        keepOnTop: widget.prefs.alwaysOnTop,
+        onToggleKeepOnTop: _pinToggle,
+        keepOnTopShortcut: _pinShortcut,
         moreActions: [
           for (final action in _pageActions(null))
             if (action.value == 'on-top') action,
@@ -3764,9 +3770,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 present: _selectedPresence,
                 currentUserId: widget.account?.sharing?.userId ?? '',
                 noteShared: selected?.isShared ?? false,
-                alwaysOnTop: widget.prefs.alwaysOnTop,
-                onToggleAlwaysOnTop: _pinToggle,
-                alwaysOnTopShortcut: _pinShortcut,
                 newNoteShortcut: widget.shortcuts
                     .bindingFor(ShortcutAction.newNote)
                     ?.displayLabel,

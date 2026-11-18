@@ -45,6 +45,9 @@ class PageToolbar extends StatelessWidget {
     this.onShare,
     this.pinned = false,
     this.onTogglePin,
+    this.keepOnTop = false,
+    this.onToggleKeepOnTop,
+    this.keepOnTopShortcut,
     this.assistant,
     this.moreActions = const [],
     this.updates,
@@ -89,6 +92,13 @@ class PageToolbar extends StatelessWidget {
 
   final bool pinned;
   final VoidCallback? onTogglePin;
+
+  /// Whether the window floats over other apps, and the toggle that turns it
+  /// on or off. Null off the desktop, where there is no window to float; it
+  /// belongs to the window, so every page of the main window carries it.
+  final bool keepOnTop;
+  final VoidCallback? onToggleKeepOnTop;
+  final String? keepOnTopShortcut;
 
   /// Kapy AI's button, between Share and the pin. It keeps its own gap, so
   /// it can hide while Kapy AI is off without leaving one behind.
@@ -241,6 +251,29 @@ class PageToolbar extends StatelessWidget {
                       onPressed: onTogglePin,
                       icon: KapyIcon(
                         KapyIcons.pinOutlined,
+                        size: AppControlMetrics.iconAction,
+                        strokeWidth: 1.9,
+                      ),
+                    ),
+                  ],
+                  if (onToggleKeepOnTop case final toggle?) ...[
+                    const SizedBox(width: 6),
+                    CompactIconButton(
+                      key: const ValueKey('page-keep-on-top'),
+                      tooltip: [
+                        keepOnTop ? 'Keep on top: on' : 'Keep on top',
+                        ?keepOnTopShortcut,
+                      ].join('  '),
+                      extent: actionExtent,
+                      radius: 10,
+                      selected: keepOnTop,
+                      selectedBackground: palette.tonalBackground,
+                      foregroundColor: keepOnTop
+                          ? palette.tonalForeground
+                          : null,
+                      onPressed: toggle,
+                      icon: KapyIcon(
+                        KapyIcons.keepOnTop,
                         size: AppControlMetrics.iconAction,
                         strokeWidth: 1.9,
                       ),
