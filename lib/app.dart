@@ -202,7 +202,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// Kapy AI, built only in builds that carry it. Held here for the reason
   /// [_localModels] is: closing the panel must not drop a chat mid-answer.
   KapyAi? _kapyAi;
-  late final TitleModel _titleModel = widget.titleModel ?? platformTitleModel();
+  late final TitleModel? _titleModel =
+      widget.titleModel ?? platformTitleModel();
 
   /// The MCP server and its settings, on the Mac and Windows only: the
   /// computers an assistant runs on, and where the app can listen locally.
