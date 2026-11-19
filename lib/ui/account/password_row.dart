@@ -25,10 +25,17 @@ class PasswordRow extends StatefulWidget {
 }
 
 class _PasswordRowState extends State<PasswordRow> {
+  bool _checking = true;
+
   @override
   void initState() {
     super.initState();
-    unawaited(widget.account.checkPassword());
+    unawaited(_check());
+  }
+
+  Future<void> _check() async {
+    await widget.account.checkPassword();
+    if (mounted) setState(() => _checking = false);
   }
 
   @override
@@ -37,22 +44,33 @@ class _PasswordRowState extends State<PasswordRow> {
     return SettingsRow(
       key: const ValueKey('password-row'),
       title: 'Password',
-      subtitle: has == false
-          ? 'Not set. You sign in with an emailed code'
-          : 'Signs you in without an emailed code',
-      trailing: has == null
-          ? null
-          : SettingsRowButton(
-              key: const ValueKey('password'),
-              label: has ? 'Change…' : 'Create…',
-              onPressed: () => unawaited(
-                showDialog<void>(
-                  context: context,
-                  builder: (context) =>
-                      _PasswordDialog(account: widget.account, creating: !has),
-                ),
-              ),
+      subtitle: switch (has) {
+        true => 'Signs you in without an emailed code',
+        false => 'Not set. You sign in with an emailed code',
+        null => _checking ? 'Checking…' : "Couldn't check right now",
+      },
+      trailing: switch (has) {
+        null when _checking => null,
+        null => SettingsRowButton(
+          key: const ValueKey('password-retry'),
+          label: 'Try again',
+          onPressed: () {
+            setState(() => _checking = true);
+            unawaited(_check());
+          },
+        ),
+        final has => SettingsRowButton(
+          key: const ValueKey('password'),
+          label: has ? 'Change…' : 'Create…',
+          onPressed: () => unawaited(
+            showDialog<void>(
+              context: context,
+              builder: (context) =>
+                  _PasswordDialog(account: widget.account, creating: !has),
             ),
+          ),
+        ),
+      },
     );
   }
 }

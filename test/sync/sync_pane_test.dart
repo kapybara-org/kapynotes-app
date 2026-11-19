@@ -703,17 +703,30 @@ void main() {
       }
     });
 
-    testWidgets('until the server says, the row offers nothing', (
+    testWidgets("a row that can't check says so, and checks again", (
       tester,
     ) async {
       final auth = FakeAuth();
       final account = await signedIn(tester, auth);
       auth.reachable = false;
       await tester.pumpWidget(harness(account));
+      expect(inRow('Checking…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('password')), findsNothing);
       await tester.pumpAndSettle();
 
-      expect(inRow('Signs you in without an emailed code'), findsOneWidget);
+      expect(inRow("Couldn't check right now"), findsOneWidget);
+      expect(inRow('Signs you in without an emailed code'), findsNothing);
       expect(find.byKey(const ValueKey('password')), findsNothing);
+
+      auth.reachable = true;
+      await tester.tap(find.byKey(const ValueKey('password-retry')));
+      await tester.pumpAndSettle();
+      expect(
+        inRow('Not set. You sign in with an emailed code'),
+        findsOneWidget,
+      );
+      expect(inRow('Create…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('password-retry')), findsNothing);
       account.dispose();
     }, timeout: const Timeout(Duration(minutes: 2)));
 
