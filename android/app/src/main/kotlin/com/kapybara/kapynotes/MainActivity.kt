@@ -41,6 +41,7 @@ class MainActivity : FlutterFragmentActivity() {
         AudioDecode.register(flutterEngine.dartExecutor.binaryMessenger)
         SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
         SystemRegion.register(flutterEngine.dartExecutor.binaryMessenger)
+        StatusBar.register(flutterEngine.dartExecutor.binaryMessenger, this)
         noteTitles = NoteTitles.register(flutterEngine.dartExecutor.binaryMessenger)
         FileExport.register(flutterEngine.dartExecutor.binaryMessenger) { this }
         pendingLaunch = takeLaunchName(intent)
