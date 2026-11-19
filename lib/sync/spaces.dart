@@ -297,6 +297,11 @@ class Space {
   /// the way an unexpired invitation is. False from a server that predates
   /// links which let people straight in.
   final bool hasLink;
+
+  /// Notes in it this account took out of its own notes without deleting
+  /// them for everyone, which every one of its devices keeps away. Null from
+  /// a server that predates it, which keeps no such list.
+  final List<String>? hiddenNotes;
   final int? attachmentMaxBytes;
   final DateTime createdAt;
 
@@ -313,6 +318,7 @@ class Space {
     required this.invites,
     required this.liveNotes,
     this.hasLink = false,
+    this.hiddenNotes,
     this.attachmentMaxBytes,
     required this.createdAt,
   });
@@ -489,6 +495,7 @@ class Space {
     ],
     'liveNotes': liveNotes,
     'hasLink': hasLink,
+    'hiddenNotes': ?hiddenNotes,
     'attachmentMaxBytes': attachmentMaxBytes,
     'createdAt': createdAt.toUtc().toIso8601String(),
   };
@@ -520,6 +527,10 @@ class Space {
           : const [],
       liveNotes: liveNotes is int ? liveNotes : 0,
       hasLink: raw['hasLink'] == true,
+      hiddenNotes: switch (raw['hiddenNotes']) {
+        final List ids => ids.whereType<String>().toList(),
+        _ => null,
+      },
       attachmentMaxBytes: switch (raw['attachmentMaxBytes']) {
         final int value when value > 0 => value,
         _ => null,

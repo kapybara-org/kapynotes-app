@@ -13,6 +13,7 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
+import 'package:kapy_notes/ui/editor/highlighting_controller.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_sliver.dart';
@@ -1505,6 +1506,151 @@ void main() {
       // Straight under the last row, `x` would have been a third row.
       expect(latest, '$body\nx');
     });
+
+    final handTyped = TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.macOS,
+    });
+
+    /// [body] open with the caret at its end.
+    Future<HighlightingController> openAtEnd(
+      WidgetTester tester,
+      String body, {
+      ValueChanged<String>? onBodyChanged,
+    }) async {
+      AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.pumpWidget(
+        harness(body, autofocus: true, onBodyChanged: onBodyChanged),
+      );
+      await tester.pumpAndSettle();
+      final controller = controllerOf(tester) as HighlightingController;
+      controller.selection = TextSelection.collapsed(offset: body.length);
+      await tester.pump();
+      return controller;
+    }
+
+    /// One character at a time, as a phone's keyboard sends them.
+    Future<void> typeByHand(
+      WidgetTester tester,
+      TextEditingController controller,
+      String characters,
+    ) async {
+      for (final character in characters.split('')) {
+        final value = controller.value;
+        final at = value.selection.baseOffset;
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: value.text.replaceRange(at, at, character),
+            selection: TextSelection.collapsed(offset: at + 1),
+          ),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+    }
+
+    int tablesIn(HighlightingController controller) =>
+        controller.markdownFor(controller.text).tables.length;
+
+    testWidgets('a separator row typed by hand becomes a table on leaving it', (
+      tester,
+    ) async {
+      const header = 'Title\n| Item | Qty |\n';
+      String? latest;
+      final controller = await openAtEnd(
+        tester,
+        header,
+        onBodyChanged: (value) => latest = value,
+      );
+      Future<void> type(String characters) =>
+          typeByHand(tester, controller, characters);
+
+      // `| --- | -` already finishes a table; the rest of the row stays on
+      // its line, and nothing turns into a grid while it is typed.
+      for (final character in '| --- | --- |'.split('')) {
+        await type(character);
+        expect(tablesIn(controller), 0, reason: 'after typing "$character"');
+      }
+      expect(latest, '$header| --- | --- |');
+
+      await type('\n');
+      expect(tablesIn(controller), 1);
+      // A row typed under it joins the table once it is finished too.
+      int rows() =>
+          controller.markdownFor(controller.text).tables.single.rows.length;
+      for (final character in '| Tea | 2 |'.split('')) {
+        await type(character);
+        expect(rows(), 1, reason: 'after typing "$character"');
+      }
+      await type('\n| Jam | 1 |');
+      expect(latest, '$header| --- | --- |\n| Tea | 2 |\n| Jam | 1 |');
+      expect(rows(), 2);
+      controller.selection = const TextSelection.collapsed(offset: 0);
+      await tester.pump();
+      expect(rows(), 3);
+
+      // Moving the caret off the line finishes it too.
+      const half = 'Title\n| A | B |\n| --- | -';
+      controller.value = const TextEditingValue(
+        text: 'Title\n| A | B |\n| --- |',
+      );
+      controller.selection = const TextSelection.collapsed(
+        offset: half.length - 2,
+      );
+      await tester.pump();
+      await type(' -');
+      expect(controller.text, half);
+      expect(tablesIn(controller), 0);
+      controller.selection = const TextSelection.collapsed(offset: 0);
+      await tester.pump();
+      expect(tablesIn(controller), 1);
+    }, variant: handTyped);
+
+    testWidgets('a selection on a half-typed separator row keeps it text', (
+      tester,
+    ) async {
+      const header = 'Title\n| A | B |\n| --- |';
+      final controller = await openAtEnd(tester, header);
+      await typeByHand(tester, controller, ' -');
+      expect(tablesIn(controller), 0);
+
+      // Selecting on the line, to fix a typo, is still typing it.
+      final end = controller.text.length;
+      controller.selection = TextSelection(
+        baseOffset: end - 3,
+        extentOffset: end - 1,
+      );
+      await tester.pump();
+      expect(tablesIn(controller), 0);
+      controller.selection = TextSelection.collapsed(offset: end);
+      await tester.pump();
+      expect(tablesIn(controller), 0);
+      await typeByHand(tester, controller, '-- |');
+      expect(controller.text, '$header --- |');
+      expect(tablesIn(controller), 0);
+    }, variant: handTyped);
+
+    testWidgets("a collaborator's edit above a half-typed row keeps it text", (
+      tester,
+    ) async {
+      const header = 'Title\n| A | B |\n| --- |';
+      final controller = await openAtEnd(tester, header);
+      await typeByHand(tester, controller, ' -');
+      expect(tablesIn(controller), 0);
+
+      // Words arriving above move the line without the writer leaving it.
+      final mine = controller.text;
+      controller.value = TextEditingValue(
+        text: 'My $mine',
+        selection: TextSelection.collapsed(offset: mine.length + 3),
+      );
+      await tester.pump();
+      expect(tablesIn(controller), 0);
+      await typeByHand(tester, controller, '-- |');
+      expect(controller.text, 'My $header --- |');
+      expect(tablesIn(controller), 0);
+    }, variant: handTyped);
 
     testWidgets('words typed after a table that ends the note stay in sight', (
       tester,

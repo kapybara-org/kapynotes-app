@@ -187,6 +187,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   StreamSubscription<SocketEvent>? _socketEvents;
   Timer? _sendTimer;
   Timer? _retryTimer;
+
+  /// Dismissals sent again on their own, and how many times in a row the
+  /// server has asked them to wait.
+  Timer? _hideRetry;
+  int _hideFailures = 0;
   Timer? _poll;
   bool _foreground = false;
   bool _reconcileScheduled = false;
@@ -670,6 +675,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (personal != null) _state.adoptPersonalSpace(personal.id);
       await _duties(vault);
       _forgetDepartedSpaces();
+      _applyHidden();
       if (_live) {
         _subscribeAll();
       } else if (_socket == null || _socketDown) {
@@ -679,6 +685,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _reconcileDirty();
       await _drain();
       await _tasks?.run();
+      await _sendHidden();
       _failures = 0;
       _state.recordSync(_now());
       _settle();
@@ -1205,7 +1212,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         // Only the owner deletes a shared note for everyone. Anyone else's
         // Delete takes it out of their own notes and is never sent, so it
         // needs no right to edit: a viewer's is dismissed the same way.
-        _notes.dismiss(stone);
+        _notes.dismiss(
+          stone,
+          joinedAt: space.member(_keyring.userId)?.joinedAt,
+        );
         continue;
       }
       if (!space.canEdit) continue;
@@ -2734,6 +2744,87 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     if (!busy) _lostUnsharesChecked[space.id] = space.liveNotes;
   }
 
+  /// Each space's list of the notes this account took out of its own notes,
+  /// so a Delete on one device keeps the note away on all of them, and one
+  /// the server let go of comes back from its history.
+  void _applyHidden() {
+    for (final space in _keyring.spaces) {
+      final hidden = space.hiddenNotes;
+      if (hidden == null || !space.isTeam) continue;
+      _bringBack(_notes.applyHidden(space.id, hidden));
+    }
+  }
+
+  /// Sends the dismissals made on this device until a space's list carries
+  /// them, last in a pass so nothing else waits on them. A server that will
+  /// not take one keeps it on this device alone, as before, and is not asked
+  /// again; one that cannot be reached is asked on the next pass. One made
+  /// under an earlier membership of the space is let go.
+  Future<void> _sendHidden() async {
+    for (final dismissal in _notes.unsentDismissals) {
+      final space = _keyring.byId(dismissal.spaceId);
+      if (space == null) continue;
+      final joined = space.member(_keyring.userId)?.joinedAt;
+      final then = dismissal.joinedAt;
+      // Whole milliseconds, as the dismissal keeps them, whatever precision
+      // the server answers in.
+      if (then != null &&
+          joined != null &&
+          joined.millisecondsSinceEpoch != then.millisecondsSinceEpoch) {
+        final editedAt = _notes.undismissStale(dismissal.noteId, space.id);
+        _bringBack([(id: dismissal.noteId, editedAt: editedAt)]);
+        continue;
+      }
+      try {
+        await _api.hideNote(space.id, dismissal.noteId);
+      } on SyncRefusedException catch (error) {
+        debugPrint('KapyNotes: dismissal not sent: ${error.code}');
+        _notes.keepDismissalLocal(dismissal.noteId);
+      } on SyncTransientException {
+        _retryHidden();
+        return;
+      }
+    }
+    _hideFailures = 0;
+  }
+
+  /// Sends the dismissals again on their own, backing off as the note sync
+  /// does, while the server asks for patience: a pass goes on without them.
+  void _retryHidden() {
+    if (_disposed || _hideRetry != null) return;
+    _hideFailures++;
+    final backoff = minRetry * pow(2, min(_hideFailures - 1, 10)).toDouble();
+    _hideRetry = Timer(backoff > maxRetry ? maxRetry : backoff, () {
+      _hideRetry = null;
+      unawaited(
+        _sendHidden().catchError(
+          (Object error) =>
+              debugPrint('KapyNotes: dismissals not sent: $error'),
+        ),
+      );
+    });
+  }
+
+  /// Renders notes that are no longer kept away from their history, which
+  /// went on arriving while they were.
+  void _bringBack(List<({String id, DateTime? editedAt})> notes) {
+    final personalId = _keyring.personal?.id;
+    for (final (id: noteId, :editedAt) in notes) {
+      final record = _docs.get(noteId);
+      final space = record == null ? null : _keyring.byId(record.spaceId);
+      if (space == null) continue;
+      _render(
+        noteId,
+        _Touched()
+          ..changed = true
+          ..at = editedAt,
+        space: space,
+        storedSpaceId: space.isPersonal ? null : space.id,
+        personalId: personalId,
+      );
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Polling and retries
   // -------------------------------------------------------------------------
@@ -2800,6 +2891,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _notes.removeListener(_onNotesChanged);
     _sendTimer?.cancel();
     _retryTimer?.cancel();
+    _hideRetry?.cancel();
     _presenceExpiryTimer?.cancel();
     _stopPolling();
     _disconnect();
