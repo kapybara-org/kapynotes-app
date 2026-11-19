@@ -1678,6 +1678,24 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
         ),
       ]),
+      _Group('Deleting', [
+        _toggle(
+          'ask-before-deleting-toggle',
+          'Ask before deleting notes',
+          'Deleting several notes at once always asks',
+          value: prefs.askBeforeDeleting,
+          onChanged: (value) => prefs.askBeforeDeleting = value,
+          byDefault: true,
+          keywords: [
+            'delete',
+            'confirm',
+            'confirmation',
+            'warning',
+            'don’t ask again',
+            'remove',
+          ],
+        ),
+      ]),
       if (AppPlatform.isDesktop || _usesPin)
         _Group('Hidden Notes', [
           if (AppPlatform.isDesktop)

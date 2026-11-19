@@ -21,6 +21,7 @@ import 'package:kapy_notes/sync/sync_api.dart' show SyncProtocolException;
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
+import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
@@ -926,6 +927,91 @@ void main() {
       expect(find.text('Manage sharing'), findsOneWidget);
     },
   );
+
+  testWidgets('a note somebody shares with you is removed from your notes, '
+      'and only an editor of it may', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final carol = Device(server, userId: 'user-3', device: 'c');
+    addTearDown(carol.dispose);
+    late Note shared;
+    late Note viewed;
+    late Note own;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      await carol.boot();
+      shared = alice.notes.create(body: 'Edited together');
+      own = bob.notes.create(body: 'Bob alone');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      viewed = carol.notes.create(body: 'Read only');
+      await carol.sync.syncNow();
+      await carol.sharing.shareNoteWith(
+        viewed.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sync.syncNow();
+      await carol.sync.syncNow();
+      await bob.sync.syncNow();
+    });
+
+    Future<void> pumpBob({required bool asks}) async {
+      await tester.pumpWidget(
+        harness(
+          SizedBox(
+            width: 280,
+            child: Sidebar(
+              notes: bob.notes.notes,
+              selectedId: null,
+              query: '',
+              displayTime: (t) => t,
+              onSearch: () {},
+              onSelect: (_) {},
+              onArchive: (_) {},
+              onDelete: (_) {},
+              asksBeforeDeleting: asks,
+              sharing: bob.sharing,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<String?> deleteLabel(Note note) async {
+      await tester.tap(find.text(note.title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      final item = find.byKey(ValueKey('delete-note-${note.id}'));
+      final label = item.evaluate().isEmpty
+          ? null
+          : tester
+                .widget<KapyMenuActionRow>(
+                  find.descendant(
+                    of: item,
+                    matching: find.byType(KapyMenuActionRow),
+                  ),
+                )
+                .action
+                .label;
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      return label;
+    }
+
+    await pumpBob(asks: true);
+    expect(bob.notes.byId(shared.id), isNotNull);
+    expect(await deleteLabel(shared), 'Remove from your notes…');
+    expect(await deleteLabel(own), 'Delete note…');
+    // A viewer can't take it out of their notes, as before.
+    expect(await deleteLabel(viewed), isNull);
+
+    await pumpBob(asks: false);
+    expect(await deleteLabel(shared), 'Remove from your notes');
+  });
 
   group('sidebar tabs', () {
     Widget tabbed(
