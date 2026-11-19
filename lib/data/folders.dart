@@ -757,8 +757,7 @@ class FolderStore extends ChangeNotifier {
   /// the top goes on reading there unwritten. For sync to call once what the
   /// server had is in.
   void prune(int serverNow) {
-    final cutoff =
-        min(_stamp(), serverNow) - deletedFolderKept.inMilliseconds;
+    final cutoff = min(_stamp(), serverNow) - deletedFolderKept.inMilliseconds;
     final gone = {
       for (final MapEntry(:key, value: slot) in _folders.slots.entries)
         if (!slot.deleted &&
@@ -768,10 +767,7 @@ class FolderStore extends ChangeNotifier {
     };
     if (gone.isEmpty) return;
     final nearest = tree._nearest;
-    _repoint({
-      for (final id in gone)
-        if (nearest[id] case final into?) id: into,
-    });
+    _repoint({for (final id in gone) id: ?nearest[id]});
     final now = _stamp();
     for (final id in gone) {
       _folders.delete(id, now);
