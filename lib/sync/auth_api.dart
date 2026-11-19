@@ -92,8 +92,13 @@ class AuthProfileUpdated extends AuthResult {
 
 /// The server said no, and the reason is worth showing.
 class AuthRejected extends AuthResult {
-  const AuthRejected(this.message);
+  const AuthRejected(this.message, {this.status, this.code});
   final String message;
+
+  /// The HTTP status and Better Auth's error code, for a caller that answers
+  /// some refusals in its own words.
+  final int? status;
+  final String? code;
 }
 
 /// Nothing was reached. Distinct from rejection because the answer is "try
@@ -166,11 +171,21 @@ abstract class AuthApi {
   /// need a browser.
   Future<AuthResult> requestPasswordReset(String email);
 
+  /// Sets a new password with a code from [requestPasswordReset]. Without
+  /// [token] the server ends every session of the account, which is how a
+  /// lost device gets signed out. With the session of a device signed in to
+  /// the same account it ends none: that is a password made in Settings.
   Future<AuthResult> resetPassword({
     required String email,
     required String code,
     required String password,
+    String? token,
   });
+
+  /// Whether the account has a password. Accounts are made by emailed code
+  /// without one, and a reset is what adds it, as Better Auth's `credential`
+  /// account. Null when the server could not say.
+  Future<bool?> hasPassword(String token);
 
   /// Exchanges a code for a session. The code proves control of the address,
   /// so this both creates the account and marks the email confirmed.
@@ -241,13 +256,37 @@ class HttpAuthApi implements AuthApi {
     required String email,
     required String code,
     required String password,
+    String? token,
   }) async {
     final response = await _post('api/auth/email-otp/reset-password', {
       'email': email,
       'otp': code,
       'password': password,
-    });
+    }, token: token);
     return response is _Failure ? response.result : const AuthPasswordChanged();
+  }
+
+  @override
+  Future<bool?> hasPassword(String token) async {
+    try {
+      final response = await _client
+          .get(
+            _baseUrl.resolve('api/auth/list-accounts'),
+            headers: {
+              'authorization': 'Bearer $token',
+              'accept': 'application/json',
+            },
+          )
+          .timeout(timeout);
+      if (response.statusCode != 200) return null;
+      final accounts = jsonDecode(response.body);
+      if (accounts is! List) return null;
+      return accounts.any(
+        (account) => account is Map && account['providerId'] == 'credential',
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -405,7 +444,11 @@ class HttpAuthApi implements AuthApi {
     return AuthSignedIn(token, user);
   }
 
-  Future<_Response> _post(String path, Map<String, Object?> payload) async {
+  Future<_Response> _post(
+    String path,
+    Map<String, Object?> payload, {
+    String? token,
+  }) async {
     final http.Response response;
     try {
       response = await _client
@@ -414,6 +457,7 @@ class HttpAuthApi implements AuthApi {
             headers: {
               'content-type': 'application/json',
               'accept': 'application/json',
+              if (token != null) 'authorization': 'Bearer $token',
             },
             body: jsonEncode(payload),
           )
@@ -452,15 +496,23 @@ class HttpAuthApi implements AuthApi {
   /// written for a person, and second-guessing it tends to lose the detail
   /// that would have helped.
   AuthResult _rejection(int status, Map<String, Object?> body) {
-    final code = body['code'];
+    final code = body['code'] is String ? body['code'] as String : null;
     final message = body['message'];
-    if (status == 403 || (code is String && code.contains('VERIFIED'))) {
-      return const AuthRejected(
+    if (status == 403 || (code != null && code.contains('VERIFIED'))) {
+      return AuthRejected(
         'Confirm your email address first. Check your inbox.',
+        status: status,
+        code: code,
       );
     }
-    if (message is String && message.isNotEmpty) return AuthRejected(message);
-    return const AuthRejected('That did not work. Check your details.');
+    if (message is String && message.isNotEmpty) {
+      return AuthRejected(message, status: status, code: code);
+    }
+    return AuthRejected(
+      'That did not work. Check your details.',
+      status: status,
+      code: code,
+    );
   }
 
   void close() => _client.close();

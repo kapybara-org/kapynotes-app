@@ -15,6 +15,7 @@ import '../../sync/key_bundle.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'encryption_pane.dart';
+import 'password_row.dart';
 import 'recovery_key_dialog.dart';
 import 'sign_out_others_row.dart';
 import '../profile_avatar.dart';
@@ -1068,6 +1069,7 @@ class _ReadyState extends State<_Ready> {
               account: account,
               onEdit: () => setState(() => _editing = true),
             ),
+          PasswordRow(account: account),
           SettingsRow(
             key: const ValueKey('sync-status'),
             title: 'Sync',
