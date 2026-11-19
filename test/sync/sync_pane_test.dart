@@ -860,6 +860,7 @@ void main() {
         find.byKey(const ValueKey('new-password')),
         'a new password',
       );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('password-continue')));
       await tester.pumpAndSettle();
 

@@ -86,7 +86,6 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   bool _codeSent = false;
   bool _busy = false;
   String? _problem;
-  final _problemShown = GlobalKey();
 
   String get _email => maskedEmail(widget.account.user?.email ?? '');
 
@@ -107,17 +106,6 @@ class _PasswordDialogState extends State<_PasswordDialog> {
     setState(() {
       _busy = false;
       _problem = problem == null ? null : passwordProblemText(problem);
-    });
-    if (problem == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final shown = _problemShown.currentContext;
-      if (shown == null) return;
-      unawaited(
-        Scrollable.ensureVisible(
-          shown,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
-        ),
-      );
     });
   }
 
@@ -151,7 +139,6 @@ class _PasswordDialogState extends State<_PasswordDialog> {
     final problemLine = problem == null
         ? null
         : Padding(
-            key: _problemShown,
             padding: EdgeInsets.only(
               top: _codeSent ? 0 : 10,
               bottom: _codeSent ? 10 : 0,
