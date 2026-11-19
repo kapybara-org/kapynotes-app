@@ -39,8 +39,10 @@ class _SpeechConsentSheet extends StatelessWidget {
             children: [
               Text(
                 'To transcribe a recording, Kapy Notes sends its audio through '
-                "our server and OpenRouter to Microsoft's MAI-Transcribe 2. "
-                'Kapy Notes does not store the uploaded audio on its server.',
+                "our server and OpenRouter to Microsoft's MAI-Transcribe 2, or, "
+                "when that model is busy or unavailable, to NVIDIA's Nemotron "
+                '3.5 Transcribe. Kapy Notes does not store the uploaded audio on '
+                'its server.',
                 style: TextStyle(color: palette.textPrimary, height: 1.45),
               ),
               const SizedBox(height: 12),
