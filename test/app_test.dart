@@ -5435,17 +5435,20 @@ void main() {
       );
     });
 
-    testWidgets('the ordinary list offers no delete at all', (tester) async {
+    testWidgets('the ordinary list has no Delete all: a note is deleted from '
+        'its own menu', (tester) async {
       await pumpApp(tester);
       notes.create();
       notes.updateBody(notes.notes.first.id, 'Keep me');
       await tester.pumpAndSettle();
 
       final note = notes.notes.single;
-      expect(find.byKey(ValueKey('delete-note-${note.id}')), findsNothing);
       expect(find.byKey(const ValueKey('archive-delete-all')), findsNothing);
       final mouse = await hoverNote(tester, note.id);
       expect(find.byKey(ValueKey('note-actions-${note.id}')), findsOneWidget);
+      await tester.tap(find.byKey(ValueKey('note-actions-${note.id}')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('delete-note-${note.id}')), findsOneWidget);
       await mouse.removePointer();
     });
   });
@@ -5894,6 +5897,47 @@ void main() {
       );
       expect(field.focusNode.hasFocus, isTrue);
     });
+
+    for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+      testWidgets('a long press on a row in the drawer offers Delete note…, '
+          'which asks first (${platform.name})', (tester) async {
+        store.data['notes.v1'] = [
+          {
+            'id': 'first',
+            'body': 'First note',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+          {
+            'id': 'second',
+            'body': 'Second note',
+            'createdAt': 2000,
+            'updatedAt': 2000,
+          },
+        ];
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpApp(tester, size: const Size(420, 800));
+        await tester.tap(notesToggleWithLabel('Show notes'));
+        await tester.pumpAndSettle();
+
+        await tester.longPress(find.widgetWithText(NoteRow, 'First note'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('delete-note-first')));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete note?'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('delete-stop-asking')),
+          findsOneWidget,
+        );
+        expect(notes.byId('first'), isNotNull);
+
+        await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+        await tester.pumpAndSettle();
+        expect(notes.byId('first'), isNull);
+        expect(notes.tombstones, hasLength(1));
+      });
+    }
 
     testWidgets('archive and hidden folders never raise a keyboard in drawer', (
       tester,

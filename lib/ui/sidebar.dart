@@ -119,6 +119,7 @@ class Sidebar extends StatelessWidget {
     this.archiveMode = false,
     this.hiddenMode = false,
     this.onDelete,
+    this.asksBeforeDeleting = true,
     this.onDeleteAll,
     this.selecting = false,
     this.checkedIds = const {},
@@ -221,8 +222,13 @@ class Sidebar extends StatelessWidget {
   final bool archiveMode;
   final bool hiddenMode;
 
-  /// Throws one note away for good. Only ever supplied in the archive.
+  /// Throws one note away for good, or takes one somebody else shares out of
+  /// the reader's notes.
   final ValueChanged<String>? onDelete;
+
+  /// Whether [onDelete] asks first, which its menu item says with an
+  /// ellipsis.
+  final bool asksBeforeDeleting;
 
   /// Empties the archive.
   final VoidCallback? onDeleteAll;
@@ -468,6 +474,20 @@ extension on Sidebar {
   /// only where the space says so. The row's rule, and the keyboard's.
   bool _mayEdit(Note note) => sharing?.canEdit(note) ?? !note.isShared;
 
+  /// What a row's delete says it does. A note somebody else owns only leaves
+  /// the reader's notes, as the question that follows says; their own goes
+  /// for good, which the archive spells out beside Restore. The ellipsis is
+  /// the question, and goes with it.
+  String _deleteLabel(Note note) {
+    final space = sharing?.spaceOf(note);
+    final label = space != null && space.isTeam && !space.isOwner
+        ? 'Remove note'
+        : _specialMode
+        ? 'Delete permanently'
+        : 'Delete note';
+    return asksBeforeDeleting ? '$label…' : label;
+  }
+
   /// The note a keypress acts on: the highlighted one, as long as the list on
   /// screen is really showing it. A selection a search has filtered out, or
   /// one left behind in the other list, is not what the reader is looking at
@@ -492,8 +512,8 @@ extension on Sidebar {
   }
 
   /// Throws it away for good, or throws away every ticked note while the
-  /// archive is picking them. The archive only — the list has no permanent
-  /// delete to lend a key — and every path through here asks first.
+  /// archive is picking them. Archive and Hidden Notes only: in the list the
+  /// key files the note away instead, which keeps it.
   VoidCallback? get _deleteSelected {
     if (!_specialMode) return null;
     if (selecting) {
@@ -572,9 +592,10 @@ extension on Sidebar {
     onUnhide: !hiddenMode || onUnhide == null || !_mayEdit(note)
         ? null
         : () => onUnhide!(note.id),
-    onDelete: !_specialMode || onDelete == null || !_mayEdit(note)
+    onDelete: onDelete == null || !_mayEdit(note)
         ? null
         : () => onDelete!(note.id),
+    deleteLabel: _deleteLabel(note),
     selecting: selecting,
     checked: checkedIds.contains(note.id),
     onToggleChecked: onToggleChecked == null
@@ -973,8 +994,8 @@ class _NoteListKeys extends StatefulWidget {
   /// where nothing in the list can be archived.
   final VoidCallback? onArchiveSelected;
 
-  /// Throws it away for good: the archive only, and behind the confirmation
-  /// the button there already asks for.
+  /// Throws it away for good: Archive and Hidden Notes only, behind the
+  /// question the menu item asks, unless the reader said not to ask.
   final VoidCallback? onDeleteSelected;
 
   /// The one press that removes the highlighted note: the same shortcut the
@@ -1044,9 +1065,13 @@ class _NoteListKeysState extends State<_NoteListKeys> {
         !keyboard.isShiftPressed;
   }
 
+  /// Not past a question the press put on screen: the dialog has the
+  /// keyboard until it is answered, and hands it back here itself.
   void _keepFocus() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _node.requestFocus();
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _node.requestFocus();
+      }
     });
   }
 
@@ -1070,11 +1095,13 @@ class _NoteListKeysState extends State<_NoteListKeys> {
 
     if (!_removes(event)) return KeyEventResult.ignored;
 
-    // The archive's delete puts a question on screen, and that dialog hands
-    // the keyboard back to this list itself once it is answered.
+    // A delete that asks first leaves the keyboard to its question; one the
+    // reader told not to ask goes at once, and the next note's editor must
+    // not take the keyboard for the next press.
     final delete = widget.onDeleteSelected;
     if (delete != null) {
       delete();
+      _keepFocus();
       return KeyEventResult.handled;
     }
 
@@ -2473,6 +2500,7 @@ class NoteRow extends StatefulWidget {
     this.onHide,
     this.onUnhide,
     this.onDelete,
+    this.deleteLabel = 'Delete note…',
     this.onTogglePin,
     this.archiveShortcut,
     this.pinned = false,
@@ -2514,9 +2542,12 @@ class NoteRow extends StatefulWidget {
   final VoidCallback? onHide;
   final VoidCallback? onUnhide;
 
-  /// Throws the note away for good. Only ever offered inside the archive:
-  /// everywhere else the way out of the list is [onArchive], which keeps it.
+  /// Throws the note away for good, or takes one somebody else shares out of
+  /// the reader's notes.
   final VoidCallback? onDelete;
+
+  /// What [onDelete]'s menu item says.
+  final String deleteLabel;
   final VoidCallback? onTogglePin;
 
   /// The chord that archives the open note, named in the menu beside the
@@ -2617,14 +2648,6 @@ class _NoteRowState extends State<NoteRow> {
           label: 'Move to Hidden Notes',
           icon: hiddenIcon,
         ),
-      if (widget.onDelete != null)
-        KapyMenuAction(
-          value: 'delete',
-          label: 'Delete permanently',
-          icon: deleteIcon,
-          hint: archiveShortcut?.displayLabel,
-          destructive: true,
-        ),
       if (widget.onRestore != null)
         const KapyMenuAction(
           value: 'restore',
@@ -2637,15 +2660,24 @@ class _NoteRowState extends State<NoteRow> {
           label: 'Move to Notes',
           icon: unhideIcon,
         ),
-      // Filing a note away is the destructive end of the ordinary note menu:
-      // keep it last, after the protected-folder alternative, and use the
-      // same warning colour as the permanent action in Archived Notes.
+      // The ways out of the list end the menu, in the warning colour, the one
+      // that keeps the note before the one that does not. The shortcut is
+      // named on whichever of them it does: archiving in the list, deleting
+      // where the note is already archived or hidden.
       if (widget.onArchive != null)
         KapyMenuAction(
           value: 'archive',
           label: 'Archive note',
           icon: archiveIcon,
           hint: archiveShortcut?.displayLabel,
+          destructive: true,
+        ),
+      if (widget.onDelete != null)
+        KapyMenuAction(
+          value: 'delete',
+          label: widget.deleteLabel,
+          icon: deleteIcon,
+          hint: widget.onArchive == null ? archiveShortcut?.displayLabel : null,
           destructive: true,
         ),
     ];

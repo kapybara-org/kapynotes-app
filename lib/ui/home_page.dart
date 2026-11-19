@@ -1780,16 +1780,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       action: 'View',
       onAction: () => _viewArchived(id),
     );
-    if (!archivingSelected) return;
-    // Its pane closed with it, and the pane beside it has the focus. Opening
-    // the next note in the list there would take the place of a note the
-    // reader chose to keep on screen.
+    if (archivingSelected) _openInPlaceOf(index, closesPane: closesPane);
+  }
+
+  /// Opens what takes the place of the open note, which has just left the
+  /// list from [index] of the store's notes: archived, hidden or deleted.
+  ///
+  /// In a split its pane closed with it, and the pane beside it has the
+  /// focus: opening the next note in the list there would take the place of
+  /// a note the reader chose to keep on screen. Otherwise the next one down.
+  void _openInPlaceOf(int index, {required bool closesPane}) {
     if (closesPane) {
       widget.prefs.lastOpenedNoteId = _selectedId;
       _focusSelectedEditorHere();
       return;
     }
-
     final next = _successorInList(index);
     setState(() => _setSelectedId(next));
     widget.prefs.lastOpenedNoteId = next;
@@ -1869,17 +1874,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? 'Choose Hidden in the notes filter to find it.'
         : 'Show it from Settings to find it.';
     Toast.show(context, 'Moved to Hidden Notes. $discovery', icon: hiddenIcon);
-    if (!hidingSelected) return;
-    if (closesPane) {
-      widget.prefs.lastOpenedNoteId = _selectedId;
-      _focusSelectedEditorHere();
-      return;
-    }
-    final next = _successorInList(index);
-    setState(() => _setSelectedId(next));
-    widget.prefs.lastOpenedNoteId = next;
-    if (_usesCompactLayout && next == null) _scheduleInitialNote();
-    _focusSelectedEditorAtEnd();
+    if (hidingSelected) _openInPlaceOf(index, closesPane: closesPane);
   }
 
   void _unhideNote(String id) {
@@ -1911,28 +1906,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Throws one archived note away for good.
+  /// Throws one note away for good.
   ///
   /// Guarded by a question, because nothing here can undo it: the note leaves
   /// this device and, through the tombstone, every other one it syncs to. A
   /// note somebody else shares with this account only leaves its own notes.
+  /// The question offers not to be asked again, and Settings asks it again.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
     if (note == null || !_canEditNote(note)) return;
     _recordKapyActivity();
-    final title = note.title.trim();
-    final name = title.isEmpty ? 'this note' : '"$title"';
     final owner = _sharedBy(note);
-    final confirmed = await _confirmDelete(
-      title: owner == null ? 'Delete note?' : 'Remove from your notes?',
-      body: owner == null
-          ? 'Permanently deletes $name from every synced device.'
-          : 'Removes $name from your notes, and from your other devices '
-                'once they are up to date. $owner and '
-                "everyone it's shared with keep it.",
-      action: owner == null ? 'Delete' : 'Remove',
-    );
-    if (!confirmed || !mounted) return;
+    if (widget.prefs.askBeforeDeleting) {
+      final title = note.title.trim();
+      final name = title.isEmpty ? 'this note' : '"$title"';
+      final confirmed = await _confirmDelete(
+        title: owner == null ? 'Delete note?' : 'Remove from your notes?',
+        body: owner == null
+            ? 'Permanently deletes $name from every synced device.'
+            : 'Removes $name from your notes, and from your other devices '
+                  'once they are up to date. $owner and '
+                  "everyone it's shared with keep it.",
+        action: owner == null ? 'Delete' : 'Remove',
+        canStopAsking: true,
+      );
+      if (!confirmed || !mounted) return;
+    }
     _forget([id]);
     if (owner == null) {
       _announceDeleted(1);
@@ -2044,13 +2043,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     }
     final losingSelected = removing.contains(_selectedId);
+    final index = losingSelected
+        ? widget.notes.activeIndexOf(_selectedId!)
+        : -1;
+    final closesPane = !_usesCompactLayout && _workspace.isSplit;
     widget.notes.deleteAll(removing);
     setState(() {
       _checkedArchived.removeAll(removing);
       if (_checkedArchived.isEmpty) _selectingArchived = false;
-      if (losingSelected) _setSelectedId(_visibleNotes.firstOrNull?.id);
+      if (losingSelected && _specialMode) {
+        _setSelectedId(_visibleNotes.firstOrNull?.id);
+      }
     });
-    if (losingSelected) widget.prefs.lastOpenedNoteId = _selectedId;
+    if (losingSelected && _specialMode) {
+      widget.prefs.lastOpenedNoteId = _selectedId;
+    } else if (losingSelected) {
+      _openInPlaceOf(index, closesPane: closesPane);
+    }
     // The notes are gone, so their attachments have no owner. See
     // [NotesStore.sweepBlobs] for why this is the only place that counts.
     unawaited(widget.notes.sweepBlobs());
@@ -2070,24 +2079,57 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// One question, asked the same way every time, with the destructive answer
   /// marked as one.
+  ///
+  /// [canStopAsking] adds "Don’t ask again", for one note at a time only.
+  /// Ticked, it counts once the answer is yes; deleting several notes at once
+  /// always asks.
   Future<bool> _confirmDelete({
     required String title,
     required String body,
     required String action,
+    bool canStopAsking = false,
   }) async {
+    var stopAsking = false;
     final answer = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
-          child: Text(
-            body,
-            style: TextStyle(
-              fontSize: AppTypeScale.control,
-              color: context.palette.textPrimary,
-              height: 1.4,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                body,
+                style: TextStyle(
+                  fontSize: AppTypeScale.control,
+                  color: context.palette.textPrimary,
+                  height: 1.4,
+                ),
+              ),
+              if (canStopAsking) ...[
+                const SizedBox(height: 10),
+                StatefulBuilder(
+                  builder: (context, setState) => CheckboxListTile(
+                    key: const ValueKey('delete-stop-asking'),
+                    value: stopAsking,
+                    onChanged: (value) =>
+                        setState(() => stopAsking = value ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      'Don’t ask again',
+                      style: TextStyle(
+                        fontSize: AppTypeScale.control,
+                        color: context.palette.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         actions: [
@@ -2106,7 +2148,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ],
       ),
     );
-    return answer ?? false;
+    final confirmed = answer ?? false;
+    if (confirmed && stopAsking) widget.prefs.askBeforeDeleting = false;
+    return confirmed;
   }
 
   void _toggleChecked(String id) {
@@ -3359,6 +3403,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             archiveMode: _archiveMode,
                             hiddenMode: _hiddenMode,
                             onDelete: _deleteNote,
+                            asksBeforeDeleting: widget.prefs.askBeforeDeleting,
                             onDeleteAll: () => unawaited(_deleteAllArchived()),
                             selecting: _selectingArchived,
                             checkedIds: _checkedArchived,
@@ -3830,6 +3875,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       archiveMode: _archiveMode,
                       hiddenMode: _hiddenMode,
                       onDelete: _deleteNote,
+                      asksBeforeDeleting: widget.prefs.askBeforeDeleting,
                       onDeleteAll: () => unawaited(_deleteAllArchived()),
                       selecting: _selectingArchived,
                       checkedIds: _checkedArchived,

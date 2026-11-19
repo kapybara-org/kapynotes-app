@@ -247,6 +247,47 @@ void main() {
     });
   });
 
+  testWidgets('Notes asks before deleting again after "Don’t ask again"', (
+    tester,
+  ) async {
+    prefs.askBeforeDeleting = false;
+    await _open(tester, section: SettingsSection.notes);
+
+    final toggle = find.byKey(const ValueKey('ask-before-deleting-toggle'));
+    await tester.scrollUntilVisible(
+      toggle,
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(
+      find.descendant(
+        of: toggle,
+        matching: find.text('Ask before deleting notes'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: toggle,
+        matching: find.text('Deleting several notes at once always asks'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<SettingsSwitch>(
+            find.descendant(of: toggle, matching: find.byType(SettingsSwitch)),
+          )
+          .value,
+      isFalse,
+    );
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.askBeforeDeleting, isTrue);
+    expect(store.data['askBeforeDeleting.v1'], isTrue);
+  });
+
   group('Hidden Notes', () {
     testWidgets('the switch moved to Notes and still shows the folder', (
       tester,
