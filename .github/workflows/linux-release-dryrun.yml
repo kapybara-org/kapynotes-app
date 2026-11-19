@@ -1,0 +1,169 @@
+# TEMPORARY dry run of the Linux release jobs, never merged. Runs the release
+# workflow's linux job verbatim, then the checks linux-publish makes, with the
+# uploads replaced by echo. No secrets are read and nothing is published.
+name: Linux release dry run
+on:
+  push:
+    branches: ['tmp/linux-release-dryrun-2']
+permissions:
+  contents: read
+env:
+  FLUTTER_VERSION: '3.47.2'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          version="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
+          build="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f2)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+  linux:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # apt-mirrors.sh gives apt a fallback mirror list and retries. deb-src
+      # for the mirrors the packages come from, so package.sh can fetch the
+      # source of each library it bundles at the version installed.
+      - name: Install build dependencies
+        run: |
+          sudo sh .github/apt-mirrors.sh
+          sed -n 's/^deb /deb-src /p' /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/deb-src.list
+          grep -q '^deb-src ' /etc/apt/sources.list.d/deb-src.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libayatana-appindicator3-dev libsecret-1-dev \
+            libpulse-dev make xz-utils curl zip \
+            patchelf dpkg-dev file desktop-file-utils appstream
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - if: matrix.arch == 'x86_64'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - if: matrix.arch == 'aarch64'
+        uses: actions/cache@v4
+        with:
+          path: ~/flutter
+          key: flutter-${{ env.FLUTTER_VERSION }}-linux-arm64
+
+      - name: Install Flutter from its release tag
+        if: matrix.arch == 'aarch64'
+        run: |
+          if [ ! -x "$HOME/flutter/bin/flutter" ]; then
+            git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$HOME/flutter"
+          fi
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          "$HOME/flutter/bin/flutter" --disable-analytics
+          "$HOME/flutter/bin/flutter" precache --linux
+
+      - run: flutter pub get
+
+      - uses: actions/cache@v4
+        with:
+          path: build/linux/ffmpeg/${{ matrix.arch }}
+          key: linux-ffmpeg-${{ matrix.runner }}-${{ hashFiles('packaging/linux/build_ffmpeg.sh') }}
+
+      # SOURCE_ARCHIVE adds KapyNotes-<version>-linux-<arch>-source.tar: the
+      # complete source of the GPL and LGPL parts of the three packages, which
+      # their notices point to. See packaging/linux/package.sh.
+      - name: Build Linux packages
+        env:
+          FLUTTER: flutter
+          SOURCE_ARCHIVE: '1'
+        run: packaging/release.sh linux
+
+      # release.sh leaves the Dart symbols under build/release/symbols/
+      # <version>/linux-<arch>; zipped here so linux-publish can attach them.
+      - name: Bundle the Dart symbols
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          cd "build/release/symbols/$VERSION"
+          zip -qr "../../KapyNotes-$VERSION-symbols-linux-$ARCH.zip" "linux-$ARCH"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-*.deb
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-${{ matrix.arch }}.AppImage
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-linux-${{ matrix.arch }}-source.tar
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-symbols-linux-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  linux-publish-dry:
+    needs: [verify, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: linux-*
+          path: dist
+          merge-multiple: true
+      - name: What linux-publish would upload
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          BUILD: ${{ needs.verify.outputs.build }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ls -l dist
+          packages=(dist/KapyNotes-"$VERSION"-linux-*.tar.gz dist/KapyNotes-"$VERSION"-*.deb dist/KapyNotes-"$VERSION"-*.AppImage)
+          sources=(dist/KapyNotes-"$VERSION"-linux-*-source.tar)
+          if [ "${#packages[@]}" -ne 6 ] || [ "${#sources[@]}" -ne 2 ]; then
+            echo "::error::expected six Linux packages and two source archives, found ${packages[*]} ${sources[*]}"
+            exit 1
+          fi
+          for file in "${sources[@]}" "${packages[@]}"; do
+            case "$file" in
+              *.tar)      type=application/x-tar ;;
+              *.tar.gz)   type=application/gzip ;;
+              *.deb)      type=application/vnd.debian.binary-package ;;
+              *.AppImage) type=application/vnd.appimage ;;
+            esac
+            echo "would put downloads/${file#dist/} ($type, $(stat -c %s "$file") bytes)"
+          done
+          echo "would attach to the release:"; ls dist/KapyNotes-"$VERSION"-*
+          cat > latest-linux.json <<JSON
+          {
+            "version": "$VERSION",
+            "build": $BUILD,
+            "notesUrl": "https://kapynotes.com/changelog/$VERSION",
+            "publishedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+            "downloadUrl": "https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION"
+          }
+          JSON
+          python3 -c 'import json; m=json.load(open("latest-linux.json")); assert m["version"] and isinstance(m["build"], int) and m["downloadUrl"].startswith("https://"), m'
+          cat latest-linux.json
+      - name: The source archives
+        run: |
+          set -euo pipefail
+          for s in dist/*-source.tar; do echo "== $s"; tar -tf "$s" | head -20; tar -tf "$s" | wc -l; done
