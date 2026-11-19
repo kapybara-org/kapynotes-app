@@ -45,6 +45,8 @@
 		C1A0B0060000000000000002 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0060000000000000001 /* Transcription.swift */; };
 		C1A0B0080000000000000002 /* AudioDecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0080000000000000001 /* AudioDecode.swift */; };
 		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
+		C1A0B0320000000000000002 /* MenuBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0320000000000000001 /* MenuBarPanel.swift */; };
+		C1A0B0330000000000000002 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0330000000000000001 /* MenuBarIcon.swift */; };
 		C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* AccessibilityText.swift */; };
 		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
 		C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00D0000000000000001 /* AppUpdater.swift */; };
@@ -143,6 +145,8 @@
 		C1A0B0060000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
 		C1A0B0080000000000000001 /* AudioDecode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDecode.swift; sourceTree = "<group>"; };
 		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
+		C1A0B0320000000000000001 /* MenuBarPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanel.swift; sourceTree = "<group>"; };
+		C1A0B0330000000000000001 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		C1A0B00B0000000000000001 /* AccessibilityText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityText.swift; sourceTree = "<group>"; };
 		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
 		C1A0B00D0000000000000001 /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
@@ -282,6 +286,8 @@
 				A11C10F02044A3C60003C045 /* LoginItem.swift */,
 				A11C10F02044A3C60003C046 /* WindowMaterial.swift */,
 				C1A0B0090000000000000001 /* WindowPin.swift */,
+				C1A0B0330000000000000001 /* MenuBarIcon.swift */,
+				C1A0B0320000000000000001 /* MenuBarPanel.swift */,
 				D5F1EC0A0000000000000001 /* FileKeychain.swift */,
 				C1A0B00C0000000000000001 /* SystemRegion.swift */,
 				C1A0B00D0000000000000001 /* AppUpdater.swift */,
@@ -690,6 +696,8 @@
 				A11C10F12044A3C60003C045 /* LoginItem.swift in Sources */,
 				A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */,
 				C1A0B0090000000000000002 /* WindowPin.swift in Sources */,
+				C1A0B0330000000000000002 /* MenuBarIcon.swift in Sources */,
+				C1A0B0320000000000000002 /* MenuBarPanel.swift in Sources */,
 				D5F1EC0A0000000000000002 /* FileKeychain.swift in Sources */,
 				C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */,
 				C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */,

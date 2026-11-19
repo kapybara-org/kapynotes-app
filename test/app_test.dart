@@ -1821,8 +1821,9 @@ void main() {
           .widget<Text>(find.byKey(const ValueKey('note-total')))
           .textSpan!
           .toPlainText(),
-      'Total: 64',
-      reason: 'dinner * 3 is worked out from dinner, so it is not added again',
+      'Total: 192',
+      reason:
+          'dinner * 3 takes dinner as its base, so dinner is not added again',
     );
     expect(settingsAffordance(), findsOneWidget);
     // Note identity stays in the note list instead of being repeated in the

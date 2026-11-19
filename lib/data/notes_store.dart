@@ -66,6 +66,12 @@ class NotesStore extends ChangeNotifier {
   /// owns; with it, only the note actually edited is re-encoded.
   final Map<String, ({Note note, Map<String, Object?> json})> _encoded = {};
 
+  /// Notes marked synced whose edit is still only in an outbox in memory.
+  /// They are written down as unsynced until [outboxWritten], so a crash
+  /// between the two writes leaves the edit to be absorbed again on the next
+  /// launch rather than lost.
+  final Set<String> _unwritten = {};
+
   /// Where image bytes live.
   ///
   /// Held here because the store is the only thing that knows the whole set of
@@ -847,6 +853,16 @@ class NotesStore extends ChangeNotifier {
     return kept;
   }
 
+  /// Forgets deletions of this device's that never went up, because a later
+  /// edit from somebody else won over them.
+  void dropTombstones(List<Tombstone> stones) {
+    final keys = {for (final s in stones) _stoneKey(s.spaceId, s.id)};
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => !keys.contains(_stoneKey(s.spaceId, s.id))),
+    );
+    _persist();
+  }
+
   /// Shared notes this account took out of its own notes without deleting
   /// them for everyone, by id, with the space each was in.
   Map<String, String> get _dismissed => {
@@ -888,6 +904,20 @@ class NotesStore extends ChangeNotifier {
   // -------------------------------------------------------------------------
   // Sync
   // -------------------------------------------------------------------------
+
+  /// Marks [notes] synced once sync has taken their edits into an outbox that
+  /// is not on disk yet.
+  void markAbsorbed(List<Note> notes) {
+    _unwritten.addAll(notes.map((note) => note.id));
+    markSynced(notes: notes);
+  }
+
+  /// The outbox holding these notes' edits is on disk.
+  void outboxWritten(Set<String> ids) {
+    final before = _unwritten.length;
+    _unwritten.removeAll(ids);
+    if (_unwritten.length != before) _persist();
+  }
 
   /// Records that the server accepted these exact revisions.
   ///
@@ -1020,9 +1050,11 @@ class NotesStore extends ChangeNotifier {
         // about the note where it is now.
         if (local.spaceId != incoming.spaceId) {
           // Nothing to remove, but the record still travels.
-        } else if (local.updatedAt.isAfter(incoming.deletedAt)) {
+        } else if (local.isDirty &&
+            local.updatedAt.isAfter(incoming.deletedAt)) {
           // A local edit newer than the remote delete resurrects the note; it
-          // is still dirty, so the next push sends it back up.
+          // is still dirty, so the next push sends it back up. A clean copy
+          // goes whatever its clock says.
           continue;
         } else {
           removed.add(index);
@@ -1110,6 +1142,20 @@ class NotesStore extends ChangeNotifier {
       hiddenAt: local.hiddenAt,
     );
     _notes = List.unmodifiable([copy, ..._notes]);
+    _persist();
+    return copy;
+  }
+
+  /// A shared note this device can no longer write to: replaced here by a
+  /// personal note with the same words, as [forgetSpace] keeps unsynced
+  /// edits. The shared one stays on the server for whoever can still open
+  /// it, so no tombstone is left for it.
+  Note? keepAsOwn(String id) {
+    final note = byId(id);
+    if (note == null || note.spaceId == null) return null;
+    final copy = keepCopy(note);
+    _notes = List.unmodifiable(_notes.where((n) => n.id != id));
+    _encoded.remove(id);
     _persist();
     return copy;
   }
@@ -1299,6 +1345,10 @@ class NotesStore extends ChangeNotifier {
     final encoded = List<Object?>.filled(_notes.length, null);
     for (var i = 0; i < _notes.length; i++) {
       final note = _notes[i];
+      if (_unwritten.contains(note.id)) {
+        encoded[i] = note.toJson()..remove('syncedAt');
+        continue;
+      }
       final cached = _encoded[note.id];
       if (cached != null && identical(cached.note, note)) {
         encoded[i] = cached.json;

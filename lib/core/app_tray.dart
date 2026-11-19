@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:tray_manager/tray_manager.dart';
 
 import 'platform.dart';
@@ -15,23 +16,38 @@ class AppTray with TrayListener {
   AppTray({
     required this.onOpen,
     required this.onNewNote,
+    required this.onNewTask,
+    required this.onSettings,
     required this.onQuit,
+    required this.onClick,
   });
 
   /// Bring the window forward. Also what a Windows tray click means.
   final VoidCallback onOpen;
   final VoidCallback onNewNote;
+  final VoidCallback onNewTask;
+  final VoidCallback onSettings;
   final VoidCallback onQuit;
+
+  /// A plain click on the macOS menu bar item: opens or closes the menu bar
+  /// panel and answers true, or answers false for the menu to open instead.
+  final Future<bool> Function() onClick;
 
   static const String _openKey = 'open';
   static const String _newNoteKey = 'new-note';
+  static const String _newTaskKey = 'new-task';
+  static const String _settingsKey = 'settings';
   static const String _quitKey = 'quit';
 
   /// Windows draws the notification area from an .ico and picks the size it
   /// wants out of it; macOS is handed one template image and tints it.
   static const String _icon = 'assets/branding/kapynotes_tray_windows.ico';
-  static const String _templateIcon =
+  static const String templateIcon =
       'assets/branding/kapynotes_tray_macos.png';
+
+  /// The icon's own button, which takes a press through accessibility
+  /// (macos/Runner/MenuBarIcon.swift). tray_manager only hears the mouse.
+  static const MethodChannel _button = MethodChannel('kapynotes/menubar_icon');
 
   bool _visible = false;
 
@@ -40,24 +56,26 @@ class AppTray with TrayListener {
   /// Never throws. A tray is a convenience, and a host that refuses one —
   /// a Windows session with the notification area locked down, a macOS menu
   /// bar with no room left — must not take the app down with it.
-  Future<void> setVisible(bool visible) async {
+  Future<void> setVisible(bool visible, {String toolTip = 'Kapy Notes'}) async {
     if (visible == _visible) return;
     _visible = visible;
 
     try {
       if (!visible) {
         trayManager.removeListener(this);
+        if (AppPlatform.isMacOS) _button.setMethodCallHandler(null);
         await trayManager.destroy();
         return;
       }
 
       trayManager.addListener(this);
       await trayManager.setIcon(
-        AppPlatform.isMacOS ? _templateIcon : _icon,
+        AppPlatform.isMacOS ? templateIcon : _icon,
         isTemplate: true,
       );
-      await trayManager.setToolTip('Kapy Notes');
+      await trayManager.setToolTip(toolTip);
       await trayManager.setContextMenu(_menu());
+      if (AppPlatform.isMacOS) unawaited(_takePresses());
     } catch (error, stack) {
       // Leaves the flag where the caller asked for it: a second attempt is
       // the user toggling the setting again, which should retry rather than
@@ -78,22 +96,55 @@ class AppTray with TrayListener {
     items: [
       MenuItem(key: _openKey, label: 'Open Kapy Notes'),
       MenuItem(key: _newNoteKey, label: 'New Note'),
-      MenuItem.separator(),
+      if (AppPlatform.isMacOS) ...[
+        MenuItem(key: _newTaskKey, label: 'New Task'),
+        MenuItem.separator(),
+        MenuItem(key: _settingsKey, label: 'Settings…'),
+      ] else
+        MenuItem.separator(),
       // Always last, always present. This is the only way out of an app whose
       // window closes to the tray, so nothing may ever hide it.
       MenuItem(key: _quitKey, label: 'Quit Kapy Notes'),
     ],
   );
 
+  /// Changes what the icon says on hover, while it is showing.
+  Future<void> setToolTip(String toolTip) async {
+    if (!_visible) return;
+    try {
+      await trayManager.setToolTip(toolTip);
+    } catch (_) {
+      // Only the hover text; the icon itself is unaffected.
+    }
+  }
+
   @override
   void onTrayIconMouseDown() {
     // A Windows tray icon opens its app on click and its menu on right-click.
-    // A macOS menu bar item opens its menu either way.
+    // A macOS menu bar item opens the menu bar panel on click, and its menu on
+    // right-click, ⌃-click, or wherever there is no panel.
     if (AppPlatform.isMacOS) {
-      unawaited(_showMenu());
+      unawaited(_click());
       return;
     }
     onOpen();
+  }
+
+  /// A press on the icon through accessibility is a click on it.
+  Future<void> _takePresses() async {
+    _button.setMethodCallHandler((call) async {
+      if (call.method == 'pressed') await _click();
+    });
+    try {
+      await _button.invokeMethod<bool>('takePresses');
+    } on MissingPluginException {
+      // No native side, as under flutter test: only the mouse opens it.
+    }
+  }
+
+  Future<void> _click() async {
+    if (await onClick()) return;
+    await _showMenu();
   }
 
   @override
@@ -126,6 +177,10 @@ class AppTray with TrayListener {
         onOpen();
       case _newNoteKey:
         onNewNote();
+      case _newTaskKey:
+        onNewTask();
+      case _settingsKey:
+        onSettings();
       case _quitKey:
         onQuit();
     }

@@ -327,60 +327,73 @@ void main() {
     });
   }
 
-  testWidgets('on a phone the index opens with one quiet row for the '
-      'changelog, and no card', (tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    tester.view.physicalSize = const Size(400, 860);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final store = _MemoryStore();
-    final notes = NotesStore(store);
-    await notes.load();
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: KapyTheme.dark(),
-        home: Scaffold(
-          body: SettingsDialog(
-            layoutPrefs: LayoutPrefs(store),
-            shortcuts: ShortcutPrefs(store)..load(),
-            rates: RatesRepository(store),
-            notes: notes,
-            updates: _checker(store),
-            asSheet: true,
+  // main.dart builds no UpdateChecker on a phone, so Settings gets updates:
+  // null there. The row must not depend on one.
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on ${platform.name}, with no update checker, the index opens '
+        'with one quiet row for the changelog, and nothing to update', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      PackageInfo.setMockInitialValues(
+        appName: 'Kapy Notes',
+        packageName: 'com.kapybara.kapynotes',
+        version: '1.0.0',
+        buildNumber: '1',
+        buildSignature: '',
+      );
+      tester.view.physicalSize = const Size(400, 860);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = _MemoryStore();
+      final notes = NotesStore(store);
+      await notes.load();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: SettingsDialog(
+              layoutPrefs: LayoutPrefs(store),
+              shortcuts: ShortcutPrefs(store)..load(),
+              rates: RatesRepository(store),
+              notes: notes,
+              asSheet: true,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final row = find.byKey(const ValueKey('settings-whats-new-row'));
-    expect(find.text("What's new in 1.0.0"), findsOneWidget);
-    expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
-    expect(
-      tester.getTopLeft(row).dy,
-      lessThan(tester.getTopLeft(find.byType(TextField).first).dy),
-      reason: 'above the search',
-    );
-    expect(find.byKey(_card), findsNothing);
+      final row = find.byKey(const ValueKey('settings-whats-new-row'));
+      expect(find.text("What's new in 1.0.0"), findsOneWidget);
+      expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+      expect(
+        tester.getTopLeft(row).dy,
+        lessThan(tester.getTopLeft(find.byType(TextField).first).dy),
+        reason: 'above the search',
+      );
+      expect(find.byKey(_card), findsNothing);
+      expect(find.text('About & updates'), findsNothing);
 
-    final launched = <Object?>[];
-    const channel = MethodChannel('plugins.flutter.io/url_launcher');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'launch') launched.add(call.arguments);
-          return true;
-        });
-    addTearDown(
-      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-    await tester.tap(row);
-    await tester.pumpAndSettle();
-    expect(
-      launched.single,
-      containsPair('url', 'https://kapynotes.com/changelog'),
-    );
-  });
+      final launched = <Object?>[];
+      const channel = MethodChannel('plugins.flutter.io/url_launcher');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'launch') launched.add(call.arguments);
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(
+        launched.single,
+        containsPair('url', 'https://kapynotes.com/changelog'),
+      );
+    });
+  }
 
   for (final (name, theme) in [
     ('dark', KapyTheme.dark()),

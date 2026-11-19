@@ -42,6 +42,7 @@ import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import '../data/note_switcher.dart';
 import '../data/notes_store.dart';
+import '../data/onboarding.dart';
 import 'editor/voice_chip.dart';
 import 'editor/voice_insertion.dart';
 import 'voice_note_dialog.dart';
@@ -52,6 +53,8 @@ import '../ai/kapy_ai.dart';
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
+import '../sync/key_bundle.dart';
+import 'account/encryption_pane.dart';
 import '../sync/presence.dart';
 import '../sync/spaces.dart';
 import '../data/rates.dart';
@@ -393,10 +396,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
     widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
+    widget.account?.addListener(_offerRecoveryKey);
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
     widget.desktopIntegration?.onOpenRequested = _beginOpenSession;
+    widget.desktopIntegration?.window = (
+      openNote: _openTaskNote,
+      openTasks: () => _showSpace(LibrarySpace.tasks),
+      find: () => unawaited(_openCommandMenu()),
+      newTask: _newTask,
+      openSettings: _showSettings,
+      explainNoteLimit: () => unawaited(_explainNoteLimit(creating: true)),
+    );
     // The controller owns the microphone but knows nothing about notes or
     // editors; this is where a finished recording becomes a ref in one.
     widget.recording?.onFinished = _deliverRecording;
@@ -425,8 +437,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
+    widget.account?.removeListener(_offerRecoveryKey);
     widget.desktopIntegration?.onNewNoteRequested = null;
     widget.desktopIntegration?.onOpenRequested = null;
+    widget.desktopIntegration?.window = null;
     _kapyIdleTimer?.cancel();
     _kapyHeader.dispose();
     _desktopShortcutFocus.dispose();
@@ -534,7 +548,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// a tap that arrives while the app is already open that note is simply the
   /// one being read — the same note the widget would have opened.
   Future<void> _runWidgetAction(LaunchIntent intent) async {
-    if (!mounted) return;
+    if (!mounted || intent == LaunchIntent.open) return;
+    if (Onboarding.holdsOnlyWelcome(widget.notes)) {
+      _createNoteNow();
+      await WidgetsBinding.instance.endOfFrame;
+    }
     switch (intent) {
       case LaunchIntent.open:
       case LaunchIntent.continueWriting:
@@ -1947,28 +1965,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .toList();
     if (ids.isEmpty) return;
     _recordKapyActivity();
+    final theirs = _allSharedByOthers(ids);
     final confirmed = await _confirmDelete(
       title: 'Empty Archived Notes?',
       body: _deleteBody(ids),
-      action: 'Delete all',
+      action: theirs ? 'Remove all' : 'Delete all',
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceDeleted(ids.length);
+    _announceForgotten(ids, theirs);
   }
 
   Future<void> _deleteChecked() async {
-    final ids = _checkedArchived.toList();
+    final ids = _checkedArchived
+        .where((id) => _canEditNote(widget.notes.byId(id)))
+        .toList();
     if (ids.isEmpty) return;
     _recordKapyActivity();
+    final theirs = _allSharedByOthers(ids);
     final confirmed = await _confirmDelete(
-      title: ids.length == 1 ? 'Delete note?' : 'Delete ${ids.length} notes?',
+      title: theirs
+          ? 'Remove from your notes?'
+          : ids.length == 1
+          ? 'Delete note?'
+          : 'Delete ${ids.length} notes?',
       body: _deleteBody(ids),
-      action: 'Delete',
+      action: theirs ? 'Remove' : 'Delete',
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceDeleted(ids.length);
+    _announceForgotten(ids, theirs);
+  }
+
+  bool _allSharedByOthers(List<String> ids) =>
+      ids.every((id) => _sharedBy(widget.notes.byId(id)) != null);
+
+  void _announceForgotten(List<String> ids, bool theirs) {
+    if (!theirs) return _announceDeleted(ids.length);
+    Toast.show(context, 'Removed from your notes', icon: deleteIcon);
   }
 
   void _restoreChecked() {
@@ -2356,6 +2390,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(showProSheet(context, billing: billing));
   }
 
+  final DateTime _openedAt = DateTime.now();
+
+  /// The one quiet suggestion for an account from before recovery keys: a
+  /// toast, once, never in the first minute and never while somebody is
+  /// typing. If the moment does not come, the next change of state tries
+  /// again; Settings → Sync keeps the row until a key exists.
+  void _offerRecoveryKey() {
+    final account = widget.account;
+    if (!mounted || account == null || !account.offersRecoveryNudge) return;
+    if (DateTime.now().difference(_openedAt) < const Duration(minutes: 1)) {
+      return;
+    }
+    final focus = FocusManager.instance.primaryFocus?.context;
+    if (focus?.findAncestorWidgetOfExactType<EditableText>() != null) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    account.recoveryNudgeShown();
+    Toast.show(
+      context,
+      'Add a recovery key, so a forgotten passphrase never locks you out.',
+      action: 'Set up',
+      onAction: () =>
+          showKeyChangeDialog(context, account, KeyProofAction.recoveryKey),
+    );
+  }
+
   void _onNoteLimitChanged() {
     if (mounted) setState(() {});
   }
@@ -2562,7 +2621,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     AccountState.needsProfile => 'Choose your name first to share this note',
     AccountState.needsPassphrase =>
       'Choose a passphrase first to share this note',
-    AccountState.locked => 'Unlock first to share this note',
+    AccountState.locked ||
+    AccountState.keysChanged => 'Unlock first to share this note',
     AccountState.needsAccountDecision =>
       'Finish signing in first to share this note',
     AccountState.restoring ||
@@ -3204,7 +3264,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ? null
                       : () => _showSettings(section: SettingsSection.account),
                   user: widget.account?.user,
-                  syncStatus: widget.account?.sync?.status,
+                  syncStatus: widget.account?.syncStatus,
                 ),
                 Expanded(
                   child: SplitView(
@@ -3380,8 +3440,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             .bindingFor(ShortcutAction.newNote)
                                             ?.displayLabel,
                                         noteOpen: selected != null,
-                                        syncStatus:
-                                            widget.account?.sync?.status,
+                                        syncStatus: widget.account?.syncStatus,
                                         unloadedPictures: unloaded.length,
                                         onShowUnloadedPicture: unloaded.isEmpty
                                             ? null
