@@ -263,6 +263,30 @@ void main() {
     );
   });
 
+  test('a phone’s MCP row in Settings says what its pane says', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    for (final phone in [TargetPlatform.android, TargetPlatform.iOS]) {
+      AppPlatform.debugTargetPlatformOverride = phone;
+      expect(
+        SettingsSection.mcp.summary,
+        'Assistants connect through Kapy Notes on your Mac, Windows PC or '
+        'Linux computer',
+      );
+    }
+    for (final desktop in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = desktop;
+      expect(
+        SettingsSection.mcp.summary,
+        'Let the AI apps you use read and change your notes, on this computer '
+        'only',
+      );
+    }
+  });
+
   testWidgets('settings search finds it by the words people use', (
     tester,
   ) async {
