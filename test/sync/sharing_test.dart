@@ -1014,6 +1014,51 @@ void main() {
       },
     );
 
+    for (final (late, space, home) in [
+      ('both its logs', true, true),
+      ('its seed', true, false),
+      ('the marker it left at home', false, true),
+    ]) {
+      test('a note shared from another device stays on this one, $late '
+          'arriving late', () async {
+        final one = await shareWithBob('One');
+        final spaceId = alice.notes.byId(one.id)!.spaceId!;
+        final personal = alice.keyring.personal!.id;
+        final laptop = Person(
+          server,
+          userId: alice.userId,
+          device: 'alice-laptop',
+        );
+        await laptop.boot();
+        addTearDown(laptop.dispose);
+        final two = alice.notes.create(body: 'Two');
+        await alice.syncAndSettle();
+        await laptop.syncAndSettle();
+        expect(laptop.bodyOf(two.id), 'Two');
+
+        // The Mac is live, and its socket brings the share's pages late.
+        await alice.goLive();
+        server.holdPagesOf.addAll([if (space) spaceId, if (home) personal]);
+        laptop.tick();
+        await laptop.sharing.shareNote(two.id, spaceId: spaceId);
+        await laptop.syncAndSettle();
+        await settle(server);
+        server.holdPagesOf.clear();
+        server.releaseFrames(alice.api.device);
+        await settle(server);
+        await alice.syncAndSettle();
+
+        expect(alice.notes.byId(two.id)?.spaceId, spaceId);
+        expect(alice.bodyOf(two.id), 'Two');
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+        alice.tick();
+        await alice.syncAndSettle();
+        expect(alice.notes.byId(two.id)?.spaceId, spaceId);
+        expect(laptop.notes.byId(two.id)?.spaceId, spaceId);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+      });
+    }
+
     test(
       'and so does one whose move is answered before its own seed comes back',
       () async {
