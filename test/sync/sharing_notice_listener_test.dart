@@ -16,7 +16,12 @@ void main() {
     now = DateTime.utc(2026, 9, 1);
     server = FakeServer()..now = () => now;
     alice = Person(server, userId: 'user-1', device: 'alice-mac');
-    bob = Person(server, userId: 'user-2', device: 'bob-phone');
+    bob = Person(
+      server,
+      userId: 'user-2',
+      device: 'bob-phone',
+      acceptOnTheirOwn: true,
+    );
   });
 
   tearDown(() {

@@ -45,6 +45,7 @@ class Person {
     required this.userId,
     required this.device,
     this.typingIdle = const Duration(milliseconds: 300),
+    bool acceptOnTheirOwn = false,
   }) {
     server.seedBundle(userId);
     store = MemoryStore();
@@ -79,6 +80,7 @@ class Person {
       notes: notes,
       sync: sync,
       now: () => now,
+      acceptOnTheirOwn: acceptOnTheirOwn,
     );
   }
 
@@ -1657,6 +1659,18 @@ void main() {
   });
 
   group('notices and invitations accepted on their own', () {
+    /// Bob, on a build with invitations accepted on their own (D2) on.
+    Future<void> acceptingOnTheirOwn() async {
+      bob.dispose();
+      bob = Person(
+        server,
+        userId: 'user-2',
+        device: 'bob-phone',
+        acceptOnTheirOwn: true,
+      );
+      await bob.boot();
+    }
+
     List<SharingNotice> listen(Person person) {
       final heard = <SharingNotice>[];
       final subscription = person.sharing.notices.listen(heard.add);
@@ -1675,9 +1689,19 @@ void main() {
       return note;
     }
 
+    test('by default, an invitation waits for a tap', () async {
+      await shareWithBob('One');
+      await aliceShares('Two', role: SpaceRole.viewer);
+      await bob.sharing.refresh();
+      await settle(server);
+      expect(bob.sharing.invites, hasLength(1));
+      expect(bob.sharing.teams, hasLength(1));
+    });
+
     test(
       'an invitation from someone whose notes you are in is accepted on its own',
       () async {
+        await acceptingOnTheirOwn();
         await shareWithBob('One');
         final heard = listen(bob);
         final note = await aliceShares('Two', role: SpaceRole.viewer);
@@ -1699,6 +1723,7 @@ void main() {
 
     test('not from someone who is only in your notes, nor before the rules '
         'are agreed', () async {
+      await acceptingOnTheirOwn();
       final bobs = bob.notes.create(body: 'Bob\'s');
       await bob.sync.syncNow();
       bob.tick();
@@ -1719,6 +1744,7 @@ void main() {
     });
 
     test('nor from someone you have blocked', () async {
+      await acceptingOnTheirOwn();
       await shareWithBob('One');
       await bob.sharing.blockPerson(alice.email);
       await aliceShares('Two', role: SpaceRole.viewer);
@@ -1731,6 +1757,7 @@ void main() {
     test(
       'a refused automatic accept is tried once and left to the person',
       () async {
+        await acceptingOnTheirOwn();
         await shareWithBob('One');
         server.user(bob.userId).termsVersion = 0;
         await aliceShares('Two', role: SpaceRole.viewer);

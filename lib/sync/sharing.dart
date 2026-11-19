@@ -18,6 +18,12 @@ import 'sync_service.dart';
 import 'trust.dart';
 import 'vault.dart';
 
+/// Whether an invitation from someone whose shared notes this account is
+/// already in is accepted without asking (D2). Off until Sanjay decides:
+/// accepting on its own shows this account's name and email to the other
+/// members of a space the person never chose to join.
+const acceptInvitesOnTheirOwn = false;
+
 /// Everything the UI does with shared spaces, in one place.
 ///
 /// Sharing a note with a person means: find or create a space that contains
@@ -37,7 +43,9 @@ class Sharing extends ChangeNotifier {
     required SyncService sync,
     ImageSync? images,
     DateTime Function() now = DateTime.now,
+    bool acceptOnTheirOwn = acceptInvitesOnTheirOwn,
   }) : _api = api,
+       _acceptOnTheirOwn = acceptOnTheirOwn,
        _vault = vault,
        _keyring = keyring,
        _notes = notes,
@@ -71,6 +79,8 @@ class Sharing extends ChangeNotifier {
   final Set<String> _leaving = {};
 
   /// Invitations this device has tried to accept by itself, once each.
+  final bool _acceptOnTheirOwn;
+
   final Set<String> _autoAccepting = {};
 
   /// Spaces joined that way, whose notice offers to leave again.
@@ -231,7 +241,7 @@ class Sharing extends ChangeNotifier {
   /// this account is already in, and has not blocked (D2). Once per
   /// invitation: one that fails stays an ordinary invitation.
   void _autoAccept() {
-    if (!hasAcceptedTerms) return;
+    if (!_acceptOnTheirOwn || !hasAcceptedTerms) return;
     for (final invite in invites) {
       final from = invite.invitedBy.toLowerCase();
       final known = teams.any(
