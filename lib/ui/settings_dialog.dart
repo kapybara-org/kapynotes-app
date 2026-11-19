@@ -34,7 +34,6 @@ import '../speech/gemma_summarizer.dart';
 import '../speech/local_model_store.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_api.dart';
-import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
 import '../speech/summary_instructions.dart';
 import '../speech/transcriber.dart';
@@ -693,52 +692,24 @@ class _SettingsDialogState extends State<SettingsDialog>
     final speech = widget.account?.speech;
     if (speech == null || _speechBusy) return false;
 
-    if (on) {
-      final accepted = await showSpeechConsentSheet(context);
-      if (!accepted) {
-        widget.voicePrefs?.transcriptionDeclinedVersion = speechConsentVersion;
-        return false;
-      }
-      if (!mounted) return false;
-    }
     setState(() {
       _speechBusy = true;
       _speechError = null;
     });
-    final progress = Toast.showProgress(
+    final status = await setCloudTranscription(
       context,
-      on
-          ? 'Turning on cloud transcription…'
-          : 'Turning off cloud transcription…',
+      speech: speech,
+      prefs: widget.voicePrefs,
+      on: on,
+      onError: (message) => setState(() => _speechError = message),
     );
-    var changed = false;
-    try {
-      // Version 0 withdraws.
-      final status = await speech.acceptConsent(on ? speechConsentVersion : 0);
-      if (on) widget.voicePrefs?.transcriptionDeclinedVersion = null;
-      changed = on ? status.isAccepted : !status.isAccepted;
-      if (mounted) {
-        setState(() => _speechConsent = status);
-        progress.success(
-          on
-              ? 'Cloud transcription turned on'
-              : 'Cloud transcription turned off',
-        );
-      } else {
-        progress.dismiss();
-      }
-    } catch (error) {
-      final message = describeSpeechError(error);
-      if (mounted) {
-        setState(() => _speechError = message);
-        progress.error(message);
-      } else {
-        progress.dismiss();
-      }
-    } finally {
-      if (mounted) setState(() => _speechBusy = false);
+    if (mounted) {
+      setState(() {
+        _speechBusy = false;
+        if (status != null) _speechConsent = status;
+      });
     }
-    return changed;
+    return status != null && status.isAccepted == on;
   }
 
   Future<void> _selectCloudTranscription(VoicePrefs prefs) async {
