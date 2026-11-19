@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/platform.dart';
+import 'linux_voice_recorder.dart';
 import 'mp4_duration.dart';
 import 'peaks.dart';
 import 'voice_recorder.dart';
@@ -86,7 +88,9 @@ class VoiceRecordingController extends ChangeNotifier {
     Directory? tempDirectory,
     Future<void> Function(VoiceRecordingResult result, String noteId)?
     onFinished,
-  }) : _recorder = recorder ?? VoiceRecorder(),
+  }) : _recorder =
+           recorder ??
+           (AppPlatform.isLinux ? LinuxVoiceRecorder() : VoiceRecorder()),
        _tempDirectory = tempDirectory,
        _onFinished = onFinished;
 

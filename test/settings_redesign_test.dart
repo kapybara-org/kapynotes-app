@@ -336,6 +336,23 @@ void main() {
       );
       expect(find.text('Cloud summaries are on Pro'), findsOneWidget);
     });
+
+    testWidgets('Linux summarises in the cloud, with nothing on the device', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      final (voice, access) = await _freeVoice(tester);
+      await _open(
+        tester,
+        section: SettingsSection.voice,
+        voicePrefs: voice,
+        cloudAccess: access,
+      );
+
+      expect(find.byKey(const ValueKey('summarise-with-device')), findsNothing);
+      expect(find.byKey(const ValueKey('local-summary-line')), findsNothing);
+      expect(find.text('Cloud summaries are on Pro'), findsOneWidget);
+    });
   });
 
   testWidgets('the preview writes numbers the way they are set', (

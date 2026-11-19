@@ -191,6 +191,12 @@ dependency_overrides:
     path: packages/apple_stubs/sherpa_onnx_ios
   sherpa_onnx_macos:
     path: packages/apple_stubs/sherpa_onnx_macos
+  # keybinder, which the published Linux half of hotkey_manager binds through,
+  # never matches a shortcut that pairs Shift with a letter, and both default
+  # system-wide shortcuts do. This one grabs the X11 keys itself. See
+  # packages/hotkey_manager_linux/README.md.
+  hotkey_manager_linux:
+    path: packages/hotkey_manager_linux
 
 dev_dependencies:
   # Virtual timers, so the thirty-minute recording cap can be tested in a
@@ -227,9 +233,11 @@ flutter:
     - assets/mascot/kapy_header_sleep_loop_30fps.webp
     # The tray icon, read by tray_manager from the bundle rather than painted:
     # an .ico for the Windows notification area, a template PNG that macOS
-    # tints for the menu bar. Desktop-only, and small enough not to matter.
+    # tints for the menu bar, a full-colour PNG for a Linux panel.
+    # Desktop-only, and small enough not to matter.
     - assets/branding/kapynotes_tray_windows.ico
     - assets/branding/kapynotes_tray_macos.png
+    - assets/branding/kapynotes_tray_linux.png
     - assets/fonts/ShantellSans-OFL.txt
     - assets/fonts/Figtree-OFL.txt
     - assets/fonts/GeistMono-OFL.txt

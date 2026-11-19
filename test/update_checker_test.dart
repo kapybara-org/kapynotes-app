@@ -12,6 +12,7 @@ import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/update_installer.dart';
 
 import 'fake_update_installer.dart';
+
 import 'package:package_info_plus/package_info_plus.dart';
 
 class _MemoryStore extends LocalStore {
@@ -384,8 +385,8 @@ void main() {
     checker.dispose();
   });
 
-  test('stays quiet where the app cannot update itself', () async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+  test('stays quiet where the store updates the app', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
     final store = _MemoryStore();
     final checker = _checker(
       store,
@@ -398,6 +399,65 @@ void main() {
     expect(checker.lastChecked, isNull);
     checker.dispose();
   });
+
+  test('the Flatpak leaves updates to Flatpak and asks for nothing', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    AppPlatform.debugIsFlatpakOverride = true;
+    addTearDown(() => AppPlatform.debugIsFlatpakOverride = null);
+    final asked = <Uri>[];
+    final checker = _checker(
+      _MemoryStore(),
+      client: MockClient((request) async {
+        asked.add(request.url);
+        return http.Response(_manifest(), 200);
+      }),
+    );
+
+    expect(await checker.check(), isFalse);
+    expect(asked, isEmpty);
+    expect(checker.hasUpdate, isFalse);
+    checker.dispose();
+  });
+
+  test(
+    'Linux reads a manifest of its own and keeps its download page',
+    () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      final store = _MemoryStore();
+      final asked = <Uri>[];
+      final checker = _checker(
+        store,
+        client: MockClient((request) async {
+          asked.add(request.url);
+          return http.Response(
+            jsonEncode({
+              ...jsonDecode(_manifest()) as Map,
+              'downloadUrl': 'https://kapynotes.com/download',
+            }),
+            200,
+          );
+        }),
+      );
+
+      await checker.check();
+
+      expect(asked, [UpdateChecker.linuxManifestUrl]);
+      expect(checker.hasUpdate, isTrue);
+      expect(checker.available?.downloadPage, 'https://kapynotes.com/download');
+      expect(await checker.download(), isFalse);
+      checker.dispose();
+
+      final reopened = _checker(
+        store,
+        client: MockClient((_) async => fail('the cache answers')),
+      )..loadCache();
+      expect(
+        reopened.available?.downloadPage,
+        'https://kapynotes.com/download',
+      );
+      reopened.dispose();
+    },
+  );
 
   group('downloads and installs', () {
     test('a release is downloaded as soon as a check finds it', () async {

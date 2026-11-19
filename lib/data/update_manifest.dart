@@ -4,12 +4,19 @@ class AvailableUpdate {
     required this.version,
     required this.build,
     required this.notesUrl,
+    this.downloadPage = '',
     this.windows,
   });
 
   final String version;
   final int build;
   final String notesUrl;
+
+  /// Where a Linux copy sends its user to fetch the release, from
+  /// `latest-linux.json`. Linux has no installer of the app's own, and the
+  /// release is installed the way the running copy was: an AppImage, a .deb
+  /// or a tarball.
+  final String downloadPage;
 
   /// The Windows installer and its signature. Null in a manifest written
   /// before the app downloaded its own updates, and in any that simply leaves
@@ -23,10 +30,12 @@ class AvailableUpdate {
     if (version is! String || version.isEmpty) return null;
     if (build is! int) return null;
     final notes = decoded['notesUrl'];
+    final download = decoded['downloadUrl'];
     return AvailableUpdate(
       version: version,
       build: build,
       notesUrl: notes is String ? notes : '',
+      downloadPage: download is String ? download : '',
       windows: UpdatePackage.fromJson(decoded['windows']),
     );
   }
@@ -35,6 +44,7 @@ class AvailableUpdate {
     'version': version,
     'build': build,
     'notesUrl': notesUrl,
+    if (downloadPage.isNotEmpty) 'downloadUrl': downloadPage,
     if (windows != null) 'windows': windows!.toJson(),
   };
 }

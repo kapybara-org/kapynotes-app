@@ -4,9 +4,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import '../../data/blob_store.dart';
 import '../../data/note_attachment.dart';
 import '../../images/note_image_provider.dart';
@@ -41,6 +44,7 @@ class NoteVideoView extends StatefulWidget {
 class _NoteVideoViewState extends State<NoteVideoView> {
   VideoPlayerController? _controller;
   bool _failed = false;
+  bool _ready = false;
 
   @override
   void initState() {
@@ -56,6 +60,7 @@ class _NoteVideoViewState extends State<NoteVideoView> {
       unawaited(_controller?.dispose());
       _controller = null;
       _failed = false;
+      _ready = false;
       unawaited(_load());
     }
   }
@@ -69,6 +74,10 @@ class _NoteVideoViewState extends State<NoteVideoView> {
     }
     if (file == null) {
       setState(() => _failed = true);
+      return;
+    }
+    if (AppPlatform.isLinux) {
+      setState(() => _ready = true);
       return;
     }
     final controller = VideoPlayerController.file(file);
@@ -122,7 +131,14 @@ class _NoteVideoViewState extends State<NoteVideoView> {
                 ),
               )
             else
-              _VideoUnavailable(palette: palette, failed: _failed),
+              _VideoUnavailable(
+                palette: palette,
+                label: _failed
+                    ? 'Video unavailable'
+                    : _ready
+                    ? 'Opens in your video player'
+                    : 'Loading video…',
+              ),
             ColoredBox(color: Colors.black.withValues(alpha: 0.12)),
             Center(
               child: DecoratedBox(
@@ -242,10 +258,10 @@ class _VideoUploadCover extends StatelessWidget {
 }
 
 class _VideoUnavailable extends StatelessWidget {
-  const _VideoUnavailable({required this.palette, required this.failed});
+  const _VideoUnavailable({required this.palette, required this.label});
 
   final CalcPalette palette;
-  final bool failed;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -262,7 +278,7 @@ class _VideoUnavailable extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              failed ? 'Video unavailable' : 'Loading video…',
+              label,
               style: TextStyle(
                 color: palette.textTertiary,
                 fontSize: AppTypeScale.caption,
@@ -292,16 +308,46 @@ class NoteVideoViewer extends StatefulWidget {
     required NoteVideoRef ref,
     required BlobStore store,
     NoteImageFetcher? fetch,
-  }) => Navigator.of(context).push(
-    PageRouteBuilder<void>(
-      opaque: true,
-      pageBuilder: (context, animation, secondary) => FadeTransition(
-        opacity: animation,
-        child: NoteVideoViewer(ref: ref, store: store, fetch: fetch),
+  }) async {
+    if (AppPlatform.isLinux) {
+      return _openInVideoPlayer(context, ref: ref, store: store, fetch: fetch);
+    }
+    await Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: true,
+        pageBuilder: (context, animation, secondary) => FadeTransition(
+          opacity: animation,
+          child: NoteVideoViewer(ref: ref, store: store, fetch: fetch),
+        ),
+        transitionDuration: const Duration(milliseconds: 160),
       ),
-      transitionDuration: const Duration(milliseconds: 160),
-    ),
-  );
+    );
+  }
+
+  /// Linux has no player in the app, so a video plays in the person's own.
+  static Future<void> _openInVideoPlayer(
+    BuildContext context, {
+    required NoteVideoRef ref,
+    required BlobStore store,
+    NoteImageFetcher? fetch,
+  }) async {
+    final file = await _videoFile(ref, store, fetch);
+    var opened = false;
+    if (file != null) {
+      try {
+        opened = await launchUrl(Uri.file(file.path));
+      } catch (_) {
+        opened = false;
+      }
+    }
+    if (opened || !context.mounted) return;
+    Toast.show(
+      context,
+      'Could not open the video',
+      icon: KapyIcons.errorOutlined,
+      isError: true,
+    );
+  }
 
   @override
   State<NoteVideoViewer> createState() => _NoteVideoViewerState();

@@ -13,7 +13,7 @@ import 'settings_rows.dart';
 import 'settings_search.dart';
 
 /// Hands the MCP service to Settings, wherever it is opened from. Present
-/// only on the Mac and Windows, where the server can run.
+/// only on the desktops, where the server can run.
 class McpScope extends InheritedNotifier<McpService> {
   const McpScope({super.key, required McpService service, required super.child})
     : super(notifier: service);
@@ -27,7 +27,11 @@ const KapyIconData mcpSectionIcon = KapyIcons.mcpServer;
 const String mcpSectionSummary =
     'Let the AI apps you use read and change your notes, on this computer only';
 
-String get _computer => AppPlatform.isWindows ? 'this PC' : 'this Mac';
+String get _computer => AppPlatform.isWindows
+    ? 'this PC'
+    : AppPlatform.isLinux
+    ? 'this computer'
+    : 'this Mac';
 
 /// What settings search finds in the MCP pane. The words people use for it
 /// lead there too: "assistants", "AI", and the apps by name.
@@ -160,13 +164,15 @@ class _McpPaneState extends State<McpPane> {
         SettingsNote(
           'Hidden notes never reach an assistant. Archived notes can be read, '
           'not changed, and drawings show by name only. Kapy Notes needs to '
-          'be open; it can stay in the menu bar.',
+          '${AppPlatform.isLinux ? 'be running' : 'be open; it can stay in the menu bar'}.',
         ),
         const SizedBox(height: SettingsMetrics.groupGap),
         const SettingsLabel('Connect an app', key: ValueKey('mcp-connect')),
         SettingsGroup(
           children: [
-            for (final kind in McpClientKind.values) _clientRow(service, kind),
+            for (final kind in McpClientKind.values)
+              if (kind != McpClientKind.claudeDesktop || !AppPlatform.isLinux)
+                _clientRow(service, kind),
           ],
         ),
         const SettingsNote(

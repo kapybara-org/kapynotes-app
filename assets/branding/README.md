@@ -13,6 +13,8 @@ Drawn by `tool/generate_brand_assets.swift` from the mark's vector geometry:
 - `kapynotes_lockup_dark.png`: horizontal `Kapy Notes` lockup for dark surfaces.
 - `kapynotes_tray_windows.ico`: notification-area icon, 16 to 48.
 - `kapynotes_tray_macos.png`: menu bar icon, a template macOS tints itself.
+- `kapynotes_tray_linux.png`: Linux panel indicator, the 64 px app icon from
+  `linux/runner/resources/icons/`.
 
 ```sh
 swift tool/generate_brand_assets.swift
