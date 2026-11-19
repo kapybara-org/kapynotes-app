@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
@@ -43,11 +44,6 @@ class PageToolbar extends StatelessWidget {
     this.currentUserId = '',
     this.noteShared = false,
     this.onShare,
-    this.pinned = false,
-    this.onTogglePin,
-    this.keepOnTop = false,
-    this.onToggleKeepOnTop,
-    this.keepOnTopShortcut,
     this.assistant,
     this.moreActions = const [],
     this.onMore,
@@ -91,17 +87,7 @@ class PageToolbar extends StatelessWidget {
   /// put as the selection comes and goes.
   final VoidCallback? onShare;
 
-  final bool pinned;
-  final VoidCallback? onTogglePin;
-
-  /// Whether the window floats over other apps, and the toggle that turns it
-  /// on or off. Null off the desktop, where there is no window to float; it
-  /// belongs to the window, so every page of the main window carries it.
-  final bool keepOnTop;
-  final VoidCallback? onToggleKeepOnTop;
-  final String? keepOnTopShortcut;
-
-  /// Kapy AI's button, between Share and the pin. It keeps its own gap, so
+  /// Kapy AI's button, between Share and More. It keeps its own gap, so
   /// it can hide while Kapy AI is off without leaving one behind.
   final Widget? assistant;
 
@@ -114,15 +100,19 @@ class PageToolbar extends StatelessWidget {
   /// the app does not update itself.
   final UpdateChecker? updates;
 
-  /// Centred in the bar's empty middle, such as Write | Draw on a new note,
-  /// where its going leaves nothing else to move.
+  /// On the bar's centre, such as Write | Draw on a new note. Where the
+  /// actions on the right reach the centre it sits just left of them instead,
+  /// the breadcrumb making room, and where even that is too little it steps
+  /// aside rather than cover anything.
   final Widget? center;
 
   /// A page that is not a note puts its own actions where a note's saved
-  /// state, Share and Pin go, and has no More.
+  /// state and Share go, and has no More.
   final List<Widget>? actions;
 
   static const double height = 56;
+
+  static const _padding = EdgeInsets.only(left: 24, right: 16);
 
   /// Narrower than this, Saved steps aside for the breadcrumb.
   static const double _savedWidth = 460;
@@ -131,8 +121,8 @@ class PageToolbar extends StatelessWidget {
   /// Saved and is up to 125 wider.
   static const double _unloadedPicturesWidth = _savedWidth + 125;
 
-  /// Narrower than this, Share is its icon alone, so the window's own buttons
-  /// (Keep on top, More) still fit beside it.
+  /// Narrower than this, Share is its icon alone, so More still fits beside
+  /// it.
   static const double _shareLabelWidth = 420;
 
   /// Narrower than this, "Update and restart" shortens to "Update".
@@ -148,9 +138,6 @@ class PageToolbar extends StatelessWidget {
     final newNoteShortcut = this.newNoteShortcut;
     final updates = this.updates;
     final center = this.center;
-    // The window's own button takes room from Saved, so Saved gives way
-    // that much sooner.
-    final onTop = onToggleKeepOnTop == null ? 0.0 : actionExtent + 6;
 
     return Container(
       key: const ValueKey('page-toolbar'),
@@ -162,7 +149,7 @@ class PageToolbar extends StatelessWidget {
             child: WindowDragArea(child: SizedBox.expand()),
           ),
           Padding(
-            padding: const EdgeInsets.only(left: 24, right: 16),
+            padding: _padding,
             child: LayoutBuilder(
               builder: (context, constraints) => Row(
                 children: [
@@ -195,150 +182,121 @@ class PageToolbar extends StatelessWidget {
                     const SizedBox(width: 8),
                   ],
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, slot) => Row(
-                        children: [
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: WindowDragArea(
-                                child: _Breadcrumb(
-                                  space: space,
-                                  section: section,
-                                ),
+                    child: CustomMultiChildLayout(
+                      delegate: _BarLayout(
+                        centreToEnd:
+                            (constraints.maxWidth + _padding.horizontal) / 2 -
+                            _padding.right,
+                        membersWidth: constraints.maxWidth / 3,
+                      ),
+                      children: [
+                        LayoutId(
+                          id: _Part.crumb,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: WindowDragArea(
+                              child: _Breadcrumb(
+                                space: space,
+                                section: section,
                               ),
                             ),
                           ),
-                          if (actions == null && members.isNotEmpty)
-                            ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: math.min(
-                                  slot.maxWidth,
-                                  constraints.maxWidth / 3,
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 8,
-                                  right: 6,
-                                ),
-                                child: MemberAvatars(
-                                  members: members,
-                                  present: present,
-                                  currentUserId: currentUserId,
-                                  onPressed: onShare,
-                                ),
+                        ),
+                        if (center != null)
+                          LayoutId(
+                            id: _Part.center,
+                            child: _IfItFits(child: center),
+                          ),
+                        if (actions == null && members.isNotEmpty)
+                          LayoutId(
+                            id: _Part.members,
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 8, right: 6),
+                              child: MemberAvatars(
+                                members: members,
+                                present: present,
+                                currentUserId: currentUserId,
+                                onPressed: onShare,
                               ),
                             ),
-                        ],
-                      ),
+                          ),
+                        LayoutId(
+                          id: _Part.trail,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (updates != null)
+                                UpdateRestartButton(
+                                  updates: updates,
+                                  wide:
+                                      constraints.maxWidth >= _updateLabelWidth,
+                                ),
+                              if (actions case final actions?)
+                                ...actions
+                              else ...[
+                                if (noteOpen &&
+                                    constraints.maxWidth >=
+                                        (unloadedPictures > 0
+                                            ? _unloadedPicturesWidth
+                                            : _savedWidth)) ...[
+                                  if (unloadedPictures > 0)
+                                    UnloadedPicturesStatus(
+                                      count: unloadedPictures,
+                                      onPressed: onShowUnloadedPicture,
+                                    )
+                                  else
+                                    _SaveStatus(syncStatus),
+                                  const SizedBox(width: 6),
+                                ],
+                                TonalButton(
+                                  key: const ValueKey('page-share'),
+                                  tall: true,
+                                  icon: KapyIcons.personAddRounded,
+                                  label:
+                                      constraints.maxWidth >= _shareLabelWidth
+                                      ? 'Share'
+                                      : null,
+                                  tooltip: noteShared
+                                      ? 'Manage sharing'
+                                      : constraints.maxWidth >= _shareLabelWidth
+                                      ? null
+                                      : 'Share',
+                                  onPressed: onShare,
+                                ),
+                                const SizedBox(width: 6),
+                                ?assistant,
+                                if (onMore case final onMore?)
+                                  Builder(
+                                    builder: (buttonContext) =>
+                                        CompactIconButton(
+                                          key: const ValueKey('page-more'),
+                                          tooltip: 'More',
+                                          extent: actionExtent,
+                                          radius: 10,
+                                          onPressed: moreActions.isEmpty
+                                              ? null
+                                              : () => _showMore(
+                                                  buttonContext,
+                                                  onMore,
+                                                ),
+                                          icon: KapyIcon(
+                                            KapyIcons.moreRounded,
+                                            size: AppControlMetrics.iconAction,
+                                            strokeWidth: 2.2,
+                                          ),
+                                        ),
+                                  ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  if (actions case final actions?) ...[
-                    if (updates != null)
-                      UpdateRestartButton(
-                        updates: updates,
-                        wide: constraints.maxWidth >= _updateLabelWidth + onTop,
-                      ),
-                    ...actions,
-                  ] else ...[
-                    if (updates != null)
-                      UpdateRestartButton(
-                        updates: updates,
-                        wide: constraints.maxWidth >= _updateLabelWidth + onTop,
-                      ),
-                    if (noteOpen &&
-                        constraints.maxWidth >=
-                            onTop +
-                                (unloadedPictures > 0
-                                    ? _unloadedPicturesWidth
-                                    : _savedWidth)) ...[
-                      if (unloadedPictures > 0)
-                        UnloadedPicturesStatus(
-                          count: unloadedPictures,
-                          onPressed: onShowUnloadedPicture,
-                        )
-                      else
-                        _SaveStatus(syncStatus),
-                      const SizedBox(width: 6),
-                    ],
-                    TonalButton(
-                      key: const ValueKey('page-share'),
-                      tall: true,
-                      icon: KapyIcons.personAddRounded,
-                      label: constraints.maxWidth >= _shareLabelWidth
-                          ? 'Share'
-                          : null,
-                      tooltip: noteShared
-                          ? 'Manage sharing'
-                          : constraints.maxWidth >= _shareLabelWidth
-                          ? null
-                          : 'Share',
-                      onPressed: onShare,
-                    ),
-                    const SizedBox(width: 6),
-                    ?assistant,
-                    CompactIconButton(
-                      key: const ValueKey('page-pin'),
-                      tooltip: pinned ? 'Unpin note' : 'Pin note',
-                      extent: actionExtent,
-                      radius: 10,
-                      foregroundColor: pinned ? palette.clay : null,
-                      onPressed: onTogglePin,
-                      icon: KapyIcon(
-                        KapyIcons.pinOutlined,
-                        size: AppControlMetrics.iconAction,
-                        strokeWidth: 1.9,
-                      ),
-                    ),
-                  ],
-                  if (onToggleKeepOnTop case final toggle?) ...[
-                    const SizedBox(width: 6),
-                    CompactIconButton(
-                      key: const ValueKey('page-keep-on-top'),
-                      tooltip: [
-                        keepOnTop ? 'Keep on top: on' : 'Keep on top',
-                        ?keepOnTopShortcut,
-                      ].join('  '),
-                      extent: actionExtent,
-                      radius: 10,
-                      selected: keepOnTop,
-                      selectedBackground: palette.tonalBackground,
-                      foregroundColor: keepOnTop
-                          ? palette.tonalForeground
-                          : null,
-                      onPressed: toggle,
-                      icon: KapyIcon(
-                        KapyIcons.keepOnTop,
-                        size: AppControlMetrics.iconAction,
-                        strokeWidth: 1.9,
-                      ),
-                    ),
-                  ],
-                  if (onMore case final onMore?) ...[
-                    const SizedBox(width: 6),
-                    Builder(
-                      builder: (buttonContext) => CompactIconButton(
-                        key: const ValueKey('page-more'),
-                        tooltip: 'More',
-                        extent: actionExtent,
-                        radius: 10,
-                        onPressed: moreActions.isEmpty
-                            ? null
-                            : () => _showMore(buttonContext, onMore),
-                        icon: KapyIcon(
-                          KapyIcons.moreRounded,
-                          size: AppControlMetrics.iconAction,
-                          strokeWidth: 2.2,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
           ),
-          if (center != null) Center(child: center),
         ],
       ),
     );
@@ -368,6 +326,118 @@ class PageToolbar extends StatelessWidget {
         if (choice != null) onMore(choice);
       }),
     );
+  }
+}
+
+enum _Part { crumb, center, members, trail }
+
+/// Lays the bar out from its right end: the page's actions, the people in
+/// the note beside them, then [PageToolbar.center] on the bar's centre, or as
+/// near it as they leave room for, and the breadcrumb in what is left.
+class _BarLayout extends MultiChildLayoutDelegate {
+  _BarLayout({required this.centreToEnd, required this.membersWidth});
+
+  /// How far the bar's centre is from this layout's right edge.
+  final double centreToEnd;
+
+  /// The most the people in the note take.
+  final double membersWidth;
+
+  /// Between [PageToolbar.center] and what is either side of it.
+  static const double _gap = 8;
+
+  @override
+  void performLayout(Size size) {
+    final loose = BoxConstraints.loose(size);
+    double top(Size child) => (size.height - child.height) / 2;
+
+    final trail = layoutChild(_Part.trail, loose);
+    var end = size.width - trail.width;
+    positionChild(_Part.trail, Offset(end, top(trail)));
+
+    if (hasChild(_Part.members)) {
+      final members = layoutChild(
+        _Part.members,
+        loose.copyWith(maxWidth: math.max(0.0, math.min(end, membersWidth))),
+      );
+      end -= members.width;
+      positionChild(_Part.members, Offset(end, top(members)));
+    }
+
+    if (hasChild(_Part.center)) {
+      final center = layoutChild(
+        _Part.center,
+        loose.copyWith(maxWidth: math.max(0.0, end - _gap)),
+      );
+      if (center.width > 0) {
+        final left = math.max(
+          0.0,
+          math.min(
+            size.width - centreToEnd - center.width / 2,
+            end - _gap - center.width,
+          ),
+        );
+        positionChild(_Part.center, Offset(left, top(center)));
+        end = left - _gap;
+      }
+    }
+
+    layoutChild(
+      _Part.crumb,
+      BoxConstraints.tightFor(width: math.max(0.0, end), height: size.height),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_BarLayout oldDelegate) =>
+      centreToEnd != oldDelegate.centreToEnd ||
+      membersWidth != oldDelegate.membersWidth;
+}
+
+/// Its child at the child's own width where the room it is given holds that,
+/// and elsewhere nothing: no room taken, nothing drawn or pressed, and
+/// nothing for a screen reader to find.
+class _IfItFits extends SingleChildRenderObjectWidget {
+  const _IfItFits({required Widget super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderIfItFits();
+}
+
+class _RenderIfItFits extends RenderProxyBox {
+  bool _fits = true;
+
+  static BoxConstraints _ownWidth(BoxConstraints constraints) =>
+      BoxConstraints(maxHeight: constraints.maxHeight);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final size = child!.getDryLayout(_ownWidth(constraints));
+    return size.width <= constraints.maxWidth
+        ? constraints.constrain(size)
+        : constraints.smallest;
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child!
+      ..layout(_ownWidth(constraints), parentUsesSize: true);
+    final fits = child.size.width <= constraints.maxWidth;
+    if (fits != _fits) {
+      _fits = fits;
+      markNeedsSemanticsUpdate();
+    }
+    size = fits ? constraints.constrain(child.size) : constraints.smallest;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (_fits) super.paint(context, offset);
+  }
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    if (_fits) super.visitChildrenForSemantics(visitor);
   }
 }
 
