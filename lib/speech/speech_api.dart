@@ -169,6 +169,15 @@ class SpeechCodes {
   /// their battery to reach the same answer, and leaves the chip claiming to
   /// be working the whole time. Pressing Retry after downloading clears it.
   static const engineUnavailable = 'engine-unavailable';
+
+  /// This device has a summariser, but none that writes the recording's
+  /// language, and only the cloud does: Hindi on an iPhone, where Apple
+  /// Intelligence has no Hindi and there is no Gemma. One code each for a
+  /// plan with cloud summaries, a plan without, and nobody signed in, because
+  /// they say different things. Terminal, like [engineUnavailable].
+  static const summaryNeedsCloud = 'summary-needs-cloud';
+  static const summaryNeedsCloudPlan = 'summary-needs-cloud-plan';
+  static const summaryNeedsCloudSignIn = 'summary-needs-cloud-sign-in';
 }
 
 /// The current consent version this build knows about. Kept in step with
