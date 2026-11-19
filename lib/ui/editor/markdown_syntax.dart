@@ -1254,6 +1254,16 @@ class MarkdownAnalyzer {
 
   _Parts _chunkFor(String source) => _chunks[source] ?? _parse(source);
 
+  /// [text] read with [line] left blank, so the table it would finish or
+  /// grow is read without it. Blanked rather than cut, which leaves every
+  /// offset where it was.
+  MarkdownAnalysis analyzeHolding(String text, TextRange line) {
+    final read = analyze(
+      text.replaceRange(line.start, line.end, ' ' * (line.end - line.start)),
+    );
+    return MarkdownAnalysis._(text, read._parts);
+  }
+
   /// Whether the piece before [boundary] is still open there, so that the
   /// text after it would be read differently in place than on its own.
   ///
