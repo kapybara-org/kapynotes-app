@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -1556,4 +1557,102 @@ void main() {
       );
     });
   }
+  group('themes', () {
+    Future<void> showAppearanceFromTheTop(WidgetTester tester) async {
+      await tapSettings(tester);
+      await tester.pumpAndSettle();
+      await Scrollable.ensureVisible(
+        tester.element(find.byKey(const ValueKey('mode-setting'))),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    for (final theme in AppTheme.values) {
+      for (final side in Brightness.values) {
+        if (theme == AppTheme.midnight && side == Brightness.light) continue;
+        final name = '${theme.name}_${side.name}';
+
+        // Riverbank's window is desktop_dark.png and desktop_light.png.
+        if (theme != AppTheme.riverbank) {
+          testWidgets('${theme.label} ${side.name}', (tester) async {
+            await pumpForGolden(
+              tester,
+              size: const Size(760, 520),
+              brightness: side,
+            );
+            goldenPrefs.theme = theme;
+            await tester.pumpAndSettle();
+            await expectLater(
+              find.byType(KapyNotesApp),
+              matchesGoldenFile('goldens/theme_$name.png'),
+            );
+          });
+        }
+
+        testWidgets('${theme.label} ${side.name}, picked in Settings', (
+          tester,
+        ) async {
+          await pumpForGolden(
+            tester,
+            size: const Size(1000, 800),
+            brightness: side,
+          );
+          goldenPrefs.theme = theme;
+          await showAppearanceFromTheTop(tester);
+          await expectLater(
+            find.byType(KapyNotesApp),
+            matchesGoldenFile('goldens/theme_settings_$name.png'),
+          );
+        });
+      }
+    }
+
+    for (final (theme, side) in [
+      (AppTheme.riverbank, Brightness.dark),
+      (AppTheme.graphite, Brightness.light),
+    ]) {
+      testWidgets('${theme.label} ${side.name} with Increase contrast on', (
+        tester,
+      ) async {
+        await pumpForGolden(
+          tester,
+          size: const Size(760, 520),
+          brightness: side,
+        );
+        goldenPrefs.theme = theme;
+        goldenPrefs.setIncreaseContrast(true, asks: false);
+        await tester.pumpAndSettle();
+        await expectLater(
+          find.byType(KapyNotesApp),
+          matchesGoldenFile(
+            'goldens/theme_${theme.name}_${side.name}_increased_contrast.png',
+          ),
+        );
+      });
+    }
+
+    testWidgets('the picker on a phone, with At night on', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(390, 1180),
+        brightness: Brightness.dark,
+        platform: TargetPlatform.iOS,
+      );
+      goldenPrefs.nightTheme = const NightTheme(enabled: true);
+      await tapSettings(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('settings-section-appearance')),
+      );
+      await tester.pumpAndSettle();
+      await Scrollable.ensureVisible(
+        tester.element(find.byKey(const ValueKey('mode-setting'))),
+      );
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/phone_settings_themes.png'),
+      );
+    });
+  });
 }

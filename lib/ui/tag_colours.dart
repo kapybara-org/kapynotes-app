@@ -5,74 +5,20 @@ import '../core/theme.dart';
 /// The eight colours a tag can take. A tag stores its colour as this key,
 /// never as a value, so each theme gives it its own card and dot.
 enum TagColour {
-  mustard(
-    Color(0xFF393425),
-    Color(0xFFF4EBC8),
-    Color(0xFFC9A447),
-    Color(0xFFA88424),
-  ),
-  rust(
-    Color(0xFF372B26),
-    Color(0xFFF2E0D4),
-    Color(0xFFC4734F),
-    Color(0xFFB5643F),
-  ),
-  olive(
-    Color(0xFF2B3125),
-    Color(0xFFE6EBD5),
-    Color(0xFF8F9B55),
-    Color(0xFF6F7B38),
-  ),
-  teal(
-    Color(0xFF273133),
-    Color(0xFFDCE8E6),
-    Color(0xFF4F9A9B),
-    Color(0xFF3D8586),
-  ),
-  sage(
-    Color(0xFF25332A),
-    Color(0xFFD9EAD9),
-    Color(0xFF5FA071),
-    Color(0xFF4B8A5D),
-  ),
-  slate(
-    Color(0xFF282D38),
-    Color(0xFFDEE4F0),
-    Color(0xFF6D88BE),
-    Color(0xFF5873A8),
-  ),
-  plum(
-    Color(0xFF322A37),
-    Color(0xFFEADFEC),
-    Color(0xFF9C77B4),
-    Color(0xFF8A64A3),
-  ),
-  rose(
-    Color(0xFF38292D),
-    Color(0xFFF3DDE2),
-    Color(0xFFC46F84),
-    Color(0xFFB25C72),
-  );
+  mustard,
+  rust,
+  olive,
+  teal,
+  sage,
+  slate,
+  plum,
+  rose;
 
-  const TagColour(
-    this._darkCard,
-    this._lightCard,
-    this._darkDot,
-    this._lightDot,
-  );
-
-  final Color _darkCard;
-  final Color _lightCard;
-  final Color _darkDot;
-  final Color _lightDot;
-
-  /// The colour of a card or row the tag colours.
-  Color card(CalcPalette palette) =>
-      palette.brightness == Brightness.dark ? _darkCard : _lightCard;
+  /// The colour of a card or row the tag colours, in [palette]'s theme.
+  Color card(CalcPalette palette) => palette.tagCards[index];
 
   /// The tag's dot, beside its name wherever the name appears.
-  Color dot(CalcPalette palette) =>
-      palette.brightness == Brightness.dark ? _darkDot : _lightDot;
+  Color dot(CalcPalette palette) => palette.tagDots[index];
 }
 
 /// A tag as a card, a row or a note square shows it. A null colour is No

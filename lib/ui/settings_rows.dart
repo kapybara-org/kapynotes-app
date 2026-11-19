@@ -573,10 +573,19 @@ class SettingsMenuButton extends StatelessWidget {
     super.key,
     required this.label,
     required this.onPressed,
+    this.leading,
+    this.chevron = true,
   });
 
   final String label;
   final VoidCallback onPressed;
+
+  /// What goes before the label: a theme's accent.
+  final Widget? leading;
+
+  /// Whether a list is behind it. A time is chosen from one too, but reads
+  /// as a field.
+  final bool chevron;
 
   @override
   Widget build(BuildContext context) {
@@ -587,7 +596,7 @@ class SettingsMenuButton extends StatelessWidget {
         onPressed: onPressed,
         style: TextButton.styleFrom(
           minimumSize: Size(0, SettingsMetrics.controlHeight),
-          padding: const EdgeInsets.only(left: 10, right: 8),
+          padding: EdgeInsets.only(left: 10, right: chevron ? 8 : 10),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           backgroundColor: palette.wellBackground,
           foregroundColor: palette.textPrimary,
@@ -599,6 +608,10 @@ class SettingsMenuButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (leading case final leading?) ...[
+              leading,
+              const SizedBox(width: 8),
+            ],
             Flexible(
               child: Text(
                 label,
@@ -607,12 +620,14 @@ class SettingsMenuButton extends StatelessWidget {
                 style: TextStyle(fontSize: SettingsMetrics.buttonLabelSize),
               ),
             ),
-            const SizedBox(width: 6),
-            KapyIcon(
-              KapyIcons.chevronDownRounded,
-              size: 13,
-              color: palette.textTertiary,
-            ),
+            if (chevron) ...[
+              const SizedBox(width: 6),
+              KapyIcon(
+                KapyIcons.chevronDownRounded,
+                size: 13,
+                color: palette.textTertiary,
+              ),
+            ],
           ],
         ),
       ),
