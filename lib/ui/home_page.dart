@@ -937,8 +937,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await queue.drain();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
     }
   }
 

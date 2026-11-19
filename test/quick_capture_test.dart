@@ -1,3 +1,4 @@
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -236,6 +237,21 @@ void main() {
       expect(await QuickCapture.lateIntent(), LaunchIntent.dictate);
       // Collected once.
       expect(await QuickCapture.lateIntent(), LaunchIntent.open);
+    });
+
+    test('an answer later than the limit is dropped', () {
+      fakeAsync((async) {
+        stubLaunchIntent('dictate', after: const Duration(seconds: 11));
+        LaunchIntent? first;
+        LaunchIntent? late;
+        QuickCapture.launchIntent().then((intent) => first = intent);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(first, LaunchIntent.open);
+
+        QuickCapture.lateIntent().then((intent) => late = intent);
+        async.elapse(const Duration(seconds: 11));
+        expect(late, LaunchIntent.open);
+      });
     });
 
     test('an answer on time leaves nothing late', () async {
