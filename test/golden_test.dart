@@ -1303,6 +1303,34 @@ void main() {
     );
   });
 
+  testWidgets('phone notes, two picked', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(390, 760),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
+    );
+    for (final body in [
+      'Old receipts\nCoffee: 12.40',
+      'Trip ideas\nLisbon in April',
+    ]) {
+      goldenNotes.create(body: body);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.widgetWithText(NoteRow, 'Trip ideas'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Select'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Old receipts'));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/phone_notes_picked.png'),
+    );
+  });
+
   group('⌘K menu', () {
     /// The trip notes p-7-0 searches: two notes, two tasks in one of them, a
     /// drawing, and one more in Archive. Pumped at Paper's 1440 × 900.
