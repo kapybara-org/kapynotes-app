@@ -2525,7 +2525,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// tooltip rather than leaving it promising a key that does nothing.
   String? get _pinShortcut => widget.shortcuts
       .bindingFor(ShortcutAction.toggleAlwaysOnTop)
-      ?.displayLabel;
+      ?.keycapLabel;
+
+  /// Keep on top as More offers it, on the note's page and on Tasks alike.
+  KapyMenuAction? get _onTopAction => _pinToggle == null
+      ? null
+      : KapyMenuAction(
+          value: 'on-top',
+          label: widget.prefs.alwaysOnTop
+              ? 'Stop keeping on top'
+              : 'Keep on top',
+          icon: KapyIcons.layersRounded,
+          hint: _pinShortcut,
+        );
 
   /// The editable chord shown on the notes-list button in both layouts.
   String? get _sidebarShortcut =>
@@ -3471,16 +3483,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                     .iconButtonExtent,
                                           gap: 6,
                                         ),
-                                        pinned: pinned,
-                                        onTogglePin:
-                                            selected == null || _specialMode
-                                            ? null
-                                            : () => _togglePinnedNote(
-                                                selected.id,
-                                              ),
-                                        keepOnTop: widget.prefs.alwaysOnTop,
-                                        onToggleKeepOnTop: _pinToggle,
-                                        keepOnTopShortcut: _pinShortcut,
                                         moreActions: _pageActions(selected),
                                         onMore: (action) =>
                                             _runPageAction(action, selected),
@@ -3533,8 +3535,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final mayEdit = note != null && _canEditNote(note);
     final removeShortcut = widget.shortcuts
         .bindingFor(ShortcutAction.deleteNote)
-        ?.displayLabel;
-    final alwaysOnTop = widget.prefs.alwaysOnTop;
+        ?.keycapLabel;
+    final pinned = note != null && widget.notes.isPinned(note.id);
     return [
       KapyMenuAction(
         value: 'split',
@@ -3543,16 +3545,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         hint: canSplit
             ? widget.shortcuts
                   .bindingFor(ShortcutAction.splitEditor)
-                  ?.displayLabel
+                  ?.keycapLabel
             : null,
         enabled: canSplit,
       ),
-      if (_pinToggle != null)
+      ?_onTopAction,
+      if (note != null && !_specialMode)
         KapyMenuAction(
-          value: 'on-top',
-          label: alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
-          icon: KapyIcons.layersRounded,
-          hint: _pinShortcut,
+          value: 'pin',
+          label: pinned ? 'Unpin note' : 'Pin note',
+          icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
       if (mayEdit && !_specialMode && !note.isShared)
         const KapyMenuAction(
@@ -3592,6 +3594,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (note == null) return;
     switch (action) {
+      case 'pin':
+        _togglePinnedNote(note.id);
       case 'hide':
         unawaited(_hideNote(note.id));
       case 'restore':
@@ -3633,10 +3637,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         newNoteShortcut: widget.shortcuts
             .bindingFor(ShortcutAction.newNote)
             ?.displayLabel,
-        keepOnTop: widget.prefs.alwaysOnTop,
-        onToggleKeepOnTop: _pinToggle,
-        keepOnTopShortcut: _pinShortcut,
         updates: widget.updates,
+        moreActions: [?_onTopAction],
+        onMore: _pinToggle == null
+            ? null
+            : (action) => _runPageAction(action, null),
         actions: [
           if (!filter.done)
             TextButton.icon(

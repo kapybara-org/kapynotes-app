@@ -70,7 +70,7 @@ enum ToolRunner {
   /// The newest Codex, as major and minor, that is run; nil while no live
   /// canary has passed, and then no Codex answer is run at all. Mirrors
   /// `CodexCli.testedUpTo`, and is set only with it.
-  static let codexTestedUpTo: (major: Int, minor: Int)? = nil
+  static let codexTestedUpTo: (major: Int, minor: Int)? = (0, 160)
 
   /// One request in, one response out, both JSON.
   static func handle(_ data: Data) -> Data {

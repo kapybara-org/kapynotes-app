@@ -2625,6 +2625,11 @@ class _SettingsDialogState extends State<SettingsDialog>
           keywords: ['profile', 'display name', 'photo', 'avatar', 'email'],
         ),
         entry(
+          'Password',
+          target: 'password-row',
+          keywords: ['sign in', 'log in', 'login'],
+        ),
+        entry(
           'Sync',
           target: 'sync-status',
           keywords: ['sync now', 'status', 'devices', 'cloud'],

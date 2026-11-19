@@ -343,10 +343,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # deb-src for the mirrors the packages come from, so package.sh can
-      # fetch the source of each library it bundles at the version installed.
+      # apt-mirrors.sh gives apt a fallback mirror list and retries. deb-src
+      # for the mirrors the packages come from, so package.sh can fetch the
+      # source of each library it bundles at the version installed.
       - name: Install build dependencies
         run: |
+          sudo sh .github/apt-mirrors.sh
           sed -n 's/^deb /deb-src /p' /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/deb-src.list
           grep -q '^deb-src ' /etc/apt/sources.list.d/deb-src.list
           sudo apt-get update

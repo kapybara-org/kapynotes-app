@@ -1,7 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
 
-const _rates = <String, double>{'EUR': 0.5, 'GBP': 0.25, 'INR': 80.0};
+const _rates = <String, double>{
+  'EUR': 0.5,
+  'GBP': 0.25,
+  'INR': 80.0,
+  'NPR': 133.0,
+  'PKR': 280.0,
+  'BDT': 110.0,
+  'LKR': 300.0,
+};
 
 String? _line(String source) =>
     CalcEngine(ratesPerUsd: _rates).evaluateDocument(source)[0]?.text;
@@ -75,6 +83,9 @@ void main() {
       expect(_line('5 हजार रुपए'), '5,000.00 INR');
       expect(_line('₹2.5 lakh'), '250,000.00 INR');
       expect(_line('rent 2 lakh INR'), '200,000.00 INR');
+      for (final code in ['NPR', 'PKR', 'BDT', 'LKR']) {
+        expect(_line('5 हज\u093Cार $code'), '5,000.00 $code', reason: code);
+      }
     });
 
     test('leave a number with no currency as the prose it is', () {
