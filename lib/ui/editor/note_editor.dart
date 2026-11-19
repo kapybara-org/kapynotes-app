@@ -47,6 +47,7 @@ import 'markdown_backdrop.dart';
 import 'markdown_editing.dart';
 import 'markdown_syntax.dart';
 import 'table_cell_editor.dart';
+import 'table_controls.dart';
 import 'table_geometry.dart';
 import 'note_footer.dart';
 import 'phone_format_bar.dart';
@@ -90,7 +91,7 @@ import 'note_video_view.dart';
 import 'paste_feedback.dart';
 import 'remote_carets.dart';
 import 'note_field.dart';
-import 'note_sliver.dart' show LineTrailing;
+import 'note_sliver.dart' show LineTrailing, lineTrailingGap;
 import 'results_gutter.dart';
 import 'editor_context_menu.dart';
 import 'selection_bubble.dart';
@@ -181,7 +182,7 @@ class NoteEditor extends StatefulWidget {
     this.idlePeekHeld,
     required this.engine,
     required this.highlighter,
-    this.gutterWidth,
+    this.keepResultRoom = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -336,9 +337,10 @@ class NoteEditor extends StatefulWidget {
   final CalcEngine engine;
   final Highlighter highlighter;
 
-  /// How wide a phone's results gutter is. Null puts each result at the end
-  /// of its own line instead, which takes no width from the writing.
-  final double? gutterWidth;
+  /// Whether a line with a result wraps its writing short of it and shows it
+  /// at the right of its first row, as a phone does. Otherwise the result
+  /// follows the writing at the end of its line, on a leader.
+  final bool keepResultRoom;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -476,6 +478,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// has given up focus — see [_editingNote], which is what keeps the rest of
   /// the note's markdown from flipping to source the moment a cell is tapped.
   final TableCellEditor _cellEditor = TableCellEditor();
+  final TableControlsController _tableControls = TableControlsController();
 
   ({int tableStart, int row, int column})? _editingCell;
 
@@ -505,6 +508,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   Map<int, LineResult> _results = const {};
   String? _totalText;
+  String Function()? _describeTotal;
   String? _hoveredKeywordId;
   late TextEditingValue _lastValue;
   late List<NoteFormatRange> _formats;
@@ -786,6 +790,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _dismissKapyPeek();
     _remoteHover.dispose();
     _cellEditor.dispose();
+    _tableControls.dispose();
     _tableGeometry.dispose();
     _controller.dispose();
     _scrollController.dispose();
@@ -3789,6 +3794,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// reach for, but a panel that outlives the caret it was raised next to is
   /// wrong whichever key moved it.
   KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
+    if (_handleTableSelectionKey(event)) return KeyEventResult.handled;
     if (_slashCommandMenu.handleKeyEvent(event) ||
         _selectionBubble.handleKeyEvent(event)) {
       return KeyEventResult.handled;
@@ -3916,15 +3922,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _handlePointerDown(PointerDownEvent event) {
+    if (!_tableControls.claims(event.position)) _tableControls.selected = null;
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
     _selectionBubble.hide();
     _rightClicked = event.buttons & kSecondaryButton != 0;
     if (_rightClicked) {
-      final field = _field;
-      if (field != null && field.box != null) {
-        final offset = field.positionAt(event.position).offset;
-        if (_openTableCellAt(field, event.position, offset)) return;
+      // The table controls open the table's menu for a right-click on its
+      // grid.
+      if (_tableFrames().any((frame) => frame.grid.contains(event.position))) {
+        return;
       }
       _caretForSecondaryTapOnMisspelling(event.position);
     }
@@ -4116,6 +4123,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     final field = _field;
     if (field == null || field.box == null) return;
+    // A press on a table's grip or "+" is the control's, not the note's.
+    if (_tableControls.claims(down.position)) return;
 
     if (_caretToBlankRow(field, event.position)) {
       _offerPasteAfterTap(down);
@@ -4663,6 +4672,28 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Widget _contextMenu(BuildContext context, NoteFieldState field) {
     final selection = _controller.selection;
     final touch = !AppPlatform.hasPointer;
+    // A table's text is hidden under its grid, so a right-click or a
+    // press-and-hold there means the table, and gets the table's menu.
+    if (!widget.readOnly) {
+      final anchor = field.contextMenuAnchors.primaryAnchor;
+      for (final frame in _tableFrames()) {
+        final row = frame.rowAt(anchor.dy);
+        final column = frame.columnAt(anchor.dx);
+        if (row == null || column == null) continue;
+        if (touch) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            ContextMenuController.removeAny();
+            _showTableMenu(
+              frame,
+              row: row,
+              column: column,
+              anchor: Rect.fromCenter(center: anchor, width: 0, height: 0),
+            );
+          });
+        }
+        return const SizedBox.shrink();
+      }
+    }
     final link = _linkForSelection(selection);
     final linkItems = _linkContextMenuItems(link);
     if (widget.readOnly) {
@@ -5671,13 +5702,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           key: 'footer-table-add-row',
           label: 'Insert row below',
           icon: KapyIcons.tableRowBelow,
-          onPressed: _addTableRow,
+          onPressed: () => _runOnOpenCell(TableCommand.rowBelow),
         ),
         FormatBarAction(
           key: 'footer-table-add-column',
           label: 'Insert column right',
           icon: KapyIcons.tableColumnRight,
-          onPressed: _addTableColumn,
+          onPressed: () => _runOnOpenCell(TableCommand.columnRight),
         ),
         FormatBarAction(
           key: 'footer-table-align-column',
@@ -5692,13 +5723,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             MarkdownCellAlign.end => KapyIcons.alignRight,
           },
           active: alignment != MarkdownCellAlign.start,
-          onPressed: _cycleTableColumnAlignment,
+          onPressed: () => _runOnOpenCell(switch (alignment) {
+            MarkdownCellAlign.start => TableCommand.alignCenter,
+            MarkdownCellAlign.center => TableCommand.alignEnd,
+            MarkdownCellAlign.end => TableCommand.alignStart,
+          }),
         ),
         FormatBarAction(
           key: 'footer-table-remove-row',
           label: 'Delete row',
           icon: KapyIcons.tableDeleteRow,
-          onPressed: cell.row == 0 ? null : _removeTableRow,
+          onPressed: cell.row == 0
+              ? null
+              : () => _runOnOpenCell(TableCommand.deleteRow),
         ),
         FormatBarAction(
           key: 'footer-table-remove-column',
@@ -5706,7 +5743,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           icon: KapyIcons.tableDeleteColumn,
           onPressed: markdownTableColumnCount(cell.table) <= 1
               ? null
-              : _removeTableColumn,
+              : () => _runOnOpenCell(TableCommand.deleteColumn),
         ),
       ];
     }
@@ -5959,6 +5996,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
     _results = evaluation.results;
     _totalText = evaluation.totalText;
+    _describeTotal = evaluation.describeTotal;
   }
 
   static DateTime _localTime(DateTime value) => value.toLocal();
@@ -6056,6 +6094,438 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       band.top,
       left + geometry.columnLeft(column) + geometry.columns[column],
       band.bottom,
+    );
+  }
+
+  /// Every table on screen where it is drawn, for the controls over it.
+  List<TableFrame> _tableFrames() {
+    final field = _field;
+    final box = field?.box;
+    if (field == null || box == null || !box.attached) return const [];
+    final left = box.localToGlobal(Offset.zero).dx;
+    final frames = <TableFrame>[];
+    for (final MapEntry(key: table, value: geometry) in _tableGrids.entries) {
+      final rowEdges = <double>[];
+      for (var row = 0; row < table.rows.length; row++) {
+        final band = _tableRowBand(field, table, row);
+        if (band == null) break;
+        if (row == 0) rowEdges.add(band.top);
+        rowEdges.add(band.bottom);
+      }
+      if (rowEdges.length != table.rows.length + 1) continue;
+      var x = left;
+      final columnEdges = [x];
+      for (final width in geometry.columns) {
+        columnEdges.add(x += width);
+      }
+      frames.add(
+        TableFrame(
+          table: table.start,
+          rowEdges: rowEdges,
+          columnEdges: columnEdges,
+        ),
+      );
+    }
+    return frames;
+  }
+
+  @visibleForTesting
+  List<TableFrame> get debugTableFrames => _tableFrames();
+
+  MarkdownTable? _tableAt(int start) =>
+      markdownTableAt(_controller.markdownFor(_controller.text), start);
+
+  void _insertTableLine(TableFrame frame, TableAxis axis, int at) => unawaited(
+    axis == TableAxis.row
+        ? _runTableCommand(frame.table, TableCommand.rowBelow, row: at - 1)
+        : _runTableCommand(
+            frame.table,
+            TableCommand.columnRight,
+            column: at - 1,
+          ),
+  );
+
+  void _moveTableLine(TableFrame frame, TableAxis axis, int from, int to) {
+    final table = _tableAt(frame.table);
+    if (table == null || widget.readOnly) return;
+    final row = axis == TableAxis.row;
+    _applyTableEdit(
+      row
+          ? moveMarkdownTableRow(_controller.value, table, from: from, to: to)
+          : moveMarkdownTableColumn(
+              _controller.value,
+              table,
+              from: from,
+              to: to,
+            ),
+    );
+    int moved(int i) => i == from
+        ? to
+        : from < to && i > from && i <= to
+        ? i - 1
+        : to < from && i >= to && i < from
+        ? i + 1
+        : i;
+    _followTableEdit(
+      table.start,
+      rows: row ? moved : null,
+      columns: row ? null : moved,
+    );
+  }
+
+  void _resizeTableColumn(TableFrame frame, int column, double? width) {
+    final table = _tableAt(frame.table);
+    final geometry = table == null ? null : _tableGrids[table];
+    if (table == null || geometry == null || widget.readOnly) return;
+    final characters = width == null
+        ? null
+        : ((width - TableGeometry.padding * 2) / geometry.charWidth).round();
+    _applyTableEdit(
+      setMarkdownTableColumnWidth(
+        _controller.value,
+        table,
+        column: column,
+        width: characters,
+      ),
+    );
+    _followTableEdit(table.start);
+  }
+
+  /// The menu for a row, a column, or a cell: a cell's leads with Cut, Copy
+  /// and Paste, which act on [textItems] when the cell is open and on the
+  /// cell's words when it is not.
+  void _showTableMenu(
+    TableFrame frame, {
+    int? row,
+    int? column,
+    required Rect anchor,
+  }) => unawaited(
+    _openTableMenu(
+      frame.table,
+      row: row,
+      column: column,
+      at: anchor.width == 0 ? anchor.center : anchor.bottomLeft,
+    ),
+  );
+
+  Future<void> _openTableMenu(
+    int tableStart, {
+    int? row,
+    int? column,
+    required Offset at,
+    List<ContextMenuButtonItem>? textItems,
+  }) async {
+    final table = _tableAt(tableStart);
+    if (table == null || widget.readOnly) return;
+    final cell = row != null && column != null;
+    // A grip picks a whole row or column for Delete, which an open cell
+    // would otherwise take for itself. A phone keeps its cell open: its grips
+    // only show beside one.
+    if (!cell && AppPlatform.hasPointer && _editingCell != null) {
+      _closeCellEditor();
+    }
+    final rows = table.rows.length;
+    final columns = markdownTableColumnCount(table);
+    bool has(ContextMenuButtonType type) =>
+        textItems == null || textItems.any((item) => item.type == type);
+    final command = await showTableMenu(
+      context: context,
+      position: at,
+      sections: tableMenuSections(
+        text: cell,
+        row: row != null,
+        column: column != null,
+      ),
+      alignment: column == null ? null : _tableColumnAlignment(table, column),
+      enabled: (command) => switch (command) {
+        TableCommand.cut => has(ContextMenuButtonType.cut),
+        TableCommand.copy => has(ContextMenuButtonType.copy),
+        TableCommand.paste => has(ContextMenuButtonType.paste),
+        TableCommand.rowAbove || TableCommand.deleteRow => row! > 0,
+        TableCommand.rowUp => row! > 1,
+        TableCommand.rowDown => row! > 0 && row < rows - 1,
+        TableCommand.columnBack => column! > 0,
+        TableCommand.columnForward => column! < columns - 1,
+        TableCommand.deleteColumn => columns > 1,
+        _ => true,
+      },
+    );
+    if (command == null || !mounted) return;
+    await _runTableCommand(
+      tableStart,
+      command,
+      row: row,
+      column: column,
+      textItems: textItems,
+    );
+  }
+
+  /// Does [command] to the table at [tableStart], at [row] and [column].
+  ///
+  /// Every structural command is one edit of the note's text, and so one step
+  /// of its undo history. An open cell and a picked row or column follow the
+  /// words they were on.
+  Future<void> _runTableCommand(
+    int tableStart,
+    TableCommand command, {
+    int? row,
+    int? column,
+    List<ContextMenuButtonItem>? textItems,
+  }) async {
+    final table = _tableAt(tableStart);
+    if (table == null || widget.readOnly) return;
+    final value = _controller.value;
+    final rows = table.rows.length;
+    final columns = markdownTableColumnCount(table);
+    if (row != null && (row < 0 || row >= rows)) return;
+    if (column != null && (column < 0 || column >= columns)) return;
+    int shift(int i, int at, int by) => i >= at ? i + by : i;
+    int swap(int i, int a, int b) => i == a
+        ? b
+        : i == b
+        ? a
+        : i;
+    final MarkdownEdit edit;
+    int Function(int)? rowMap;
+    int Function(int)? columnMap;
+    switch (command) {
+      case TableCommand.cut || TableCommand.copy || TableCommand.paste:
+        if (row == null || column == null) return;
+        return _tableClipboard(table, command, row, column, textItems);
+      case TableCommand.rowAbove:
+        if (row == null || row == 0) return;
+        edit = insertMarkdownTableRow(value, table, after: row - 1);
+        rowMap = (i) => shift(i, row, 1);
+      case TableCommand.rowBelow:
+        if (row == null) return;
+        edit = insertMarkdownTableRow(value, table, after: row);
+        rowMap = (i) => shift(i, row + 1, 1);
+      case TableCommand.columnLeft:
+        if (column == null) return;
+        edit = insertMarkdownTableColumn(value, table, after: column - 1);
+        columnMap = (i) => shift(i, column, 1);
+      case TableCommand.columnRight:
+        if (column == null) return;
+        edit = insertMarkdownTableColumn(value, table, after: column);
+        columnMap = (i) => shift(i, column + 1, 1);
+      case TableCommand.rowUp || TableCommand.rowDown:
+        if (row == null) return;
+        final to = command == TableCommand.rowUp ? row - 1 : row + 1;
+        edit = moveMarkdownTableRow(value, table, from: row, to: to);
+        rowMap = (i) => swap(i, row, to);
+      case TableCommand.columnBack || TableCommand.columnForward:
+        if (column == null) return;
+        final to = command == TableCommand.columnBack ? column - 1 : column + 1;
+        edit = moveMarkdownTableColumn(value, table, from: column, to: to);
+        columnMap = (i) => swap(i, column, to);
+      case TableCommand.alignStart ||
+          TableCommand.alignCenter ||
+          TableCommand.alignEnd:
+        if (column == null) return;
+        edit = setMarkdownTableColumnAlign(
+          value,
+          table,
+          column: column,
+          align: command.align!,
+        );
+      case TableCommand.deleteRow:
+        if (row == null || row == 0) return;
+        edit = removeMarkdownTableRow(value, table, row: row);
+        rowMap = (i) => i > row ? i - 1 : math.min(i, rows - 2);
+      case TableCommand.deleteColumn:
+        if (column == null || columns <= 1) return;
+        edit = removeMarkdownTableColumn(value, table, column: column);
+        columnMap = (i) => i > column ? i - 1 : math.min(i, columns - 2);
+    }
+    if (identical(edit.value, value) || edit.value.text == value.text) return;
+    // Adding a row or column from the cell being edited goes on into it, the
+    // way Tab past the last cell does.
+    final open = _editingCell;
+    final fromCell =
+        open != null &&
+        open.tableStart == tableStart &&
+        (row == null || row == open.row) &&
+        (column == null || column == open.column);
+    _applyTableEdit(edit);
+    _followTableEdit(
+      tableStart,
+      rows: fromCell && command == TableCommand.rowBelow
+          ? (i) => i + 1
+          : rowMap,
+      columns: fromCell && command == TableCommand.columnRight
+          ? (i) => i + 1
+          : columnMap,
+      keepPicked:
+          command == TableCommand.rowUp ||
+          command == TableCommand.rowDown ||
+          command == TableCommand.columnBack ||
+          command == TableCommand.columnForward,
+    );
+  }
+
+  /// Takes an open cell and a picked row or column along with an edit to
+  /// their table, through [rows] and [columns], which say where each index
+  /// went. A picked line stays picked only when [keepPicked], so that a
+  /// second ⌥⇧↓ moves the same row on.
+  void _followTableEdit(
+    int tableStart, {
+    int Function(int)? rows,
+    int Function(int)? columns,
+    bool keepPicked = false,
+  }) {
+    final picked = _tableControls.selected;
+    _tableControls.selected = !keepPicked || picked?.table != tableStart
+        ? null
+        : (
+            table: tableStart,
+            axis: picked!.axis,
+            index:
+                (picked.axis == TableAxis.row ? rows : columns)?.call(
+                  picked.index,
+                ) ??
+                picked.index,
+          );
+    final open = _editingCell;
+    if (open == null || open.tableStart != tableStart) return;
+    _scheduleTableCell(
+      tableStart,
+      rows?.call(open.row) ?? open.row,
+      columns?.call(open.column) ?? open.column,
+    );
+  }
+
+  Future<void> _tableClipboard(
+    MarkdownTable table,
+    TableCommand command,
+    int row,
+    int column,
+    List<ContextMenuButtonItem>? textItems,
+  ) async {
+    if (textItems != null) {
+      final type = switch (command) {
+        TableCommand.cut => ContextMenuButtonType.cut,
+        TableCommand.copy => ContextMenuButtonType.copy,
+        _ => ContextMenuButtonType.paste,
+      };
+      for (final item in textItems) {
+        if (item.type == type) item.onPressed?.call();
+      }
+      return;
+    }
+    final cells = table.rows[row].cells;
+    final words = column < cells.length
+        ? _controller.text.substring(cells[column].start, cells[column].end)
+        : '';
+    if (command != TableCommand.paste) {
+      await Clipboard.setData(ClipboardData(text: words));
+      if (command == TableCommand.cut && words.isNotEmpty && mounted) {
+        _applyTableEdit(
+          setMarkdownTableCell(
+            _controller.value,
+            table,
+            row: row,
+            column: column,
+            text: '',
+          ),
+        );
+      }
+      return;
+    }
+    final pasted = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    if (pasted == null || !mounted) return;
+    final now = _tableAt(table.start);
+    if (now == null || row >= now.rows.length) return;
+    _applyTableEdit(
+      setMarkdownTableCell(
+        _controller.value,
+        now,
+        row: row,
+        column: column,
+        text: pasted.trim(),
+      ),
+    );
+  }
+
+  /// Keys for the row or column picked with its grip: Delete takes it away,
+  /// the table's shortcuts act on it, Escape lets go, and any other key lets
+  /// go and carries on as usual.
+  bool _handleTableSelectionKey(KeyEvent event) {
+    final picked = _tableControls.selected;
+    if (picked == null || event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return false;
+    }
+    final table = _tableAt(picked.table);
+    final row = picked.axis == TableAxis.row;
+    if (table == null ||
+        picked.index >=
+            (row ? table.rows.length : markdownTableColumnCount(table))) {
+      _tableControls.selected = null;
+      return false;
+    }
+    final key = event.logicalKey;
+    final keyboard = HardwareKeyboard.instance;
+    final plain =
+        !keyboard.isMetaPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed;
+    if (key == LogicalKeyboardKey.escape) {
+      _tableControls.selected = null;
+      return true;
+    }
+    var command = tableCommandFor(event, columnMoves: true);
+    if (plain &&
+        (key == LogicalKeyboardKey.backspace ||
+            key == LogicalKeyboardKey.delete)) {
+      command = row ? TableCommand.deleteRow : TableCommand.deleteColumn;
+    }
+    const rowCommands = {
+      TableCommand.rowAbove,
+      TableCommand.rowBelow,
+      TableCommand.rowUp,
+      TableCommand.rowDown,
+      TableCommand.deleteRow,
+    };
+    if (command != null && rowCommands.contains(command) == row) {
+      unawaited(
+        _runTableCommand(
+          picked.table,
+          command,
+          row: row ? picked.index : null,
+          column: row ? null : picked.index,
+        ),
+      );
+      return true;
+    }
+    if (event is KeyDownEvent &&
+        !HardwareKeyboard.instance.logicalKeysPressed.every(_isModifier)) {
+      _tableControls.selected = null;
+    }
+    return false;
+  }
+
+  static bool _isModifier(LogicalKeyboardKey key) => {
+    LogicalKeyboardKey.metaLeft,
+    LogicalKeyboardKey.metaRight,
+    LogicalKeyboardKey.controlLeft,
+    LogicalKeyboardKey.controlRight,
+    LogicalKeyboardKey.altLeft,
+    LogicalKeyboardKey.altRight,
+    LogicalKeyboardKey.shiftLeft,
+    LogicalKeyboardKey.shiftRight,
+  }.contains(key);
+
+  /// A command on the cell being edited, from the phone's footer.
+  void _runOnOpenCell(TableCommand command) {
+    final active = _activeTableCell();
+    if (active == null) return;
+    unawaited(
+      _runTableCommand(
+        active.table.start,
+        command,
+        row: active.row,
+        column: active.column,
+      ),
     );
   }
 
@@ -6240,15 +6710,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (active == null || field == null || box == null) return;
     final rect = _cellRect(field, active.table, active.row, active.column);
     if (rect == null) return;
-    final geometry = _tableGrids[active.table];
-    _cellEditor.moveTo(
-      rect,
-      bounds: box.localToGlobal(Offset.zero) & box.size,
-      tableLeft: geometry == null
-          ? null
-          : rect.left - geometry.columnLeft(active.column),
-      tableTop: _tableRowBand(field, active.table, 0)?.top,
-    );
+    _cellEditor.moveTo(rect);
   }
 
   /// Tab: on to the next cell, or into a new row when there is no next one.
@@ -6374,96 +6836,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
-  void _addTableRow({bool above = false}) {
-    final active = _activeTableCell();
-    if (active == null || widget.readOnly) return;
-    // Nothing goes above the header: the row under it would become the header.
-    if (above && active.row == 0) return;
-    final targetRow = above ? active.row : active.row + 1;
-    _applyTableEdit(
-      insertMarkdownTableRow(
-        _controller.value,
-        active.table,
-        after: above ? active.row - 1 : active.row,
-      ),
-    );
-    _scheduleTableCell(active.table.start, targetRow, active.column);
-  }
-
-  void _removeTableRow() {
-    final active = _activeTableCell();
-    if (active == null || active.row == 0 || widget.readOnly) return;
-    _applyTableEdit(
-      removeMarkdownTableRow(_controller.value, active.table, row: active.row),
-    );
-    final targetRow = math.min(active.row, active.table.rows.length - 2);
-    _scheduleTableCell(active.table.start, targetRow, active.column);
-  }
-
-  void _addTableColumn({bool before = false}) {
-    final active = _activeTableCell();
-    if (active == null || widget.readOnly) return;
-    _applyTableEdit(
-      insertMarkdownTableColumn(
-        _controller.value,
-        active.table,
-        after: before ? active.column - 1 : active.column,
-      ),
-    );
-    _scheduleTableCell(
-      active.table.start,
-      active.row,
-      before ? active.column : active.column + 1,
-    );
-  }
-
-  void _removeTableColumn() {
-    final active = _activeTableCell();
-    if (active == null || widget.readOnly) return;
-    final columns = markdownTableColumnCount(active.table);
-    if (columns <= 1) return;
-    _applyTableEdit(
-      removeMarkdownTableColumn(
-        _controller.value,
-        active.table,
-        column: active.column,
-      ),
-    );
-    _scheduleTableCell(
-      active.table.start,
-      active.row,
-      math.min(active.column, columns - 2),
-    );
-  }
-
   MarkdownCellAlign _tableColumnAlignment(MarkdownTable table, int column) =>
       table.aligns.elementAtOrNull(column) ?? MarkdownCellAlign.start;
-
-  void _cycleTableColumnAlignment() {
-    final active = _activeTableCell();
-    if (active == null || widget.readOnly) return;
-    final current = _tableColumnAlignment(active.table, active.column);
-    _setTableColumnAlignment(switch (current) {
-      MarkdownCellAlign.start => MarkdownCellAlign.center,
-      MarkdownCellAlign.center => MarkdownCellAlign.end,
-      MarkdownCellAlign.end => MarkdownCellAlign.start,
-    });
-  }
-
-  void _setTableColumnAlignment(MarkdownCellAlign next) {
-    final active = _activeTableCell();
-    if (active == null || widget.readOnly) return;
-    if (_tableColumnAlignment(active.table, active.column) == next) return;
-    _applyTableEdit(
-      setMarkdownTableColumnAlign(
-        _controller.value,
-        active.table,
-        column: active.column,
-        align: next,
-      ),
-    );
-    _scheduleTableCell(active.table.start, active.row, active.column);
-  }
 
   /// The note field's own undo history, asked directly.
   ///
@@ -6512,7 +6886,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (moved) setState(() => _editingCell = target);
     final palette = context.palette;
     final accent = Theme.of(context).colorScheme.primary;
-    final columns = markdownTableColumnCount(table);
     final alignment = _tableColumnAlignment(table, column);
     final header = table.rows[row].header;
     final base = EditorMetrics.textStyle(
@@ -6520,19 +6893,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       widget.writingFont,
       editorScale: widget.editorTextScale,
     );
-    final field = _field;
-    final box = field?.box;
-    final geometry = _tableGrids[table];
     _cellEditor.show(
       context,
       anchor: rect,
-      bounds: box == null ? null : box.localToGlobal(Offset.zero) & box.size,
-      tableLeft: geometry == null
-          ? rect.left
-          : rect.left - geometry.columnLeft(column),
-      tableTop: field == null
-          ? rect.top
-          : _tableRowBand(field, table, 0)?.top ?? rect.top,
       text: source,
       caretAtStart: caretAtStart,
       reset: moved,
@@ -6547,27 +6910,30 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         MarkdownCellAlign.end => TextAlign.right,
       },
       padding: TableGeometry.padding,
-      showToolbar: !AppPlatform.isMobile,
       cursorColor: accent,
       background: header ? palette.controlBackground : palette.paperColor,
       border: accent,
-      toolbarBackground: palette.paperColor,
       onChanged: _commitCellText,
       onDone: _closeCellEditor,
       onTapOutside: _cellTappedOutside,
+      passThrough: AppPlatform.isMobile ? _tableControls.claims : null,
       onTab: (backwards) => _moveToCell(backwards: backwards),
       onEnter: _moveDownTable,
       onArrow: _moveByArrow,
-      onAddRowAbove: row == 0 ? null : () => _addTableRow(above: true),
-      onAddRow: _addTableRow,
-      onRemoveRow: row == 0 ? null : _removeTableRow,
-      onAddColumnBefore: () => _addTableColumn(before: true),
-      onAddColumn: _addTableColumn,
-      onRemoveColumn: columns <= 1 ? null : _removeTableColumn,
-      onAlign: _setTableColumnAlignment,
+      onCommand: (command) => unawaited(
+        _runTableCommand(table.start, command, row: row, column: column),
+      ),
+      onContextMenu: (menu) => unawaited(
+        _openTableMenu(
+          table.start,
+          row: row,
+          column: column,
+          at: menu.at,
+          textItems: menu.items,
+        ),
+      ),
       onUndo: () => _undoTableEdit(redo: false),
       onRedo: () => _undoTableEdit(redo: true),
-      alignment: alignment,
     );
     if (moved) _ensureCellVisible();
   }
@@ -6637,6 +7003,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// note the keyboard only for the next cell to take it back, and on a phone
   /// the keyboard went down in that exchange and stayed down.
   void _cellTappedOutside(Offset position) {
+    if (_tableControls.claims(position)) return;
     final active = _activeTableCell();
     final field = _field;
     final box = field?.box;
@@ -6914,6 +7281,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           done: checklist.done,
           tasks: checklist.total,
           total: _totalText,
+          describeTotal: _describeTotal,
           typing: widget.typing,
           readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
           readOnlyIcon: widget.readOnlyIcon,
@@ -7363,19 +7731,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Results sit at the ends of their lines and take no width
-                // from the writing. A phone reserves its gutter only when a
-                // line calculates, so prose, checklists, and journals keep the
-                // full writing width.
+                // Results take width only from their own lines, so prose,
+                // checklists, and journals keep the full writing width.
                 final resultsVisible =
                     widget.resultsVisible && _results.isNotEmpty;
-                final gutterWidth = resultsVisible
-                    ? (widget.gutterWidth ?? 0).clamp(
-                        0.0,
-                        (constraints.maxWidth - 160).clamp(0.0, 480.0),
-                      )
-                    : 0.0;
-                final textPaneWidth = constraints.maxWidth - gutterWidth;
+                final textPaneWidth = constraints.maxWidth;
 
                 // The page centres a column of [EditorMetrics.columnWidth].
                 final side = EditorMetrics.page
@@ -7595,9 +7955,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 final chips = EditorMetrics.page
                     ? _controller.linkChips(_controller.text)
                     : const <TextRange>[];
-                // The field reaches across the results column, which is where
-                // each line puts its result on a phone.
-                final fieldWidth = constraints.maxWidth - padding.left;
                 final leaderColor = palette.textTertiary.withValues(alpha: 0.3);
 
                 // The chip follows the paste's caret once the field has laid
@@ -7707,11 +8064,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
-                            if (gutterWidth > 0)
-                              SizedBox(
-                                width: gutterWidth,
-                                child: const ResultsGutter(),
-                              ),
                           ],
                         ),
                       ),
@@ -7724,18 +8076,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           trailingOf: resultsVisible
                               ? (line) => switch (_results[line]) {
                                   null => null,
-                                  final result when gutterWidth > 0 => (
+                                  final result when widget.keepResultRoom => (
                                     child: ResultChip(
                                       result: result,
-                                      collapsedWidth:
-                                          gutterWidth -
-                                          ResultsGutter.leftInset -
-                                          ResultsGutter.rightInset,
+                                      collapsedWidth: contentWidth / 2,
                                     ),
                                     leader: null,
-                                    right:
-                                        fieldWidth - ResultsGutter.rightInset,
+                                    right: contentWidth,
                                     firstRow: true,
+                                    room:
+                                        math.min(
+                                          ResultChip.widthOf(context, result),
+                                          contentWidth / 2,
+                                        ) +
+                                        lineTrailingGap,
                                   ),
                                   final result => (
                                     child: ResultChip(
@@ -7749,11 +8103,37 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     ),
                                     right: contentWidth,
                                     firstRow: false,
+                                    room: 0.0,
                                   ),
                                 }
                               : null,
                         ),
                       ),
+                      if (!widget.readOnly && markdown.tables.isNotEmpty)
+                        Positioned.fill(
+                          child: TableControlsLayer(
+                            frames: _tableFrames,
+                            repaint: Listenable.merge([
+                              _scrollController,
+                              _controller,
+                            ]),
+                            scroll: _scrollController,
+                            controller: _tableControls,
+                            editing: switch (_editingCell) {
+                              final cell? => (
+                                table: cell.tableStart,
+                                row: cell.row,
+                                column: cell.column,
+                              ),
+                              null => null,
+                            },
+                            touch: !AppPlatform.hasPointer,
+                            onInsert: _insertTableLine,
+                            onMove: _moveTableLine,
+                            onResize: _resizeTableColumn,
+                            onMenu: _showTableMenu,
+                          ),
+                        ),
                       if (title != null)
                         Positioned.fill(child: _titleMarks(title, padding)),
                       if (EditorMetrics.page && !widget.readOnly)
@@ -8733,7 +9113,7 @@ class _UnknownChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: palette.controlBackground,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
           border: Border.all(color: palette.controlBorder),
         ),
         child: Text(

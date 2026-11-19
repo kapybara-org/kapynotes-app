@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
@@ -59,7 +60,7 @@ void main() {
     expect(filled.minimumSize!.resolve({})!.height, 36);
     expect(filled.visualDensity, VisualDensity.standard);
     expect(filled.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
-    expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w600);
+    expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w500);
     expect(
       (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
       BorderRadius.circular(AppRadii.control),
@@ -95,13 +96,13 @@ void main() {
     expect(theme.textTheme.bodyMedium?.fontFamilyFallback?.first, 'Segoe UI');
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
     expect(theme.textTheme.bodySmall?.fontWeight, FontWeight.w400);
-    expect(theme.textTheme.bodySmall?.fontSize, 12.5);
-    expect(theme.textTheme.labelMedium?.fontSize, 12.5);
-    expect(theme.textTheme.labelSmall?.fontSize, 11.5);
-    expect(AppTypeScale.micro, 11.5);
-    expect(AppTypeScale.caption, 12.5);
+    expect(theme.textTheme.bodySmall?.fontSize, 13);
+    expect(theme.textTheme.labelMedium?.fontSize, 13);
+    expect(theme.textTheme.labelSmall?.fontSize, 12);
+    expect(AppTypeScale.micro, 12);
+    expect(AppTypeScale.caption, 13);
     expect(AppTypeScale.small, 13);
-    expect(AppTypeScale.body, 13.5);
+    expect(AppTypeScale.body, 14);
     expect(AppTypeScale.control, 14);
   });
 
@@ -280,7 +281,7 @@ void main() {
 
   test('handwritten editor face stays restrained', () {
     expect(WritingFont.handwritten.fontFamily, 'Shantell Sans');
-    expect(WritingFont.handwritten.editorSize, 16.5);
+    expect(WritingFont.handwritten.editorSize, 16);
     expect(WritingFont.handwritten.fontVariations, const [
       FontVariation('INFM', 16),
       FontVariation('BNCE', 0),
@@ -293,5 +294,52 @@ void main() {
     expect(WritingFont.mixed.fontFamily, 'Figtree');
     expect(WritingFont.mixed.fontFamilyFallback, AppPlatform.uiFontFallback);
     expect(WritingFont.mixed.editorSize, 16);
+  });
+
+  test('muted text holds 4.5:1 on every surface it sits on', () {
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance(), lb = b.computeLuminance();
+      return (max(la, lb) + 0.05) / (min(la, lb) + 0.05);
+    }
+
+    for (final palette in [KapyTheme.darkPalette, KapyTheme.lightPalette]) {
+      for (final surface in [
+        palette.editorBackground,
+        palette.sidebarBackground,
+        palette.railBackground,
+        palette.controlBackground,
+        palette.cardBackground,
+        palette.wellBackground,
+        palette.keycapBackground,
+        palette.selectedBackground,
+        palette.hover,
+      ]) {
+        expect(
+          contrast(palette.textTertiary, surface),
+          greaterThanOrEqualTo(4.5),
+          reason: '${palette.textTertiary} on $surface',
+        );
+      }
+    }
+  });
+
+  testWidgets('a hairline is one physical pixel at every display scale', (
+    tester,
+  ) async {
+    for (final scale in [1.0, 1.25, 1.5, 2.0, 3.0]) {
+      late double width;
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(devicePixelRatio: scale),
+          child: Builder(
+            builder: (context) {
+              width = AppHairline.of(context);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      expect(width * scale, 1, reason: 'at ${scale}x');
+    }
   });
 }

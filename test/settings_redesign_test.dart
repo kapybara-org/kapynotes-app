@@ -204,7 +204,7 @@ void main() {
           find.descendant(of: row, matching: find.byType(SettingsSwitch)),
         );
 
-    testWidgets('is on by default with a model on the device, and turns off', (
+    testWidgets('is off by default with a model on the device, and turns on', (
       tester,
     ) async {
       await open(tester, _Titles());
@@ -215,13 +215,13 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(switchIn(tester).value, isTrue);
+      expect(switchIn(tester).value, isFalse);
       expect(switchIn(tester).enabled, isTrue);
 
       await tester.tap(row);
       await tester.pumpAndSettle();
-      expect(prefs.autoTitlesEnabled, isFalse);
-      expect(switchIn(tester).value, isFalse);
+      expect(prefs.autoTitlesEnabled, isTrue);
+      expect(switchIn(tester).value, isTrue);
     });
 
     testWidgets('without a model it is off and disabled, and says why', (
@@ -238,7 +238,7 @@ void main() {
 
       await tester.tap(row);
       await tester.pumpAndSettle();
-      expect(prefs.autoTitlesEnabled, isTrue, reason: 'nothing to turn off');
+      expect(prefs.autoTitlesEnabled, isFalse, reason: 'nothing to turn on');
     });
 
     testWidgets('is left out where nothing names notes', (tester) async {

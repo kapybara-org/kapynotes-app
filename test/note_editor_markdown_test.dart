@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
-    show PointerDeviceKind, PointerScrollEvent, kSecondaryButton;
+    show PointerDeviceKind, PointerScrollEvent;
 import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -237,12 +237,12 @@ void main() {
     testWidgets('a heading is large and bold, its marker hidden', (
       tester,
     ) async {
-      await tester.pumpWidget(harness('# Title\nbody'));
+      await tester.pumpWidget(harness('Note\n# Title\nbody'));
       await tester.pumpAndSettle();
 
       final title = styleOf(tester, 'Title');
       final body = styleOf(tester, 'body');
-      expect(title.fontWeight, FontWeight.w700);
+      expect(title.fontWeight, FontWeight.w600);
       expect(title.fontSize, greaterThan(body.fontSize!));
       expect(isHidden(tester, '#'), isTrue);
       expect(isHidden(tester, 'Title'), isFalse);
@@ -290,7 +290,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w600);
       expect(styleOf(tester, 'it').fontStyle, FontStyle.italic);
       expect(
         styleOf(tester, 'code').fontFamily,
@@ -338,7 +338,7 @@ void main() {
 
       await tester.pumpWidget(harness('Note\n**bold**'));
       await tester.pumpAndSettle();
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w600);
     });
   });
 
@@ -490,7 +490,7 @@ void main() {
 
       expect(styleOf(tester, 'one').fontStyle, FontStyle.italic);
       expect(styleOf(tester, 'two').fontStyle, FontStyle.italic);
-      expect(styleOf(tester, 'three').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'three').fontWeight, FontWeight.w600);
       expect(styleOf(tester, 'four').decoration, TextDecoration.lineThrough);
       expect(
         styleOf(tester, 'five').fontFamily,
@@ -1535,122 +1535,6 @@ void main() {
       expect(latest, '$body\n\nx');
     });
 
-    testWidgets('the cell toolbar edits rows, columns and alignment', (
-      tester,
-    ) async {
-      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
-      String? latest;
-      await tester.pumpWidget(
-        harness(body, onBodyChanged: (value) => latest = value),
-      );
-      await tester.pumpAndSettle();
-
-      final rowStart = body.indexOf('| Tea');
-      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('table-cell-toolbar')), findsOneWidget);
-
-      await tester.tap(find.byKey(const ValueKey('table-align-center')));
-      await tester.pumpAndSettle();
-      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |');
-
-      await tester.tap(find.byKey(const ValueKey('table-add-row')));
-      await tester.pumpAndSettle();
-      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |\n|  |  |');
-
-      await tester.tap(find.byKey(const ValueKey('table-add-column')));
-      await tester.pumpAndSettle();
-      expect(
-        latest,
-        '| a |  | b |\n'
-        '| :---: | --- | --- |\n'
-        '| Tea |  | 4 |\n'
-        '|  |  |  |',
-      );
-
-      await tester.tap(find.byKey(const ValueKey('table-remove-column')));
-      await tester.pumpAndSettle();
-      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |\n|  |  |');
-
-      await tester.tap(find.byKey(const ValueKey('table-remove-row')));
-      await tester.pumpAndSettle();
-      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |');
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const ValueKey('table-cell-editor')))
-            .controller!
-            .text,
-        '4',
-        reason: 'removing the last row lands in the previous one',
-      );
-    });
-
-    testWidgets('a structural table action is one undo step', (tester) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      addTearDown(() {
-        AppPlatform.debugTargetPlatformOverride = null;
-        debugDefaultTargetPlatformOverride = null;
-      });
-      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
-      String latest = body;
-      await tester.pumpWidget(
-        harness(body, onBodyChanged: (value) => latest = value),
-      );
-      await tester.pumpAndSettle();
-      final rowStart = body.indexOf('| Tea');
-      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
-      await tester.pumpAndSettle();
-      // The table tap gives the main field its first valid caret, which is when
-      // Flutter can put the note's initial value into UndoHistory. It throttles
-      // that entry for 500 ms, the same cadence used by the insertion test.
-      await tester.pump(const Duration(milliseconds: 600));
-      await tester.tap(find.byKey(const ValueKey('table-add-row')));
-      await tester.pumpAndSettle();
-      expect(latest, '$body\n|  |  |');
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const ValueKey('table-cell-editor')))
-            .focusNode!
-            .hasFocus,
-        isTrue,
-        reason: 'table actions keep keyboard ownership in the active cell',
-      );
-
-      await tester.sendKeyDownEvent(
-        LogicalKeyboardKey.controlLeft,
-        platform: 'windows',
-      );
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ, platform: 'windows');
-      await tester.sendKeyUpEvent(
-        LogicalKeyboardKey.controlLeft,
-        platform: 'windows',
-      );
-      await tester.pumpAndSettle();
-      debugDefaultTargetPlatformOverride = null;
-
-      expect(latest, body);
-    });
-
-    testWidgets('a secondary click opens the same cell controls', (
-      tester,
-    ) async {
-      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
-      await tester.pumpWidget(harness(body));
-      await tester.pumpAndSettle();
-
-      final rowStart = body.indexOf('| Tea');
-      await tester.tapAt(
-        centerOfRange(tester, rowStart, rowStart + 1),
-        buttons: kSecondaryButton,
-        kind: PointerDeviceKind.mouse,
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const ValueKey('table-cell-editor')), findsOneWidget);
-      expect(find.byKey(const ValueKey('table-cell-toolbar')), findsOneWidget);
-    });
-
     testWidgets('a read-only table stays a grid without an editor', (
       tester,
     ) async {
@@ -1906,7 +1790,7 @@ void main() {
       await typeAtCaret(tester, 'h');
       await typeAtCaret(tester, 'i');
       expect(controllerOf(tester).text, 'say **hi**');
-      expect(styleOf(tester, 'hi').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'hi').fontWeight, FontWeight.w600);
 
       // A space, then the key again: the next word is plain.
       await typeAtCaret(tester, ' ');
@@ -2054,7 +1938,7 @@ void main() {
       expect(styleOf(tester, 'return').color, palette.codeKeyword);
       expect(styleOf(tester, 'sum').color, palette.codeBuiltIn);
       expect(styleOf(tester, 'total').color, palette.textPrimary);
-      expect(styleOf(tester, 'total').fontWeight, FontWeight.w600);
+      expect(styleOf(tester, 'total').fontWeight, FontWeight.w500);
       expect(styleOf(tester, '# all').color, palette.textTertiary);
       expect(styleOf(tester, '# all').fontStyle, FontStyle.italic);
       // A language it does not know is left as it is written.
@@ -2495,5 +2379,50 @@ void main() {
         );
       });
     });
+  });
+
+  group('the note title', () {
+    const note =
+        'Lisbon trip budget\n'
+        'Flights for two, in April.\n'
+        '# Days\n'
+        '## Getting there\n'
+        '### Trains\n'
+        'flights = 412 eur';
+
+    for (final light in [true, false]) {
+      final theme = light ? 'light' : 'dark';
+
+      for (final (view, readOnly, phone) in [
+        ('editor', false, false),
+        ('read_only', true, false),
+        ('phone', false, true),
+      ]) {
+        testWidgets('in Newsreader, $view, $theme', (tester) async {
+          if (phone) {
+            AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+            addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          }
+          tester.view.physicalSize = phone
+              ? const Size(390, 420)
+              : const Size(720, 460);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            harness(
+              note,
+              light: light,
+              readOnly: readOnly,
+              writingFont: WritingFont.clean,
+            ),
+          );
+          await settleWithPageKapy(tester);
+          await expectLater(
+            find.byType(NoteEditor),
+            matchesGoldenFile('goldens/note_title_${view}_$theme.png'),
+          );
+        });
+      }
+    }
   });
 }

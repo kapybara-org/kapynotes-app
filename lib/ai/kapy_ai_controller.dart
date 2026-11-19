@@ -281,6 +281,15 @@ class KapyAiController extends KapyAi {
   void downloadDeviceModel() => _device.download();
 
   @override
+  Future<bool> deviceDownloadOnMobileData() => _device.onMobileData();
+
+  @override
+  void downloadDeviceModelOnWifi() {
+    _device.downloadOnWifi();
+    dismissPending();
+  }
+
+  @override
   void cancelDeviceDownload() => _device.cancel();
 
   @override

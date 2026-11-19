@@ -64,7 +64,7 @@ Offset _centerOf(WidgetTester tester, String body, String linkText) {
 Widget harness(
   String body, {
   List<NoteFormatRange> initialFormats = const [],
-  double? gutterWidth,
+  bool keepResultRoom = false,
   bool resultsVisible = true,
   double? width,
   DateTime? lastUpdatedAt,
@@ -94,7 +94,7 @@ Widget harness(
     initialFormats: initialFormats,
     engine: engine,
     highlighter: Highlighter(engine.registry),
-    gutterWidth: gutterWidth,
+    keepResultRoom: keepResultRoom,
     resultsVisible: resultsVisible,
     lastUpdatedAt: lastUpdatedAt,
     dailySeparatorsEnabled: dailySeparatorsEnabled,
@@ -960,7 +960,7 @@ void main() {
     const body =
         'Food and getting around town for the week // only a rough guess\n'
         'daily = 55\n'
-        'daily * 7\n'
+        '7 * 55\n'
         'total';
     await tester.pumpWidget(harness(body, width: 465));
     await tester.pumpAndSettle();
@@ -1296,7 +1296,7 @@ void main() {
     final formatted = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Format',
     );
-    expect(formatted.style!.fontWeight, FontWeight.w700);
+    expect(formatted.style!.fontWeight, FontWeight.w600);
     expect(formatted.style!.fontStyle, FontStyle.italic);
   });
 
@@ -1306,7 +1306,7 @@ void main() {
     // A phone's look: on the page a link is a chip and the first line a
     // title, both of which editor_page_test covers.
     _onPhone();
-    const body = 'Read https://example.com/docs?q=notes.';
+    const body = 'Links\nRead https://example.com/docs?q=notes.';
     const linkText = 'https://example.com/docs?q=notes';
     final linkStart = body.indexOf(linkText);
     final linkEnd = linkStart + linkText.length;
@@ -1419,15 +1419,15 @@ void main() {
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
-        'Project title\nA supporting thought',
+        'Note\nProject title\nA supporting thought',
         onFormatsChanged: changes.add,
       ),
     );
     await tester.pumpAndSettle();
     final field = tester.widget<NoteField>(noteField);
     field.controller.selection = const TextSelection(
-      baseOffset: 2,
-      extentOffset: 7,
+      baseOffset: 7,
+      extentOffset: 12,
     );
     await tester.pump();
     await revealFormatting(tester);
@@ -1436,13 +1436,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 13, format: NoteFormat.heading),
+      NoteFormatRange(start: 5, end: 18, format: NoteFormat.heading),
     ]);
     final rendered = NoteDriver(tester).span;
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Project title',
     );
-    expect(heading.style!.fontWeight, FontWeight.w700);
+    expect(heading.style!.fontWeight, FontWeight.w600);
     expect(
       heading.style!.fontSize,
       greaterThan(
@@ -1456,7 +1456,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('format-style')));
     await tester.pumpAndSettle();
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 13, format: NoteFormat.subtitle),
+      NoteFormatRange(start: 5, end: 18, format: NoteFormat.subtitle),
     ]);
 
     await tester.tap(find.byKey(const ValueKey('format-style')));
@@ -1495,7 +1495,7 @@ void main() {
       (span) => span.text?.contains('Body') ?? false,
     );
     // The page's writing weight, in italic.
-    expect(body.style!.fontWeight, FontWeight.w500);
+    expect(body.style!.fontWeight, FontWeight.w400);
     expect(body.style!.fontStyle, FontStyle.italic);
 
     field.controller.value = const TextEditingValue(
@@ -1584,20 +1584,19 @@ void main() {
     ScrollController fieldScroll(WidgetTester tester) =>
         tester.widget<NoteField>(noteField).scrollController;
 
-    testWidgets('a drag over the gutter scrolls the note', (tester) async {
-      // The gutter is a sibling of the field, not part of it, so a drag here
-      // used to land on nothing at all — a third of a phone's width where
-      // scrolling silently did nothing.
+    testWidgets('a drag beside the results scrolls the note', (tester) async {
+      // The right of a phone's page, where results sit, once was a column
+      // of its own that a drag landed on nothing in.
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness(longBody(), gutterWidth: 140));
+      await tester.pumpWidget(harness(longBody(), keepResultRoom: true));
       await tester.pumpAndSettle();
 
       final scroll = fieldScroll(tester);
       expect(scroll.offset, 0);
 
-      final gutter = tester.getCenter(find.byType(ResultsGutter));
+      final gutter = tester.getRect(noteField).centerRight - const Offset(8, 0);
       await tester.dragFrom(gutter, const Offset(0, -160));
       await tester.pumpAndSettle();
 
@@ -1619,12 +1618,12 @@ void main() {
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness(longBody(), gutterWidth: 140));
+      await tester.pumpWidget(harness(longBody(), keepResultRoom: true));
       await tester.pumpAndSettle();
 
       final scroll = fieldScroll(tester);
-      await tester.fling(
-        find.byType(ResultsGutter),
+      await tester.flingFrom(
+        tester.getRect(noteField).centerRight - const Offset(8, 0),
         const Offset(0, -200),
         800,
       );
@@ -2157,7 +2156,7 @@ void main() {
     final italic = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'emphasis',
     );
-    expect(bold.style!.fontWeight, FontWeight.w700);
+    expect(bold.style!.fontWeight, FontWeight.w600);
     expect(italic.style!.fontStyle, FontStyle.italic);
   });
 
@@ -2660,7 +2659,7 @@ void main() {
 
     final rendered = NoteDriver(tester).span.style!;
     final expected = EditorMetrics.textStyle(
-      const Color(0xFF000000),
+      KapyTheme.darkPalette.textPrimary,
       WritingFont.handwritten,
     );
 
@@ -2779,7 +2778,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ResultLeader), findsWidgets);
-    expect(find.byType(ResultsGutter), findsNothing);
     final editable = NoteDriver(tester);
     final columnRight =
         editable.toGlobal(Offset.zero).dx + editable.columnWidth;
@@ -2862,11 +2860,11 @@ void main() {
     final advance = probe.width;
     probe.dispose();
 
-    // A calculating line that stops 40px short of the column's edge: too
+    // A calculating line that stops 24px short of the column's edge: too
     // close for its pill to sit there with a gap before it, with room enough
     // in the margin to step out into.
     const tail = ' = 6 * 7';
-    final chars = ((width - 40) / advance).floor() - tail.length;
+    final chars = ((width - 24) / advance).floor() - tail.length;
     // Under a blank first line, so this is not the note's title.
     final body = '\n${'x' * chars}$tail';
     await tester.pumpWidget(harness(body, writingFont: WritingFont.monospace));
@@ -3009,18 +3007,71 @@ void main() {
     expect(tester.getSize(noteField).width, shown);
   });
 
-  testWidgets('a phone keeps its results in a column beside the text', (
+  testWidgets('a phone puts a result at the right of its own line', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('Budget\n6 * 7', gutterWidth: 140));
+    await tester.pumpWidget(harness('Budget\n6 * 7', keepResultRoom: true));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ResultsGutter), findsOneWidget);
     expect(find.byType(ResultLeader), findsNothing);
     expect(
       tester.getCenter(chipWithText('42')).dy,
       closeTo(lineRect(tester, 'Budget\n6 * 7', 1).center.dy, 1.5),
     );
+    final target = tester.getSize(chipWithText('42'));
+    expect(target.width, greaterThanOrEqualTo(44));
+    expect(target.height, greaterThanOrEqualTo(44));
+  });
+
+  testWidgets('on a 390 pt phone, prose reaches the right margin and a '
+      'result line keeps its value whole at the right', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const body =
+        'We walked along the river until the light went and the cafes '
+        'began to close one after another\n'
+        'Flights for the two of us to Lisbon in October = 2 * 1147.50 eur';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    final editable = NoteDriver(tester);
+    final columnRight =
+        editable.toGlobal(Offset.zero).dx + editable.columnWidth;
+    final prose = NoteDriver(
+      tester,
+    ).boxesFor(TextSelection(baseOffset: 0, extentOffset: body.indexOf('\n')));
+    final proseRight = prose
+        .map((box) => box.right)
+        .fold(0.0, (a, b) => a > b ? a : b);
+    expect(
+      editable.toGlobal(Offset(proseRight, 0)).dx,
+      greaterThan(columnRight - 40),
+      reason: 'a line without a result keeps the full writing width',
+    );
+
+    final chip = chipWithText('2,295.00 EUR');
+    expect(chip, findsOneWidget);
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find.descendant(of: chip, matching: find.byType(RichText)),
+    );
+    expect(paragraph.didExceedMaxLines, isFalse);
+    final pill = tester.getRect(chip);
+    expect(pill.right, closeTo(columnRight, 1));
+
+    final calculation = NoteDriver(tester).boxesFor(
+      TextSelection(
+        baseOffset: body.indexOf('\n') + 1,
+        extentOffset: body.length,
+      ),
+    );
+    for (final box in calculation) {
+      expect(
+        editable.toGlobal(Offset(box.right, 0)).dx,
+        lessThanOrEqualTo(pill.left),
+        reason: 'the calculation wraps short of its result',
+      );
+    }
   });
 
   testWidgets('keeps results pinned to their lines while scrolling', (
@@ -3151,6 +3202,51 @@ total to usd''';
     );
   });
 
+  testWidgets('writes the total hover only once the total is hovered', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('rent = 1200\nfood = 300'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsNothing);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('note-total'))),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsOneWidget);
+  });
+
+  testWidgets('long-pressing the total on a phone shows its capped hover', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final body = [for (var i = 1; i <= 25; i++) 'a$i = $i'].join('\n');
+    await tester.pumpWidget(harness(body));
+    await tester.pumpAndSettle();
+    final total = find.byKey(const ValueKey('note-total'));
+    final tooltip = find.ancestor(of: total, matching: find.byType(Tooltip));
+    expect(tester.widget<Tooltip>(tooltip).message, 'Total');
+
+    await tester.longPress(total);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final shown = tester.widget<Tooltip>(tooltip).message!;
+    expect(shown, startsWith('25 amounts\n'));
+    expect(shown, contains('a20 20, and 5 more'));
+    expect(
+      find.text(shown, findRichText: true),
+      findsOneWidget,
+      reason: 'the overlay is up',
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   testWidgets('hides the running total until the note has a calculation', (
     tester,
   ) async {
@@ -3196,7 +3292,7 @@ total to usd''';
     final subtitle = sampleSpans.firstWhere(
       (span) => span.text?.startsWith('Notes and quick') ?? false,
     );
-    expect(heading.style!.fontWeight, FontWeight.w700);
+    expect(heading.style!.fontWeight, FontWeight.w600);
     expect(subtitle.style!.fontStyle, FontStyle.italic);
     expect(find.byKey(const ValueKey('note-total')), findsNothing);
 

@@ -115,6 +115,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _keepRunningKey = 'keepRunningInBackground.v1';
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
+  static const String _menuBarTasksKey = 'menuBarOpensTasks.v1';
   static const String _slashCommandUsesKey = 'slashCommandUses.v1';
   static const String _lastSlashCommandKey = 'lastSlashCommand.v1';
 
@@ -153,7 +154,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   bool _spellCheckEnabled = true;
-  bool _autoTitlesEnabled = true;
+  bool _autoTitlesEnabled = autoTitlesByDefault;
   bool _markdownEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.clean;
@@ -172,6 +173,7 @@ class LayoutPrefs extends ChangeNotifier {
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
   bool _loginItemDefaultApplied = false;
+  bool _menuBarOpensTasks = false;
   int _slashCommandUses = 0;
   String? _lastSlashCommand;
   bool _alwaysOnTop = false;
@@ -212,6 +214,11 @@ class LayoutPrefs extends ChangeNotifier {
 
   /// Name new notes from what is in them, where a model on the device can.
   bool get autoTitlesEnabled => _autoTitlesEnabled;
+
+  /// Whether new notes are named until the person says otherwise. Off
+  /// everywhere until a model on the device has named a note in a real run:
+  /// Gemini Nano on a phone, Apple Intelligence on a Mac.
+  static const bool autoTitlesByDefault = false;
 
   /// Whether notes are written in markdown: `# `, `**`, `- ` and the rest
   /// drawn as what they mean, and the formatting controls writing them.
@@ -296,6 +303,17 @@ class LayoutPrefs extends ChangeNotifier {
   /// close it into.
   bool get keepRunningInBackground => _keepRunningInBackground;
 
+  /// Whether the menu bar panel opens on Tasks, the tab used last, rather
+  /// than on Notes, where a first run opens. Nothing else shows it, so
+  /// nothing is told when it changes.
+  bool get menuBarOpensTasks => _menuBarOpensTasks;
+
+  set menuBarOpensTasks(bool value) {
+    if (value == _menuBarOpensTasks) return;
+    _menuBarOpensTasks = value;
+    _store.putNow(_menuBarTasksKey, value);
+  }
+
   /// Whether this install has already introduced itself to the login items.
   ///
   /// "Open at login" is not a preference this class stores — it lives in the
@@ -359,7 +377,8 @@ class LayoutPrefs extends ChangeNotifier {
     _readyToTypeOnOpen = _store.read<bool>(_readyToTypeOnOpenKey) ?? true;
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
-    _autoTitlesEnabled = _store.read<bool>(_autoTitlesKey) ?? true;
+    _autoTitlesEnabled =
+        _store.read<bool>(_autoTitlesKey) ?? autoTitlesByDefault;
     _markdownEnabled = _store.read<bool>(_markdownKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
@@ -391,6 +410,7 @@ class LayoutPrefs extends ChangeNotifier {
     _keepRunningInBackground =
         _store.read<bool>(_keepRunningKey) ?? AppPlatform.isDesktop;
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
+    _menuBarOpensTasks = _store.read<bool>(_menuBarTasksKey) ?? false;
     _slashCommandUses = _store.read<int>(_slashCommandUsesKey) ?? 0;
     _lastSlashCommand = _store.read<String>(_lastSlashCommandKey);
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;

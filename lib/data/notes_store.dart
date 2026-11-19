@@ -37,6 +37,7 @@ class NotesStore extends ChangeNotifier {
   static const String _writingDaysKey = 'writingDays.v1';
   static const String _nameHereKey = 'nameHereNoteIds.v1';
   static const String _privateCopiesKey = 'privateCopies.v1';
+  static const String _dismissedKey = 'dismissed.v1';
   static const int _nameHereLimit = 200;
 
   final LocalStore _store;
@@ -64,6 +65,12 @@ class NotesStore extends ChangeNotifier {
   /// Without this, every keystroke rebuilt the JSON for every note the user
   /// owns; with it, only the note actually edited is re-encoded.
   final Map<String, ({Note note, Map<String, Object?> json})> _encoded = {};
+
+  /// Notes marked synced whose edit is still only in an outbox in memory.
+  /// They are written down as unsynced until [outboxWritten], so a crash
+  /// between the two writes leaves the edit to be absorbed again on the next
+  /// launch rather than lost.
+  final Set<String> _unwritten = {};
 
   /// Where image bytes live.
   ///
@@ -116,10 +123,12 @@ class NotesStore extends ChangeNotifier {
   List<Note> notesIn(String? spaceId) =>
       _notes.where((note) => note.spaceId == spaceId).toList(growable: false);
 
-  /// Every shared space that has a note in it locally.
+  /// Every shared space this device holds something of: a note in it, or a
+  /// note taken out of this account's own notes there.
   Set<String> get spaceIds => {
     for (final note in _notes)
       if (note.spaceId != null) note.spaceId!,
+    ..._dismissed.values,
   };
 
   Future<void> load() => _loadFuture ??= _load();
@@ -298,13 +307,26 @@ class NotesStore extends ChangeNotifier {
 
   /// Writes [body] on the person's behalf, as an assistant connected over MCP
   /// does: saved and synced exactly as typing is, but not counted towards the
-  /// writing streak, which is the person's own. [edit] must leave existing
-  /// formats and attachments where they were, as an append or a same-length
-  /// swap does.
-  void updateForAssistant(String id, String body, TextEdit edit) {
+  /// writing streak, which is the person's own. [formats] and [attachments]
+  /// are where they land after [edit]; left out, they stay where they were,
+  /// as after an append.
+  void updateForAssistant(
+    String id,
+    String body,
+    TextEdit edit, {
+    List<NoteFormatRange>? formats,
+    List<NoteAttachmentRef>? attachments,
+  }) {
     final existing = byId(id);
     if (existing == null) return;
-    _writeDocument(id, body, existing.formats, null, edit, authored: false);
+    _writeDocument(
+      id,
+      body,
+      formats ?? existing.formats,
+      attachments,
+      edit,
+      authored: false,
+    );
   }
 
   void _writeDocument(
@@ -444,8 +466,14 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Writes a drawing's canvas and title. A no-op for a written note: a
-  /// canvas cannot appear on a note that already has words in it.
-  void updateDrawing(String id, NoteDrawing drawing, {String? title}) {
+  /// canvas cannot appear on a note that already has words in it. An
+  /// assistant's drawing is not [authored], so the streak stays the person's.
+  void updateDrawing(
+    String id,
+    NoteDrawing drawing, {
+    String? title,
+    bool authored = true,
+  }) {
     final index = indexOf(id);
     if (index < 0) return;
     final existing = _notes[index];
@@ -453,7 +481,7 @@ class NotesStore extends ChangeNotifier {
     final body = title ?? existing.body;
     if (existing.drawing == drawing && existing.body == body) return;
     final at = _now();
-    _recordWriting([WritingStreak.dayOf(at)]);
+    if (authored) _recordWriting([WritingStreak.dayOf(at)]);
     _replace(
       index,
       existing.copyWith(drawing: drawing, body: body, updatedAt: at),
@@ -820,13 +848,76 @@ class NotesStore extends ChangeNotifier {
     _tombstones = List.unmodifiable(
       _tombstones.where((stone) => stone.spaceId != spaceId),
     );
+    _undismiss((_, dismissedIn) => dismissedIn == spaceId);
     _persist();
     return kept;
+  }
+
+  /// Forgets deletions of this device's that never went up, because a later
+  /// edit from somebody else won over them.
+  void dropTombstones(List<Tombstone> stones) {
+    final keys = {for (final s in stones) _stoneKey(s.spaceId, s.id)};
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => !keys.contains(_stoneKey(s.spaceId, s.id))),
+    );
+    _persist();
+  }
+
+  /// Shared notes this account took out of its own notes without deleting
+  /// them for everyone, by id, with the space each was in.
+  Map<String, String> get _dismissed => {
+    if (_store.data[_dismissedKey] case final Map raw)
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (key is String && value is String) key: value,
+  };
+
+  /// Whether this account took the note with [id] in [spaceId] out of its own
+  /// notes. Nothing that arrives for it there brings it back.
+  bool isDismissed(String id, String? spaceId) =>
+      spaceId != null && _dismissed[id] == spaceId;
+
+  /// Turns a deletion of a note in somebody else's shared space into taking
+  /// it out of this account's own notes. Only a space's owner deletes a note
+  /// for everyone, so [stone] is dropped unsent, and the note stays away
+  /// however it changes in that space.
+  void dismiss(Tombstone stone) {
+    final spaceId = stone.spaceId;
+    if (spaceId == null) return;
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => !(s.id == stone.id && s.spaceId == spaceId)),
+    );
+    _store.put(_dismissedKey, {..._dismissed, stone.id: spaceId});
+    _persist();
+  }
+
+  /// Drops the dismissals [gone] matches: the note was deleted for everyone,
+  /// or this account left its space, so there is nothing left to keep away.
+  void _undismiss(bool Function(String id, String spaceId) gone) {
+    final dismissed = _dismissed;
+    if (!dismissed.entries.any((e) => gone(e.key, e.value))) return;
+    _store.put(_dismissedKey, {
+      for (final MapEntry(:key, :value) in dismissed.entries)
+        if (!gone(key, value)) key: value,
+    });
   }
 
   // -------------------------------------------------------------------------
   // Sync
   // -------------------------------------------------------------------------
+
+  /// Marks [notes] synced once sync has taken their edits into an outbox that
+  /// is not on disk yet.
+  void markAbsorbed(List<Note> notes) {
+    _unwritten.addAll(notes.map((note) => note.id));
+    markSynced(notes: notes);
+  }
+
+  /// The outbox holding these notes' edits is on disk.
+  void outboxWritten(Set<String> ids) {
+    final before = _unwritten.length;
+    _unwritten.removeAll(ids);
+    if (_unwritten.length != before) _persist();
+  }
 
   /// Records that the server accepted these exact revisions.
   ///
@@ -902,6 +993,7 @@ class NotesStore extends ChangeNotifier {
     final now = _now();
 
     for (final incoming in notes) {
+      if (isDismissed(incoming.id, incoming.spaceId)) continue;
       final index = byIdIndex[incoming.id];
       final stoneKey = _stoneKey(incoming.spaceId, incoming.id);
       final localStone = stones[stoneKey];
@@ -946,6 +1038,10 @@ class NotesStore extends ChangeNotifier {
       written.addAll(_daysWrittenElsewhere(incoming));
     }
 
+    _undismiss(
+      (id, spaceId) =>
+          tombstones.any((stone) => stone.id == id && stone.spaceId == spaceId),
+    );
     for (final incoming in tombstones) {
       final index = byIdIndex[incoming.id];
       if (index != null) {
@@ -954,9 +1050,11 @@ class NotesStore extends ChangeNotifier {
         // about the note where it is now.
         if (local.spaceId != incoming.spaceId) {
           // Nothing to remove, but the record still travels.
-        } else if (local.updatedAt.isAfter(incoming.deletedAt)) {
+        } else if (local.isDirty &&
+            local.updatedAt.isAfter(incoming.deletedAt)) {
           // A local edit newer than the remote delete resurrects the note; it
-          // is still dirty, so the next push sends it back up.
+          // is still dirty, so the next push sends it back up. A clean copy
+          // goes whatever its clock says.
           continue;
         } else {
           removed.add(index);
@@ -993,6 +1091,7 @@ class NotesStore extends ChangeNotifier {
   /// here does. A tombstone the server has confirmed for this note in this
   /// space is dropped: the log says the note is live, and the log is later.
   void applyDoc(Note note) {
+    if (isDismissed(note.id, note.spaceId)) return;
     final index = indexOf(note.id);
     final remaining = index < 0
         ? List<Note>.of(_notes)
@@ -1246,6 +1345,10 @@ class NotesStore extends ChangeNotifier {
     final encoded = List<Object?>.filled(_notes.length, null);
     for (var i = 0; i < _notes.length; i++) {
       final note = _notes[i];
+      if (_unwritten.contains(note.id)) {
+        encoded[i] = note.toJson()..remove('syncedAt');
+        continue;
+      }
       final cached = _encoded[note.id];
       if (cached != null && identical(cached.note, note)) {
         encoded[i] = cached.json;

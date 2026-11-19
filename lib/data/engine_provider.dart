@@ -61,6 +61,7 @@ class EngineProvider extends ChangeNotifier {
       grouping: _grouping,
       timeZoneId: _timeZoneId,
       now: _now,
+      ratesAsOf: _rates.refreshedDate.isEmpty ? null : _rates.refreshedDate,
     );
     _highlighter = Highlighter(_engine.registry);
   }

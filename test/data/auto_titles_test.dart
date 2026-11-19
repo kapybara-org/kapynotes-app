@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -286,10 +286,11 @@ void main() {
     late NoteNamer namer;
     var mayName = true;
 
-    void start(FakeAsync async) {
+    void start(FakeAsync async, {bool turnedOn = true}) {
       final store = _MemoryStore();
       notes = NotesStore(store);
       prefs = LayoutPrefs(store)..load();
+      if (turnedOn) prefs.autoTitlesEnabled = true;
       model = FakeTitleModel();
       mayName = true;
       namer = NoteNamer(
@@ -593,17 +594,19 @@ void main() {
       },
     );
 
-    test('the setting off names nothing; on is the default', () {
+    test('off by default, so it names nothing until turned on', () {
       fakeAsync((async) {
-        start(async);
-        expect(prefs.autoTitlesEnabled, isTrue);
-        expect(namer.isOn, isTrue);
-        prefs.autoTitlesEnabled = false;
+        start(async, turnedOn: false);
+        expect(prefs.autoTitlesEnabled, isFalse);
         expect(namer.isOn, isFalse);
         final note = write(_trip);
-        async.elapse(const Duration(seconds: 5));
+        expect(namer.willName(note), isFalse);
         namer.left(note.id);
         expect(model.prompts, isEmpty);
+
+        prefs.autoTitlesEnabled = true;
+        namer.left(note.id);
+        expect(model.prompts, [_trip]);
       });
     });
 

@@ -12,6 +12,7 @@ import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
 import '../core/editor_font.dart';
+import '../core/mobile_data.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -44,6 +45,7 @@ import 'hidden_notes_gate.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
 import 'mcp_pane.dart';
+import 'mobile_data_sheet.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
 import 'settings_rows.dart';
@@ -840,6 +842,19 @@ class _SettingsDialogState extends State<SettingsDialog>
       if (accepted != true || !mounted) return;
       prefs.acceptTerms(model.id, terms.version);
     }
+    if (model.bytes > MobileData.askAboveBytes &&
+        await store.mobileData.inUse()) {
+      if (!mounted) return;
+      final choice = await showMobileDataSheet(
+        context,
+        name: model.name,
+        bytes: model.bytes,
+      );
+      if (choice == MobileDataChoice.onWifi) {
+        unawaited(store.downloadOnWifi(model));
+      }
+      if (choice != MobileDataChoice.now) return;
+    }
     unawaited(store.download(model));
   }
 
@@ -1582,7 +1597,9 @@ class _SettingsDialogState extends State<SettingsDialog>
               onChanged: namer.available
                   ? (value) => prefs.autoTitlesEnabled = value
                   : null,
-              byDefault: namer.available ? true : null,
+              byDefault: namer.available
+                  ? LayoutPrefs.autoTitlesByDefault
+                  : null,
               keywords: [
                 'title',
                 'name',
@@ -2071,7 +2088,14 @@ class _SettingsDialogState extends State<SettingsDialog>
                 ? 'Keep running in the menu bar'
                 : 'Keep running in the tray',
             AppPlatform.isMacOS
-                ? 'Open, write or quit from the menu bar'
+                ? switch (widget.shortcuts.bindingFor(
+                    ShortcutAction.openMenuBarPanel,
+                  )) {
+                    final keys? =>
+                      'Click the icon or press ${keys.keycapLabel} for quick '
+                          'notes and tasks',
+                    null => 'Click the icon for quick notes and tasks',
+                  }
                 : 'Shortcuts keep working after the window closes',
             value: prefs.keepRunningInBackground,
             onChanged: _setKeepRunning,
@@ -2128,6 +2152,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     final filter = filtered ? _shortcutFilter.text.trim().toLowerCase() : '';
     bool shows(ShortcutAction action) =>
         (action != ShortcutAction.toggleKapyAi || kapyAiAvailable) &&
+        (action != ShortcutAction.openMenuBarPanel || AppPlatform.isMacOS) &&
         (filter.isEmpty ||
             _shortcutLabel(action).toLowerCase().contains(filter) ||
             _keys(action).toLowerCase() == filter);
@@ -2154,6 +2179,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     final recording = _recording == action;
     final swap = recording ? _swap : null;
     void reset() => unawaited(_applyShortcuts({action: standard}));
+    final panelOff =
+        action == ShortcutAction.openMenuBarPanel &&
+        !widget.layoutPrefs.keepRunningInBackground;
     return _Setting(
       'shortcut-row-${action.name}',
       _shortcutLabel(action),
@@ -2169,7 +2197,15 @@ class _SettingsDialogState extends State<SettingsDialog>
         recording: recording,
         changed: changed,
         onReset: reset,
-        onPressed: () => recording ? _stopRecording() : _startRecording(action),
+        onPressed: panelOff
+            ? null
+            : () => recording ? _stopRecording() : _startRecording(action),
+        notice: panelOff
+            ? 'Needs Keep running in the menu bar'
+            : (widget.desktopIntegration?.isTaken(action) ?? false)
+            ? 'Taken by another app. The panel still opens from the menu bar '
+                  'icon.'
+            : null,
         onKey: _onRecordingKey,
         focusNode: _recordingFocus,
         swap: swap == null
@@ -2629,7 +2665,10 @@ class _SettingsDialogState extends State<SettingsDialog>
           decoration: BoxDecoration(
             color: palette.surfaceBackground,
             borderRadius: _sheetCorners,
-            border: Border.all(color: palette.controlBorder, width: 0.5),
+            border: Border.all(
+              color: palette.controlBorder,
+              width: AppHairline.of(context),
+            ),
           ),
           child: ClipRRect(
             borderRadius: _sheetCorners,
@@ -2987,7 +3026,8 @@ extension on ShortcutAction {
   /// given a place here.
   _ShortcutGroup get group => switch (this) {
     ShortcutAction.openApp ||
-    ShortcutAction.newNoteAnywhere => _ShortcutGroup.fromAnywhere,
+    ShortcutAction.newNoteAnywhere ||
+    ShortcutAction.openMenuBarPanel => _ShortcutGroup.fromAnywhere,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
     ShortcutAction.newTask ||
@@ -3060,7 +3100,7 @@ class _AppearancePreview extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: palette.wellBackground,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(color: palette.controlBorder),
       ),
       child: NotebookPaper(
@@ -3112,7 +3152,9 @@ class _AppearancePreview extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: palette.tonalBackground,
-                            borderRadius: BorderRadius.circular(7),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.compact,
+                            ),
                           ),
                           child: Text(
                             ResultFormatter.sample(prefs.digitGrouping),
@@ -3258,7 +3300,8 @@ class _DeviceEngineLine extends StatelessWidget {
         ? null
         : switch (state.status) {
             LocalModelStatus.fetchingRuntime ||
-            LocalModelStatus.downloading => SettingsRowButton(
+            LocalModelStatus.downloading ||
+            LocalModelStatus.waitingForWifi => SettingsRowButton(
               key: ValueKey('local-cancel-${model.id}'),
               label: 'Cancel',
               onPressed: () => store.cancel(model),
@@ -3278,9 +3321,15 @@ class _DeviceEngineLine extends StatelessWidget {
               onPressed: onDownload,
             ),
           };
-    final line = here
-        ? '${model.name} · on this device'
-        : blocked ?? '${model.name} · ${fileSize(model.bytes)} download';
+    // A copy downloaded under an older, lower gate stays removable, but the
+    // line says why nothing uses it.
+    final line =
+        blocked ??
+        (here
+            ? '${model.name} · on this device'
+            : state.status == LocalModelStatus.waitingForWifi
+            ? '${model.name} · waiting for Wi-Fi'
+            : '${model.name} · ${fileSize(model.bytes)} download');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -3437,7 +3486,7 @@ class _Keycap extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: recording ? null : palette.surfaceBackground,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
         border: Border.all(
           color: recording
               ? Theme.of(context).colorScheme.primary
@@ -3507,7 +3556,7 @@ class _ShortcutFilter extends StatelessWidget {
                   ),
                   fillColor: palette.surfaceBackground,
                   borderWidth: 1.5,
-                  radius: 10,
+                  radius: AppRadii.control,
                   neutralFocus: !pressing,
                   prefixIcon: Padding(
                     padding: const EdgeInsets.only(left: 10, right: 8),
@@ -3545,7 +3594,7 @@ class _ShortcutFilter extends StatelessWidget {
                 : palette.textPrimary,
             side: BorderSide(color: palette.controlBorder),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
           ),
         ),
@@ -3569,6 +3618,7 @@ class _ShortcutRow extends StatelessWidget {
     required this.focusNode,
     required this.swap,
     required this.error,
+    this.notice,
   });
 
   final ShortcutAction action;
@@ -3580,13 +3630,18 @@ class _ShortcutRow extends StatelessWidget {
   final bool recording;
   final bool changed;
   final VoidCallback onReset;
-  final VoidCallback onPressed;
+
+  /// Null while the shortcut cannot be used, which dims its keys.
+  final VoidCallback? onPressed;
   final FocusOnKeyEventCallback onKey;
   final FocusNode focusNode;
 
   /// The keys pressed, who has them now, and what that one would get.
   final ({String keys, String holder, String? given})? swap;
   final String? error;
+
+  /// Why the shortcut is not answering, under the row while not recording.
+  final String? notice;
 
   @override
   Widget build(BuildContext context) {
@@ -3599,10 +3654,13 @@ class _ShortcutRow extends StatelessWidget {
       child: InkWell(
         key: ValueKey('shortcut-${action.name}'),
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(6),
-        child: _Keycap(
-          binding?.displayLabel ?? (recording ? 'Press keys' : 'None'),
-          recording: recording,
+        borderRadius: BorderRadius.circular(AppRadii.compact),
+        child: Opacity(
+          opacity: onPressed == null ? 0.45 : 1,
+          child: _Keycap(
+            binding?.displayLabel ?? (recording ? 'Press keys' : 'None'),
+            recording: recording,
+          ),
         ),
       ),
     );
@@ -3634,6 +3692,14 @@ class _ShortcutRow extends StatelessWidget {
                 keys,
             ],
           ),
+          if (notice case final notice? when !recording) ...[
+            const SizedBox(height: 4),
+            Text(
+              notice,
+              key: ValueKey('shortcut-note-${action.name}'),
+              style: TextStyle(fontSize: 12, color: palette.textDescription),
+            ),
+          ],
           if (recording) ...[
             const SizedBox(height: 6),
             Row(
@@ -3700,7 +3766,7 @@ class _SheetGrabber extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: context.palette.textTertiary.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
         ),
         child: const SizedBox(width: 38, height: 4),
       ),
@@ -3803,7 +3869,7 @@ class _CategoryRow extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: KapyIcon(section.icon, size: 18, color: accent),
               ),
@@ -3889,7 +3955,7 @@ class _RailItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    const corners = BorderRadius.all(Radius.circular(9));
+    const corners = BorderRadius.all(Radius.circular(AppRadii.control));
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Semantics(
@@ -4029,7 +4095,11 @@ class _SheetPage extends StatelessWidget {
               ],
             ),
           ),
-          Divider(height: 0.5, thickness: 0.5, color: palette.separator),
+          Divider(
+            height: AppHairline.of(context),
+            thickness: AppHairline.of(context),
+            color: palette.separator,
+          ),
           Expanded(
             child: _withFlash(
               SingleChildScrollView(
@@ -4073,7 +4143,7 @@ class _ScrollingPane extends StatelessWidget {
       controller: controller,
       thumbVisibility: AppPlatform.hasPointer,
       thickness: 3,
-      radius: const Radius.circular(999),
+      radius: const Radius.circular(AppRadii.pill),
       child: SingleChildScrollView(
         controller: controller,
         padding: AppPlatform.hasPointer
@@ -4256,7 +4326,7 @@ class _ModelProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           child: SizedBox(
             height: 4,
             child: Stack(
@@ -4462,7 +4532,7 @@ class _UpdateRow extends StatelessWidget {
                       : palette.controlBackground,
                   foregroundColor: palette.textPrimary,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(7),
+                    borderRadius: BorderRadius.circular(AppRadii.compact),
                   ),
                 ),
                 child: Text(
@@ -4798,8 +4868,8 @@ class _DefaultNotePickerDialog extends StatelessWidget {
         child: ListView.separated(
           itemCount: notes.length + 1,
           separatorBuilder: (_, _) => Divider(
-            height: 0.5,
-            thickness: 0.5,
+            height: AppHairline.of(context),
+            thickness: AppHairline.of(context),
             color: context.palette.separator,
           ),
           itemBuilder: (context, index) {
@@ -4897,7 +4967,7 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
                 ),
                 isDense: true,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
               ),
               onChanged: (value) => setState(() => _query = value),
@@ -4914,8 +4984,8 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
                   : ListView.separated(
                       itemCount: options.length,
                       separatorBuilder: (_, _) => Divider(
-                        height: 0.5,
-                        thickness: 0.5,
+                        height: AppHairline.of(context),
+                        thickness: AppHairline.of(context),
                         color: context.palette.separator,
                       ),
                       itemBuilder: (context, index) {

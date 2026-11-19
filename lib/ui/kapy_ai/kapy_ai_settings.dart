@@ -376,11 +376,11 @@ class _KapyAccountRowState extends State<KapyAccountRow> {
                 vertical: 11,
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(AppRadii.control),
                 borderSide: BorderSide(color: palette.separator),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(AppRadii.control),
                 borderSide: BorderSide(
                   color: palette.selectedBorder,
                   width: 1.5,

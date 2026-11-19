@@ -29,7 +29,7 @@ class _UnderlinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final scale = word.height / EditorMetrics.titleRow;
+    final scale = word.height / 48;
     final path = Path()
       ..moveTo(word.left - 2.9 * scale, word.top + 47.1 * scale)
       ..quadraticBezierTo(
@@ -63,6 +63,7 @@ class NoteMetaRow extends StatelessWidget {
     this.done = 0,
     this.tasks = 0,
     this.total,
+    this.describeTotal,
     this.typing = const [],
     this.readOnlyLabel,
     this.readOnlyIcon,
@@ -82,6 +83,10 @@ class NoteMetaRow extends StatelessWidget {
   final int tasks;
 
   final String? total;
+
+  /// Writes what the total counted and how, for the hover on it; called only
+  /// once someone hovers, since the note is read on every keystroke.
+  final String Function()? describeTotal;
   final List<Collaborator> typing;
 
   /// Set only when the note cannot be changed: what that is called here.
@@ -102,11 +107,11 @@ class NoteMetaRow extends StatelessWidget {
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: 13,
       height: 16 / 13,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w400,
       color: palette.textTertiary,
     );
     final strong = quiet.copyWith(
-      fontWeight: FontWeight.w600,
+      fontWeight: FontWeight.w500,
       color: palette.textSecondary,
     );
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
@@ -134,13 +139,16 @@ class NoteMetaRow extends StatelessWidget {
           ),
         ),
       if (total case final total?)
-        Text.rich(
-          key: const ValueKey('note-total'),
-          TextSpan(
-            text: 'Total: ',
-            children: [TextSpan(text: total, style: strong)],
+        _TotalHover(
+          describe: describeTotal,
+          child: Text.rich(
+            key: const ValueKey('note-total'),
+            TextSpan(
+              text: 'Total: ',
+              children: [TextSpan(text: total, style: strong)],
+            ),
+            style: quiet,
           ),
-          style: quiet,
         ),
       if (typingText != null)
         Semantics(
@@ -239,4 +247,42 @@ class _ReadOnly extends StatelessWidget {
             ),
     );
   }
+}
+
+/// A tooltip whose text is worked out when the pointer arrives or touches,
+/// which is before a long press has lasted long enough to show it, and not on
+/// every rebuild. A [Tooltip] with no message has no gestures at all, so until
+/// then it says what it is on.
+class _TotalHover extends StatefulWidget {
+  const _TotalHover({required this.describe, required this.child});
+
+  final String Function()? describe;
+  final Widget child;
+
+  @override
+  State<_TotalHover> createState() => _TotalHoverState();
+}
+
+class _TotalHoverState extends State<_TotalHover> {
+  String? _detail;
+
+  @override
+  void didUpdateWidget(_TotalHover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.describe != oldWidget.describe) _detail = null;
+  }
+
+  void _describe() {
+    if (_detail != null) return;
+    setState(() => _detail = widget.describe?.call() ?? '');
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) => _describe(),
+    child: MouseRegion(
+      onEnter: (_) => _describe(),
+      child: Tooltip(message: _detail ?? 'Total', child: widget.child),
+    ),
+  );
 }

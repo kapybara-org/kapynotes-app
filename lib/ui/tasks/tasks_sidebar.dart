@@ -184,14 +184,14 @@ class _FilterRow extends StatelessWidget {
       button: true,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         hoverColor: palette.hover,
         child: Ink(
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: selected ? palette.controlBackground : null,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Row(
             children: [
@@ -370,7 +370,7 @@ class _MethodCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.controlBackground,
           border: Border.all(color: palette.separator),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
           boxShadow: [
             BoxShadow(
               color: palette.shadow.withAlpha(0x80),

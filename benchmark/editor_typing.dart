@@ -156,7 +156,7 @@ void _show(String body, {required bool markdown}) {
           initialBody: body,
           engine: engine,
           highlighter: Highlighter(engine.registry),
-          gutterWidth: 200,
+          keepResultRoom: true,
           resultsVisible: true,
           markdownEnabled: markdown,
           autofocus: true,
