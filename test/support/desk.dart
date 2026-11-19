@@ -13,6 +13,7 @@ import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/slash_commands.dart';
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -76,6 +77,7 @@ class Desk {
     Widget? below,
     Brightness brightness = Brightness.dark,
     DateTime Function()? now,
+    ValueChanged<SlashCommandType>? onSlashCommandChosen,
   }) async {
     attachments = initialAttachments;
     AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
@@ -91,6 +93,10 @@ class Desk {
       initialBody: body,
       initialAttachments: initialAttachments,
       images: images,
+      imageAcquirer: (_) async => [],
+      videoAcquirer: () async => [],
+      fileAcquirer: () async => [],
+      onSlashCommandChosen: onSlashCommandChosen,
       engine: engine,
       highlighter: Highlighter(engine.registry),
       resultsVisible: results,
