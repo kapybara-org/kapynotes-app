@@ -15,6 +15,8 @@ import 'package:kapy_notes/ui/speech_provider_notice.dart';
 import 'package:kapy_notes/ui/voice_consent_sheet.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'test_fonts.dart';
+
 class _Store extends LocalStore {
   _Store() : super(fileName: 'speech-provider-notice-test.json');
   @override
@@ -491,6 +493,8 @@ void main() {
   });
 
   group('goldens', () {
+    setUpAll(loadTestFonts);
+
     for (final (name, size, platform, dark) in [
       ('desktop_light', const Size(640, 720), TargetPlatform.macOS, false),
       ('desktop_dark', const Size(640, 720), TargetPlatform.macOS, true),
