@@ -413,9 +413,15 @@ class Parser {
     );
   }
 
+  static bool _isCurrencyCode(String word) {
+    final code = word.toUpperCase();
+    if (!isoCurrencyCodes.contains(code)) return false;
+    return !wordLikeCurrencyCodes.contains(code) || word == code;
+  }
+
   /// The word at [offset] when it can name an unrated currency for [node]: a
-  /// readout of the note's total, and an ISO currency code that is not a name
-  /// the note defined.
+  /// readout of the note's total, and an ISO currency code, in capitals if
+  /// it is also a word, that is not a name the note defined.
   Token? _unratedTotalCode(Node node, int offset) {
     final word = _peek(offset);
     final readout =
@@ -423,7 +429,7 @@ class Parser {
         aggregateNames.contains(node.name.toLowerCase());
     if (!readout ||
         word.type != TokenType.identifier ||
-        !isoCurrencyCodes.contains(word.text.toUpperCase()) ||
+        !_isCurrencyCode(word.text) ||
         _isBound(word.text)) {
       return null;
     }
