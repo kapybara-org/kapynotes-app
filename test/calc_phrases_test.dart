@@ -253,6 +253,29 @@ void main() {
       );
     });
 
+    test('shows it with no rates at all', () {
+      final results = CalcEngine().evaluateDocument('10\n5\ntotal in eur');
+      expect(results[2]!.text, '15.00 EUR');
+      expect(
+        CalcEngine().evaluateDocument('10\n5\nsum in eur')[2]!.text,
+        '15.00 EUR',
+      );
+      expect(
+        CalcEngine().evaluateDocument('10\n5\navg in gbp')[2]!.text,
+        '7.50 GBP',
+      );
+    });
+
+    test('has no rate to convert money with when there are none', () {
+      expect(CalcEngine().evaluateDocument('\$10\n5\ntotal in eur')[2], isNull);
+      expect(CalcEngine().evaluateDocument('100 usd in eur')[0], isNull);
+      expect(CalcEngine().evaluateDocument('5 in eur')[0], isNull);
+      expect(
+        CalcEngine().evaluateDocument('total = 5\ntotal in eur')[1],
+        isNull,
+      );
+    });
+
     test('leaves a plain number and a name the note gave a value alone', () {
       expect(_line('5 in eur'), isNull);
       expect(_engine().evaluateDocument('total = 5\ntotal in eur')[1], isNull);

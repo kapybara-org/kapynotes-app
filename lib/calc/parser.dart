@@ -382,7 +382,8 @@ class Parser {
         _advance();
         final unit =
             _parseUnitSpec(expectedDimension: _nodeDimension(node)) ??
-            _parseUnitSpec();
+            _parseUnitSpec() ??
+            _unratedTotalCurrency(node);
         if (unit == null) throw const CalcError('expected a unit after "to"');
         node = ConvertNode(node, unit);
         continue;
@@ -390,6 +391,44 @@ class Parser {
       break;
     }
     return node;
+  }
+
+  /// The currency a total is asked for in when no rate for it is known, as
+  /// 'total in eur' is with no rates at all. A note of plain numbers needs no
+  /// rate to be shown in a currency; the evaluator refuses the unit for
+  /// anything that would have to be converted.
+  Unit? _unratedTotalCurrency(Node node) {
+    final word = _unratedTotalCode(node, 0);
+    if (word == null) return null;
+    _advance();
+    return Unit.single(
+      UnitDef(
+        symbol: word.text.toUpperCase(),
+        dimension: Dimension.base(Dimension.currency),
+        factor: 1,
+        rated: false,
+        aliases: const [],
+        category: 'currency',
+      ),
+    );
+  }
+
+  /// The word at [offset] when it can name an unrated currency for [node]: a
+  /// readout of the note's total, and a three-letter word that is neither a
+  /// keyword nor a name the note defined.
+  Token? _unratedTotalCode(Node node, int offset) {
+    final word = _peek(offset);
+    final readout =
+        node is IdentifierNode &&
+        aggregateNames.contains(node.name.toLowerCase());
+    if (!readout ||
+        word.type != TokenType.identifier ||
+        !RegExp(r'^[A-Za-z]{3}$').hasMatch(word.text) ||
+        calcKeywords.contains(word.text.toLowerCase()) ||
+        _isBound(word.text)) {
+      return null;
+    }
+    return word;
   }
 
   NumericNotation? _conversionNotation() {
@@ -445,7 +484,8 @@ class Parser {
     if (word == 'in' || word == 'as') {
       final dimension = _nodeDimension(value);
       return _startsUnitSpec(1, expectedDimension: dimension) ||
-          _isCompoundUnit(dimension);
+          _isCompoundUnit(dimension) ||
+          _unratedTotalCode(value, 1) != null;
     }
     return false;
   }
@@ -842,6 +882,7 @@ class Parser {
       // `10 in cm` converts; `10 in` and `10 in + 2 in` are inches.
       final next = _peek();
       if (_startsUnitSpec(1, expectedDimension: _nodeDimension(value)) ||
+          _unratedTotalCode(value, 1) != null ||
           (next.type == TokenType.identifier &&
               numericNotationNames.containsKey(next.text.toLowerCase()))) {
         return null;
