@@ -3221,6 +3221,32 @@ total to usd''';
     expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsOneWidget);
   });
 
+  testWidgets('long-pressing the total on a phone shows its capped hover', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final body = [for (var i = 1; i <= 25; i++) 'a$i = $i'].join('\n');
+    await tester.pumpWidget(harness(body));
+    await tester.pumpAndSettle();
+    final total = find.byKey(const ValueKey('note-total'));
+    final tooltip = find.ancestor(of: total, matching: find.byType(Tooltip));
+    expect(tester.widget<Tooltip>(tooltip).message, 'Total');
+
+    await tester.longPress(total);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final shown = tester.widget<Tooltip>(tooltip).message!;
+    expect(shown, startsWith('25 amounts\n'));
+    expect(shown, contains('a20 20, and 5 more'));
+    expect(
+      find.text(shown, findRichText: true),
+      findsOneWidget,
+      reason: 'the overlay is up',
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   testWidgets('hides the running total until the note has a calculation', (
     tester,
   ) async {

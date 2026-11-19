@@ -111,6 +111,8 @@ class Contribution {
     }
     if (!_isAmount(value)) return claim();
     switch (expression) {
+      case ConvertNode(value: final inner) when !_reads(inner):
+        return claim(amount: value);
       case ConvertNode(value: final inner):
         return claim(
           skipped: _restates(inner),
@@ -250,8 +252,9 @@ class Contribution {
     _ => 'Not added again: a conversion restates its amount',
   };
 
-  static bool _reads(Node node, String name) => switch (node) {
-    IdentifierNode() => node.name == name,
+  /// Whether [node] reads [name], or reads any name when [name] is null.
+  static bool _reads(Node node, [String? name]) => switch (node) {
+    IdentifierNode() => name == null || node.name == name,
     QuantityNode() => _reads(node.magnitude, name),
     PercentNode() => _reads(node.operand, name),
     UnaryNode() => _reads(node.operand, name),

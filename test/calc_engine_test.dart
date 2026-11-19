@@ -782,6 +782,24 @@ void main() {
       expect(left, contains('and 5 more'));
     });
 
+    test('counts a conversion of a typed amount, not of a name', () {
+      const kitchen = 'Tiles 4200 eur to usd';
+      expect(total(kitchen), '8,400.00 USD');
+      expect(marked(kitchen, 0), isNull);
+      expect(
+        total('Tiles 4200 eur to usd\nLabor 800 usd'),
+        '9,200.00 USD',
+        reason: 'both count',
+      );
+      const rent = 'Rent = 1000 eur\nrent to usd';
+      expect(total(rent), '1,000.00 EUR');
+      expect(hover(rent, 1), 'Not added again: restates rent');
+      expect(
+        total('Rent = 1000 eur\nrent to usd\n5 km to miles'),
+        '1,000.00 EUR',
+      );
+    });
+
     test('counts a labelled redefinition once', () {
       const body = 'Lunch = \$10\nLunch = Burger \$12';
       expect(total(body), '12.00 USD');

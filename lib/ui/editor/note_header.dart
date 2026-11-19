@@ -249,8 +249,10 @@ class _ReadOnly extends StatelessWidget {
   }
 }
 
-/// A tooltip whose text is worked out when the pointer arrives or a press
-/// begins, not on every rebuild.
+/// A tooltip whose text is worked out when the pointer arrives or touches,
+/// which is before a long press has lasted long enough to show it, and not on
+/// every rebuild. A [Tooltip] with no message has no gestures at all, so until
+/// then it says what it is on.
 class _TotalHover extends StatefulWidget {
   const _TotalHover({required this.describe, required this.child});
 
@@ -276,12 +278,11 @@ class _TotalHoverState extends State<_TotalHover> {
   }
 
   @override
-  Widget build(BuildContext context) => MouseRegion(
-    onEnter: (_) => _describe(),
-    child: Tooltip(
-      message: _detail ?? '',
-      onTriggered: _describe,
-      child: widget.child,
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) => _describe(),
+    child: MouseRegion(
+      onEnter: (_) => _describe(),
+      child: Tooltip(message: _detail ?? 'Total', child: widget.child),
     ),
   );
 }
