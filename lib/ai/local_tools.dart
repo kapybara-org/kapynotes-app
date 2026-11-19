@@ -590,16 +590,14 @@ class CodexCli extends _Cli {
   /// different Codex from the one that answers.
   static final List<String> switches = [..._settings, ..._features];
 
-  /// The newest Codex, as major and minor, that the app will run; null while
-  /// no live canary has passed, and then no Codex is run and no model called.
+  /// The newest Codex, as major and minor, that the app will run.
   ///
-  /// It is set to the canary's version (0.160 is the one everything here was
-  /// read against) only once the one canary after 19 Nov has passed for
-  /// every model family the picker offers: an injected note in an empty
-  /// directory, and no file made, no secret read, no tool run. After that it
+  /// 0.160 passed the live canary on 19 Nov for every model family the
+  /// picker offered (gpt-5.6-terra and gpt-5.6-luna): an injected note in an
+  /// empty directory, and no file made, no secret read, no tool run. It
   /// rises only the same way, because a newer Codex can bring tools,
   /// features and models nobody has read.
-  static const (int, int)? testedUpTo = null;
+  static const (int, int) testedUpTo = (0, 160);
 
   /// Whether `codex --version` (`codex-cli 0.160.0`) is [pin] or older. With
   /// no pin, or a version that cannot be read, it is not.

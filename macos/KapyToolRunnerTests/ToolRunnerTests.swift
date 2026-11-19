@@ -237,9 +237,10 @@ final class ToolRunnerTests: XCTestCase {
 
   // MARK: What the helper reads for itself before a Codex answer
 
-  func testWithNoPinNoCodexAnswerRunsAndNothingBeyondTheVersionIsStarted() throws {
+  func testWithNoPinOrANewerCodexNoAnswerRunsAndNothingBeyondTheVersionIsStarted() throws {
     try install(.codex)
-    XCTAssertNil(ToolRunner.codexTestedUpTo, "the pin moves with CodexCli.testedUpTo")
+    XCTAssertEqual(ToolRunner.codexTestedUpTo?.major, 0, "the pin moves with CodexCli.testedUpTo")
+    XCTAssertEqual(ToolRunner.codexTestedUpTo?.minor, 160, "the pin moves with CodexCli.testedUpTo")
     let answer = request(.codex, Self.codexAnswer, stdin: "q", expectedVersion: "tool 1.0.0")
     for pin in [nil, ToolRunner.codexTestedUpTo] as [(major: Int, minor: Int)?] {
       XCTAssertEqual(run(answer, pin: pin).outcome.rawValue, "refused")

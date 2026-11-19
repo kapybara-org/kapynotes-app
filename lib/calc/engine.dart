@@ -923,7 +923,11 @@ class CalcEngine {
           break;
       }
     }
-    return hasNumber || hasOperator || hasKnownName || Phrases.recognizes(line);
+    return hasNumber ||
+        hasOperator ||
+        hasKnownName ||
+        Phrases.recognizes(line) ||
+        Phrases.hasSpelledAmount(line);
   }
 }
 
