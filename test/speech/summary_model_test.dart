@@ -161,7 +161,7 @@ void main() {
       files: [
         LocalModelFile(
           name: 'model.bin',
-          url: 'https://models.test/model.bin',
+          urls: ['https://models.test/model.bin'],
           bytes: 1024,
           sha256: 'not-checked-here',
         ),
