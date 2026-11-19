@@ -468,6 +468,102 @@ void main() {
     expect(await two.images.read(hash), bytes);
   });
 
+  group('after a reset', () {
+    Future<(Device, Device, String, String, Uint8List)> shared() async {
+      final one = Device(server, name: 'one', dir: await dirFor('one'));
+      final two = Device(server, name: 'two', dir: await dirFor('two'));
+      addTearDown(one.dispose);
+      addTearDown(two.dispose);
+      await one.boot();
+      await two.boot();
+      final bytes = picture(7);
+      final hash = await one.images.put(bytes);
+      final id = one.notes.create().id;
+      one.notes.updateDocument(id, 'kept\n$anchor', const [], [
+        NoteImageRef(
+          offset: 5,
+          hash: hash,
+          key: randomKey(),
+          mime: 'image/png',
+          width: 64,
+          height: 64,
+          bytes: bytes.length,
+        ),
+      ]);
+      await one.sync.syncNow();
+      await settle(server);
+      await two.sync.syncNow();
+      await settle(server);
+      final swept = one.notes.byId(id)!.attachments.single.attachmentId!;
+      expect(two.notes.byId(id)!.attachments.single.attachmentId, swept);
+      // Thirty days on, no device had brought the note back, and the sweep
+      // took its picture.
+      server.blobs.remove(swept);
+      return (one, two, id, swept, bytes);
+    }
+
+    test('a rejoin uploads a swept picture again, and the other device '
+        'gets it', () async {
+      final (one, two, id, swept, bytes) = await shared();
+      final hash = one.notes.byId(id)!.attachments.single.hash;
+
+      one.clock = one.clock.add(const Duration(days: 31));
+      one.state.beginRejoin(2);
+      await one.sync.syncNow();
+      await settle(server);
+      await one.sync.syncNow();
+      await settle(server);
+
+      final again = one.notes.byId(id)!.attachments.single;
+      expect(again.isUploaded, isTrue);
+      expect(again.attachmentId, isNot(swept));
+      expect(server.blobs.containsKey(again.attachmentId), isTrue);
+      expect(one.state.owesRejoin, isFalse);
+
+      await two.sync.syncNow();
+      await settle(server);
+      final arrived = two.notes.byId(id)!.attachments.single;
+      expect(arrived.attachmentId, again.attachmentId);
+      expect(await two.imageSync.fetch(hash), bytes);
+    });
+
+    test('a rejoin keeps a swept picture this device never held, and still '
+        'sends its notes up', () async {
+      final (_, two, id, swept, _) = await shared();
+      final written = two.notes.create(body: 'Written on two').id;
+
+      two.state.beginRejoin(2);
+      await two.sync.syncNow();
+      await settle(server);
+
+      expect(two.notes.byId(id)!.attachments.single.attachmentId, swept);
+      expect(two.state.owesRejoin, isFalse);
+      expect(two.sync.status, isNot(SyncStatus.failed));
+      expect(server.rows.containsKey(written), isTrue);
+    });
+
+    test('a rejoin asks about attachments a hundred at a time', () async {
+      final one = Device(server, name: 'one', dir: await dirFor('one'));
+      addTearDown(one.dispose);
+      await one.boot();
+      final id = one.notes.create().id;
+      final refs = [
+        for (var i = 0; i < 250; i++)
+          fileRef(
+            i.toRadixString(16).padLeft(64, '0'),
+            10,
+          ).copyWith(offset: i, attachmentId: 'gone-$i'),
+      ];
+      one.notes.updateDocument(id, anchor * 250, const [], refs);
+
+      expect(await one.imageSync.forgetSwept(one.notes.notes), isTrue);
+      expect(server.urlBatches, [100, 100, 50]);
+      expect(one.notes.byId(id)!.attachments.map((ref) => ref.attachmentId), [
+        for (var i = 0; i < 250; i++) 'gone-$i',
+      ]);
+    });
+  });
+
   test('a video uses the same encrypted quota and sync path', () async {
     final one = Device(server, name: 'one', dir: await dirFor('one'));
     final two = Device(server, name: 'two', dir: await dirFor('two'));

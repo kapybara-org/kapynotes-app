@@ -83,6 +83,7 @@ Future<void> main() async {
             baseUrl: Uri.parse(kApiBaseUrl),
             token: () async => token,
             deviceId: syncState.deviceId,
+            keyGeneration: () => syncState.keyGeneration,
           ),
           keys: KeyStore(defaultSecureStore()),
           notes: notes,

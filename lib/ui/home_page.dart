@@ -400,6 +400,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
     widget.desktopIntegration?.onOpenRequested = _beginOpenSession;
+    widget.desktopIntegration?.window = (
+      openNote: _openTaskNote,
+      openTasks: () => _showSpace(LibrarySpace.tasks),
+      find: () => unawaited(_openCommandMenu()),
+      newTask: _newTask,
+      openSettings: _showSettings,
+      explainNoteLimit: () => unawaited(_explainNoteLimit(creating: true)),
+    );
     // The controller owns the microphone but knows nothing about notes or
     // editors; this is where a finished recording becomes a ref in one.
     widget.recording?.onFinished = _deliverRecording;
@@ -431,6 +439,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.account?.removeListener(_offerRecoveryKey);
     widget.desktopIntegration?.onNewNoteRequested = null;
     widget.desktopIntegration?.onOpenRequested = null;
+    widget.desktopIntegration?.window = null;
     _kapyIdleTimer?.cancel();
     _kapyHeader.dispose();
     _desktopShortcutFocus.dispose();
@@ -2591,7 +2600,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     AccountState.needsProfile => 'Choose your name first to share this note',
     AccountState.needsPassphrase =>
       'Choose a passphrase first to share this note',
-    AccountState.locked => 'Unlock first to share this note',
+    AccountState.locked ||
+    AccountState.keysChanged => 'Unlock first to share this note',
     AccountState.needsAccountDecision =>
       'Finish signing in first to share this note',
     AccountState.restoring ||
@@ -3233,7 +3243,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ? null
                       : () => _showSettings(section: SettingsSection.account),
                   user: widget.account?.user,
-                  syncStatus: widget.account?.sync?.status,
+                  syncStatus: widget.account?.syncStatus,
                 ),
                 Expanded(
                   child: SplitView(
@@ -3409,8 +3419,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             .bindingFor(ShortcutAction.newNote)
                                             ?.displayLabel,
                                         noteOpen: selected != null,
-                                        syncStatus:
-                                            widget.account?.sync?.status,
+                                        syncStatus: widget.account?.syncStatus,
                                         unloadedPictures: unloaded.length,
                                         onShowUnloadedPicture: unloaded.isEmpty
                                             ? null
