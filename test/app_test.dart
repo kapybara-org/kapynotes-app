@@ -35,6 +35,7 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
+import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
@@ -52,7 +53,7 @@ import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
-import 'package:kapy_notes/ui/compact_icon_button.dart';
+import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_card.dart';
@@ -1520,7 +1521,7 @@ void main() {
     expect(notes.notes.single.body, 'Earlier thought');
   });
 
-  testWidgets('the page pins its note, and More keeps the window on top', (
+  testWidgets('More pins the page\'s note, and keeps the window on top', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -1531,13 +1532,14 @@ void main() {
 
     // A button, so it answers at once rather than after the drag region's
     // double-tap timeout.
-    final pin = find.byKey(const ValueKey('page-pin'));
     expect(
-      find.ancestor(of: pin, matching: find.byType(WindowDragArea)),
+      find.ancestor(
+        of: find.byKey(const ValueKey('page-more')),
+        matching: find.byType(WindowDragArea),
+      ),
       findsNothing,
     );
-    await tester.tap(pin);
-    await tester.pumpAndSettle();
+    await pickPageAction(tester, 'pin');
     expect(notes.isPinned(note.id), isTrue);
     expect(
       find.descendant(
@@ -1551,6 +1553,7 @@ void main() {
     expect(prefs.alwaysOnTop, isTrue);
     await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
+    expect(find.text('Unpin note'), findsOneWidget);
     expect(find.text('Stop keeping on top'), findsOneWidget);
   });
 
@@ -1648,101 +1651,171 @@ void main() {
       await pumpApp(tester, size: const Size(420, 800));
       expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
       expect(findKapyIcon(KapyIcons.pinRounded), findsNothing);
-      expect(find.byKey(const ValueKey('page-keep-on-top')), findsNothing);
     },
   );
 
-  group('Keep on top button', () {
-    final button = find.byKey(const ValueKey('page-keep-on-top'));
-    bool lit(WidgetTester tester) =>
-        tester.widget<CompactIconButton>(button).selected;
+  group('Pin and Keep on top live in More', () {
+    Finder lineOf(String value) => find.byKey(ValueKey('page-more-$value'));
+    Future<void> openMore(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+    }
 
-    testWidgets('stands left of More in Notes and Drawings, at every desktop '
-        'width and with the list hidden', (tester) async {
-      for (final size in [
-        const Size(1100, 760),
-        const Size(700, 620),
-        LayoutPrefs.minimumWindowSize,
+    testWidgets('and the bar has no button for either, on any desktop, at '
+        'any width', (tester) async {
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final buttons = find.descendant(
+        of: find.byKey(const ValueKey('page-toolbar')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Tooltip &&
+              RegExp(
+                '^(Keep on top|Pin note|Unpin note)',
+              ).hasMatch(widget.message ?? ''),
+        ),
+      );
+      await notes.load();
+      notes.create(body: 'alpha');
+      for (final platform in [
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
       ]) {
-        for (final sidebarVisible in [true, false]) {
-          await pumpApp(tester, size: size, sidebarVisible: sidebarVisible);
-          for (final space in ['notes', 'drawings']) {
-            await tester.tap(find.byKey(ValueKey('rail-$space')));
-            await tester.pumpAndSettle();
-            final reason = 'missing in $space at $size, list $sidebarVisible';
-            expect(button, findsOneWidget, reason: reason);
-            expect(
-              tester.getRect(button).right,
-              lessThan(
-                tester.getRect(find.byKey(const ValueKey('page-more'))).left,
-              ),
-              reason: reason,
-            );
+        AppPlatform.debugTargetPlatformOverride = platform;
+        for (final size in [
+          const Size(1100, 760),
+          const Size(700, 620),
+          LayoutPrefs.minimumWindowSize,
+        ]) {
+          for (final sidebarVisible in [true, false]) {
+            await pumpApp(tester, size: size, sidebarVisible: sidebarVisible);
+            for (final space in ['notes', 'drawings']) {
+              await tester.tap(find.byKey(ValueKey('rail-$space')));
+              await tester.pumpAndSettle();
+              final reason =
+                  '$space on ${platform.name} at $size, list $sidebarVisible';
+              expect(buttons, findsNothing, reason: reason);
+              expect(
+                find.byKey(const ValueKey('page-more')),
+                findsOneWidget,
+                reason: reason,
+              );
+            }
           }
         }
       }
     });
 
-    testWidgets('floats the window, says so, and keeps More in step', (
-      tester,
-    ) async {
+    testWidgets('More pins the note and floats the window, side by side, each '
+        'saying which', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester);
-      notes.create(body: 'alpha');
+      final note = notes.create(body: 'alpha');
       await tester.pumpAndSettle();
-      final chord = shortcuts
-          .bindingFor(ShortcutAction.toggleAlwaysOnTop)!
-          .displayLabel;
-      expect(find.byTooltip('Keep on top  $chord'), findsOneWidget);
-      expect(lit(tester), isFalse);
-      expect(prefs.alwaysOnTop, isFalse);
+      Finder says(String value, String text) =>
+          find.descendant(of: lineOf(value), matching: find.text(text));
+      // As the app's keycaps print it, rather than spelled out.
+      expect(
+        shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!.keycapLabel,
+        '⇧⌘T',
+      );
 
-      await tester.tap(button);
+      await openMore(tester);
+      expect(says('pin', 'Pin note'), findsOneWidget);
+      expect(says('on-top', 'Keep on top'), findsOneWidget);
+      expect(says('on-top', '⇧⌘T'), findsOneWidget);
+      expect(
+        tester.getRect(lineOf('pin')).top,
+        closeTo(tester.getRect(lineOf('on-top')).bottom, 0.01),
+      );
+      await tester.tap(lineOf('pin'));
       await tester.pumpAndSettle();
-      expect(prefs.alwaysOnTop, isTrue);
-      expect(lit(tester), isTrue);
-      expect(find.byTooltip('Keep on top: on  $chord'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('page-more')));
-      await tester.pumpAndSettle();
-      expect(find.text('Stop keeping on top'), findsOneWidget);
+      expect(notes.isPinned(note.id), isTrue);
 
-      await tester.tap(find.byKey(const ValueKey('page-more-on-top')));
-      await tester.pumpAndSettle();
-      expect(prefs.alwaysOnTop, isFalse);
-      expect(lit(tester), isFalse);
-      await tester.tap(find.byKey(const ValueKey('page-more')));
-      await tester.pumpAndSettle();
-      expect(find.text('Keep on top'), findsOneWidget);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-
-      await tester.tap(button);
-      await tester.pumpAndSettle();
-      await tester.tap(button);
-      await tester.pumpAndSettle();
-      expect(prefs.alwaysOnTop, isFalse);
-      expect(lit(tester), isFalse);
-    });
-
-    testWidgets('leaves the editor focused, so typing carries on', (
-      tester,
-    ) async {
-      await pumpApp(tester);
-      notes.create(body: 'alpha');
-      await tester.pumpAndSettle();
-      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-
-      await tester.tap(button);
-      await tester.pumpAndSettle();
-
-      expect(prefs.alwaysOnTop, isTrue);
-      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-    });
-
-    testWidgets('the setting set elsewhere lights it', (tester) async {
-      await pumpApp(tester);
+      // Turned on from Settings or its shortcut, the line follows.
       prefs.alwaysOnTop = true;
       await tester.pumpAndSettle();
-      expect(lit(tester), isTrue);
+      await openMore(tester);
+      expect(says('pin', 'Unpin note'), findsOneWidget);
+      expect(says('on-top', 'Stop keeping on top'), findsOneWidget);
+      await tester.tap(lineOf('on-top'));
+      await tester.pumpAndSettle();
+      expect(prefs.alwaysOnTop, isFalse);
+      expect(notes.isPinned(note.id), isTrue);
+
+      await openMore(tester);
+      await tester.tap(lineOf('pin'));
+      await tester.pumpAndSettle();
+      expect(notes.isPinned(note.id), isFalse);
+    });
+
+    testWidgets('More shows every line in full, with its shortcut, on every '
+        'desktop', (tester) async {
+      // Keep on top's label used to give way to "Cmd + Shift + T", and
+      // Archive's to "Cmd + Delete".
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final lines = find.byType(KapyMenuActionRow);
+      void expectInFull(String reason) {
+        expect(lines, findsWidgets, reason: reason);
+        for (final line in tester.renderObjectList<RenderParagraph>(
+          find.descendant(of: lines, matching: find.byType(RichText)),
+        )) {
+          expect(
+            line.didExceedMaxLines,
+            isFalse,
+            reason: '"${line.text.toPlainText()}" is cut short $reason',
+          );
+        }
+      }
+
+      for (final platform in [
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        // A fresh window on each, with nothing chosen yet.
+        await tester.pumpWidget(const SizedBox.shrink());
+        store = MemoryStore();
+        notes = NotesStore(store);
+        prefs = LayoutPrefs(store);
+        rates = RatesRepository(store);
+        shortcuts = ShortcutPrefs(store);
+        await pumpApp(
+          tester,
+          size: LayoutPrefs.defaultWindowSize,
+          sidebarVisible: false,
+        );
+        await openMore(tester);
+        expect(find.text('Choose a note for this pane first'), findsOneWidget);
+        expectInFull('with nothing open on ${platform.name}');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        final note = notes.create(body: 'alpha');
+        notes.togglePinned(note.id);
+        prefs.alwaysOnTop = true;
+        await tester.pumpAndSettle();
+        await openMore(tester);
+        expectInFull('with a note open on ${platform.name}');
+        for (final action in [
+          ShortcutAction.splitEditor,
+          ShortcutAction.toggleAlwaysOnTop,
+          ShortcutAction.deleteNote,
+        ]) {
+          expect(
+            find.descendant(
+              of: lines,
+              matching: find.text(shortcuts.bindingFor(action)!.keycapLabel),
+            ),
+            findsOneWidget,
+            reason: '$action on ${platform.name}',
+          );
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+      }
     });
   });
 
@@ -1761,10 +1834,6 @@ void main() {
     Finder pageButton(String key, Type type) => find.descendant(
       of: find.byKey(ValueKey(key)),
       matching: find.byType(type),
-    );
-    expect(
-      tester.getSize(pageButton('page-pin', IconButton)),
-      const Size.square(32),
     );
     expect(
       tester.getSize(pageButton('page-more', IconButton)),
@@ -2594,7 +2663,8 @@ void main() {
       findsOneWidget,
     );
 
-    // More spells out Keep on top's shortcut, and keeps up with a new one.
+    // More prints Keep on top's shortcut as the keycaps do, and keeps up with
+    // a new one.
     Finder onTopHint(String label) => find.descendant(
       of: find.byKey(const ValueKey('page-more-on-top')),
       matching: find.text(label),
@@ -2602,7 +2672,7 @@ void main() {
     final pin = shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!;
     await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
-    expect(onTopHint(pin.displayLabel), findsOneWidget);
+    expect(onTopHint(pin.keycapLabel), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
@@ -2619,7 +2689,9 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
-    expect(onTopHint('Cmd + Shift + J'), findsOneWidget);
+    final rebound = shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!;
+    expect(rebound.keycapLabel, isNot(pin.keycapLabel));
+    expect(onTopHint(rebound.keycapLabel), findsOneWidget);
   });
 
   testWidgets('a shortcut can be removed, and then answers nothing', (
@@ -3420,9 +3492,14 @@ void main() {
       find.ancestor(of: menu, matching: find.byType(FadeTransition)),
       findsOneWidget,
     );
+    // As wide as its longest line, so none is cut short.
+    for (final line in tester.renderObjectList<RenderParagraph>(
+      find.descendant(of: menu, matching: find.byType(RichText)),
+    )) {
+      expect(line.didExceedMaxLines, isFalse, reason: line.text.toPlainText());
+    }
     final menuRect = tester.getRect(menu);
     final rowRect = tester.getRect(find.byType(Sidebar));
-    expect(menuRect.width, lessThanOrEqualTo(208));
     expect(menuRect.left, greaterThanOrEqualTo(rowRect.left));
     expect(menuRect.right, lessThanOrEqualTo(rowRect.right));
   });
@@ -3731,9 +3808,274 @@ void main() {
     },
   );
 
-  group('draw mode', () {
+  group('drawings', () {
     Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
-    Finder draw() => find.byKey(const ValueKey('note-mode-draw'));
+    Finder modeSwitch() => find.byKey(const ValueKey('note-mode-switch'));
+    List<String> titles(WidgetTester tester) => [
+      for (final row in tester.widgetList<NoteRow>(find.byType(NoteRow)))
+        row.note.title,
+    ];
+
+    testWidgets('the bar over a new note holds no Write | Draw, and keeps '
+        'Share and More on it, at every desktop width', (tester) async {
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final bar = find.byKey(const ValueKey('page-toolbar'));
+      for (final platform in [
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        for (final listShown in [true, false]) {
+          await pumpApp(tester, sidebarVisible: listShown);
+          await tester.tap(
+            find.byKey(
+              ValueKey(listShown ? 'sidebar-new-note' : 'page-new-note'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          for (
+            var width = LayoutPrefs.minimumWindowSize.width;
+            width <= 1400;
+            width += 20
+          ) {
+            tester.view.physicalSize = Size(width, 720);
+            await tester.pumpAndSettle();
+            final reason =
+                '${platform.name}, ${width.round()} wide, list '
+                '${listShown ? 'shown' : 'hidden'}';
+            expect(modeSwitch(), findsNothing, reason: reason);
+            for (final key in ['page-share', 'page-more']) {
+              final control = tester.getRect(find.byKey(ValueKey(key)));
+              expect(
+                tester.getRect(bar).intersect(control),
+                control,
+                reason: '$key, $reason',
+              );
+            }
+          }
+        }
+      }
+    });
+
+    testWidgets('a new note has no Write | Draw, and New in Drawings starts a '
+        'drawing', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsOneWidget);
+      expect(modeSwitch(), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(notes.notes.first.isDrawing, isTrue);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+      expect(modeSwitch(), findsNothing);
+    });
+
+    testWidgets('a new note on a phone has no Write | Draw over it', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester, size: const Size(420, 800));
+      await tester.pumpAndSettle();
+      expect(notes.notes.single.isEmpty, isTrue);
+      expect(find.byType(NoteEditor), findsOneWidget);
+      expect(modeSwitch(), findsNothing);
+    });
+
+    testWidgets('Notes lists and counts notes, and Drawings drawings, in the '
+        'archive too', (tester) async {
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(id: 'plain', body: 'Groceries', createdAt: at, updatedAt: at),
+        Note(
+          id: 'sketch',
+          body: 'Floor plan',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+        Note(
+          id: 'old-plain',
+          body: 'Old list',
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: at,
+        ),
+        Note(
+          id: 'old-sketch',
+          body: 'Old plan',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: at,
+        ),
+      ]);
+      await pumpApp(tester);
+      Future<void> showArchive() async {
+        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+        await tester.pumpAndSettle();
+      }
+
+      expect(titles(tester), ['Groceries']);
+      expect(spaceCount(tester), '1');
+      await showArchive();
+      expect(titles(tester), ['Old list']);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(titles(tester), ['Floor plan']);
+      expect(spaceCount(tester), '1');
+      await showArchive();
+      expect(titles(tester), ['Old plan']);
+    });
+
+    testWidgets('search finds drawings beside notes, and opens each where it '
+        'lives', (tester) async {
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(
+          id: 'plain',
+          body: 'Garden tools\nrake and twine',
+          createdAt: at,
+          updatedAt: at,
+        ),
+        Note(
+          id: 'sketch',
+          body: 'Garden plan',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+      ]);
+      await pumpApp(tester);
+      Finder row(String title) =>
+          find.byKey(ValueKey('command-menu-row-$title'));
+      Future<void> search(String text) async {
+        await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          text,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      expect(titles(tester), ['Garden tools']);
+      await search('Garden');
+      expect(row('Garden tools'), findsOneWidget);
+      expect(row('Garden plan'), findsOneWidget);
+      await tester.tap(row('Garden plan'));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'Drawings');
+      expect(titles(tester), ['Garden plan']);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+
+      await search('Garden');
+      await tester.tap(row('Garden tools'));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'My notes');
+      expect(titles(tester), ['Garden tools']);
+      expect(find.byType(DrawingCanvas), findsNothing);
+      expect(openNoteBody(tester), 'Garden tools\nrake and twine');
+    });
+
+    testWidgets('a phone keeps Drawings open from search as the keyboard comes '
+        'up and the phone turns', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'plain',
+          'body': 'Groceries',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+        {
+          'id': 'sketch',
+          'body': 'Floor plan',
+          'createdAt': 2000,
+          'updatedAt': 2000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      await pumpApp(tester, size: const Size(420, 800));
+      Future<Set<String>> listed() async {
+        final page = tester.firstState<ScaffoldState>(find.byType(Scaffold));
+        if (!page.isDrawerOpen) {
+          await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+          await tester.pumpAndSettle();
+        }
+        return titles(tester).toSet();
+      }
+
+      // Phone-only until Phone v2's Drawings tab: Notes keeps the drawings.
+      expect(await listed(), {'Groceries', 'Floor plan'});
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CommandMenu),
+          matching: find.text('Drawings'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(await listed(), {'Floor plan'});
+      expect(
+        find.descendant(
+          of: find.byType(Sidebar),
+          matching: find.text('Drawings'),
+        ),
+        findsOneWidget,
+      );
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
+      expect(await listed(), {'Floor plan'});
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      tester.view.physicalSize = const Size(800, 420);
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(420, 800);
+      await tester.pumpAndSettle();
+      expect(await listed(), {'Floor plan'});
+    });
+
+    testWidgets('a drawing that a sync race left words beside is in Notes for '
+        'them, and on the canvas in Drawings', (tester) async {
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(
+          id: 'both',
+          body: 'Garden\nTomatoes by the shed',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+      ]);
+      await pumpApp(tester);
+      expect(titles(tester), ['Garden']);
+      await tester.tap(find.widgetWithText(NoteRow, 'Garden'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawingCanvas), findsNothing);
+      expect(openNoteBody(tester), 'Garden\nTomatoes by the shed');
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(titles(tester), ['Garden']);
+      await tester.tap(find.widgetWithText(NoteRow, 'Garden'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+    });
 
     testWidgets('a stroke across a drawing on a phone stays a stroke', (
       tester,
@@ -3769,8 +4111,7 @@ void main() {
 
     test('restoring an archive over a drawing keeps the canvas', () async {
       await notes.load();
-      final note = notes.create();
-      notes.setDrawingMode(note.id, drawing: true);
+      final note = notes.create(drawing: true);
       notes.updateDrawing(
         note.id,
         NoteDrawing([
@@ -3791,35 +4132,13 @@ void main() {
       expect(notes.byId(note.id)!.body, 'Plan');
     });
 
-    testWidgets('a new note can become a drawing, and back while blank', (
-      tester,
-    ) async {
-      await pumpApp(tester);
-      await tester.tap(plus());
-      await tester.pumpAndSettle();
-      final id = notes.notes.first.id;
-      expect(draw(), findsOneWidget);
-
-      await tester.tap(draw());
-      await tester.pumpAndSettle();
-      expect(notes.byId(id)!.isDrawing, isTrue);
-      expect(find.byType(DrawingCanvas), findsOneWidget);
-      expect(find.byType(NoteEditor), findsNothing);
-      expect(notes.byId(id)!.title, 'Drawing');
-
-      await tester.tap(find.byKey(const ValueKey('note-mode-write')));
-      await tester.pumpAndSettle();
-      expect(notes.byId(id)!.isDrawing, isFalse);
-      expect(find.byType(NoteEditor), findsOneWidget);
-    });
-
     testWidgets('strokes and a title are saved to the note', (tester) async {
       await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
       await tester.tap(plus());
       await tester.pumpAndSettle();
       final id = notes.notes.first.id;
-      await tester.tap(draw());
-      await tester.pumpAndSettle();
 
       final surface = tester.getRect(
         find.byKey(const ValueKey('drawing-surface')),
@@ -3833,8 +4152,6 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
-      // Something is in it now, so the choice has been made.
-      expect(find.byKey(const ValueKey('note-mode-switch')), findsNothing);
 
       await tester.enterText(
         find.byKey(const ValueKey('drawing-title')),
@@ -3843,21 +4160,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.title, 'Garden plan');
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
-    });
-
-    testWidgets('a note with words in it offers no switch', (tester) async {
-      await pumpApp(tester);
-      await tester.tap(plus());
-      await tester.pumpAndSettle();
-      expect(draw(), findsOneWidget);
-
-      await tester.enterNote(
-        'Groceries',
-        find.descendant(of: find.byType(NoteEditor), matching: noteField),
-      );
-      await tester.pumpAndSettle();
-      expect(draw(), findsNothing);
-      expect(notes.notes.first.isDrawing, isFalse);
     });
   });
 
@@ -4768,6 +5070,46 @@ void main() {
       expect(find.text('Archive note'), findsOneWidget);
       expect(find.text('Cmd + Delete'), findsOneWidget);
     });
+
+    // The card view's menu used to cut "Archive note" to "Archive…" beside
+    // its shortcut.
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      testWidgets('names itself in full in the card view, as does every other '
+          'line, on ${platform.name}', (tester) async {
+        await openNote(tester, platform);
+        final card = find.widgetWithText(NoteRow, 'Second');
+        expect(tester.widget<NoteRow>(card).style, NoteRowStyle.card);
+
+        await tester.longPress(card);
+        await tester.pumpAndSettle();
+
+        final lines = find.byType(KapyMenuActionRow);
+        final shortcut = shortcuts
+            .bindingFor(ShortcutAction.deleteNote)!
+            .displayLabel;
+        expect(
+          find.descendant(of: lines, matching: find.text('Archive note')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: lines, matching: find.text(shortcut)),
+          findsOneWidget,
+        );
+        for (final line in tester.renderObjectList<RenderParagraph>(
+          find.descendant(of: lines, matching: find.byType(RichText)),
+        )) {
+          expect(
+            line.didExceedMaxLines,
+            isFalse,
+            reason: '"${line.text.toPlainText()}" is cut short',
+          );
+        }
+      });
+    }
   });
 
   group('the Delete key in the notes list', () {
@@ -5176,7 +5518,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('2 selected'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('archive-restore-checked')));
+      await tester.tap(find.byKey(const ValueKey('picked-restore')));
       await tester.pumpAndSettle();
 
       expect(
@@ -5192,11 +5534,11 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+      await tester.tap(find.byKey(const ValueKey('pick-all')));
       await tester.pumpAndSettle();
       expect(find.text('3 selected'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('archive-delete-checked')));
+      await tester.tap(find.byKey(const ValueKey('picked-delete')));
       await tester.pumpAndSettle();
       expect(find.text('Delete 3 notes?'), findsOneWidget);
       await confirm(tester);
@@ -5235,29 +5577,29 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+      await tester.tap(find.byKey(const ValueKey('pick-all')));
       await tester.pumpAndSettle();
 
       // Four actions and a count in 150pt, which is as narrow as the pane goes.
       expect(tester.takeException(), isNull);
       expect(find.text('3 selected'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('archive-delete-checked')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('picked-delete')), findsOneWidget);
     });
 
-    testWidgets('the ordinary list offers no delete at all', (tester) async {
+    testWidgets('the ordinary list has no Delete all: a note is deleted from '
+        'its own menu', (tester) async {
       await pumpApp(tester);
       notes.create();
       notes.updateBody(notes.notes.first.id, 'Keep me');
       await tester.pumpAndSettle();
 
       final note = notes.notes.single;
-      expect(find.byKey(ValueKey('delete-note-${note.id}')), findsNothing);
       expect(find.byKey(const ValueKey('archive-delete-all')), findsNothing);
       final mouse = await hoverNote(tester, note.id);
       expect(find.byKey(ValueKey('note-actions-${note.id}')), findsOneWidget);
+      await tester.tap(find.byKey(ValueKey('note-actions-${note.id}')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('delete-note-${note.id}')), findsOneWidget);
       await mouse.removePointer();
     });
   });
@@ -5707,6 +6049,47 @@ void main() {
       expect(field.focusNode.hasFocus, isTrue);
     });
 
+    for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+      testWidgets('a long press on a row in the drawer offers Delete note…, '
+          'which asks first (${platform.name})', (tester) async {
+        store.data['notes.v1'] = [
+          {
+            'id': 'first',
+            'body': 'First note',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+          {
+            'id': 'second',
+            'body': 'Second note',
+            'createdAt': 2000,
+            'updatedAt': 2000,
+          },
+        ];
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpApp(tester, size: const Size(420, 800));
+        await tester.tap(notesToggleWithLabel('Show notes'));
+        await tester.pumpAndSettle();
+
+        await tester.longPress(find.widgetWithText(NoteRow, 'First note'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('delete-note-first')));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete note?'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('delete-stop-asking')),
+          findsOneWidget,
+        );
+        expect(notes.byId('first'), isNotNull);
+
+        await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+        await tester.pumpAndSettle();
+        expect(notes.byId('first'), isNull);
+        expect(notes.tombstones, hasLength(1));
+      });
+    }
+
     testWidgets('archive and hidden folders never raise a keyboard in drawer', (
       tester,
     ) async {
@@ -6134,7 +6517,7 @@ void main() {
         },
       ];
       await pumpApp(tester);
-      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+      expect(rowTitles(tester), ['Words']);
 
       await openSpace(tester, 'drawings');
       expect(rowTitles(tester), ['Sketch']);
@@ -6142,7 +6525,7 @@ void main() {
       expect(spaceCount(tester), '1');
 
       await openSpace(tester, 'notes');
-      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+      expect(rowTitles(tester), ['Words']);
       expect(spaceTitle(tester), 'My notes');
 
       // New in Drawings makes a drawing, so the list stays where it is.
@@ -6321,7 +6704,9 @@ void main() {
         await openSpace(tester, 'notes');
         expect(noteField, findsNothing);
         expect(find.text('Words'), findsNothing);
-        expect(find.byType(DrawingCanvas), findsOneWidget);
+        // Nor does the drawing take its place: Notes has nothing to open.
+        expect(find.byType(DrawingCanvas), findsNothing);
+        expect(find.byType(EmptyState), findsOneWidget);
       });
     }
 
@@ -6330,22 +6715,19 @@ void main() {
       await notes.load();
       notes.create(body: 'Words');
       await pumpApp(tester);
-      VoidCallback? press(String key) =>
-          tester.widget<CompactIconButton>(find.byKey(ValueKey(key))).onPressed;
       Future<void> openMore() async {
         await tester.tap(find.byKey(const ValueKey('page-more')));
         await tester.pumpAndSettle();
       }
 
-      expect(press('page-pin'), isNotNull);
       await openMore();
+      expect(find.byKey(const ValueKey('page-more-pin')), findsOneWidget);
       expect(find.byKey(const ValueKey('page-more-hide')), findsOneWidget);
       expect(find.byKey(const ValueKey('page-more-archive')), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
 
       await openSpace(tester, 'drawings');
-      expect(press('page-pin'), isNull);
       expect(
         tester
             .widget<TonalButton>(find.byKey(const ValueKey('page-share')))
@@ -6353,6 +6735,7 @@ void main() {
         isNull,
       );
       await openMore();
+      expect(find.byKey(const ValueKey('page-more-pin')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-hide')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-archive')), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -6434,9 +6817,19 @@ void main() {
         notes.importNotes([
           Note(id: 'plain', body: 'Groceries', createdAt: at, updatedAt: at),
           Note(
-            id: 'sketch',
-            body: 'Floor plan',
-            drawing: NoteDrawing.empty,
+            id: 'receipt',
+            body: 'Receipt\n${NoteAttachmentRef.placeholder}',
+            attachments: [
+              NoteImageRef(
+                offset: 8,
+                hash: 'abc123',
+                key: Uint8List(32),
+                mime: 'image/png',
+                width: 10,
+                height: 20,
+                bytes: 100,
+              ),
+            ],
             createdAt: at,
             updatedAt: at,
           ),
@@ -6450,22 +6843,25 @@ void main() {
 
         await tester.tap(filter);
         await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('media-filter-drawing')),
+          findsNothing,
+        );
         await tick('voice');
         await tick('video');
-        await tick('image');
-        expect(rowTitles(tester), ['Floor plan']);
+        expect(rowTitles(tester), ['Receipt']);
         expect(
-          find.descendant(of: filter, matching: find.text('Drawing')),
+          find.descendant(of: filter, matching: find.text('Image')),
           findsOneWidget,
         );
 
         // The last kind ticked stays ticked: nothing ticked would read as a
         // library that had lost its notes.
-        await tick('drawing');
-        expect(rowTitles(tester), ['Floor plan']);
+        await tick('image');
+        expect(rowTitles(tester), ['Receipt']);
 
         await tick('all');
-        expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
+        expect(rowTitles(tester).toSet(), {'Groceries', 'Receipt'});
         expect(
           find.descendant(of: filter, matching: find.text('All notes')),
           findsOneWidget,

@@ -23,7 +23,6 @@ import 'tag_ui.dart';
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
 enum NoteMedia {
-  drawing('Drawing', KapyIcons.penRounded),
   voice('Voice', KapyIcons.micRounded),
   video('Video', KapyIcons.videoOutlined),
   image('Image', KapyIcons.photoLibraryOutlined);
@@ -34,7 +33,6 @@ enum NoteMedia {
   final KapyIconData icon;
 
   static Set<NoteMedia> inNote(Note note) => {
-    if (note.isDrawing) drawing,
     for (final ref in note.attachments)
       if (ref is NoteVoiceRef)
         voice
@@ -219,10 +217,12 @@ Border? _cardBorder(
     ? null
     : Border.all(color: resting);
 
-/// A tick box: the media menu's, and a note's while the archive is picking
-/// notes.
+/// A tick box: the media menu's, and a note's while notes are being picked.
 class _PickBox extends StatelessWidget {
   const _PickBox({required this.checked});
+
+  /// Its side, which a card's title leaves room for.
+  static const double size = 16;
 
   final bool checked;
 
@@ -230,8 +230,8 @@ class _PickBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      width: 16,
-      height: 16,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: checked ? palette.selectedBorder : null,
         border: checked
@@ -291,7 +291,7 @@ class NoteCardFace extends StatelessWidget {
   final bool locked;
   final bool shared;
 
-  /// Ticked or not while the archive is picking notes; null otherwise.
+  /// Ticked or not while notes are being picked; null otherwise.
   final bool? picking;
 
   /// What a card with no line of text says instead, by what the note holds.
@@ -353,15 +353,20 @@ class NoteCardFace extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          note.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _handwritten(
-                            14,
-                            18,
-                            FontWeight.w500,
-                            palette.cardTitle,
+                        Padding(
+                          padding: EdgeInsets.only(
+                            right: picking == null ? 0 : _PickBox.size + 6,
+                          ),
+                          child: Text(
+                            note.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _handwritten(
+                              14,
+                              18,
+                              FontWeight.w500,
+                              palette.cardTitle,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 3),

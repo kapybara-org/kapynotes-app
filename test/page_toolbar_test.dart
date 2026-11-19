@@ -46,7 +46,6 @@ void main() {
     VoidCallback? onShowList,
     VoidCallback? onCreate,
     Widget? assistant,
-    bool keepOnTop = false,
   }) => PageToolbar(
     space: 'My notes',
     section: section,
@@ -61,9 +60,6 @@ void main() {
     members: members,
     currentUserId: 'me',
     onShare: () {},
-    pinned: true,
-    onTogglePin: () {},
-    onToggleKeepOnTop: keepOnTop ? () {} : null,
     assistant: assistant,
     moreActions: moreActions,
     onMore: onMore ?? (_) {},
@@ -163,7 +159,7 @@ void main() {
     await tester.pumpWidget(harness(toolbar(listVisible: false), width: 420));
 
     expect(saved, findsNothing);
-    for (final key in ['page-share', 'page-pin', 'page-more']) {
+    for (final key in ['page-share', 'page-more']) {
       expect(find.byKey(ValueKey(key)), findsOneWidget);
     }
     expect(tester.takeException(), isNull);
@@ -306,7 +302,6 @@ void main() {
               listVisible: listVisible,
               members: crowd,
               assistant: const SizedBox(width: 38, height: 32),
-              keepOnTop: true,
             ),
             width: width,
           ),
