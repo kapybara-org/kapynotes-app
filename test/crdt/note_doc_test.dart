@@ -571,6 +571,24 @@ void main() {
       expect(b.toSnapshot(), snapshot);
     });
 
+    test('a restamp changes the document for every replica, and nothing a '
+        'reader sees', () {
+      final a = NoteDoc(replica: 'a');
+      type(a, 'hello');
+      a.reconcile(
+        body: 'hello',
+        formats: const [],
+        attachments: const [],
+        createdAt: created,
+      );
+      final b = NoteDoc.fromSnapshot(a.toSnapshot(), replica: 'b');
+      expect(b.mergeSnapshot(a.toSnapshot()), isFalse);
+      a.restamp(created, DateTime.utc(2030));
+      expect(b.mergeSnapshot(a.toSnapshot()), isTrue);
+      expect(b.view.body, 'hello');
+      expect(b.view.createdAt, created);
+    });
+
     test('typed runs coalesce into one snapshot run', () {
       final a = NoteDoc(replica: 'a');
       for (var i = 1; i <= 5; i++) {

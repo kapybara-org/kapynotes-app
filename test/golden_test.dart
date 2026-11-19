@@ -28,6 +28,7 @@ import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
@@ -316,8 +317,7 @@ void _seedDrawings(NotesStore notes) {
       width: width,
       text: text,
     );
-    final note = notes.create();
-    notes.setDrawingMode(note.id, drawing: true);
+    final note = notes.create(drawing: true);
     notes.updateDrawing(
       note.id,
       NoteDrawing([
@@ -633,11 +633,64 @@ void main() {
     await fillAndOpenArchive(tester);
     await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+    await tester.tap(find.byKey(const ValueKey('pick-all')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_archive_selecting.png'),
+    );
+  });
+
+  /// Two notes picked in the ordinary list: the bar over it, and the menu a
+  /// right click opens on them.
+  Future<void> pickTwo(WidgetTester tester) async {
+    for (final body in [
+      'Old receipts\nCoffee: 12.40',
+      'Trip ideas\nLisbon in April',
+    ]) {
+      goldenNotes.create(body: body);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Trip ideas'));
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.tap(find.widgetWithText(NoteRow, 'Old receipts'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('desktop light notes, two picked', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.light,
+      platform: TargetPlatform.macOS,
+    );
+    await pickTwo(tester);
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_light_notes_picked.png'),
+    );
+  });
+
+  testWidgets('desktop dark notes, two picked, with their menu', (
+    tester,
+  ) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.macOS,
+    );
+    await pickTwo(tester);
+    await tester.tap(
+      find.widgetWithText(NoteRow, 'Old receipts'),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_notes_picked_menu.png'),
     );
   });
 
@@ -1265,8 +1318,7 @@ void main() {
       notes.create(
         body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
       );
-      final drawing = notes.create();
-      notes.setDrawingMode(drawing.id, drawing: true);
+      final drawing = notes.create(drawing: true);
       notes.updateDrawing(
         drawing.id,
         NoteDrawing.empty,

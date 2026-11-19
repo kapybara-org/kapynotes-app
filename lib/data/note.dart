@@ -115,6 +115,11 @@ class Note {
   bool get isHidden => hiddenAt != null;
   bool get isDrawing => drawing != null;
 
+  /// Whether a drawing also holds words beyond its title, which is all of a
+  /// drawing's own body. Nothing in the app writes that: it is what is left
+  /// where a note was typed in on one device while another made it a drawing.
+  bool get hasTextBesideDrawing => isDrawing && body.trim().contains('\n');
+
   Note copyWith({
     String? body,
     List<NoteFormatRange>? formats,
