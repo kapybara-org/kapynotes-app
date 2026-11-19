@@ -3260,6 +3260,30 @@ total to usd''';
     expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsOneWidget);
   });
 
+  testWidgets('keeps the total hover current while the note is typed in', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('rent = 1200\nfood = 300'));
+    await tester.pumpAndSettle();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('note-total'))),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsOneWidget);
+
+    await tester.enterNote('rent = 1200\nfood = 300\nfun = 50');
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    expect(find.byTooltip('Total'), findsNothing);
+    expect(
+      find.byTooltip('3 amounts\nrent 1,200, food 300, fun 50'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('long-pressing the total on a phone shows its capped hover', (
     tester,
   ) async {

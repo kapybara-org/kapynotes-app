@@ -71,6 +71,12 @@ abstract class Summarizer {
   /// to call on every open; never downloads anything to find out.
   Future<SummarizerReadiness> readiness();
 
+  /// Whether this writes in [lang], the transcript's language code. Asked
+  /// before choosing among the device's models: one asked for a language it
+  /// does not have answers in another, or not at all. Empty is "the transcript
+  /// did not say", which every model may try.
+  Future<bool> writes(String lang);
+
   /// The summary, or a throw. [jobId] is the server's handle on the
   /// transcription this came from, and is meaningless to the local ones.
   ///
@@ -121,6 +127,21 @@ class SummarizerUnavailable implements Exception {
   String toString() => message;
 }
 
+/// Raised when this device has a summariser, but none that writes [lang].
+///
+/// Permanent, like any other [SummarizerReadiness.unsupported]: Apple
+/// Intelligence has no Hindi, and an iPhone has nothing else to ask. The
+/// queue says so on the recording rather than dropping the summary quietly.
+class SummaryLanguageUnavailable extends SummarizerUnavailable {
+  SummaryLanguageUnavailable(this.lang)
+    : super(
+        SummarizerReadiness.unsupported,
+        'No summariser on this device writes "$lang".',
+      );
+
+  final String lang;
+}
+
 /// Picks the device summariser that this machine actually has.
 ///
 /// Ordered, best-for-the-user first: the platform's own model where there is
@@ -166,7 +187,7 @@ class DeviceSummarizer implements Summarizer {
     String? jobId,
     String? instruction,
   }) async {
-    final chosen = await _ready();
+    final chosen = await _ready(lang);
     return chosen.summarize(
       text: text,
       lang: lang,
@@ -182,7 +203,7 @@ class DeviceSummarizer implements Summarizer {
     required String instruction,
     String? jobId,
   }) async {
-    final chosen = await _ready();
+    final chosen = await _ready(lang);
     return chosen.rewrite(
       text: text,
       lang: lang,
@@ -191,16 +212,41 @@ class DeviceSummarizer implements Summarizer {
     );
   }
 
-  Future<Summarizer> _ready() async {
+  @override
+  Future<bool> writes(String lang) async {
     for (final candidate in candidates) {
-      if (await candidate.readiness() == SummarizerReadiness.ready) {
-        return candidate;
+      if (await candidate.readiness() == SummarizerReadiness.ready &&
+          await candidate.writes(lang)) {
+        return true;
       }
     }
-    throw SummarizerUnavailable(
-      await readiness(),
-      'No summariser is ready on this device.',
-    );
+    return false;
+  }
+
+  /// The first ready candidate that writes [lang]: on a Mac, Apple
+  /// Intelligence for English and Gemma for Hindi.
+  ///
+  /// When none is ready, the failure reported is the most actionable among
+  /// those that write [lang], so a Mac with Hindi and no Gemma is told to
+  /// download it. A device whose only models lack the language, ready or not,
+  /// is a [SummaryLanguageUnavailable]: switching Apple Intelligence on, or
+  /// waiting for it, would not give an iPhone Hindi either.
+  Future<Summarizer> _ready(String lang) async {
+    var best = SummarizerReadiness.unsupported;
+    var lacksLanguage = false;
+    for (final candidate in candidates) {
+      final state = await candidate.readiness();
+      if (!await candidate.writes(lang)) {
+        lacksLanguage |= state != SummarizerReadiness.unsupported;
+        continue;
+      }
+      if (state == SummarizerReadiness.ready) return candidate;
+      if (_rank(state) > _rank(best)) best = state;
+    }
+    if (lacksLanguage && best == SummarizerReadiness.unsupported) {
+      throw SummaryLanguageUnavailable(lang);
+    }
+    throw SummarizerUnavailable(best, 'No summariser is ready on this device.');
   }
 }
 
@@ -224,6 +270,9 @@ class RoutingSummarizer implements Summarizer {
 
   @override
   Future<SummarizerReadiness> readiness() => _chosen.readiness();
+
+  @override
+  Future<bool> writes(String lang) => _chosen.writes(lang);
 
   @override
   Future<SummaryDraft> summarize({

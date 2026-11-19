@@ -351,6 +351,11 @@ abstract class KapyAi extends ChangeNotifier {
   /// that fit any note.
   String? suggestionFor(String noteId) => null;
 
+  /// What a link in [answer] may come from: the question it answered and the
+  /// notes it read that are still here and not hidden. Empty makes no link
+  /// live.
+  String linkSources(KapyChat chat, KapyMessage answer) => '';
+
   /// True while an answer is being written.
   bool get answering;
   KapyPending? get pending;

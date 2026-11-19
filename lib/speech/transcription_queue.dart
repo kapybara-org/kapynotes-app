@@ -631,6 +631,20 @@ class TranscriptionQueue extends ChangeNotifier {
         touch: true,
       );
       remove(entry.noteId, entry.hash);
+    } on SummaryLanguageUnavailable catch (error) {
+      // Nothing on this device writes the language, and waiting will not
+      // change that. Said on the recording, rather than dropped: an English
+      // summary of a Hindi note, or none with no reason, are both worse.
+      _replace(
+        entry.copyWith(
+          lang: error.lang,
+          lastError: _api() == null
+              ? SpeechCodes.summaryNeedsCloudSignIn
+              : _cloudAccess?.cloudSummariesAllowed == false
+              ? SpeechCodes.summaryNeedsCloudPlan
+              : SpeechCodes.summaryNeedsCloud,
+        ),
+      );
     } on SummarizerUnavailable catch (error) {
       // A summariser that cannot work here will not start working. Keeping
       // the entry would leave the chip saying "Summarising…" forever over a
@@ -707,6 +721,9 @@ class TranscriptionQueue extends ChangeNotifier {
   /// roll over, or accept that this recording cannot be read.
   static bool _isTerminal(String? code) =>
       code == SpeechCodes.engineUnavailable ||
+      code == SpeechCodes.summaryNeedsCloud ||
+      code == SpeechCodes.summaryNeedsCloudPlan ||
+      code == SpeechCodes.summaryNeedsCloudSignIn ||
       code == SpeechCodes.consentRequired ||
       code == SpeechCodes.minutesExhausted ||
       code == SpeechCodes.summariesExhausted ||

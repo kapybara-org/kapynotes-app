@@ -1,8 +1,9 @@
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
@@ -91,8 +92,15 @@ class _FakeLocalTranscriber implements Transcriber {
 class _FakeLocalSummarizer implements Summarizer {
   int calls = 0;
 
+  /// Null writes everything. Otherwise any other language has no model here,
+  /// as Hindi has none on an iPhone.
+  Set<String>? languages;
+
   @override
   Future<SummarizerReadiness> readiness() async => SummarizerReadiness.ready;
+
+  @override
+  Future<bool> writes(String lang) async => true;
 
   @override
   Future<SummaryDraft> summarize({
@@ -102,6 +110,9 @@ class _FakeLocalSummarizer implements Summarizer {
     String? instruction,
   }) async {
     calls++;
+    if (languages case final known? when !known.contains(lang)) {
+      throw SummaryLanguageUnavailable(lang);
+    }
     return const SummaryDraft(
       engine: 'apple/foundation-models',
       title: 'Summarised here',
@@ -851,6 +862,87 @@ void main() {
       },
     );
 
+    test('a summary no model here can write says the cloud does, once, and '
+        'keeps the transcript', () async {
+      here.languages = {'en'};
+      notes.updateAttachment(
+        noteId,
+        'v1',
+        (ref) => (ref as NoteVoiceRef).copyWith(
+          transcript: VoiceTranscript(
+            lang: 'hi',
+            engine: 'apple/speech',
+            at: 1,
+            segments: const [TranscriptSegment(s: 0, e: 1, t: 'नमस्ते')],
+          ),
+        ),
+      );
+      free.enqueue(noteId, 'v1');
+      await free.drain();
+
+      final entry = free.entries.single;
+      expect(current()!.transcript, isNotNull);
+      expect(current()!.summary, isNull);
+      expect(entry.lastError, SpeechCodes.summaryNeedsCloudPlan);
+      expect(free.stateFor(current()!), VoiceChipState.failed);
+      expect(api.summarizeCalls, 0);
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      expect(
+        describeSpeechError(
+          SyncRefusedException(400, entry.lastError!, {'lang': entry.lang}),
+        ),
+        "Hindi summaries on iPhone use the cloud, which isn't part of the "
+        'Free plan. The transcript is here.',
+      );
+
+      await free.drain(now: DateTime.now().add(const Duration(days: 1)));
+      expect(here.calls, 1, reason: 'a language no model has is not retried');
+    });
+
+    test('signed out, it says to sign in before choosing Cloud', () async {
+      final signedOut = TranscriptionQueue(
+        store: queueStore,
+        notes: notes,
+        blobs: blobs,
+        prefs: prefs,
+        cloudAccess: access,
+        summarizer: () => here,
+        transcriber: () => local,
+      );
+      addTearDown(signedOut.dispose);
+      here.languages = {'en'};
+      notes.updateAttachment(
+        noteId,
+        'v1',
+        (ref) => (ref as NoteVoiceRef).copyWith(
+          transcript: VoiceTranscript(
+            lang: 'hi',
+            engine: 'apple/speech',
+            at: 1,
+            segments: const [TranscriptSegment(s: 0, e: 1, t: 'नमस्ते')],
+          ),
+        ),
+      );
+      signedOut.enqueue(noteId, 'v1');
+      await signedOut.drain();
+
+      final entry = signedOut.entries.single;
+      expect(entry.lastError, SpeechCodes.summaryNeedsCloudSignIn);
+      expect(current()!.transcript, isNotNull);
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      expect(
+        describeSpeechError(
+          SyncRefusedException(400, entry.lastError!, {'lang': entry.lang}),
+        ),
+        'Hindi summaries on iPhone use the cloud. Sign in, then choose Cloud '
+        'for summaries in Settings › Voice & AI.',
+      );
+    });
+
     test('a language this device cannot do goes to the cloud, its summary '
         'stays here', () async {
       local.state = TranscriberReadiness.unsupported;
@@ -864,6 +956,29 @@ void main() {
       expect(current()!.summary!.title, 'Summarised here');
       expect(api.summarizeCalls, 0);
     });
+  });
+
+  test('a plan with cloud summaries is pointed at them, by language', () {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    expect(
+      describeSpeechError(
+        const SyncRefusedException(400, SpeechCodes.summaryNeedsCloud, {
+          'lang': 'hi',
+        }),
+      ),
+      'Hindi summaries on iPhone use the cloud. Choose Cloud for summaries in '
+      'Settings › Voice & AI.',
+    );
+    expect(
+      describeSpeechError(
+        const SyncRefusedException(400, SpeechCodes.summaryNeedsCloud, {
+          'lang': 'xx',
+        }),
+      ),
+      startsWith('Summaries in this language on iPhone'),
+    );
   });
 
   test('enqueueing the same recording twice does not queue it twice', () {
