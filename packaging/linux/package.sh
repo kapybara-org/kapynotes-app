@@ -33,8 +33,7 @@
 #                      stops at them.
 #   the bundle carries everything else the walk reaches, in lib/: in practice
 #                      the tray (libayatana-appindicator3 and its indicator,
-#                      ido and dbusmenu libraries), the X11 shortcut library
-#                      (libkeybinder-3.0) and libsecret. Each copy gets
+#                      ido and dbusmenu libraries) and libsecret. Each copy gets
 #                      RUNPATH $ORIGIN, as does every .so in lib/ that needs
 #                      one of them, so they resolve with no wrapper script and
 #                      no LD_LIBRARY_PATH. libapp.so is never touched.

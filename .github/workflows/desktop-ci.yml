@@ -163,15 +163,15 @@ jobs:
       - uses: actions/checkout@v4
 
       # Flutter's own Linux toolchain (clang, cmake, ninja, GTK 3), the
-      # libraries the plugins link (the tray's ayatana-appindicator3, the X11
-      # shortcut's keybinder, secure storage's libsecret), libpulse for the
-      # ffmpeg that voice notes use, and the packaging and validation tools.
+      # libraries the plugins link (the tray's ayatana-appindicator3, secure
+      # storage's libsecret), libpulse for the ffmpeg that voice notes use,
+      # and the packaging and validation tools.
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev \
-            libayatana-appindicator3-dev libkeybinder-3.0-dev libsecret-1-dev \
+            libayatana-appindicator3-dev libsecret-1-dev \
             libpulse-dev make xz-utils curl \
             patchelf dpkg-dev file desktop-file-utils appstream lintian
 

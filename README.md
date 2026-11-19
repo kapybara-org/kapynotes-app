@@ -48,8 +48,8 @@ Android-only) runs a CMake that looks for one:
 
 ```bash
 sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
-  libstdc++-12-dev libayatana-appindicator3-dev libkeybinder-3.0-dev \
-  libsecret-1-dev libpulse-dev openjdk-17-jdk-headless
+  libstdc++-12-dev libayatana-appindicator3-dev libsecret-1-dev libpulse-dev \
+  openjdk-17-jdk-headless
 ```
 
 ## Releasing
@@ -127,7 +127,7 @@ built on Ubuntu 22.04 so that they run on its glibc (2.35) and anything newer:
 
 The tarball and the AppImage have no package manager behind them, so they
 carry the libraries a stock GNOME or KDE desktop may lack (the tray's
-appindicator stack, keybinder and libsecret) with `$ORIGIN` RUNPATHs, and take
+appindicator stack and libsecret) with `$ORIGIN` RUNPATHs, and take
 everything ABI-stable from the system: glibc, GTK 3, GL and the rest of the
 list at the top of the script. Every package also has, in `libexec/`, an LGPL
 `ffmpeg` built by `packaging/linux/build_ffmpeg.sh` with only the parts voice
@@ -610,7 +610,9 @@ The spec described an Electron build. These changed for Flutter:
   the desktop entry and the icon. One instance per session: a second launch,
   `kapynotes --new-note` or a `kapynotes://` link goes to the one already
   running. On X11 the two system-wide shortcuts work as on Windows, through
-  keybinder. Wayland lets no app take a key outside its own windows, so there
+  the key grabs in `packages/hotkey_manager_linux`, which stands in for the
+  published plugin because keybinder never matches Shift with a letter.
+  Wayland lets no app take a key outside its own windows, so there
   Settings › Shortcuts replaces the two recorders with a row that copies
   `kapynotes --new-note` for the desktop's own keyboard settings, and since
   Wayland also keeps a window's position from the app, only its size comes

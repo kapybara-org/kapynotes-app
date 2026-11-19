@@ -1,0 +1,19 @@
+name: hotkey_manager_linux
+description: hotkey_manager's Linux half, grabbing X11 keys without keybinder. See README.md.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.32.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    implements: hotkey_manager
+    platforms:
+      linux:
+        pluginClass: HotkeyManagerLinuxPlugin

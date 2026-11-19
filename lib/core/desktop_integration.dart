@@ -340,7 +340,9 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
     if (await _register(action, candidate)) return null;
     if (previous != null) await _register(action, previous);
-    return 'That shortcut is already used by macOS, Windows, or another app.';
+    return AppPlatform.isLinux
+        ? 'That shortcut is already used by your desktop or another app.'
+        : 'That shortcut is already used by macOS, Windows, or another app.';
   }
 
   Future<bool> _register(ShortcutAction action, HotKey hotKey) async {
