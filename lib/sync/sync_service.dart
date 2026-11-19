@@ -2742,6 +2742,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
       debugPrint('KapyNotes: finishing an un-share that never went up');
       record.spaceId = space.id;
+      // Builds up to 1.30 that hold the note in the space take a seed with
+      // nothing new in it for no change, and the space's delete marker after
+      // it for a delete. The seed always carries a change, so they bring the
+      // note home before the marker comes.
+      record.doc.restamp(note.createdAt, _now());
       _reconcileInto(record, note, personalId);
       _docs.markDirty(noteId);
     }

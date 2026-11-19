@@ -1060,6 +1060,49 @@ void main() {
       });
     }
 
+    test('the repaired un-share\'s seed brings the note home on the owner\'s '
+        'other devices before the space lets go of it', () async {
+      final one = await shareWithBob('One');
+      final spaceId = alice.notes.byId(one.id)!.spaceId!;
+      final laptop = Person(
+        server,
+        userId: alice.userId,
+        device: 'alice-laptop',
+      );
+      await laptop.boot();
+      addTearDown(laptop.dispose);
+      final two = alice.notes.create(body: 'Two');
+      await alice.sync.syncNow();
+      alice.tick();
+      await alice.sharing.shareNoteWith(two.id, email: bob.email);
+      await alice.syncAndSettle();
+      await laptop.syncAndSettle();
+      expect(laptop.notes.byId(two.id)!.spaceId, spaceId);
+
+      alice.notes.moveToSpace(two.id, spaceId: null, contentKey: null);
+      alice.notes.markSynced(notes: [alice.notes.byId(two.id)!]);
+
+      // The laptop hears from its own notes first. Builds up to 1.30 render
+      // the note again only when the seed changes it, and otherwise read the
+      // space's marker after it as a delete.
+      await laptop.goLive();
+      server.holdPagesOf.add(spaceId);
+      alice.tick();
+      await alice.syncAndSettle();
+      await settle(server);
+      expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
+      expect(laptop.notes.byId(two.id)!.spaceId, isNull);
+      expect(laptop.bodyOf(two.id), 'Two');
+
+      server.holdPagesOf.clear();
+      server.releaseFrames(laptop.api.device);
+      await settle(server);
+      await laptop.syncAndSettle();
+      expect(laptop.notes.byId(two.id)!.spaceId, isNull);
+      expect(laptop.bodyOf(two.id), 'Two');
+      expect(alice.bodyOf(two.id), 'Two');
+    });
+
     test('a note another of the owner\'s devices has just shared is not taken '
         'back before its seed arrives', () async {
       final one = await shareWithBob('One');
