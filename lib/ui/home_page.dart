@@ -927,7 +927,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     try {
       await widget.account?.speech?.acceptConsent(speechConsentVersion);
-      prefs?.transcriptionDeclinedVersion = null;
+      prefs?.consentGiven();
       queue.needsConsent = false;
       for (final entry in queue.entries) {
         queue.retry(entry.noteId, entry.hash);

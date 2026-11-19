@@ -28,13 +28,11 @@ import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
 import '../data/voice_prefs.dart';
-import '../speech/apple_summarizer.dart';
 import '../speech/cloud_access.dart';
-import '../speech/gemma_summarizer.dart';
+import '../speech/device_summaries.dart';
 import '../speech/local_model_store.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_api.dart';
-import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
 import '../speech/summary_instructions.dart';
 import '../speech/transcriber.dart';
@@ -693,52 +691,24 @@ class _SettingsDialogState extends State<SettingsDialog>
     final speech = widget.account?.speech;
     if (speech == null || _speechBusy) return false;
 
-    if (on) {
-      final accepted = await showSpeechConsentSheet(context);
-      if (!accepted) {
-        widget.voicePrefs?.transcriptionDeclinedVersion = speechConsentVersion;
-        return false;
-      }
-      if (!mounted) return false;
-    }
     setState(() {
       _speechBusy = true;
       _speechError = null;
     });
-    final progress = Toast.showProgress(
+    final status = await setCloudTranscription(
       context,
-      on
-          ? 'Turning on cloud transcription…'
-          : 'Turning off cloud transcription…',
+      speech: speech,
+      prefs: widget.voicePrefs,
+      on: on,
+      onError: (message) => setState(() => _speechError = message),
     );
-    var changed = false;
-    try {
-      // Version 0 withdraws.
-      final status = await speech.acceptConsent(on ? speechConsentVersion : 0);
-      if (on) widget.voicePrefs?.transcriptionDeclinedVersion = null;
-      changed = on ? status.isAccepted : !status.isAccepted;
-      if (mounted) {
-        setState(() => _speechConsent = status);
-        progress.success(
-          on
-              ? 'Cloud transcription turned on'
-              : 'Cloud transcription turned off',
-        );
-      } else {
-        progress.dismiss();
-      }
-    } catch (error) {
-      final message = describeSpeechError(error);
-      if (mounted) {
-        setState(() => _speechError = message);
-        progress.error(message);
-      } else {
-        progress.dismiss();
-      }
-    } finally {
-      if (mounted) setState(() => _speechBusy = false);
+    if (mounted) {
+      setState(() {
+        _speechBusy = false;
+        if (status != null) _speechConsent = status;
+      });
     }
-    return changed;
+    return status != null && status.isAccepted == on;
   }
 
   Future<void> _selectCloudTranscription(VoicePrefs prefs) async {
@@ -1750,10 +1720,6 @@ class _SettingsDialogState extends State<SettingsDialog>
         .firstOrNull;
     final builtInSpeech = _deviceTranscriptState == TranscriberReadiness.ready;
     final builtInSummary = _deviceSummaryState == SummarizerReadiness.ready;
-    // Linux has no summariser of its own and is not offered the downloaded
-    // one, so its summaries are the cloud's or none.
-    final deviceSummaries =
-        AppleSummarizer.isPossibleHere || GemmaSummarizer.isPossibleHere;
     final consented = _speechConsent?.isAccepted ?? false;
     final transcription = access?.transcription;
     final summaries = access?.summaries;
@@ -1881,7 +1847,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       _Group(
         'Summaries',
         [
-          if (deviceSummaries)
+          if (deviceSummariesPossible)
             _Setting(
               'summarise-with',
               'Summarise with',
