@@ -594,27 +594,29 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
                 alignment: Alignment.topLeft,
                 child: ExcludeFocus(
                   excluding: !widget.controller.searching,
-                  child: FloatingSurface(
-                    key: const ValueKey('slash-command-menu'),
-                    padding: const EdgeInsets.all(6),
-                    child: widget.controller.choosingTable
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Kept so the keyboard stays with the menu.
-                              if (widget.controller.searching)
-                                Offstage(
-                                  child: _SearchField(
-                                    controller: widget.controller,
+                  child: TextFieldTapRegion(
+                    child: FloatingSurface(
+                      key: const ValueKey('slash-command-menu'),
+                      padding: const EdgeInsets.all(6),
+                      child: widget.controller.choosingTable
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Kept so the keyboard stays with the menu.
+                                if (widget.controller.searching)
+                                  Offstage(
+                                    child: _SearchField(
+                                      controller: widget.controller,
+                                    ),
                                   ),
-                                ),
-                              _TableSizePicker(controller: widget.controller),
-                            ],
-                          )
-                        : _CommandList(
-                            controller: widget.controller,
-                            scroll: _scroll,
-                          ),
+                                _TableSizePicker(controller: widget.controller),
+                              ],
+                            )
+                          : _CommandList(
+                              controller: widget.controller,
+                              scroll: _scroll,
+                            ),
+                    ),
                   ),
                 ),
               ),
