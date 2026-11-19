@@ -142,7 +142,7 @@ class TagPopover extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.controlBackground,
           border: Border.all(color: palette.separator),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
           boxShadow: [
             BoxShadow(
               color: palette.shadowAt(0x80),
@@ -312,7 +312,7 @@ class _TagPickerState extends State<TagPicker> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: index == _picker.at ? palette.hover : null,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             child: Row(
               children: [
@@ -323,7 +323,7 @@ class _TagPickerState extends State<TagPicker> {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _text(13, FontWeight.w500, palette.textPrimary),
+                    style: _text(13, FontWeight.w400, palette.textPrimary),
                   ),
                 ),
                 if (count != null) ...[
@@ -409,7 +409,7 @@ class _TagPickerState extends State<TagPicker> {
                 decoration: BoxDecoration(
                   color: palette.wellBackground,
                   border: Border.all(color: palette.selectedBorder),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   children: [
@@ -460,7 +460,7 @@ class _TagPickerState extends State<TagPicker> {
                   key: const ValueKey('tag-picker-problem'),
                   style: _text(
                     12,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     Theme.of(context).colorScheme.error,
                   ),
                 ),
@@ -596,7 +596,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
                     const SizedBox(width: 4),
                     Text(
                       'Tag',
-                      style: _text(12.5, FontWeight.w500, palette.textTertiary),
+                      style: _text(13, FontWeight.w400, palette.textTertiary),
                     ),
                   ],
                 ),
@@ -663,7 +663,7 @@ class _TagChipState extends State<_TagChip> {
     final palette = context.palette;
     final tag = widget.tag;
     final colour = tagColourOf(tag.colour.v);
-    final style = _text(12, FontWeight.w600, palette.textPrimary);
+    final style = _text(12, FontWeight.w500, palette.textPrimary);
     final painter = TextPainter(
       text: TextSpan(text: tag.name.v, style: style),
       textDirection: Directionality.of(context),
@@ -678,7 +678,7 @@ class _TagChipState extends State<_TagChip> {
       padding: const EdgeInsets.only(left: 7, right: 8),
       decoration: BoxDecoration(
         color: colour?.card(palette) ?? palette.cardBackground,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -796,7 +796,7 @@ class _TagNameFieldState extends State<TagNameField> {
                   },
                   style: _text(
                     13,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     _refused
                         ? Theme.of(context).colorScheme.error
                         : palette.textPrimary,
@@ -812,7 +812,7 @@ class _TagNameFieldState extends State<TagNameField> {
                   key: const ValueKey('tag-name-refused'),
                   style: _text(
                     12,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     Theme.of(context).colorScheme.error,
                   ),
                 ),
@@ -893,7 +893,7 @@ Future<void> showTagActions(
                       key == noTagColour
                           ? 'No colour'
                           : '${key[0].toUpperCase()}${key.substring(1)}',
-                      style: _text(13, FontWeight.w500, palette.textPrimary),
+                      style: _text(13, FontWeight.w400, palette.textPrimary),
                     ),
                   ),
                   if (key == current)
@@ -1054,7 +1054,7 @@ class _TagSettingsState extends State<TagSettings> {
                               overflow: TextOverflow.ellipsis,
                               style: _text(
                                 13,
-                                FontWeight.w500,
+                                FontWeight.w400,
                                 palette.textPrimary,
                               ),
                             ),

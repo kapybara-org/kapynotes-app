@@ -3,6 +3,7 @@ package com.kapybara.kapynotes
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.prompt.Feature
 import com.google.mlkit.genai.prompt.GenerateContentRequest
@@ -37,7 +38,9 @@ import kotlinx.coroutines.withTimeout
  * One title is made at a time. A second request while one runs is refused
  * with "busy" rather than queued, since a title that arrives late is for a
  * note the person has already moved on from. Neither the prompt nor the
- * output is ever logged: both are the person's own words.
+ * output is ever logged: both are the person's own words. A failure logs
+ * the class of what was thrown and nothing else, since an exception's
+ * message can quote the prompt.
  */
 class NoteTitles private constructor(messenger: BinaryMessenger) {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -86,6 +89,7 @@ class NoteTitles private constructor(messenger: BinaryMessenger) {
       } catch (error: CancellationException) {
         throw error
       } catch (error: Exception) {
+        Log.w(TAG, "availability failed: ${error.javaClass.name}")
         "unavailable"
       }
       main.post { result.success(answer) }
@@ -116,9 +120,9 @@ class NoteTitles private constructor(messenger: BinaryMessenger) {
         }
       } catch (error: CancellationException) {
         if (error !is TimeoutCancellationException) throw error
+        Log.w(TAG, "title timed out")
       } catch (error: Exception) {
-        // Told apart by code only: the message of an exception from here can
-        // quote the prompt.
+        Log.w(TAG, "title failed: ${error.javaClass.name}")
       } finally {
         running.set(false)
       }
@@ -149,6 +153,7 @@ class NoteTitles private constructor(messenger: BinaryMessenger) {
 
   companion object {
     private const val CHANNEL = "kapynotes/titles"
+    private const val TAG = "NoteTitles"
     private const val MIN_SDK = Build.VERSION_CODES.O
     private const val TIMEOUT_MS = 60_000L
     private const val TEMPERATURE = 0.1f

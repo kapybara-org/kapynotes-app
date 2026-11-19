@@ -312,11 +312,11 @@ class _ModeChoice extends StatelessWidget {
       button: true,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: Container(
           padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(9),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             border: Border.all(
               color: selected ? scheme.primary : palette.controlBorder,
               width: selected ? 1.2 : 0.5,

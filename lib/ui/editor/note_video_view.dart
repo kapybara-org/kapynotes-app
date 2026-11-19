@@ -99,12 +99,15 @@ class _NoteVideoViewState extends State<NoteVideoView> {
     final palette = context.palette;
     final progress = widget.uploadProgress;
     final media = ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Colors.black,
-          border: Border.all(color: palette.separator, width: 0.5),
-          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: palette.separator,
+            width: AppHairline.of(context),
+          ),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
         child: Stack(
           fit: StackFit.expand,
@@ -145,7 +148,7 @@ class _NoteVideoViewState extends State<NoteVideoView> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: AppTypeScale.caption,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w400,
                   shadows: [Shadow(blurRadius: 6, color: Colors.black)],
                 ),
               ),
@@ -230,7 +233,7 @@ class _VideoUploadCover extends StatelessWidget {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: AppTypeScale.control,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
       ),

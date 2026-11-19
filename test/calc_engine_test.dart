@@ -571,9 +571,9 @@ void main() {
     test(
       'exposes the final running total without double-counting readouts',
       () {
-        final result = engine.evaluateDocumentWithSummary('10\n20\ntotal');
+        final result = engine.evaluateDocumentWithSummary('10\n20\navg');
 
-        expect(result.results[2]!.text, '30');
+        expect(result.results[2]!.text, '15');
         expect(result.totalText, '30');
         expect(
           engine.evaluateDocumentWithSummary('notes only').totalText,
@@ -583,10 +583,118 @@ void main() {
         final converted = engine.evaluateDocumentWithSummary(
           '10 usd\n20 usd\ntotal\ntotal to eur',
         );
+        expect(converted.results[2]!.text, '30.00 USD');
         expect(converted.results[3]!.text, '15.00 EUR');
-        expect(converted.totalText, '30.00 USD');
+        expect(converted.totalText, isNull, reason: "the note's own total");
       },
     );
+  });
+
+  group("the note's total", () {
+    String? total(String body) =>
+        engine.evaluateDocumentWithSummary(body).totalText;
+
+    String? freshTotal(String body) => CalcEngine(
+      ratesPerUsd: _rates,
+    ).evaluateDocumentWithSummary(body).totalText;
+
+    test('leaves out a line worked out from another result', () {
+      const body = 'Total spend = 412 + 896 + 38\nPer person = total / 2';
+      expect(total(body), '1,346');
+      expect(doc(body), {0: '1,346', 1: '673'}, reason: 'results are as shown');
+    });
+
+    test('adds a plain list up as it always did', () {
+      expect(total('Rent = 1200\nFood = 300'), '1,500');
+      expect(total('Rent = 1200\nFood = 300\nTax 5\n20 + 5'), '1,525');
+    });
+
+    test('leaves a total of the list under it out of the footer', () {
+      const body = 'Rent = 1200\nFood = 300\nTotal = Rent + Food';
+      expect(total(body), '1,500');
+      expect(doc(body)[2], '1,500', reason: 'the line still shows its result');
+    });
+
+    test('leaves out a line that reads prev, sum or avg', () {
+      expect(total('10\n20\nprev * 2'), '30');
+      expect(total('10\n20\nsum + 5'), '30');
+      expect(total('10\n20\navg * 4'), '30');
+    });
+
+    test('does not count a readout or conversion of a derived value', () {
+      expect(total('Rent = 1200 usd\nRent in eur'), '1,200.00 USD');
+      expect(total('100 usd\n200 usd\nper person = sum / 2 usd'), '300.00 USD');
+    });
+
+    test('hides the footer under a total or sum line of the note\'s own', () {
+      const derived = 'Rent = 1200\nFood = 300\nTotal = Rent + Food';
+      expect(total('$derived\ntotal'), isNull);
+      expect(total('$derived\nsum'), isNull);
+      const priced = 'Rent = 1200 usd\nFood = 300 usd\nTotal = Rent + Food';
+      expect(total('$priced\ntotal in eur'), isNull);
+      expect(total('$priced\nsum to eur'), isNull);
+    });
+
+    test('brings the footer back when the total line goes, and back again', () {
+      const body = 'Rent = 1200\nFood = 300\nPer person = Rent / 2';
+      for (final (edited, expected) in [
+        (body, '1,500'),
+        ('$body\ntotal', null),
+        (body, '1,500'),
+        ('$body\nsum', null),
+        (body, '1,500'),
+      ]) {
+        expect(total(edited), expected, reason: edited);
+        expect(total(edited), freshTotal(edited), reason: 'as a fresh engine');
+      }
+    });
+
+    test('keeps the footer under an avg or prev line', () {
+      expect(total('Rent = 1200\nFood = 300\navg'), '1,500');
+      expect(total('Rent = 1200\nFood = 300\nprev'), '1,500');
+      expect(total('Rent = 1200\nFood = 300\nprev * 2'), '1,500');
+    });
+
+    test('keeps the footer when a variable is named total', () {
+      const issue = 'Total spend = 412 + 896 + 38\nPer person = total / 2';
+      expect(total(issue), '1,346');
+      expect(total('total = 5\nextra = 3'), '8');
+    });
+
+    test('drops an add-on such as a tip, by design', () {
+      expect(
+        total('Dinner = 80\nTip = Dinner * 15%'),
+        '80',
+        reason: 'a total that counts a derived line twice is the worse error',
+      );
+    });
+
+    test('follows an edit that turns a plain line derived, and back', () {
+      const lines = ['a = 10', 'b = 5', 'c = 7'];
+      for (final (body, expected) in [
+        (lines.join('\n'), '22'),
+        ('a = 10\nb = a + 5\nc = 7', '17'),
+        (lines.join('\n'), '22'),
+        ('a = 10\nb = 5\nc = b * 2', '15'),
+        (lines.join('\n'), '22'),
+      ]) {
+        expect(total(body), expected, reason: body);
+        expect(total(body), freshTotal(body), reason: 'as a fresh engine');
+      }
+    });
+
+    test('follows a referenced variable being renamed or deleted', () {
+      const body = 'price = 10\nitem = price * 2\nextra = 5';
+      expect(total(body), '15');
+      for (final (edited, expected) in [
+        ('cost = 10\nitem = price * 2\nextra = 5', '15'),
+        ('item = price * 2\nextra = 5', '5'),
+        (body, '15'),
+      ]) {
+        expect(total(edited), expected, reason: edited);
+        expect(total(edited), freshTotal(edited), reason: 'as a fresh engine');
+      }
+    });
   });
 
   group('date and time', () {
@@ -771,7 +879,15 @@ void main() {
       );
       expect(evaluation.results[0], isNull, reason: 'the heading');
       expect(evaluation.results[4]?.text, '24.75 USD');
-      expect(evaluation.totalText, '24.75 USD');
+      expect(evaluation.totalText, isNull, reason: "the note's own total");
+      expect(
+        engine
+            .evaluateDocumentWithSummary(
+              'Lisbon trip\nCoffee \$4.50\nLunch \$12\nTaxi \$8.25',
+            )
+            .totalText,
+        '24.75 USD',
+      );
     });
 
     test('a name the note has defined keeps its meaning', () {
@@ -933,10 +1049,7 @@ void main() {
     // `Milk: 2 bottles` is a label with its amount, as it always was. Taking
     // `Milk` for a variable would stop it labelling the lines below.
     test('a colon label keeps its word free for later labels', () {
-      expect(doc('Milk: 2 bottles\nMilk powder \$8'), {
-        0: '2',
-        1: '8.00 USD',
-      });
+      expect(doc('Milk: 2 bottles\nMilk powder \$8'), {0: '2', 1: '8.00 USD'});
       expect(doc('Hotel: 3 nights\nHotel rate \$120\nHotel tax \$25'), {
         0: '3',
         1: '120.00 USD',
@@ -962,7 +1075,13 @@ void main() {
       );
       expect(evaluation.results[0], isNull, reason: 'the heading');
       expect(evaluation.results[3]?.text, '25');
-      expect(evaluation.totalText, '25');
+      expect(evaluation.totalText, isNull, reason: "the note's own total");
+      expect(
+        engine
+            .evaluateDocumentWithSummary('Shopping\n12 mangoes\n13 bananas')
+            .totalText,
+        '25',
+      );
     });
   });
 

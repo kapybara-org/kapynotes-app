@@ -171,7 +171,7 @@ class PageToolbar extends StatelessWidget {
                       key: const ValueKey('page-show-list'),
                       tooltip: ['Show notes', ?showListShortcut].join('  '),
                       extent: AppControlMetrics.tonalButtonHeight,
-                      radius: 8,
+                      radius: AppRadii.control,
                       onPressed: onShowList,
                       icon: KapyIcon(
                         KapyIcons.menuOpenRounded,
