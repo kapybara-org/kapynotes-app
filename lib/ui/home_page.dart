@@ -96,7 +96,6 @@ import 'split_view.dart';
 import 'toolbar.dart';
 import 'window_drag_area.dart';
 import 'draw/drawing_canvas.dart';
-import 'draw/note_mode_switch.dart';
 
 /// The narrowest window that holds the notes list beside the page. Below it a
 /// phone switches to the compact editor with a notes drawer, while a desktop
@@ -480,9 +479,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
-    if (mounted && _drawingsOnly && _usesCompactLayout) {
-      setState(() => _drawingsOnly = false);
-    }
     // An open compact drawer is disposed when a phone turns or a tablet's
     // window widens into the two-pane layout. Scaffold cannot report a closing
     // transition after that disposal, so clear the transient flag here.
@@ -1271,16 +1267,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Lists the tab [id] is in, when a note is opened from somewhere other
   /// than the list: a link, a pane, the note put back after the archive. A
   /// row the reader clicked is in the tab on screen already, and the reader
-  /// switching tabs moves no selection, so neither is overruled. A note that
-  /// is not a drawing takes the list out of Drawings, for the same reason.
+  /// switching tabs moves no selection, so neither is overruled. For the
+  /// same reason a note takes the list out of Drawings, and a drawing takes it
+  /// into Drawings.
   void _showTabOf(String? id) {
-    if (id == null || _specialMode) return;
+    if (id == null) return;
     final note = widget.notes.byId(id);
     if (note == null) return;
-    if (_drawingsOnly) {
-      if (note.isDrawing) return;
-      _drawingsOnly = false;
+    if (_drawingsOnly ? !note.isDrawing : !_listedInNotes(note)) {
+      _drawingsOnly = !_drawingsOnly;
     }
+    if (_specialMode || _drawingsOnly) return;
     final sharing = widget.account?.sharing;
     if (sharing != null) _sidebarTab = sidebarTabOf(note, sharing);
   }
@@ -1698,8 +1695,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           body: drawing || body.isNotEmpty ? body : Note.blankBody,
           authored: body.isNotEmpty,
           hidden: creatingHidden,
+          drawing: drawing,
         );
-    if (drawing) widget.notes.setDrawingMode(note.id, drawing: true);
     if (blank == null) {
       _freshNoteIds.add(note.id);
     } else {
@@ -3104,12 +3101,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// Narrows [notes] to the space the list is showing. The ordinary list is
-  /// split by whose the notes are once there is an account to have shared
-  /// anything with, or narrowed to drawings from the rail, and everything that
+  /// Narrows [notes] to the space the list is showing, and everything that
   /// walks the list (the arrow keys, the note after an archived one) walks
-  /// what is on screen. Drawings keeps to drawings in the archive and Hidden
-  /// Notes too; from Notes, both hold every note of theirs.
+  /// what is on screen. Drawings live in Drawings and every other space lists
+  /// notes, in the archive and Hidden Notes too. The ordinary list is also
+  /// split by whose the notes are once there is an account to have shared
+  /// anything with.
   List<Note> _narrowed(List<Note> notes) {
     if (_drawingsOnly) {
       return [
@@ -3117,14 +3114,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (note.isDrawing) note,
       ];
     }
-    if (_specialMode) return notes;
-    final sharing = widget.account?.sharing;
-    if (sharing == null) return notes;
+    final sharing = _specialMode ? null : widget.account?.sharing;
     return [
       for (final note in notes)
-        if (sidebarTabOf(note, sharing) == _sidebarTab) note,
+        if (_listedInNotes(note) &&
+            (sharing == null || sidebarTabOf(note, sharing) == _sidebarTab))
+          note,
     ];
   }
+
+  /// Whether a list other than Drawings holds [note]: a note does, and so
+  /// does a drawing that a sync race left words beside, for those words.
+  bool _listedInNotes(Note note) =>
+      _phoneListsDrawings || !note.isDrawing || note.hasTextBesideDrawing;
+
+  /// Phone-only and temporary: a phone has no Drawings to go to until Phone
+  /// v2's tab bar brings one, so until then its Notes list keeps the drawings
+  /// too. Phone v2 deletes this and its one use above.
+  bool get _phoneListsDrawings => _usesCompactLayout;
 
   /// The space the rail shows as open.
   LibrarySpace get _space => _tasksMode
@@ -3574,18 +3581,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         onMore: (action) =>
                                             _runPageAction(action, selected),
                                         updates: widget.updates,
-                                        center:
-                                            selected != null &&
-                                                _canChooseMode(selected)
-                                            ? NoteModeSwitch(
-                                                drawing: selected.isDrawing,
-                                                onChanged: (drawing) =>
-                                                    _setDrawingMode(
-                                                      selected.id,
-                                                      drawing: drawing,
-                                                    ),
-                                              )
-                                            : null,
                                       ),
                                       Expanded(child: _buildWideWorkspace()),
                                     ],
@@ -3942,6 +3937,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       archiveShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.deleteNote,
                       ),
+                      drawings: _drawingsOnly,
                       updates: widget.updates,
                       controls: _notesControls(_space, cards: false),
                     ),
@@ -4021,8 +4017,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildCompactEditor(Note note) {
-    if (note.isDrawing) return _buildDrawing(note, modeSwitch: true);
-    final editor = ListenableBuilder(
+    if (_opensAsDrawing(note)) return _buildDrawing(note);
+    return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
         listenable: _toolbarSources,
@@ -4101,7 +4097,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
-    return _withModeSwitch(note, editor);
   }
 
   Widget _buildEditor(
@@ -4110,7 +4105,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required bool active,
     VoidCallback? onFocus,
   }) {
-    if (note.isDrawing) return _buildDrawing(note, onFocus: onFocus);
+    if (_opensAsDrawing(note)) return _buildDrawing(note, onFocus: onFocus);
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -4204,48 +4199,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Whether [note] can still become a drawing, or go back to being a page:
-  /// only while it is blank, and only for somebody who may write in it.
-  bool _canChooseMode(Note note) =>
-      _canWriteNote(note) &&
-      !note.isArchived &&
-      note.isEmpty &&
-      note.attachments.isEmpty;
-
-  /// The phone's editor, with "Write | Draw" over its corner while the note
-  /// is new.
-  ///
-  /// Always the same Stack, with or without the switch: the first keystroke
-  /// takes the switch away, and a tree that changed shape under the editor
-  /// at that moment would rebuild it out from under the caret.
-  Widget _withModeSwitch(Note note, Widget editor) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        editor,
-        if (_canChooseMode(note))
-          Positioned(
-            top: 10,
-            right: 14,
-            child: NoteModeSwitch(
-              drawing: false,
-              onChanged: (drawing) {
-                if (drawing) _setDrawingMode(note.id, drawing: true);
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  void _setDrawingMode(String id, {required bool drawing}) {
-    final note = widget.notes.byId(id);
-    if (note == null || !_canChooseMode(note)) return;
-    // The caret was in the page this note is no longer going to be.
-    if (drawing) FocusManager.instance.primaryFocus?.unfocus();
-    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    widget.notes.setDrawingMode(id, drawing: drawing);
-  }
+  /// Whether [note] opens on the canvas. A drawing does, except from a list
+  /// that holds it for the words a sync race left beside it, where it opens
+  /// as those words.
+  bool _opensAsDrawing(Note note) =>
+      note.isDrawing && (_drawingsOnly || !note.hasTextBesideDrawing);
 
   /// The page with nothing open on it, which in Drawings points at New
   /// drawing rather than offering a note.
@@ -4257,13 +4215,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         )
       : EmptyState(onCreate: _createNote);
 
-  /// A phone shows Write | Draw in the drawing's title row when
-  /// [modeSwitch]; a window shows it in the page toolbar.
-  Widget _buildDrawing(
-    Note note, {
-    VoidCallback? onFocus,
-    bool modeSwitch = false,
-  }) {
+  Widget _buildDrawing(Note note, {VoidCallback? onFocus}) {
     final canWrite = _canWriteNote(note);
     return DrawingCanvas(
       key: ValueKey('drawing-${note.id}'),
@@ -4276,9 +4228,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
-      onSwitchToWrite: modeSwitch && _canChooseMode(note)
-          ? () => _setDrawingMode(note.id, drawing: false)
-          : null,
       onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
       onTitleChanged: (title) => _updateDrawing(note.id, title: title),
     );

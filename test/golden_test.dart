@@ -317,8 +317,7 @@ void _seedDrawings(NotesStore notes) {
       width: width,
       text: text,
     );
-    final note = notes.create();
-    notes.setDrawingMode(note.id, drawing: true);
+    final note = notes.create(drawing: true);
     notes.updateDrawing(
       note.id,
       NoteDrawing([
@@ -1319,8 +1318,7 @@ void main() {
       notes.create(
         body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
       );
-      final drawing = notes.create();
-      notes.setDrawingMode(drawing.id, drawing: true);
+      final drawing = notes.create(drawing: true);
       notes.updateDrawing(
         drawing.id,
         NoteDrawing.empty,
