@@ -141,7 +141,14 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 set(LINUX_RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runner/resources")
 install(FILES "${LINUX_RESOURCES_DIR}/${APPLICATION_ID}.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications" COMPONENT Runtime)
-install(FILES "${LINUX_RESOURCES_DIR}/${APPLICATION_ID}.metainfo.xml"
+# Software centres show the metainfo's release as the version installed, so
+# it is pubspec's, the one the rest of the build is stamped with.
+set(RELEASE_VERSION
+  "${FLUTTER_VERSION_MAJOR}.${FLUTTER_VERSION_MINOR}.${FLUTTER_VERSION_PATCH}")
+string(TIMESTAMP RELEASE_DATE "%Y-%m-%d" UTC)
+configure_file("${LINUX_RESOURCES_DIR}/${APPLICATION_ID}.metainfo.xml.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/${APPLICATION_ID}.metainfo.xml" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${APPLICATION_ID}.metainfo.xml"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/metainfo" COMPONENT Runtime)
 foreach(icon_size 16 24 32 48 64 128 256 512)
   install(FILES "${LINUX_RESOURCES_DIR}/icons/${icon_size}.png"

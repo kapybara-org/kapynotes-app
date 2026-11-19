@@ -59,9 +59,8 @@ apart from any tar.gz, .deb or AppImage install; sync carries them across.
   source changed from the local path to the released tarballs: one
   `type: archive` source per arch with `url`, `sha256` and `only-arches`,
   and `x-checker-data` so Flathub's bot follows new releases.
-- Screenshots and a release entry for the version in the metainfo, which
-  Flathub's linter requires, and a check of the build with
-  `flatpak-builder-lint` (manifest and repo).
+- Screenshots in the metainfo, which Flathub's linter requires, and a check
+  of the build with `flatpak-builder-lint` (manifest and repo).
 - Verification of the `com.kapybara` ID, which needs kapybara.com, or a
   move to an ID on a domain Kapybara can verify.
 - Open at login through the Background portal, which the Flatpak hides for

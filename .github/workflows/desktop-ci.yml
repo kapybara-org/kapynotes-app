@@ -255,7 +255,11 @@ jobs:
           tarball="build/release/KapyNotes-$version-linux-${{ matrix.arch }}.tar.gz"
           ls -l "$deb" "$appimage" "$tarball"
           desktop-file-validate linux/runner/resources/com.kapybara.kapynotes.desktop
-          appstreamcli validate --no-net --pedantic linux/runner/resources/com.kapybara.kapynotes.metainfo.xml
+          # The metainfo as built, which is where its release gets pubspec's version.
+          mkdir -p metainfo
+          tar -xzf "$tarball" -C metainfo --strip-components=3 kapynotes/share/metainfo/com.kapybara.kapynotes.metainfo.xml
+          appstreamcli validate --no-net --pedantic metainfo/com.kapybara.kapynotes.metainfo.xml
+          grep -q "<release version=\"$version\"" metainfo/com.kapybara.kapynotes.metainfo.xml
           dpkg-deb -I "$deb"
           # dlopened rather than linked, so package.sh names them itself.
           for lib in libgl1 libegl1 libgles2; do
