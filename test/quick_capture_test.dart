@@ -23,11 +23,20 @@ class _MemoryStore extends LocalStore {
 
 /// Answers the platform channel with [name], or with nothing at all when it
 /// is null, the way a host with no handler registered does.
-void stubLaunchIntent(String? name, {bool respond = true}) {
+void stubLaunchIntent(
+  String? name, {
+  bool respond = true,
+  Duration after = Duration.zero,
+}) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
         QuickCapture.channel,
-        respond ? (call) async => name : null,
+        respond
+            ? (call) async {
+                if (after > Duration.zero) await Future<void>.delayed(after);
+                return name;
+              }
+            : null,
       );
 }
 
@@ -218,6 +227,33 @@ void main() {
       QuickCapture.startedWith(const []);
 
       expect(await QuickCapture.launchIntent(), LaunchIntent.continueWriting);
+    });
+
+    test('an answer after the deadline is kept for lateIntent', () async {
+      stubLaunchIntent('dictate', after: const Duration(milliseconds: 700));
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.open);
+      expect(await QuickCapture.lateIntent(), LaunchIntent.dictate);
+      // Collected once.
+      expect(await QuickCapture.lateIntent(), LaunchIntent.open);
+    });
+
+    test('an answer on time leaves nothing late', () async {
+      stubLaunchIntent('capture');
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.capture);
+      expect(await QuickCapture.lateIntent(), LaunchIntent.open);
+    });
+
+    test('a second late ask does not lose the first one\'s action', () async {
+      stubLaunchIntent('capture', after: const Duration(milliseconds: 700));
+      final first = QuickCapture.launchIntent();
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      stubLaunchIntent(null, after: const Duration(milliseconds: 700));
+
+      expect(await first, LaunchIntent.open);
+      expect(await QuickCapture.launchIntent(), LaunchIntent.open);
+      expect(await QuickCapture.lateIntent(), LaunchIntent.capture);
     });
 
     test('desktop never asks at all', () async {

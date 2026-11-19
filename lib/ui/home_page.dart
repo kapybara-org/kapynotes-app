@@ -465,7 +465,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // been holding that fact since the intent or the URL arrived, and gives
       // it up once, to whoever asks first — so asking on every resume costs
       // an ordinary resume one unanswered question and nothing else.
-      unawaited(QuickCapture.launchIntent().then(_runWidgetAction));
+      unawaited(_runWidgetActions(QuickCapture.launchIntent()));
     } else {
       // A window can lose the matching modifier-up event while focus moves to
       // the operating system. Commit the last preview so the switcher cannot
@@ -564,10 +564,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// Runs the action [intent] names, then one whose answer missed the
+  /// launch's deadline, once that answer arrives.
+  Future<void> _runWidgetActions(Future<LaunchIntent> intent) async {
+    await _runWidgetAction(await intent);
+    await _runWidgetAction(await QuickCapture.lateIntent());
+  }
+
   Future<void> _runInitialImageAndWidgetActions() async {
     final interruptedSelection = await _recoverInterruptedImageSelection();
     if (!mounted || interruptedSelection) return;
-    await _runWidgetAction(widget.launchIntent);
+    await _runWidgetActions(Future.value(widget.launchIntent));
   }
 
   Future<List<XFile>> _acquireImages(
@@ -930,9 +937,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await queue.drain();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
     }
   }
 

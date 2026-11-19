@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -90,16 +92,34 @@ class QuickCapture {
       _startedWith = null;
       return started;
     }
+    final answer = channel
+        .invokeMethod<String>('launchIntent')
+        .then(_named, onError: (_) => LaunchIntent.open);
     try {
-      final name = await channel
-          .invokeMethod<String>('launchIntent')
-          .timeout(_answerDeadline);
-      return _named(name);
-    } catch (_) {
-      // A desktop host, a platform with no handler registered, or one that
-      // never answered. All three mean the same thing to the user.
+      return await answer.timeout(_answerDeadline);
+    } on TimeoutException {
+      // A busy cold start can answer after the deadline, and the host gives
+      // the action up as it answers, so it is kept for [lateIntent] rather
+      // than lost.
+      final earlier = _late;
+      _late = earlier == null
+          ? answer
+          : earlier.then(
+              (intent) => intent == LaunchIntent.open ? answer : intent,
+            );
       return LaunchIntent.open;
     }
+  }
+
+  /// An answer that missed [_answerDeadline], until it is collected.
+  static Future<LaunchIntent>? _late;
+
+  /// The action whose answer missed the launch's deadline, once it arrives,
+  /// or [LaunchIntent.open] when every answer was on time. Collected once.
+  static Future<LaunchIntent> lateIntent() {
+    final late = _late;
+    _late = null;
+    return late ?? Future.value(LaunchIntent.open);
   }
 
   /// The intent the platform named, or [LaunchIntent.open] for a name this
