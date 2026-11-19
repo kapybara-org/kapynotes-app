@@ -283,6 +283,32 @@ void main() {
       }
     });
 
+    test('takes a code that is also a word only in capitals', () {
+      for (final engine in [CalcEngine(), _engine()]) {
+        for (final word in ['bob', 'Bob', 'mad', 'gel', 'ron', 'Try', 'lak']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+        for (final code in ['TRY', 'MAD', 'BOB', 'ALL', 'ZWG', 'XCG']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $code')[2]!.text,
+            '15.00 $code',
+            reason: code,
+          );
+        }
+        for (final word in ['LAK', 'ANG', 'ZWL']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+      }
+    });
+
     test('has no rate to convert money with when there are none', () {
       expect(CalcEngine().evaluateDocument('\$10\n5\ntotal in eur')[2], isNull);
       expect(CalcEngine().evaluateDocument('100 usd in eur')[0], isNull);
