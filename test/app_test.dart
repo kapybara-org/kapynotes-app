@@ -3937,6 +3937,57 @@ void main() {
       expect(titles(tester), ['Old plan']);
     });
 
+    testWidgets('search finds drawings beside notes, and opens each where it '
+        'lives', (tester) async {
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(
+          id: 'plain',
+          body: 'Garden tools\nrake and twine',
+          createdAt: at,
+          updatedAt: at,
+        ),
+        Note(
+          id: 'sketch',
+          body: 'Garden plan',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+      ]);
+      await pumpApp(tester);
+      Finder row(String title) =>
+          find.byKey(ValueKey('command-menu-row-$title'));
+      Future<void> search(String text) async {
+        await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          text,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      expect(titles(tester), ['Garden tools']);
+      await search('Garden');
+      expect(row('Garden tools'), findsOneWidget);
+      expect(row('Garden plan'), findsOneWidget);
+      await tester.tap(row('Garden plan'));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'Drawings');
+      expect(titles(tester), ['Garden plan']);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+
+      await search('Garden');
+      await tester.tap(row('Garden tools'));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'My notes');
+      expect(titles(tester), ['Garden tools']);
+      expect(find.byType(DrawingCanvas), findsNothing);
+      expect(openNoteBody(tester), 'Garden tools\nrake and twine');
+    });
+
     testWidgets('a phone keeps Drawings open from search as the keyboard comes '
         'up and the phone turns', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -3978,6 +4029,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(await listed(), {'Floor plan'});
+      expect(
+        find.descendant(
+          of: find.byType(Sidebar),
+          matching: find.text('Drawings'),
+        ),
+        findsOneWidget,
+      );
 
       tester.view.viewInsets = const FakeViewPadding(bottom: 320);
       await tester.pumpAndSettle();
@@ -6646,7 +6704,9 @@ void main() {
         await openSpace(tester, 'notes');
         expect(noteField, findsNothing);
         expect(find.text('Words'), findsNothing);
-        expect(find.byType(DrawingCanvas), findsOneWidget);
+        // Nor does the drawing take its place: Notes has nothing to open.
+        expect(find.byType(DrawingCanvas), findsNothing);
+        expect(find.byType(EmptyState), findsOneWidget);
       });
     }
 
