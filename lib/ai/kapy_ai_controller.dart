@@ -97,6 +97,7 @@ class KapyAiController extends KapyAi {
     );
     _wasPro = isPro;
     _device.addListener(_onDevice);
+    _notes.addListener(_linkSources.clear);
     _billing?.addListener(_onBilling);
     _book.addListener(_notify);
   }
@@ -550,6 +551,23 @@ class KapyAiController extends KapyAi {
     await _answer();
   }
 
+  /// [linkSources] by answer id, until a note changes.
+  final _linkSources = <String, String>{};
+
+  @override
+  String linkSources(KapyChat chat, KapyMessage answer) =>
+      _linkSources[answer.id] ??= () {
+        final at = chat.messages.indexWhere(
+          (message) => message.id == answer.id,
+        );
+        final read = {for (final ref in answer.read) ref.noteId};
+        return [
+          if (at > 0) chat.messages[at - 1].text,
+          for (final note in _notes.allNotes)
+            if (read.contains(note.id) && !note.isHidden) note.body,
+        ].join('\n');
+      }();
+
   /// Answers the current chat's last question, if nothing holds it up.
   Future<void> _answer() async {
     await _ready();
@@ -581,7 +599,15 @@ class KapyAiController extends KapyAi {
             : RetrievalBudget.cloud,
       );
       final read = readableNotes(_notes, retrieval.notes);
-      final earlier = chat.messages.sublist(0, chat.messages.length - 1);
+      final hidden = {
+        for (final note in _notes.allNotes)
+          if (note.isHidden) note.id,
+      };
+      final before = chat.messages.sublist(0, chat.messages.length - 1);
+      final cut = before.indexWhere(
+        (message) => message.read.any((ref) => hidden.contains(ref.noteId)),
+      );
+      final earlier = cut < 0 ? before : before.sublist(0, cut);
       final text = await _engineFor(using).answer(
         using,
         AnswerRequest(
@@ -760,6 +786,7 @@ class KapyAiController extends KapyAi {
   void dispose() {
     _disposed = true;
     _device.removeListener(_onDevice);
+    _notes.removeListener(_linkSources.clear);
     _billing?.removeListener(_onBilling);
     _book.removeListener(_notify);
     super.dispose();

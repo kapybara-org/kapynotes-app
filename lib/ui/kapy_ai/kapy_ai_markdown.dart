@@ -18,10 +18,24 @@ import 'punycode.dart';
 /// characters it was. A link is live only for http, https and mailto, opens
 /// only when it is clicked, and opens outside the app; any other scheme
 /// (`javascript:`, `file:`, an app's own) is left as its words.
+///
+/// It is live only when its address is written in [sources], too. A note
+/// someone else wrote can ask the model for a link that carries the person's
+/// other notes in its query, one click from leaving; an address nobody gave
+/// the model is printed after its words, to read or copy, and opens nothing.
 class KapyAiMarkdown extends StatefulWidget {
-  const KapyAiMarkdown(this.text, {super.key, this.launch = _openOutside});
+  const KapyAiMarkdown(
+    this.text, {
+    super.key,
+    required this.sources,
+    this.launch = _openOutside,
+  });
 
   final String text;
+
+  /// What was sent with the question this answers: the question and the
+  /// notes it read, from `KapyAi.linkSources`.
+  final String sources;
 
   /// Opens a link the reader clicked. Replaced in tests.
   final Future<void> Function(Uri uri) launch;
@@ -256,9 +270,17 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
         );
       } else {
         final label = match[6]!;
-        final uri = KapyAiMarkdown.safeLink(match[7]!);
+        final address = match[7]!;
+        final uri = KapyAiMarkdown.safeLink(address);
         if (uri == null) {
           spans.addAll(_spans(label, style));
+          continue;
+        }
+        if (!widget.sources.contains(address.trim())) {
+          spans.addAll(_spans(label, style));
+          if (label.trim() != address.trim()) {
+            spans.add(TextSpan(text: ' ($address)', style: style));
+          }
           continue;
         }
         final recognizer = TapGestureRecognizer()
