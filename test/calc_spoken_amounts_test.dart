@@ -54,6 +54,7 @@ void main() {
     });
 
     test('reads rs and rupay in Latin script', () {
+      expect(_line('lunch 5 bucks'), '5.00 USD');
       expect(_line('chai 250 rs'), '250.00 INR');
       expect(_line('chai 250 rupay'), '250.00 INR');
       expect(_line('chai 250 rupaye'), '250.00 INR');
@@ -64,20 +65,26 @@ void main() {
   group('lakh, crore and thousand words', () {
     test('scale the number before them', () {
       expect(_line('2.5 lakh'), '250,000');
-      expect(_line('3 crore'), '30,000,000');
-      expect(_line('3 करो\u095C'), '30,000,000');
-      expect(_line('3 करोड\u093C'), '30,000,000');
       expect(_line('2.5 lakh rupees'), '250,000.00 INR');
       expect(_line('budget 3 crore rupees'), '30,000,000.00 INR');
       expect(_line('बजट 2.5 लाख रुपये'), '250,000.00 INR');
+      expect(_line('बजट 3 करो\u095C रुपये'), '30,000,000.00 INR');
+      expect(_line('बजट 3 करोड\u093C रुपये'), '30,000,000.00 INR');
       expect(_line('5 हज\u093Cार रुपये'), '5,000.00 INR');
       expect(_line('5 ह\u095Bार रुपये'), '5,000.00 INR');
       expect(_line('5 हजार रुपए'), '5,000.00 INR');
+      expect(_line('₹2.5 lakh'), '250,000.00 INR');
+      expect(_line('rent 2 lakh INR'), '200,000.00 INR');
     });
 
-    test('leave a labelled number with no currency as the prose it is', () {
+    test('leave a number with no currency as the prose it is', () {
       expect(_line('budget 3 crore'), isNull);
       expect(_line('बजट 2.5 लाख'), isNull);
+      expect(_line('2 lakh people came'), isNull);
+      final results = CalcEngine(
+        ratesPerUsd: _rates,
+      ).evaluateDocument('Distance 5 km\n2 lakh steps');
+      expect(results[1], isNull);
     });
   });
 

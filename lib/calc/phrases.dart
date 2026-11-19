@@ -94,6 +94,8 @@ class Phrases {
 
   /// The words the registry has no unit for, which are rewritten to a code.
   static const Set<String> _unknownMajors = {
+    'bucks',
+    'buck',
     'डॉलर',
     'rupaye',
     'rupay',
@@ -151,8 +153,28 @@ class Phrases {
     'हजार': 1e3,
   };
 
+  static final String _scale = _alternatives(_scales.keys);
+  static final String _currency =
+      '${_alternatives(_majors.keys)}|usd|inr|eur|gbp|jpy|cad|aud|aed|sgd|chf|cny';
+
+  /// A scale word counts only with a currency attached, a symbol before the
+  /// number or a currency word or code after the scale, so '2 lakh people'
+  /// stays prose.
   static final RegExp _scaled = _spokenPattern(
-    '$_number\\s*(${_alternatives(_scales.keys)})$_end',
+    r'(?:(?<=[$€£¥₹]\s*)|(?=\d+(?:\.\d+)?\s*(?:' +
+        _scale +
+        r')' +
+        _end +
+        r'\s*(?:' +
+        _currency +
+        r')' +
+        _end +
+        '))' +
+        _number +
+        r'\s*(' +
+        _scale +
+        r')' +
+        _end,
   );
 
   static final RegExp _minorAlone = _spokenPattern(
