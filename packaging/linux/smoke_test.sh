@@ -247,7 +247,7 @@ run_app() {
   # GTK registers with a session manager only if one is there when it starts.
   local event
   if [[ "$kind" == appimage* ]]; then
-    coproc SESSION { DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" exec python3 "$here/session_manager.py"; }
+    coproc SESSION { DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" exec python3 "$here/session_manager.py" "$APP_ID"; }
     started+=("$SESSION_PID")
     expect_session ready
   fi
