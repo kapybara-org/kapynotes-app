@@ -50,7 +50,8 @@ class SharingPane extends StatelessWidget {
                       'Finish your profile before sharing notes.',
                     AccountState.needsPassphrase =>
                       'Save your passphrase to start sharing notes.',
-                    AccountState.locked => 'Unlock your notes to share them.',
+                    AccountState.locked || AccountState.keysChanged =>
+                      'Unlock your notes to share them.',
                     _ =>
                       'Sharing becomes available once your notes are '
                           'unlocked.',

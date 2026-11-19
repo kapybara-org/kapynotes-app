@@ -2605,7 +2605,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     AccountState.needsProfile => 'Choose your name first to share this note',
     AccountState.needsPassphrase =>
       'Choose a passphrase first to share this note',
-    AccountState.locked => 'Unlock first to share this note',
+    AccountState.locked ||
+    AccountState.keysChanged => 'Unlock first to share this note',
     AccountState.needsAccountDecision =>
       'Finish signing in first to share this note',
     AccountState.restoring ||
@@ -3247,7 +3248,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ? null
                       : () => _showSettings(section: SettingsSection.account),
                   user: widget.account?.user,
-                  syncStatus: widget.account?.sync?.status,
+                  syncStatus: widget.account?.syncStatus,
                 ),
                 Expanded(
                   child: SplitView(
@@ -3423,8 +3424,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             .bindingFor(ShortcutAction.newNote)
                                             ?.displayLabel,
                                         noteOpen: selected != null,
-                                        syncStatus:
-                                            widget.account?.sync?.status,
+                                        syncStatus: widget.account?.syncStatus,
                                         unloadedPictures: unloaded.length,
                                         onShowUnloadedPicture: unloaded.isEmpty
                                             ? null

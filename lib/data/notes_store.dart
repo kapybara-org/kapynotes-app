@@ -1146,6 +1146,20 @@ class NotesStore extends ChangeNotifier {
     return copy;
   }
 
+  /// A shared note this device can no longer write to: replaced here by a
+  /// personal note with the same words, as [forgetSpace] keeps unsynced
+  /// edits. The shared one stays on the server for whoever can still open
+  /// it, so no tombstone is left for it.
+  Note? keepAsOwn(String id) {
+    final note = byId(id);
+    if (note == null || note.spaceId == null) return null;
+    final copy = keepCopy(note);
+    _notes = List.unmodifiable(_notes.where((n) => n.id != id));
+    _encoded.remove(id);
+    _persist();
+    return copy;
+  }
+
   /// A private copy of [source] for leaving its space: the one an earlier
   /// attempt made, while it is still here, or a new one. [made] says which.
   ({Note note, bool made}) privateCopyOf(Note source) {

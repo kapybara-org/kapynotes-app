@@ -38,14 +38,17 @@ class MemoryStore extends LocalStore {
 
 /// One device: its own storage and keystore, the shared server.
 class Device {
-  Device(this.server, {FakeAuth? auth}) : auth = auth ?? FakeAuth() {
+  Device(this.server, {FakeAuth? auth, int protocol = protocolVersion})
+    : auth = auth ?? FakeAuth() {
     store = MemoryStore();
     notes = NotesStore(store);
     keys = KeyStore(InMemorySecureStore());
     final syncState = SyncState(store);
     account = Account(
       auth: this.auth,
-      syncApi: (_) => FakeApi(server),
+      syncApi: (_) => FakeApi(server, userId: this.auth.id)
+        ..protocol = protocol
+        ..keyGeneration = () => syncState.keyGeneration,
       keys: keys,
       notes: notes,
       state: syncState,
