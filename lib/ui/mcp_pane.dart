@@ -68,8 +68,8 @@ List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
       entry(
         'AI assistants',
         description:
-            'Assistants connect through Kapy Notes on your Mac or '
-            'Windows PC',
+            'Assistants connect through Kapy Notes on your Mac, Windows PC '
+            'or Linux computer',
       ),
     ];
   }
@@ -133,7 +133,8 @@ class _McpPaneState extends State<McpPane> {
     final service = McpScope.maybeOf(context);
     if (service == null) {
       return const SettingsNote(
-        'Assistants connect through Kapy Notes on your Mac or Windows PC.',
+        'Assistants connect through Kapy Notes on your Mac, Windows PC or '
+        'Linux computer.',
       );
     }
     final activity = service.activity;

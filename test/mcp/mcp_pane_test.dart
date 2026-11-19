@@ -251,9 +251,15 @@ void main() {
     await pumpPane(tester, scoped: false);
     expect(
       find.text(
-        'Assistants connect through Kapy Notes on your Mac or Windows PC.',
+        'Assistants connect through Kapy Notes on your Mac, Windows PC or '
+        'Linux computer.',
       ),
       findsOneWidget,
+    );
+    expect(
+      mcpSearchEntries(null).single.description,
+      'Assistants connect through Kapy Notes on your Mac, Windows PC or '
+      'Linux computer',
     );
   });
 
