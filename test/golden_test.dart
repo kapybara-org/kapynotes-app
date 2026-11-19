@@ -1231,10 +1231,14 @@ void main() {
 
       testWidgets('phone tasks, $name', (tester) async {
         await pumpPhone(tester);
+        // One note, so the list keeps the order its lines read: tasks that
+        // two notes add at the same golden instant tie, and fall back to
+        // their random ids.
         goldenNotes.create(
-          body: 'Lisbon trip\n☐ Sintra train tickets\n☐ Pack adapters',
+          body:
+              'Lisbon trip\n☐ Book the Sintra train\n☐ Pack adapters\n'
+              '☐ Pay the electricity bill',
         );
-        goldenNotes.create(body: 'Home budget\n☐ Pay the electricity bill');
         await tester.runAsync(goldenTasks.reconcileNow);
         await tester.pumpAndSettle();
         await tapAndSettle(tester, 'page-back');
