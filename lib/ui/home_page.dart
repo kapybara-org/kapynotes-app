@@ -42,6 +42,7 @@ import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import '../data/note_switcher.dart';
 import '../data/notes_store.dart';
+import '../data/onboarding.dart';
 import 'editor/voice_chip.dart';
 import 'editor/voice_insertion.dart';
 import 'voice_note_dialog.dart';
@@ -547,7 +548,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// a tap that arrives while the app is already open that note is simply the
   /// one being read — the same note the widget would have opened.
   Future<void> _runWidgetAction(LaunchIntent intent) async {
-    if (!mounted) return;
+    if (!mounted || intent == LaunchIntent.open) return;
+    if (Onboarding.holdsOnlyWelcome(widget.notes)) {
+      _createNoteNow();
+      await WidgetsBinding.instance.endOfFrame;
+    }
     switch (intent) {
       case LaunchIntent.open:
       case LaunchIntent.continueWriting:

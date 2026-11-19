@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../data/daily_separator.dart';
 import '../data/note.dart';
 import '../data/notes_store.dart';
+import '../data/onboarding.dart';
 import 'platform.dart';
 
 /// How the app was opened, as far as it changes what the user meets.
@@ -107,7 +108,12 @@ class QuickCapture {
         ? target
         : notes.lastEditedNote;
     // A drawing's body is its title, and words added there would be too.
-    if (!intent.continuesLastNote || last == null || last.isDrawing) {
+    // A library that is only the welcome note is the same as an empty one: it
+    // is there to be read, so nothing is carried on in it.
+    if (!intent.continuesLastNote ||
+        Onboarding.holdsOnlyWelcome(notes) ||
+        last == null ||
+        last.isDrawing) {
       return draft.isEmpty
           ? notes.create(body: Note.blankBody, authored: false)
           : notes.create(body: draft);
