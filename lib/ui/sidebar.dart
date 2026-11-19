@@ -481,7 +481,7 @@ extension on Sidebar {
   String _deleteLabel(Note note) {
     final space = sharing?.spaceOf(note);
     final label = space != null && space.isTeam && !space.isOwner
-        ? 'Remove from your notes'
+        ? 'Remove note'
         : _specialMode
         ? 'Delete permanently'
         : 'Delete note';

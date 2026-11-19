@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -992,6 +993,14 @@ void main() {
                 )
                 .action
                 .label;
+      if (label != null) {
+        final text = find.descendant(of: item, matching: find.text(label));
+        expect(
+          tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+          isFalse,
+          reason: '$label fits the menu',
+        );
+      }
       await tester.tapAt(Offset.zero);
       await tester.pumpAndSettle();
       return label;
@@ -999,13 +1008,13 @@ void main() {
 
     await pumpBob(asks: true);
     expect(bob.notes.byId(shared.id), isNotNull);
-    expect(await deleteLabel(shared), 'Remove from your notes…');
+    expect(await deleteLabel(shared), 'Remove note…');
     expect(await deleteLabel(own), 'Delete note…');
     // A viewer can't take it out of their notes, as before.
     expect(await deleteLabel(viewed), isNull);
 
     await pumpBob(asks: false);
-    expect(await deleteLabel(shared), 'Remove from your notes');
+    expect(await deleteLabel(shared), 'Remove note');
   });
 
   group('sidebar tabs', () {
