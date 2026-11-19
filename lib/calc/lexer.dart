@@ -64,6 +64,26 @@ const Map<String, String> currencySymbolCodes = {
   '₮': 'MNT',
 };
 
+/// The ISO 4217 currency codes a total can be shown in with no rate, as
+/// 'total in eur' is with no rates at all. Codes that are also common words,
+/// such as ALL, TRY, PEN and MOP, are left out, so 'total in all' stays prose.
+final Set<String> isoCurrencyCodes =
+    ('AED AFN AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT '
+            'BGN BHD BIF BMD BND BOB BRL BSD BTN BWP BYN BZD '
+            'CAD CDF CHF CLP CNY COP CRC CUP CVE CZK DJF DKK '
+            'DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP '
+            'GMD GNF GTQ GYD HKD HNL HTG HUF IDR ILS INR IQD '
+            'IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD '
+            'KYD KZT LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK '
+            'MNT MRU MUR MVR MWK MXN MYR MZN NAD NGN NIO NOK '
+            'NPR NZD OMR PAB PGK PHP PKR PLN PYG QAR RON RSD '
+            'RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SRD SSP '
+            'STN SVC SYP SZL THB TJS TMT TND TTD TWD TZS UAH '
+            'UGX USD UYU UZS VES VND VUV WST XAF XCD XOF XPF '
+            'YER ZAR ZMW ZWL')
+        .split(' ')
+        .toSet();
+
 /// Multi-character operators, longest first so `<=` never lexes as `<`.
 const List<String> _multiCharOperators = [
   '**',
