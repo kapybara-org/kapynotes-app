@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:file_selector/file_selector.dart' show XFile;
+import 'package:flutter/gestures.dart'
+    show kBackMouseButton, kForwardMouseButton;
 import 'package:flutter/services.dart'
     show
         HardwareKeyboard,
@@ -61,6 +63,7 @@ import '../data/rates.dart';
 import 'share_dialog.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
+import '../data/writing_streak.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
@@ -77,6 +80,7 @@ import 'kapy_ai/kapy_ai_panel.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
+import 'note_tabs.dart';
 import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
@@ -287,6 +291,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   EditorWorkspacePreviewSession? _noteSwitchWorkspace;
   ({String id, bool focusEditor})? _committedSwitchAwaitingSelection;
 
+  /// The note on screen when the arrows began walking the list, which ⌘↵
+  /// puts back. Null once anything else takes over.
+  String? _listWalkStart;
+
   /// True for a selection frame that only previews a note. The new editor is
   /// prepared at its normal caret but cannot steal focus from either sidebar
   /// scrubbing or an active Ctrl/Cmd switch session.
@@ -388,8 +396,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _workspace = EditorWorkspace(widget.store)
       ..load(
         availableNoteIds: widget.notes.notes.map((note) => note.id),
+        today: WritingStreak.dayOf(DateTime.now()),
         openingNoteId: openingId,
       );
+    // A draft still blank after a restart is still one nobody wrote in.
+    if (widget.notes.byId(_workspace.draft) case final draft?
+        when draft.isEmpty && draft.attachments.isEmpty) {
+      _freshNoteIds.add(draft.id);
+    }
+    _startNewDay();
     _selectedId = _workspace.selectedNoteId;
     // Opens on the tab that lists the note it opens on.
     _showTabOf(_selectedId);
@@ -509,7 +524,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// The first open of a new day on the desktop: the tabs left from earlier
+  /// days close into Recently closed, and the day starts on the note chosen
+  /// to open on launch, or else on a blank draft. Today's notes from other
+  /// devices stay in the list. Returns whether it was a new day.
+  bool _startNewDay() {
+    if (!AppPlatform.isDesktop || _specialMode) return false;
+    final opening = _workspace.selectedNoteId;
+    if (_workspace.rollOver(WritingStreak.dayOf(DateTime.now())) == null) {
+      return false;
+    }
+    final fixed = widget.notes.byId(widget.prefs.defaultNoteId);
+    if (fixed != null && !fixed.isArchived && !fixed.isHidden) {
+      _workspace.open(fixed.id);
+    } else if (!_openDraft() && opening != null) {
+      _workspace.open(opening);
+    }
+    return true;
+  }
+
+  /// Opens the day's blank draft. One left blank from an earlier day is used
+  /// again rather than another made beside it, and like any new note it is
+  /// discarded if it is left without a word in it. False where the note limit
+  /// leaves no room for one.
+  bool _openDraft() {
+    final kept = widget.notes.byId(_workspace.draft);
+    final reused = kept != null && _isBlankPage(kept);
+    if (!reused && !(_noteLimit?.canCreate ?? true)) return false;
+    final id = reused
+        ? kept.id
+        : widget.notes.create(body: Note.blankBody, authored: false).id;
+    if (reused) widget.notes.startAsNew(id);
+    _freshNoteIds.add(id);
+    _workspace
+      ..open(id)
+      ..draft = id;
+    return true;
+  }
+
   void _beginOpenSession() {
+    final previous = _selectedId;
+    if (_startNewDay()) setState(() => _adoptWorkspaceSelection(previous));
     // A welcome note nobody has typed into yet is there to be read. Appending
     // a dated line to it and dropping the cursor underneath is the opposite of
     // that, and on a phone it would raise a keyboard over the half that
@@ -1235,13 +1290,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Deletes the new notes the reader left without writing anything.
   ///
-  /// A note still on screen — selected, or in another pane — is still being
+  /// A note still open — on screen, or in a tab behind — is still being
   /// looked at, and one mid-way through a held-key switch may be switched
   /// back to. A note that got any writing, picture or recording is a real
   /// note from then on, and stops being a candidate even if later emptied.
   void _discardAbandonedBlanks() {
     if (_noteSwitchWorkspace != null) return;
-    final open = _workspace.openNoteIds;
+    final open = _workspace.tabbedNoteIds;
     final recordingInto = widget.recording?.isRecording ?? false
         ? widget.recording?.session?.noteId
         : null;
@@ -1283,11 +1338,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (sharing != null) _sidebarTab = sidebarTabOf(note, sharing);
   }
 
-  /// Abandons a held-key preview before another interaction takes ownership.
-  /// In split view that also restores the pane arrangement from the start of
-  /// the gesture, so a click or structural pane action never inherits a
-  /// half-previewed layout.
+  /// Abandons a held-key preview, and a walk down the list, before another
+  /// interaction takes ownership. On the desktop that also puts the tabs back
+  /// as the gesture found them, so a click or a change to the panes never
+  /// inherits a half-previewed layout.
   bool _cancelNoteSwitchPreview() {
+    _listWalkStart = null;
     _noteSwitchModifier = null;
     _committedSwitchAwaitingSelection = null;
     _noteSwitcher.cancel();
@@ -1325,14 +1381,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Runs [change] at once, unless it would take the note being recorded into
-  /// off the screen. That recording is delivered first, while the editor
-  /// holding its note is still there to take it at the caret.
-  void _afterRecordingLeaves(String? leaving, VoidCallback change) {
+  /// off the screen: one of [leaving]. That recording is delivered first,
+  /// while the editor holding its note is still there to take it at the
+  /// caret.
+  void _afterRecordingLeaves(Set<String> leaving, VoidCallback change) {
     final recording = widget.recording;
-    if (leaving != null &&
-        recording != null &&
+    if (recording != null &&
         recording.isRecording &&
-        recording.session?.noteId == leaving) {
+        leaving.contains(recording.session?.noteId)) {
       unawaited(
         recording.finishRecordingAndFlush().then((_) {
           if (mounted) change();
@@ -1357,14 +1413,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!selectionPreview && _cancelNoteSwitchPreview() && mounted) {
       setState(() {});
     }
-    // Showing a note replaces the focused one, unless it is already open in a
-    // pane of its own, which is then only focused.
-    final leaving = workspacePreview != null
-        ? workspacePreview.displacedBy(id)
-        : id != _selectedId &&
-              (_usesCompactLayout || _specialMode || _workspace.paneOf(id) < 0)
-        ? _selectedId
-        : null;
+    final leaving = workspacePreview?.displacedBy(id) ?? _leavingFor(id);
     _afterRecordingLeaves(leaving, () {
       if (!mounted || request != _selectionRequest) return;
       _selectNow(
@@ -1388,8 +1437,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _select(id);
   }
 
-  void _previewFromSidebar(String id) =>
-      _select(id, focusEditor: false, selectionPreview: true);
+  void _previewFromSidebar(String id) {
+    _listWalkStart ??= _selectedId;
+    _select(id, focusEditor: false, selectionPreview: true);
+  }
+
+  /// The notes on screen that showing [id] would take off it: the focused
+  /// one, which [id] takes the place of, or every one in front when [id]'s
+  /// own tab comes forward instead.
+  Set<String> _leavingFor(String id) {
+    if (id == _selectedId) return const {};
+    if (_usesCompactLayout || _specialMode) return {?_selectedId};
+    if (_workspace.paneOf(id) >= 0) return const {};
+    return _workspace.tabOf(id) >= 0 ? _workspace.openNoteIds : {?_selectedId};
+  }
 
   void _selectNow(
     String id, {
@@ -1442,10 +1503,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _openNoteToSide(String id) {
     if (_usesCompactLayout || _specialMode) return;
     _dismissListOverlay();
-    _afterRecordingLeaves(
-      _workspace.displacedByOpenToSide(id),
-      () => _openNoteToSideNow(id),
-    );
+    _afterRecordingLeaves({
+      ?_workspace.displacedByOpenToSide(id),
+    }, () => _openNoteToSideNow(id));
   }
 
   void _openNoteToSideNow(String id) {
@@ -1501,7 +1561,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_specialMode || _usesCompactLayout) return;
     if (index >= _workspace.paneCount) return;
     final pane = _workspace.panes[index];
-    _afterRecordingLeaves(pane.noteId, () {
+    _afterRecordingLeaves({?pane.noteId}, () {
       final previous = _selectedId;
       final at = _workspace.panes.indexWhere((open) => open.id == pane.id);
       if (!_workspace.close(at)) return;
@@ -1520,7 +1580,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (plan == null) return;
     final target = _workspace.panes[index];
     _afterRecordingLeaves(
-      plan.action == PaneDropAction.replace ? target.noteId : null,
+      {if (plan.action == PaneDropAction.replace) ?target.noteId},
       () {
         final previous = _selectedId;
         final at = _workspace.panes.indexWhere((pane) => pane.id == target.id);
@@ -1529,6 +1589,128 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _afterPaneChange();
       },
     );
+  }
+
+  /// Where the tab with [tabId] is on the row, or -1.
+  int _tabIndex(String tabId) =>
+      _workspace.tabs.indexWhere((tab) => '${tab.id}' == tabId);
+
+  /// Changes the tabs once any recording into a note [leaving] the screen is
+  /// delivered, then takes up the note in front. [change] finds its tab again
+  /// by id, since delivering a recording can take a moment.
+  void _changeTabs(
+    Set<String> leaving,
+    bool Function() change, {
+    bool focus = true,
+  }) {
+    if (_specialMode) return;
+    if (_cancelNoteSwitchPreview()) setState(() {});
+    _afterRecordingLeaves(leaving, () {
+      if (!mounted) return;
+      final previous = _selectedId;
+      if (!change()) return;
+      setState(() => _adoptWorkspaceSelection(previous));
+      _afterPaneChange(focus: focus);
+    });
+  }
+
+  void _activateTab(String tabId) {
+    final index = _tabIndex(tabId);
+    if (index < 0) return;
+    _changeTabs(
+      index == _workspace.frontTabIndex ? const {} : _workspace.openNoteIds,
+      () => _workspace.activateTab(_tabIndex(tabId)),
+    );
+  }
+
+  /// Closes a tab, and offers it back for a moment. Its notes stay exactly
+  /// where they are in the list.
+  void _closeTab(String tabId) {
+    final index = _tabIndex(tabId);
+    if (index < 0) return;
+    final title = widget.notes.byId(_workspace.tabs[index].noteId)?.title;
+    _changeTabs(
+      index == _workspace.frontTabIndex ? _workspace.openNoteIds : const {},
+      () {
+        if (!_workspace.closeTab(_tabIndex(tabId))) return false;
+        Toast.show(
+          context,
+          title == null ? 'Closed the tab' : 'Closed "$title"',
+          icon: KapyIcons.closeRounded,
+          action: 'Reopen',
+          onAction: _reopenTab,
+        );
+        return true;
+      },
+    );
+  }
+
+  void _closeOtherTabs(String tabId) {
+    final index = _tabIndex(tabId);
+    if (index < 0) return;
+    _changeTabs(
+      index == _workspace.frontTabIndex ? const {} : _workspace.openNoteIds,
+      () {
+        final at = _tabIndex(tabId);
+        if (at < 0) return false;
+        _workspace.closeOthers(at);
+        return true;
+      },
+    );
+  }
+
+  /// Opens the tab closed last again, in front.
+  void _reopenTab() {
+    if (_workspace.recentlyClosed.isEmpty) return;
+    _changeTabs(_workspace.openNoteIds, () => _workspace.reopen() != null);
+  }
+
+  void _goBack() {
+    final id = _workspace.backNoteId;
+    if (id != null) _changeTabs(_leavingFor(id), _workspace.back);
+  }
+
+  void _goForward() {
+    final id = _workspace.forwardNoteId;
+    if (id != null) _changeTabs(_leavingFor(id), _workspace.forward);
+  }
+
+  /// What ⌘W closes: the focused pane while the tab is split, else the tab
+  /// while there is another to show. Unbound with one tab of one note, so
+  /// the chord never leaves an empty page the reader did not mean to.
+  VoidCallback? get _closeShortcutAction {
+    if (_specialMode || _usesCompactLayout) return null;
+    if (_workspace.isSplit) return () => _closePane(_workspace.activePane);
+    final front = _workspace.frontTab;
+    if (front == null || _workspace.tabs.length < 2) return null;
+    return () => _closeTab('${front.id}');
+  }
+
+  /// Opens [id] in a tab of its own behind the one in front, and leaves the
+  /// screen as it is.
+  void _openInNewTab(String id) {
+    if (_specialMode || _usesCompactLayout) return;
+    final previous = _selectedId;
+    if (!_workspace.openInNewTab(id)) return;
+    setState(() => _adoptWorkspaceSelection(previous));
+  }
+
+  /// ⌘↵ in the list: the note the arrows walked to moves to a tab of its own
+  /// behind this one, and this tab goes back to the note the walk began on.
+  void _openSelectedInNewTab() {
+    final id = _selectedId;
+    final start = _listWalkStart;
+    if (id == null ||
+        start == null ||
+        start == id ||
+        _usesCompactLayout ||
+        widget.notes.byId(start) == null) {
+      return;
+    }
+    _changeTabs({id}, () {
+      _workspace.open(start);
+      return _workspace.openInNewTab(id);
+    }, focus: false);
   }
 
   /// Previews another note in MRU order while the switching modifier is held.
@@ -1567,7 +1749,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (starting &&
         !_specialMode &&
         !_usesCompactLayout &&
-        _workspace.isSplit) {
+        _workspace.frontTab != null) {
       _noteSwitchWorkspace = _workspace.beginPreviewSession();
     }
 
@@ -1736,17 +1918,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// its text says — [Note.isEmpty] only reads the body.
   Note? _blankNoteAlreadyOpen() {
     if (_archiveMode) return null;
-    final id = _selectedId;
-    if (id == null) return null;
-    final note = widget.notes.byId(id);
-    if (note == null || note.isArchived || note.isShared) return null;
-    if (note.isHidden != _hiddenMode) return null;
-    if (!note.isEmpty || note.attachments.isNotEmpty) return null;
+    final note = widget.notes.byId(_selectedId);
+    return note != null && _isBlankPage(note) ? note : null;
+  }
+
+  /// Whether [note] is still a blank page, which a new note may as well be.
+  /// See [_blankNoteAlreadyOpen].
+  bool _isBlankPage(Note note) {
+    if (note.isArchived || note.isShared) return false;
+    if (note.isHidden != _hiddenMode) return false;
+    if (!note.isEmpty || note.attachments.isNotEmpty) return false;
     // A blank canvas was chosen as one: "new note" means a page to write on.
-    if (note.isDrawing) return null;
+    if (note.isDrawing) return false;
     // Nobody can type into it, so it is not the new note either.
-    if (_limitHolds(note)) return null;
-    return note;
+    return !_limitHolds(note);
   }
 
   /// What the archive shortcut does to the note that is open.
@@ -1771,7 +1956,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     final index = widget.notes.activeIndexOf(id);
     final archivingSelected = id == _selectedId;
-    final closesPane = !_usesCompactLayout && _workspace.isSplit;
+    final othersOpen =
+        !_usesCompactLayout &&
+        (_workspace.isSplit || _workspace.tabs.length > 1);
     widget.notes.archive(id);
     Toast.show(
       context,
@@ -1781,10 +1968,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onAction: () => _viewArchived(id),
     );
     if (!archivingSelected) return;
-    // Its pane closed with it, and the pane beside it has the focus. Opening
-    // the next note in the list there would take the place of a note the
-    // reader chose to keep on screen.
-    if (closesPane) {
+    // Its pane or its tab closed with it, and a note the reader opened is in
+    // front in its place. Opening the next note in the list there would take
+    // the place of a note the reader chose to keep open.
+    if (othersOpen) {
       widget.prefs.lastOpenedNoteId = _selectedId;
       _focusSelectedEditorHere();
       return;
@@ -1858,7 +2045,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     final index = widget.notes.activeIndexOf(id);
     final hidingSelected = id == _selectedId;
-    final closesPane = !_usesCompactLayout && _workspace.isSplit;
+    final othersOpen =
+        !_usesCompactLayout &&
+        (_workspace.isSplit || _workspace.tabs.length > 1);
     widget.notes.hide(id);
     final shortcut = widget.shortcuts
         .bindingFor(ShortcutAction.toggleHiddenFolder)
@@ -1870,7 +2059,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         : 'Show it from Settings to find it.';
     Toast.show(context, 'Moved to Hidden Notes. $discovery', icon: hiddenIcon);
     if (!hidingSelected) return;
-    if (closesPane) {
+    if (othersOpen) {
       widget.prefs.lastOpenedNoteId = _selectedId;
       _focusSelectedEditorHere();
       return;
@@ -3158,7 +3347,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             : page;
         final content = Listener(
           behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) => _recordKapyActivity(),
+          onPointerDown: (event) {
+            _recordKapyActivity();
+            // The mouse's own Back and Forward buttons, as in a browser.
+            if (event.buttons == kBackMouseButton) _goBack();
+            if (event.buttons == kForwardMouseButton) _goForward();
+          },
           child: gesturePage,
         );
 
@@ -3184,11 +3378,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onSplitEditor: _specialMode || !_workspace.canSplit
                 ? null
                 : _splitEditor,
-            // Unbound with a single pane, so the chord closes nothing at all
-            // rather than something the reader did not mean it to.
-            onClosePane: _specialMode || !_workspace.isSplit
-                ? null
-                : () => _closePane(_workspace.activePane),
+            onCloseTab: _closeShortcutAction,
+            onReopenTab: _specialMode ? null : _reopenTab,
+            onGoBack: _specialMode ? null : _goBack,
+            onGoForward: _specialMode ? null : _goForward,
             onFocusPane: [
               for (var index = 0; index < EditorWorkspace.maxPanes; index++)
                 _specialMode || index >= _workspace.paneCount
@@ -3332,6 +3525,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 ? _enterSelectedEditorFromSidebar
                                 : null,
                             onOpenToSide: _specialMode ? null : _openNoteToSide,
+                            onOpenInNewTab: _specialMode ? null : _openInNewTab,
+                            onOpenSelectedInNewTab: _specialMode
+                                ? null
+                                : _openSelectedInNewTab,
+                            tabbedIds: _specialMode
+                                ? const {}
+                                : _workspace.tabbedNoteIds,
                             openElsewhereIds: _specialMode
                                 ? const {}
                                 : _workspace.openNoteIds.difference({
@@ -3497,6 +3697,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                     ),
                                               )
                                             : null,
+                                      ),
+                                      TabRowReveal(
+                                        shown:
+                                            !_specialMode &&
+                                            _workspace.tabs.length > 1,
+                                        child: _buildTabRow(),
                                       ),
                                       Expanded(child: _buildWideWorkspace()),
                                     ],
@@ -3682,6 +3888,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
+  /// The open tabs, under the toolbar while there is more than one.
+  Widget _buildTabRow() {
+    final front = _workspace.frontTab;
+    return NoteTabRow(
+      tabs: [
+        for (final tab in _workspace.tabs)
+          if (widget.notes.byId(tab.noteId) case final note?)
+            NoteTab(id: '${tab.id}', title: note.title, icon: _tabIcon(note)),
+      ],
+      activeId: front == null ? null : '${front.id}',
+      recentIds: [for (final tab in _workspace.recentTabs) '${tab.id}'],
+      onSelect: _activateTab,
+      onClose: _closeTab,
+      onCloseOthers: _closeOtherTabs,
+      // While the tab is split, the chord closes its focused pane first.
+      closeShortcut: _workspace.isSplit
+          ? null
+          : widget.shortcuts.bindingFor(ShortcutAction.closeTab)?.keycapLabel,
+    );
+  }
+
+  /// The rail's icon for where a tab's note lives.
+  static KapyIconData _tabIcon(Note note) => note.isDrawing
+      ? KapyIcons.penRounded
+      : note.isShared
+      ? KapyIcons.groupOutlined
+      : KapyIcons.noteOutlined;
+
   Widget _buildWideWorkspace() {
     if (_specialMode) {
       final selected = widget.notes.byId(_selectedId);
@@ -3741,7 +3975,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onTitlePressed: () => _focusPane(index),
       onClose: split ? () => _closePane(index) : null,
       closeShortcut: widget.shortcuts
-          .bindingFor(ShortcutAction.closePane)
+          .bindingFor(ShortcutAction.closeTab)
           ?.displayLabel,
       planDrop: (data, zone) => _planDrop(data, index, zone),
       onDrop: (data, zone) => _dropNote(data, index, zone),
@@ -4265,7 +4499,10 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onNextNote,
     required this.onPreviousNote,
     required this.onSplitEditor,
-    required this.onClosePane,
+    required this.onCloseTab,
+    required this.onReopenTab,
+    required this.onGoBack,
+    required this.onGoForward,
     required this.onFocusPane,
     required this.onOpenSettings,
     required this.onIncreaseEditorTextSize,
@@ -4302,7 +4539,12 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
   final VoidCallback? onSplitEditor;
-  final VoidCallback? onClosePane;
+
+  /// Null where the chord would close nothing the reader could see go.
+  final VoidCallback? onCloseTab;
+  final VoidCallback? onReopenTab;
+  final VoidCallback? onGoBack;
+  final VoidCallback? onGoForward;
 
   /// One per pane position, left to right; null past the panes that are open.
   final List<VoidCallback?> onFocusPane;
@@ -4367,8 +4609,12 @@ class _DesktopShortcuts extends StatelessWidget {
             onPreviousNote,
         ?shortcuts.bindingFor(ShortcutAction.splitEditor)?.activator:
             ?onSplitEditor,
-        ?shortcuts.bindingFor(ShortcutAction.closePane)?.activator:
-            ?onClosePane,
+        ?shortcuts.bindingFor(ShortcutAction.closeTab)?.activator: ?onCloseTab,
+        ?shortcuts.bindingFor(ShortcutAction.reopenTab)?.activator:
+            ?onReopenTab,
+        ?shortcuts.bindingFor(ShortcutAction.goBack)?.activator: ?onGoBack,
+        ?shortcuts.bindingFor(ShortcutAction.goForward)?.activator:
+            ?onGoForward,
         ?shortcuts.bindingFor(ShortcutAction.focusFirstPane)?.activator:
             ?onFocusPane[0],
         ?shortcuts.bindingFor(ShortcutAction.focusSecondPane)?.activator:

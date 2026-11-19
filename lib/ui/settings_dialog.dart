@@ -3080,7 +3080,7 @@ class _SettingsDialogState extends State<SettingsDialog>
 enum _ShortcutGroup {
   fromAnywhere('From anywhere'),
   notesAndSearch('Notes and search'),
-  panes('Panes'),
+  tabsAndPanes('Tabs and panes'),
   window('Window'),
   writing('Writing'),
   formatting('Formatting');
@@ -3105,11 +3105,14 @@ extension on ShortcutAction {
     ShortcutAction.previousNote ||
     ShortcutAction.deleteNote ||
     ShortcutAction.toggleKapyAi => _ShortcutGroup.notesAndSearch,
+    ShortcutAction.goBack ||
+    ShortcutAction.goForward ||
+    ShortcutAction.closeTab ||
+    ShortcutAction.reopenTab ||
     ShortcutAction.splitEditor ||
-    ShortcutAction.closePane ||
     ShortcutAction.focusFirstPane ||
     ShortcutAction.focusSecondPane ||
-    ShortcutAction.focusThirdPane => _ShortcutGroup.panes,
+    ShortcutAction.focusThirdPane => _ShortcutGroup.tabsAndPanes,
     ShortcutAction.showNotes ||
     ShortcutAction.showTasks ||
     ShortcutAction.showDrawings ||

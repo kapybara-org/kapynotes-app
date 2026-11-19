@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kMiddleMouseButton;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -103,6 +104,9 @@ class Sidebar extends StatelessWidget {
     this.onEnterSelected,
     this.onOpenToSide,
     this.openElsewhereIds = const {},
+    this.onOpenInNewTab,
+    this.onOpenSelectedInNewTab,
+    this.tabbedIds = const {},
     this.onArchive,
     this.onRestore,
     this.onHide,
@@ -186,6 +190,19 @@ class Sidebar extends StatelessWidget {
   /// so the list says what is already on screen before a click there would
   /// only move the focus to it.
   final Set<String> openElsewhereIds;
+
+  /// Opens a note in a tab of its own behind the one in front: ⌘-click or
+  /// Ctrl-click, a middle click, or the menu. Null in the compact and archive
+  /// layouts, which have no tabs.
+  final ValueChanged<String>? onOpenInNewTab;
+
+  /// ⌘↵ or Ctrl+Enter while the list holds the keyboard: the highlighted note
+  /// goes to a tab of its own.
+  final VoidCallback? onOpenSelectedInNewTab;
+
+  /// Notes open in a tab, in front or behind. A new tab for one of them would
+  /// only be a second tab for the same note, so their menus leave it out.
+  final Set<String> tabbedIds;
   final ValueChanged<String>? onArchive;
   final ValueChanged<String>? onRestore;
   final ValueChanged<String>? onHide;
@@ -360,6 +377,7 @@ class Sidebar extends StatelessWidget {
                 child: _NoteListKeys(
                   onMoveSelected: _moveSelected,
                   onEnterSelected: onEnterSelected,
+                  onOpenSelectedInNewTab: onOpenSelectedInNewTab,
                   onArchiveSelected: _archiveSelected,
                   onDeleteSelected: _deleteSelected,
                   archiveShortcut: archiveShortcut,
@@ -557,6 +575,10 @@ extension on Sidebar {
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
     openElsewhere: openElsewhereIds.contains(note.id),
+    onOpenInNewTab: onOpenInNewTab == null
+        ? null
+        : () => onOpenInNewTab!(note.id),
+    tabbed: tabbedIds.contains(note.id),
     onTogglePin: onTogglePin == null ? null : () => onTogglePin!(note.id),
     archiveShortcut: archiveShortcut,
     onShare: _specialMode || onShare == null ? null : () => onShare!(note.id),
@@ -957,6 +979,7 @@ class _NoteListKeys extends StatefulWidget {
   const _NoteListKeys({
     required this.onMoveSelected,
     required this.onEnterSelected,
+    required this.onOpenSelectedInNewTab,
     required this.onArchiveSelected,
     required this.onDeleteSelected,
     required this.archiveShortcut,
@@ -968,6 +991,9 @@ class _NoteListKeys extends StatefulWidget {
 
   /// Moves focus from the selected row into its editor.
   final VoidCallback? onEnterSelected;
+
+  /// Puts the selected row's note in a tab of its own: ⌘↵, or Ctrl+Enter.
+  final VoidCallback? onOpenSelectedInNewTab;
 
   /// Files the highlighted note away, exactly as its own glyph does. Null
   /// where nothing in the list can be archived.
@@ -1032,6 +1058,21 @@ class _NoteListKeysState extends State<_NoteListKeys> {
     };
   }
 
+  /// ⌘↵ on a Mac, Ctrl+Enter elsewhere: a browser's open in a new tab.
+  static bool _opensInNewTab(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        (event.logicalKey != LogicalKeyboardKey.enter &&
+            event.logicalKey != LogicalKeyboardKey.numpadEnter)) {
+      return false;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    return (AppPlatform.isMacOS
+            ? keyboard.isMetaPressed && !keyboard.isControlPressed
+            : keyboard.isControlPressed && !keyboard.isMetaPressed) &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed;
+  }
+
   static bool _entersEditor(KeyEvent event) {
     if (event is! KeyDownEvent ||
         event.logicalKey != LogicalKeyboardKey.arrowRight) {
@@ -1051,6 +1092,14 @@ class _NoteListKeysState extends State<_NoteListKeys> {
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (_opensInNewTab(event)) {
+      final open = widget.onOpenSelectedInNewTab;
+      if (open == null) return KeyEventResult.ignored;
+      open();
+      _keepFocus();
+      return KeyEventResult.handled;
+    }
+
     if (_entersEditor(event)) {
       final enter = widget.onEnterSelected;
       if (enter == null) return KeyEventResult.ignored;
@@ -2467,6 +2516,8 @@ class NoteRow extends StatefulWidget {
     required this.onTap,
     this.onOpenToSide,
     this.openElsewhere = false,
+    this.onOpenInNewTab,
+    this.tabbed = false,
     this.onShare,
     this.onArchive,
     this.onRestore,
@@ -2508,6 +2559,13 @@ class NoteRow extends StatefulWidget {
 
   /// Whether the note is already open in a pane other than the focused one.
   final bool openElsewhere;
+
+  /// Opens the note in a tab of its own behind the one in front: ⌘-click or
+  /// Ctrl-click, a middle click, and the menu. Null where there are no tabs.
+  final VoidCallback? onOpenInNewTab;
+
+  /// Whether the note is open in a tab already, in front or behind.
+  final bool tabbed;
   final VoidCallback? onShare;
   final VoidCallback? onArchive;
   final VoidCallback? onRestore;
@@ -2567,11 +2625,26 @@ class _NoteRowState extends State<NoteRow> {
       !widget.selected &&
       !widget.openElsewhere;
 
+  bool get _canOpenInNewTab =>
+      widget.onOpenInNewTab != null && !widget.selecting && !widget.tabbed;
+
   /// A click opens the note where the focus is. Option- or Alt-click opens it
-  /// beside that instead, the way a code editor's file list does.
+  /// beside that instead, the way a code editor's file list does, and ⌘-click
+  /// or Ctrl-click opens it in a tab behind, the way a browser does. A note
+  /// with a tab already stays where it is: the click asked for nothing to
+  /// change on screen.
   void _open() {
-    if (_canOpenToSide && HardwareKeyboard.instance.isAltPressed) {
+    final keyboard = HardwareKeyboard.instance;
+    if (_canOpenToSide && keyboard.isAltPressed) {
       widget.onOpenToSide!();
+      return;
+    }
+    if (widget.onOpenInNewTab != null &&
+        !widget.selecting &&
+        (AppPlatform.isMacOS
+            ? keyboard.isMetaPressed
+            : keyboard.isControlPressed)) {
+      if (_canOpenInNewTab) widget.onOpenInNewTab!();
       return;
     }
     widget.onTap();
@@ -2585,12 +2658,19 @@ class _NoteRowState extends State<NoteRow> {
         ? widget.archiveShortcut
         : null;
     return [
+      if (_canOpenInNewTab)
+        KapyMenuAction(
+          value: 'open-tab',
+          label: 'Open in new tab',
+          icon: KapyIcons.openExternalRounded,
+          hint: AppPlatform.isMacOS ? '⌘↵' : 'Ctrl+Enter',
+        ),
       if (_canOpenToSide)
         KapyMenuAction(
           value: 'open-side',
           label: 'Open to the side',
           icon: KapyIcons.viewColumnOutlined,
-          hint: AppPlatform.isMacOS ? 'Option + Click' : 'Alt + Click',
+          hint: AppPlatform.isMacOS ? '⌥ Click' : 'Alt+Click',
         ),
       if (widget.onTogglePin != null)
         KapyMenuAction(
@@ -2774,6 +2854,7 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'share') widget.onShare?.call();
     if (choice == 'pin') widget.onTogglePin?.call();
     if (choice == 'open-side') widget.onOpenToSide?.call();
+    if (choice == 'open-tab') widget.onOpenInNewTab?.call();
     if (choice == 'tags' && context.mounted) {
       await showTagPickerAt(context, position, widget.note.id);
     }
@@ -3022,7 +3103,16 @@ class _NoteRowState extends State<NoteRow> {
                 : (details) =>
                       _showContextMenu(context, details.globalPosition),
             behavior: HitTestBehavior.opaque,
-            child: face,
+            child: Listener(
+              // A middle click opens the note in a tab behind, as a
+              // browser's middle click opens a link.
+              onPointerDown: (event) {
+                if (event.buttons == kMiddleMouseButton && _canOpenInNewTab) {
+                  widget.onOpenInNewTab!();
+                }
+              },
+              child: face,
+            ),
           ),
         ),
       ),

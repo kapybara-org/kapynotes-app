@@ -19,8 +19,11 @@ enum ShortcutAction {
   showArchive,
   nextNote,
   previousNote,
+  goBack,
+  goForward,
+  closeTab,
+  reopenTab,
   splitEditor,
-  closePane,
   focusFirstPane,
   focusSecondPane,
   focusThirdPane,
@@ -65,8 +68,11 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.showArchive => 'Go to Archive',
     ShortcutAction.nextNote => 'Next note',
     ShortcutAction.previousNote => 'Previous note',
+    ShortcutAction.goBack => 'Go back',
+    ShortcutAction.goForward => 'Go forward',
+    ShortcutAction.closeTab => 'Close tab',
+    ShortcutAction.reopenTab => 'Reopen closed tab',
     ShortcutAction.splitEditor => 'Split view',
-    ShortcutAction.closePane => 'Close pane',
     ShortcutAction.focusFirstPane => 'Focus pane 1',
     ShortcutAction.focusSecondPane => 'Focus pane 2',
     ShortcutAction.focusThirdPane => 'Focus pane 3',
@@ -112,10 +118,13 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.nextNote => 'Switch forward through recently used notes',
     ShortcutAction.previousNote =>
       'Switch backward through recently used notes',
+    ShortcutAction.goBack => 'Show the note you had open before',
+    ShortcutAction.goForward => 'Go forward again after going back',
+    ShortcutAction.closeTab =>
+      'Close the tab you are in. Its note stays in the list',
+    ShortcutAction.reopenTab => 'Open the tab you closed last again',
     ShortcutAction.splitEditor =>
       'Open a pane beside this note, for up to three side by side',
-    ShortcutAction.closePane =>
-      'Close the focused pane. Its note stays in the list',
     ShortcutAction.focusFirstPane => 'Move the keyboard to the leftmost pane',
     ShortcutAction.focusSecondPane => 'Move the keyboard to the second pane',
     ShortcutAction.focusThirdPane => 'Move the keyboard to the third pane',
@@ -339,9 +348,9 @@ class ShortcutPrefs extends ChangeNotifier {
     final saved = raw is Map ? raw : const <Object?, Object?>{};
     _bindings = {
       for (final action in ShortcutAction.values)
-        if (saved[action.name] != _unbound)
+        if (_saved(saved, action) != _unbound)
           action:
-              ShortcutBinding.fromJson(saved[action.name]) ??
+              ShortcutBinding.fromJson(_saved(saved, action)) ??
               defaultFor(action),
     };
 
@@ -370,6 +379,12 @@ class ShortcutPrefs extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  /// What [saved] holds for [action]. Close tab was Close pane until there
+  /// were tabs, on the same keys.
+  static Object? _saved(Map<Object?, Object?> saved, ShortcutAction action) =>
+      saved[action.name] ??
+      (action == ShortcutAction.closeTab ? saved['closePane'] : null);
 
   /// The defaults [action] has shipped with and since given up.
   ///
@@ -439,6 +454,17 @@ class ShortcutPrefs extends ChangeNotifier {
           control: !useMeta,
         ),
       ],
+      // Cmd/Ctrl+Shift+T until there were tabs, which is what every tabbed
+      // app reopens a closed tab with. See [defaultFor].
+      ShortcutAction.toggleAlwaysOnTop => [
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyT,
+          physicalKey: PhysicalKeyboardKey.keyT,
+          meta: useMeta,
+          control: !useMeta,
+          shift: true,
+        ),
+      ],
       // The first notes-list default. Cmd/Ctrl+S is a better fit because
       // every note saves itself and there is no manual Save to displace.
       ShortcutAction.toggleSidebar => [
@@ -475,11 +501,10 @@ class ShortcutPrefs extends ChangeNotifier {
 
   /// Link answers only while words are selected, and leaves its chord to
   /// Search everywhere else, so the two may share one.
-  static bool sharesChord(ShortcutAction a, ShortcutAction? b) =>
-      {a, b}.containsAll(const {
-        ShortcutAction.findNotes,
-        ShortcutAction.formatLink,
-      });
+  static bool sharesChord(ShortcutAction a, ShortcutAction? b) => {
+    a,
+    b,
+  }.containsAll(const {ShortcutAction.findNotes, ShortcutAction.formatLink});
 
   void update(ShortcutAction action, ShortcutBinding binding) {
     if (_bindings[action] == binding) return;
@@ -618,11 +643,26 @@ class ShortcutPrefs extends ChangeNotifier {
       // Option+Cmd and a number on a Mac, beside the Cmd and a number that
       // focus the panes. Alt and a number elsewhere: Ctrl+Alt is AltGr on
       // international layouts, where it types ² and ³.
-      ShortcutAction.showNotes => _section(LogicalKeyboardKey.digit1, PhysicalKeyboardKey.digit1),
-      ShortcutAction.showTasks => _section(LogicalKeyboardKey.digit2, PhysicalKeyboardKey.digit2),
-      ShortcutAction.showDrawings => _section(LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3),
-      ShortcutAction.showShared => _section(LogicalKeyboardKey.digit4, PhysicalKeyboardKey.digit4),
-      ShortcutAction.showArchive => _section(LogicalKeyboardKey.digit5, PhysicalKeyboardKey.digit5),
+      ShortcutAction.showNotes => _section(
+        LogicalKeyboardKey.digit1,
+        PhysicalKeyboardKey.digit1,
+      ),
+      ShortcutAction.showTasks => _section(
+        LogicalKeyboardKey.digit2,
+        PhysicalKeyboardKey.digit2,
+      ),
+      ShortcutAction.showDrawings => _section(
+        LogicalKeyboardKey.digit3,
+        PhysicalKeyboardKey.digit3,
+      ),
+      ShortcutAction.showShared => _section(
+        LogicalKeyboardKey.digit4,
+        PhysicalKeyboardKey.digit4,
+      ),
+      ShortcutAction.showArchive => _section(
+        LogicalKeyboardKey.digit5,
+        PhysicalKeyboardKey.digit5,
+      ),
       // Control on both platforms, and the one pair of defaults that does not
       // follow [useMeta]. Cmd+Tab is the macOS application switcher: the window
       // server takes it before any app is told a key moved, so a Cmd default
@@ -647,14 +687,44 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
       ),
+      // A browser's Back and Forward: Cmd and the square brackets on a Mac,
+      // Alt and the arrows elsewhere.
+      ShortcutAction.goBack => ShortcutBinding(
+        logicalKey: useMeta
+            ? LogicalKeyboardKey.bracketLeft
+            : LogicalKeyboardKey.arrowLeft,
+        physicalKey: useMeta
+            ? PhysicalKeyboardKey.bracketLeft
+            : PhysicalKeyboardKey.arrowLeft,
+        meta: useMeta,
+        alt: !useMeta,
+      ),
+      ShortcutAction.goForward => ShortcutBinding(
+        logicalKey: useMeta
+            ? LogicalKeyboardKey.bracketRight
+            : LogicalKeyboardKey.arrowRight,
+        physicalKey: useMeta
+            ? PhysicalKeyboardKey.bracketRight
+            : PhysicalKeyboardKey.arrowRight,
+        meta: useMeta,
+        alt: !useMeta,
+      ),
       // What closes a tab or a document everywhere. The macOS menu bar has no
-      // Close item to take it first, and with a single pane nothing answers
-      // it at all, so it can never close the window by surprise.
-      ShortcutAction.closePane => ShortcutBinding(
+      // Close item to take it first, and with no tab open nothing answers it
+      // at all, so it can never close the window by surprise.
+      ShortcutAction.closeTab => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyW,
         physicalKey: PhysicalKeyboardKey.keyW,
         meta: useMeta,
         control: !useMeta,
+      ),
+      // Every tabbed app's reopen, which Keep window on top gave up for it.
+      ShortcutAction.reopenTab => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyT,
+        physicalKey: PhysicalKeyboardKey.keyT,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
       ),
       // Numbered the way a browser numbers its tabs: by position, from the
       // left.
@@ -700,16 +770,21 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
       ),
-      // T for top, one modifier along from the T that cycles text style.
-      // Not P for pin: Cmd+Shift+P is the chord the settings pane's own test
-      // rebinds onto, and a default that occupies it would be refused there
-      // by [conflictFor] — see the defaults-do-not-collide test.
+      // T for top, beside the T that cycles text style and the one that
+      // reopens a tab. Control+Cmd on a Mac, where the window's own chords
+      // live (Control+Cmd+F is full screen). Alt+Shift elsewhere, the family
+      // the system-wide keys use: Ctrl+Alt is AltGr on international layouts
+      // and opens a terminal on Ubuntu. Not P for pin: Cmd+Shift+P is the
+      // chord the settings pane's own test rebinds onto, and a default that
+      // occupies it would be refused there by [conflictFor] — see the
+      // defaults-do-not-collide test.
       ShortcutAction.toggleAlwaysOnTop => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyT,
         physicalKey: PhysicalKeyboardKey.keyT,
         meta: useMeta,
-        control: !useMeta,
-        shift: true,
+        control: useMeta,
+        alt: !useMeta,
+        shift: !useMeta,
       ),
       // J sits under the right hand beside K, which ⌘K's search takes, and
       // nothing here or in the editor binds it.

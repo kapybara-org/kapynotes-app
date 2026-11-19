@@ -1,6 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/gestures.dart'
+    show
+        PointerDeviceKind,
+        kBackMouseButton,
+        kMiddleMouseButton,
+        kSecondaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +32,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/stamped.dart';
+import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
@@ -48,6 +54,7 @@ import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
+import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
@@ -2518,7 +2525,7 @@ void main() {
     const headings = [
       'From anywhere',
       'Notes and search',
-      'Panes',
+      'Tabs and panes',
       'Window',
       'Writing',
       'Formatting',
@@ -3050,7 +3057,7 @@ void main() {
       buttons: kSecondaryButton,
     );
     await tester.pumpAndSettle();
-    expect(find.text('Open in New Tab'), findsNothing);
+    expect(find.text('Open in new tab'), findsOneWidget);
     await tester.tap(find.text('Open to the side'));
     await tester.pumpAndSettle();
     expect(
@@ -3083,7 +3090,7 @@ void main() {
         pressShortcut(tester, shortcuts.bindingFor(action)!);
 
     // With one pane there is nothing for the close chord to close.
-    await press(ShortcutAction.closePane);
+    await press(ShortcutAction.closeTab);
     expect(find.byType(EditorPaneFrame), findsOneWidget);
 
     await press(ShortcutAction.splitEditor);
@@ -3135,7 +3142,9 @@ void main() {
     expect(bodyInPane(tester, 2), 'Right note');
 
     List<num> savedWeights() =>
-        ((store.data[EditorWorkspace.storeKey] as Map)['weights'] as List)
+        ((((store.data[EditorWorkspace.storeKey] as Map)['tabs'] as List).single
+                    as Map)['weights']
+                as List)
             .cast<num>();
 
     // A divider resizes the two panes either side of it, and is remembered.
@@ -3163,7 +3172,7 @@ void main() {
     // Closing the focused pane hands the focus to the pane beside it, and
     // leaves its note exactly as it was.
     await press(ShortcutAction.focusThirdPane);
-    await press(ShortcutAction.closePane);
+    await press(ShortcutAction.closeTab);
     expect(find.byType(EditorPaneFrame), findsNWidgets(2));
     expect(notes.byId(right.id)?.body, 'Right note');
     expect(fieldInPane(tester, 1).focusNode.hasFocus, isTrue);
@@ -3171,6 +3180,270 @@ void main() {
     // A pane that is not there cannot take the focus.
     await press(ShortcutAction.focusThirdPane);
     expect(fieldInPane(tester, 1).focusNode.hasFocus, isTrue);
+  });
+
+  group('tabs', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    Finder tabRow() => find.byType(NoteTabRow);
+    Finder tab(String title) =>
+        find.descendant(of: tabRow(), matching: find.text(title));
+    List<String> tabTitles(WidgetTester tester) => [
+      for (final tab in tester.widget<NoteTabRow>(tabRow()).tabs) tab.title,
+    ];
+
+    Future<void> clickWith(
+      WidgetTester tester,
+      LogicalKeyboardKey modifier,
+      String title,
+    ) async {
+      await tester.sendKeyDownEvent(modifier);
+      await tester.tap(find.widgetWithText(NoteRow, title));
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> press(WidgetTester tester, ShortcutAction action) =>
+        pressShortcut(tester, shortcuts.bindingFor(action)!);
+
+    Future<void> threeNotes(WidgetTester tester) async {
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'First note');
+      notes.create(body: 'Second note');
+      notes.create(body: 'Third note');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('⌘-click opens a note in a tab behind, and the row shows only '
+        'while there are two', (tester) async {
+      await threeNotes(tester);
+      expect(tabRow(), findsNothing, reason: 'one tab has no row');
+
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'Second note');
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(tester.getSize(tabRow()).height, NoteTabRow.height);
+
+      // A note with a tab already, in front or behind, gets no second one.
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'Second note');
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(openNoteBody(tester), 'First note');
+
+      await tester.tap(tab('Second note'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+
+      // ⌘W closes the tab in front, the tab used before comes forward, and
+      // the row goes with the second tab. The toast offers it back.
+      await press(tester, ShortcutAction.closeTab);
+      expect(openNoteBody(tester), 'First note');
+      expect(tabRow(), findsNothing);
+      expect(find.text('Closed "Second note"'), findsOneWidget);
+      await tester.tap(find.text('Reopen'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+
+      // The × closes a tab behind and leaves the one in front alone.
+      await tester.tap(find.byTooltip('Close tab'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabRow(), findsNothing);
+
+      // With one tab of one note, ⌘W has nothing to close.
+      await press(tester, ShortcutAction.closeTab);
+      expect(openNoteBody(tester), 'Second note');
+
+      // ⇧⌘T brings back the tab closed last, in front.
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['Second note', 'First note']);
+      expect(notes.notes, hasLength(3), reason: 'a tab closes no note');
+    });
+
+    testWidgets('a middle click and the menu open a tab behind too', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Second note'),
+        buttons: kMiddleMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['First note', 'Second note']);
+
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Third note'),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      // Hints are keycaps, and a modifier-click is its keycap and Click.
+      expect(find.text('⌘↵'), findsOneWidget);
+      expect(find.text('⌥ Click'), findsOneWidget);
+      await tester.tap(find.text('Open in new tab'));
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['First note', 'Second note', 'Third note']);
+      expect(openNoteBody(tester), 'First note');
+
+      // A note with a tab already is not offered another.
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Second note'),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Open in new tab'), findsNothing);
+      expect(find.text('Open to the side'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('off a Mac it is Ctrl-click', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      await threeNotes(tester);
+      await clickWith(tester, LogicalKeyboardKey.controlLeft, 'Second note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(openNoteBody(tester), 'First note');
+    });
+
+    testWidgets('Back and Forward walk the notes shown, mouse buttons too', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabRow(), findsNothing, reason: 'a plain click stays in the tab');
+
+      await press(tester, ShortcutAction.goBack);
+      expect(openNoteBody(tester), 'First note');
+      await press(tester, ShortcutAction.goForward);
+      expect(openNoteBody(tester), 'Second note');
+
+      await tester.tapAt(
+        tester.getCenter(find.byType(NoteEditor)),
+        buttons: kBackMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'First note');
+    });
+
+    testWidgets('⌘↵ in the list sends the note the arrows reached to a tab '
+        'behind', (tester) async {
+      await threeNotes(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+    });
+
+    testWidgets('Ctrl+Tab brings a note forward in the tab it is open in', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'Second note');
+      await tester.tap(tab('Second note'));
+      await tester.pumpAndSettle();
+
+      await press(tester, ShortcutAction.nextNote);
+      expect(openNoteBody(tester), 'First note');
+      final row = tester.widget<NoteTabRow>(tabRow());
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(row.activeId, row.tabs.first.id);
+    });
+
+    testWidgets('the row grows in under the toolbar, and at once with less '
+        'motion', (tester) async {
+      await threeNotes(tester);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final growing = tester.getSize(find.byType(TabRowReveal)).height;
+      expect(growing, greaterThan(0));
+      expect(growing, lessThan(NoteTabRow.height));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(TabRowReveal)).height,
+        NoteTabRow.height,
+      );
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pump();
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.closeTab)!,
+        settle: false,
+      );
+      expect(tester.getSize(find.byType(TabRowReveal)).height, 0);
+    });
+
+    testWidgets('a new day closes the tabs from before and starts on a blank '
+        'draft', (tester) async {
+      final first = notes.create(body: 'First note');
+      final second = notes.create(body: 'Second note');
+      store.data[EditorWorkspace.storeKey] = {
+        'tabs': [
+          {
+            'panes': [first.id],
+          },
+          {
+            'panes': [second.id],
+          },
+        ],
+        'tab': 1,
+        'day': WritingStreak.dayOf(DateTime.now()) - 1,
+      };
+      await pumpApp(tester, size: const Size(1400, 800));
+      final draft = notes.notes.singleWhere((note) => note.isEmpty);
+      expect(openNoteBody(tester), draft.body.trimRight());
+      expect(tabRow(), findsNothing);
+
+      // The tab used last comes back first.
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabTitles(tester), hasLength(2));
+
+      // The draft, closed without a word in it, was never a note.
+      await tester.tap(find.byTooltip('Close tab'));
+      await tester.pumpAndSettle();
+      expect(notes.notes.map((note) => note.id), [second.id, first.id]);
+    });
+
+    testWidgets('a new day starts on the note chosen to open on launch', (
+      tester,
+    ) async {
+      final first = notes.create(body: 'First note');
+      final second = notes.create(body: 'Second note');
+      prefs.defaultNoteId = first.id;
+      store.data[EditorWorkspace.storeKey] = {
+        'tabs': [
+          {
+            'panes': [second.id],
+          },
+        ],
+        'day': WritingStreak.dayOf(DateTime.now()) - 1,
+      };
+      await pumpApp(tester, size: const Size(1400, 800));
+      expect(openNoteBody(tester), 'First note');
+      expect(notes.notes, hasLength(2), reason: 'no draft beside it');
+    });
   });
 
   testWidgets('dragging a note opens it beside a pane, in place, or moves it', (

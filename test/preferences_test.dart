@@ -803,13 +803,16 @@ void main() {
     }
   });
 
-  test('only the summon, new-note and menu bar panel shortcuts reach the OS', () {
-    expect(ShortcutAction.values.where((action) => action.isGlobal), [
-      ShortcutAction.openApp,
-      ShortcutAction.newNoteAnywhere,
-      ShortcutAction.openMenuBarPanel,
-    ]);
-  });
+  test(
+    'only the summon, new-note and menu bar panel shortcuts reach the OS',
+    () {
+      expect(ShortcutAction.values.where((action) => action.isGlobal), [
+        ShortcutAction.openApp,
+        ShortcutAction.newNoteAnywhere,
+        ShortcutAction.openMenuBarPanel,
+      ]);
+    },
+  );
 
   test(
     'an install still on the 1Password-shadowed shortcut is moved across',
@@ -1074,6 +1077,51 @@ void main() {
       expect(migrated.meta, useMeta);
       expect(migrated.control, !useMeta);
     }
+  });
+
+  test('Keep on top gives its old chord to Reopen closed tab', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+      final store = _MemoryStore();
+      // What it shipped as: Cmd+Shift+T and Ctrl+Shift+T.
+      final shipped = ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyT,
+        physicalKey: PhysicalKeyboardKey.keyT,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      );
+      store.data['shortcuts.v1'] = {'toggleAlwaysOnTop': shipped.toJson()};
+
+      final prefs = ShortcutPrefs(store)..load();
+      expect(
+        prefs.bindingFor(ShortcutAction.toggleAlwaysOnTop),
+        ShortcutPrefs.defaultFor(ShortcutAction.toggleAlwaysOnTop),
+        reason: 'Keep on top on $platform',
+      );
+      expect(
+        prefs.bindingFor(ShortcutAction.reopenTab),
+        shipped,
+        reason: 'Reopen closed tab on $platform',
+      );
+    }
+  });
+
+  test('a key chosen for Close pane carries over to Close tab', () {
+    final store = _MemoryStore();
+    const chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyJ,
+      physicalKey: PhysicalKeyboardKey.keyJ,
+      meta: true,
+      shift: true,
+    );
+    store.data['shortcuts.v1'] = {'closePane': chosen.toJson()};
+
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.closeTab), chosen);
   });
 
   test('a cleared shortcut does not come back at the next launch', () {
