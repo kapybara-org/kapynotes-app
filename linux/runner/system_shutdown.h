@@ -11,8 +11,9 @@
 // logout), the process is asked to stop (SIGTERM, SIGINT, SIGHUP), or
 // `window` is closed and the app has not taken the close over to hide it.
 // The app saves and asks for `quit`, which is also how it quits on its own.
-// The main loop stops when it asks, ten seconds after a request it has not
-// finished, or at a second signal.
+// The main loop stops when it asks, or ten seconds after a request it has
+// not finished. Asking again in the meantime, by signal, logout or close,
+// waits for the save rather than cutting it short.
 //
 // Create it after the plugins are registered: window_manager's delete-event
 // handler, which is the one that hides the window, has to run before this

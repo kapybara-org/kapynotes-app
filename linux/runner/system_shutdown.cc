@@ -37,11 +37,11 @@ static gboolean deadline_cb(gpointer user_data) {
   return G_SOURCE_REMOVE;
 }
 
+// Asking again while the app saves waits for it: quitting at once would stop
+// the isolate between writing the store and moving it into place. The deadline
+// still ends a save that never finishes.
 static void request(SystemShutdown* shutdown) {
-  if (shutdown->requested) {
-    quit(shutdown);
-    return;
-  }
+  if (shutdown->requested) return;
   shutdown->requested = TRUE;
   fl_method_channel_invoke_method(shutdown->channel, "shutdown", nullptr,
                                   nullptr, nullptr, nullptr);
@@ -79,8 +79,7 @@ static void query_end_cb(GtkApplication* application, gpointer user_data) {
 // Closing again while the app saves just waits for it.
 static gboolean delete_event_cb(GtkWidget* window, GdkEvent* event,
                                 gpointer user_data) {
-  SystemShutdown* shutdown = static_cast<SystemShutdown*>(user_data);
-  if (!shutdown->requested) request(shutdown);
+  request(static_cast<SystemShutdown*>(user_data));
   return TRUE;
 }
 
