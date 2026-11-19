@@ -396,7 +396,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _workspace = EditorWorkspace(widget.store)
       ..load(
         availableNoteIds: widget.notes.notes.map((note) => note.id),
-        today: WritingStreak.dayOf(DateTime.now()),
+        today: _today,
         openingNoteId: openingId,
       );
     // A draft still blank after a restart is still one nobody wrote in.
@@ -524,16 +524,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// Today, by the clock the notes are dated by.
+  int get _today => WritingStreak.dayOf(widget.notes.now());
+
+  /// Whether the next open starts a new day: on the desktop, outside the
+  /// special modes, with tabs that belong to an earlier one.
+  bool get _isNewDay =>
+      AppPlatform.isDesktop && !_specialMode && _workspace.day != _today;
+
   /// The first open of a new day on the desktop: the tabs left from earlier
   /// days close into Recently closed, and the day starts on the note chosen
   /// to open on launch, or else on a blank draft. Today's notes from other
   /// devices stay in the list. Returns whether it was a new day.
   bool _startNewDay() {
-    if (!AppPlatform.isDesktop || _specialMode) return false;
+    if (!_isNewDay) return false;
     final opening = _workspace.selectedNoteId;
-    if (_workspace.rollOver(WritingStreak.dayOf(DateTime.now())) == null) {
-      return false;
-    }
+    _workspace.rollOver(_today);
     final fixed = widget.notes.byId(widget.prefs.defaultNoteId);
     if (fixed != null && !fixed.isArchived && !fixed.isHidden) {
       _workspace.open(fixed.id);
@@ -563,37 +569,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _beginOpenSession() {
-    final previous = _selectedId;
-    if (_startNewDay()) setState(() => _adoptWorkspaceSelection(previous));
-    // A welcome note nobody has typed into yet is there to be read. Appending
-    // a dated line to it and dropping the cursor underneath is the opposite of
-    // that, and on a phone it would raise a keyboard over the half that
-    // explains itself.
-    if (_selectedId != null && _selectedId == _untouchedWelcomeId) return;
-    if (!widget.prefs.readyToTypeOnOpen ||
-        _editorFocusSuppressed ||
-        _openSessionScheduled) {
-      return;
-    }
-    _openSessionScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _openSessionScheduled = false;
-      if (!mounted ||
+    // A new day closes the tabs on screen, so a recording into one of their
+    // notes is delivered first, as on every other way off the screen.
+    _afterRecordingLeaves(_isNewDay ? _workspace.openNoteIds : const {}, () {
+      final previous = _selectedId;
+      if (_startNewDay()) setState(() => _adoptWorkspaceSelection(previous));
+      // A welcome note nobody has typed into yet is there to be read.
+      // Appending a dated line to it and dropping the cursor underneath is
+      // the opposite of that, and on a phone it would raise a keyboard over
+      // the half that explains itself.
+      if (_selectedId != null && _selectedId == _untouchedWelcomeId) return;
+      if (!widget.prefs.readyToTypeOnOpen ||
           _editorFocusSuppressed ||
-          ModalRoute.of(context)?.isCurrent == false) {
+          _openSessionScheduled) {
         return;
       }
-      // Coming back to the app on the same day is coming back to the middle
-      // of something. Take the focus, and leave the caret where it is.
-      final id = _selectedId;
-      if (id != null && widget.prefs.caretIn(id) != null) {
-        _selectedEditor?.focusHere();
-        return;
-      }
-      _selectedEditor?.beginAppendSession();
+      _openSessionScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openSessionScheduled = false;
+        if (!mounted ||
+            _editorFocusSuppressed ||
+            ModalRoute.of(context)?.isCurrent == false) {
+          return;
+        }
+        // Coming back to the app on the same day is coming back to the middle
+        // of something. Take the focus, and leave the caret where it is.
+        final id = _selectedId;
+        if (id != null && widget.prefs.caretIn(id) != null) {
+          _selectedEditor?.focusHere();
+          return;
+        }
+        _selectedEditor?.beginAppendSession();
+      });
+      // An idle app draws no frame of its own to run that in.
+      WidgetsBinding.instance.ensureVisualUpdate();
     });
-    // An idle app draws no frame of its own to run that in.
-    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   /// The half of a widget tap that is not the note it opened.

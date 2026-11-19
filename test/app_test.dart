@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart'
     show
@@ -12,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -19,6 +21,7 @@ import 'package:kapy_notes/core/quick_capture.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -67,6 +70,7 @@ import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
+import 'audio/voice_recording_controller_test.dart' show FakeVoiceRecorder;
 import 'kapy_icon_finder.dart';
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'support/note_driver.dart';
@@ -129,6 +133,7 @@ Future<void> pumpApp(
   Account? account,
   TagStore? tags,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
+  VoiceRecordingController? recording,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -160,6 +165,7 @@ Future<void> pumpApp(
       account: account,
       tags: tags,
       titleModel: titleModel,
+      recording: recording,
     ),
   );
   await tester.pumpAndSettle();
@@ -3443,6 +3449,56 @@ void main() {
       await pumpApp(tester, size: const Size(1400, 800));
       expect(openNoteBody(tester), 'First note');
       expect(notes.notes, hasLength(2), reason: 'no draft beside it');
+    });
+
+    testWidgets('a new day delivers a recording before its tab closes', (
+      tester,
+    ) async {
+      var clock = DateTime(2026, 11, 18, 23, 40);
+      final temp = Directory.systemTemp.createTempSync('kapy-new-day');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      notes = NotesStore(
+        store,
+        now: () => clock,
+        blobs: BlobStore(directory: temp),
+      );
+      final first = notes.create(body: 'First note');
+      final recorder = FakeVoiceRecorder(writesFile: false);
+      final recording = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+      );
+      addTearDown(recording.dispose);
+      await pumpApp(tester, size: const Size(1400, 800), recording: recording);
+      expect(await recording.start(noteId: first.id), isTrue);
+      // Written here, because the recorder's own write is real file work that
+      // never finishes on the test's fake clock.
+      final tone = File('test/fixtures/tone_5s.m4a').readAsBytesSync();
+      File(recorder.startedAt!).writeAsBytesSync(tone);
+      await tester.pump();
+
+      // Away past midnight with the microphone on, and back. Delivering the
+      // recording is real file work too, so the return runs on the real
+      // clock, and the day starts once the note has its recording.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      clock = DateTime(2026, 11, 19, 8);
+      await tester.runAsync(() async {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        for (var wait = 0; wait < 100 && notes.notes.length == 1; wait++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pumpAndSettle();
+
+      expect(recording.isRecording, isFalse);
+      expect(
+        notes.byId(first.id)!.attachments.whereType<NoteVoiceRef>(),
+        hasLength(1),
+      );
+      final draft = notes.notes.singleWhere((note) => note.isEmpty);
+      expect(openNoteBody(tester), draft.body.trimRight());
     });
   });
 

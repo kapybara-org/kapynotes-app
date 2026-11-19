@@ -194,6 +194,9 @@ class EditorWorkspace {
   /// Every note with a tab, on screen or behind.
   Set<String> get tabbedNoteIds => {for (final tab in _tabs) ...tab.noteIds};
 
+  /// The day the tabs belong to.
+  int? get day => _day;
+
   /// Where [noteId] is on screen, or -1.
   int paneOf(String noteId) => frontTab?._paneOf(noteId) ?? -1;
 

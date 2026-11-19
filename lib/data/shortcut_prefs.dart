@@ -501,10 +501,11 @@ class ShortcutPrefs extends ChangeNotifier {
 
   /// Link answers only while words are selected, and leaves its chord to
   /// Search everywhere else, so the two may share one.
-  static bool sharesChord(ShortcutAction a, ShortcutAction? b) => {
-    a,
-    b,
-  }.containsAll(const {ShortcutAction.findNotes, ShortcutAction.formatLink});
+  static bool sharesChord(ShortcutAction a, ShortcutAction? b) =>
+      {a, b}.containsAll(const {
+        ShortcutAction.findNotes,
+        ShortcutAction.formatLink,
+      });
 
   void update(ShortcutAction action, ShortcutBinding binding) {
     if (_bindings[action] == binding) return;
@@ -643,26 +644,11 @@ class ShortcutPrefs extends ChangeNotifier {
       // Option+Cmd and a number on a Mac, beside the Cmd and a number that
       // focus the panes. Alt and a number elsewhere: Ctrl+Alt is AltGr on
       // international layouts, where it types ² and ³.
-      ShortcutAction.showNotes => _section(
-        LogicalKeyboardKey.digit1,
-        PhysicalKeyboardKey.digit1,
-      ),
-      ShortcutAction.showTasks => _section(
-        LogicalKeyboardKey.digit2,
-        PhysicalKeyboardKey.digit2,
-      ),
-      ShortcutAction.showDrawings => _section(
-        LogicalKeyboardKey.digit3,
-        PhysicalKeyboardKey.digit3,
-      ),
-      ShortcutAction.showShared => _section(
-        LogicalKeyboardKey.digit4,
-        PhysicalKeyboardKey.digit4,
-      ),
-      ShortcutAction.showArchive => _section(
-        LogicalKeyboardKey.digit5,
-        PhysicalKeyboardKey.digit5,
-      ),
+      ShortcutAction.showNotes => _section(LogicalKeyboardKey.digit1, PhysicalKeyboardKey.digit1),
+      ShortcutAction.showTasks => _section(LogicalKeyboardKey.digit2, PhysicalKeyboardKey.digit2),
+      ShortcutAction.showDrawings => _section(LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3),
+      ShortcutAction.showShared => _section(LogicalKeyboardKey.digit4, PhysicalKeyboardKey.digit4),
+      ShortcutAction.showArchive => _section(LogicalKeyboardKey.digit5, PhysicalKeyboardKey.digit5),
       // Control on both platforms, and the one pair of defaults that does not
       // follow [useMeta]. Cmd+Tab is the macOS application switcher: the window
       // server takes it before any app is told a key moved, so a Cmd default
@@ -774,7 +760,9 @@ class ShortcutPrefs extends ChangeNotifier {
       // reopens a tab. Control+Cmd on a Mac, where the window's own chords
       // live (Control+Cmd+F is full screen). Alt+Shift elsewhere, the family
       // the system-wide keys use: Ctrl+Alt is AltGr on international layouts
-      // and opens a terminal on Ubuntu. Not P for pin: Cmd+Shift+P is the
+      // and opens a terminal on Ubuntu. Windows switches input language on
+      // Alt+Shift only when both are let go with no other key pressed, so
+      // Alt+Shift+T leaves the layout alone. Not P for pin: Cmd+Shift+P is the
       // chord the settings pane's own test rebinds onto, and a default that
       // occupies it would be refused there by [conflictFor] — see the
       // defaults-do-not-collide test.
