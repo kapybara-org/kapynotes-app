@@ -1013,6 +1013,49 @@ void main() {
     );
 
     test(
+      'an un-share a build from before lost goes up from the next pass',
+      () async {
+        final one = await shareWithBob('One');
+        final spaceId = alice.notes.byId(one.id)!.spaceId!;
+        final personal = alice.keyring.personal!.id;
+        final two = alice.notes.create(body: 'Two');
+        await alice.sync.syncNow();
+        alice.tick();
+        await alice.sharing.shareNoteWith(two.id, email: bob.email);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.notes.byId(two.id), isNotNull);
+        await alice.syncAndSettle();
+
+        // What 1.29 to 1.33 left on Alice's device (KAP-110): the record
+        // taken back home by Two's own seed, then Move to my notes, which
+        // found nothing to send and called the note synced.
+        alice.docs.get(two.id)!.spaceId = personal;
+        alice.notes.moveToSpace(two.id, spaceId: null, contentKey: null);
+        alice.notes.markSynced(notes: [alice.notes.byId(two.id)!]);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+
+        alice.tick();
+        await alice.syncAndSettle();
+        expect(server.rowsIn(personal)[two.id]!.isTombstone, isFalse);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
+        expect(alice.notes.byId(two.id)!.spaceId, isNull);
+        expect(alice.bodyOf(two.id), 'Two');
+        bob.tick();
+        await bob.syncAndSettle();
+        expect(bob.notes.byId(two.id), isNull);
+        expect(bob.bodyOf(one.id), 'One');
+
+        // Done once: nothing more to look for, and nothing sent again.
+        final asked = server.noteKeyFetches;
+        alice.tick();
+        await alice.syncAndSettle();
+        expect(server.noteKeyFetches, asked);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
+      },
+    );
+
+    test(
       'and so does one whose move is answered before its own seed comes back',
       () async {
         final one = await shareWithBob('One');

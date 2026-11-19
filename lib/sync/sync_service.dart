@@ -675,6 +675,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       } else if (_socket == null || _socketDown) {
         await _pullAllOverHttp();
       }
+      await _finishLostUnshares();
       _reconcileDirty();
       await _drain();
       await _tasks?.run();
@@ -2653,6 +2654,55 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           'this account left',
         );
       }
+    }
+  }
+
+  /// Each owned space's count of live notes when it was last looked through
+  /// for un-shares that never went up.
+  final Map<String, int> _lostUnsharesChecked = {};
+
+  /// Finishes un-shares that builds 1.29 to 1.33 lost (KAP-110): the note
+  /// is back in this account's own notes, and its record says so, but the
+  /// move never went up, so the server still holds it live in the shared
+  /// space and everyone there keeps it. The space's count of live notes
+  /// running ahead of the notes this device holds in it is the sign, and the
+  /// space's note keys name what the server holds there. A move already
+  /// queued is left to go on its own.
+  Future<void> _finishLostUnshares() async {
+    final personal = _keyring.personal;
+    if (personal == null) return;
+    for (final space in _keyring.spaces) {
+      if (!space.isTeam || !space.isOwner) continue;
+      if (_needsPro.contains(space.id) || !_caughtUp.contains(space.id)) {
+        continue;
+      }
+      if (_notes.notesIn(space.id).length >= space.liveNotes) continue;
+      if (_lostUnsharesChecked[space.id] == space.liveNotes) continue;
+      final List<WireNoteKey> rows;
+      try {
+        rows = await _api.fetchNoteKeys(space.id);
+      } on SyncRefusedException catch (error) {
+        debugPrint('KapyNotes: note keys of ${space.id}: ${error.code}');
+        continue;
+      }
+      var busy = false;
+      for (final row in rows) {
+        final noteId = row.noteId;
+        final note = noteId == null ? null : _notes.byId(noteId);
+        final record = noteId == null ? null : _docs.get(noteId);
+        if (note == null || record == null || note.spaceId != null) continue;
+        if (record.spaceId != personal.id) continue;
+        if (note.isDirty || record.hasPending) {
+          busy = true;
+          continue;
+        }
+        debugPrint('KapyNotes: finishing an un-share that never went up');
+        record.spaceId = space.id;
+        _reconcileInto(record, note, personal.id);
+        _docs.markDirty(note.id);
+      }
+      // Looked through again once whatever was on its way has gone up.
+      if (!busy) _lostUnsharesChecked[space.id] = space.liveNotes;
     }
   }
 

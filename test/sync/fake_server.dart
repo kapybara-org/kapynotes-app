@@ -140,6 +140,9 @@ class FakeServer {
   /// and not applied, as `applyOps` answers them.
   int guestDeletes = 0;
 
+  /// Times a space's note keys were asked for.
+  int noteKeyFetches = 0;
+
   /// How many task records one pull returns.
   int taskPageSize = 1 << 30;
 
@@ -1236,6 +1239,7 @@ class FakeServer {
   }
 
   List<WireNoteKey> noteKeys(String userId, String spaceId) {
+    noteKeyFetches++;
     final space = _member(userId, spaceId);
     return [
       for (final note in _liveNotes(spaceId))
