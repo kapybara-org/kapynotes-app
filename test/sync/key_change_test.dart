@@ -182,6 +182,28 @@ void main() {
     },
   );
 
+  test(
+    'a failed attempt keeps the warning an earlier unsaved key set',
+    () async {
+      final a = await unlocked('first passphrase', create: true);
+      final first = await a.account.prepareRecoveryKey();
+      final code = await proof(a, KeyProofAction.recoveryKey);
+      expect(
+        await a.account.commitKeyChange(first!, proof: code),
+        isA<KeyChangeDone>(),
+      );
+      // The app quit before the key was shown: it is on the server, unseen.
+      expect(a.account.recoveryKeyUnsaved, isTrue);
+
+      final second = await a.account.prepareRecoveryKey();
+      expect(
+        await a.account.commitKeyChange(second!),
+        isA<KeyChangeNeedsCode>(),
+      );
+      expect(a.account.recoveryKeyUnsaved, isTrue);
+    },
+  );
+
   test('a first recovery key needs a code, like replacing one', () async {
     final a = await unlocked('first passphrase', create: true);
     final user = server.user('user-1');

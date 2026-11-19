@@ -200,11 +200,18 @@ class KeyArchive {
     required this.wrappedMasterKey,
     required this.kdf,
     this.recoveryWrappedMasterKey,
+    this.retiredAt,
   });
 
   final SealedBox wrappedMasterKey;
   final KdfParams kdf;
   final SealedBox? recoveryWrappedMasterKey;
+
+  /// When the reset set it aside. It and the notes from before it are kept
+  /// for [kept] after that.
+  final DateTime? retiredAt;
+
+  static const Duration kept = Duration(days: 30);
 
   static KeyArchive? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -217,6 +224,10 @@ class KeyArchive {
       recoveryWrappedMasterKey: SealedBox.fromJson(
         raw['recoveryWrappedMasterKey'],
       ),
+      retiredAt: switch (raw['retiredAt']) {
+        final String at => DateTime.tryParse(at),
+        _ => null,
+      },
     );
   }
 }

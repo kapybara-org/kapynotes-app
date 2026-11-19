@@ -16,6 +16,9 @@ class CloudSummarizer implements Summarizer {
   final SpeechApi? Function() _api;
 
   @override
+  Future<bool> writes(String lang) async => true;
+
+  @override
   Future<SummarizerReadiness> readiness() async => _api() == null
       ? SummarizerReadiness.needsAccount
       : SummarizerReadiness.ready;
