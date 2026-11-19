@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart';
 
 import 'editor_formatting.dart';
@@ -1950,9 +1952,127 @@ MarkdownEdit setMarkdownTableColumnAlign(
   if (aligns[column] == align) return MarkdownEdit._unchanged(value);
   aligns[column] = align;
   return _applyEdits(value, [
-    _Edit(table.delimiterStart, table.delimiterEnd, _delimiterSource(aligns)),
+    _Edit(
+      table.delimiterStart,
+      table.delimiterEnd,
+      _delimiterSource(aligns, markdownTableDashes(value.text, table)),
+    ),
   ]);
 }
+
+/// Moves body row [from] so that it becomes row [to], every character of it
+/// kept. The header stays where it is: it is what makes the lines a table.
+MarkdownEdit moveMarkdownTableRow(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int from,
+  required int to,
+}) {
+  final rows = table.rows.length;
+  if (from <= 0 || to <= 0 || from >= rows || to >= rows || from == to) {
+    return MarkdownEdit._unchanged(value);
+  }
+  final line = table.rows[from];
+  final words = value.text.substring(line.start, line.end);
+  final target = table.rows[to];
+  return _applyEdits(value, [
+    if (to < from) _Edit(target.start, target.start, '$words\n'),
+    _Edit(line.start - 1, line.end, ''),
+    if (to > from) _Edit(target.end, target.end, '\n$words'),
+  ]);
+}
+
+/// Moves column [from] so that it becomes column [to], its alignment and
+/// width going with it.
+MarkdownEdit moveMarkdownTableColumn(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int from,
+  required int to,
+}) {
+  final columns = markdownTableColumnCount(table);
+  if (from < 0 || to < 0 || from >= columns || to >= columns || from == to) {
+    return MarkdownEdit._unchanged(value);
+  }
+  return _rewriteTableColumns(value, table, moveFrom: from, moveTo: to);
+}
+
+/// The dashes in each column's cell of the delimiter row, its colons not
+/// counted: how wide the column was set, where it was set at all.
+///
+/// A column is as wide as its words need while it has three dashes or fewer,
+/// which is every table this app writes and nearly every one typed by hand.
+/// More dashes than that are its width in characters of the note's face, the
+/// way the row reads as plain text and the way Pandoc reads it. Other GFM
+/// readers ignore the count, so the table stays an ordinary table everywhere.
+List<int> markdownTableDashes(String text, MarkdownTable table) {
+  final runs = _dashRuns(text, table);
+  return [
+    for (var c = 0; c < markdownTableColumnCount(table); c++)
+      c < runs.length ? runs[c].end - runs[c].start : 3,
+  ];
+}
+
+/// The width [dashes] sets, in characters, or null where it sets none.
+int? markdownTableColumnWidth(int dashes) =>
+    dashes > markdownTableAutoDashes ? dashes : null;
+
+/// The dashes of a column whose width is not set.
+const markdownTableAutoDashes = 3;
+
+/// Sets column [column] to [width] characters, or back to fitting its words
+/// when [width] is null.
+///
+/// Only dashes past the first three are added or taken away, so whatever two
+/// devices do to one column at once, the merged row keeps at least three and
+/// stays a delimiter row.
+MarkdownEdit setMarkdownTableColumnWidth(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int column,
+  required int? width,
+}) {
+  final columns = markdownTableColumnCount(table);
+  if (column < 0 || column >= columns) return MarkdownEdit._unchanged(value);
+  final runs = _dashRuns(value.text, table);
+  final wanted = width == null
+      ? markdownTableAutoDashes
+      : math.max(markdownTableAutoDashes + 1, width);
+  if (runs.length != columns) {
+    final dashes = markdownTableDashes(value.text, table)..[column] = wanted;
+    return _applyEdits(value, [
+      _Edit(
+        table.delimiterStart,
+        table.delimiterEnd,
+        _delimiterSource(_paddedAligns(table, columns), dashes),
+      ),
+    ]);
+  }
+  final run = runs[column];
+  final count = run.end - run.start;
+  if (width == null && count <= markdownTableAutoDashes) {
+    return MarkdownEdit._unchanged(value);
+  }
+  if (count == wanted) return MarkdownEdit._unchanged(value);
+  if (count < wanted) {
+    return _applyEdits(value, [
+      _Edit(run.end, run.end, '-' * (wanted - count)),
+    ]);
+  }
+  final keep = math.max(markdownTableAutoDashes, wanted);
+  return _applyEdits(value, [_Edit(run.start + keep, run.end, '')]);
+}
+
+/// Where each column's dashes stand in the delimiter row.
+List<TextRange> _dashRuns(String text, MarkdownTable table) => [
+  for (final match in RegExp(
+    '-+',
+  ).allMatches(text.substring(table.delimiterStart, table.delimiterEnd)))
+    TextRange(
+      start: table.delimiterStart + match.start,
+      end: table.delimiterStart + match.end,
+    ),
+];
 
 /// Every row and the delimiter written out again, as one edit: a column belongs
 /// to all of them at once, and half a table is not one.
@@ -1961,22 +2081,36 @@ MarkdownEdit _rewriteTableColumns(
   MarkdownTable table, {
   int? insertAt,
   int? removeAt,
+  int? moveFrom,
+  int? moveTo,
 }) {
   final columns = markdownTableColumnCount(table);
   if (columns <= 0) return MarkdownEdit._unchanged(value);
   final source = value.text;
+  void reshape<T>(List<T> list, T inserted) {
+    if (insertAt != null) list.insert(insertAt, inserted);
+    if (removeAt != null) list.removeAt(removeAt);
+    if (moveFrom != null && moveTo != null) {
+      list.insert(moveTo, list.removeAt(moveFrom));
+    }
+  }
+
   final edits = <_Edit>[];
   for (final row in table.rows) {
     final fields = _paddedFields(source, row, columns);
-    if (insertAt != null) fields.insert(insertAt, '');
-    if (removeAt != null) fields.removeAt(removeAt);
+    reshape(fields, '');
     edits.add(_Edit(row.start, row.end, _rowSource(fields)));
   }
   final aligns = _paddedAligns(table, columns);
-  if (insertAt != null) aligns.insert(insertAt, MarkdownCellAlign.start);
-  if (removeAt != null) aligns.removeAt(removeAt);
+  final dashes = markdownTableDashes(source, table);
+  reshape(aligns, MarkdownCellAlign.start);
+  reshape(dashes, markdownTableAutoDashes);
   edits.add(
-    _Edit(table.delimiterStart, table.delimiterEnd, _delimiterSource(aligns)),
+    _Edit(
+      table.delimiterStart,
+      table.delimiterEnd,
+      _delimiterSource(aligns, dashes),
+    ),
   );
   return _applyEdits(value, edits);
 }
@@ -2047,16 +2181,20 @@ List<MarkdownCellAlign> _paddedAligns(MarkdownTable table, int columns) => [
 /// One row written out, in the shape [markdownTableTemplate] writes.
 String _rowSource(List<String> cells) => '| ${cells.join(' | ')} |';
 
-String _delimiterSource(List<MarkdownCellAlign> aligns) =>
-    '| ${aligns.map(_alignSource).join(' | ')} |';
+String _delimiterSource(List<MarkdownCellAlign> aligns, List<int> dashes) =>
+    '| ${[for (var c = 0; c < aligns.length; c++) _alignSource(aligns[c], dashes[c])].join(' | ')} |';
 
-/// Left is written as the bare `---`, the way a table is written by hand and by
+/// Left is written as bare dashes, the way a table is written by hand and by
 /// [markdownTableTemplate]: it is the default, and `:---` says nothing more.
-String _alignSource(MarkdownCellAlign align) => switch (align) {
-  MarkdownCellAlign.start => '---',
-  MarkdownCellAlign.center => ':---:',
-  MarkdownCellAlign.end => '---:',
-};
+/// A column whose width is not set gets the three dashes it always had.
+String _alignSource(MarkdownCellAlign align, int dashes) {
+  final run = '-' * math.max(markdownTableAutoDashes, dashes);
+  return switch (align) {
+    MarkdownCellAlign.start => run,
+    MarkdownCellAlign.center => ':$run:',
+    MarkdownCellAlign.end => '$run:',
+  };
+}
 
 /// Words as they can live inside a cell: no line breaks, and a pipe escaped so
 /// it stays in the words instead of becoming another divider.

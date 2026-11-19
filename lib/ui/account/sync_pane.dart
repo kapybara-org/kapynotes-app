@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../core/file_export.dart';
 import '../../core/platform.dart';
 import '../../core/text_file_export.dart';
 import '../../core/theme.dart';
@@ -11,11 +10,12 @@ import '../../core/toast.dart';
 import '../../images/image_ingest.dart';
 import '../../images/image_picker.dart';
 import '../../sync/account.dart';
+import '../../sync/device_name.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
+import 'encryption_pane.dart';
 import 'recovery_key_dialog.dart';
 import 'sign_out_others_row.dart';
-import '../control_surface.dart';
 import '../profile_avatar.dart';
 import '../settings_rows.dart';
 
@@ -57,7 +57,12 @@ class SyncPane extends StatelessWidget {
         ),
         AccountState.locked => _UnlockForm(account: account),
         AccountState.needsAccountDecision => _AccountSwitch(account: account),
-        AccountState.ready => _Ready(account: account, middle: middle),
+        AccountState.ready => _Ready(
+          account: account,
+          middle: middle,
+          saveTextFile: saveTextFile,
+          passphraseGenerator: passphraseGenerator,
+        ),
       },
     );
   }
@@ -688,35 +693,7 @@ class _PassphraseFormState extends State<_PassphraseForm> {
   late final String _passphrase = widget.passphraseGenerator();
   String? _problem;
   bool _busy = false;
-  bool _copied = false;
   bool _savingFile = false;
-  bool _savedFile = false;
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: _passphrase));
-    if (mounted) setState(() => _copied = true);
-  }
-
-  Future<void> _download() async {
-    if (_savingFile) return;
-    setState(() {
-      _savingFile = true;
-      _problem = null;
-    });
-    final result = await widget.saveTextFile(
-      contents: '$_passphrase\n',
-      suggestedName: 'kapy-notes-passphrase.txt',
-    );
-    if (!mounted) return;
-    setState(() {
-      _savingFile = false;
-      if (result == FileExportOutcome.saved) _savedFile = true;
-      if (result == FileExportOutcome.failed ||
-          result == FileExportOutcome.unsupported) {
-        _problem = 'Could not save the file. Copy it instead.';
-      }
-    });
-  }
 
   Future<void> _create() async {
     setState(() {
@@ -745,74 +722,28 @@ class _PassphraseFormState extends State<_PassphraseForm> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-
-    return _Panel(
-      key: const ValueKey('passphrase-setup'),
-      title: 'Save your passphrase',
-      blurb: 'Use it to unlock your notes on other devices.',
-      children: [
-        KapyControlSurface(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: SelectableText(
-            _passphrase,
-            key: const ValueKey('generated-passphrase'),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: AppPlatform.monoFontFallback.first,
-              fontFamilyFallback: AppPlatform.monoFontFallback,
-              fontSize: AppTypeScale.control,
-              fontWeight: FontWeight.w500,
-              height: 1.6,
-              letterSpacing: 0.45,
-              color: palette.textPrimary,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              key: const ValueKey('copy-passphrase'),
-              onPressed: _busy ? null : _copy,
-              icon: KapyIcon(
-                _copied ? KapyIcons.checkRounded : KapyIcons.copyRounded,
-                size: AppControlMetrics.iconControl,
-              ),
-              label: Text(_copied ? 'Copied' : 'Copy'),
-            ),
-            OutlinedButton.icon(
-              key: const ValueKey('download-passphrase'),
-              onPressed: _busy || _savingFile ? null : _download,
-              icon: _savingFile
-                  ? SizedBox.square(
-                      dimension: AppControlMetrics.iconControl,
-                      child: const CircularProgressIndicator(strokeWidth: 1.5),
-                    )
-                  : KapyIcon(
-                      _savedFile
-                          ? KapyIcons.checkRounded
-                          : KapyIcons.downloadRounded,
-                      size: AppControlMetrics.iconControl,
-                    ),
-              label: Text(_savedFile ? 'Saved' : 'Download'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          key: const ValueKey('confirm-passphrase-saved'),
-          onPressed: _busy || _savingFile ? null : _create,
-          icon: const KapyIcon(KapyIcons.checkRounded),
-          label: const Text("I've saved my passphrase"),
-        ),
-        if (_problem != null) _Message(_problem!),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => _Panel(
+    key: const ValueKey('passphrase-setup'),
+    title: 'Save your passphrase',
+    blurb: 'Use it to unlock your notes on other devices.',
+    children: [
+      GeneratedPassphrase(
+        passphrase: _passphrase,
+        saveTextFile: widget.saveTextFile,
+        enabled: !_busy,
+        onSaving: (saving) => setState(() => _savingFile = saving),
+        onProblem: (problem) => setState(() => _problem = problem),
+      ),
+      const SizedBox(height: 12),
+      FilledButton.icon(
+        key: const ValueKey('confirm-passphrase-saved'),
+        onPressed: _busy || _savingFile ? null : _create,
+        icon: const KapyIcon(KapyIcons.checkRounded),
+        label: const Text("I've saved my passphrase"),
+      ),
+      if (_problem != null) _Message(_problem!),
+    ],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -854,11 +785,24 @@ class _UnlockFormState extends State<_UnlockForm> {
       }
       return;
     }
+    final changes = widget.account.keyBundle?.changes;
     final problem = opened
         ? null
         : _usingRecoveryKey
-        ? 'That recovery key does not open this account.'
-        : 'That passphrase does not open this account.';
+        ? switch (changes?.recoveryKey) {
+            final change? =>
+              "That doesn't match. Your recovery key was replaced on "
+                  '${changeDate(change.at)} from ${changeDevice(change)}. Use '
+                  'the newest one, or your passphrase.',
+            null => 'That recovery key does not open this account.',
+          }
+        : switch (changes?.passphrase) {
+            final change? =>
+              "That doesn't match. Your passphrase was changed on "
+                  '${changeDate(change.at)} from ${changeDevice(change)}. '
+                  'Enter the new one, or use your recovery key.',
+            null => 'That passphrase does not open this account.',
+          };
     setState(() {
       _busy = false;
       _problem = problem;
@@ -875,7 +819,14 @@ class _UnlockFormState extends State<_UnlockForm> {
     title: 'Unlock your notes',
     blurb: _usingRecoveryKey
         ? 'Paste the recovery key saved for this account.'
-        : 'Enter your passphrase to unlock notes on this device.',
+        : switch (widget.account.passphraseChangedSinceUnlock) {
+            final change? =>
+              'Your passphrase was changed on ${changeDate(change.at)} from '
+                  '${changeDevice(change)}. The notes on this '
+                  '$thisDeviceKind are safe. Enter the new passphrase to '
+                  'keep syncing.',
+            null => 'Enter your passphrase to unlock notes on this device.',
+          },
     children: [
       _Field(
         key: ValueKey(_usingRecoveryKey),
@@ -983,9 +934,16 @@ class _AccountSwitch extends StatelessWidget {
 /// pane read as a page to fill in every time it was visited — when a name is
 /// set once and the pane is mostly opened to sync, share or sign out.
 class _Ready extends StatefulWidget {
-  const _Ready({required this.account, required this.middle});
+  const _Ready({
+    required this.account,
+    required this.middle,
+    required this.saveTextFile,
+    required this.passphraseGenerator,
+  });
   final Account account;
   final List<Widget> middle;
+  final TextFileSaver? saveTextFile;
+  final String Function()? passphraseGenerator;
 
   @override
   State<_Ready> createState() => _ReadyState();
@@ -1076,6 +1034,12 @@ class _ReadyState extends State<_Ready> {
         SizedBox(height: SettingsMetrics.groupGap),
         group,
       ],
+      SizedBox(height: SettingsMetrics.groupGap),
+      EncryptionGroup(
+        account: account,
+        saveTextFile: widget.saveTextFile,
+        passphraseGenerator: widget.passphraseGenerator,
+      ),
       SizedBox(height: SettingsMetrics.groupGap),
       const SettingsLabel('Sign out or delete'),
       SettingsGroup(
