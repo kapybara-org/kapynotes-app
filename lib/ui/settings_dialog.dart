@@ -28,7 +28,9 @@ import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
 import '../data/voice_prefs.dart';
+import '../speech/apple_summarizer.dart';
 import '../speech/cloud_access.dart';
+import '../speech/gemma_summarizer.dart';
 import '../speech/local_model_store.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_api.dart';
@@ -1730,6 +1732,10 @@ class _SettingsDialogState extends State<SettingsDialog>
         .firstOrNull;
     final builtInSpeech = _deviceTranscriptState == TranscriberReadiness.ready;
     final builtInSummary = _deviceSummaryState == SummarizerReadiness.ready;
+    // Linux has no summariser of its own and is not offered the downloaded
+    // one, so its summaries are the cloud's or none.
+    final deviceSummaries =
+        AppleSummarizer.isPossibleHere || GemmaSummarizer.isPossibleHere;
     final consented = _speechConsent?.isAccepted ?? false;
     final transcription = access?.transcription;
     final summaries = access?.summaries;
@@ -1857,50 +1863,65 @@ class _SettingsDialogState extends State<SettingsDialog>
       _Group(
         'Summaries',
         [
-          _Setting(
-            'summarise-with',
-            'Summarise with',
-            subtitle:
-                summaries?.note ??
-                ((AppPlatform.isMacOS || AppPlatform.isIOS)
-                    ? 'This device uses Apple Intelligence or a downloaded model'
-                    : 'This device uses a downloaded model'),
-            keywords: ['summary', 'apple intelligence', 'offline', 'local'],
-            value: cloudSummarises ? 'Cloud' : 'This device',
-            wide: true,
-            control: SettingsSegmented<SummaryEngine>(
-              options: SummaryEngine.values,
-              selected: cloudSummarises
-                  ? SummaryEngine.cloud
-                  : SummaryEngine.device,
-              labelFor: engineLabel,
-              keyFor: (engine) => ValueKey('summarise-with-${engine.name}'),
-              enabledFor: (engine) => engine == SummaryEngine.cloud
-                  ? signedIn && (summaries?.cloudSelectable ?? true)
-                  : _deviceReady(summaryModel, builtIn: builtInSummary),
-              onSelected: (engine) => prefs.summaryEngine = engine,
+          if (deviceSummaries)
+            _Setting(
+              'summarise-with',
+              'Summarise with',
+              subtitle:
+                  summaries?.note ??
+                  ((AppPlatform.isMacOS || AppPlatform.isIOS)
+                      ? 'This device uses Apple Intelligence or a downloaded model'
+                      : 'This device uses a downloaded model'),
+              keywords: ['summary', 'apple intelligence', 'offline', 'local'],
+              value: cloudSummarises ? 'Cloud' : 'This device',
+              wide: true,
+              control: SettingsSegmented<SummaryEngine>(
+                options: SummaryEngine.values,
+                selected: cloudSummarises
+                    ? SummaryEngine.cloud
+                    : SummaryEngine.device,
+                labelFor: engineLabel,
+                keyFor: (engine) => ValueKey('summarise-with-${engine.name}'),
+                enabledFor: (engine) => engine == SummaryEngine.cloud
+                    ? signedIn && (summaries?.cloudSelectable ?? true)
+                    : _deviceReady(summaryModel, builtIn: builtInSummary),
+                onSelected: (engine) => prefs.summaryEngine = engine,
+              ),
+              below: builtInSummary
+                  ? null
+                  : _DeviceEngineLine(
+                      key: const ValueKey('local-summary-line'),
+                      store: store,
+                      model: summaryModel,
+                      blockedReason: summaryModel == null
+                          ? null
+                          : _downloadBlockedReason(summaryModel),
+                      unavailableNote: switch (_deviceSummaryState) {
+                        SummarizerReadiness.needsSystemFeature =>
+                          'Turn on Apple Intelligence in System Settings',
+                        SummarizerReadiness.preparing =>
+                          'Apple Intelligence is still preparing',
+                        _ => null,
+                      },
+                      onDownload: summaryModel == null || store == null
+                          ? null
+                          : () =>
+                                unawaited(_startDownload(store, summaryModel)),
+                    ),
+            )
+          else
+            _Setting(
+              'summarise-with',
+              'Summarise with',
+              subtitle:
+                  summaries?.note ??
+                  (signedIn
+                      ? 'This computer has no model of its own for summaries'
+                      : 'Made in the cloud once you sign in'),
+              keywords: ['summary', 'cloud'],
+              value: 'Cloud',
+              control: const SettingsValue('Cloud'),
             ),
-            below: builtInSummary
-                ? null
-                : _DeviceEngineLine(
-                    key: const ValueKey('local-summary-line'),
-                    store: store,
-                    model: summaryModel,
-                    blockedReason: summaryModel == null
-                        ? null
-                        : _downloadBlockedReason(summaryModel),
-                    unavailableNote: switch (_deviceSummaryState) {
-                      SummarizerReadiness.needsSystemFeature =>
-                        'Turn on Apple Intelligence in System Settings',
-                      SummarizerReadiness.preparing =>
-                        'Apple Intelligence is still preparing',
-                      _ => null,
-                    },
-                    onDownload: summaryModel == null || store == null
-                        ? null
-                        : () => unawaited(_startDownload(store, summaryModel)),
-                  ),
-          ),
           _Setting(
             'summary-instructions',
             'Summary instructions',
