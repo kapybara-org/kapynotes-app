@@ -1960,28 +1960,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .toList();
     if (ids.isEmpty) return;
     _recordKapyActivity();
+    final theirs = _allSharedByOthers(ids);
     final confirmed = await _confirmDelete(
       title: 'Empty Archived Notes?',
       body: _deleteBody(ids),
-      action: 'Delete all',
+      action: theirs ? 'Remove all' : 'Delete all',
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceDeleted(ids.length);
+    _announceForgotten(ids, theirs);
   }
 
   Future<void> _deleteChecked() async {
-    final ids = _checkedArchived.toList();
+    final ids = _checkedArchived
+        .where((id) => _canEditNote(widget.notes.byId(id)))
+        .toList();
     if (ids.isEmpty) return;
     _recordKapyActivity();
+    final theirs = _allSharedByOthers(ids);
     final confirmed = await _confirmDelete(
-      title: ids.length == 1 ? 'Delete note?' : 'Delete ${ids.length} notes?',
+      title: theirs
+          ? 'Remove from your notes?'
+          : ids.length == 1
+          ? 'Delete note?'
+          : 'Delete ${ids.length} notes?',
       body: _deleteBody(ids),
-      action: 'Delete',
+      action: theirs ? 'Remove' : 'Delete',
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceDeleted(ids.length);
+    _announceForgotten(ids, theirs);
+  }
+
+  bool _allSharedByOthers(List<String> ids) =>
+      ids.every((id) => _sharedBy(widget.notes.byId(id)) != null);
+
+  void _announceForgotten(List<String> ids, bool theirs) {
+    if (!theirs) return _announceDeleted(ids.length);
+    Toast.show(context, 'Removed from your notes', icon: deleteIcon);
   }
 
   void _restoreChecked() {
@@ -2600,7 +2616,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     AccountState.needsProfile => 'Choose your name first to share this note',
     AccountState.needsPassphrase =>
       'Choose a passphrase first to share this note',
-    AccountState.locked => 'Unlock first to share this note',
+    AccountState.locked ||
+    AccountState.keysChanged => 'Unlock first to share this note',
     AccountState.needsAccountDecision =>
       'Finish signing in first to share this note',
     AccountState.restoring ||
@@ -3242,7 +3259,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ? null
                       : () => _showSettings(section: SettingsSection.account),
                   user: widget.account?.user,
-                  syncStatus: widget.account?.sync?.status,
+                  syncStatus: widget.account?.syncStatus,
                 ),
                 Expanded(
                   child: SplitView(
@@ -3418,8 +3435,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             .bindingFor(ShortcutAction.newNote)
                                             ?.displayLabel,
                                         noteOpen: selected != null,
-                                        syncStatus:
-                                            widget.account?.sync?.status,
+                                        syncStatus: widget.account?.syncStatus,
                                         unloadedPictures: unloaded.length,
                                         onShowUnloadedPicture: unloaded.isEmpty
                                             ? null

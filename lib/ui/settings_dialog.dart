@@ -3802,6 +3802,7 @@ class _CategoryList extends StatelessWidget {
       AccountState.needsProfile => 'Choose the name people will see',
       AccountState.needsPassphrase => 'Save your passphrase to start syncing',
       AccountState.locked => 'Unlock to read these notes here',
+      AccountState.keysChanged => 'Waiting for your new passphrase',
       AccountState.needsAccountDecision => 'Choose what happens to local notes',
       AccountState.ready => account.user?.displayName ?? 'Signed in',
     };

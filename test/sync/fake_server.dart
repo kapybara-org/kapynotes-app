@@ -67,6 +67,12 @@ class FakeServer {
   /// Calls to let through before [failNext] is thrown.
   int failAfter = 0;
 
+  /// Key bundle fetches to fail as offline before one is answered.
+  int failKeyFetches = 0;
+
+  /// How many ids each attachment URL request asked about.
+  final List<int> urlBatches = [];
+
   /// Thrown after the next removal is applied, as when its answer is lost.
   SyncException? loseRemovalAnswer;
 
@@ -141,6 +147,9 @@ class FakeServer {
 
   /// Connected sockets, by device id.
   final Map<String, FakeSocket> sockets = {};
+
+  /// The protocol each device last spoke, as the device registry keeps it.
+  final Map<String, int> deviceProtocols = {};
 
   /// Sockets that asked to connect while [socketsAllowed] was false, or whose
   /// connection was dropped, and are waiting to try again.
@@ -323,6 +332,76 @@ class FakeServer {
   /// Drops every connection, as a proxy reaping idle sockets would. Each
   /// socket comes back on its own after [reconnectDelay], unless
   /// [socketsAllowed] is off.
+  /// Whether a request naming [generation] at [protocol] may touch this
+  /// account's encrypted data. Like the generation middleware: an account
+  /// that never reset is never asked.
+  void checkGeneration(String userId, int protocol, int generation) {
+    final current = user(userId).bundle?.generation ?? 1;
+    if (current <= 1) return;
+    if (protocol < 7) throw const SyncOutdatedException(7);
+    if (generation != current) {
+      throw SyncKeysChangedException(
+        current,
+        user(userId).bundle?.changes.reset,
+      );
+    }
+  }
+
+  /// Like `POST /keys/reset` once the version and the proof have passed.
+  KeyBundle resetKeys(
+    String userId, {
+    required KeyBundle old,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required SealedBox recoveryWrappedMasterKey,
+    required WireIdentity identity,
+    required String? device,
+  }) {
+    calls.add('resetKeys');
+    final account = user(userId);
+    account.archive = KeyArchive(
+      wrappedMasterKey: old.wrappedMasterKey,
+      kdf: old.kdf,
+      recoveryWrappedMasterKey: old.recoveryWrappedMasterKey,
+    );
+    final bundle = KeyBundle(
+      wrappedMasterKey: wrappedMasterKey,
+      kdf: kdf,
+      recoveryWrappedMasterKey: recoveryWrappedMasterKey,
+      identity: identity,
+      version: old.version + 1,
+      generation: old.generation + 1,
+      changes: KeyChanges(
+        reset: KeyChange(at: DateTime.now(), device: device),
+      ),
+    );
+    account.bundle = bundle;
+
+    final home = personal(userId);
+    final retired = account.retired = FakeSpace(
+      id: 'retired-${home.id}',
+      kind: SpaceKind.personal,
+      name: null,
+      ownerId: userId,
+    );
+    retired.ops.addAll(home.ops);
+    retired.snapshots.addAll(home.snapshots);
+    retired.notes.addAll(home.notes);
+    home.ops.clear();
+    home.snapshots.clear();
+    home.notes.clear();
+
+    for (final space in spaces.values) {
+      if (space.kind != SpaceKind.team) continue;
+      if (space.keys.remove(userId) != null) announceSpace(space.id);
+    }
+    tasks.remove(userId);
+    for (final socket in sockets.values.toList()) {
+      if (socket.userId == userId) socket._dropped();
+    }
+    return bundle;
+  }
+
   void dropSockets() {
     for (final socket in sockets.values.toList()) {
       socket._dropped();
@@ -942,10 +1021,11 @@ class FakeServer {
           name: user(entry.key).name,
           image: user(entry.key).image,
           role: entry.value,
-          joinedAt: DateTime.utc(2026, 9, 1),
+          joinedAt: space.joinedAt[entry.key] ?? DateTime.utc(2026, 9, 1),
           hasKey: space.keys.containsKey(entry.key),
           x25519Public: user(entry.key).bundle?.identity?.x25519Public,
           ed25519Public: user(entry.key).bundle?.identity?.ed25519Public,
+          identityResetAt: user(entry.key).bundle?.changes.reset?.at,
         ),
     ],
     invites: [
@@ -1069,14 +1149,14 @@ class FakeServer {
       if (invite?.email != email) continue;
       // A blocked sender's invitation does not exist, however its link
       // travelled, and the rules are agreed to before joining.
-      if (user(
-        userId,
-      ).blocks.contains(user(space.ownerId).email.toLowerCase())) {
+      if (user(userId).blocks
+          .contains(user(space.ownerId).email.toLowerCase())) {
         _refuse(404, 'no such invitation');
       }
       _requireTerms(userId);
       space.invites.remove(token);
       space.members[userId] = invite!.role;
+      space.joinedAt[userId] = now();
       announceSpace(space.id);
       return _wire(space, userId);
     }
@@ -1168,6 +1248,43 @@ class FakeServer {
       _refuse(409, 'stale-key-generation', {
         'keyGeneration': space.keyGeneration,
       });
+    }
+    // Nobody left who could grant the key: a member who reset rotates it
+    // from the copies they hold, and a note they lack keeps its old wrap.
+    final orphaned =
+        !space.keys.containsKey(userId) &&
+        !space.members.entries.any(
+          (m) =>
+              m.key != userId &&
+              m.value.canEdit &&
+              space.keys.containsKey(m.key),
+        );
+    if (orphaned) {
+      // Like the server: only the owner, or an account that reset.
+      if (space.members[userId] != SpaceRole.owner &&
+          user(userId).bundle?.changes.reset == null) {
+        _refuse(403, 'not allowed');
+      }
+      space.keys
+        ..clear()
+        ..addAll(spaceKeys);
+      final generation = expected + 1;
+      for (final entry in wraps.entries) {
+        final stored = space.noteKeys[entry.key];
+        if (stored == null || stored.contentKeyEpoch != entry.value.fromEpoch) {
+          continue;
+        }
+        space.noteKeys[entry.key] = FakeNoteKey(
+          wrapped: entry.value.key,
+          keyGeneration: generation,
+          contentKeyEpoch: stored.contentKeyEpoch,
+          contentKeyGeneration: stored.contentKeyGeneration,
+        );
+      }
+      space.keyGeneration = generation;
+      space.rotationPending = false;
+      announceSpace(spaceId);
+      return;
     }
     for (final holder in space.keys.keys) {
       if (!spaceKeys.containsKey(holder)) {
@@ -1359,6 +1476,11 @@ class FakeUser {
   KeyBundle? bundle;
   bool deleted = false;
 
+  /// The seals from before the last reset, and what the reset moved aside:
+  /// the personal space's rows as they were, kept out of every answer.
+  KeyArchive? archive;
+  FakeSpace? retired;
+
   /// The newest emailed code per action, and the proofs it was traded for.
   final Map<KeyProofAction, String> codes = {};
   final Map<String, KeyProofAction> proofs = {};
@@ -1417,6 +1539,9 @@ class FakeSpace {
   /// live outside this fake, so a test that makes a link says so here.
   bool hasLink = false;
   final Map<String, SpaceRole> members = {};
+
+  /// When each member joined, where a test's clock was running.
+  final Map<String, DateTime> joinedAt = {};
   final Map<String, SealedToPublicKey> keys = {};
   final Map<String, ({String email, SpaceRole role})> invites = {};
   final Map<String, FakeNoteKey> noteKeys = {};
@@ -1471,12 +1596,14 @@ class FakeSocket implements SyncSocket {
     required this.device,
     required this.userId,
     required this.protocol,
+    this.keyGeneration = 1,
   });
 
   final FakeServer server;
   final String device;
   final String userId;
   final int protocol;
+  final int keyGeneration;
 
   final StreamController<SocketEvent> _events = StreamController.broadcast();
   final Map<String, _Subscription> _subs = {};
@@ -1512,6 +1639,12 @@ class FakeSocket implements SyncSocket {
     if (!server.socketsAllowed ||
         protocol < server.minProtocol ||
         server.user(userId).deleted) {
+      server._parked.add(this);
+      return;
+    }
+    try {
+      server.checkGeneration(userId, protocol, keyGeneration);
+    } on SyncException {
       server._parked.add(this);
       return;
     }
@@ -1972,7 +2105,12 @@ class FakeApi implements SyncApi {
   /// What this build claims to speak. Lower it to see the server refuse.
   int protocol = protocolVersion;
 
-  void _gate() {
+  /// The key generation every request names, as `HttpSyncApi` reads it.
+  int Function() keyGeneration = () => 1;
+
+  /// Every route but the key routes, sign-out and account deletion, which
+  /// stay open to a device holding a key from before a reset.
+  void _gate({bool keys = false}) {
     final failure = server.failNext;
     if (failure != null && server.failAfter > 0) {
       server.failAfter--;
@@ -1986,6 +2124,7 @@ class FakeApi implements SyncApi {
     if (server.user(userId).deleted) {
       throw const SyncAuthException('session rejected');
     }
+    if (!keys) server.checkGeneration(userId, protocol, keyGeneration());
   }
 
   void _record(String call) {
@@ -2026,31 +2165,40 @@ class FakeApi implements SyncApi {
   }
 
   @override
-  SyncSocket openSocket() =>
-      FakeSocket(server, device: device, userId: userId, protocol: protocol);
+  SyncSocket openSocket() => FakeSocket(
+    server,
+    device: device,
+    userId: userId,
+    protocol: protocol,
+    keyGeneration: keyGeneration(),
+  );
 
   @override
   Future<KeyBundle?> fetchKeyBundle() async {
-    _gate();
+    _gate(keys: true);
+    if (server.failKeyFetches > 0) {
+      server.failKeyFetches--;
+      throw const SyncTransientException('offline');
+    }
     return server.user(userId).bundle;
   }
 
   @override
   Future<void> createKeyBundle(KeyBundle bundle) async {
-    _gate();
+    _gate(keys: true);
     server.user(userId).bundle = bundle;
   }
 
   @override
   Future<void> sendKeyProof(KeyProofAction action) async {
-    _gate();
+    _gate(keys: true);
     _record('sendKeyProof:${action.wire}');
     server.user(userId).codes[action] = '123456';
   }
 
   @override
   Future<String> verifyKeyProof(KeyProofAction action, String code) async {
-    _gate();
+    _gate(keys: true);
     final account = server.user(userId);
     final sent = account.codes[action];
     if (sent == null) throw const SyncRefusedException(400, 'code-expired', {});
@@ -2091,7 +2239,7 @@ class FakeApi implements SyncApi {
     required KdfParams kdf,
     required String? device,
   }) async {
-    _gate();
+    _gate(keys: true);
     _record('changePassphrase:$expectedVersion');
     final bundle = _changeable(expectedVersion);
     _useProof(proof, KeyProofAction.passphrase);
@@ -2101,9 +2249,11 @@ class FakeApi implements SyncApi {
       recoveryWrappedMasterKey: bundle.recoveryWrappedMasterKey,
       identity: bundle.identity,
       version: bundle.version + 1,
+      generation: bundle.generation,
       changes: KeyChanges(
         passphrase: KeyChange(at: DateTime.now(), device: device),
         recoveryKey: bundle.changes.recoveryKey,
+        reset: bundle.changes.reset,
       ),
     );
     return bundle.version + 1;
@@ -2116,7 +2266,7 @@ class FakeApi implements SyncApi {
     required SealedBox recoveryWrappedMasterKey,
     required String? device,
   }) async {
-    _gate();
+    _gate(keys: true);
     _record('changeRecoveryKey:$expectedVersion');
     final bundle = _changeable(expectedVersion);
     _useProof(proof, KeyProofAction.recoveryKey);
@@ -2126,9 +2276,11 @@ class FakeApi implements SyncApi {
       recoveryWrappedMasterKey: recoveryWrappedMasterKey,
       identity: bundle.identity,
       version: bundle.version + 1,
+      generation: bundle.generation,
       changes: KeyChanges(
         passphrase: bundle.changes.passphrase,
         recoveryKey: KeyChange(at: DateTime.now(), device: device),
+        reset: bundle.changes.reset,
       ),
     );
     return bundle.version + 1;
@@ -2139,13 +2291,81 @@ class FakeApi implements SyncApi {
     required String name,
     required String platform,
   }) async {
-    _gate();
+    _gate(keys: true);
     server.user(userId).devices[device] = name;
   }
 
   @override
+  Future<ResetPreview> fetchResetPreview() async {
+    _gate(keys: true);
+    _record('fetchResetPreview');
+    final account = server.user(userId);
+    return ResetPreview(
+      devices: [
+        for (final entry in account.devices.entries)
+          if (entry.key != device)
+            ResetDevice(
+              name: entry.value,
+              platform: 'macos',
+              lastSeenAt: DateTime.now(),
+              protocol: server.deviceProtocols[entry.key],
+            ),
+      ],
+      personalNoteIds: {
+        for (final row in server.personal(userId).notes.values)
+          if (row.deletedAt == null) row.id,
+      },
+      orphanedSpaces: {
+        for (final space in server.spaces.values)
+          if (space.kind == SpaceKind.team &&
+              (space.members[userId]?.canEdit ?? false) &&
+              !space.members.entries.any(
+                (m) =>
+                    m.key != userId &&
+                    m.value.canEdit &&
+                    space.keys.containsKey(m.key),
+              ))
+            space.id,
+      },
+      release: '1.34.0',
+    );
+  }
+
+  @override
+  Future<({int version, int generation})> resetEncryption({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required SealedBox recoveryWrappedMasterKey,
+    required WireIdentity identity,
+    required String? device,
+  }) async {
+    _gate(keys: true);
+    _record('resetEncryption:$expectedVersion');
+    final old = _changeable(expectedVersion);
+    _useProof(proof, KeyProofAction.reset);
+    final bundle = server.resetKeys(
+      userId,
+      old: old,
+      wrappedMasterKey: wrappedMasterKey,
+      kdf: kdf,
+      recoveryWrappedMasterKey: recoveryWrappedMasterKey,
+      identity: identity,
+      device: device,
+    );
+    return (version: bundle.version, generation: bundle.generation);
+  }
+
+  @override
+  Future<KeyArchive?> fetchKeyArchive() async {
+    _gate(keys: true);
+    return server.user(userId).archive;
+  }
+
+  @override
   Future<void> publishIdentity(WireIdentity identity) async {
-    _gate();
+    _gate(keys: true);
     final account = server.user(userId);
     final existing = account.bundle;
     if (existing == null) {
@@ -2166,7 +2386,7 @@ class FakeApi implements SyncApi {
 
   @override
   Future<void> deleteAccount(String confirmation) async {
-    _gate();
+    _gate(keys: true);
     server.deleteAccount(userId, confirmation);
   }
 
@@ -2413,6 +2633,11 @@ class FakeApi implements SyncApi {
   @override
   Future<Map<String, Uri>> attachmentUrls(List<String> ids) async {
     _gate();
+    server.urlBatches.add(ids.length);
+    // Like the server's request schema.
+    if (ids.length > 100) {
+      throw const SyncRefusedException(400, 'invalid request', {});
+    }
     // Like the server, only for members of the space an attachment is in.
     bool member(String id) =>
         server.spaces[server.attachments[id]?.spaceId]?.members.containsKey(
