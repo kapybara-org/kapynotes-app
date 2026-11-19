@@ -375,11 +375,24 @@ jobs:
           name: linux-x86_64-unsigned
           path: dist
 
+      # The Ubuntu images download the desktop baseline (about 90 MB) from
+      # archive.ubuntu.com into a fresh container, which can crawl at 70 kB/s
+      # and run past the job limit. They use azure.archive.ubuntu.com, the
+      # mirror GitHub's own runner images use, and retry failed downloads.
       - name: Start the packages in a clean ${{ matrix.image }}
         if: matrix.image != ''
         run: |
-          docker run --rm -v "$PWD:/w" -w /w "${{ matrix.image }}" bash -c \
-            'packaging/linux/smoke_test.sh baseline && packaging/linux/smoke_test.sh all dist smoke-out'
+          prepare=:
+          if [[ "${{ matrix.image }}" == ubuntu:* ]]; then
+            prepare=$(cat <<'APT'
+          echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+          sed -i -E 's#https?://(archive|security)\.ubuntu\.com#http://azure.archive.ubuntu.com#' \
+            /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+          APT
+            )
+          fi
+          docker run --rm -v "$PWD:/w" -w /w -e PREPARE="$prepare" "${{ matrix.image }}" bash -c \
+            'eval "$PREPARE" && packaging/linux/smoke_test.sh baseline && packaging/linux/smoke_test.sh all dist smoke-out'
 
       - name: Mount the AppImage through FUSE
         if: matrix.image == ''
