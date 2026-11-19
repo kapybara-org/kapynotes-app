@@ -331,6 +331,18 @@ void main() {
         expectWelcomeLeftAlone(tester);
       });
     }
+
+    testWidgets('an ordinary resume of $who with only the welcome note makes '
+        'no new note', (tester) async {
+      welcomeOnlyLibrary();
+
+      await pumpLaunch(tester);
+      await resumeWith(tester, 'open');
+
+      expect(notes.notes, hasLength(1));
+      expect(notes.notes.single.body, welcomeNoteBody);
+      expect(imageRequests, isEmpty);
+    });
   }
 
   testWidgets('a welcome note that has been edited is a real note, and Dictate '
