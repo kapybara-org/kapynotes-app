@@ -50,6 +50,7 @@ import 'mobile_data_sheet.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
 import 'settings_rows.dart';
+import 'theme_cards.dart';
 import 'settings_search.dart';
 import 'settings_update_card.dart';
 import 'sidebar_timestamp.dart';
@@ -1240,6 +1241,45 @@ class _SettingsDialogState extends State<SettingsDialog>
     widget.layoutPrefs.defaultNoteId = selected.isEmpty ? null : selected;
   }
 
+  Future<void> _chooseNightTheme() async {
+    final prefs = widget.layoutPrefs;
+    final chosen = await showDialog<AppTheme>(
+      context: context,
+      builder: (context) => _ListPickerDialog<AppTheme>(
+        title: 'Night theme',
+        options: AppTheme.values,
+        selected: prefs.nightTheme.theme,
+        label: (theme) => theme.label,
+        keyFor: (theme) => 'night-theme-${theme.name}',
+        leading: (theme) =>
+            _AccentRing(KapyTheme.palette(theme, Brightness.dark).accent),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    prefs.nightTheme = prefs.nightTheme.copyWith(theme: chosen);
+  }
+
+  /// The hour the night starts at, or the hour it ends at.
+  Future<void> _chooseNightHour({required bool start}) async {
+    final prefs = widget.layoutPrefs;
+    final night = prefs.nightTheme;
+    final chosen = await showDialog<int>(
+      context: context,
+      builder: (context) => _ListPickerDialog<int>(
+        title: start ? 'Night starts at' : 'Night ends at',
+        options: [for (var hour = 0; hour < 24; hour++) hour * 60],
+        selected: start ? night.from : night.to,
+        label: NightTheme.clock,
+        keyFor: (minute) => 'night-hour-$minute',
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    final now = prefs.nightTheme;
+    prefs.nightTheme = start
+        ? now.copyWith(from: chosen)
+        : now.copyWith(to: chosen);
+  }
+
   Future<void> _changePin() async {
     final gate = widget.hiddenNotes;
     if (gate == null) return;
@@ -1371,6 +1411,11 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   List<_Group> _appearanceGroups() {
     final prefs = widget.layoutPrefs;
+    final touch = !AppPlatform.hasPointer;
+    final night = prefs.nightTheme;
+    // The app puts every platform's request for more contrast here, the ones
+    // Flutter cannot read included.
+    final systemAsks = MediaQuery.highContrastOf(context);
     final scale = prefs.editorTextScale;
     final percent = '${(scale * 100).round()}%';
     final transparency = prefs.transparencyEnabled
@@ -1385,9 +1430,11 @@ class _SettingsDialogState extends State<SettingsDialog>
     return [
       _Group('Look', [
         _choice<AppearanceMode>(
-          'theme-setting',
-          'Theme',
-          'Colours for the whole app',
+          'mode-setting',
+          'Mode',
+          touch
+              ? 'Follow your device, or choose one.'
+              : 'Follow your computer, or choose one.',
           options: AppearanceMode.values,
           selected: prefs.appearance,
           label: (mode) => mode.label,
@@ -1396,6 +1443,116 @@ class _SettingsDialogState extends State<SettingsDialog>
           keyPrefix: 'appearance',
           keywords: ['dark mode', 'light mode', 'night', 'colour', 'color'],
         ),
+        _Setting(
+          'theme-setting',
+          'Theme',
+          subtitle: 'Each comes in dark and light; Midnight is dark only.',
+          keywords: [
+            'colour',
+            'color',
+            'palette',
+            'scheme',
+            for (final theme in AppTheme.values) theme.label,
+          ],
+          value: prefs.theme.label,
+          changed: prefs.theme != AppTheme.riverbank,
+          onReset: () => prefs.theme = AppTheme.riverbank,
+          below: ThemeCards(
+            selected: prefs.theme,
+            onSelected: (theme) => prefs.theme = theme,
+          ),
+        ),
+        _toggle(
+          'increase-contrast-setting',
+          'Increase contrast',
+          touch
+              ? 'Stronger text and borders in any theme.'
+              : 'Stronger text, borders and tag labels in any theme. Turns '
+                    'on with your system setting.',
+          value: prefs.increaseContrast ?? systemAsks,
+          onChanged: (on) => prefs.setIncreaseContrast(on, asks: systemAsks),
+          byDefault: systemAsks,
+          keywords: [
+            'accessibility',
+            'high contrast',
+            'legibility',
+            'readability',
+            'borders',
+          ],
+        ),
+        _toggle(
+          'night-theme-setting',
+          'At night, use a different theme',
+          touch
+              ? 'Switches back in the morning.'
+              : 'It switches by itself, and back again in the morning.',
+          value: night.enabled,
+          onChanged: (on) => prefs.nightTheme = night.copyWith(enabled: on),
+          byDefault: false,
+          keywords: ['bedtime', 'evening', 'schedule', 'sleep', 'late'],
+        ),
+        if (night.enabled) ...[
+          _Setting(
+            'night-theme-choice-setting',
+            'Night theme',
+            keywords: ['bedtime', 'evening'],
+            value: night.theme.label,
+            changed: night.theme != const NightTheme().theme,
+            onReset: () => prefs.nightTheme = night.copyWith(
+              theme: const NightTheme().theme,
+            ),
+            control: SettingsMenuButton(
+              key: const ValueKey('night-theme-button'),
+              leading: _AccentRing(
+                KapyTheme.palette(night.theme, Brightness.dark).accent,
+              ),
+              label: night.theme.label,
+              onPressed: _chooseNightTheme,
+            ),
+          ),
+          _Setting(
+            'night-hours-setting',
+            'From',
+            keywords: ['bedtime', 'hours', 'time', 'until'],
+            value:
+                '${NightTheme.clock(night.from)} to '
+                '${NightTheme.clock(night.to)}',
+            changed:
+                night.from != const NightTheme().from ||
+                night.to != const NightTheme().to,
+            onReset: () => prefs.nightTheme = night.copyWith(
+              from: const NightTheme().from,
+              to: const NightTheme().to,
+            ),
+            control: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SettingsMenuButton(
+                  key: const ValueKey('night-from-button'),
+                  label: NightTheme.clock(night.from),
+                  chevron: false,
+                  onPressed: () => _chooseNightHour(start: true),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    'to',
+                    style: TextStyle(
+                      color: context.palette.textTertiary,
+                      fontSize: SettingsMetrics.buttonLabelSize,
+                    ),
+                  ),
+                ),
+                SettingsMenuButton(
+                  key: const ValueKey('night-to-button'),
+                  label: NightTheme.clock(night.to),
+                  chevron: false,
+                  onPressed: () => _chooseNightHour(start: false),
+                ),
+              ],
+            ),
+          ),
+        ],
         _choice<PaperStyle>(
           'paper-setting',
           'Paper',
@@ -4949,6 +5106,119 @@ class _ChangelogLinkRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A theme's accent as a ring, beside its name where a theme is chosen.
+class _AccentRing extends StatelessWidget {
+  const _AccentRing(this.color);
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 12,
+    height: 12,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: color, width: 3),
+    ),
+  );
+}
+
+/// One of a short list, opened from a row's menu button with the current
+/// choice in view: the night theme, an hour.
+class _ListPickerDialog<T> extends StatefulWidget {
+  const _ListPickerDialog({
+    required this.title,
+    required this.options,
+    required this.selected,
+    required this.label,
+    required this.keyFor,
+    this.leading,
+  });
+
+  final String title;
+  final List<T> options;
+  final T selected;
+  final String Function(T option) label;
+  final String Function(T option) keyFor;
+  final Widget Function(T option)? leading;
+
+  @override
+  State<_ListPickerDialog<T>> createState() => _ListPickerDialogState<T>();
+}
+
+class _ListPickerDialogState<T> extends State<_ListPickerDialog<T>> {
+  static const double _rowHeight = 44;
+  static const double _maxHeight = 352;
+
+  late final double _height = math.min(
+    _maxHeight,
+    _rowHeight * widget.options.length,
+  );
+
+  late final ScrollController _scroll = ScrollController(
+    initialScrollOffset:
+        ((widget.options.indexOf(widget.selected) + 0.5) * _rowHeight -
+                _height / 2)
+            .clamp(0.0, _rowHeight * widget.options.length - _height),
+  );
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return AlertDialog(
+      title: Text(widget.title),
+      contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      content: SizedBox(
+        width: math.min(320, MediaQuery.sizeOf(context).width - 80),
+        height: _height,
+        child: ListView.builder(
+          controller: _scroll,
+          itemExtent: _rowHeight,
+          itemCount: widget.options.length,
+          itemBuilder: (context, index) {
+            final option = widget.options[index];
+            final selected = option == widget.selected;
+            final leading = widget.leading;
+            return Semantics(
+              selected: selected,
+              button: true,
+              child: ListTile(
+                key: ValueKey(widget.keyFor(option)),
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                leading: leading?.call(option),
+                minLeadingWidth: 12,
+                title: Text(widget.label(option)),
+                trailing: KapyIcon(
+                  selected
+                      ? KapyIcons.checkCircleRounded
+                      : KapyIcons.circleOutlined,
+                  size: 18,
+                  color: selected ? palette.accent : palette.textTertiary,
+                ),
+                onTap: () => Navigator.of(context).pop(option),
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
     );
   }
 }

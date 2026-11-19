@@ -7408,4 +7408,166 @@ void main() {
       }
     });
   });
+
+  group('themes', () {
+    CalcPalette palette(WidgetTester tester) => Theme.of(
+      tester.element(find.byType(HomePage)),
+    ).extension<CalcPalette>()!;
+
+    Brightness side(WidgetTester tester) =>
+        Theme.of(tester.element(find.byType(HomePage))).brightness;
+
+    Future<void> reveal(WidgetTester tester, String key) async {
+      await tester.ensureVisible(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a theme picked in Settings dresses the window at once and '
+        'is there on the next launch', (tester) async {
+      await pumpApp(tester);
+      await openSettings(tester);
+      await reveal(tester, 'theme-graphite');
+      await tester.tap(find.byKey(const ValueKey('theme-graphite')));
+      await tester.pumpAndSettle();
+
+      expect(prefs.theme, AppTheme.graphite);
+      expect(
+        palette(tester).editorBackground,
+        KapyTheme.palette(AppTheme.graphite, side(tester)).editorBackground,
+      );
+      expect((LayoutPrefs(store)..load()).theme, AppTheme.graphite);
+    });
+
+    testWidgets('Increase contrast follows the system until it is switched '
+        'by hand', (tester) async {
+      await pumpApp(tester);
+      expect(palette(tester).increasedContrast, isFalse);
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(highContrast: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pumpAndSettle();
+      expect(palette(tester).increasedContrast, isTrue);
+      expect(prefs.increaseContrast, isNull, reason: 'still following');
+
+      await openSettings(tester);
+      await reveal(tester, 'increase-contrast-setting');
+      final row = find.byKey(const ValueKey('increase-contrast-setting'));
+      bool shown() => tester
+          .widget<SettingsSwitch>(
+            find.descendant(of: row, matching: find.byType(SettingsSwitch)),
+          )
+          .value;
+      expect(shown(), isTrue);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(shown(), isFalse);
+      expect(prefs.increaseContrast, isFalse);
+      expect(
+        palette(tester).increasedContrast,
+        isFalse,
+        reason: 'the person can still turn it off',
+      );
+    });
+
+    testWidgets('At night takes over at 22:00 and lets go at 06:00', (
+      tester,
+    ) async {
+      var clock = DateTime(2026, 11, 19, 21, 59);
+      notes = NotesStore(store, now: () => clock);
+      await pumpApp(tester);
+      prefs.nightTheme = const NightTheme(enabled: true);
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.light);
+      expect(
+        palette(tester).editorBackground,
+        KapyTheme.lightPalette.editorBackground,
+      );
+
+      final lamplight = KapyTheme.palette(AppTheme.lamplight, Brightness.dark);
+      clock = DateTime(2026, 11, 19, 22);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.dark);
+      expect(palette(tester).editorBackground, lamplight.editorBackground);
+
+      clock = DateTime(2026, 11, 20, 5, 59);
+      await tester.pump(const Duration(hours: 7, minutes: 59));
+      await tester.pumpAndSettle();
+      expect(palette(tester).editorBackground, lamplight.editorBackground);
+
+      clock = DateTime(2026, 11, 20, 6);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.light);
+      expect(
+        palette(tester).editorBackground,
+        KapyTheme.lightPalette.editorBackground,
+      );
+    });
+
+    testWidgets('At night catches up when the app resumes or the clock jumps', (
+      tester,
+    ) async {
+      var clock = DateTime(2026, 11, 19, 21);
+      notes = NotesStore(store, now: () => clock);
+      await pumpApp(tester);
+      prefs.nightTheme = const NightTheme(enabled: true);
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.light);
+
+      clock = DateTime(2026, 11, 19, 23, 30);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(
+        side(tester),
+        Brightness.dark,
+        reason: 'a phone that slept through 22:00 resumes at 23:30',
+      );
+
+      clock = DateTime(2026, 11, 20, 6);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pumpAndSettle();
+      expect(
+        side(tester),
+        Brightness.light,
+        reason:
+            'the clock reached 06:00 while the timers counted only minutes: '
+            'a Mac waking from sleep, a clock or time zone change, or a '
+            'spring-forward night',
+      );
+    });
+
+    testWidgets('At night shows its theme and hours once it is on, and both '
+        'can be changed', (tester) async {
+      await pumpApp(tester);
+      await openSettings(tester);
+      await reveal(tester, 'night-theme-setting');
+      expect(find.byKey(const ValueKey('night-theme-button')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('night-theme-setting')));
+      await tester.pumpAndSettle();
+      expect(prefs.nightTheme.enabled, isTrue);
+
+      await reveal(tester, 'night-theme-button');
+      await tester.tap(find.byKey(const ValueKey('night-theme-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('night-theme-midnight')));
+      await tester.pumpAndSettle();
+      expect(prefs.nightTheme.theme, AppTheme.midnight);
+
+      await reveal(tester, 'night-from-button');
+      await tester.tap(find.byKey(const ValueKey('night-from-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('night-hour-1380')));
+      await tester.pumpAndSettle();
+      expect(prefs.nightTheme.from, 23 * 60);
+      expect(find.text('23:00'), findsOneWidget);
+      expect((LayoutPrefs(store)..load()).nightTheme, prefs.nightTheme);
+    });
+  });
 }
