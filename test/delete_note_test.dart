@@ -133,7 +133,10 @@ void main() {
       tester.getTopLeft(delete).dy,
       greaterThan(tester.getTopLeft(archive).dy),
     );
-    final text = find.descendant(of: delete, matching: find.text('Delete note…'));
+    final text = find.descendant(
+      of: delete,
+      matching: find.text('Delete note…'),
+    );
     expect(
       tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
       isFalse,
