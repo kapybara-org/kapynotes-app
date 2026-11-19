@@ -1016,13 +1016,20 @@ void main() {
     final launched = <Uri>[];
     setUp(launched.clear);
 
-    Future<void> show(WidgetTester tester, String text) => tester.pumpWidget(
-      _harness(
-        SingleChildScrollView(
-          child: KapyAiMarkdown(text, launch: (uri) async => launched.add(uri)),
-        ),
-      ),
-    );
+    /// [sources] is what was sent with the question; by default every
+    /// address in [text] was in a note.
+    Future<void> show(WidgetTester tester, String text, {String? sources}) =>
+        tester.pumpWidget(
+          _harness(
+            SingleChildScrollView(
+              child: KapyAiMarkdown(
+                text,
+                sources: sources ?? text,
+                launch: (uri) async => launched.add(uri),
+              ),
+            ),
+          ),
+        );
 
     /// Taps every link in the text that holds [label], the way a click on it
     /// would: through the recogniser, which is all a link has.
@@ -1042,6 +1049,44 @@ void main() {
 
       walk(rich.text);
     }
+
+    testWidgets('a link no note held is its words and address, and opens '
+        'nothing', (tester) async {
+      await show(
+        tester,
+        'Open [your itinerary](https://evil.example/c?d=flights+on+Friday) '
+        'or [mail it](mailto:x@evil.example?body=door+code).',
+        sources: 'Lisbon trip\nflights on Friday\nhttps://good.example/a',
+      );
+
+      tapLinksIn(tester, 'your itinerary');
+      expect(launched, isEmpty);
+      expect(
+        find.textContaining(
+          'your itinerary (https://evil.example/c?d=flights+on+Friday)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'mail it (mailto:x@evil.example?body=door+code)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a link a note held opens when tapped', (tester) async {
+      await show(
+        tester,
+        'Check in at [the airline](https://good.example/a).',
+        sources: 'Lisbon trip\ncheck in: https://good.example/a',
+      );
+
+      tapLinksIn(tester, 'the airline');
+      expect(launched, [Uri.parse('https://good.example/a')]);
+    });
 
     testWidgets('an https link opens only when tapped', (tester) async {
       await show(tester, 'See [the docs](https://example.com/a).');
