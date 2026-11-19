@@ -75,36 +75,47 @@ class SettingsLabel extends StatelessWidget {
     final detail = this.detail;
     final caption = this.caption;
     if (AppPlatform.hasPointer) {
-      final heading = Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Text(
-            text,
-            style: TextStyle(
-              fontFamily: 'Shantell Sans',
-              fontSize: SettingsMetrics.sectionLabelSize,
-              fontWeight: FontWeight.w500,
-              height: 18 / 14,
-              color: palette.textSubheading,
-            ),
-          ),
-          if (detail != null) ...[
-            const SizedBox(width: 8),
-            Expanded(
+      // The heading yields to the line beside it when the two cannot share
+      // the width; at every width they can, it keeps its natural size.
+      final heading = LayoutBuilder(
+        builder: (context, box) => Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: math.max(0, box.maxWidth - (detail == null ? 0 : 96)),
+              ),
               child: Text(
-                detail,
+                text,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
-                  height: 16 / 12,
-                  color: palette.textTertiary,
+                  fontFamily: 'Shantell Sans',
+                  fontSize: SettingsMetrics.sectionLabelSize,
+                  fontWeight: FontWeight.w500,
+                  height: 18 / 14,
+                  color: palette.textSubheading,
                 ),
               ),
             ),
+            if (detail != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 16 / 12,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       );
       return Padding(
         padding: const EdgeInsets.only(left: 2, bottom: 8),
@@ -301,9 +312,14 @@ class SettingsRowCopy extends StatelessWidget {
             ],
             if (tag != null) ...[
               const SizedBox(width: 7),
-              Text(
-                tag,
-                style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              Flexible(
+                child: Text(
+                  tag,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: TextStyle(fontSize: 11, color: palette.textTertiary),
+                ),
               ),
             ],
           ],

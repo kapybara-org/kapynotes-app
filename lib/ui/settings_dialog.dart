@@ -2547,7 +2547,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     // but a margin of itself.
     final width = math.min(_dialogWidth, media.width - 48);
     final height = math.min(_dialogHeight, media.height - 48);
-    final paned = AppPlatform.isWindows || width >= _railBreakpoint;
+    // The rail needs the room a wide dialog has; a Windows window resized
+    // narrow stacks its sections like any other.
+    final paned = width >= _railBreakpoint;
     const corners = BorderRadius.all(Radius.circular(AppRadii.dialog));
 
     return Dialog(
@@ -3040,27 +3042,34 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   Widget _shortcutsFooter() {
     final changed = _changedShortcuts;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            changed == 0
-                ? 'Every shortcut is as it came'
-                : '${_count(changed, 'shortcut')} changed',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: context.palette.textDescription,
+    return LayoutBuilder(
+      builder: (context, box) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              changed == 0
+                  ? 'Every shortcut is as it came'
+                  : '${_count(changed, 'shortcut')} changed',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: context.palette.textDescription,
+              ),
             ),
           ),
-        ),
-        SettingsRowButton(
-          key: const ValueKey('restore-shortcut-defaults'),
-          label: 'Restore all shortcuts…',
-          onPressed: changed == 0
-              ? null
-              : () => unawaited(_restoreShortcutDefaults()),
-        ),
-      ],
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: math.max(0, box.maxWidth - 12),
+            ),
+            child: SettingsRowButton(
+              key: const ValueKey('restore-shortcut-defaults'),
+              label: 'Restore all shortcuts…',
+              onPressed: changed == 0
+                  ? null
+                  : () => unawaited(_restoreShortcutDefaults()),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3167,87 +3176,101 @@ class _AppearancePreview extends StatelessWidget {
         topInset: 18,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Trip budget',
-                      style: body.copyWith(
-                        fontFamily: heading.fontFamily,
-                        fontFamilyFallback: heading.fontFamilyFallback,
-                        fontVariations: heading.fontVariations,
-                        fontSize: 20 * scale,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Flights are booked. The hotel is still open.',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: body,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'saved = 12345678',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: body,
-                          ),
+          child: LayoutBuilder(
+            builder: (context, box) => Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Trip budget',
+                        style: body.copyWith(
+                          fontFamily: heading.fontFamily,
+                          fontFamilyFallback: heading.fontFamilyFallback,
+                          fontVariations: heading.fontVariations,
+                          fontSize: 20 * scale,
                         ),
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: palette.tonalBackground,
-                            borderRadius: BorderRadius.circular(
-                              AppRadii.compact,
-                            ),
-                          ),
-                          child: Text(
-                            ResultFormatter.sample(prefs.digitGrouping),
-                            style: TextStyle(
-                              fontFamily: AppPlatform.monoFontFallback.first,
-                              fontFamilyFallback: AppPlatform.monoFontFallback,
-                              fontSize: 12.5,
-                              color: palette.tonalForeground,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // A phone is too narrow to label the preview beside the note.
-              if (AppPlatform.hasPointer) ...[
-                const SizedBox(width: 24),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('Preview', style: caption),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Changes as you choose',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: palette.textDescription,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text(
+                        'Flights are booked. The hotel is still open.',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: body,
+                      ),
+                      const SizedBox(height: 4),
+                      LayoutBuilder(
+                        builder: (context, line) => Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'saved = 12345678',
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: body,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: math.max(0, line.maxWidth - 10),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: palette.tonalBackground,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.compact,
+                                  ),
+                                ),
+                                child: Text(
+                                  ResultFormatter.sample(prefs.digitGrouping),
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily:
+                                        AppPlatform.monoFontFallback.first,
+                                    fontFamilyFallback:
+                                        AppPlatform.monoFontFallback,
+                                    fontSize: 12.5,
+                                    color: palette.tonalForeground,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                // A phone is too narrow to label the preview beside the note.
+                if (AppPlatform.hasPointer && box.maxWidth >= 360) ...[
+                  const SizedBox(width: 24),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Preview', style: caption),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Changes as you choose',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textDescription,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -3296,7 +3319,12 @@ class _TransparencySlider extends StatelessWidget {
         Text('Off', style: end),
         const SizedBox(width: 4),
         if (AppPlatform.hasPointer)
-          SizedBox(width: 160, child: slider)
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: slider,
+            ),
+          )
         else
           Expanded(child: slider),
         const SizedBox(width: 4),
@@ -3503,21 +3531,24 @@ class _SearchHints extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    Widget hint(String keys, String what) => Padding(
-      padding: const EdgeInsets.only(right: 18),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Keycap(keys),
-          const SizedBox(width: 8),
-          Text(
+    Widget hint(String keys, String what) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Keycap(keys),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
             what,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12.5, color: palette.textDescription),
           ),
-        ],
-      ),
+        ),
+      ],
     );
-    return Row(
+    return Wrap(
+      spacing: 18,
+      runSpacing: 6,
       children: [
         hint('↵', 'Go to the setting'),
         hint('↑↓', 'Move'),
@@ -3541,7 +3572,6 @@ class _Keycap extends StatelessWidget {
       height: recording ? 26 : 24,
       constraints: const BoxConstraints(minWidth: 28),
       padding: EdgeInsets.symmetric(horizontal: recording ? 9 : 8),
-      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: recording ? null : palette.surfaceBackground,
         borderRadius: BorderRadius.circular(AppRadii.compact),
@@ -3552,14 +3582,20 @@ class _Keycap extends StatelessWidget {
           width: recording ? 1.5 : 1,
         ),
       ),
-      child: Text(
-        keys,
-        style: TextStyle(
-          fontFamily: AppPlatform.monoFontFallback.first,
-          fontFamilyFallback: AppPlatform.monoFontFallback,
-          fontSize: 12,
-          height: 1.2,
-          color: keys.isEmpty ? palette.textTertiary : palette.textPrimary,
+      child: Center(
+        widthFactor: 1,
+        child: Text(
+          keys,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: AppPlatform.monoFontFallback.first,
+            fontFamilyFallback: AppPlatform.monoFontFallback,
+            fontSize: 12,
+            height: 1.2,
+            color: keys.isEmpty ? palette.textTertiary : palette.textPrimary,
+          ),
         ),
       ),
     );
@@ -3735,20 +3771,30 @@ class _ShortcutRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: SettingsRowCopy(title: label, changed: changed),
-              ),
-              if (changed && !recording) ...[
-                SettingsResetButton(onPressed: onReset),
-                const SizedBox(width: 4),
+          LayoutBuilder(
+            builder: (context, box) => Row(
+              children: [
+                Expanded(
+                  child: SettingsRowCopy(title: label, changed: changed),
+                ),
+                if (changed && !recording) ...[
+                  SettingsResetButton(onPressed: onReset),
+                  const SizedBox(width: 4),
+                ],
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.max(0, box.maxWidth - 40),
+                  ),
+                  child: recording
+                      ? Focus(
+                          focusNode: focusNode,
+                          onKeyEvent: onKey,
+                          child: keys,
+                        )
+                      : keys,
+                ),
               ],
-              if (recording)
-                Focus(focusNode: focusNode, onKeyEvent: onKey, child: keys)
-              else
-                keys,
-            ],
+            ),
           ),
           if (notice case final notice? when !recording) ...[
             const SizedBox(height: 4),
