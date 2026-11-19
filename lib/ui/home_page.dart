@@ -3646,9 +3646,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: SafeArea(
               bottom: false,
               child: tasks != null
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: _buildTasksPage(tasks, listVisible: true),
+                  ? TasksScreen(
+                      key: _tasksPage,
+                      phone: true,
+                      controller: tasks,
+                      filter: _taskFilter,
+                      addFocus: _taskAddFocus,
+                      labelOf: _taskNoteLabel,
+                      onOpenNote: _openTaskNote,
                     )
                   : _phoneNotes(),
             ),

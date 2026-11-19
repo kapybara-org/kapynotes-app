@@ -1215,6 +1215,35 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
+    testWidgets('phone tasks, ${brightness.name}', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(393, 852),
+        brightness: brightness,
+        platform: TargetPlatform.iOS,
+        withTasks: true,
+      );
+      goldenNotes.create(
+        body: 'Lisbon trip\n☐ Sintra train tickets\n☐ Pack adapters',
+      );
+      goldenNotes.create(body: 'Home budget\n☐ Pay the electricity bill');
+      goldenNotes.create(body: 'Groceries\n☐ Buy coffee beans');
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('bar-tasks')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/phone_tasks_${brightness.name}.png'),
+      );
+    });
+  }
+
+  for (final brightness in Brightness.values) {
     testWidgets('phone notes home, ${brightness.name}', (tester) async {
       await pumpForGolden(
         tester,
