@@ -897,7 +897,7 @@ void main() {
         bob.notes.moveToSpace(note.id, spaceId: null, contentKey: null);
         await until(() => refused() > 0, reason: 'the move was never refused');
         await settle(server);
-        expect(bob.sync.status, SyncStatus.failed);
+        await until(() => bob.sync.status == SyncStatus.failed);
         expect(bob.sync.lastError, contains('owner-only'));
 
         // Typing in another note syncs it and leaves the refused move alone.
@@ -1320,7 +1320,7 @@ void main() {
         alice.notes.updateBody(note.id, 'Race, edited by Alice');
         await settle(server);
         expect(server.refusals, contains('stale-key-generation'));
-        expect(alice.sync.status, SyncStatus.idle);
+        await until(() => alice.sync.status == SyncStatus.idle);
         expect(alice.sync.pendingCount, 0);
         expect(server.spaces[space.id]!.noteKeys[note.id]!.keyGeneration, 2);
 
