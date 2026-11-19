@@ -1636,6 +1636,23 @@ void main() {
         expect(pad.sync.status, SyncStatus.idle);
       });
 
+      test('a join time the server gives in microseconds still matches the '
+          'one the delete kept', () async {
+        server.now = () => now.add(const Duration(microseconds: 250));
+        final (note, spaceId) = await sharedWithBoth();
+        expect(
+          bob.keyring.byId(spaceId)!.member(bob.userId)!.joinedAt.microsecond,
+          250,
+        );
+        await mac.syncAndSettle();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+        expect(server.spaces[spaceId]!.hidden[bob.userId], {note.id});
+        expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+        await mac.syncAndSettle();
+        expect(mac.notes.byId(note.id), isNull);
+      });
+
       test('a device clock behind the server does not make a fresh delete '
           'look like one from an earlier membership', () async {
         server.now = () => now.add(const Duration(hours: 6));

@@ -2688,7 +2688,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (space == null) continue;
       final joined = space.member(_keyring.userId)?.joinedAt;
       final then = dismissal.joinedAt;
-      if (then != null && joined != null && !joined.isAtSameMomentAs(then)) {
+      // Whole milliseconds, as the dismissal keeps them, whatever precision
+      // the server answers in.
+      if (then != null &&
+          joined != null &&
+          joined.millisecondsSinceEpoch != then.millisecondsSinceEpoch) {
         final editedAt = _notes.undismissStale(dismissal.noteId, space.id);
         _bringBack([(id: dismissal.noteId, editedAt: editedAt)]);
         continue;
