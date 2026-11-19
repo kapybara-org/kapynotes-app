@@ -375,6 +375,26 @@ jobs:
           name: linux-x86_64-unsigned
           path: dist
 
+      # The runner's own apt (the AppImage entry's baseline and FUSE, and
+      # ImageMagick for the screenshots) reads /etc/apt/apt-mirrors.txt, which
+      # lists only the EC2 regional mirror, archive.ubuntu.com and
+      # security.ubuntu.com, so an outage of Ubuntu's hosts fails every
+      # job. It uses azure.archive.ubuntu.com instead, like the Ubuntu
+      # containers below, with the same retries.
+      - name: Point the runner's apt at azure.archive.ubuntu.com
+        run: |
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'http://azure.archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$f" ]; then
+              sudo sed -i -E 's#https?://([a-z0-9-]+\.)*(archive|security)\.ubuntu\.com#http://azure.archive.ubuntu.com#' "$f"
+            fi
+          done
+          ! grep -rhoE '([a-z0-9-]+\.)*(archive|security)\.ubuntu\.com' /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null |
+            grep -vx 'azure\.archive\.ubuntu\.com' | grep -q .
+
       # Every container job used to download its desktop baseline (85 to 95
       # MB on the Ubuntu images) from a distro mirror into a fresh container,
       # and a slow mirror alone pushed the job past its limit. The baseline is
