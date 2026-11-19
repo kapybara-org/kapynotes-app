@@ -158,6 +158,34 @@ void main() {
       expect(folders.move(pair.id, parentId: chain[7].id), isNull);
       expect(folders.tree.byId(pair.id)!.depth, 9);
     });
+
+    test(
+      'folders two devices took past ten levels can still move up or across',
+      () {
+        final ids = [for (var i = 0; i < 12; i++) noteIdFor(100 + i)];
+        for (var i = 0; i < ids.length; i++) {
+          folders.applyRemoteFolder(
+            remoteFolder(ids[i], 'F$i', parent: i == 0 ? null : ids[i - 1]),
+            1,
+          );
+        }
+        final other = folders.create('Other')!;
+        final deeper = folders.create('Deeper', parentId: other.id)!;
+        expect(folders.tree.byId(ids.last)!.depth, 12);
+        expect(folders.checkMove(ids[1]), isNull, reason: 'up to the top');
+        expect(folders.checkMove(ids[1], parentId: other.id), isNull);
+        expect(
+          folders.checkMove(ids[1], parentId: deeper.id),
+          FolderRefusal.tooDeep,
+        );
+        expect(
+          folders.checkMove(other.id, parentId: ids[9]),
+          FolderRefusal.tooDeep,
+        );
+        expect(folders.move(ids[2], parentId: other.id), isNull);
+        expect(folders.tree.byId(ids.last)!.depth, 11);
+      },
+    );
   });
 
   group('notes', () {
@@ -270,11 +298,57 @@ void main() {
         expect(folders.tree.folderOf(noteB), acme.id);
       },
     );
+
+    test(
+      'a folder deleted over 30 days ago goes, and what read past it into a live folder is written there',
+      () {
+        final work = folders.create('Work')!;
+        final trip = folders.create('Trip')!;
+        final old = folders.create('Old', parentId: work.id)!;
+        final inner = folders.create('Inner', parentId: old.id)!;
+        final top = folders.create('Top')!;
+        folders.file([noteA], old.id);
+        folders.file([noteB], top.id);
+        folders.delete(old.id);
+        folders.delete(top.id);
+        acknowledgeAll(folders);
+        final room = folders.room;
+
+        clock = clock.add(const Duration(days: 29));
+        folders.delete(folders.create('Recent')!.id);
+        acknowledgeAll(folders);
+        folders.prune();
+        expect(folders.owed, isEmpty, reason: 'none 30 days gone yet');
+
+        clock = clock.add(const Duration(days: 2));
+        folders.prune();
+        expect(shape(folders.tree), 'Trip\nWork\n  Inner');
+        expect(folders.tree.folderOf(noteA), work.id);
+        expect(folders.tree.folderOf(noteB), isNull);
+        expect(
+          {for (final r in folders.owed) r.key: r.payload == null},
+          {old.id: true, top.id: true, inner.id: false, noteA: false},
+        );
+
+        final since = clock.millisecondsSinceEpoch - 1000;
+        folders.applyRemoteNote(
+          NoteFolder(noteId: noteA, folder: Stamped(trip.id, since)),
+          since,
+        );
+        expect(
+          folders.tree.folderOf(noteA),
+          trip.id,
+          reason: 'a filing made since the folder went still wins',
+        );
+        acknowledgeAll(folders);
+        expect(folders.room, room + 1);
+      },
+    );
   });
 
   group('what other devices wrote', () {
     test(
-      'two folders moved into each other: the earlier move goes to the top',
+      'two folders moved into each other: the earlier move reads at the top, and is written there once the loop is opened',
       () {
         folders.applyRemoteFolder(
           remoteFolder(idA, 'Work', parent: idB, parentAt: 5),
@@ -285,22 +359,20 @@ void main() {
           11,
         );
         expect(shape(folders.tree), 'Work\n  Clients');
-        expect(folders.owed, isEmpty, reason: 'read so until sync settles it');
-        folders.settle();
-        expect(folders.owed.single.key, idA);
-        expect(folders.owed.single.payload!['parent'], {
-          'v': null,
-          'at': 6,
-        }, reason: 'one past the move it overrules, as every device writes it');
-        expect(shape(folders.tree), 'Work\n  Clients');
-        folders.settle();
-        expect(folders.owed, hasLength(1), reason: 'once');
+        expect(folders.owed, isEmpty, reason: 'only read so');
         expect(folders.move(idB), isNull);
         expect(
           shape(folders.tree),
           'Clients\nWork',
           reason: 'the loop\'s earlier move does not come back',
         );
+        final owed = {for (final r in folders.owed) r.key: r.payload!};
+        expect(
+          owed[idA]!['parent'],
+          {'v': null, 'at': 6},
+          reason: 'one past the move it overrules, so a later move still wins',
+        );
+        expect((owed[idB]!['parent'] as Map)['v'], isNull);
 
         final again = FolderStore(_MemoryStore());
         again.applyRemoteFolder(

@@ -405,6 +405,61 @@ void main() {
         c.dispose();
       },
     );
+
+    test(
+      'a loop read while one device\'s moves are half pushed is never written, so the rest puts every folder where that device moved it',
+      () async {
+        final (a, b) = await pair();
+        final x = a.folders.create('X')!;
+        final y = a.folders.create('Y')!;
+        final z = a.folders.create('Z')!;
+        a.folders.move(z.id, parentId: x.id);
+        a.folders.move(x.id, parentId: y.id);
+        await passes([a, b]);
+        expect(shape(b), 'Y\n  X\n    Z');
+
+        a.folders.move(x.id);
+        a.folders.move(y.id, parentId: z.id);
+        server.withheld = (id) => id == x.id;
+        await passes([a, b]);
+        expect(
+          shape(b),
+          'Z\n  Y\n    X',
+          reason: 'the loop reads broken at its earliest move',
+        );
+
+        server.withheld = null;
+        await passes([a, b, a, b]);
+        expect(shape(a), 'X\n  Z\n    Y');
+        expectSettled(a, b);
+        a.dispose();
+        b.dispose();
+      },
+    );
+
+    test(
+      'a folder deleted over 30 days ago leaves the server, and what was in it stays where it read',
+      () async {
+        final (a, b) = await pair();
+        final note = a.notes.create(body: 'Plan');
+        final work = a.folders.create('Work')!;
+        final old = a.folders.create('Old', parentId: work.id)!;
+        a.folders.file([note.id], old.id);
+        a.folders.delete(old.id);
+        await passes([a, b]);
+        expect(shape(b, [note.id]), 'Work\nPlan: Work');
+
+        for (final d in [a, b]) {
+          d.clock = d.clock.add(const Duration(days: 31));
+        }
+        await passes([a, b, a, b]);
+        expect(stored()[old.id]!.record.deletedAt, isNotNull);
+        expect(shape(b, [note.id]), 'Work\nPlan: Work');
+        expectSettled(a, b, [note.id]);
+        a.dispose();
+        b.dispose();
+      },
+    );
   });
 
   group('builds from before folders', () {

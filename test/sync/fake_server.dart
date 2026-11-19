@@ -455,6 +455,10 @@ class FakeServer {
   /// Set to refuse task pushes as an account at the row cap is refused.
   bool tasksFull = false;
 
+  /// Set to keep the task records it matches out of every push, as records
+  /// still on their way: neither taken nor returned as a conflict.
+  bool Function(String id)? withheld;
+
   /// Each account's task records by id, with the seq each was last written
   /// at. Mirrors `server/src/tasks.ts`: last writer wins on `updatedAt`,
   /// the pull pages by seq.
@@ -476,6 +480,7 @@ class FakeServer {
     final applied = <String>[];
     final conflicts = <WireTaskRecord>[];
     for (final record in records) {
+      if (withheld?.call(record.id) ?? false) continue;
       final stored = mine[record.id];
       if (stored != null &&
           !stored.record.updatedAt.isBefore(record.updatedAt)) {

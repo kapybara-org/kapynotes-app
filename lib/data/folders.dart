@@ -257,9 +257,10 @@ class FolderTree {
   ///
   /// A parent this device does not hold reads as the top. Every loop two
   /// devices' moves made is broken where its earliest move was made, the
-  /// lower id on a tie, so that folder reads as being at the top until
-  /// [FolderStore.settle] writes it there. Then anything whose folder is
-  /// deleted reads as being in the nearest live folder above it.
+  /// lower id on a tie, so that folder reads as being at the top. Nothing
+  /// writes it there but a move of another folder in the loop (see
+  /// [FolderStore.move]). Then anything whose folder is deleted reads as
+  /// being in the nearest live folder above it.
   factory FolderTree._read(
     Map<String, FolderRecord> records,
     Map<String, String> placed,
@@ -451,6 +452,10 @@ class FolderStore extends ChangeNotifier {
 
   static const String _key = 'folders.v1';
 
+  /// How long a deleted folder keeps its record, so Undo can bring it back
+  /// with what was in it. Then [prune] lets it go.
+  static const Duration deletedFolderKept = Duration(days: 30);
+
   final _folders = RecordBook<FolderRecord>(
     keepDeleted: false,
     merge: (mine, theirs) => mine.merge(theirs),
@@ -493,6 +498,7 @@ class FolderStore extends ChangeNotifier {
   FolderTree? _tree;
 
   /// How many more folders or newly filed notes fit in [folderRecordsMax].
+  /// A deleted folder counts until [prune] lets it go.
   int get room {
     final live =
         _folders.slots.values.where((slot) => !slot.deleted).length +
@@ -585,7 +591,11 @@ class FolderStore extends ChangeNotifier {
       return FolderRefusal.intoItself;
     }
     if (parentId == folder.parentId) return null;
-    return _placeRefusal(parentId, tree._levels(folderId)) ??
+    return _placeRefusal(
+          parentId,
+          tree._levels(folderId),
+          from: folder.depth - 1,
+        ) ??
         _nameRefusal(folder.name, parentId, folderId);
   }
 
@@ -611,11 +621,16 @@ class FolderStore extends ChangeNotifier {
     return null;
   }
 
-  /// Whether [levels] of folders fit in [parentId].
-  FolderRefusal? _placeRefusal(String? parentId, int levels) {
+  /// Whether [levels] of folders fit in [parentId]. Moving them from a place
+  /// [from] levels below My notes to one no deeper always fits: two devices'
+  /// moves can leave folders deeper than [folderDepthMax], and they must
+  /// still be able to come back up.
+  FolderRefusal? _placeRefusal(String? parentId, int levels, {int from = -1}) {
     final above = parentId == null ? 0 : tree.byId(parentId)?.depth;
     if (above == null) return FolderRefusal.gone;
-    return above + levels > folderDepthMax ? FolderRefusal.tooDeep : null;
+    return above > from && above + levels > folderDepthMax
+        ? FolderRefusal.tooDeep
+        : null;
   }
 
   // -------------------------------------------------------------------------
@@ -651,13 +666,27 @@ class FolderStore extends ChangeNotifier {
   }
 
   /// Moves a folder, with everything in it, into [parentId] (null: the top).
+  /// If it is in a loop two devices made, the folder that loop is broken at
+  /// is written at the top as well, where it reads, stamped just past the
+  /// move the break overrules: so opening the loop doesn't take that folder
+  /// back in, and any later move of it still wins.
   FolderRefusal? move(String folderId, {String? parentId}) {
     final refusal = checkMove(folderId, parentId: parentId);
     if (refusal != null) return refusal;
     final folder = _folders.live(folderId)!;
-    if (folder.parent.v != parentId) {
-      _write(folder.copyWith(parent: _over(folder.parent, parentId, _stamp())));
+    if (folder.parent.v == parentId) return null;
+    final now = _stamp();
+    for (final cut in tree._cut) {
+      var at = _folders.live(cut)!.parent.v;
+      while (at != null && at != cut && at != folderId) {
+        at = _folders.live(at)?.parent.v;
+      }
+      if (cut == folderId || at != folderId) continue;
+      final looped = _folders.live(cut)!;
+      final top = Stamped<String?>(null, _past(looped.parent.at));
+      _folders.write(cut, looped.copyWith(parent: top), now);
     }
+    _write(folder.copyWith(parent: _over(folder.parent, parentId, now)));
     return null;
   }
 
@@ -719,20 +748,55 @@ class FolderStore extends ChangeNotifier {
     return null;
   }
 
-  /// Writes each folder a loop was broken at as being at the top, which is
-  /// where every device already reads it, so a later move of another folder
-  /// in the loop can't bring the loop's earlier move back. It is stamped just
-  /// after the move it overrules, so every device that reads the loop writes
-  /// the same, and any later move of the folder still wins. For sync to call
-  /// once what the server had is in.
-  void settle() {
-    final cut = tree._cut;
-    if (cut.isEmpty) return;
+  /// Lets go of the records of folders deleted more than [deletedFolderKept]
+  /// ago, so they stop counting against [folderRecordsMax]. First, what
+  /// still reads past one into a live folder is written there, stamped just
+  /// past what it replaces, so any real change made since still wins; what
+  /// reads at the top goes on reading there unwritten. For sync to call once
+  /// what the server had is in.
+  void prune() {
+    final cutoff = _stamp() - deletedFolderKept.inMilliseconds;
+    final gone = {
+      for (final MapEntry(:key, value: slot) in _folders.slots.entries)
+        if (!slot.deleted &&
+            slot.value.deleted.v &&
+            slot.value.deleted.at < cutoff)
+          key,
+    };
+    if (gone.isEmpty) return;
+    final nearest = tree._nearest;
     final now = _stamp();
-    for (final id in cut) {
-      final folder = _folders.live(id)!;
-      final top = Stamped<String?>(null, _past(folder.parent.at));
-      _folders.write(id, folder.copyWith(parent: top), now);
+    for (final MapEntry(:key, value: slot) in _folders.slots.entries.toList()) {
+      final parent = slot.value.parent;
+      final into = nearest[parent.v];
+      if (slot.deleted ||
+          gone.contains(key) ||
+          !gone.contains(parent.v) ||
+          into == null) {
+        continue;
+      }
+      _folders.write(
+        key,
+        slot.value.copyWith(parent: Stamped(into, _past(parent.at))),
+        now,
+      );
+    }
+    for (final MapEntry(:key, value: slot) in _notes.slots.entries.toList()) {
+      final folder = slot.value.folder;
+      final into = nearest[folder.v];
+      if (slot.deleted || !gone.contains(folder.v) || into == null) continue;
+      _notes.write(
+        key,
+        NoteFolder(
+          noteId: key,
+          folder: Stamped(into, _past(folder.at)),
+          extra: slot.value.extra,
+        ),
+        now,
+      );
+    }
+    for (final id in gone) {
+      _folders.delete(id, now);
     }
     _changed();
   }
