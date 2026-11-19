@@ -17,6 +17,7 @@ class MainFlutterWindow: NSWindow {
   private var updaterChannel: FlutterMethodChannel?
   private var toolRunnerChannel: FlutterMethodChannel?
   private var menuBarPanel: MenuBarPanel?
+  private var menuBarIcon: MenuBarIcon?
 
   override func awakeFromNib() {
     let flutterViewController = KapyFlutterViewController()
@@ -88,6 +89,7 @@ class MainFlutterWindow: NSWindow {
     )
 
     menuBarPanel = MenuBarPanel(engine: flutterViewController.engine)
+    menuBarIcon = MenuBarIcon(messenger: flutterViewController.engine.binaryMessenger)
 
     super.awakeFromNib()
   }
