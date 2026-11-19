@@ -649,9 +649,10 @@ class CodexCli extends _Cli {
 
   Future<bool>? _vetted;
 
-  /// Whether this Codex is one the app has read: not newer than
-  /// [testedUpTo] (and none at all while that is null), and with every feature it has on under [lockedDown] one
-  /// that was read. Asked once per [check], from Codex itself, and a Codex
+  /// Whether this Codex is one the app has read: not newer than the pin
+  /// ([testedUpTo] unless a test passes another, and none at all with a null
+  /// one), and with every feature it has on under [lockedDown] one that was
+  /// read. Asked once per [check], from Codex itself, and a Codex
   /// that cannot say is not vetted.
   ///
   /// `features list` reads `config.toml` from Codex's home and cannot be told
