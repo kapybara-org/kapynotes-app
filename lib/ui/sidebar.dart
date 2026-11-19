@@ -241,7 +241,8 @@ class Sidebar extends StatelessWidget {
   /// Empties the archive.
   final VoidCallback? onDeleteAll;
 
-  /// The notes picked to act on together. Null where none can be.
+  /// The notes picked to act on together. Null where none can be. While
+  /// any are picked, Back lets go of them rather than leaving the list.
   final NotePicks? picks;
 
   /// Does an action to the picked notes on screen it applies to, given in
@@ -311,7 +312,7 @@ class Sidebar extends StatelessWidget {
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
     // [CalcPalette.sidebarColor].
-    return ColoredBox(
+    final list = ColoredBox(
       color: palette.sidebarColor,
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
@@ -392,6 +393,13 @@ class Sidebar extends StatelessWidget {
           ],
         ),
       ),
+    );
+    return PopScope(
+      canPop: !_picking,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) picks?.clear();
+      },
+      child: list,
     );
   }
 }
@@ -2781,7 +2789,8 @@ class NoteRow extends StatefulWidget {
   final bool checked;
 
   /// Picks the note or lets it go while notes are being picked: what any
-  /// click on it does then, with ⌘ or Ctrl or without.
+  /// click on it does then, with ⌘ or Ctrl or without. On a phone its menu's
+  /// Select starts picking with it.
   final VoidCallback? onToggleChecked;
 
   /// A click with ⌘ (Ctrl off a Mac) while nothing is picked.
@@ -2863,6 +2872,12 @@ class _NoteRowState extends State<NoteRow> {
         ? widget.archiveShortcut
         : null;
     return [
+      if (AppPlatform.isMobile && widget.onToggleChecked != null)
+        const KapyMenuAction(
+          value: 'select',
+          label: 'Select',
+          icon: KapyIcons.checklistRounded,
+        ),
       if (_canOpenToSide)
         KapyMenuAction(
           value: 'open-side',
@@ -3052,6 +3067,7 @@ class _NoteRowState extends State<NoteRow> {
       if (choice != null) widget.onPickedAction?.call(choice);
       return;
     }
+    if (choice == 'select') widget.onToggleChecked?.call();
     if (choice == 'archive') widget.onArchive?.call();
     if (choice == 'restore') widget.onRestore?.call();
     if (choice == 'hide') widget.onHide?.call();

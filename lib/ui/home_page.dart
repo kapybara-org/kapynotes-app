@@ -3865,7 +3865,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _drawerOpen = isOpen;
             if (isOpen) _drawerContentReady = true;
           });
-          if (!isOpen) _focusSelectedEditorAtEnd();
+          if (!isOpen) {
+            _picks.clear();
+            _focusSelectedEditorAtEnd();
+          }
         },
         drawer: Drawer(
           width: drawerWidth,
