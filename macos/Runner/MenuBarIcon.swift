@@ -28,9 +28,7 @@ final class MenuBarIcon: NSObject {
   /// Points the button of each status item this app shows at [pressed], and
   /// answers whether there was one.
   private func takePresses() -> Bool {
-    let buttons = NSApp.windows
-      .filter { $0.className == "NSStatusBarWindow" }
-      .flatMap { Self.buttons(in: $0.contentView) }
+    let buttons = NSApp.windows.flatMap { Self.buttons(in: $0.contentView) }
     for button in buttons {
       button.target = self
       button.action = #selector(pressed)
