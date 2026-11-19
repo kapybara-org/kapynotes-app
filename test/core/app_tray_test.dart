@@ -107,6 +107,37 @@ void main() {
     expect(calls, isEmpty, reason: 'a left click is not a menu on Windows');
   });
 
+  test('a plain click on Linux opens the app, as on Windows', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    var opened = 0;
+
+    AppTray(
+      onOpen: () => opened++,
+      onNewNote: () {},
+      onNewTask: () {},
+      onSettings: () {},
+      onQuit: () {},
+      onClick: () async => fail('Linux has no menu bar panel'),
+    ).onTrayIconMouseDown();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(opened, 1);
+    expect(calls, isEmpty);
+  });
+
+  test('Linux has the Windows menu: open, a new note and quit', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+
+    await tray().setVisible(true);
+
+    final menu = calls.singleWhere((call) => call.method == 'setContextMenu');
+    final items = ((menu.arguments as Map)['menu'] as Map)['items'] as List;
+    expect(
+      [for (final item in items) (item as Map)['label']],
+      ['Open Kapy Notes', 'New Note', '', 'Quit Kapy Notes'],
+    );
+  });
+
   test('a click on the Mac opens the menu bar panel, not the menu', () async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     var clicks = 0;
