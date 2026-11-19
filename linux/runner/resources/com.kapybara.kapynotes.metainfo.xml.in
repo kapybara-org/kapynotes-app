@@ -55,7 +55,9 @@
     <content_attribute id="social-chat">mild</content_attribute>
   </content_rating>
 
+  <!-- The release this build is, from pubspec.yaml's version, written in by
+       linux/CMakeLists.txt at build time. -->
   <releases>
-    <release version="1.33.0" date="2026-11-18"/>
+    <release version="@RELEASE_VERSION@" date="@RELEASE_DATE@"/>
   </releases>
 </component>
