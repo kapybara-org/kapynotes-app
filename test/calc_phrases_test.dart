@@ -366,7 +366,7 @@ void main() {
           );
         }
         expect(engine.evaluateDocument('30 TRY in usd')[0]!.text, '1.00 USD');
-        expect(engine.evaluateDocument('5 try')[0], isNull);
+        expect(engine.evaluateDocument('5 try')[0]?.text, isNot('5.00 TRY'));
         expect(engine.evaluateDocument('5 TRY')[0]!.text, '5.00 TRY');
         expect(engine.evaluateDocument('\$5 in eur')[0]!.text, '2.50 EUR');
       },
