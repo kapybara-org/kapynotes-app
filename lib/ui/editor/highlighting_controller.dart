@@ -157,20 +157,32 @@ class HighlightingController extends TextEditingController {
   }
 
   int? _holdFor(TextEditingValue old, TextEditingValue now) {
-    final caret = now.selection;
-    if (!caret.isValid || !caret.isCollapsed) return null;
-    final typed = old.text != now.text;
-    if (_held == null && !typed) return null;
-    final at = caret.baseOffset;
-    final lineStart = at == 0 ? 0 : now.text.lastIndexOf('\n', at - 1) + 1;
-    final newline = now.text.indexOf('\n', at);
-    final line = now.text.substring(
-      lineStart,
-      newline < 0 ? now.text.length : newline,
-    );
+    final selection = now.selection;
+    if (!selection.isValid) return null;
+    final text = now.text;
+    final typed = old.text != text;
+    final previous = _held;
+    if (previous == null && !typed) return null;
+    int lineOf(int offset) =>
+        offset == 0 ? 0 : text.lastIndexOf('\n', offset - 1) + 1;
+    final lineStart = lineOf(selection.start);
+    // A selection inside the line, to fix a typo, still holds it.
+    if (lineOf(selection.end) != lineStart) return null;
+    final newline = text.indexOf('\n', lineStart);
+    final line = text.substring(lineStart, newline < 0 ? text.length : newline);
     if (!line.contains('|')) return null;
-    if (lineStart == _held) return _held;
-    if (!typed) return null;
+    if (previous != null) {
+      // Carried through an edit before it, such as a collaborator's.
+      final shifted = previous + text.length - old.text.length;
+      final held = text.startsWith(old.text.substring(0, previous))
+          ? previous
+          : shifted >= 0 &&
+                text.substring(shifted) == old.text.substring(previous)
+          ? shifted
+          : null;
+      if (lineStart == held) return held;
+    }
+    if (!typed || !selection.isCollapsed) return null;
     bool inTable(MarkdownAnalysis analysis) => analysis.tables.any(
       (table) => lineStart > table.start && lineStart <= table.end,
     );
