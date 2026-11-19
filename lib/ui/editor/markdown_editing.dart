@@ -631,19 +631,6 @@ int nextMarkdownHeadingLevel(int? current) => switch (current) {
   _ => 0,
 };
 
-/// What the text-style control calls [level] in a markdown note.
-String markdownHeadingLabel(int? level) => switch (level) {
-  null => 'Mixed',
-  0 => 'Text',
-  final heading => 'Heading $heading',
-};
-
-/// The same, as the two characters the footer has room for.
-String markdownHeadingShortLabel(int? level) => switch (level) {
-  null || 0 => 'Aa',
-  final heading => 'H$heading',
-};
-
 /// Makes every selected line a heading at [level], or body text at 0.
 MarkdownEdit applyMarkdownHeading(TextEditingValue value, int level) {
   final text = value.text;

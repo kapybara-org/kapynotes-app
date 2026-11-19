@@ -802,15 +802,6 @@ class MarkdownAnalysis {
     _parts.tables.isEmpty ? _Parts.empty : _parts._tablesOnly(),
   );
 
-  /// The task whose `[` is at [box], if there is one.
-  MarkdownTask? taskAt(int box) {
-    for (final task in tasks) {
-      if (task.box == box) return task;
-      if (task.box > box) break;
-    }
-    return null;
-  }
-
   /// The words of [start, end) with every marker in it hidden, trimmed, and
   /// cut wherever their inline markdown changes: what a table's cell shows
   /// when the table is drawn as a grid rather than as its text.

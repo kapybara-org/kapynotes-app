@@ -181,8 +181,6 @@ class CalcEngine {
   }) : registry = UnitRegistry(ratesPerUsd: ratesPerUsd),
        _now = now ?? DateTime.now;
 
-  bool get hasCurrencyRates => registry.hasCurrencies;
-
   /// Evaluates every line of [body], returning results keyed by line index.
   /// Lines that are prose, blank, or unparseable are simply absent.
   Map<int, LineResult> evaluateDocument(String body) =>

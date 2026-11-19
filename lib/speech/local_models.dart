@@ -179,11 +179,6 @@ class LocalSpeechModel implements DownloadableModel {
   @override
   final List<LocalModelFile> files;
 
-  /// Whether it can do more than one language at all. The card says "25
-  /// languages" rather than "multilingual" where there is room, but the
-  /// yes/no is what a search or a filter would want.
-  bool get isMultilingual => languages.length > 1;
-
   @override
   int get bytes => files.fold(0, (total, file) => total + file.bytes);
 
