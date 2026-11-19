@@ -4916,6 +4916,46 @@ void main() {
       expect(find.text('Archive note'), findsOneWidget);
       expect(find.text('Cmd + Delete'), findsOneWidget);
     });
+
+    // The card view's menu used to cut "Archive note" to "Archive…" beside
+    // its shortcut.
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      testWidgets('names itself in full in the card view, as does every other '
+          'line, on ${platform.name}', (tester) async {
+        await openNote(tester, platform);
+        final card = find.widgetWithText(NoteRow, 'Second');
+        expect(tester.widget<NoteRow>(card).style, NoteRowStyle.card);
+
+        await tester.longPress(card);
+        await tester.pumpAndSettle();
+
+        final lines = find.byType(KapyMenuActionRow);
+        final shortcut = shortcuts
+            .bindingFor(ShortcutAction.deleteNote)!
+            .displayLabel;
+        expect(
+          find.descendant(of: lines, matching: find.text('Archive note')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: lines, matching: find.text(shortcut)),
+          findsOneWidget,
+        );
+        for (final line in tester.renderObjectList<RenderParagraph>(
+          find.descendant(of: lines, matching: find.byType(RichText)),
+        )) {
+          expect(
+            line.didExceedMaxLines,
+            isFalse,
+            reason: '"${line.text.toPlainText()}" is cut short',
+          );
+        }
+      });
+    }
   });
 
   group('the Delete key in the notes list', () {
