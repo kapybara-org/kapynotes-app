@@ -59,6 +59,7 @@ class _Server {
     this.honoursRange = true,
     this.status = 200,
     this.truncateTo,
+    this.failAfterChunks,
     this.onChunk,
   });
 
@@ -68,6 +69,9 @@ class _Server {
 
   /// Stop the body short, as a dropped connection does.
   final int? truncateTo;
+
+  /// Fail the body after this many chunks, as a reset connection does.
+  final int? failAfterChunks;
 
   /// Called after each chunk leaves, which is where a test presses Cancel.
   final void Function()? onChunk;
@@ -112,10 +116,14 @@ class _Server {
 
   Stream<List<int>> _chunked(List<int> payload) async* {
     const size = 64;
+    var chunks = 0;
     for (var at = 0; at < payload.length; at += size) {
       final end = at + size > payload.length ? payload.length : at + size;
       yield payload.sublist(at, end);
       onChunk?.call();
+      if (++chunks == failAfterChunks) {
+        throw http.ClientException('Connection reset by peer');
+      }
     }
   }
 }
@@ -621,6 +629,26 @@ void main() {
       await store.download(model);
 
       expect(store.stateOf(model).status, LocalModelStatus.absent);
+      expect(origin.requests, isEmpty);
+    });
+
+    test('a copy that fails after Cancel was pressed leaves the download '
+        'cancelled, not failed', () async {
+      late LocalModelStore store;
+      final copy = _Server(
+        bodies,
+        onChunk: () => store.cancel(model),
+        failAfterChunks: 1,
+      );
+      final origin = _Server(bodies);
+      store = storeWith(copy, origin);
+
+      await store.download(model);
+
+      final state = store.stateOf(model);
+      expect(state.status, LocalModelStatus.absent);
+      expect(state.error, isNull);
+      expect(state.receivedBytes, 64, reason: 'kept for the next attempt');
       expect(origin.requests, isEmpty);
     });
   });

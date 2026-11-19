@@ -260,7 +260,10 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
     expect(
-      find.descendant(of: toggle, matching: find.text('Ask before deleting notes')),
+      find.descendant(
+        of: toggle,
+        matching: find.text('Ask before deleting notes'),
+      ),
       findsOneWidget,
     );
     expect(
@@ -271,9 +274,11 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester.widget<SettingsSwitch>(
-        find.descendant(of: toggle, matching: find.byType(SettingsSwitch)),
-      ).value,
+      tester
+          .widget<SettingsSwitch>(
+            find.descendant(of: toggle, matching: find.byType(SettingsSwitch)),
+          )
+          .value,
       isFalse,
     );
 
