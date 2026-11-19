@@ -185,6 +185,55 @@ void main() {
     expect(notes.byId(archived.id)?.archivedAt, isNull);
   });
 
+  test('many notes archive, restore, hide, unhide and pin as one change '
+      'each, newest first in the order they were in', () async {
+    var now = DateTime.utc(2026, 9, 4, 8);
+    final store = _MemoryStore();
+    final notes = NotesStore(store, now: () => now);
+    await notes.load();
+    final a = notes.create(body: 'A');
+    final b = notes.create(body: 'B');
+    final c = notes.create(body: 'C');
+    final shared = notes.create(
+      body: 'Shared',
+      spaceId: 'team-1',
+      contentKey: Uint8List(32),
+    );
+    var changes = 0;
+    notes.addListener(() => changes++);
+
+    now = DateTime.utc(2026, 9, 4, 9);
+    notes.archiveAll([a.id, c.id, 'gone']);
+    expect(changes, 1);
+    expect(notes.archivedNotes.map((note) => note.id), [c.id, a.id]);
+    expect(notes.byId(a.id)?.archivedAt, now);
+    expect(notes.notes.map((note) => note.id), [shared.id, b.id]);
+    expect(notes.tombstones, isEmpty);
+
+    notes.restoreAll([a.id, c.id, b.id]);
+    expect(changes, 2);
+    expect(notes.archivedNotes, isEmpty);
+    expect(notes.notes.map((note) => note.id), [c.id, a.id, shared.id, b.id]);
+
+    // The shared one is refused, as one at a time it always was.
+    notes.hideAll([shared.id, b.id, a.id]);
+    expect(changes, 3);
+    expect(notes.hiddenNotes.map((note) => note.id), [a.id, b.id]);
+    notes.unhideAll([a.id, b.id]);
+    expect(notes.hiddenNotes, isEmpty);
+
+    expect(notes.pinAll([a.id, b.id, shared.id], pinned: true), 3);
+    expect(notes.pinAll([a.id, b.id], pinned: true), 0);
+    expect(notes.pinAll([a.id, c.id], pinned: false), 1);
+    expect(notes.isPinned(a.id), isFalse);
+    expect(notes.isPinned(b.id), isTrue);
+
+    final before = changes;
+    notes.archiveAll(const []);
+    notes.unhideAll([a.id]);
+    expect(changes, before, reason: 'nothing to change is no change');
+  });
+
   test('archive state survives a restart', () async {
     final store = _MemoryStore();
     final notes = NotesStore(store, now: () => DateTime.utc(2026, 9, 4));

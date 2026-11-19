@@ -219,8 +219,7 @@ Border? _cardBorder(
     ? null
     : Border.all(color: resting);
 
-/// A tick box: the media menu's, and a note's while the archive is picking
-/// notes.
+/// A tick box: the media menu's, and a note's while notes are being picked.
 class _PickBox extends StatelessWidget {
   const _PickBox({required this.checked});
 
@@ -291,7 +290,7 @@ class NoteCardFace extends StatelessWidget {
   final bool locked;
   final bool shared;
 
-  /// Ticked or not while the archive is picking notes; null otherwise.
+  /// Ticked or not while notes are being picked; null otherwise.
   final bool? picking;
 
   /// What a card with no line of text says instead, by what the note holds.

@@ -214,14 +214,28 @@ class NotesStore extends ChangeNotifier {
   bool? togglePinned(String id) {
     final note = byId(id);
     if (note == null || note.isArchived || note.isHidden) return null;
+    final pinned = !_pinnedNoteIds.contains(id);
+    pinAll([id], pinned: pinned);
+    return pinned;
+  }
 
+  /// Pins or unpins several notes as one change, and says how many changed.
+  /// An archived or hidden note is never pinned.
+  int pinAll(Iterable<String> ids, {required bool pinned}) {
+    final wanted = ids.toSet();
     final updated = Set<String>.of(_pinnedNoteIds);
-    final pinned = updated.add(id);
-    if (!pinned) updated.remove(id);
+    var changed = 0;
+    for (final note in _notes) {
+      if (!wanted.contains(note.id) || note.isArchived || note.isHidden) {
+        continue;
+      }
+      if (pinned ? updated.add(note.id) : updated.remove(note.id)) changed++;
+    }
+    if (changed == 0) return 0;
     _pinnedNoteIds = Set.unmodifiable(updated);
     _store.putNow(_pinnedKey, _pinnedNoteIds.toList(growable: false));
     notifyListeners();
-    return pinned;
+    return changed;
   }
 
   /// Creates a note at the top of the list and returns it.
@@ -579,27 +593,30 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Moves a note out of the main list without creating a tombstone.
-  void archive(String id) {
-    final index = indexOf(id);
-    if (index < 0 || _notes[index].isArchived || _notes[index].isHidden) return;
+  void archive(String id) => archiveAll([id]);
+
+  /// Moves several notes out of the main list as one change.
+  void archiveAll(Iterable<String> ids) {
     final at = _now();
-    _replace(
-      index,
-      _notes[index].copyWith(archivedAt: at, updatedAt: at),
-      toFront: true,
+    _replaceAll(
+      ids,
+      (note) => note.isArchived || note.isHidden
+          ? null
+          : note.copyWith(archivedAt: at, updatedAt: at),
     );
   }
 
   /// Returns an archived note to the main list as the most recent change.
-  void restore(String id) {
-    final index = indexOf(id);
-    if (index < 0 || !_notes[index].isArchived || _notes[index].isHidden) {
-      return;
-    }
-    _replace(
-      index,
-      _notes[index].copyWith(archivedAt: null, updatedAt: _now()),
-      toFront: true,
+  void restore(String id) => restoreAll([id]);
+
+  /// Returns several archived notes to the main list as one change.
+  void restoreAll(Iterable<String> ids) {
+    final at = _now();
+    _replaceAll(
+      ids,
+      (note) => !note.isArchived || note.isHidden
+          ? null
+          : note.copyWith(archivedAt: null, updatedAt: at),
     );
   }
 
@@ -608,23 +625,29 @@ class NotesStore extends ChangeNotifier {
   /// Shared notes are deliberately refused. Hidden state syncs with the note,
   /// so allowing one collaborator to set it would make the note disappear for
   /// everybody in that space.
-  void hide(String id) {
-    final index = indexOf(id);
-    if (index < 0) return;
-    final note = _notes[index];
-    if (note.isHidden || note.isArchived || note.isShared) return;
+  void hide(String id) => hideAll([id]);
+
+  /// Moves several personal notes behind Hidden Notes as one change.
+  void hideAll(Iterable<String> ids) {
     final at = _now();
-    _replace(index, note.copyWith(hiddenAt: at, updatedAt: at), toFront: true);
+    _replaceAll(
+      ids,
+      (note) => note.isHidden || note.isArchived || note.isShared
+          ? null
+          : note.copyWith(hiddenAt: at, updatedAt: at),
+    );
   }
 
   /// Returns a hidden note to the ordinary notes list.
-  void unhide(String id) {
-    final index = indexOf(id);
-    if (index < 0 || !_notes[index].isHidden) return;
-    _replace(
-      index,
-      _notes[index].copyWith(hiddenAt: null, updatedAt: _now()),
-      toFront: true,
+  void unhide(String id) => unhideAll([id]);
+
+  /// Returns several hidden notes to the ordinary notes list as one change.
+  void unhideAll(Iterable<String> ids) {
+    final at = _now();
+    _replaceAll(
+      ids,
+      (note) =>
+          note.isHidden ? note.copyWith(hiddenAt: null, updatedAt: at) : null,
     );
   }
 
@@ -1412,6 +1435,27 @@ class NotesStore extends ChangeNotifier {
       copy[index] = replacement;
       _notes = List.unmodifiable(copy);
     }
+    _persist();
+  }
+
+  /// Changes the notes [ids] names as one edit, as [deleteAll] does: one
+  /// save and one rebuild however many there are. Each changed note moves to
+  /// the front, the most recent change, in the order they were in. [change]
+  /// answers null for a note it leaves as it is.
+  void _replaceAll(Iterable<String> ids, Note? Function(Note note) change) {
+    final wanted = ids.toSet();
+    final changed = <Note>[];
+    final rest = <Note>[];
+    for (final note in _notes) {
+      final replacement = wanted.contains(note.id) ? change(note) : null;
+      if (replacement == null) {
+        rest.add(note);
+      } else {
+        changed.add(replacement);
+      }
+    }
+    if (changed.isEmpty) return;
+    _notes = [...changed, ...rest];
     _persist();
   }
 

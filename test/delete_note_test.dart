@@ -139,7 +139,10 @@ void main() {
     final first = _note('First');
     notes.togglePinned(first.id);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('sidebar-pinned-heading')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar-pinned-heading')),
+      findsOneWidget,
+    );
 
     await _rightClick(tester, 'First');
 
@@ -265,7 +268,7 @@ void main() {
     await tester.tap(_row('First'));
     await tester.tap(_row('Second'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('archive-delete-checked')));
+    await tester.tap(find.byKey(const ValueKey('picked-delete')));
     await tester.pumpAndSettle();
 
     expect(find.text('Delete 2 notes?'), findsOneWidget);
