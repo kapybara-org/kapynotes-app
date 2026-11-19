@@ -1799,7 +1799,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final closesPane = !_usesCompactLayout && _workspace.isSplit;
     widget.notes.hide(id);
     final shortcut = widget.shortcuts
-        .bindingFor(ShortcutAction.toggleHiddenFolder)
+        .hintFor(ShortcutAction.toggleHiddenFolder)
         ?.displayLabel;
     final discovery = AppPlatform.hasPointer && shortcut != null
         ? 'Press $shortcut to find it.'
@@ -2449,13 +2449,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Null once the pin's shortcut is cleared, which drops the chord from the
   /// tooltip rather than leaving it promising a key that does nothing.
-  String? get _pinShortcut => widget.shortcuts
-      .bindingFor(ShortcutAction.toggleAlwaysOnTop)
-      ?.displayLabel;
+  String? get _pinShortcut =>
+      widget.shortcuts.hintFor(ShortcutAction.toggleAlwaysOnTop)?.displayLabel;
 
   /// The editable chord shown on the notes-list button in both layouts.
   String? get _sidebarShortcut =>
-      widget.shortcuts.bindingFor(ShortcutAction.toggleSidebar)?.displayLabel;
+      widget.shortcuts.hintFor(ShortcutAction.toggleSidebar)?.displayLabel;
 
   /// Shares whatever note is open, for the title bar's own action. Null with
   /// nothing selected, which greys that action rather than removing it and
@@ -2631,7 +2630,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ),
     onClose: onClose,
     shortcut: AppPlatform.isDesktop
-        ? widget.shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.keycapLabel
+        ? widget.shortcuts.hintFor(ShortcutAction.toggleKapyAi)?.keycapLabel
         : null,
     now: widget.notes.now,
   );
@@ -2657,7 +2656,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       controller: _kapyPanel,
       onPressed: _toggleKapyAi,
       shortcut: widget.shortcuts
-          .bindingFor(ShortcutAction.toggleKapyAi)
+          .hintFor(ShortcutAction.toggleKapyAi)
           ?.displayLabel,
       extent: extent,
       trailingGap: gap,
@@ -2773,7 +2772,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onShowChanged: _setShow,
         hiddenListed: _hiddenReachable,
         hiddenShortcut: widget.shortcuts
-            .bindingFor(ShortcutAction.toggleHiddenFolder)
+            .hintFor(ShortcutAction.toggleHiddenFolder)
             ?.displayLabel,
         archivedCount: _narrowed(widget.notes.archivedNotes).length,
         media: space == LibrarySpace.drawings ? null : _mediaFilter,
@@ -3160,7 +3159,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   openTasks: taskBoard?.open.length,
                   streak: widget.notes.streak,
                   onSettingsPressed: _showSettings,
-                  settingsShortcut: widget.shortcuts.bindingFor(
+                  settingsShortcut: widget.shortcuts.hintFor(
                     ShortcutAction.openSettings,
                   ),
                   updates: widget.updates,
@@ -3188,7 +3187,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 setState(() => _taskFilter = filter),
                             labelOf: _taskNoteLabel,
                             onSearch: _openCommandMenu,
-                            searchShortcut: widget.shortcuts.bindingFor(
+                            searchShortcut: widget.shortcuts.hintFor(
                               ShortcutAction.findNotes,
                             ),
                             searchPlaceholder: _searchPlaceholder,
@@ -3198,11 +3197,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               countLabel: 'open',
                               noun: 'task',
                               onCreate: _createInSpace,
-                              newNoteShortcut: widget.shortcuts.bindingFor(
+                              newNoteShortcut: widget.shortcuts.hintFor(
                                 ShortcutAction.newNote,
                               ),
                               onHide: () => _setListShown(false),
-                              hideShortcut: widget.shortcuts.bindingFor(
+                              hideShortcut: widget.shortcuts.hintFor(
                                 ShortcutAction.toggleSidebar,
                               ),
                             ),
@@ -3261,11 +3260,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 : _openSpace,
                             tab: _sidebarTab,
                             onTabChanged: _setSidebarTab,
-                            searchShortcut: widget.shortcuts.bindingFor(
+                            searchShortcut: widget.shortcuts.hintFor(
                               ShortcutAction.findNotes,
                             ),
                             searchPlaceholder: _searchPlaceholder,
-                            archiveShortcut: widget.shortcuts.bindingFor(
+                            archiveShortcut: widget.shortcuts.hintFor(
                               ShortcutAction.deleteNote,
                             ),
                             drawings: space == LibrarySpace.drawings,
@@ -3284,11 +3283,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                   ? 'drawing'
                                   : 'note',
                               onCreate: _createInSpace,
-                              newNoteShortcut: widget.shortcuts.bindingFor(
+                              newNoteShortcut: widget.shortcuts.hintFor(
                                 ShortcutAction.newNote,
                               ),
                               onHide: () => _setListShown(false),
-                              hideShortcut: widget.shortcuts.bindingFor(
+                              hideShortcut: widget.shortcuts.hintFor(
                                 ShortcutAction.toggleSidebar,
                               ),
                             ),
@@ -3341,7 +3340,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             : 'note',
                                         onCreate: _createInSpace,
                                         newNoteShortcut: widget.shortcuts
-                                            .bindingFor(ShortcutAction.newNote)
+                                            .hintFor(ShortcutAction.newNote)
                                             ?.displayLabel,
                                         noteOpen: selected != null,
                                         syncStatus: widget.account?.syncStatus,
@@ -3427,7 +3426,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final canSplit = !_specialMode && _workspace.canSplit;
     final mayEdit = note != null && _canEditNote(note);
     final removeShortcut = widget.shortcuts
-        .bindingFor(ShortcutAction.deleteNote)
+        .hintFor(ShortcutAction.deleteNote)
         ?.displayLabel;
     final alwaysOnTop = widget.prefs.alwaysOnTop;
     return [
@@ -3436,9 +3435,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         label: canSplit ? 'Split view' : splitBlocker ?? 'Split view',
         icon: KapyIcons.viewColumnOutlined,
         hint: canSplit
-            ? widget.shortcuts
-                  .bindingFor(ShortcutAction.splitEditor)
-                  ?.displayLabel
+            ? widget.shortcuts.hintFor(ShortcutAction.splitEditor)?.displayLabel
             : null,
         enabled: canSplit,
       ),
@@ -3526,7 +3523,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         noun: 'task',
         onCreate: _createInSpace,
         newNoteShortcut: widget.shortcuts
-            .bindingFor(ShortcutAction.newNote)
+            .hintFor(ShortcutAction.newNote)
             ?.displayLabel,
         keepOnTop: widget.prefs.alwaysOnTop,
         onToggleKeepOnTop: _pinToggle,
@@ -3570,7 +3567,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           labelOf: _taskNoteLabel,
           onOpenNote: _openTaskNote,
           newTaskShortcut: widget.shortcuts
-              .bindingFor(ShortcutAction.newNote)
+              .hintFor(ShortcutAction.newNote)
               ?.keycapLabel,
         ),
       ),
@@ -3636,7 +3633,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onTitlePressed: () => _focusPane(index),
       onClose: split ? () => _closePane(index) : null,
       closeShortcut: widget.shortcuts
-          .bindingFor(ShortcutAction.closePane)
+          .hintFor(ShortcutAction.closePane)
           ?.displayLabel,
       planDrop: (data, zone) => _planDrop(data, index, zone),
       onDrop: (data, zone) => _dropNote(data, index, zone),
@@ -4114,7 +4111,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _emptyPage() => _drawingsOnly
       ? EmptyState.drawings(
           shortcut: widget.shortcuts
-              .bindingFor(ShortcutAction.newNote)
+              .hintFor(ShortcutAction.newNote)
               ?.keycapLabel,
         )
       : EmptyState(onCreate: _createNote);

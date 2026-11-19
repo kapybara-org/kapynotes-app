@@ -349,7 +349,7 @@ class _CommandMenuState extends State<CommandMenu> {
   ];
 
   String? _keycap(ShortcutAction action) =>
-      widget.shortcuts.bindingFor(action)?.keycapLabel;
+      widget.shortcuts.hintFor(action)?.keycapLabel;
 
   /// New note's key makes whatever the section on screen makes, so the row
   /// shows it only where that is a note.

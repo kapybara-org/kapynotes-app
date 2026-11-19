@@ -18,7 +18,11 @@ import 'task_marks.dart';
 import 'tasks_controller.dart';
 
 /// The chord that finishes Do now, as its button prints it.
-String get doneShortcutLabel => AppPlatform.isMacOS ? '⌘↵' : 'Ctrl+↵';
+String? get doneShortcutLabel => !AppPlatform.hasPointer
+    ? null
+    : AppPlatform.isMacOS
+    ? '⌘↵'
+    : 'Ctrl+↵';
 
 /// Tasks' page: Today, the one list worked with Mark Forster's Final Version
 /// Perfected, or the Done view.

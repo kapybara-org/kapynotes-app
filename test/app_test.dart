@@ -5579,6 +5579,53 @@ void main() {
       expect(find.byKey(const ValueKey('phone-bar')), findsNothing);
     });
 
+    testWidgets('names no desktop keys, and its result pills say Tap', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final semantics = tester.ensureSemantics();
+      final keys = RegExp(r'Ctrl|Cmd|Alt \+|Option \+|[⌘⌥⌃⇧]');
+      List<String> tooltips() => [
+        for (final tooltip in tester.widgetList<Tooltip>(find.byType(Tooltip)))
+          tooltip.message ?? '',
+      ];
+      void expectNoKeys() {
+        expect(tooltips().where(keys.hasMatch), isEmpty);
+        expect(
+          find.semantics.byPredicate(
+            (node) => keys.hasMatch(node.label) || keys.hasMatch(node.tooltip),
+          ),
+          findsNothing,
+        );
+      }
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await pumpApp(tester, size: const Size(412, 915));
+      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+      expect(find.semantics.byLabel('Bold'), findsOneWidget);
+      expect(
+        tooltips().where((message) => message.endsWith('\nTap to copy')),
+        isNotEmpty,
+      );
+      expect(tooltips().where((message) => message.contains('Click')), isEmpty);
+      expectNoKeys();
+
+      tester.view.resetViewInsets();
+      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-bar')), findsOneWidget);
+      expectNoKeys();
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Lisbon trip'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('page-more-archive')), findsOneWidget);
+      expectNoKeys();
+      semantics.dispose();
+    });
+
     testWidgets('the system back gesture leaves the page for the list', (
       tester,
     ) async {

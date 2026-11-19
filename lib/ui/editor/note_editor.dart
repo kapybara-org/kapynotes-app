@@ -3432,7 +3432,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           (SlashCommandType.checklist, ShortcutAction.formatChecklist),
           (SlashCommandType.bulletedList, ShortcutAction.formatBullets),
         ])
-          if (widget.shortcuts.bindingFor(action) case final binding?)
+          if (widget.shortcuts.hintFor(action) case final binding?)
             command: binding.displayLabel,
       },
       lastCommand: widget.lastSlashCommand,
@@ -5401,7 +5401,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       ].reduce((a, b) => a.expandToInclude(b)),
     );
     String? key(ShortcutAction action) =>
-        widget.shortcuts.bindingFor(action)?.displayLabel;
+        widget.shortcuts.hintFor(action)?.displayLabel;
     final markdown = widget.markdownEnabled
         ? _controller.markdownFor(_controller.text)
         : null;
@@ -8111,7 +8111,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     key: ObjectKey(_convertedPaste),
                                     caret: caret.shift(padding.topLeft),
                                     shortcut: widget.shortcuts
-                                        .bindingFor(
+                                        .hintFor(
                                           ShortcutAction.pasteAsPlainText,
                                         )
                                         ?.keycapLabel,
