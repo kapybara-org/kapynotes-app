@@ -792,6 +792,40 @@ void main() {
       expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
     });
 
+    testWidgets('a table from the slash menu opens on its first cell, with '
+        'the placeholder selected to type over', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterNote('/table');
+      await tester.pump();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      final cell = find.byKey(const ValueKey('table-cell-editor'));
+      expect(cell, findsOneWidget);
+      final typing = tester
+          .widget<EditableText>(
+            find.descendant(of: cell, matching: find.byType(EditableText)),
+          )
+          .controller
+          .value;
+      expect(typing.text, 'Column 1');
+      expect(
+        typing.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+
+      await tester.enterText(cell, 'Item');
+      await tester.pumpAndSettle();
+      expect(controllerOf(tester).text, startsWith('| Item | Column 2 |\n'));
+    }, variant: TargetPlatformVariant.desktop());
+
     testWidgets('inserts every structural text command from search', (
       tester,
     ) async {

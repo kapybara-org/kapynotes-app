@@ -175,6 +175,24 @@ void main() {
     expect((LayoutPrefs(store)..load()).hiddenFolderVisible, isFalse);
   });
 
+  test('deleting a note asks by default, and a no survives a launch', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.askBeforeDeleting, isTrue);
+
+    var notified = 0;
+    prefs.addListener(() => notified++);
+    prefs.askBeforeDeleting = false;
+    prefs.askBeforeDeleting = false;
+
+    expect(notified, 1);
+    expect(store.data['askBeforeDeleting.v1'], isFalse);
+    expect((LayoutPrefs(store)..load()).askBeforeDeleting, isFalse);
+
+    prefs.askBeforeDeleting = true;
+    expect((LayoutPrefs(store)..load()).askBeforeDeleting, isTrue);
+  });
+
   test('startup note follows the last opened note by default', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();

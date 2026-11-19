@@ -15,6 +15,9 @@ dependencies:
   http: ^1.2.2
   # Bundled IANA rules for user-selected note timestamps and DST handling.
   timezone: ^0.11.1
+  # The time a late widget answer is measured against, which tests can fake.
+  # Already in the build through flutter.
+  clock: ^1.1.2
   # Desktop window chrome (macOS traffic-light inset, min size, title bar).
   window_manager: ^0.5.2
   # Keeps a restored window reachable when the connected-display layout has

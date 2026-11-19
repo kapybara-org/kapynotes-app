@@ -14,7 +14,6 @@ import '../mobile_page_swipe.dart';
 import '../sidebar_swipe.dart';
 import 'drawing_geometry.dart';
 import 'drawing_painter.dart';
-import 'note_mode_switch.dart';
 
 /// What a pointer does on the canvas.
 enum DrawTool {
@@ -79,7 +78,6 @@ class DrawingCanvas extends StatefulWidget {
     required this.onTitleChanged,
     this.edited,
     this.readOnly = false,
-    this.onSwitchToWrite,
     this.onFocus,
   });
 
@@ -92,9 +90,6 @@ class DrawingCanvas extends StatefulWidget {
   /// shapes it holds.
   final String? edited;
   final bool readOnly;
-
-  /// Offered only while the canvas and its title are both blank.
-  final VoidCallback? onSwitchToWrite;
 
   final VoidCallback? onFocus;
 
@@ -923,54 +918,39 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     const handwritten = WritingFont.handwritten;
     final edited = widget.edited;
     final shapes = _drawing.elements.length;
-    final title = Row(
-      children: [
-        Expanded(
-          child: TextField(
-            key: const ValueKey('drawing-title'),
-            controller: _titleController,
-            focusNode: _titleFocus,
-            readOnly: widget.readOnly,
-            maxLines: 1,
-            textInputAction: TextInputAction.done,
-            style: touch
-                ? Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: palette.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  )
-                : TextStyle(
-                    fontFamily: handwritten.fontFamily,
-                    fontFamilyFallback: handwritten.fontFamilyFallback,
-                    fontVariations: handwritten.fontVariations,
-                    fontSize: 28,
-                    height: 36 / 28,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-            decoration: InputDecoration(
-              hintText: 'Untitled drawing',
-              hintStyle: TextStyle(color: palette.textTertiary),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              filled: false,
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+    final title = TextField(
+      key: const ValueKey('drawing-title'),
+      controller: _titleController,
+      focusNode: _titleFocus,
+      readOnly: widget.readOnly,
+      maxLines: 1,
+      textInputAction: TextInputAction.done,
+      style: touch
+          ? Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: palette.textPrimary,
+              fontWeight: FontWeight.w600,
+            )
+          : TextStyle(
+              fontFamily: handwritten.fontFamily,
+              fontFamilyFallback: handwritten.fontFamilyFallback,
+              fontVariations: handwritten.fontVariations,
+              fontSize: 28,
+              height: 36 / 28,
+              fontWeight: FontWeight.w600,
+              color: palette.textPrimary,
             ),
-            onChanged: widget.onTitleChanged,
-            onSubmitted: (_) => _canvasFocus.requestFocus(),
-          ),
-        ),
-        if (widget.onSwitchToWrite != null &&
-            _drawing.isEmpty &&
-            _titleController.text.trim().isEmpty)
-          NoteModeSwitch(
-            drawing: true,
-            onChanged: (drawing) {
-              if (!drawing) widget.onSwitchToWrite!();
-            },
-          ),
-      ],
+      decoration: InputDecoration(
+        hintText: 'Untitled drawing',
+        hintStyle: TextStyle(color: palette.textTertiary),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        filled: false,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      ),
+      onChanged: widget.onTitleChanged,
+      onSubmitted: (_) => _canvasFocus.requestFocus(),
     );
     if (touch) {
       return Padding(

@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
 import '../data/editor_workspace.dart';
+import 'note_picks.dart';
 
 /// A note on its way to a pane: out of the notes list, or by a pane's title.
 @immutable
@@ -18,7 +20,8 @@ class NoteDragData {
 ///
 /// Only ever built where there is a mouse. The primary button alone starts a
 /// drag, so a right click still opens a row's menu, and on touch a drag is
-/// what scrolls the list.
+/// what scrolls the list. Only sideways: dragged up or down the list, the
+/// same press picks the notes it crosses ([NoteSweep]).
 class NoteDraggable extends StatelessWidget {
   const NoteDraggable({super.key, required this.data, required this.child});
 
@@ -27,7 +30,7 @@ class NoteDraggable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Draggable<NoteDragData>(
+    return _SidewaysDraggable(
       data: data,
       // The drop targets read the pointer, not the card, so the card is set
       // off from it below rather than moved by the anchor.
@@ -37,6 +40,58 @@ class NoteDraggable extends StatelessWidget {
       child: child,
     );
   }
+}
+
+class _SidewaysDraggable extends Draggable<NoteDragData> {
+  const _SidewaysDraggable({
+    super.data,
+    super.dragAnchorStrategy,
+    required super.feedback,
+    super.childWhenDragging,
+    required super.child,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer(
+    GestureMultiDragStartCallback onStart,
+  ) =>
+      _SidewaysDragRecognizer(allowedButtonsFilter: allowedButtonsFilter)
+        ..onStart = onStart;
+}
+
+class _SidewaysDragRecognizer extends MultiDragGestureRecognizer {
+  _SidewaysDragRecognizer({super.allowedButtonsFilter})
+    : super(debugOwner: null);
+
+  @override
+  MultiDragPointerState createNewPointerState(PointerDownEvent event) =>
+      _SidewaysPointerState(event.position, event.kind, gestureSettings);
+
+  @override
+  String get debugDescription => 'sideways multidrag';
+}
+
+class _SidewaysPointerState extends MultiDragPointerState {
+  _SidewaysPointerState(super.initialPosition, super.kind, super.settings);
+
+  @override
+  void checkForResolutionAfterMove() {
+    switch (movesSideways(
+      pendingDelta!,
+      computeHitSlop(kind, gestureSettings),
+    )) {
+      case true:
+        resolve(GestureDisposition.accepted);
+      case false:
+        resolve(GestureDisposition.rejected);
+      case null:
+        break;
+    }
+  }
+
+  @override
+  void accepted(GestureMultiDragStartCallback starter) =>
+      starter(initialPosition);
 }
 
 /// The card that follows the pointer while a note is dragged.

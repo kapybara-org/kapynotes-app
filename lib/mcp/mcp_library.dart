@@ -818,8 +818,8 @@ class McpLibrary {
         'A drawing holds at most ${McpDrawing.maxElements} elements.',
       );
     }
-    final noteId = existing?.id ?? notes.create(authored: false).id;
-    if (existing == null) notes.setDrawingMode(noteId, drawing: true);
+    final noteId =
+        existing?.id ?? notes.create(authored: false, drawing: true).id;
     notes.updateDrawing(noteId, drawing, title: heading, authored: false);
     return (
       note: notes.byId(noteId)!,
