@@ -1055,6 +1055,45 @@ void main() {
       },
     );
 
+    test('a note another of the owner\'s devices has just shared is not taken '
+        'back before its seed arrives', () async {
+      final one = await shareWithBob('One');
+      final spaceId = alice.notes.byId(one.id)!.spaceId!;
+      final personal = alice.keyring.personal!.id;
+      final laptop = Person(
+        server,
+        userId: alice.userId,
+        device: 'alice-laptop',
+      );
+      await laptop.boot();
+      addTearDown(laptop.dispose);
+      final two = alice.notes.create(body: 'Two');
+      await alice.syncAndSettle();
+      await laptop.syncAndSettle();
+      expect(laptop.bodyOf(two.id), 'Two');
+
+      // The Mac is live, and its socket has not yet brought the share.
+      await alice.goLive();
+      server.holdPagesOf.addAll([spaceId, personal]);
+      laptop.tick();
+      await laptop.sharing.shareNote(two.id, spaceId: spaceId);
+      await laptop.syncAndSettle();
+      expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+      alice.tick();
+      await alice.sync.syncNow();
+      await settle(server);
+
+      server.holdPagesOf.clear();
+      server.releaseFrames(alice.api.device);
+      await settle(server);
+      await alice.syncAndSettle();
+      expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+      expect(server.rowsIn(personal)[two.id]!.isTombstone, isTrue);
+      bob.tick();
+      await bob.syncAndSettle();
+      expect(bob.bodyOf(two.id), 'Two');
+    });
+
     test(
       'and so does one whose move is answered before its own seed comes back',
       () async {

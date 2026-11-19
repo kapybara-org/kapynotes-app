@@ -2678,32 +2678,60 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
       if (_notes.notesIn(space.id).length >= space.liveNotes) continue;
       if (_lostUnsharesChecked[space.id] == space.liveNotes) continue;
-      final List<WireNoteKey> rows;
       try {
-        rows = await _api.fetchNoteKeys(space.id);
+        await _finishLostUnsharesIn(space, personal.id);
       } on SyncRefusedException catch (error) {
-        debugPrint('KapyNotes: note keys of ${space.id}: ${error.code}');
+        debugPrint('KapyNotes: un-shares in ${space.id}: ${error.code}');
+      } on SyncTransientException catch (error) {
+        debugPrint('KapyNotes: un-shares in ${space.id}: ${error.message}');
+      }
+    }
+  }
+
+  Future<void> _finishLostUnsharesIn(Space space, String personalId) async {
+    bool lost(String? noteId) {
+      final note = noteId == null ? null : _notes.byId(noteId);
+      final record = noteId == null ? null : _docs.get(noteId);
+      return note != null &&
+          record != null &&
+          note.spaceId == null &&
+          record.spaceId == personalId;
+    }
+
+    final rows = await _api.fetchNoteKeys(space.id);
+    final candidates = [
+      for (final row in rows)
+        if (lost(row.noteId)) row.noteId!,
+    ];
+    // Something on its way is looked at again on a later pass, after it has
+    // landed: a move of this device's own still queued, or the space's log
+    // running ahead of this device. A note another of this account's devices
+    // has just shared into the space looks lost until its seed arrives here,
+    // and must not be taken straight back.
+    var busy = false;
+    if (candidates.isNotEmpty) {
+      final ahead = await _api.pullOps(
+        space: space.id,
+        after: _state.cursorFor(space.id),
+        limit: 1,
+      );
+      busy = !ahead.isEmpty;
+    }
+    for (final noteId in candidates) {
+      if (busy) break;
+      final note = _notes.byId(noteId);
+      final record = _docs.get(noteId);
+      if (!lost(noteId)) continue;
+      if (note!.isDirty || record!.hasPending) {
+        busy = true;
         continue;
       }
-      var busy = false;
-      for (final row in rows) {
-        final noteId = row.noteId;
-        final note = noteId == null ? null : _notes.byId(noteId);
-        final record = noteId == null ? null : _docs.get(noteId);
-        if (note == null || record == null || note.spaceId != null) continue;
-        if (record.spaceId != personal.id) continue;
-        if (note.isDirty || record.hasPending) {
-          busy = true;
-          continue;
-        }
-        debugPrint('KapyNotes: finishing an un-share that never went up');
-        record.spaceId = space.id;
-        _reconcileInto(record, note, personal.id);
-        _docs.markDirty(note.id);
-      }
-      // Looked through again once whatever was on its way has gone up.
-      if (!busy) _lostUnsharesChecked[space.id] = space.liveNotes;
+      debugPrint('KapyNotes: finishing an un-share that never went up');
+      record.spaceId = space.id;
+      _reconcileInto(record, note, personalId);
+      _docs.markDirty(noteId);
     }
+    if (!busy) _lostUnsharesChecked[space.id] = space.liveNotes;
   }
 
   // -------------------------------------------------------------------------
