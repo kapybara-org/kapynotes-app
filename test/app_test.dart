@@ -5364,7 +5364,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('2 selected'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('archive-restore-checked')));
+      await tester.tap(find.byKey(const ValueKey('picked-restore')));
       await tester.pumpAndSettle();
 
       expect(
@@ -5380,11 +5380,11 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+      await tester.tap(find.byKey(const ValueKey('pick-all')));
       await tester.pumpAndSettle();
       expect(find.text('3 selected'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('archive-delete-checked')));
+      await tester.tap(find.byKey(const ValueKey('picked-delete')));
       await tester.pumpAndSettle();
       expect(find.text('Delete 3 notes?'), findsOneWidget);
       await confirm(tester);
@@ -5423,16 +5423,13 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+      await tester.tap(find.byKey(const ValueKey('pick-all')));
       await tester.pumpAndSettle();
 
       // Four actions and a count in 150pt, which is as narrow as the pane goes.
       expect(tester.takeException(), isNull);
       expect(find.text('3 selected'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('archive-delete-checked')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('picked-delete')), findsOneWidget);
     });
 
     testWidgets('the ordinary list has no Delete all: a note is deleted from '

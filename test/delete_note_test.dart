@@ -277,7 +277,7 @@ void main() {
     await tester.tap(_row('First'));
     await tester.tap(_row('Second'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('archive-delete-checked')));
+    await tester.tap(find.byKey(const ValueKey('picked-delete')));
     await tester.pumpAndSettle();
 
     expect(find.text('Delete 2 notes?'), findsOneWidget);
