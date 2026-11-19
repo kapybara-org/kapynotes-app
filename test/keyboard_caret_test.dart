@@ -241,6 +241,78 @@ void main() {
     );
   }, variant: phones);
 
+  for (final long in [true, false]) {
+    final note = long ? 'a long note' : 'a note that fits the screen';
+
+    testWidgets('a table from the slash menu at the end of $note opens its '
+        'first cell above the keyboard', (tester) async {
+      var body = _lines(80);
+      if (!long) {
+        await open(tester, 'Probe');
+        final rows =
+            tester.getRect(noteField).height ~/ NoteDriver(tester).rowHeight;
+        body = _lines(rows - 2);
+      }
+      await open(tester, body);
+      await tapWithKeyboardDown(tester, nearTheBottom(tester));
+      await _keyboardTo(tester, _keyboard);
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: body,
+          selection: TextSelection.collapsed(offset: body.length),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _type(tester, '\n');
+      await _type(tester, '/table');
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('slash-command-table')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('table-size-grid')),
+              matching: find.byType(GestureDetector),
+            )
+            .at(7),
+      );
+      await tester.pumpAndSettle();
+
+      final cell = find.byKey(_cell);
+      expect(cell, findsOneWidget);
+      expect(
+        tester.getRect(cell).bottom,
+        lessThanOrEqualTo(_shownBottom(tester)),
+      );
+      expect(
+        tester.getRect(cell).top,
+        greaterThanOrEqualTo(tester.getRect(noteField).top),
+      );
+      final typing = tester
+          .widget<EditableText>(
+            find.descendant(of: cell, matching: find.byType(EditableText)),
+          )
+          .controller
+          .value;
+      expect(typing.text, 'Column 1');
+      expect(
+        typing.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+
+      await tester.enterText(cell, 'cell one');
+      await tester.pumpAndSettle();
+      expect(
+        NoteDriver(tester).value.text,
+        contains('| cell one | Column 2 |'),
+      );
+      expect(
+        tester.getRect(cell).bottom,
+        lessThanOrEqualTo(_shownBottom(tester)),
+      );
+    }, variant: phones);
+  }
+
   testWidgets('a desktop window made shorter leaves the note where it was', (
     tester,
   ) async {
