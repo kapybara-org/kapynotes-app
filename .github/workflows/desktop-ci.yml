@@ -278,6 +278,34 @@ jobs:
           ! grep -q 'libdartjni.so' deb-contents.txt
           tar -tzf "$tarball" | grep -qx 'kapynotes/kapynotes'
           tar -tzf "$tarball" | grep -qx 'kapynotes/libexec/ffmpeg'
+          # Every package's notice gives the app's source at the tag and the
+          # archive holding the source of its GPL and LGPL parts, and ships
+          # those licences in full; the portable ones list each library they
+          # bundle, and the AppImage its runtime.
+          source="KapyNotes-$version-linux-${{ matrix.arch }}-source.tar"
+          mkdir -p notices
+          tar -xzf "$tarball" -C notices kapynotes/share/doc/kapynotes
+          dpkg-deb --fsys-tarfile "$deb" | tar -x -C notices ./usr/share/doc/kapynotes
+          (cd notices && "../$appimage" --appimage-extract 'usr/share/doc/kapynotes/*' >/dev/null)
+          for doc in notices/kapynotes/share/doc/kapynotes notices/usr/share/doc/kapynotes notices/squashfs-root/usr/share/doc/kapynotes; do
+            cat "$doc/SOURCE"
+            for licence in GPL-3 LGPL-2.1 LGPL-3; do
+              cmp "$doc/$licence" "/usr/share/common-licenses/$licence"
+            done
+            for url in "https://github.com/kapybara-org/kapynotes-app/tree/v$version" \
+              "https://dl.kapynotes.com/downloads/$source" \
+              "https://github.com/kapybara-org/kapynotes-app/releases/download/v$version/$source"; do
+              grep -qxF "  $url" "$doc/SOURCE" || { echo "::error::$doc/SOURCE does not give $url"; exit 1; }
+            done
+            grep -q 'libexec/ffmpeg$' "$doc/SOURCE"
+          done
+          grep -q "AppImage's type2-runtime" notices/squashfs-root/usr/share/doc/kapynotes/SOURCE
+          tar -tzf "$tarball" > tar-contents.txt
+          for lib in $(awk '!/^#/ { print $1 }' packaging/linux/bundled_sources.txt); do
+            grep -qx "kapynotes/lib/$lib" tar-contents.txt || continue
+            grep -qx "  kapynotes/lib/$lib" notices/kapynotes/share/doc/kapynotes/SOURCE
+            grep -qx "  usr/lib/kapynotes/lib/$lib" notices/squashfs-root/usr/share/doc/kapynotes/SOURCE
+          done
           # Lintian's verdict is shown but does not fail the build: a few of
           # its tags (a bundled Flutter engine, a private RUNPATH) are the
           # nature of a Flutter app rather than something to fix.

@@ -138,6 +138,16 @@ The LiteRT-LM runtime behind the on-device summary model is left out, since
 Linux does not offer the model, and `package.sh` refuses any library that
 calls into glibc's private ABI, which would tie the .deb to one exact glibc.
 
+Some of what ships is GPL or LGPL: the bundled libraries, `ffmpeg`, and the
+AppImage's runtime, which links libfuse statically. Each package's
+`share/doc/kapynotes/SOURCE` names them with their versions, gives the app's
+source at the release tag, and points to
+`KapyNotes-<version>-linux-<arch>-source.tar`, which holds their complete
+source and which a release publishes beside the packages; the GPL-3, LGPL-2.1
+and LGPL-3 texts ship beside it. A bundled library needs a line in
+`packaging/linux/bundled_sources.txt` naming its Ubuntu source package, or the
+build fails, so a plugin cannot bring one in unnoticed.
+
 `packaging/linux/flatpak/` holds a Flatpak manifest that repackages the same
 tarball on the GNOME runtime. Neither `release.sh` nor CI builds it yet; the
 README beside it covers building it, what its sandbox allows, and what

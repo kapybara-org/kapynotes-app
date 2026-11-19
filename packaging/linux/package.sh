@@ -39,8 +39,22 @@
 #                      no LD_LIBRARY_PATH. libapp.so is never touched.
 #
 # A library that turns up in neither list is bundled and named in the output,
-# so a new plugin's needs are visible in the build log. The distro copyright
-# file of every bundled library goes into share/doc/kapynotes/third-party/.
+# so a new plugin's needs are visible in the build log, and the build fails
+# until bundled_sources.txt beside this script names the Ubuntu source package
+# it comes from. The distro copyright file of every bundled library goes into
+# share/doc/kapynotes/third-party/.
+#
+# Some of what ships is GPL or LGPL: those libraries, libexec/ffmpeg, and the
+# AppImage's runtime, which links libfuse statically. Every package's
+# share/doc/kapynotes/SOURCE names each of them with its version, gives the
+# app's source at the release tag, and points to one archive per arch,
+#
+#   KapyNotes-<version>-linux-<arch>-source.tar
+#
+# which holds their complete source and is published beside the packages.
+# With SOURCE_ARCHIVE=1, which only the release workflow sets, this script
+# writes that archive too, from the very package versions it bundled; apt
+# then needs deb-src entries for the build machine's mirrors.
 #
 # Built on Ubuntu 22.04 (glibc 2.35), the oldest LTS Flutter 3.47 supports;
 # the highest GLIBC_ symbol version any shipped ELF needs is printed at the
@@ -65,6 +79,7 @@ APP_ID="com.kapybara.kapynotes"
 BIN="kapynotes"
 MAINTAINER="Kapybara LLC <hello@kapynotes.com>"
 HOMEPAGE="https://kapynotes.com"
+REPO="https://github.com/kapybara-org/kapynotes-app"
 
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -72,8 +87,11 @@ case "$ARCH" in
   aarch64) DEBARCH=arm64 ;;
   *) echo "error: unsupported arch $ARCH" >&2; exit 1 ;;
 esac
+SOURCE_NAME="KapyNotes-$VERSION-linux-$ARCH-source.tar"
 
 FFMPEG_DIR="${FFMPEG_DIR:-$ROOT/build/linux/ffmpeg/$ARCH}"
+# The FFmpeg release build_ffmpeg.sh pins, for the notices and the source.
+eval "$(grep -E '^FFMPEG_(VERSION|SHA256|URL)=' "$HERE/build_ffmpeg.sh")"
 TOOLS="$ROOT/build/linux/tools"
 WORK="$ROOT/build/linux/package-$ARCH"
 
@@ -84,6 +102,12 @@ WORK="$ROOT/build/linux/package-$ARCH"
 # CCA5 6490 F695) when these hashes were taken.
 RUNTIME_RELEASE="20251108"
 APPIMAGETOOL_RELEASE="1.9.1"
+# The runtime's source, as the source archive publishes it: the commit that
+# release is tagged at, and the libfuse release its
+# scripts/common/install-dependencies.sh builds and links in statically.
+RUNTIME_COMMIT="dd6cebedcbddde9c82f89b011e8e1d40b6e43868"
+LIBFUSE_VERSION="3.15.0"
+LIBFUSE_SHA256="70589cfd5e1cff7ccd6ac91c86c01be340b227285c5e200baa284e401eea2ca0"
 declare -A PIN=(
   [runtime-x86_64]="2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
   [runtime-aarch64]="00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444"
@@ -146,7 +170,7 @@ write_copyright() {
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Kapy Notes
 Upstream-Contact: $MAINTAINER
-Source: https://github.com/kapybara-org/kapynotes-app
+Source: $REPO/tree/v$VERSION
 
 Files: *
 Copyright: 2026 Kapybara LLC
@@ -207,7 +231,7 @@ License: LGPL-2.1+
  .
  On Debian systems, the complete text of the GNU Lesser General Public License
  version 2.1 can be found in "/usr/share/common-licenses/LGPL-2.1". The full
- text also ships in libexec/ffmpeg-LICENSE.md.
+ text also ships beside this file, in LGPL-2.1.
 EOF
     if [[ -n "$katex" ]]; then
       printf '\nLicense: Expat\n'
@@ -221,6 +245,50 @@ EOF
   } >"$dest"
 }
 
+# SOURCE, and the GPL and LGPL texts beside it: what in the package is GPL or
+# LGPL, at which version, and where its source is. $1 is the file to write,
+# $2 the package's file name, $3 the app's folder inside the package, and the
+# rest are the bundled libraries, each "lib/<soname>|<source, version>|<licence>".
+write_source_notice() {
+  local dest="$1" package="$2" app="$3" entry path what licence
+  shift 3
+  {
+    cat <<EOF
+Source code for $package
+
+Kapy Notes is licensed under the Apache License, Version 2.0. This build is of
+the v$VERSION tag of its repository:
+
+  $REPO/tree/v$VERSION
+
+The package also contains the programs and libraries below, which are
+licensed under the GNU General Public License (GPL) or the GNU Lesser General
+Public License (LGPL). Their complete corresponding source, at the versions
+built into this package and with the scripts and flags that built them, is
+one archive published beside the package, at either of these addresses:
+
+  https://dl.kapynotes.com/downloads/$SOURCE_NAME
+  $REPO/releases/download/v$VERSION/$SOURCE_NAME
+
+EOF
+    for entry in "$@" "libexec/ffmpeg|FFmpeg $FFMPEG_VERSION|LGPL-2.1+"; do
+      IFS='|' read -r path what licence <<<"$entry"
+      printf '  %s%s\n      %s; %s\n' "$app" "$path" "$what" "$licence"
+    done
+    if [[ "$package" == *.AppImage ]]; then
+      printf '  the runtime at the start of the AppImage\n      %s; %s\n' \
+        "AppImage's type2-runtime $RUNTIME_RELEASE, which links libfuse $LIBFUSE_VERSION statically" \
+        "MIT, and LGPL-2.1 for libfuse"
+    fi
+    cat <<'EOF'
+
+The GNU GPL version 3 and the GNU LGPL versions 2.1 and 3 are in GPL-3,
+LGPL-2.1 and LGPL-3 beside this file.
+EOF
+  } >"$dest"
+  cp /usr/share/common-licenses/{GPL-3,LGPL-2.1,LGPL-3} "$(dirname "$dest")/"
+}
+
 # ---------------------------------------------------------------------------
 
 [[ -x "$BUNDLE/$BIN" ]] || die "$BUNDLE/$BIN missing; is this a Flutter Linux bundle?"
@@ -230,6 +298,10 @@ EOF
 [[ -f "$BUNDLE/share/icons/hicolor/256x256/apps/$APP_ID.png" ]] || die "the 256 px icon is missing from $BUNDLE/share"
 [[ ! -e "$BUNDLE/lib/libdartjni.so" ]] || die "$BUNDLE/lib/libdartjni.so is Android-only (it links libjvm.so) and must not ship"
 [[ -x "$FFMPEG_DIR/ffmpeg" ]] || die "$FFMPEG_DIR/ffmpeg missing; run packaging/linux/build_ffmpeg.sh"
+# The notices name the FFmpeg release build_ffmpeg.sh pins, so the binary has
+# to be the one that script built.
+[[ "$(cat "$FFMPEG_DIR/stamp" 2>/dev/null)" == "$(sha256sum "$HERE/build_ffmpeg.sh" | cut -d' ' -f1)" ]] ||
+  die "$FFMPEG_DIR/ffmpeg was not built by the current build_ffmpeg.sh; run packaging/linux/build_ffmpeg.sh"
 # An ELF that calls into glibc's private ABI ties the .deb to one exact glibc
 # release, which dpkg-shlibdeps then writes into Depends, and can stop loading
 # on any other.
@@ -280,10 +352,11 @@ cp -a "$PLAIN" "$PORTABLE"
 DOC="$PORTABLE/share/doc/kapynotes"
 mkdir -p "$DOC/third-party"
 
-declare -A seen=()
+declare -A seen=() debsrc=()
 queue=()
 while read -r elf; do queue+=("$elf"); done < <(elfs_in "$PORTABLE")
 bundled=()
+bundled_notice=()
 while ((${#queue[@]})); do
   elf="${queue[0]}"
   queue=("${queue[@]:1}")
@@ -303,7 +376,17 @@ while ((${#queue[@]})); do
     [[ -n "$pkg" ]] || pkg="$(dpkg -S "$path" 2>/dev/null | head -1 | cut -d: -f1 || true)"
     [[ -n "$pkg" && -f "/usr/share/doc/$pkg/copyright" ]] || die "no copyright file found for $soname ($real)"
     cp "/usr/share/doc/$pkg/copyright" "$DOC/third-party/$pkg.copyright"
-    echo "  bundled $soname from $pkg"
+    entry="$(awk -v s="$soname" '$1 == s { print; exit }' "$HERE/bundled_sources.txt")"
+    [[ -n "$entry" ]] ||
+      die "$soname (from $pkg) would be bundled, but packaging/linux/bundled_sources.txt has no line for it; a release publishes the source of everything it bundles, so add one"
+    read -r _ src licence <<<"$entry"
+    # shellcheck disable=SC2016 # dpkg-query's own field names
+    read -r built_from src_version <<<"$(dpkg-query -W -f='${source:Package} ${source:Version}' "$pkg:$DEBARCH")"
+    [[ "$built_from" == "$src" ]] ||
+      die "bundled_sources.txt says $soname is built from $src, but $pkg:$DEBARCH is built from '$built_from'"
+    debsrc["$src=$src_version"]=1
+    bundled_notice+=("lib/$soname|Ubuntu's $src $src_version|$licence")
+    echo "  bundled $soname from $pkg, source $src $src_version"
   done < <(needed "$elf")
 done
 
@@ -324,6 +407,7 @@ missing="$(elfs_in "$PORTABLE" | while read -r elf; do ldd "$elf" 2>&1 | grep 'n
 
 write_copyright "$PORTABLE" "$DOC/copyright"
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$DOC/"
+write_source_notice "$DOC/SOURCE" "KapyNotes-$VERSION-linux-$ARCH.tar.gz" kapynotes/ "${bundled_notice[@]}"
 find "$PORTABLE" -type d -exec chmod 0755 {} +
 find "$DOC" -type f -exec chmod 0644 {} +
 
@@ -348,6 +432,7 @@ rm -rf "$PKG/usr/lib/kapynotes/share"
 ln -s ../../share "$PKG/usr/lib/kapynotes/share"
 ln -s ../lib/kapynotes/$BIN "$PKG/usr/bin/$BIN"
 write_copyright "$PKG/usr/lib/kapynotes" "$PKG/usr/share/doc/kapynotes/copyright"
+write_source_notice "$PKG/usr/share/doc/kapynotes/SOURCE" "KapyNotes-$VERSION-$DEBARCH.deb" /usr/lib/kapynotes/
 {
   echo "kapynotes ($VERSION) unstable; urgency=medium"
   echo
@@ -418,6 +503,7 @@ ln -s usr/lib/kapynotes/$BIN "$APPDIR/AppRun"
 cp "$APPDIR/usr/share/applications/$APP_ID.desktop" "$APPDIR/$APP_ID.desktop"
 cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_ID.png" "$APPDIR/$APP_ID.png"
 ln -s "$APP_ID.png" "$APPDIR/.DirIcon"
+write_source_notice "$APPDIR/usr/share/doc/kapynotes/SOURCE" "KapyNotes-$VERSION-$ARCH.AppImage" usr/lib/kapynotes/ "${bundled_notice[@]}"
 
 runtime="$(fetch_pinned "runtime-$ARCH")"
 appimagetool="$(fetch_pinned "appimagetool-$ARCH.AppImage")"
@@ -431,6 +517,61 @@ APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" VERSION="$VERSION" \
   { cat "$WORK/appimagetool.log" >&2; die "appimagetool failed"; }
 chmod 0755 "$APPIMAGE"
 echo "  → $APPIMAGE"
+
+# ---------------------------------------------------------------------------
+
+if [[ "${SOURCE_ARCHIVE:-}" == 1 ]]; then
+  info "Collecting the source of the GPL and LGPL parts"
+  SRC="$WORK/source/${SOURCE_NAME%.tar}"
+  mkdir -p "$SRC/ubuntu" "$SRC/ffmpeg" "$SRC/appimage-runtime"
+  # apt checks every file against the signed Sources index.
+  for spec in $(printf '%s\n' "${!debsrc[@]}" | sort); do
+    (cd "$SRC/ubuntu" && apt-get -qq source --download-only "$spec") ||
+      die "apt-get could not fetch the source of $spec; it needs deb-src entries for the mirrors the build machine installed from"
+  done
+  curl -fsSL --retry 3 -o "$SRC/ffmpeg/${FFMPEG_URL##*/}" "$FFMPEG_URL"
+  echo "$FFMPEG_SHA256  $SRC/ffmpeg/${FFMPEG_URL##*/}" | sha256sum -c --quiet || die "the FFmpeg archive does not match its pinned hash"
+  cp "$HERE/build_ffmpeg.sh" "$FFMPEG_DIR/ffmpeg-LICENSE.md" "$SRC/ffmpeg/"
+  git init -q "$WORK/type2-runtime"
+  git -C "$WORK/type2-runtime" fetch -q --depth 1 https://github.com/AppImage/type2-runtime "$RUNTIME_COMMIT"
+  [[ "$(git -C "$WORK/type2-runtime" rev-parse FETCH_HEAD)" == "$RUNTIME_COMMIT" ]] || die "fetched the wrong type2-runtime commit"
+  git -C "$WORK/type2-runtime" show FETCH_HEAD:scripts/common/install-dependencies.sh | grep -q "$LIBFUSE_SHA256" ||
+    die "type2-runtime $RUNTIME_RELEASE does not build with libfuse $LIBFUSE_VERSION; pin the libfuse its scripts/common/install-dependencies.sh fetches"
+  git -C "$WORK/type2-runtime" archive --prefix="type2-runtime-$RUNTIME_RELEASE/" FETCH_HEAD |
+    gzip -9n >"$SRC/appimage-runtime/type2-runtime-$RUNTIME_RELEASE.tar.gz"
+  curl -fsSL --retry 3 -o "$SRC/appimage-runtime/fuse-$LIBFUSE_VERSION.tar.xz" \
+    "https://github.com/libfuse/libfuse/releases/download/fuse-$LIBFUSE_VERSION/fuse-$LIBFUSE_VERSION.tar.xz"
+  echo "$LIBFUSE_SHA256  $SRC/appimage-runtime/fuse-$LIBFUSE_VERSION.tar.xz" | sha256sum -c --quiet || die "the libfuse archive does not match its pinned hash"
+  cat >"$SRC/README" <<EOF
+The complete corresponding source of the GPL- and LGPL-licensed parts of
+KapyNotes-$VERSION-linux-$ARCH.tar.gz, KapyNotes-$VERSION-$DEBARCH.deb and
+KapyNotes-$VERSION-$ARCH.AppImage. The share/doc/kapynotes/SOURCE file in
+each package lists those parts. Kapy Notes itself is the v$VERSION tag of
+$REPO.
+
+ubuntu/
+  The Ubuntu source packages of the libraries the tar.gz and the AppImage
+  carry in lib/, at the versions they carry. \`dpkg-source -x\` on a .dsc
+  unpacks one, and its debian/rules builds it.
+
+ffmpeg/
+  ${FFMPEG_URL##*/}, the FFmpeg release libexec/ffmpeg is built from;
+  build_ffmpeg.sh, the script that built it, which holds every configure
+  flag; and ffmpeg-LICENSE.md, which ships beside the program.
+
+appimage-runtime/
+  type2-runtime-$RUNTIME_RELEASE.tar.gz, AppImage's type2-runtime at commit
+  $RUNTIME_COMMIT, from which its release
+  $RUNTIME_RELEASE, the runtime the AppImage starts with, was built by
+  scripts/chroot/chroot_build.sh; and fuse-$LIBFUSE_VERSION.tar.xz, the libfuse
+  that runtime links statically, with the runtime's
+  patches/libfuse/mount.c.diff applied.
+EOF
+  rm -f "$OUT/$SOURCE_NAME"
+  tar --sort=name --owner=0 --group=0 --numeric-owner -C "$WORK/source" -cf "$OUT/$SOURCE_NAME" "${SOURCE_NAME%.tar}"
+  tar -tvf "$OUT/$SOURCE_NAME" | sed 's/^/  /'
+  echo "  → $OUT/$SOURCE_NAME"
+fi
 
 # ---------------------------------------------------------------------------
 
