@@ -4,11 +4,13 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 
+import '../core/platform.dart';
 import '../data/blob_store.dart';
 import '../data/attachment_limits.dart';
 import '../data/note_attachment.dart';
 import '../sync/aead.dart';
 import '../sync/sealed_box.dart';
+import 'mp4_video_metadata.dart';
 
 /// The local source must leave room for framing and authentication bytes when
 /// it is sealed. The server measures the resulting ciphertext.
@@ -53,8 +55,10 @@ class VideoBatch {
 
 /// Reads the dimensions and duration through the same native decoder that
 /// will play the attachment. A container the current device cannot open is
-/// rejected before it becomes a permanent blank block in the note.
+/// rejected before it becomes a permanent blank block in the note. Linux has
+/// no player in the app, and reads the container instead.
 Future<VideoMetadata?> readVideoMetadata(File file) async {
+  if (AppPlatform.isLinux) return readMp4VideoMetadata(file);
   final controller = VideoPlayerController.file(file);
   try {
     await controller.initialize();

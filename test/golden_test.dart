@@ -26,8 +26,8 @@ import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
-import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
@@ -578,10 +578,11 @@ void main() {
       size: const Size(760, 520),
       brightness: Brightness.dark,
     );
-    // The pin is the only toolbar control with an on state, and the filled
-    // icon behind a selected surface is the whole signal that the window is
-    // now floating.
+    // Keep on top has no button in the bar, so More is where it says the
+    // window is floating: by offering to stop.
     goldenPrefs.toggleAlwaysOnTop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
@@ -632,11 +633,64 @@ void main() {
     await fillAndOpenArchive(tester);
     await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+    await tester.tap(find.byKey(const ValueKey('pick-all')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_archive_selecting.png'),
+    );
+  });
+
+  /// Two notes picked in the ordinary list: the bar over it, and the menu a
+  /// right click opens on them.
+  Future<void> pickTwo(WidgetTester tester) async {
+    for (final body in [
+      'Old receipts\nCoffee: 12.40',
+      'Trip ideas\nLisbon in April',
+    ]) {
+      goldenNotes.create(body: body);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Trip ideas'));
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.tap(find.widgetWithText(NoteRow, 'Old receipts'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('desktop light notes, two picked', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.light,
+      platform: TargetPlatform.macOS,
+    );
+    await pickTwo(tester);
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_light_notes_picked.png'),
+    );
+  });
+
+  testWidgets('desktop dark notes, two picked, with their menu', (
+    tester,
+  ) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.macOS,
+    );
+    await pickTwo(tester);
+    await tester.tap(
+      find.widgetWithText(NoteRow, 'Old receipts'),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_notes_picked_menu.png'),
     );
   });
 
@@ -653,46 +707,49 @@ void main() {
     );
   });
 
-  for (final brightness in [Brightness.dark, Brightness.light]) {
-    for (final on in [false, true]) {
-      testWidgets(
-        'toolbar, Keep on top ${on ? 'on' : 'off'}, ${brightness.name}',
-        (tester) async {
-          await pumpForGolden(
-            tester,
-            size: const Size(760, 520),
-            brightness: brightness,
-            withPinnedNote: true,
-          );
-          if (on) goldenPrefs.alwaysOnTop = true;
-          await tester.pumpAndSettle();
-          await expectLater(
-            find.byKey(const ValueKey('page-toolbar')),
-            matchesGoldenFile(
-              'goldens/keep_on_top_${brightness.name}_${on ? 'on' : 'off'}.png',
-            ),
-          );
-        },
-      );
-    }
-  }
-
-  testWidgets('Tasks carries Keep on top too', (tester) async {
+  testWidgets('Tasks keeps Keep on top under More, with its shortcut', (
+    tester,
+  ) async {
     await pumpForGolden(
       tester,
       size: const Size(1000, 640),
       brightness: Brightness.dark,
       withTasks: true,
+      platform: TargetPlatform.macOS,
     );
     await tester.tap(find.byKey(const ValueKey('rail-tasks')));
     await tester.pumpAndSettle();
-    final button = find.byKey(const ValueKey('page-keep-on-top'));
-    expect(button, findsOneWidget);
-    expect(find.byKey(const ValueKey('page-more')), findsNothing);
-    await tester.tap(button);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip &&
+            (widget.message ?? '').startsWith('Keep on top'),
+      ),
+      findsNothing,
+    );
+
+    final more = find.byKey(const ValueKey('page-more'));
+    final onTop = find.byKey(const ValueKey('page-more-on-top'));
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: onTop, matching: find.text('Keep on top')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: onTop, matching: find.text('⇧⌘T')),
+      findsOneWidget,
+    );
+    await tester.tap(onTop);
     await tester.pumpAndSettle();
     expect(goldenPrefs.alwaysOnTop, isTrue);
-    expect(tester.widget<CompactIconButton>(button).selected, isTrue);
+
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: onTop, matching: find.text('Stop keeping on top')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('desktop dark narrow, results at line ends', (tester) async {

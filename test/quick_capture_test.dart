@@ -1,3 +1,4 @@
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,11 +24,20 @@ class _MemoryStore extends LocalStore {
 
 /// Answers the platform channel with [name], or with nothing at all when it
 /// is null, the way a host with no handler registered does.
-void stubLaunchIntent(String? name, {bool respond = true}) {
+void stubLaunchIntent(
+  String? name, {
+  bool respond = true,
+  Duration after = Duration.zero,
+}) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
         QuickCapture.channel,
-        respond ? (call) async => name : null,
+        respond
+            ? (call) async {
+                if (after > Duration.zero) await Future<void>.delayed(after);
+                return name;
+              }
+            : null,
       );
 }
 
@@ -191,6 +201,75 @@ void main() {
       stubLaunchIntent(null, respond: false);
 
       expect(await QuickCapture.launchIntent(), LaunchIntent.open);
+    });
+
+    test("a cold start's action comes with Dart's arguments", () async {
+      stubLaunchIntent('capture');
+      QuickCapture.startedWith(['dictate']);
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.dictate);
+      // Collected once: the next question is the channel's again.
+      expect(await QuickCapture.launchIntent(), LaunchIntent.capture);
+    });
+
+    test(
+      'an argument this version has never heard of opens normally',
+      () async {
+        stubLaunchIntent('capture');
+        QuickCapture.startedWith(['teleport']);
+
+        expect(await QuickCapture.launchIntent(), LaunchIntent.open);
+        expect(await QuickCapture.launchIntent(), LaunchIntent.capture);
+      },
+    );
+
+    test('with no arguments the channel is asked', () async {
+      stubLaunchIntent('continueWriting');
+      QuickCapture.startedWith(const []);
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.continueWriting);
+    });
+
+    test('an answer after the deadline is kept for lateIntent', () async {
+      stubLaunchIntent('dictate', after: const Duration(milliseconds: 700));
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.open);
+      expect(await QuickCapture.lateIntent(), LaunchIntent.dictate);
+      // Collected once.
+      expect(await QuickCapture.lateIntent(), LaunchIntent.open);
+    });
+
+    test('an answer later than the limit is dropped', () {
+      fakeAsync((async) {
+        stubLaunchIntent('dictate', after: const Duration(seconds: 11));
+        LaunchIntent? first;
+        LaunchIntent? late;
+        QuickCapture.launchIntent().then((intent) => first = intent);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(first, LaunchIntent.open);
+
+        QuickCapture.lateIntent().then((intent) => late = intent);
+        async.elapse(const Duration(seconds: 11));
+        expect(late, LaunchIntent.open);
+      });
+    });
+
+    test('an answer on time leaves nothing late', () async {
+      stubLaunchIntent('capture');
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.capture);
+      expect(await QuickCapture.lateIntent(), LaunchIntent.open);
+    });
+
+    test('a second late ask does not lose the first one\'s action', () async {
+      stubLaunchIntent('capture', after: const Duration(milliseconds: 700));
+      final first = QuickCapture.launchIntent();
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      stubLaunchIntent(null, after: const Duration(milliseconds: 700));
+
+      expect(await first, LaunchIntent.open);
+      expect(await QuickCapture.launchIntent(), LaunchIntent.open);
+      expect(await QuickCapture.lateIntent(), LaunchIntent.capture);
     });
 
     test('desktop never asks at all', () async {

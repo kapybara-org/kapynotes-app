@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -50,12 +53,33 @@ class QuickCapture {
 
   /// How long the platform gets to say why the app was opened.
   ///
-  /// It knows the answer before Dart starts, so this is never actually
-  /// waited out. The deadline is here so that a host which somehow never
-  /// replies costs a fraction of a second rather than stranding the app on
-  /// its launch surface — and even that fraction is spent on a surface the
-  /// user can already type into.
+  /// The deadline is here so that a host which somehow never replies costs a
+  /// fraction of a second rather than stranding the app on its launch
+  /// surface — and even that fraction is spent on a surface the user can
+  /// already type into. A busy main thread can miss it, which is why Android
+  /// hands a cold start's action over with Dart's arguments instead.
   static const Duration _answerDeadline = Duration(milliseconds: 400);
+
+  /// How long after the ask a late answer may still run its action. A slow
+  /// cold start answers within a few seconds; later than this, the person is
+  /// already using the app, and the action would interrupt them.
+  static const Duration _lateLimit = Duration(seconds: 10);
+
+  /// The action the platform named as it started Dart, until it is collected.
+  static LaunchIntent? _startedWith;
+
+  /// Takes the action from `main`'s arguments, where Android puts a cold
+  /// start's widget action.
+  ///
+  /// Asking over the channel instead means asking a main thread that is, at
+  /// that moment, bringing up the window and the keyboard. On an emulator its
+  /// answer missed [_answerDeadline] in two cold launches out of three, which
+  /// dropped Dictate and Capture and held Write back by the whole deadline.
+  /// The activity takes the action off its intent as it hands it over, so the
+  /// channel never answers it a second time.
+  static void startedWith(List<String> args) {
+    if (args.isNotEmpty) _startedWith = _named(args.first);
+  }
 
   /// Why the app was opened, according to the platform.
   ///
@@ -69,16 +93,46 @@ class QuickCapture {
   /// next gets it, and nobody gets it twice.
   static Future<LaunchIntent> launchIntent() async {
     if (!AppPlatform.isMobile) return LaunchIntent.open;
+    final started = _startedWith;
+    if (started != null) {
+      _startedWith = null;
+      return started;
+    }
+    final asked = clock.now();
+    final answer = channel
+        .invokeMethod<String>('launchIntent')
+        .then(_named, onError: (_) => LaunchIntent.open);
     try {
-      final name = await channel
-          .invokeMethod<String>('launchIntent')
-          .timeout(_answerDeadline);
-      return _named(name);
-    } catch (_) {
-      // A desktop host, a platform with no handler registered, or one that
-      // never answered. All three mean the same thing to the user.
+      return await answer.timeout(_answerDeadline);
+    } on TimeoutException {
+      // A busy cold start can answer after the deadline, and the host gives
+      // the action up as it answers, so it is kept for [lateIntent] rather
+      // than lost.
+      final late = answer.then(
+        (intent) => clock.now().difference(asked) > _lateLimit
+            ? LaunchIntent.open
+            : intent,
+      );
+      final earlier = _late;
+      _late = earlier == null
+          ? late
+          : earlier.then(
+              (intent) => intent == LaunchIntent.open ? late : intent,
+            );
       return LaunchIntent.open;
     }
+  }
+
+  /// An answer that missed [_answerDeadline], until it is collected.
+  static Future<LaunchIntent>? _late;
+
+  /// The action whose answer missed the launch's deadline, once it arrives,
+  /// or [LaunchIntent.open] when every answer was on time or the late one
+  /// came after [_lateLimit]. Collected once.
+  static Future<LaunchIntent> lateIntent() {
+    final late = _late;
+    _late = null;
+    return late ?? Future.value(LaunchIntent.open);
   }
 
   /// The intent the platform named, or [LaunchIntent.open] for a name this

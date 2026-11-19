@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -635,5 +636,14 @@ void main() {
   test('a platform with no built-in model says so', () async {
     const none = NoTitleModel('Needs a built-in on-device model');
     expect(await none.unavailableReason(), 'Needs a built-in on-device model');
+  });
+
+  test('Linux has no model to wait for, so nothing offers to name notes', () {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    expect(platformTitleModel(), isNull);
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    expect(platformTitleModel(), isA<NoTitleModel>());
   });
 }

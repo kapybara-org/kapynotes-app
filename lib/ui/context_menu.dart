@@ -54,9 +54,12 @@ class KapyContextMenuSurface extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(vertical: 4),
   });
 
+  /// As wide as its longest line where there is a pointer, so every label
+  /// shows in full beside its shortcut. On touch, wide enough for a phone's
+  /// longer labels, which have no shortcut beside them.
   static BoxConstraints get constraints => BoxConstraints(
     minWidth: 144,
-    maxWidth: AppPlatform.hasPointer ? 208 : 256,
+    maxWidth: AppPlatform.hasPointer ? 320 : 256,
   );
 
   final Widget child;

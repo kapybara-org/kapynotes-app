@@ -22,6 +22,9 @@
 # release/** still build on push, since no pull request covers a direct push or
 # the commit a merge creates.
 #
+# Linux builds here too, on x86_64 and aarch64, and the x86_64 packages are
+# then started on clean distros. Neither Linux job is a required check yet.
+#
 # Pull requests from forks run with no secrets — GitHub withholds them — so
 # untrusted code cannot reach the signing keys this repository holds for
 # desktop-release.yml.
@@ -154,3 +157,306 @@ jobs:
           name: macos-dmg-unsigned
           path: build/release/KapyNotes-*-unsigned.dmg
           if-no-files-found: error
+
+  # The tar.gz, .deb and AppImage, built natively on each arch rather than
+  # cross-compiled: GitHub's arm64 runners are free for public repositories,
+  # and a native build runs the same packaging/release.sh a developer does.
+  # ubuntu-22.04 because it is the oldest LTS that Flutter 3.47 and the
+  # plugins accept, and its glibc (2.35) is the floor every package inherits:
+  # build on a newer one and the app stops starting on 22.04 and Debian 12.
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Flutter's own Linux toolchain (clang, cmake, ninja, GTK 3), the
+      # libraries the plugins link (the tray's ayatana-appindicator3, secure
+      # storage's libsecret), libpulse for the ffmpeg that voice notes use,
+      # and the packaging and validation tools. apt-mirrors.sh gives apt a
+      # fallback mirror list and retries, for this step and the ffmpeg below.
+      - name: Install build dependencies
+        run: |
+          sudo sh .github/apt-mirrors.sh
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libayatana-appindicator3-dev libsecret-1-dev \
+            libpulse-dev make xz-utils curl \
+            patchelf dpkg-dev file desktop-file-utils appstream lintian
+
+      # `jni` arrives transitively and its CMake looks for a JVM even though
+      # the library it builds is Android-only and never ships; 17 matches the
+      # Windows job.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # flutter-action installs from Flutter's release archives, which exist
+      # for x64 Linux only. On arm64 the SDK is a clone of the release tag,
+      # which downloads its own arm64 Dart SDK and engine on first run.
+      - if: matrix.arch == 'x86_64'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - if: matrix.arch == 'aarch64'
+        uses: actions/cache@v4
+        with:
+          path: ~/flutter
+          key: flutter-${{ env.FLUTTER_VERSION }}-linux-arm64
+
+      - name: Install Flutter from its release tag
+        if: matrix.arch == 'aarch64'
+        run: |
+          if [ ! -x "$HOME/flutter/bin/flutter" ]; then
+            git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$HOME/flutter"
+          fi
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          "$HOME/flutter/bin/flutter" --disable-analytics
+          "$HOME/flutter/bin/flutter" precache --linux
+
+      - run: flutter --version
+
+      - run: flutter pub get
+
+      # The LGPL ffmpeg that every package ships in libexec/. It changes only
+      # with its script, so a cache keyed on the script's hash skips the
+      # build on almost every run.
+      - uses: actions/cache@v4
+        with:
+          path: build/linux/ffmpeg/${{ matrix.arch }}
+          key: linux-ffmpeg-${{ matrix.runner }}-${{ hashFiles('packaging/linux/build_ffmpeg.sh') }}
+
+      # Builds the obfuscated release bundle with its symbols split out (as on
+      # every other platform), then ffmpeg if the cache missed, then the three
+      # packages. FLUTTER overrides the script's default SDK path.
+      - name: Build Linux packages
+        env:
+          FLUTTER: flutter
+        run: packaging/release.sh linux
+
+      - name: Validate packages
+        run: |
+          set -x
+          version="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
+          case "${{ matrix.arch }}" in x86_64) debarch=amd64 ;; aarch64) debarch=arm64 ;; esac
+          deb="build/release/KapyNotes-$version-$debarch.deb"
+          appimage="build/release/KapyNotes-$version-${{ matrix.arch }}.AppImage"
+          tarball="build/release/KapyNotes-$version-linux-${{ matrix.arch }}.tar.gz"
+          ls -l "$deb" "$appimage" "$tarball"
+          desktop-file-validate linux/runner/resources/com.kapybara.kapynotes.desktop
+          # The metainfo as built, which is where its release gets pubspec's version.
+          mkdir -p metainfo
+          tar -xzf "$tarball" -C metainfo --strip-components=3 kapynotes/share/metainfo/com.kapybara.kapynotes.metainfo.xml
+          appstreamcli validate --no-net --pedantic metainfo/com.kapybara.kapynotes.metainfo.xml
+          grep -q "<release version=\"$version\"" metainfo/com.kapybara.kapynotes.metainfo.xml
+          dpkg-deb -I "$deb"
+          # dlopened rather than linked, so package.sh names them itself.
+          for lib in libgl1 libegl1 libgles2; do
+            dpkg-deb -f "$deb" Depends | tr ',' '\n' | awk '{print $1}' | grep -qx "$lib" \
+              || { echo "::error::$lib missing from the Depends of $deb"; exit 1; }
+          done
+          dpkg-deb -c "$deb" > deb-contents.txt
+          for path in ./usr/bin/kapynotes ./usr/lib/kapynotes/kapynotes ./usr/lib/kapynotes/lib/libapp.so \
+            ./usr/lib/kapynotes/libexec/ffmpeg \
+            ./usr/share/applications/com.kapybara.kapynotes.desktop \
+            ./usr/share/metainfo/com.kapybara.kapynotes.metainfo.xml \
+            ./usr/share/icons/hicolor/256x256/apps/com.kapybara.kapynotes.png \
+            ./usr/share/doc/kapynotes/copyright; do
+            grep -q " $path" deb-contents.txt || { echo "::error::$path missing from $deb"; exit 1; }
+          done
+          ! grep -q 'libdartjni.so' deb-contents.txt
+          tar -tzf "$tarball" | grep -qx 'kapynotes/kapynotes'
+          tar -tzf "$tarball" | grep -qx 'kapynotes/libexec/ffmpeg'
+          # Every package's notice gives the app's source at the tag and the
+          # archive holding the source of its GPL and LGPL parts, and ships
+          # those licences in full; the portable ones list each library they
+          # bundle, and the AppImage its runtime.
+          source="KapyNotes-$version-linux-${{ matrix.arch }}-source.tar"
+          mkdir -p notices
+          tar -xzf "$tarball" -C notices kapynotes/share/doc/kapynotes
+          dpkg-deb --fsys-tarfile "$deb" | tar -x -C notices ./usr/share/doc/kapynotes
+          (cd notices && "../$appimage" --appimage-extract 'usr/share/doc/kapynotes/*' >/dev/null)
+          for doc in notices/kapynotes/share/doc/kapynotes notices/usr/share/doc/kapynotes notices/squashfs-root/usr/share/doc/kapynotes; do
+            cat "$doc/SOURCE"
+            for licence in GPL-3 LGPL-2.1 LGPL-3; do
+              cmp "$doc/$licence" "/usr/share/common-licenses/$licence"
+            done
+            for url in "https://github.com/kapybara-org/kapynotes-app/tree/v$version" \
+              "https://dl.kapynotes.com/downloads/$source" \
+              "https://github.com/kapybara-org/kapynotes-app/releases/download/v$version/$source"; do
+              grep -qxF "  $url" "$doc/SOURCE" || { echo "::error::$doc/SOURCE does not give $url"; exit 1; }
+            done
+            grep -q 'libexec/ffmpeg$' "$doc/SOURCE"
+          done
+          grep -q "AppImage's type2-runtime" notices/squashfs-root/usr/share/doc/kapynotes/SOURCE
+          # The portable packages bundle GPL-3 libraries, so as a whole they
+          # are distributed under the GPL version 3; the .deb bundles none.
+          for doc in notices/kapynotes/share/doc/kapynotes notices/squashfs-root/usr/share/doc/kapynotes; do
+            grep -qF 'Flatpak made from the tar.gz are each distributed, as a whole, under the terms' "$doc/SOURCE"
+          done
+          if grep -qF 'as a whole' notices/usr/share/doc/kapynotes/SOURCE; then
+            echo "::error::the .deb bundles no GPL-3 library, so its notice must not put it under GPL-3"; exit 1
+          fi
+          tar -tzf "$tarball" > tar-contents.txt
+          for lib in $(awk '!/^#/ { print $1 }' packaging/linux/bundled_sources.txt); do
+            grep -qx "kapynotes/lib/$lib" tar-contents.txt || continue
+            grep -qx "  kapynotes/lib/$lib" notices/kapynotes/share/doc/kapynotes/SOURCE
+            grep -qx "  usr/lib/kapynotes/lib/$lib" notices/squashfs-root/usr/share/doc/kapynotes/SOURCE
+          done
+          # Lintian's verdict is shown but does not fail the build: a few of
+          # its tags (a bundled Flutter engine, a private RUNPATH) are the
+          # nature of a Flutter app rather than something to fix.
+          lintian --no-tag-display-limit "$deb" || true
+
+      # Voice notes on Linux are ffmpeg talking to PulseAudio, and the ffmpeg
+      # is the minimal one the packages ship, so this records, decodes and
+      # plays back through that very build against a headless sound server: a
+      # speaker nobody hears and a microphone that hears a tone. The tone
+      # comes from the distro's ffmpeg, which has the lavfi input the shipped
+      # one leaves out. The tests skip themselves where nothing can capture;
+      # here that would be a failure, so they run regardless.
+      - name: Record, decode and play voice notes through the shipped ffmpeg
+        run: |
+          sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils ffmpeg
+          bash test/audio/headless_pulse.sh
+          PATH="$PWD/build/linux/ffmpeg/${{ matrix.arch }}:$PATH" flutter test --run-skipped test/audio/linux_voice_test.dart
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-unsigned
+          path: |
+            build/release/KapyNotes-*.tar.gz
+            build/release/KapyNotes-*.deb
+            build/release/KapyNotes-*.AppImage
+          if-no-files-found: error
+
+  # Starts the x86_64 packages on distros that have never seen a build
+  # toolchain: each container gets only a desktop baseline (GTK 3, libpulse,
+  # Mesa, a font) and the test's own Xvfb and D-Bus, never the libraries the
+  # portable packages bundle, so a library the bundle forgot fails here rather
+  # than on a user's machine. The .deb goes in through apt, which proves its
+  # Depends. packaging/linux/smoke_test.sh holds the checks and runs the same
+  # locally. The host entry mounts the AppImage through FUSE for real on a
+  # 24.04 machine without libfuse2, which is what the static runtime is for.
+  linux-smoke:
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-22.04
+            image: ubuntu:22.04
+          - name: ubuntu-24.04
+            image: ubuntu:24.04
+          - name: debian-12
+            image: debian:12
+          - name: fedora
+            image: fedora:latest
+          - name: appimage-fuse
+            image: ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64-unsigned
+          path: dist
+
+      # The runner's own apt installs the AppImage entry's baseline and FUSE,
+      # and ImageMagick for the screenshots.
+      - name: Give the runner's apt the fallback mirrors
+        run: sudo sh .github/apt-mirrors.sh
+
+      # Every container job used to download its desktop baseline (85 to 95
+      # MB on the Ubuntu images) from a distro mirror into a fresh container,
+      # and a slow mirror alone pushed the job past its limit. The baseline is
+      # now installed once, committed to an image and cached under a key of the
+      # image digest and smoke_test.sh (which lists the packages), so a new
+      # base image or a new package list rebuilds it and later runs load
+      # it from the Actions cache. A cache miss installs it through
+      # apt-mirrors.sh's retries and, on Ubuntu, its fallback mirror list.
+      - name: Resolve the digest of ${{ matrix.image }}
+        id: image
+        if: matrix.image != ''
+        run: |
+          digest=$(docker buildx imagetools inspect "${{ matrix.image }}" --format '{{.Manifest.Digest}}')
+          [[ "$digest" == sha256:* ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # Bump the v1 when the install command below changes: the key sees only
+      # the two scripts.
+      - name: Restore the desktop baseline of ${{ matrix.image }}
+        id: baseline
+        if: matrix.image != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: baseline.tar.gz
+          key: smoke-baseline-v1-${{ matrix.image }}-${{ steps.image.outputs.digest }}-${{ hashFiles('packaging/linux/smoke_test.sh', '.github/apt-mirrors.sh') }}
+
+      - name: Install the desktop baseline in a clean ${{ matrix.image }}
+        if: matrix.image != '' && steps.baseline.outputs.cache-hit != 'true'
+        run: |
+          docker run --name baseline -v "$PWD:/w" -w /w "${{ matrix.image }}" bash -c \
+            'sh .github/apt-mirrors.sh && packaging/linux/smoke_test.sh baseline && { apt-get clean || dnf clean all; }'
+          docker commit baseline smoke-baseline
+          docker save smoke-baseline | gzip > baseline.tar.gz
+
+      - name: Cache the desktop baseline of ${{ matrix.image }}
+        if: matrix.image != '' && steps.baseline.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: baseline.tar.gz
+          key: ${{ steps.baseline.outputs.cache-primary-key }}
+
+      - name: Start the packages in a clean ${{ matrix.image }}
+        if: matrix.image != ''
+        run: |
+          gzip -dc baseline.tar.gz | docker load
+          docker run --rm -v "$PWD:/w" -w /w smoke-baseline bash -c \
+            'if command -v apt-get >/dev/null; then apt-get update -q; fi
+             packaging/linux/smoke_test.sh all dist smoke-out'
+
+      - name: Mount the AppImage through FUSE
+        if: matrix.image == ''
+        run: |
+          # The runner image has no GL libraries at all, so it gets the
+          # containers' desktop baseline first, then FUSE 3 alone.
+          sudo packaging/linux/smoke_test.sh baseline
+          sudo apt-get install -y --no-install-recommends fuse3
+          if dpkg -s libfuse2t64 >/dev/null 2>&1 || dpkg -s libfuse2 >/dev/null 2>&1; then
+            sudo apt-get remove -y libfuse2t64 libfuse2 || true
+          fi
+          ! ldconfig -p | grep -q 'libfuse.so.2'
+          SMOKE_FUSE=1 packaging/linux/smoke_test.sh appimage dist/KapyNotes-*.AppImage smoke-out
+
+      # The containers have no ImageMagick on purpose; the runner does.
+      - name: Convert screenshots
+        if: always()
+        run: |
+          command -v convert >/dev/null || { sudo apt-get update && sudo apt-get install -y imagemagick; }
+          for xwd in smoke-out/*.xwd; do
+            [ -e "$xwd" ] && convert "xwd:$xwd" "${xwd%.xwd}.png" && rm "$xwd"
+          done
+          true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-smoke-${{ matrix.name }}
+          path: smoke-out
+          if-no-files-found: warn

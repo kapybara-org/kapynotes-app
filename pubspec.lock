@@ -130,7 +130,7 @@ packages:
     source: hosted
     version: "1.4.1"
   clock:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: clock
       sha256: e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e
@@ -552,13 +552,12 @@ packages:
     source: hosted
     version: "0.2.3"
   hotkey_manager_linux:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: hotkey_manager_linux
-      sha256: "83676bda8210a3377bc6f1977f193bc1dbdd4c46f1bdd02875f44b6eff9a8473"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.0"
+      path: "packages/hotkey_manager_linux"
+      relative: true
+    source: path
+    version: "0.0.1"
   hotkey_manager_macos:
     dependency: transitive
     description:

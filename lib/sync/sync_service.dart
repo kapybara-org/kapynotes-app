@@ -187,6 +187,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   StreamSubscription<SocketEvent>? _socketEvents;
   Timer? _sendTimer;
   Timer? _retryTimer;
+
+  /// Dismissals sent again on their own, and how many times in a row the
+  /// server has asked them to wait.
+  Timer? _hideRetry;
+  int _hideFailures = 0;
   Timer? _poll;
   bool _foreground = false;
   bool _reconcileScheduled = false;
@@ -670,14 +675,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (personal != null) _state.adoptPersonalSpace(personal.id);
       await _duties(vault);
       _forgetDepartedSpaces();
+      _applyHidden();
       if (_live) {
         _subscribeAll();
       } else if (_socket == null || _socketDown) {
         await _pullAllOverHttp();
       }
+      await _finishLostUnshares();
       _reconcileDirty();
       await _drain();
       await _tasks?.run();
+      await _sendHidden();
       _failures = 0;
       _state.recordSync(_now());
       _settle();
@@ -1204,7 +1212,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         // Only the owner deletes a shared note for everyone. Anyone else's
         // Delete takes it out of their own notes and is never sent, so it
         // needs no right to edit: a viewer's is dismissed the same way.
-        _notes.dismiss(stone);
+        _notes.dismiss(
+          stone,
+          joinedAt: space.member(_keyring.userId)?.joinedAt,
+        );
         continue;
       }
       if (!space.canEdit) continue;
@@ -2656,6 +2667,173 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     }
   }
 
+  /// Each owned space's count of live notes when it was last looked through
+  /// for un-shares that never went up.
+  final Map<String, int> _lostUnsharesChecked = {};
+
+  /// Finishes un-shares that builds 1.29 to 1.33 lost (KAP-110): the note
+  /// is back in this account's own notes, but the move never went up, so the
+  /// server still holds it live in the shared space and everyone there keeps
+  /// it. Its record names the space still, as 1.33 leaves it, or home. The
+  /// space's count of live notes running ahead of the notes this device holds
+  /// in it is the sign, and the space's note keys name what the server holds
+  /// there. A move already
+  /// queued is left to go on its own.
+  Future<void> _finishLostUnshares() async {
+    final personal = _keyring.personal;
+    if (personal == null) return;
+    for (final space in _keyring.spaces) {
+      if (!space.isTeam || !space.isOwner) continue;
+      if (_needsPro.contains(space.id) || !_caughtUp.contains(space.id)) {
+        continue;
+      }
+      if (_notes.notesIn(space.id).length >= space.liveNotes) continue;
+      if (_lostUnsharesChecked[space.id] == space.liveNotes) continue;
+      try {
+        await _finishLostUnsharesIn(space, personal.id);
+      } on SyncRefusedException catch (error) {
+        debugPrint('KapyNotes: un-shares in ${space.id}: ${error.code}');
+      } on SyncTransientException catch (error) {
+        debugPrint('KapyNotes: un-shares in ${space.id}: ${error.message}');
+      }
+    }
+  }
+
+  Future<void> _finishLostUnsharesIn(Space space, String personalId) async {
+    bool lost(String? noteId) {
+      final note = noteId == null ? null : _notes.byId(noteId);
+      final record = noteId == null ? null : _docs.get(noteId);
+      return note != null &&
+          record != null &&
+          note.spaceId == null &&
+          (record.spaceId == personalId || record.spaceId == space.id);
+    }
+
+    final rows = await _api.fetchNoteKeys(space.id);
+    final candidates = [
+      for (final row in rows)
+        if (lost(row.noteId)) row.noteId!,
+    ];
+    // Something on its way is looked at again on a later pass, after it has
+    // landed: a move of this device's own still queued, or the space's log or
+    // this account's own running ahead of this device. A note another of this
+    // account's devices has just shared into the space looks lost until both
+    // its seed and the marker it left at home arrive here, and must not be
+    // taken straight back. The server writes the two together.
+    var busy = false;
+    if (candidates.isNotEmpty) {
+      for (final log in [space.id, personalId]) {
+        final ahead = await _api.pullOps(
+          space: log,
+          after: _state.cursorFor(log),
+          limit: 1,
+        );
+        if (!ahead.isEmpty) busy = true;
+      }
+    }
+    for (final noteId in candidates) {
+      if (busy) break;
+      final note = _notes.byId(noteId);
+      final record = _docs.get(noteId);
+      if (!lost(noteId)) continue;
+      if (note!.isDirty || record!.hasPending) {
+        busy = true;
+        continue;
+      }
+      debugPrint('KapyNotes: finishing an un-share that never went up');
+      record.spaceId = space.id;
+      // Builds up to 1.30 that hold the note in the space take a seed with
+      // nothing new in it for no change, and the space's delete marker after
+      // it for a delete. The seed always carries a change, so they bring the
+      // note home before the marker comes.
+      record.doc.restamp(note.createdAt, _now());
+      _reconcileInto(record, note, personalId);
+      _docs.markDirty(noteId);
+    }
+    if (!busy) _lostUnsharesChecked[space.id] = space.liveNotes;
+  }
+
+  /// Each space's list of the notes this account took out of its own notes,
+  /// so a Delete on one device keeps the note away on all of them, and one
+  /// the server let go of comes back from its history.
+  void _applyHidden() {
+    for (final space in _keyring.spaces) {
+      final hidden = space.hiddenNotes;
+      if (hidden == null || !space.isTeam) continue;
+      _bringBack(_notes.applyHidden(space.id, hidden));
+    }
+  }
+
+  /// Sends the dismissals made on this device until a space's list carries
+  /// them, last in a pass so nothing else waits on them. A server that will
+  /// not take one keeps it on this device alone, as before, and is not asked
+  /// again; one that cannot be reached is asked on the next pass. One made
+  /// under an earlier membership of the space is let go.
+  Future<void> _sendHidden() async {
+    for (final dismissal in _notes.unsentDismissals) {
+      final space = _keyring.byId(dismissal.spaceId);
+      if (space == null) continue;
+      final joined = space.member(_keyring.userId)?.joinedAt;
+      final then = dismissal.joinedAt;
+      // Whole milliseconds, as the dismissal keeps them, whatever precision
+      // the server answers in.
+      if (then != null &&
+          joined != null &&
+          joined.millisecondsSinceEpoch != then.millisecondsSinceEpoch) {
+        final editedAt = _notes.undismissStale(dismissal.noteId, space.id);
+        _bringBack([(id: dismissal.noteId, editedAt: editedAt)]);
+        continue;
+      }
+      try {
+        await _api.hideNote(space.id, dismissal.noteId);
+      } on SyncRefusedException catch (error) {
+        debugPrint('KapyNotes: dismissal not sent: ${error.code}');
+        _notes.keepDismissalLocal(dismissal.noteId);
+      } on SyncTransientException {
+        _retryHidden();
+        return;
+      }
+    }
+    _hideFailures = 0;
+  }
+
+  /// Sends the dismissals again on their own, backing off as the note sync
+  /// does, while the server asks for patience: a pass goes on without them.
+  void _retryHidden() {
+    if (_disposed || _hideRetry != null) return;
+    _hideFailures++;
+    final backoff = minRetry * pow(2, min(_hideFailures - 1, 10)).toDouble();
+    _hideRetry = Timer(backoff > maxRetry ? maxRetry : backoff, () {
+      _hideRetry = null;
+      unawaited(
+        _sendHidden().catchError(
+          (Object error) =>
+              debugPrint('KapyNotes: dismissals not sent: $error'),
+        ),
+      );
+    });
+  }
+
+  /// Renders notes that are no longer kept away from their history, which
+  /// went on arriving while they were.
+  void _bringBack(List<({String id, DateTime? editedAt})> notes) {
+    final personalId = _keyring.personal?.id;
+    for (final (id: noteId, :editedAt) in notes) {
+      final record = _docs.get(noteId);
+      final space = record == null ? null : _keyring.byId(record.spaceId);
+      if (space == null) continue;
+      _render(
+        noteId,
+        _Touched()
+          ..changed = true
+          ..at = editedAt,
+        space: space,
+        storedSpaceId: space.isPersonal ? null : space.id,
+        personalId: personalId,
+      );
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Polling and retries
   // -------------------------------------------------------------------------
@@ -2722,6 +2900,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _notes.removeListener(_onNotesChanged);
     _sendTimer?.cancel();
     _retryTimer?.cancel();
+    _hideRetry?.cancel();
     _presenceExpiryTimer?.cancel();
     _stopPolling();
     _disconnect();

@@ -203,7 +203,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// Kapy AI, built only in builds that carry it. Held here for the reason
   /// [_localModels] is: closing the panel must not drop a chat mid-answer.
   KapyAi? _kapyAi;
-  late final TitleModel _titleModel = widget.titleModel ?? platformTitleModel();
+  late final TitleModel? _titleModel =
+      widget.titleModel ?? platformTitleModel();
 
   /// The MCP server and its settings, on the Mac and Windows only: the
   /// computers an assistant runs on, and where the app can listen locally.
@@ -428,8 +429,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     }
     widget.rates.loadCache();
     _engines = EngineProvider(widget.rates, widget.prefs, widget.notes.now);
-    if ((AppPlatform.isMacOS || AppPlatform.isWindows) &&
-        !AppPlatform.isFlutterTest) {
+    if (AppPlatform.isDesktop && !AppPlatform.isFlutterTest) {
       final engines = _engines!;
       _mcp = McpService(
         store: widget.store,
@@ -445,21 +445,32 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       );
     }
     _ready = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Behind the editor's first two frames, never in front of them: the
+    // editor asks for focus after its first, so the second is the one with
+    // the caret in it and the keyboard on its way, which is all a tap on a
+    // widget is waiting for. The update cache is a map read plus a platform
+    // call for the installed version; restoring the account reads the
+    // platform keystore and asks the server who we are; the task index reads
+    // every task document and reconciles every note with a checklist.
+    // Nothing on screen at that moment needs any of it, and every platform
+    // message and every slice of work before those frames is one they wait
+    // behind.
+    final binding = WidgetsBinding.instance;
+    binding.addPostFrameCallback((_) {
       if (!mounted) return;
-      // After the first frame, never in front of it. The update cache is a
-      // map read plus a platform call for the installed version; restoring
-      // the account reads the platform keystore and asks the server who we
-      // are. Nothing on screen at that moment needs either answer, and every
-      // platform message sent before the frame is one the frame waits behind.
-      widget.updates?.loadCache();
-      unawaited(_mcp?.load());
-      final account = widget.account;
-      if (account != null) {
-        account.planTerms?.loadCache();
-        unawaited(account.restore());
-      }
-      _scheduleBackgroundFetches();
+      binding.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.updates?.loadCache();
+        unawaited(_mcp?.load());
+        final account = widget.account;
+        if (account != null) {
+          account.planTerms?.loadCache();
+          unawaited(account.restore());
+        }
+        unawaited(widget.tasks?.load());
+        _scheduleBackgroundFetches();
+      });
+      binding.ensureVisualUpdate();
     });
   }
 

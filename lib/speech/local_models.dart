@@ -20,14 +20,18 @@ library;
 class LocalModelFile {
   const LocalModelFile({
     required this.name,
-    required this.url,
+    required this.urls,
     required this.bytes,
     required this.sha256,
   });
 
   /// What it is called on disk, inside the model's own directory.
   final String name;
-  final String url;
+
+  /// Where it is fetched from, in order: our own copy on dl.kapynotes.com,
+  /// then the pinned original it was copied from. A host that fails, or
+  /// whose bytes fail [sha256], hands over to the next.
+  final List<String> urls;
 
   /// The exact length, known ahead of time so progress is real from the first
   /// byte and a truncated download is caught without hashing.
@@ -239,10 +243,12 @@ const List<LocalSpeechModel> localSpeechModels = <LocalSpeechModel>[
 /// NVIDIA's Parakeet TDT 0.6B v3, quantised to int8 and exported to ONNX by
 /// the sherpa-onnx project — the export the recogniser will load.
 ///
-/// Served from Hugging Face, which is where the sherpa-onnx maintainer
-/// publishes it. Our own mirror would cost 670 MB of storage and buy nothing
-/// while [LocalModelFile.sha256] is checked on arrival: a CDN that served the
-/// wrong bytes would fail verification exactly as a hostile one would.
+/// Served from our own copy on dl.kapynotes.com, with the sherpa-onnx
+/// maintainer's Hugging Face upload, pinned to the revision the copy was made
+/// from, behind it. The pin stops a re-export from changing the bytes under a
+/// shipped build, but Hugging Face can still delete the revision or turn a
+/// busy client away, and a shipped build cannot be pointed anywhere else.
+/// Whichever host answers, the bytes have to match [LocalModelFile.sha256].
 const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
   id: 'parakeet-tdt-0.6b-v3-int8',
   name: 'Parakeet TDT 0.6B v3',
@@ -308,32 +314,40 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
   files: <LocalModelFile>[
     LocalModelFile(
       name: 'encoder.int8.onnx',
-      url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx',
+      urls: [
+        'https://dl.kapynotes.com/models/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx',
+        'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx',
+      ],
       bytes: 652184281,
       sha256:
           'acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247',
     ),
     LocalModelFile(
       name: 'decoder.int8.onnx',
-      url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx',
+      urls: [
+        'https://dl.kapynotes.com/models/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx',
+        'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx',
+      ],
       bytes: 11845275,
       sha256:
           '179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e',
     ),
     LocalModelFile(
       name: 'joiner.int8.onnx',
-      url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx',
+      urls: [
+        'https://dl.kapynotes.com/models/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx',
+        'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx',
+      ],
       bytes: 6355277,
       sha256:
           '3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3',
     ),
     LocalModelFile(
       name: 'tokens.txt',
-      url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt',
+      urls: [
+        'https://dl.kapynotes.com/models/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt',
+        'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt',
+      ],
       bytes: 93939,
       sha256:
           'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d',
@@ -438,12 +452,9 @@ const List<LocalSummaryModel> localSummaryModels = <LocalSummaryModel>[
 /// Google's Gemma 4 E2B, instruction-tuned, in the LiteRT-LM bundle that runs
 /// on all five platforms.
 ///
-/// Served from Hugging Face rather than our own mirror, for the same reason
-/// Parakeet is: the checksum below is compiled into the app, so the host is
-/// never trusted, only the content. A mirror was planned while the smaller
-/// Gemma 3 was the candidate and its weights were behind a licence gate;
-/// these are not, so mirroring would have bought storage and a second thing
-/// to keep in sync and nothing else.
+/// Served the way Parakeet is: our copy on dl.kapynotes.com first, then the
+/// pinned Hugging Face revision it was copied from, both checked against the
+/// hash compiled into the app.
 ///
 /// Chosen over the smaller Gemma 3 1B after measuring both trades. It is a
 /// four-times larger download and a better summariser by a wide margin, and —
@@ -485,8 +496,10 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
   files: [
     LocalModelFile(
       name: 'gemma-4-E2B-it.litertlm',
-      url:
-          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/2d74ac41a33d7da82f39f7d5720a04c68514a103/gemma-4-E2B-it.litertlm',
+      urls: [
+        'https://dl.kapynotes.com/models/litert-community/gemma-4-E2B-it-litert-lm/2d74ac41a33d7da82f39f7d5720a04c68514a103/gemma-4-E2B-it.litertlm',
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/2d74ac41a33d7da82f39f7d5720a04c68514a103/gemma-4-E2B-it.litertlm',
+      ],
       bytes: 2588147712,
       sha256:
           '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',

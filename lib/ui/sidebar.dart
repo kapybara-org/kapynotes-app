@@ -23,6 +23,7 @@ import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'keycap.dart';
 import 'member_avatars.dart';
+import 'note_picks.dart';
 import 'notes_list.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
@@ -79,6 +80,19 @@ SidebarTab sidebarTabOf(Note note, Sharing sharing) {
       : SidebarTab.shared;
 }
 
+/// What can be done to many picked notes at once.
+enum PickedAction { pin, unpin, hide, unhide, archive, restore, delete }
+
+KapyIconData _pickedIcon(PickedAction action) => switch (action) {
+  PickedAction.pin => KapyIcons.pinOutlined,
+  PickedAction.unpin => KapyIcons.pinRounded,
+  PickedAction.hide => hiddenIcon,
+  PickedAction.unhide => unhideIcon,
+  PickedAction.archive => archiveIcon,
+  PickedAction.restore => restoreIcon,
+  PickedAction.delete => deleteIcon,
+};
+
 /// The note list, under the field that opens search.
 class Sidebar extends StatelessWidget {
   const Sidebar({
@@ -109,15 +123,10 @@ class Sidebar extends StatelessWidget {
     this.archiveMode = false,
     this.hiddenMode = false,
     this.onDelete,
+    this.asksBeforeDeleting = true,
     this.onDeleteAll,
-    this.selecting = false,
-    this.checkedIds = const {},
-    this.onToggleChecked,
-    this.onStartSelecting,
-    this.onCancelSelecting,
-    this.onCheckAll,
-    this.onDeleteChecked,
-    this.onRestoreChecked,
+    this.picks,
+    this.onPicked,
     this.collaborators = const {},
     this.onOpenSpace,
     this.tab = SidebarTab.mine,
@@ -202,21 +211,23 @@ class Sidebar extends StatelessWidget {
   final bool archiveMode;
   final bool hiddenMode;
 
-  /// Throws one note away for good. Only ever supplied in the archive.
+  /// Throws one note away for good, or takes one somebody else shares out of
+  /// the reader's notes.
   final ValueChanged<String>? onDelete;
+
+  /// Whether [onDelete] asks first, which its menu item says with an
+  /// ellipsis.
+  final bool asksBeforeDeleting;
 
   /// Empties the archive.
   final VoidCallback? onDeleteAll;
 
-  /// Whether the list is picking notes rather than opening them.
-  final bool selecting;
-  final Set<String> checkedIds;
-  final ValueChanged<String>? onToggleChecked;
-  final VoidCallback? onStartSelecting;
-  final VoidCallback? onCancelSelecting;
-  final VoidCallback? onCheckAll;
-  final VoidCallback? onDeleteChecked;
-  final VoidCallback? onRestoreChecked;
+  /// The notes picked to act on together. Null where none can be.
+  final NotePicks? picks;
+
+  /// Does an action to the picked notes on screen it applies to, given in
+  /// the list's order.
+  final void Function(PickedAction action, List<String> ids)? onPicked;
 
   /// Whoever else has each shared note open right now, by note. A row with
   /// somebody in it says so where its timestamp would be.
@@ -307,18 +318,7 @@ class Sidebar extends StatelessWidget {
                     : const EdgeInsets.fromLTRB(18, 0, 18, 12),
                 child: controls,
               ),
-            if (archiveMode && (notes.isNotEmpty || selecting))
-              _ArchiveActions(
-                selecting: selecting,
-                checkedCount: checkedIds.length,
-                total: notes.length,
-                onStartSelecting: onStartSelecting,
-                onCancelSelecting: onCancelSelecting,
-                onCheckAll: onCheckAll,
-                onDeleteAll: onDeleteAll,
-                onDeleteChecked: onDeleteChecked,
-                onRestoreChecked: onRestoreChecked,
-              ),
+            if (_picking || (archiveMode && notes.isNotEmpty)) _pickBar(),
             Expanded(
               child: _BelowInvitations(
                 invitations:
@@ -338,10 +338,18 @@ class Sidebar extends StatelessWidget {
                   onEnterSelected: onEnterSelected,
                   onArchiveSelected: _archiveSelected,
                   onDeleteSelected: _deleteSelected,
+                  onPickAll: picks == null || notes.isEmpty
+                      ? null
+                      : () => picks!.all(_order),
+                  onExtendPick: picks == null || notes.isEmpty
+                      ? null
+                      : (delta) =>
+                            picks!.step(_order, delta, open: _highlighted?.id),
+                  onStopPicking: _picking ? picks!.clear : null,
                   archiveShortcut: archiveShortcut,
                   child: notes.isEmpty
                       ? _buildEmpty(context)
-                      : _buildBesideRail(context),
+                      : _sweeps(_buildBesideRail(context)),
                 ),
               ),
             ),
@@ -388,6 +396,204 @@ extension on Sidebar {
   /// only where the space says so. The row's rule, and the keyboard's.
   bool _mayEdit(Note note) => sharing?.canEdit(note) ?? !note.isShared;
 
+  /// What a row's delete says it does. A note somebody else owns only leaves
+  /// the reader's notes, as the question that follows says; their own goes
+  /// for good, which the archive spells out beside Restore. The ellipsis is
+  /// the question, and goes with it.
+  String _deleteLabel(Note note) {
+    final label = _theirs(note)
+        ? 'Remove note'
+        : _specialMode
+        ? 'Delete permanently'
+        : 'Delete note';
+    return asksBeforeDeleting ? '$label…' : label;
+  }
+
+  /// Whether [note] is somebody else's, shared with the reader: a delete only
+  /// takes it out of their notes.
+  bool _theirs(Note note) {
+    final space = sharing?.spaceOf(note);
+    return space != null && space.isTeam && !space.isOwner;
+  }
+
+  bool get _picking => picks?.on ?? false;
+
+  /// The notes in the order their rows are painted, which is the order the
+  /// arrows walk and a range of picks runs across.
+  List<Note> get _painted => _railOrder;
+
+  List<String> get _order => [for (final note in _painted) note.id];
+
+  /// The picked notes on screen, in the list's order. One picked in another
+  /// list, or filtered out by a search, is not what an action here acts on.
+  List<Note> get _picked => [
+    for (final note in _painted)
+      if (picks?.contains(note.id) ?? false) note,
+  ];
+
+  /// What can be done to the picked notes, each with the ones it applies to:
+  /// the row menu's own rules, note by note, so one a reader may only view
+  /// is left out of what would change it.
+  List<(PickedAction, List<Note>)> get _pickedChoices {
+    final picked = _picked;
+    List<Note> those(bool Function(Note note) applies) =>
+        picked.where(applies).toList();
+    final unpinned = those((note) => !pinnedNoteIds.contains(note.id));
+    return [
+      if (onTogglePin != null)
+        unpinned.isEmpty
+            ? (PickedAction.unpin, picked)
+            : (PickedAction.pin, unpinned),
+      if (!_specialMode && onHide != null)
+        (PickedAction.hide, those((note) => !note.isShared && _mayEdit(note))),
+      if (archiveMode && onRestore != null)
+        (PickedAction.restore, those(_mayEdit)),
+      if (hiddenMode && onUnhide != null)
+        (PickedAction.unhide, those(_mayEdit)),
+      if (!_specialMode && onArchive != null)
+        (PickedAction.archive, those(_mayEdit)),
+      if (onDelete != null) (PickedAction.delete, those(_mayEdit)),
+    ];
+  }
+
+  /// What an action says it does, and to how many, in the width of a menu.
+  /// One note deletes as a row does, asking only if the reader still wants
+  /// to be asked; more always ask.
+  String _pickedLabel(PickedAction action, List<Note> notes) {
+    final many = notes.length > 1;
+    final count = many ? '${notes.length} notes' : 'note';
+    return switch (action) {
+      PickedAction.pin => 'Pin $count',
+      PickedAction.unpin => 'Unpin $count',
+      PickedAction.hide => many ? 'Hide $count' : 'Move to Hidden Notes',
+      PickedAction.unhide =>
+        many ? 'Move ${notes.length} to Notes' : 'Move to Notes',
+      PickedAction.archive => 'Archive $count',
+      PickedAction.restore => 'Restore $count',
+      PickedAction.delete =>
+        !many
+            ? _deleteLabel(notes.single)
+            : notes.every(_theirs)
+            ? 'Remove $count…'
+            : 'Delete $count…',
+    };
+  }
+
+  /// The menu a right click or long press opens on picked notes.
+  List<KapyMenuAction> _pickedMenu() => [
+    for (final (action, notes) in _pickedChoices)
+      if (notes.isNotEmpty)
+        KapyMenuAction(
+          value: 'picked-${action.name}',
+          label: _pickedLabel(action, notes),
+          icon: _pickedIcon(action),
+          destructive:
+              action == PickedAction.archive || action == PickedAction.delete,
+        ),
+  ];
+
+  void _choosePicked(String value) {
+    for (final (action, notes) in _pickedChoices) {
+      if (value != 'picked-${action.name}' || notes.isEmpty) continue;
+      onPicked?.call(action, [for (final note in notes) note.id]);
+    }
+  }
+
+  /// [action] on the picked notes it applies to; null where it applies to
+  /// none of them, which greys its button out.
+  VoidCallback? _pickedAction(PickedAction action) {
+    final onPicked = this.onPicked;
+    if (onPicked == null) return null;
+    for (final (each, notes) in _pickedChoices) {
+      if (each != action || notes.isEmpty) continue;
+      return () => onPicked(action, [for (final note in notes) note.id]);
+    }
+    return null;
+  }
+
+  /// Over the list while notes are picked: how many, and what most often
+  /// happens to them. The rest is in their menu. Over the archive at rest,
+  /// its Select and Delete all.
+  Widget _pickBar() {
+    final picks = this.picks;
+    if (picks == null || !picks.on) {
+      return _PickActions(
+        label: 'Archived Notes',
+        buttons: [
+          _IconButton(
+            key: const ValueKey('archive-start-selecting'),
+            icon: KapyIcons.checklistRounded,
+            tooltip: 'Select notes',
+            onPressed: picks?.start,
+          ),
+          _IconButton(
+            key: const ValueKey('archive-delete-all'),
+            icon: KapyIcons.deleteSweepOutlined,
+            tooltip: 'Delete all',
+            onPressed: onDeleteAll,
+          ),
+        ],
+      );
+    }
+    final picked = _picked.length;
+    final order = _order;
+    final (primary, primaryTip) = archiveMode
+        ? (PickedAction.restore, 'Restore selected')
+        : hiddenMode
+        ? (PickedAction.unhide, 'Move selected to Notes')
+        : (PickedAction.archive, 'Archive selected');
+    final offered = {for (final (action, _) in _pickedChoices) action};
+    return _PickActions(
+      label: picked == 0 ? 'Select notes' : '$picked selected',
+      buttons: [
+        if (picked < order.length)
+          _IconButton(
+            key: const ValueKey('pick-all'),
+            icon: KapyIcons.selectAllRounded,
+            tooltip: 'Select all',
+            onPressed: () => picks.all(order),
+          ),
+        if (offered.contains(primary))
+          _IconButton(
+            key: ValueKey('picked-${primary.name}'),
+            icon: _pickedIcon(primary),
+            tooltip: primaryTip,
+            onPressed: _pickedAction(primary),
+          ),
+        if (offered.contains(PickedAction.delete))
+          _IconButton(
+            key: const ValueKey('picked-delete'),
+            icon: deleteIcon,
+            tooltip: 'Delete selected',
+            onPressed: _pickedAction(PickedAction.delete),
+          ),
+        _IconButton(
+          key: const ValueKey('pick-done'),
+          icon: KapyIcons.closeRounded,
+          tooltip: 'Done selecting',
+          onPressed: picks.clear,
+        ),
+      ],
+    );
+  }
+
+  /// A ⌘-click, or a Ctrl-click off a Mac, on a note while nothing is
+  /// picked: the one place that decides what it does. It starts picking with
+  /// the open note and this one, as Finder does.
+  void _commandClick(Note note) =>
+      picks!.toggle(note.id, open: _highlighted?.id);
+
+  /// Lets a mouse press dragged down the rows pick every note it crosses.
+  Widget _sweeps(Widget list) {
+    final picks = this.picks;
+    if (picks == null || !AppPlatform.hasPointer) return list;
+    return NoteSweep(
+      onStart: picks.sweepFrom,
+      onUpdate: (id) => picks.sweepTo(_order, id),
+      child: list,
+    );
+  }
+
   /// The note a keypress acts on: the highlighted one, as long as the list on
   /// screen is really showing it. A selection a search has filtered out, or
   /// one left behind in the other list, is not what the reader is looking at
@@ -402,24 +608,22 @@ extension on Sidebar {
   }
 
   /// Files the highlighted note away: what the archive shortcut does in the
-  /// list, mirroring the glyph the row itself offers. Null where there is
-  /// nothing to file.
+  /// list, mirroring the glyph the row itself offers, or files away every
+  /// picked note while there are picks. Null where there is nothing to file.
   VoidCallback? get _archiveSelected {
-    if (_specialMode || selecting || onArchive == null) return null;
+    if (_specialMode || onArchive == null) return null;
+    if (_picking) return _pickedAction(PickedAction.archive);
     final note = _highlighted;
     if (note == null || !_mayEdit(note)) return null;
     return () => onArchive!(note.id);
   }
 
-  /// Throws it away for good, or throws away every ticked note while the
-  /// archive is picking them. The archive only — the list has no permanent
-  /// delete to lend a key — and every path through here asks first.
+  /// Throws it away for good, or every picked note while there are picks.
+  /// Archive and Hidden Notes only: in the list the key files the note away
+  /// instead, which keeps it.
   VoidCallback? get _deleteSelected {
     if (!_specialMode) return null;
-    if (selecting) {
-      final deleteChecked = onDeleteChecked;
-      return checkedIds.isEmpty ? null : deleteChecked;
-    }
+    if (_picking) return _pickedAction(PickedAction.delete);
     if (onDelete == null) return null;
     final note = _highlighted;
     if (note == null || !_mayEdit(note)) return null;
@@ -433,8 +637,8 @@ extension on Sidebar {
   /// store's order, and an arrow key must follow what is visibly above or
   /// below the current row.
   void _moveSelected(int delta) {
-    if (selecting) return;
-    final ordered = _railOrder;
+    if (_picking) return;
+    final ordered = _painted;
     if (ordered.length < 2) return;
     final current = ordered.indexWhere((note) => note.id == selectedId);
     final next = current < 0
@@ -448,6 +652,16 @@ extension on Sidebar {
     required bool shared,
     bool pinned = false,
     NoteRowStyle style = NoteRowStyle.row,
+  }) => MetaData(
+    metaData: NotePickTarget(note.id),
+    child: _noteRow(note, shared: shared, pinned: pinned, style: style),
+  );
+
+  Widget _noteRow(
+    Note note, {
+    required bool shared,
+    required bool pinned,
+    required NoteRowStyle style,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
@@ -479,14 +693,19 @@ extension on Sidebar {
     onUnhide: !hiddenMode || onUnhide == null || !_mayEdit(note)
         ? null
         : () => onUnhide!(note.id),
-    onDelete: !_specialMode || onDelete == null || !_mayEdit(note)
+    onDelete: onDelete == null || !_mayEdit(note)
         ? null
         : () => onDelete!(note.id),
-    selecting: selecting,
-    checked: checkedIds.contains(note.id),
-    onToggleChecked: onToggleChecked == null
+    deleteLabel: _deleteLabel(note),
+    selecting: _picking,
+    checked: picks?.contains(note.id) ?? false,
+    onToggleChecked: picks == null ? null : () => picks!.toggle(note.id),
+    onCommandClick: picks == null ? null : () => _commandClick(note),
+    onPickTo: picks == null || !AppPlatform.hasPointer
         ? null
-        : () => onToggleChecked!(note.id),
+        : () => picks!.extendTo(_order, note.id, open: _highlighted?.id),
+    pickedActions: picks == null ? null : _pickedMenu,
+    onPickedAction: _choosePicked,
   );
 
   /// Pinned notes lead, then the shared spaces, then everything else.
@@ -863,12 +1082,26 @@ class _NoteListKeys extends StatefulWidget {
     required this.onEnterSelected,
     required this.onArchiveSelected,
     required this.onDeleteSelected,
+    required this.onPickAll,
+    required this.onExtendPick,
+    required this.onStopPicking,
     required this.archiveShortcut,
     required this.child,
   });
 
   /// Walks the highlight by one visible row. Negative is up, positive down.
   final ValueChanged<int> onMoveSelected;
+
+  /// ⌘A, or Ctrl+A off a Mac: picks every note in the list. Null where
+  /// nothing can be picked, which leaves the chord to whoever else wants it.
+  final VoidCallback? onPickAll;
+
+  /// Shift with ↑ or ↓: the picked range one row further that way.
+  final ValueChanged<int>? onExtendPick;
+
+  /// Esc while notes are picked, which lets them go. Null otherwise, so Esc
+  /// goes on to whatever it closes.
+  final VoidCallback? onStopPicking;
 
   /// Moves focus from the selected row into its editor.
   final VoidCallback? onEnterSelected;
@@ -877,8 +1110,8 @@ class _NoteListKeys extends StatefulWidget {
   /// where nothing in the list can be archived.
   final VoidCallback? onArchiveSelected;
 
-  /// Throws it away for good: the archive only, and behind the confirmation
-  /// the button there already asks for.
+  /// Throws it away for good: Archive and Hidden Notes only, behind the
+  /// question the menu item asks, unless the reader said not to ask.
   final VoidCallback? onDeleteSelected;
 
   /// The one press that removes the highlighted note: the same shortcut the
@@ -936,6 +1169,36 @@ class _NoteListKeysState extends State<_NoteListKeys> {
     };
   }
 
+  /// Shift with a vertical arrow, and no other modifier: how far the picked
+  /// range grows. Repeats too, as a held arrow walks the list.
+  static int? _extension(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return null;
+    final keyboard = HardwareKeyboard.instance;
+    if (!keyboard.isShiftPressed ||
+        keyboard.isMetaPressed ||
+        keyboard.isControlPressed ||
+        keyboard.isAltPressed) {
+      return null;
+    }
+    return switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowUp => -1,
+      LogicalKeyboardKey.arrowDown => 1,
+      _ => null,
+    };
+  }
+
+  /// ⌘A on a Mac, Ctrl+A elsewhere, alone.
+  static bool _picksAll(KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyA) {
+      return false;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    final command = AppPlatform.isMacOS
+        ? keyboard.isMetaPressed && !keyboard.isControlPressed
+        : keyboard.isControlPressed && !keyboard.isMetaPressed;
+    return command && !keyboard.isShiftPressed && !keyboard.isAltPressed;
+  }
+
   static bool _entersEditor(KeyEvent event) {
     if (event is! KeyDownEvent ||
         event.logicalKey != LogicalKeyboardKey.arrowRight) {
@@ -948,9 +1211,13 @@ class _NoteListKeysState extends State<_NoteListKeys> {
         !keyboard.isShiftPressed;
   }
 
+  /// Not past a question the press put on screen: the dialog has the
+  /// keyboard until it is answered, and hands it back here itself.
   void _keepFocus() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _node.requestFocus();
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _node.requestFocus();
+      }
     });
   }
 
@@ -959,6 +1226,27 @@ class _NoteListKeysState extends State<_NoteListKeys> {
       final enter = widget.onEnterSelected;
       if (enter == null) return KeyEventResult.ignored;
       enter();
+      return KeyEventResult.handled;
+    }
+
+    final pickAll = widget.onPickAll;
+    if (pickAll != null && _picksAll(event)) {
+      pickAll();
+      return KeyEventResult.handled;
+    }
+
+    final extendPick = widget.onExtendPick;
+    final extension = _extension(event);
+    if (extendPick != null && extension != null) {
+      extendPick(extension);
+      return KeyEventResult.handled;
+    }
+
+    final stopPicking = widget.onStopPicking;
+    if (stopPicking != null &&
+        event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
+      stopPicking();
       return KeyEventResult.handled;
     }
 
@@ -974,11 +1262,13 @@ class _NoteListKeysState extends State<_NoteListKeys> {
 
     if (!_removes(event)) return KeyEventResult.ignored;
 
-    // The archive's delete puts a question on screen, and that dialog hands
-    // the keyboard back to this list itself once it is answered.
+    // A delete that asks first leaves the keyboard to its question; one the
+    // reader told not to ask goes at once, and the next note's editor must
+    // not take the keyboard for the next press.
     final delete = widget.onDeleteSelected;
     if (delete != null) {
       delete();
+      _keepFocus();
       return KeyEventResult.handled;
     }
 
@@ -1006,8 +1296,15 @@ class _NoteListKeysState extends State<_NoteListKeys> {
       onKeyEvent: _onKeyEvent,
       child: Listener(
         // A listener rather than a gesture, so every tap still reaches the
-        // row it was aimed at.
-        onPointerDown: (_) => _node.requestFocus(),
+        // row it was aimed at. Taken once the press has reached everything
+        // else: the note being typed in lets go of the keyboard when pressed
+        // outside of, and that must not undo this. Not past a menu the press
+        // put on screen.
+        onPointerDown: (_) => scheduleMicrotask(() {
+          if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+            _node.requestFocus();
+          }
+        }),
         child: widget.child,
       ),
     );
@@ -1071,103 +1368,44 @@ class SidebarNoteGroups {
   ];
 }
 
-/// The strip above the archive: pick some notes, or empty the whole thing.
+/// The bar over the list while notes are picked, and over the archive at
+/// rest: what it holds, then what can be done with it.
 ///
-/// Only ever in the archive. The main list has no delete at all — a note
-/// leaves it by being archived — so there is nothing here to offer anywhere
-/// else, and a bar that appeared over the ordinary notes would be a bar of
-/// dangerous buttons over the ones people actually keep.
+/// Never over the ordinary notes at rest. A bar that stayed there would be a
+/// bar of dangerous buttons over the notes people actually keep.
 ///
 /// Icons rather than words on the right, because the sidebar can be dragged
 /// down to 150pt and the count on the left is the part that must stay
-/// readable when it is.
-class _ArchiveActions extends StatelessWidget {
-  const _ArchiveActions({
-    required this.selecting,
-    required this.checkedCount,
-    required this.total,
-    this.onStartSelecting,
-    this.onCancelSelecting,
-    this.onCheckAll,
-    this.onDeleteAll,
-    this.onDeleteChecked,
-    this.onRestoreChecked,
-  });
+/// readable when it is: four at most, and whatever else picked notes can do
+/// is in their menu.
+class _PickActions extends StatelessWidget {
+  const _PickActions({required this.label, required this.buttons});
 
-  final bool selecting;
-  final int checkedCount;
-  final int total;
-  final VoidCallback? onStartSelecting;
-  final VoidCallback? onCancelSelecting;
-  final VoidCallback? onCheckAll;
-  final VoidCallback? onDeleteAll;
-  final VoidCallback? onDeleteChecked;
-  final VoidCallback? onRestoreChecked;
+  final String label;
+  final List<Widget> buttons;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final label = selecting
-        ? checkedCount == 0
-              ? 'Select notes'
-              : '$checkedCount selected'
-        : 'Archived Notes';
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                fontWeight: FontWeight.w400,
-                color: palette.textSecondary,
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: AppTypeScale.small,
+                  fontWeight: FontWeight.w400,
+                  color: context.palette.textSecondary,
+                ),
               ),
             ),
           ),
-          if (selecting) ...[
-            if (checkedCount < total)
-              _IconButton(
-                key: const ValueKey('archive-check-all'),
-                icon: KapyIcons.selectAllRounded,
-                tooltip: 'Select all',
-                onPressed: onCheckAll,
-              ),
-            _IconButton(
-              key: const ValueKey('archive-restore-checked'),
-              icon: restoreIcon,
-              tooltip: 'Restore selected',
-              onPressed: checkedCount == 0 ? null : onRestoreChecked,
-            ),
-            _IconButton(
-              key: const ValueKey('archive-delete-checked'),
-              icon: deleteIcon,
-              tooltip: 'Delete selected',
-              onPressed: checkedCount == 0 ? null : onDeleteChecked,
-            ),
-            _IconButton(
-              key: const ValueKey('archive-cancel-selecting'),
-              icon: KapyIcons.closeRounded,
-              tooltip: 'Done selecting',
-              onPressed: onCancelSelecting,
-            ),
-          ] else ...[
-            _IconButton(
-              key: const ValueKey('archive-start-selecting'),
-              icon: KapyIcons.checklistRounded,
-              tooltip: 'Select notes',
-              onPressed: total == 0 ? null : onStartSelecting,
-            ),
-            _IconButton(
-              key: const ValueKey('archive-delete-all'),
-              icon: KapyIcons.deleteSweepOutlined,
-              tooltip: 'Delete all',
-              onPressed: total == 0 ? null : onDeleteAll,
-            ),
-          ],
+          ...buttons,
         ],
       ),
     );
@@ -1841,6 +2079,7 @@ class NoteRow extends StatefulWidget {
     this.onHide,
     this.onUnhide,
     this.onDelete,
+    this.deleteLabel = 'Delete note…',
     this.onTogglePin,
     this.archiveShortcut,
     this.pinned = false,
@@ -1850,6 +2089,10 @@ class NoteRow extends StatefulWidget {
     this.selecting = false,
     this.checked = false,
     this.onToggleChecked,
+    this.onCommandClick,
+    this.onPickTo,
+    this.pickedActions,
+    this.onPickedAction,
     this.style = NoteRowStyle.row,
     this.engine,
     this.now = DateTime.now,
@@ -1880,9 +2123,12 @@ class NoteRow extends StatefulWidget {
   final VoidCallback? onHide;
   final VoidCallback? onUnhide;
 
-  /// Throws the note away for good. Only ever offered inside the archive:
-  /// everywhere else the way out of the list is [onArchive], which keeps it.
+  /// Throws the note away for good, or takes one somebody else shares out of
+  /// the reader's notes.
   final VoidCallback? onDelete;
+
+  /// What [onDelete]'s menu item says.
+  final String deleteLabel;
   final VoidCallback? onTogglePin;
 
   /// The chord that archives the open note, named in the menu beside the
@@ -1897,7 +2143,22 @@ class NoteRow extends StatefulWidget {
 
   /// Whether this row is one of the picked ones.
   final bool checked;
+
+  /// Picks the note or lets it go while notes are being picked: what any
+  /// click on it does then, with ⌘ or Ctrl or without.
   final VoidCallback? onToggleChecked;
+
+  /// A click with ⌘ (Ctrl off a Mac) while nothing is picked.
+  final VoidCallback? onCommandClick;
+
+  /// A click with Shift: picks every note from the last one picked, or the
+  /// open one, to this.
+  final VoidCallback? onPickTo;
+
+  /// While picking, the menu a right click or long press opens instead of
+  /// the note's own, for every picked note, and what was chosen from it.
+  final List<KapyMenuAction> Function()? pickedActions;
+  final ValueChanged<String>? onPickedAction;
 
   /// Whether the note is in a shared space, which the row marks so a person
   /// typing knows somebody else can see it.
@@ -1926,9 +2187,23 @@ class _NoteRowState extends State<NoteRow> {
       !widget.openElsewhere;
 
   /// A click opens the note where the focus is. Option- or Alt-click opens it
-  /// beside that instead, the way a code editor's file list does.
+  /// beside that instead, the way a code editor's file list does. Shift picks
+  /// the range from the open note, as a file list does, and while notes are
+  /// picked any other click picks too. A click with ⌘ or Ctrl while nothing
+  /// is picked goes to [NoteRow.onCommandClick].
   void _open() {
-    if (_canOpenToSide && HardwareKeyboard.instance.isAltPressed) {
+    final keyboard = HardwareKeyboard.instance;
+    final pickTo = widget.onPickTo;
+    if (pickTo != null && keyboard.isShiftPressed) return pickTo();
+    if (widget.selecting) return (widget.onToggleChecked ?? widget.onTap)();
+    final commandClick = widget.onCommandClick;
+    final command = AppPlatform.isMacOS
+        ? keyboard.isMetaPressed
+        : keyboard.isControlPressed;
+    if (commandClick != null && command && AppPlatform.hasPointer) {
+      return commandClick();
+    }
+    if (_canOpenToSide && keyboard.isAltPressed) {
       widget.onOpenToSide!();
       return;
     }
@@ -1936,6 +2211,7 @@ class _NoteRowState extends State<NoteRow> {
   }
 
   List<KapyMenuAction> _availableActions() {
+    if (widget.selecting) return widget.pickedActions?.call() ?? const [];
     // Named only where there is a keyboard to press it on: this same menu
     // opens on a long press on a phone, and a chord nobody there can type is
     // a line of noise beside the thing they came to tap.
@@ -1975,14 +2251,6 @@ class _NoteRowState extends State<NoteRow> {
           label: 'Move to Hidden Notes',
           icon: hiddenIcon,
         ),
-      if (widget.onDelete != null)
-        KapyMenuAction(
-          value: 'delete',
-          label: 'Delete permanently',
-          icon: deleteIcon,
-          hint: archiveShortcut?.displayLabel,
-          destructive: true,
-        ),
       if (widget.onRestore != null)
         const KapyMenuAction(
           value: 'restore',
@@ -1995,15 +2263,24 @@ class _NoteRowState extends State<NoteRow> {
           label: 'Move to Notes',
           icon: unhideIcon,
         ),
-      // Filing a note away is the destructive end of the ordinary note menu:
-      // keep it last, after the protected-folder alternative, and use the
-      // same warning colour as the permanent action in Archived Notes.
+      // The ways out of the list end the menu, in the warning colour, the one
+      // that keeps the note before the one that does not. The shortcut is
+      // named on whichever of them it does: archiving in the list, deleting
+      // where the note is already archived or hidden.
       if (widget.onArchive != null)
         KapyMenuAction(
           value: 'archive',
           label: 'Archive note',
           icon: archiveIcon,
           hint: archiveShortcut?.displayLabel,
+          destructive: true,
+        ),
+      if (widget.onDelete != null)
+        KapyMenuAction(
+          value: 'delete',
+          label: widget.deleteLabel,
+          icon: deleteIcon,
+          hint: widget.onArchive == null ? archiveShortcut?.displayLabel : null,
           destructive: true,
         ),
     ];
@@ -2083,6 +2360,9 @@ class _NoteRowState extends State<NoteRow> {
 
   /// Right-click on desktop, long-press on touch, or the row's More button.
   Future<void> _showContextMenu(BuildContext context, Offset position) async {
+    // While picking, the menu is the picked notes', and the note it was
+    // opened on is one of them.
+    if (widget.selecting && !widget.checked) widget.onToggleChecked?.call();
     final actions = _availableActions();
     if (actions.isEmpty) return;
 
@@ -2121,6 +2401,10 @@ class _NoteRowState extends State<NoteRow> {
       );
     }
     if (!mounted) return;
+    if (widget.selecting) {
+      if (choice != null) widget.onPickedAction?.call(choice);
+      return;
+    }
     if (choice == 'archive') widget.onArchive?.call();
     if (choice == 'restore') widget.onRestore?.call();
     if (choice == 'hide') widget.onHide?.call();
@@ -2160,6 +2444,9 @@ class _NoteRowState extends State<NoteRow> {
               presenceStatusText([for (final person in people) person.name])!;
     final glance = NoteGlance.of(note, widget.engine);
     final picking = widget.selecting ? widget.checked : null;
+    // While picking, what is lit is what is picked: the open note keeps its
+    // highlight only once it is one of them.
+    final selected = widget.selected && !widget.selecting;
     final ringed = widget.openElsewhere && !widget.selected;
     final face = switch (widget.style) {
       NoteRowStyle.card || NoteRowStyle.square => NoteCardFace(
@@ -2169,7 +2456,7 @@ class _NoteRowState extends State<NoteRow> {
         date: date,
         day: day,
         snippet: snippet,
-        selected: widget.selected,
+        selected: selected,
         hovering: _hovering,
         ringed: ringed,
         locked: widget.locked,
@@ -2180,7 +2467,7 @@ class _NoteRowState extends State<NoteRow> {
         note: note,
         date: date,
         day: day,
-        selected: widget.selected,
+        selected: selected,
         hovering: _hovering,
         ringed: ringed,
         locked: widget.locked,
@@ -2190,7 +2477,7 @@ class _NoteRowState extends State<NoteRow> {
       NoteRowStyle.drawingRow => DrawingListRowFace(
         note: note,
         date: date,
-        selected: widget.selected,
+        selected: selected,
         hovering: _hovering,
         ringed: ringed,
         locked: widget.locked,
@@ -2203,7 +2490,7 @@ class _NoteRowState extends State<NoteRow> {
         glance: glance,
         date: date,
         snippet: snippet,
-        selected: widget.selected,
+        selected: selected,
         hovering: _hovering,
         ringed: ringed,
         locked: widget.locked,
@@ -2249,18 +2536,21 @@ class _NoteRowState extends State<NoteRow> {
         ? null
         : widget.note.matchSnippet(widget.query.trim());
 
-    final hasMenu =
-        !widget.selecting &&
-        (widget.onTogglePin != null ||
-            _canOpenToSide ||
-            widget.onArchive != null ||
-            widget.onRestore != null ||
-            widget.onHide != null ||
-            widget.onUnhide != null ||
-            widget.onDelete != null ||
-            widget.onShare != null);
+    final hasMenu = widget.selecting
+        ? widget.pickedActions != null
+        : widget.onTogglePin != null ||
+              _canOpenToSide ||
+              widget.onArchive != null ||
+              widget.onRestore != null ||
+              widget.onHide != null ||
+              widget.onUnhide != null ||
+              widget.onDelete != null ||
+              widget.onShare != null;
 
-    final face = _boardFace(snippet: snippet, hasMenu: hasMenu);
+    final face = _boardFace(
+      snippet: snippet,
+      hasMenu: hasMenu && !widget.selecting,
+    );
 
     final row = MouseRegion(
       // The row is the main click target in the sidebar; matching the
@@ -2271,11 +2561,9 @@ class _NoteRowState extends State<NoteRow> {
       child: Semantics(
         container: true,
         button: true,
-        selected: widget.selected,
+        selected: widget.selecting ? widget.checked : widget.selected,
         child: GestureDetector(
-          onTap: widget.selecting
-              ? (widget.onToggleChecked ?? widget.onTap)
-              : _open,
+          onTap: _open,
           onSecondaryTapDown: !hasMenu
               ? null
               : (details) => _showContextMenu(context, details.globalPosition),

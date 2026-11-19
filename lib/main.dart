@@ -17,6 +17,7 @@ import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
 import 'core/font_licenses.dart';
 import 'core/platform.dart';
+import 'core/quick_capture.dart';
 import 'core/window_placement.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
@@ -34,8 +35,9 @@ import 'sync/key_store.dart';
 import 'sync/sync_api.dart';
 import 'sync/sync_state.dart';
 
-Future<void> main() async {
+Future<void> main([List<String> args = const []]) async {
   WidgetsFlutterBinding.ensureInitialized();
+  QuickCapture.startedWith(args);
   registerFontLicenses();
   // After the binding has claimed the view-focus callback, so it wraps the
   // framework's handler rather than being replaced by it.
@@ -55,9 +57,9 @@ Future<void> main() async {
   final prefs = LayoutPrefs(store);
   final shortcuts = ShortcutPrefs(store);
   final rates = RatesRepository(store);
-  // Only where the app can install its own updates: Linux desktop and the
-  // phones get theirs elsewhere and would show a button that lies.
-  final updates = AppPlatform.hasAutoUpdate ? UpdateChecker(store) : null;
+  // The desktops only: the phones update through their stores. Linux hears
+  // about a release and links to it; macOS and Windows also install it.
+  final updates = AppPlatform.isDesktop ? UpdateChecker(store) : null;
 
   // One object owns the session, the key and the sync loop; everything else
   // just hands it along. Constructed eagerly because it is cheap — nothing
@@ -183,7 +185,6 @@ Future<void> main() async {
   if (desktopIntegration != null) {
     unawaited(desktopIntegration.initialize(shortcuts));
   }
-  unawaited(tasks.load());
   unawaited(tags.load());
 }
 

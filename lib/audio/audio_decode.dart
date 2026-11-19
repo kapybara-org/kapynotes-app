@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../core/platform.dart';
+import 'linux_ffmpeg.dart';
+
 /// Turns a recording into the raw samples a recogniser can read.
 ///
 /// This is the one piece of native code the whole voice feature needs, and it
@@ -9,7 +12,9 @@ import 'package:flutter/services.dart';
 /// is AAC in an `.m4a`, and every speech model on earth wants 16 kHz mono
 /// PCM. Nothing in Dart decodes AAC, and the four platforms each already have
 /// a decoder in the box — `AVAudioConverter`, `MediaCodec`, Media Foundation
-/// — so the job is to reach each of them, not to ship a fifth.
+/// — so the job is to reach each of them, not to ship a fifth. Linux has none,
+/// and uses the ffmpeg its packages already ship to record and play: see
+/// [decodeWithFfmpeg].
 ///
 /// Apple platforms running macOS or iOS 26 never come here at all: their
 /// recogniser reads the `.m4a` itself. This is for everything else, and for
@@ -74,7 +79,7 @@ class AudioDecodeException implements Exception {
   String toString() => message;
 }
 
-/// The `kapynotes/audio_decode` channel.
+/// The `kapynotes/audio_decode` channel, and ffmpeg on Linux.
 class AudioDecoder {
   const AudioDecoder({MethodChannel channel = const MethodChannel(channelName)})
     : _channel = channel;
@@ -95,6 +100,9 @@ class AudioDecoder {
     File source, {
     int sampleRate = modelSampleRate,
   }) async {
+    if (AppPlatform.isLinux) {
+      return decodeWithFfmpeg(source, sampleRate: sampleRate);
+    }
     final Object? answer;
     try {
       answer = await _channel.invokeMethod<Object?>('decode', {

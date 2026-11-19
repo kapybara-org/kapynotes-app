@@ -73,6 +73,22 @@ void main() {
     expect(frontArgOf(calls.single), isFalse);
   });
 
+  test('Linux shows the colour icon and asks for no tooltip', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    final linux = tray();
+
+    await linux.setVisible(true);
+
+    // tray_manager's Linux side answers setToolTip with not-implemented,
+    // which would leave the tray switched off.
+    expect(calls.map((call) => call.method), ['setIcon', 'setContextMenu']);
+    expect(
+      (calls.first.arguments as Map)['iconPath'],
+      endsWith('assets/branding/kapynotes_tray_linux.png'),
+    );
+    expect(linux.isVisible, isTrue);
+  });
+
   test('a plain click on Windows opens the app rather than the menu', () async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     var opened = 0;
@@ -89,6 +105,37 @@ void main() {
 
     expect(opened, 1);
     expect(calls, isEmpty, reason: 'a left click is not a menu on Windows');
+  });
+
+  test('a plain click on Linux opens the app, as on Windows', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    var opened = 0;
+
+    AppTray(
+      onOpen: () => opened++,
+      onNewNote: () {},
+      onNewTask: () {},
+      onSettings: () {},
+      onQuit: () {},
+      onClick: () async => fail('Linux has no menu bar panel'),
+    ).onTrayIconMouseDown();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(opened, 1);
+    expect(calls, isEmpty);
+  });
+
+  test('Linux has the Windows menu: open, a new note and quit', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+
+    await tray().setVisible(true);
+
+    final menu = calls.singleWhere((call) => call.method == 'setContextMenu');
+    final items = ((menu.arguments as Map)['menu'] as Map)['items'] as List;
+    expect(
+      [for (final item in items) (item as Map)['label']],
+      ['Open Kapy Notes', 'New Note', '', 'Quit Kapy Notes'],
+    );
   });
 
   test('a click on the Mac opens the menu bar panel, not the menu', () async {

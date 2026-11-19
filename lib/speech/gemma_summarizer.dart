@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
 
@@ -12,10 +13,10 @@ import 'summarizer.dart';
 
 /// A downloaded language model, writing summaries on this device.
 ///
-/// This is the fallback for everyone the platform does not cover: Windows and
-/// Linux, and every Mac and phone without Apple Intelligence. It costs a
-/// download the platform model does not, so everything here is arranged
-/// around not making anyone pay for it twice:
+/// This is the fallback for everyone the platform does not cover: Windows, and
+/// every Mac and phone without Apple Intelligence. It costs a download the
+/// platform model does not, so everything here is arranged around not making
+/// anyone pay for it twice:
 ///
 ///   * **Nothing loads until a summary is asked for.** No engine, no weights,
 ///     no native library. A user who never summarises on the device pays the
@@ -75,7 +76,8 @@ class GemmaSummarizer implements Summarizer {
   int get maximumTranscriptChars => (_model.contextTokens * 4 * 2) ~/ 3;
 
   /// Everywhere the LiteRT-LM runtime is in the build, which is everywhere
-  /// but iOS.
+  /// but iOS, except Linux: it has the runtime, and does not offer the model
+  /// yet.
   ///
   /// iOS is the one platform where the runtime could neither be fetched
   /// later — the App Store forbids loading code it did not deliver — nor be
@@ -84,7 +86,7 @@ class GemmaSummarizer implements Summarizer {
   /// summariser does not cover. Those phones summarise in the cloud, as they
   /// did before this existed. The frameworks are dropped from the iOS build
   /// by a script phase on the Runner target.
-  static bool get isPossibleHere => !AppPlatform.isIOS;
+  static bool get isPossibleHere => !AppPlatform.isIOS && !AppPlatform.isLinux;
 
   /// Gemma is multilingual, and the fallback for every language Apple's
   /// model lacks.
@@ -122,7 +124,7 @@ class GemmaSummarizer implements Summarizer {
     String? jobId,
     String? instruction,
   }) async => draftFromText(
-    await _queued(_summaryPrompt(text, instruction), maxTokens: 320),
+    await _queued(summaryPrompt(text, instruction), maxTokens: 320),
     engine: engineId,
   );
 
@@ -235,7 +237,8 @@ class GemmaSummarizer implements Summarizer {
       ? transcript.substring(0, maximumTranscriptChars)
       : transcript;
 
-  String _summaryPrompt(String transcript, String? instruction) {
+  @visibleForTesting
+  String summaryPrompt(String transcript, String? instruction) {
     // The format is asked for explicitly because this model has no guided
     // generation to constrain it — see parseSummaryText for what happens when
     // it answers in its own shape anyway.
@@ -245,7 +248,9 @@ class GemmaSummarizer implements Summarizer {
               'two to five short points, each on its own line beginning '
               'with "- ".';
     return 'Here is a transcript of someone talking into a notes app.\n\n'
-        '$asked\n\n'
+        '$asked\n'
+        'Write in the language the transcript is in, unless asked otherwise '
+        'above.\n\n'
         '$_groundRules\n\n'
         'Transcript:\n${_clamped(transcript)}';
   }

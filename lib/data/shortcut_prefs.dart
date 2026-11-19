@@ -246,7 +246,7 @@ class ShortcutBinding {
       if (control) 'Ctrl',
       if (alt) 'Alt',
       if (shift) 'Shift',
-      if (meta) 'Win',
+      if (meta) AppPlatform.isLinux ? 'Super' : 'Win',
       keyLabel,
     ].join(' + ');
   }

@@ -1,0 +1,18 @@
+# The source of every library the portable Linux packages (the tar.gz and the
+# AppImage) carry in lib/: its soname, the Ubuntu source package it is built
+# from, and that package's licence as Ubuntu's copyright file gives it.
+#
+# package.sh refuses to bundle a library that has no line here, so a plugin
+# that brings in a new one fails the build until its line is added. Every
+# package's share/doc/kapynotes/SOURCE lists these libraries at the versions
+# bundled, and a release build (SOURCE_ARCHIVE=1 in package.sh) puts their
+# Ubuntu source packages, at exactly those versions, into the source archive
+# published beside the packages.
+#
+# soname                        source package           licence
+libsecret-1.so.0                libsecret                LGPL-2.1+
+libayatana-appindicator3.so.1   libayatana-appindicator  LGPL-2.1 or LGPL-3
+libayatana-indicator3.so.7      libayatana-indicator     GPL-3
+libayatana-ido3-0.4.so.0        ayatana-ido              GPL-3, parts LGPL-2.1 or LGPL-3
+libdbusmenu-glib.so.4           libdbusmenu              LGPL-2.1 or LGPL-3
+libdbusmenu-gtk3.so.4           libdbusmenu              LGPL-2.1 or LGPL-3

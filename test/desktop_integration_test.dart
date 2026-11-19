@@ -78,6 +78,11 @@ void main() {
   late DesktopIntegration integration;
 
   setUp(() {
+    // The tray, close button and login item here are the macOS and Windows
+    // ones. Linux offers the tray only where a tray host answers, and keeps
+    // its login item in XDG autostart.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     sequence = [];
     window = _NativeRecorder('window_manager', sequence: sequence)
       ..answers['isVisible'] = true
@@ -373,6 +378,89 @@ void main() {
 
     expect(window.calls, contains('setPreventClose'));
     expect(window.calls, contains('destroy'));
+  });
+
+  test('Linux quits through the runner and leaves the window up', () async {
+    // GTK destroying the window under a running isolate crashes the process
+    // on its way out: the window calls already queued still run, and there is
+    // no window left for them.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    final runner = _NativeRecorder(
+      'kapynotes/system_shutdown',
+      sequence: sequence,
+    )..install();
+
+    var flushed = false;
+    integration.onBeforeQuit = () async => flushed = true;
+    await integration.quit();
+
+    expect(flushed, isTrue, reason: 'notes must reach disk before the exit');
+    expect(runner.calls, ['quit']);
+    expect(window.calls, isNot(contains('destroy')));
+  });
+
+  /// What the Linux runner sends when a logout asks whether it may.
+  Future<void> sendSave() {
+    return TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          SystemShutdown.channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            const MethodCall('save'),
+          ),
+          (_) {},
+        );
+  }
+
+  test('a Linux logout that only asks gets the save, not the quit', () async {
+    // The dialog that follows can still call the logout off, and an app that
+    // had quit would be gone from a session that carries on, its tray icon
+    // and shortcuts with it. GTK ends the process if the logout goes ahead.
+    await integration.initialize(ShortcutPrefs(_MemoryStore())..load());
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    final runner = _NativeRecorder(
+      'kapynotes/system_shutdown',
+      sequence: sequence,
+    )..install();
+    await settle();
+    window.calls.clear();
+    tray.calls.clear();
+
+    var saves = 0;
+    integration.onBeforeQuit = () async => saves++;
+
+    await sendSave();
+
+    expect(saves, 1, reason: 'the logout waits for this save');
+    expect(runner.calls, isEmpty);
+    expect(tray.calls, isNot(contains('destroy')));
+    expect(window.calls, isNot(contains('setPreventClose')));
+
+    // Being asked to end, after a logout that was called off, still quits.
+    await sendShutdown();
+
+    expect(saves, 2);
+    expect(runner.calls, ['quit']);
+  });
+
+  test('Linux names the desktop when another client holds a chord', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    final hotKeys = _NativeRecorder(
+      'dev.leanflutter.plugins/hotkey_manager',
+      sequence: sequence,
+    )..refuses.add('register');
+    hotKeys.install();
+
+    final error = await integration.trySystemShortcut(
+      ShortcutAction.openApp,
+      ShortcutPrefs.defaultFor(ShortcutAction.openApp),
+    );
+
+    expect(hotKeys.calls, ['register']);
+    expect(
+      error,
+      'That shortcut is already used by your desktop or another app.',
+    );
+    expect(integration.isTaken(ShortcutAction.openApp), isTrue);
   });
 
   test(

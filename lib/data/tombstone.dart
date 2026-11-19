@@ -21,11 +21,17 @@ class Tombstone {
   /// space would otherwise never see it go.
   final String? spaceId;
 
+  /// The note's last edit before it was deleted here, when known: a shared
+  /// note somebody else owns only leaves this account's notes, and may come
+  /// back to the place it had.
+  final DateTime? editedAt;
+
   const Tombstone({
     required this.id,
     required this.deletedAt,
     this.syncedAt,
     this.spaceId,
+    this.editedAt,
   });
 
   /// How long a confirmed tombstone is kept before being dropped.
@@ -41,8 +47,13 @@ class Tombstone {
       syncedAt == null ||
       syncedAt!.millisecondsSinceEpoch != deletedAt.millisecondsSinceEpoch;
 
-  Tombstone markSynced(DateTime at) =>
-      Tombstone(id: id, deletedAt: deletedAt, syncedAt: at, spaceId: spaceId);
+  Tombstone markSynced(DateTime at) => Tombstone(
+    id: id,
+    deletedAt: deletedAt,
+    syncedAt: at,
+    spaceId: spaceId,
+    editedAt: editedAt,
+  );
 
   /// A tombstone is safe to forget once the server has it and it has aged out.
   /// An unsynced one is kept regardless of age — dropping it would resurrect
@@ -55,6 +66,7 @@ class Tombstone {
     'deletedAt': deletedAt.millisecondsSinceEpoch,
     if (syncedAt != null) 'syncedAt': syncedAt!.millisecondsSinceEpoch,
     if (spaceId != null) 'spaceId': spaceId,
+    'editedAt': ?editedAt?.millisecondsSinceEpoch,
   };
 
   static Tombstone? fromJson(Object? raw) {
@@ -64,6 +76,7 @@ class Tombstone {
     if (id is! String || deletedAt is! int) return null;
     final syncedAt = raw['syncedAt'];
     final spaceId = raw['spaceId'];
+    final editedAt = raw['editedAt'];
     return Tombstone(
       id: id,
       deletedAt: DateTime.fromMillisecondsSinceEpoch(deletedAt),
@@ -71,6 +84,9 @@ class Tombstone {
           ? DateTime.fromMillisecondsSinceEpoch(syncedAt)
           : null,
       spaceId: spaceId is String && spaceId.isNotEmpty ? spaceId : null,
+      editedAt: editedAt is int
+          ? DateTime.fromMillisecondsSinceEpoch(editedAt)
+          : null,
     );
   }
 }

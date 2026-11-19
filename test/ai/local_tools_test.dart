@@ -592,11 +592,22 @@ future_feature under development false
       );
     });
 
+    test('the pin is 0.160, the Codex the 19 Nov canary passed on', () {
+      expect(CodexCli.testedUpTo, (0, 160));
+      expect(
+        CodexCli.versionAccepted('codex-cli 0.160.0', CodexCli.testedUpTo),
+        isTrue,
+      );
+      expect(
+        CodexCli.versionAccepted('codex-cli 0.161.0', CodexCli.testedUpTo),
+        isFalse,
+      );
+    });
+
     test('with no pin, no version is run and no model is called', () async {
-      expect(CodexCli.testedUpTo, isNull);
       expect(CodexCli.versionAccepted('codex-cli 0.160.0', null), isFalse);
       final cli = await fake();
-      final codex = CodexCli(executable: cli.path);
+      final codex = CodexCli(executable: cli.path, pin: null);
       expect((await codex.check()).status, KapyAccountStatus.error);
       await expectLater(
         codex.answer(_codexModel, _request()),

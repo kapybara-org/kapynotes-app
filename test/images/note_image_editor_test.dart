@@ -905,6 +905,9 @@ void main() {
   });
 
   testWidgets('clicking a video opens its full-screen player', (tester) async {
+    // Linux hands a video to the system's player instead.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await tester.pumpWidget(harness(anchor, attachments: [videoAt(0)]));
     await tester.pump();
 

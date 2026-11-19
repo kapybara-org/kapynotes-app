@@ -219,10 +219,12 @@ Border? _cardBorder(
     ? null
     : Border.all(color: resting);
 
-/// A tick box: the media menu's, and a note's while the archive is picking
-/// notes.
+/// A tick box: the media menu's, and a note's while notes are being picked.
 class _PickBox extends StatelessWidget {
   const _PickBox({required this.checked});
+
+  /// Its side, which a card's title leaves room for.
+  static const double size = 16;
 
   final bool checked;
 
@@ -230,8 +232,8 @@ class _PickBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      width: 16,
-      height: 16,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: checked ? palette.selectedBorder : null,
         border: checked
@@ -295,7 +297,7 @@ class NoteCardFace extends StatelessWidget {
   final bool locked;
   final bool shared;
 
-  /// Ticked or not while the archive is picking notes; null otherwise.
+  /// Ticked or not while notes are being picked; null otherwise.
   final bool? picking;
 
   /// Drawn as a phone's pinned card, [squareHeight] tall.
@@ -371,23 +373,28 @@ class NoteCardFace extends StatelessWidget {
                           ),
                           const SizedBox(height: 8),
                         ],
-                        Text(
-                          note.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: square
-                              ? _handwritten(
-                                  19,
-                                  24,
-                                  FontWeight.w400,
-                                  palette.cardTitle,
-                                )
-                              : _handwritten(
-                                  14,
-                                  18,
-                                  FontWeight.w500,
-                                  palette.cardTitle,
-                                ),
+                        Padding(
+                          padding: EdgeInsets.only(
+                            right: picking == null ? 0 : _PickBox.size + 6,
+                          ),
+                          child: Text(
+                            note.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: square
+                                ? _handwritten(
+                                    19,
+                                    24,
+                                    FontWeight.w400,
+                                    palette.cardTitle,
+                                  )
+                                : _handwritten(
+                                    14,
+                                    18,
+                                    FontWeight.w500,
+                                    palette.cardTitle,
+                                  ),
+                          ),
                         ),
                         SizedBox(height: square ? 6 : 3),
                         Text(

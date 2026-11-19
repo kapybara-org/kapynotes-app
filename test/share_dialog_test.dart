@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -21,6 +22,8 @@ import 'package:kapy_notes/sync/sync_api.dart' show SyncProtocolException;
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
+import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/note_picks.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
@@ -920,6 +923,210 @@ void main() {
       expect(find.text('Manage sharing'), findsOneWidget);
     },
   );
+
+  testWidgets('a note somebody shares with you is removed from your notes, '
+      'and only an editor of it may', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    late Note shared;
+    late Note viewed;
+    late Note own;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      shared = alice.notes.create(body: 'Edited together');
+      viewed = alice.notes.create(body: 'Read only');
+      own = bob.notes.create(body: 'Bob alone');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWith(
+        viewed.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+    });
+
+    Future<void> pumpBob({required bool asks}) async {
+      await tester.pumpWidget(
+        harness(
+          SizedBox(
+            width: 280,
+            child: Sidebar(
+              notes: bob.notes.notes,
+              selectedId: null,
+              query: '',
+              displayTime: (t) => t,
+              onSearch: () {},
+              onSelect: (_) {},
+              onArchive: (_) {},
+              onDelete: (_) {},
+              asksBeforeDeleting: asks,
+              sharing: bob.sharing,
+              windowBar: const SizedBox(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<String?> deleteLabel(Note note) async {
+      await tester.tap(find.text(note.title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      final item = find.byKey(ValueKey('delete-note-${note.id}'));
+      final label = item.evaluate().isEmpty
+          ? null
+          : tester
+                .widget<KapyMenuActionRow>(
+                  find.descendant(
+                    of: item,
+                    matching: find.byType(KapyMenuActionRow),
+                  ),
+                )
+                .action
+                .label;
+      if (label != null) {
+        final text = find.descendant(of: item, matching: find.text(label));
+        expect(
+          tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+          isFalse,
+          reason: '$label fits the menu',
+        );
+      }
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      return label;
+    }
+
+    await pumpBob(asks: true);
+    expect(bob.notes.byId(shared.id), isNotNull);
+    expect(await deleteLabel(shared), 'Remove note…');
+    expect(await deleteLabel(own), 'Delete note…');
+    // A viewer can't take it out of their notes, as before.
+    expect(await deleteLabel(viewed), isNull);
+
+    await pumpBob(asks: false);
+    expect(await deleteLabel(shared), 'Remove note');
+  });
+
+  testWidgets('picked notes somebody shares with you are acted on only where '
+      'their row would let you', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    late Note shared;
+    late Note viewed;
+    late Note own;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      shared = alice.notes.create(body: 'Edited together');
+      viewed = alice.notes.create(body: 'Read only');
+      own = bob.notes.create(body: 'Bob alone');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWith(
+        viewed.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+    });
+
+    final picks = NotePicks();
+    addTearDown(picks.dispose);
+    final done = <(PickedAction, List<String>)>[];
+    await tester.pumpWidget(
+      harness(
+        SizedBox(
+          width: 280,
+          child: ListenableBuilder(
+            listenable: picks,
+            builder: (context, _) => Sidebar(
+              notes: bob.notes.notes,
+              selectedId: null,
+              query: '',
+              displayTime: (t) => t,
+              onSearch: () {},
+              onSelect: (_) {},
+              onArchive: (_) {},
+              onHide: (_) {},
+              onTogglePin: (_) {},
+              onDelete: (_) {},
+              sharing: bob.sharing,
+              picks: picks,
+              onPicked: (action, ids) => done.add((action, ids)),
+              windowBar: const SizedBox(),
+            ),
+          ),
+        ),
+      ),
+    );
+    picks.all([for (final note in bob.notes.notes) note.id]);
+    await tester.pumpAndSettle();
+    expect(find.text('3 selected'), findsOneWidget);
+
+    Future<String?> label(String action) async {
+      await tester.tap(find.text(own.title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      final item = find.byKey(ValueKey('picked-$action-note-${own.id}'));
+      final label = item.evaluate().isEmpty
+          ? null
+          : tester
+                .widget<KapyMenuActionRow>(
+                  find.descendant(
+                    of: item,
+                    matching: find.byType(KapyMenuActionRow),
+                  ),
+                )
+                .action
+                .label;
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      return label;
+    }
+
+    // Pins are the reader's own, so every note takes one.
+    expect(await label('pin'), 'Pin 3 notes');
+    // Hidden Notes are only ever the reader's own notes.
+    expect(await label('hide'), 'Move to Hidden Notes');
+    // A viewer changes nothing: the note they may only read is left out.
+    expect(await label('archive'), 'Archive 2 notes');
+    expect(await label('delete'), 'Delete 2 notes…');
+
+    await tester.tap(find.byKey(const ValueKey('picked-delete')));
+    await tester.pumpAndSettle();
+    expect(done.single.$1, PickedAction.delete);
+    expect(done.single.$2, unorderedEquals([shared.id, own.id]));
+
+    // Of these two only the editor's leaves Bob's notes, as its row says.
+    picks
+      ..clear()
+      ..toggle(shared.id)
+      ..toggle(viewed.id);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(shared.title), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    final remove = find.byKey(ValueKey('picked-delete-note-${shared.id}'));
+    expect(
+      tester
+          .widget<KapyMenuActionRow>(
+            find.descendant(
+              of: remove,
+              matching: find.byType(KapyMenuActionRow),
+            ),
+          )
+          .action
+          .label,
+      'Remove note…',
+    );
+  });
 
   group('sidebar tabs', () {
     Widget tabbed(
