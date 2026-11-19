@@ -266,6 +266,23 @@ void main() {
       );
     });
 
+    test('takes only a real currency code, with rates or without', () {
+      for (final engine in [CalcEngine(), _engine()]) {
+        for (final word in ['may', 'Jan', 'xyz', 'all', 'try']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+        expect(engine.evaluateDocument('Total in May')[0], isNull);
+        expect(
+          engine.evaluateDocument('10\n5\nsum in zar')[2]!.text,
+          '15.00 ZAR',
+        );
+      }
+    });
+
     test('has no rate to convert money with when there are none', () {
       expect(CalcEngine().evaluateDocument('\$10\n5\ntotal in eur')[2], isNull);
       expect(CalcEngine().evaluateDocument('100 usd in eur')[0], isNull);

@@ -414,8 +414,8 @@ class Parser {
   }
 
   /// The word at [offset] when it can name an unrated currency for [node]: a
-  /// readout of the note's total, and a three-letter word that is neither a
-  /// keyword nor a name the note defined.
+  /// readout of the note's total, and an ISO currency code that is not a name
+  /// the note defined.
   Token? _unratedTotalCode(Node node, int offset) {
     final word = _peek(offset);
     final readout =
@@ -423,8 +423,7 @@ class Parser {
         aggregateNames.contains(node.name.toLowerCase());
     if (!readout ||
         word.type != TokenType.identifier ||
-        !RegExp(r'^[A-Za-z]{3}$').hasMatch(word.text) ||
-        calcKeywords.contains(word.text.toLowerCase()) ||
+        !isoCurrencyCodes.contains(word.text.toUpperCase()) ||
         _isBound(word.text)) {
       return null;
     }
