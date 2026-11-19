@@ -265,7 +265,7 @@ void main() {
   testWidgets('searching for a password lands on its row', (tester) async {
     await pumpSettings(
       tester,
-      size: const Size(880, 640),
+      size: const Size(1000, 800),
       asSheet: false,
       section: SettingsSection.account,
     );

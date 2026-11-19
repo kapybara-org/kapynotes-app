@@ -9,11 +9,12 @@ import '../../sync/account.dart';
 import '../settings_rows.dart';
 import 'encryption_pane.dart' show keyCodeProblemText, maskedEmail;
 
-/// Creates a password, or changes it, without signing out.
+/// Creates a password, or changes it, without signing this device out.
 ///
 /// Accounts start with emailed codes only. A password is set the way a
 /// forgotten one is reset, with a code sent to the address, but from here the
-/// reset carries this device's session, and the server then ends no session.
+/// reset carries this device's session, so the server ends every session but
+/// this one.
 class PasswordRow extends StatefulWidget {
   const PasswordRow({super.key, required this.account});
 
@@ -85,6 +86,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   bool _codeSent = false;
   bool _busy = false;
   String? _problem;
+  final _problemShown = GlobalKey();
 
   String get _email => maskedEmail(widget.account.user?.email ?? '');
 
@@ -105,6 +107,17 @@ class _PasswordDialogState extends State<_PasswordDialog> {
     setState(() {
       _busy = false;
       _problem = problem == null ? null : passwordProblemText(problem);
+    });
+    if (problem == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final shown = _problemShown.currentContext;
+      if (shown == null) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          shown,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+        ),
+      );
     });
   }
 
@@ -135,9 +148,28 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final problem = _problem;
+    final problemLine = problem == null
+        ? null
+        : Padding(
+            key: _problemShown,
+            padding: EdgeInsets.only(
+              top: _codeSent ? 0 : 10,
+              bottom: _codeSent ? 10 : 0,
+            ),
+            child: Text(
+              problem,
+              key: const ValueKey('password-problem'),
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                color: context.palette.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          );
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
+        scrollable: true,
         title: Text(
           _codeSent
               ? 'Enter the code'
@@ -150,22 +182,15 @@ class _PasswordDialogState extends State<_PasswordDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_codeSent) ..._codeStep() else ..._intro(),
-              if (problem != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Text(
-                    problem,
-                    key: const ValueKey('password-problem'),
-                    style: TextStyle(
-                      fontSize: AppTypeScale.small,
-                      color: context.palette.textSecondary,
-                      height: 1.4,
+            children: _codeSent
+                ? [
+                    _Line(
+                      'We sent a 6-digit code to $_email. It works for 10 minutes.',
                     ),
-                  ),
-                ),
-            ],
+                    ?problemLine,
+                    ..._fields(),
+                  ]
+                : [..._intro(), ?problemLine],
           ),
         ),
         actions: [
@@ -197,14 +222,13 @@ class _PasswordDialogState extends State<_PasswordDialog> {
           : 'Your old password stops working.',
     ),
     const _Line(
-      "Your devices stay signed in, and your passphrase and notes don't "
-      'change.',
+      'Your other devices will be signed out and will need your passphrase '
+      "again. This device stays signed in, and your notes don't change.",
     ),
     _Line("To check it's you, we'll email a code to $_email.", last: true),
   ];
 
-  List<Widget> _codeStep() => [
-    _Line('We sent a 6-digit code to $_email. It works for 10 minutes.'),
+  List<Widget> _fields() => [
     TextField(
       key: const ValueKey('password-code'),
       controller: _code,

@@ -160,10 +160,13 @@ void main() {
     });
 
     test("a refusal keeps the server's status and code", () async {
-      Future<AuthResult> answer(int status, String body) => _answering(
-        status,
-        body,
-      ).resetPassword(email: 'a@b.co', code: '000000', password: 'pw', token: 't');
+      Future<AuthResult> answer(int status, String body) =>
+          _answering(status, body).resetPassword(
+            email: 'a@b.co',
+            code: '000000',
+            password: 'pw',
+            token: 't',
+          );
 
       expect(
         await answer(400, '{"code":"INVALID_OTP","message":"Invalid OTP"}'),

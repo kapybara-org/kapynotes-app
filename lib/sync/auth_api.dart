@@ -174,7 +174,8 @@ abstract class AuthApi {
   /// Sets a new password with a code from [requestPasswordReset]. Without
   /// [token] the server ends every session of the account, which is how a
   /// lost device gets signed out. With the session of a device signed in to
-  /// the same account it ends none: that is a password made in Settings.
+  /// the same account it keeps that one and ends the rest: that is a
+  /// password made in Settings.
   Future<AuthResult> resetPassword({
     required String email,
     required String code,

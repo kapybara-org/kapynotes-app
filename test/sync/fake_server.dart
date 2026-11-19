@@ -2882,7 +2882,11 @@ class FakeAuth implements AuthApi {
     String? token,
   }) async {
     if (code != this.code) {
-      return const AuthRejected('Invalid OTP', status: 400, code: 'INVALID_OTP');
+      return const AuthRejected(
+        'Invalid OTP',
+        status: 400,
+        code: 'INVALID_OTP',
+      );
     }
     this.password = password;
     passwordSet = true;

@@ -100,6 +100,8 @@ class _Answering extends FakeAuth {
 
 /// The account's password row, opened at its dialog's code step.
 Future<void> openPasswordCodeStep(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const ValueKey('password')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const ValueKey('password')));
   await tester.pumpAndSettle();
   await tester.tap(find.widgetWithText(FilledButton, 'Send code'));
@@ -715,14 +717,15 @@ void main() {
       account.dispose();
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    testWidgets('an account without one is offered a password', (
-      tester,
-    ) async {
+    testWidgets('an account without one is offered a password', (tester) async {
       final account = await signedIn(tester, FakeAuth());
       await tester.pumpWidget(harness(account));
       await tester.pumpAndSettle();
 
-      expect(inRow('Not set. You sign in with an emailed code'), findsOneWidget);
+      expect(
+        inRow('Not set. You sign in with an emailed code'),
+        findsOneWidget,
+      );
       expect(inRow('Create…'), findsOneWidget);
       account.dispose();
     }, timeout: const Timeout(Duration(minutes: 2)));
@@ -751,7 +754,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Create a password'), findsOneWidget);
       expect(find.textContaining('s•••@example.com'), findsOneWidget);
-      expect(find.textContaining('stay signed in'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Your other devices will be signed out and will need your passphrase',
+        ),
+        findsOneWidget,
+      );
 
       await tester.tap(find.widgetWithText(FilledButton, 'Send code'));
       await tester.pumpAndSettle();
@@ -796,7 +804,7 @@ void main() {
       account.dispose();
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    testWidgets('the right code sets it and every device stays signed in', (
+    testWidgets('the right code sets it and this device stays signed in', (
       tester,
     ) async {
       final auth = FakeAuth();
@@ -827,6 +835,43 @@ void main() {
       expect(account.state, AccountState.ready);
       expect(account.token, token);
       expect(inRow('Change…'), findsOneWidget);
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    testWidgets('the code step fits a small phone with the keyboard up', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final account = await signedIn(tester, FakeAuth());
+      await tester.pumpWidget(harness(account));
+      await tester.pumpAndSettle();
+      await openPasswordCodeStep(tester);
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 253);
+      await tester.enterText(
+        find.byKey(const ValueKey('password-code')),
+        '000000',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('new-password')),
+        'a new password',
+      );
+      await tester.tap(find.byKey(const ValueKey('password-continue')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('password-problem')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('password-continue')).hitTestable(),
+        findsOneWidget,
+      );
       account.dispose();
     }, timeout: const Timeout(Duration(minutes: 2)));
   });

@@ -332,8 +332,8 @@ class Account extends ChangeNotifier {
   }
 
   /// Creates the password, or replaces it, with the emailed code. The reset
-  /// carries this device's session, so the server ends no session: this
-  /// device and every other stay signed in. Null when it is done.
+  /// carries this device's session, so the server keeps it and ends every
+  /// other session of the account. Null when it is done.
   Future<PasswordProblem?> setPassword({
     required String code,
     required String password,
