@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -131,6 +132,11 @@ void main() {
     expect(
       tester.getTopLeft(delete).dy,
       greaterThan(tester.getTopLeft(archive).dy),
+    );
+    final text = find.descendant(of: delete, matching: find.text('Delete note…'));
+    expect(
+      tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+      isFalse,
     );
   });
 
