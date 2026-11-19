@@ -81,6 +81,7 @@ import 'kapy_ai/kapy_ai_settings.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
 import 'note_tabs.dart';
+import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
@@ -264,6 +265,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// The tags that list is narrowed to, kept the same way.
   TagFilter _tagFilter = const TagFilter();
+
+  /// How far back that list reaches, kept the same way.
+  NotesWhen _when = NotesWhen.anyTime;
 
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
@@ -1334,16 +1338,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Lists the tab [id] is in, when a note is opened from somewhere other
   /// than the list: a link, a pane, the note put back after the archive. A
   /// row the reader clicked is in the tab on screen already, and the reader
-  /// switching tabs moves no selection, so neither is overruled. A note that
-  /// is not a drawing takes the list out of Drawings, for the same reason.
+  /// switching tabs moves no selection, so neither is overruled. Beside the
+  /// rail a drawing takes the list to Drawings, and a note takes it back to
+  /// Notes.
   void _showTabOf(String? id) {
     if (id == null || _specialMode) return;
     final note = widget.notes.byId(id);
     if (note == null) return;
-    if (_drawingsOnly) {
-      if (note.isDrawing) return;
-      _drawingsOnly = false;
+    // A drawing opens in Drawings wherever it was found, and a note in
+    // Notes. A phone lists both in one place.
+    if (note.isDrawing && !_usesCompactLayout) {
+      _drawingsOnly = true;
+      return;
     }
+    _drawingsOnly = false;
     final sharing = widget.account?.sharing;
     if (sharing != null) _sidebarTab = sidebarTabOf(note, sharing);
   }
@@ -2431,8 +2439,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {
       _mediaFilter = NoteMedia.values.toSet();
       _tagFilter = const TagFilter();
+      _when = NotesWhen.anyTime;
     });
   }
+
+  void _setWhen(NotesWhen when) => setState(() => _when = when);
 
   /// The tags the lists offer, in the person's order, each with how many
   /// notes carry it: the archived ones in Archive, and otherwise the rest,
@@ -2477,7 +2488,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ...widget.notes.notes,
                 if (_hiddenMode) ...widget.notes.hiddenNotes,
               ])
-      note.id,
+      if (_listsKind(note)) note.id,
   };
 
   /// How many of those carry no tag, for No tag.
@@ -3083,6 +3094,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onClear: _clearFilter,
         tags: widget.tags == null ? null : _tagsNarrowed,
         onTagsChanged: (tags) => setState(() => _tagFilter = tags),
+        when: _when,
+        onWhenChanged: _setWhen,
+        today: dayShown(widget.notes.now(), widget.prefs.displayTime),
         cards: widget.prefs.noteCards,
         onCardsChanged: cards
             ? (cards) => widget.prefs.noteCards = cards
@@ -3200,25 +3214,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
+  /// Whether the list lists [note]'s kind: drawings in Drawings, with its
+  /// archive and Hidden Notes, and notes in Notes. A phone has no Drawings
+  /// to list them in, so its one list keeps both.
+  bool _listsKind(Note note) =>
+      note.isDrawing == _drawingsOnly || (!_drawingsOnly && _usesCompactLayout);
+
   /// Narrows [notes] to the space the list is showing. The ordinary list is
-  /// split by whose the notes are once there is an account to have shared
-  /// anything with, or narrowed to drawings from the rail, and everything that
-  /// walks the list (the arrow keys, the note after an archived one) walks
-  /// what is on screen. Drawings keeps to drawings in the archive and Hidden
-  /// Notes too; from Notes, both hold every note of theirs.
+  /// also split by whose the notes are once there is an account to have
+  /// shared anything with, and everything that walks the list (the arrow
+  /// keys, the note after an archived one) walks what is on screen.
   List<Note> _narrowed(List<Note> notes) {
-    if (_drawingsOnly) {
-      return [
-        for (final note in notes)
-          if (note.isDrawing) note,
-      ];
-    }
-    if (_specialMode) return notes;
-    final sharing = widget.account?.sharing;
-    if (sharing == null) return notes;
+    final sharing = _drawingsOnly || _specialMode
+        ? null
+        : widget.account?.sharing;
     return [
       for (final note in notes)
-        if (sidebarTabOf(note, sharing) == _sidebarTab) note,
+        if (_listsKind(note) &&
+            (sharing == null || sidebarTabOf(note, sharing) == _sidebarTab))
+          note,
     ];
   }
 
@@ -3249,9 +3263,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final byTag = tags == null ? const TagFilter() : _tagsNarrowed;
     final byMedia =
         !_drawingsOnly && _mediaFilter.length < NoteMedia.values.length;
+    final displayTime = widget.prefs.displayTime;
+    final span = _when.span(
+      today: dayShown(widget.notes.now(), displayTime),
+      firstWeekday: firstWeekday(context),
+    );
     return [
       for (final note in _narrowed(notes))
-        if ((!byMedia || NoteMedia.shows(note, _mediaFilter)) &&
+        if ((span == null || span.covers(noteDay(note, displayTime))) &&
+            (!byMedia || NoteMedia.shows(note, _mediaFilter)) &&
             (!byTag.narrowed ||
                 byTag.matches([
                   for (final tag in tags!.tagsOf(note.id)) tag.id,
@@ -3589,6 +3609,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             now: widget.notes.now,
                             cards: widget.prefs.noteCards,
                             controls: _notesControls(space),
+                            grouping: widget.prefs.notesGrouping,
+                            onGroupingChanged: (grouping) =>
+                                widget.prefs.notesGrouping = grouping,
+                            when: _when,
+                            onWhenChanged: _setWhen,
                             pinnedOnly: _showingPinnedOnly,
                             onPinnedOnlyChanged: (value) =>
                                 setState(() => _pinnedOnly = value),
@@ -4402,6 +4427,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (drawing) FocusManager.instance.primaryFocus?.unfocus();
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     widget.notes.setDrawingMode(id, drawing: drawing);
+    setState(() => _showTabOf(id));
   }
 
   /// The page with nothing open on it, which in Drawings points at New

@@ -3502,6 +3502,146 @@ void main() {
     });
   });
 
+  group('notes list', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    // Thursday 19 November, at noon. Call with Arjun was started on the 2nd
+    // and last edited today.
+    Future<void> library(WidgetTester tester) async {
+      int at(int month, int day, int hour) =>
+          DateTime(2026, month, day, hour).millisecondsSinceEpoch;
+      Map<String, Object?> note(String body, int created, int updated) => {
+        'id': body,
+        'body': body,
+        'createdAt': created,
+        'updatedAt': updated,
+      };
+      store.data['notes.v1'] = [
+        note('Call with Arjun', at(11, 2, 9), at(11, 19, 11)),
+        note('Standup notes', at(11, 18, 9), at(11, 18, 17)),
+        note('Pricing ideas', at(11, 17, 8), at(11, 17, 8)),
+        note('October plan', at(10, 20, 8), at(10, 20, 8)),
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(1400, 800));
+    }
+
+    List<String> headings(WidgetTester tester) => [
+      for (final heading in tester.widgetList<NotesGroupHeading>(
+        find.byType(NotesGroupHeading),
+      ))
+        [heading.label, ?heading.detail].join(' '),
+    ];
+
+    testWidgets('notes sit under the day they were last edited, or by letter', (
+      tester,
+    ) async {
+      await library(tester);
+      expect(headings(tester), [
+        'Today Thu 19 Nov',
+        'Yesterday Wed 18',
+        'Tue 17',
+        'Tue 20 Oct',
+      ]);
+      expect(find.text('By date'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-grouping-aToZ')));
+      await tester.pumpAndSettle();
+      expect(headings(tester), ['C', 'O', 'P', 'S']);
+      expect(find.text('A–Z'), findsOneWidget);
+      // Kept for the next launch.
+      expect(store.data['notesGrouping.v1'], 'aToZ');
+    });
+
+    testWidgets('When narrows the list, and its chip goes back to any time', (
+      tester,
+    ) async {
+      await library(tester);
+      Future<void> tap(Key key) async {
+        await tester.tap(find.byKey(key));
+        await tester.pumpAndSettle();
+      }
+
+      // The menu's When row says how far back the list reaches, and its
+      // submenu the days each span covers.
+      await tap(const ValueKey('sidebar-notes-filter'));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('notes-filter-when')),
+          matching: find.text('Any time'),
+        ),
+        findsOneWidget,
+      );
+      await tap(const ValueKey('notes-filter-when'));
+      final menu = find.byKey(const ValueKey('notes-when-menu'));
+      for (final detail in ['Thu 19', 'November']) {
+        expect(
+          find.descendant(of: menu, matching: find.text(detail)),
+          findsOneWidget,
+        );
+      }
+
+      await tap(const ValueKey('notes-filter-when-thisWeek'));
+      expect(headings(tester), [
+        'Today Thu 19 Nov',
+        'Yesterday Wed 18',
+        'Tue 17',
+      ]);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('notes-when-chip')),
+          matching: find.text('This week'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('notes-when-chip')));
+      await tester.pumpAndSettle();
+      expect(headings(tester), hasLength(4));
+      expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
+
+      // Nothing was written last week: the list says so, and offers the way
+      // back.
+      await tap(const ValueKey('sidebar-notes-filter'));
+      await tap(const ValueKey('notes-filter-when'));
+      await tap(const ValueKey('notes-filter-when-lastWeek'));
+      expect(find.text('No notes last week'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('sidebar-empty-action')));
+      await tester.pumpAndSettle();
+      expect(headings(tester), hasLength(4));
+    });
+
+    testWidgets('the narrowest list keeps the grouping menu and the chip', (
+      tester,
+    ) async {
+      await library(tester);
+      prefs.sidebarWidth = LayoutPrefs.minSidebarWidth;
+      await tester.pumpAndSettle();
+      for (final key in [
+        'sidebar-notes-filter',
+        'notes-filter-when',
+        'notes-filter-when-thisMonth',
+      ]) {
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+      }
+
+      final list = tester.getRect(find.byType(Sidebar));
+      for (final key in ['notes-grouping', 'notes-when-chip']) {
+        expect(
+          tester.getRect(find.byKey(ValueKey(key))).right,
+          lessThanOrEqualTo(list.right),
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('notes-when-chip')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
+      expect(headings(tester), hasLength(4));
+    });
+  });
+
   testWidgets('dragging a note opens it beside a pane, in place, or moves it', (
     tester,
   ) async {
@@ -4410,8 +4550,8 @@ void main() {
         .map((row) => row.note.title)
         .toList();
     expect(rowTitles(), ['Latest', 'Older']);
-    expect(find.text('Yesterday'), findsOneWidget);
-    expect(find.text('Tue'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, 'Yesterday'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, 'Tue'), findsOneWidget);
     expect(find.widgetWithText(NoteRow, 'latest details'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NoteRow, 'Older'));
@@ -4455,10 +4595,7 @@ void main() {
       find.descendant(of: find.byType(Sidebar), matching: find.text('Pinned')),
       findsOneWidget,
     );
-    expect(
-      find.descendant(of: find.byType(Sidebar), matching: find.text('Notes')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('sidebar-group-Today')), findsOneWidget);
     expect(rowTitles(), ['Reference', 'Today']);
     expect(notes.isPinned(reference.id), isTrue);
 
@@ -6463,7 +6600,7 @@ void main() {
         },
       ];
       await pumpApp(tester);
-      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+      expect(rowTitles(tester), ['Words']);
 
       await openSpace(tester, 'drawings');
       expect(rowTitles(tester), ['Sketch']);
@@ -6471,7 +6608,7 @@ void main() {
       expect(spaceCount(tester), '1');
 
       await openSpace(tester, 'notes');
-      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+      expect(rowTitles(tester), ['Words']);
       expect(spaceTitle(tester), 'My notes');
 
       // New in Drawings makes a drawing, so the list stays where it is.
@@ -6591,6 +6728,39 @@ void main() {
       expect(openNoteBody(tester), 'Words');
     });
 
+    testWidgets('Notes lists notes and Drawings drawings, and a drawing '
+        'opens in Drawings wherever it was found', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {'id': 'words', 'body': 'Words', 'createdAt': 2000, 'updatedAt': 2000},
+        {
+          'id': 'sketch',
+          'body': 'Sketch',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      prefs.lastOpenedNoteId = 'words';
+      await pumpApp(tester);
+      expect(rowTitles(tester), ['Words']);
+      expect(spaceCount(tester), '1');
+
+      await openSpace(tester, 'drawings');
+      expect(rowTitles(tester), ['Sketch']);
+
+      // Back in Notes on Words, Back goes to the drawing, and the list goes
+      // with it.
+      await openSpace(tester, 'notes');
+      expect(openNoteBody(tester), 'Words');
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.goBack)!);
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+      expect(spaceTitle(tester), 'Drawings');
+      expect(rowTitles(tester), ['Sketch']);
+    });
+
     testWidgets('Drawings opens its own first drawing in place of the note, '
         'and Notes gets the note back', (tester) async {
       store.data['notes.v1'] = [
@@ -6650,7 +6820,7 @@ void main() {
         await openSpace(tester, 'notes');
         expect(noteField, findsNothing);
         expect(find.text('Words'), findsNothing);
-        expect(find.byType(DrawingCanvas), findsOneWidget);
+        expect(find.byType(DrawingCanvas), findsNothing);
       });
     }
 
@@ -6763,9 +6933,19 @@ void main() {
         notes.importNotes([
           Note(id: 'plain', body: 'Groceries', createdAt: at, updatedAt: at),
           Note(
-            id: 'sketch',
-            body: 'Floor plan',
-            drawing: NoteDrawing.empty,
+            id: 'photo',
+            body: 'Floor plan\n${NoteAttachmentRef.placeholder}',
+            attachments: [
+              NoteImageRef(
+                offset: 11,
+                hash: 'abc123',
+                key: Uint8List(32),
+                mime: 'image/png',
+                width: 10,
+                height: 20,
+                bytes: 100,
+              ),
+            ],
             createdAt: at,
             updatedAt: at,
           ),
@@ -6781,16 +6961,15 @@ void main() {
         await tester.pumpAndSettle();
         await tick('voice');
         await tick('video');
-        await tick('image');
         expect(rowTitles(tester), ['Floor plan']);
         expect(
-          find.descendant(of: filter, matching: find.text('Drawing')),
+          find.descendant(of: filter, matching: find.text('Image')),
           findsOneWidget,
         );
 
         // The last kind ticked stays ticked: nothing ticked would read as a
         // library that had lost its notes.
-        await tick('drawing');
+        await tick('image');
         expect(rowTitles(tester), ['Floor plan']);
 
         await tick('all');
