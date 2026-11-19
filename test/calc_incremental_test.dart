@@ -181,6 +181,25 @@ const _corpus = [
   '3 == 4',
   '1 / 0',
   '0 / 0',
+  'flights = 412 eur',
+  'flights to usd',
+  'flights + 20 eur',
+  'flights - 10%',
+  'hotel = 96 eur * 7',
+  'nightly = 128 eur',
+  'hotel = nightly * 7',
+  '7 * nightly',
+  'nights = 7',
+  'hotel = nightly * nights',
+  'dinner = 80',
+  'share = dinner / 2',
+  'tip = dinner * 15%',
+  'rent = 1200',
+  'food = 300',
+  'rent + food',
+  'x = x + 1',
+  'both = price * x',
+  '5 kg',
 ];
 
 CalcEngine _engine(String? timeZoneId, {DateTime Function()? now}) =>
@@ -196,13 +215,13 @@ List<String> _seen(DocumentEvaluation evaluation) => [
   for (final index in evaluation.results.keys.toList()..sort())
     _result(index, evaluation.results[index]!),
   'total ${evaluation.totalText} ${_value(evaluation.total)} '
-      '${evaluation.grouping}',
+      '${evaluation.grouping} ${evaluation.totalDetail}',
 ];
 
 String _result(int index, LineResult result) =>
     '$index: line ${result.line}, ${result.text} | ${result.copyText} | '
     '${result.grouping} | total ${result.isTotal} | ${result.kind} | '
-    '${result.tooltipText} | ${_value(result.value)}';
+    '${result.tooltipText} | ${result.count?.mark} | ${_value(result.value)}';
 
 String _value(CalcValue? value) => switch (value) {
   null => 'none',
@@ -379,8 +398,11 @@ void main() {
       ('10\n20\ntotal\navg', {0: '10', 1: '20', 2: '30', 3: '15'}),
       ('10\n40\ntotal\navg', {0: '10', 1: '40', 2: '50', 3: '25'}),
       ('10\n40\n\ntotal\navg', {0: '10', 1: '40', 3: '50', 4: '25'}),
-      ('10\nprev * 2\nsum', {0: '10', 1: '20', 2: '30'}),
-      ('11\nprev * 2\nsum', {0: '11', 1: '22', 2: '33'}),
+      ('10\nprev * 2\nsum', {0: '10', 1: '20', 2: '10'}),
+      ('11\nprev * 2\nsum', {0: '11', 1: '22', 2: '11'}),
+      ('10\nprev\n20\nsum', {0: '10', 1: '10', 2: '20', 3: '30'}),
+      ('10\nx = 5\nx * 2\nsum', {0: '10', 1: '5', 2: '10', 3: '20'}),
+      ('10\nx = 6\nx * 2\nsum', {0: '10', 1: '6', 2: '12', 3: '22'}),
     ]) {
       expect(_texts(engine, body), texts, reason: body);
     }

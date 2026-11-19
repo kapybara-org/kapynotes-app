@@ -1,4 +1,5 @@
 import 'ast.dart';
+import 'contribution.dart';
 import 'evaluator.dart';
 import 'format.dart';
 import 'lexer.dart';
@@ -25,13 +26,17 @@ class LineResult {
   /// builds up to.
   final bool isTotal;
 
+  /// What the note's total says about the line: why it is not in it, or, on
+  /// a line that reads the total, what is.
+  final CountNote? count;
+
   /// Number-system-aware words and scale context, prepared only if a visible
   /// chip needs them. Long notes should not spell every off-screen result on
   /// each keystroke.
-  late final String tooltipText = ResultFormatter.tooltip(
-    value,
-    grouping: grouping,
-  );
+  late final String tooltipText = [
+    ResultFormatter.tooltip(value, grouping: grouping),
+    ?count?.text,
+  ].join('\n');
 
   LineResult({
     required this.line,
@@ -40,7 +45,19 @@ class LineResult {
     required this.copyText,
     this.grouping = DigitGrouping.international,
     this.isTotal = false,
+    this.count,
   });
+
+  /// The same result with what the total says about it.
+  LineResult withCount(CountNote count) => LineResult(
+    line: line,
+    value: value,
+    text: text,
+    copyText: copyText,
+    grouping: grouping,
+    isTotal: isTotal,
+    count: count,
+  );
 
   ResultKind get kind => value.kind;
 }
@@ -50,19 +67,25 @@ class LineResult {
 class DocumentEvaluation {
   final Map<int, LineResult> results;
 
-  /// The sum of the lines that read nothing from other lines. A line worked
-  /// out from another's result, as `per person = total / 2` is, is left out
-  /// so that nothing is counted twice, though `total` and `sum` in the note
-  /// still read everything. Null when the note has a `total` or `sum` line of
-  /// its own, so that the footer never contradicts a total the writer wrote.
+  /// The note's total, each amount counted once. Null when the note has a
+  /// `total` or `sum` line of its own, so that the footer never contradicts
+  /// a total the writer wrote.
   final CalcValue? total;
+
+  /// Writes what the total counted and how, for its hover: null when it
+  /// counted nothing. It is worked out only when asked, since a note is read
+  /// on every keystroke and the hover is seen rarely.
+  final String Function()? describeTotal;
   final DigitGrouping grouping;
 
   const DocumentEvaluation({
     required this.results,
     required this.total,
+    this.describeTotal,
     this.grouping = DigitGrouping.international,
   });
+
+  String? get totalDetail => describeTotal?.call();
 
   /// Null when the note holds no calculations at all, so the footer can omit
   /// the readout rather than claim a total of zero, and when it has a `total`
@@ -76,21 +99,26 @@ class _EvaluatedLine {
   final LineResult result;
   final bool isAggregateReadout;
 
-  /// Whether the line is worked out from the note's other lines, reading a
-  /// variable they define or an aggregate such as `total` or `prev`.
-  final bool isDerived;
+  /// What the line says, null for a line read from words alone.
+  final Node? node;
+
+  /// Whether the line is worked out from the note's total, reading an
+  /// aggregate such as `total` or `prev`.
+  final bool readsAggregate;
 
   const _EvaluatedLine({
     required this.result,
     required this.isAggregateReadout,
-    this.isDerived = false,
+    this.node,
+    this.readsAggregate = false,
   });
 
-  /// The same outcome, marked as worked out from other lines.
-  _EvaluatedLine derived() => _EvaluatedLine(
+  /// The same outcome, marked as worked out from the total.
+  _EvaluatedLine readingAggregate() => _EvaluatedLine(
     result: result,
     isAggregateReadout: isAggregateReadout,
-    isDerived: true,
+    node: node,
+    readsAggregate: true,
   );
 
   /// The same outcome on line [line].
@@ -104,7 +132,8 @@ class _EvaluatedLine {
       isTotal: result.isTotal,
     ),
     isAggregateReadout: isAggregateReadout,
-    isDerived: isDerived,
+    node: node,
+    readsAggregate: readsAggregate,
   );
 }
 
@@ -131,6 +160,9 @@ class CalcEngine {
   /// means building a new engine, exactly as a rate change does.
   final DigitGrouping grouping;
 
+  /// The date the exchange rates are from, as the total's hover says it.
+  final String? ratesAsOf;
+
   final _LineMemo _memo = _LineMemo();
 
   CalcEngine({
@@ -138,6 +170,7 @@ class CalcEngine {
     this.grouping = DigitGrouping.international,
     DateTime Function()? now,
     this.timeZoneId,
+    this.ratesAsOf,
   }) : registry = UnitRegistry(ratesPerUsd: ratesPerUsd),
        _now = now ?? DateTime.now;
 
@@ -168,18 +201,100 @@ class CalcEngine {
         // Aggregate readouts, including conversions such as `total to usd`,
         // report the total without becoming another entry in it.
         if (!evaluated.isAggregateReadout) {
-          scope.record(evaluated.result.value, derived: evaluated.isDerived);
+          scope.record(
+            i,
+            evaluated.result.value,
+            Contribution.of(
+              evaluated.node,
+              evaluated.result.value,
+              readsAggregate: evaluated.readsAggregate,
+              owner: scope.liveOwner,
+              isVariable: scope.defines,
+            ),
+          );
         }
       }
     }
     _memo.end(pass);
+    final notes = scope.notes();
+    final describe = scope.runningSum == null
+        ? null
+        : () => _describeTotal(scope, notes);
+    notes.forEach((line, note) {
+      final result = results[line];
+      if (result != null) results[line] = result.withCount(note);
+    });
+    if (describe != null) {
+      results.updateAll(
+        (_, result) => result.isTotal
+            ? result.withCount(CountNote.lazy(describe))
+            : result,
+      );
+    }
     return DocumentEvaluation(
       results: Map<int, LineResult>.unmodifiable(results),
       total: results.values.any((result) => result.isTotal)
           ? null
-          : scope.ownSum,
+          : scope.runningSum,
+      describeTotal: describe,
       grouping: grouping,
     );
+  }
+
+  /// The amounts, and the lines left out, that a total's hover names before it
+  /// says how many more there are.
+  static const _describedAmounts = 20;
+
+  /// What the total counted and how: how many amounts, in what unit, at
+  /// which rates, then each amount, then the lines it could not join.
+  String _describeTotal(CalcScope scope, Map<int, CountNote> notes) {
+    final counted = scope.counted;
+    final total = scope.runningSum!;
+    final unit = total is QuantityValue ? total.unit : null;
+    final headline = [
+      '${counted.length} ${counted.length == 1 ? 'amount' : 'amounts'}',
+      if (unit != null) unit.format(),
+    ].join(' · ');
+
+    final converted = <String>{};
+    final rates = <String>[];
+    if (unit != null && unit.isCurrency) {
+      for (final entry in counted) {
+        final other = (entry.amount as QuantityValue).unit;
+        if (other == unit || !converted.add(other.format())) continue;
+        final one = Arith.convert(QuantityValue(1, unit), other);
+        final rate = (one as QuantityValue).value
+            .toStringAsFixed(4)
+            .replaceFirst(RegExp(r'\.?0+$'), '');
+        rates.add('1 ${unit.format()} = $rate ${other.format()}');
+      }
+    }
+    final conversion = rates.isEmpty
+        ? null
+        : '${converted.join(', ')} converted at ${rates.join(', ')}'
+              '${ratesAsOf == null ? '' : ' (rates of $ratesAsOf)'}';
+
+    String label(CountedAmount entry) => entry.name ?? 'line ${entry.line + 1}';
+    final marked = [
+      for (final MapEntry(key: line, value: note) in notes.entries)
+        if (note.mark)
+          'line ${line + 1} (${note.text.replaceFirst('Not in the total: ', '')})',
+    ];
+    final left = [
+      ...marked.take(_describedAmounts),
+      if (marked.length > _describedAmounts)
+        'and ${marked.length - _describedAmounts} more',
+    ];
+    return [
+      [headline, ?conversion].join(' · '),
+      [
+        for (final entry in counted.take(_describedAmounts))
+          '${label(entry)} ${ResultFormatter.display(entry.amount, grouping: grouping)}',
+        if (counted.length > _describedAmounts)
+          'and ${counted.length - _describedAmounts} more',
+      ].join(', '),
+      if (left.isNotEmpty) 'Not in the total: ${left.join(', ')}',
+    ].join('\n');
   }
 
   /// True when the parsed expression only reads an aggregate, optionally
@@ -215,8 +330,8 @@ class CalcEngine {
     if (reading != null) return reading.at(index);
     scope.beginTrace();
     var evaluated = _readLine(pass.lines[index], index, evaluator, scope);
-    if (evaluated != null && scope.tracedReadsResults) {
-      evaluated = evaluated.derived();
+    if (evaluated != null && scope.tracedReadsAggregate) {
+      evaluated = evaluated.readingAggregate();
     }
     _memo.remember(pass, index, scope.endTrace(), evaluated);
     return evaluated;
@@ -443,6 +558,7 @@ class CalcEngine {
           isTotal: _isTotalReadout(node, scope),
         ),
         isAggregateReadout: _isAggregateReadout(node, scope),
+        node: node,
       );
     } on CalcError {
       return null;
