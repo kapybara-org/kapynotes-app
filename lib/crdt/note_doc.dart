@@ -313,6 +313,15 @@ class NoteDoc {
     return ops;
   }
 
+  /// Writes [createdAt] again under a newer stamp and returns the op. Nothing
+  /// a reader sees changes, but every replica that merges this document finds
+  /// it changed.
+  List<Object?> restamp(DateTime createdAt, DateTime now) => _setLocal(
+    _createdKey,
+    createdAt.millisecondsSinceEpoch,
+    now.millisecondsSinceEpoch,
+  );
+
   /// Writes a register locally and returns the op. The timestamp is bumped
   /// above whatever the register already holds: a device with a slow clock
   /// must still be able to change its own note, and a set that lost to a
