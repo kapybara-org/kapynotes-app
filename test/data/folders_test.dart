@@ -314,14 +314,21 @@ void main() {
         acknowledgeAll(folders);
         final room = folders.room;
 
+        int now() => clock.millisecondsSinceEpoch;
         clock = clock.add(const Duration(days: 29));
         folders.delete(folders.create('Recent')!.id);
         acknowledgeAll(folders);
-        folders.prune();
+        folders.prune(now());
         expect(folders.owed, isEmpty, reason: 'none 30 days gone yet');
 
         clock = clock.add(const Duration(days: 2));
-        folders.prune();
+        folders.prune(now() - const Duration(days: 2).inMilliseconds);
+        expect(
+          folders.owed,
+          isEmpty,
+          reason: 'not by the server\'s clock, which this one is ahead of',
+        );
+        folders.prune(now());
         expect(shape(folders.tree), 'Trip\nWork\n  Inner');
         expect(folders.tree.folderOf(noteA), work.id);
         expect(folders.tree.folderOf(noteB), isNull);
