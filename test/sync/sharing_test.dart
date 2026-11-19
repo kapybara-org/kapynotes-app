@@ -1014,9 +1014,12 @@ void main() {
       },
     );
 
-    test(
-      'an un-share a build from before lost goes up from the next pass',
-      () async {
+    for (final (where, home) in [
+      ('still in the space, as 1.33.0 leaves it', false),
+      ('taken back home by its own seed', true),
+    ]) {
+      test('an un-share a build from before lost goes up from the next pass, '
+          'its record $where', () async {
         final one = await shareWithBob('One');
         final spaceId = alice.notes.byId(one.id)!.spaceId!;
         final personal = alice.keyring.personal!.id;
@@ -1029,12 +1032,12 @@ void main() {
         expect(bob.notes.byId(two.id), isNotNull);
         await alice.syncAndSettle();
 
-        // What 1.29 to 1.33 left on Alice's device (KAP-110): the record
-        // taken back home by Two's own seed, then Move to my notes, which
-        // found nothing to send and called the note synced.
-        alice.docs.get(two.id)!.spaceId = personal;
+        // What 1.29 to 1.33 left on Alice's device (KAP-110): Move to my
+        // notes, which found nothing to send and called the note synced.
+        if (home) alice.docs.get(two.id)!.spaceId = personal;
         alice.notes.moveToSpace(two.id, spaceId: null, contentKey: null);
         alice.notes.markSynced(notes: [alice.notes.byId(two.id)!]);
+        expect(alice.docs.get(two.id)!.spaceId, home ? personal : spaceId);
         expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
 
         alice.tick();
@@ -1054,8 +1057,8 @@ void main() {
         await alice.syncAndSettle();
         expect(server.noteKeyFetches, asked);
         expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
-      },
-    );
+      });
+    }
 
     test('a note another of the owner\'s devices has just shared is not taken '
         'back before its seed arrives', () async {
@@ -1091,6 +1094,46 @@ void main() {
       await alice.syncAndSettle();
       expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
       expect(server.rowsIn(personal)[two.id]!.isTombstone, isTrue);
+      bob.tick();
+      await bob.syncAndSettle();
+      expect(bob.bodyOf(two.id), 'Two');
+    });
+
+    test('nor one whose seed has arrived while the marker it left at home '
+        'has not', () async {
+      final one = await shareWithBob('One');
+      final spaceId = alice.notes.byId(one.id)!.spaceId!;
+      final personal = alice.keyring.personal!.id;
+      final laptop = Person(
+        server,
+        userId: alice.userId,
+        device: 'alice-laptop',
+      );
+      await laptop.boot();
+      addTearDown(laptop.dispose);
+      final two = alice.notes.create(body: 'Two');
+      await alice.syncAndSettle();
+      await laptop.syncAndSettle();
+      expect(laptop.bodyOf(two.id), 'Two');
+
+      await alice.goLive();
+      server.holdPagesOf.add(personal);
+      laptop.tick();
+      await laptop.sharing.shareNote(two.id, spaceId: spaceId);
+      await laptop.syncAndSettle();
+      await settle(server);
+      expect(alice.docs.get(two.id)!.spaceId, spaceId);
+      alice.tick();
+      await alice.sync.syncNow();
+      await settle(server);
+      expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+      expect(server.rowsIn(personal)[two.id]!.isTombstone, isTrue);
+
+      server.holdPagesOf.clear();
+      server.releaseFrames(alice.api.device);
+      await settle(server);
+      await alice.syncAndSettle();
+      expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
       bob.tick();
       await bob.syncAndSettle();
       expect(bob.bodyOf(two.id), 'Two');

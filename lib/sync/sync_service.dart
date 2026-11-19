@@ -2672,11 +2672,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   final Map<String, int> _lostUnsharesChecked = {};
 
   /// Finishes un-shares that builds 1.29 to 1.33 lost (KAP-110): the note
-  /// is back in this account's own notes, and its record says so, but the
-  /// move never went up, so the server still holds it live in the shared
-  /// space and everyone there keeps it. The space's count of live notes
-  /// running ahead of the notes this device holds in it is the sign, and the
-  /// space's note keys name what the server holds there. A move already
+  /// is back in this account's own notes, but the move never went up, so the
+  /// server still holds it live in the shared space and everyone there keeps
+  /// it. Its record names the space still, as 1.33 leaves it, or home. The
+  /// space's count of live notes running ahead of the notes this device holds
+  /// in it is the sign, and the space's note keys name what the server holds
+  /// there. A move already
   /// queued is left to go on its own.
   Future<void> _finishLostUnshares() async {
     final personal = _keyring.personal;
@@ -2705,7 +2706,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       return note != null &&
           record != null &&
           note.spaceId == null &&
-          record.spaceId == personalId;
+          (record.spaceId == personalId || record.spaceId == space.id);
     }
 
     final rows = await _api.fetchNoteKeys(space.id);
@@ -2714,18 +2715,21 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         if (lost(row.noteId)) row.noteId!,
     ];
     // Something on its way is looked at again on a later pass, after it has
-    // landed: a move of this device's own still queued, or the space's log
-    // running ahead of this device. A note another of this account's devices
-    // has just shared into the space looks lost until its seed arrives here,
-    // and must not be taken straight back.
+    // landed: a move of this device's own still queued, or the space's log or
+    // this account's own running ahead of this device. A note another of this
+    // account's devices has just shared into the space looks lost until both
+    // its seed and the marker it left at home arrive here, and must not be
+    // taken straight back. The server writes the two together.
     var busy = false;
     if (candidates.isNotEmpty) {
-      final ahead = await _api.pullOps(
-        space: space.id,
-        after: _state.cursorFor(space.id),
-        limit: 1,
-      );
-      busy = !ahead.isEmpty;
+      for (final log in [space.id, personalId]) {
+        final ahead = await _api.pullOps(
+          space: log,
+          after: _state.cursorFor(log),
+          limit: 1,
+        );
+        if (!ahead.isEmpty) busy = true;
+      }
     }
     for (final noteId in candidates) {
       if (busy) break;
