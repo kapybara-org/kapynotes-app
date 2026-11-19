@@ -118,14 +118,18 @@ class _Overflows {
   }
 }
 
-void main() {
-  final windows = {
-    'an 880 by 640 window': const Size(880, 640),
-    'the smallest window': LayoutPrefs.minimumWindowSize,
-  };
+/// The smallest window Settings can open in. Windows widens the window to
+/// 1004 first (_windowsSettingsWindowWidth), so it never opens narrower.
+Map<String, Size> _windows(TargetPlatform platform) => {
+  'an 880 by 640 window': const Size(880, 640),
+  'the smallest window': platform == TargetPlatform.windows
+      ? Size(1004, LayoutPrefs.minimumWindowSize.height)
+      : LayoutPrefs.minimumWindowSize,
+};
 
+void main() {
   for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
-    for (final MapEntry(key: name, value: size) in windows.entries) {
+    for (final MapEntry(key: name, value: size) in _windows(platform).entries) {
       testWidgets('on ${platform.name}, in $name, no section overflows', (
         tester,
       ) async {
