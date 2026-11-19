@@ -2261,10 +2261,12 @@ class _SettingsDialogState extends State<SettingsDialog>
             : () => recording ? _stopRecording() : _startRecording(action),
         notice: panelOff
             ? 'Needs Keep running in the menu bar'
-            : (widget.desktopIntegration?.isTaken(action) ?? false)
-            ? 'Taken by another app. The panel still opens from the menu bar '
-                  'icon.'
-            : null,
+            : !(widget.desktopIntegration?.isTaken(action) ?? false)
+            ? null
+            : AppPlatform.isLinux
+            ? 'Taken by your desktop or another app.'
+            : 'Taken by another app. The panel still opens from the menu bar '
+                  'icon.',
         onKey: _onRecordingKey,
         focusNode: _recordingFocus,
         swap: swap == null

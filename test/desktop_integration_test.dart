@@ -399,6 +399,27 @@ void main() {
     expect(window.calls, isNot(contains('destroy')));
   });
 
+  test('Linux names the desktop when another client holds a chord', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    final hotKeys = _NativeRecorder(
+      'dev.leanflutter.plugins/hotkey_manager',
+      sequence: sequence,
+    )..refuses.add('register');
+    hotKeys.install();
+
+    final error = await integration.trySystemShortcut(
+      ShortcutAction.openApp,
+      ShortcutPrefs.defaultFor(ShortcutAction.openApp),
+    );
+
+    expect(hotKeys.calls, ['register']);
+    expect(
+      error,
+      'That shortcut is already used by your desktop or another app.',
+    );
+    expect(integration.isTaken(ShortcutAction.openApp), isTrue);
+  });
+
   test(
     'a first launch opens at login, and later ones leave it alone',
     () async {

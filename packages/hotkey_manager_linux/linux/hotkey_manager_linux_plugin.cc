@@ -88,8 +88,10 @@ static void send_key_down(HotkeyManagerLinuxPlugin* self,
   fl_event_channel_send(self->events, event, nullptr, nullptr);
 }
 
-// A held key repeats as further presses with no release between them, and a
-// summon that toggles the window must not flicker through each of them.
+// A shortcut fires when its key comes back up. From the press until then X
+// holds the keyboard for the grab, and GTK counts the app's own window as
+// unfocused for that long, so a summon that hides a focused window would only
+// ever show it. It also fires once however long the key is held.
 static GdkFilterReturn filter_key(GdkXEvent* gdk_xevent,
                                   GdkEvent* event,
                                   gpointer user_data) {
@@ -106,10 +108,10 @@ static GdkFilterReturn filter_key(GdkXEvent* gdk_xevent,
     Binding& binding = entry.second;
     if (binding.keycode != xevent->xkey.keycode) continue;
     result = GDK_FILTER_REMOVE;
-    if (xevent->type == KeyRelease) {
+    if (xevent->type == KeyPress) {
+      if (binding.modifiers == modifiers) binding.down = true;
+    } else if (binding.down) {
       binding.down = false;
-    } else if (binding.modifiers == modifiers && !binding.down) {
-      binding.down = true;
       send_key_down(self, entry.first);
     }
   }
