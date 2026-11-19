@@ -372,6 +372,39 @@ void main() {
         b.dispose();
       },
     );
+
+    test(
+      'a note filed again after a fast clock took it out stays filed, on every device',
+      () async {
+        final (a, b) = await pair();
+        final c = Device(server, name: 'tablet');
+        await c.boot();
+        final note = b.notes.create(body: 'Plan');
+        final x = b.folders.create('X')!;
+        final y = b.folders.create('Y')!;
+        final z = b.folders.create('Z')!;
+        b.folders.file([note.id], x.id);
+        await passes([b, a, c]);
+
+        a.clock = a.clock.add(const Duration(minutes: 4));
+        a.folders.file([note.id], y.id);
+        await passes([a, c]);
+        a.folders.file([note.id], null);
+        await passes([a, b]);
+        expect(b.folders.tree.folderOf(note.id), isNull);
+
+        b.folders.file([note.id], z.id);
+        await passes([b, c, a, b, c]);
+        for (final d in [a, b, c]) {
+          expect(d.folders.tree.folderOf(note.id), z.id, reason: d.name);
+        }
+        expectSettled(a, b, [note.id]);
+        expectSettled(a, c, [note.id]);
+        a.dispose();
+        b.dispose();
+        c.dispose();
+      },
+    );
   });
 
   group('builds from before folders', () {

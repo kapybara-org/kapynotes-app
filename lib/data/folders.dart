@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 
 import 'local_store.dart';
@@ -64,6 +66,23 @@ class Folder {
   final int depth;
   final int createdAt;
 }
+
+/// The latest stamp a folder record may carry: JavaScript's largest safe
+/// integer, where the contract's integers stop. Real stamps are milliseconds
+/// since 1970, so only a corrupt record comes near it. A reader refuses a
+/// record past it, and no change is stamped past it, so one past a stamp can
+/// never wrap or lose precision.
+const int _stampMax = 9007199254740991;
+
+/// [raw] as a stamp a device could have written, or null.
+Stamped<T>? _stamped<T>(Object? raw) {
+  final stamped = Stamped.fromJson<T>(raw);
+  if (stamped == null || stamped.at < 0 || stamped.at > _stampMax) return null;
+  return stamped;
+}
+
+/// One past [at], short of [_stampMax].
+int _past(int at) => at < _stampMax ? at + 1 : _stampMax;
 
 /// Control characters, line breaks among them, as spaces, and trimmed.
 String _spaced(String name) => name
@@ -146,9 +165,9 @@ class FolderRecord {
   /// one, cut to [folderNameMax], so every device sees the same.
   static FolderRecord? fromPayload(String id, Object? raw) {
     if (raw is! Map || raw['id'] != id) return null;
-    final name = Stamped.fromJson<String>(raw['name']);
-    final parent = Stamped.fromJson<String?>(raw['parent']);
-    final deleted = Stamped.fromJson<bool>(raw['deleted']);
+    final name = _stamped<String>(raw['name']);
+    final parent = _stamped<String?>(raw['parent']);
+    final deleted = _stamped<bool>(raw['deleted']);
     final createdAt = raw['createdAt'];
     if (name == null ||
         parent == null ||
@@ -210,7 +229,7 @@ class NoteFolder {
   static NoteFolder? fromPayload(Object? raw) {
     if (raw is! Map) return null;
     final noteId = raw['noteId'];
-    final folder = Stamped.fromJson<String>(raw['folder']);
+    final folder = _stamped<String>(raw['folder']);
     if (noteId is! String || folder == null) return null;
     return NoteFolder(
       noteId: noteId,
@@ -439,9 +458,11 @@ class FolderStore extends ChangeNotifier {
     decode: FolderRecord.fromPayload,
   );
 
-  /// Keyed by note id.
+  /// Keyed by note id. A note taken out of every folder keeps its record,
+  /// deleted, while that delete is ahead of this device's clock, so filing it
+  /// again is stamped past it (see [_letGo]).
   final _notes = RecordBook<NoteFolder>(
-    keepDeleted: false,
+    keepDeleted: true,
     merge: (mine, theirs) => mine.merge(theirs),
     encode: (note) => note.toPayload(),
     decode: (noteId, raw) {
@@ -456,7 +477,7 @@ class FolderStore extends ChangeNotifier {
   /// behind it: a change made over a value outranks it, so a device with a
   /// slow clock can still undo or move what one with a fast clock wrote.
   static Stamped<T> _over<T>(Stamped<T> replaced, T v, int now) =>
-      Stamped(v, now > replaced.at ? now : replaced.at + 1);
+      Stamped(v, now > replaced.at ? now : _past(replaced.at));
 
   /// The folders as they read now, rebuilt on the first read after a change.
   FolderTree get tree => _tree ??= FolderTree._read(
@@ -662,7 +683,9 @@ class FolderStore extends ChangeNotifier {
 
   /// Files [noteIds] in [folderId], or takes them out of every folder with
   /// null: one write for each note that moves, and none at all when
-  /// [checkFile] refuses.
+  /// [checkFile] refuses. A filing is stamped past all this device holds for
+  /// the note, the delete that took it out included, so it outranks what it
+  /// replaces on every device, however far ahead the clock that wrote that.
   FolderRefusal? file(Iterable<String> noteIds, String? folderId) {
     final ids = noteIds.toSet();
     final refusal = checkFile(ids, folderId);
@@ -676,14 +699,16 @@ class FolderStore extends ChangeNotifier {
         _notes.delete(noteId, now);
       } else {
         if (placed?.folder.v == folderId) continue;
+        final slot = _notes.slots[noteId];
+        final held = slot == null
+            ? 0
+            : max(slot.updatedAt, slot.value.folder.at);
         _notes.write(
           noteId,
           NoteFolder(
             noteId: noteId,
-            folder: placed == null
-                ? Stamped(folderId, now)
-                : _over(placed.folder, folderId, now),
-            extra: placed?.extra ?? const {},
+            folder: Stamped(folderId, now > held ? now : _past(held)),
+            extra: slot?.value.extra ?? const {},
           ),
           now,
         );
@@ -706,23 +731,44 @@ class FolderStore extends ChangeNotifier {
     final now = _stamp();
     for (final id in cut) {
       final folder = _folders.live(id)!;
-      final top = Stamped<String?>(null, folder.parent.at + 1);
+      final top = Stamped<String?>(null, _past(folder.parent.at));
       _folders.write(id, folder.copyWith(parent: top), now);
     }
     _changed();
   }
 
-  /// A note deleted for good takes its placement with it.
+  /// A note deleted for good takes its placement with it, and once the
+  /// server has that, nothing of it stays: the note is never filed again.
   void forgetNote(String noteId) {
-    if (_notes.live(noteId) == null) return;
-    _notes.delete(noteId, _stamp());
-    _changed();
+    final slot = _notes.slots[noteId];
+    if (slot == null || (slot.deleted && slot.dirty)) return;
+    if (slot.deleted) {
+      _notes.slots.remove(noteId);
+      _save();
+    } else {
+      _notes.delete(noteId, _stamp());
+      _changed();
+    }
+  }
+
+  /// Lets go of [noteId]'s placement once it is a delete the server has and
+  /// this device's clock has passed: a filing made from then on outranks it
+  /// by its own time.
+  void _letGo(String noteId) {
+    final slot = _notes.slots[noteId];
+    if (slot != null &&
+        slot.deleted &&
+        !slot.dirty &&
+        slot.updatedAt < _stamp()) {
+      _notes.slots.remove(noteId);
+    }
   }
 
   // -------------------------------------------------------------------------
   // Sync
 
-  /// The notes this device has a placement for.
+  /// The notes this device holds a placement record for, taken-out ones
+  /// included.
   Iterable<String> get noteIds => _notes.slots.keys;
 
   /// Whether the server is owed anything.
@@ -736,10 +782,12 @@ class FolderStore extends ChangeNotifier {
 
   /// The server took the record as sent. Anything changed since stays owed.
   void acknowledge(OwedRecord record) {
-    (record.kind == FolderRecord.kind ? _folders : _notes).acknowledge(
-      record.key,
-      record.updatedAt,
-    );
+    if (record.kind == FolderRecord.kind) {
+      _folders.acknowledge(record.key, record.updatedAt);
+    } else {
+      _notes.acknowledge(record.key, record.updatedAt);
+      _letGo(record.key);
+    }
     _save();
   }
 
@@ -759,16 +807,20 @@ class FolderStore extends ChangeNotifier {
   /// placement by [noteId] where the record id is known to be that note's. A
   /// newer local change survives it and goes up again.
   void applyRemoteDelete(String id, int updatedAt, {String? noteId}) {
-    if (_folders.applyRemoteDelete(id, updatedAt) ||
-        (noteId != null && _notes.applyRemoteDelete(noteId, updatedAt))) {
+    if (_folders.applyRemoteDelete(id, updatedAt)) {
+      _changed();
+    } else if (noteId != null && _notes.applyRemoteDelete(noteId, updatedAt)) {
+      _letGo(noteId);
       _changed();
     }
   }
 
   /// Signing out: the folders stay, and everything live is owed to the next
-  /// account, whose record ids are its own.
+  /// account, whose record ids are its own. A taken-out placement was this
+  /// account's record, and goes.
   void forgetAccount() {
     _folders.forgetAccount();
+    _notes.slots.removeWhere((_, slot) => slot.deleted);
     _notes.forgetAccount();
     _save();
   }

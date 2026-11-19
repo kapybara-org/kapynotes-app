@@ -37,7 +37,8 @@ class RecordBook<T> {
   });
 
   /// Whether a deleted record stays once the server has it: a tag does, for
-  /// Undo and so a note can tell how long ago it went; a note's tags go with
+  /// Undo and so a note can tell how long ago it went, and a note taken out
+  /// of its folder does until `FolderStore` lets it go; a note's tags go with
   /// the note.
   final bool keepDeleted;
   final T Function(T mine, T theirs) merge;

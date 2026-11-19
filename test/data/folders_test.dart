@@ -374,6 +374,97 @@ void main() {
       },
     );
 
+    test(
+      'a stamp past the largest safe integer is refused, and none is written past it',
+      () {
+        const max = 9007199254740991;
+        Map<String, Object?> payload(int at) =>
+            remoteFolder(idA, 'Work', at: at).toPayload();
+        expect(FolderRecord.fromPayload(idA, payload(max)), isNotNull);
+        expect(FolderRecord.fromPayload(idA, payload(max + 1)), isNull);
+        expect(FolderRecord.fromPayload(idA, payload(-1)), isNull);
+        expect(
+          NoteFolder.fromPayload(
+            NoteFolder(
+              noteId: noteA,
+              folder: const Stamped(idA, max + 1),
+            ).toPayload(),
+          ),
+          isNull,
+        );
+
+        folders.applyRemoteFolder(remoteFolder(idA, 'Work', at: max - 1), 1);
+        expect(folders.rename(idA, 'Office'), isNull);
+        expect(folders.rename(idA, 'Studio'), isNull);
+        final written = folders.owed.single.payload!;
+        expect((written['name'] as Map)['at'], max);
+        expect(FolderRecord.fromPayload(idA, written)?.name.v, 'Studio');
+      },
+    );
+
+    test(
+      'a note taken out ahead of this clock is held, so filing it again outranks that',
+      () {
+        final ahead = clock.millisecondsSinceEpoch + 3600 * 1000;
+        folders.applyRemoteFolder(remoteFolder(idA, 'Work'), 1);
+        folders.applyRemoteNote(
+          NoteFolder(noteId: noteA, folder: Stamped(idA, ahead)),
+          ahead,
+        );
+        folders.applyRemoteNote(
+          NoteFolder(noteId: noteB, folder: const Stamped(idA, 2)),
+          2,
+        );
+        expect(folders.file([noteA], null), isNull);
+        acknowledgeAll(folders);
+        folders.applyRemoteDelete('placement', ahead, noteId: noteB);
+        expect(folders.tree.folderOf(noteB), isNull);
+        expect(folders.noteIds, [
+          noteA,
+          noteB,
+        ], reason: 'both deletes are ahead of this clock');
+
+        expect(folders.file([noteA, noteB], idA), isNull);
+        final owed = {for (final r in folders.owed) r.key: r};
+        expect(owed[noteA]!.updatedAt, ahead + 2);
+        expect(owed[noteA]!.payload!['folder'], {'v': idA, 'at': ahead + 2});
+        expect(owed[noteB]!.updatedAt, ahead + 1);
+        expect(owed[noteB]!.payload!['folder'], {'v': idA, 'at': ahead + 1});
+      },
+    );
+
+    test(
+      'a taken-out placement is let go once this clock passes it, when its note is deleted for good, and on signing out',
+      () {
+        final ahead = clock.millisecondsSinceEpoch + 3600 * 1000;
+        final work = folders.create('Work')!;
+        folders.file([noteA, noteB, noteC], work.id);
+        acknowledgeAll(folders);
+        folders.file([noteA], null);
+        acknowledgeAll(folders);
+        folders.applyRemoteDelete(
+          'placement-b',
+          clock.millisecondsSinceEpoch,
+          noteId: noteB,
+        );
+        folders.applyRemoteDelete('placement-c', ahead, noteId: noteC);
+        expect(folders.noteIds, [noteC]);
+
+        folders.forgetNote(noteC);
+        expect(folders.noteIds, isEmpty, reason: 'it is never filed again');
+        expect(folders.owed, isEmpty);
+
+        folders.applyRemoteNote(
+          NoteFolder(noteId: noteA, folder: Stamped(work.id, ahead)),
+          ahead,
+        );
+        expect(folders.file([noteA], null), isNull);
+        folders.forgetAccount();
+        expect(folders.noteIds, isEmpty);
+        expect(folders.owed.map((r) => r.key), [work.id]);
+      },
+    );
+
     test('fields a later build wrote are kept and written back', () {
       final later = FolderRecord.fromPayload(idA, {
         ...remoteFolder(idA, 'Work').toPayload(),
