@@ -2114,7 +2114,14 @@ class _SettingsDialogState extends State<SettingsDialog>
                   ? 'Keep running in the menu bar'
                   : 'Keep running in the tray',
               AppPlatform.isMacOS
-                  ? 'Open, write or quit from the menu bar'
+                  ? switch (widget.shortcuts.bindingFor(
+                      ShortcutAction.openMenuBarPanel,
+                    )) {
+                      final keys? =>
+                        'Click the icon or press ${keys.keycapLabel} for quick '
+                            'notes and tasks',
+                      null => 'Click the icon for quick notes and tasks',
+                    }
                   : 'Shortcuts keep working after the window closes',
               value: prefs.keepRunningInBackground,
               onChanged: _setKeepRunning,
@@ -2171,6 +2178,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     final filter = filtered ? _shortcutFilter.text.trim().toLowerCase() : '';
     bool shows(ShortcutAction action) =>
         (action != ShortcutAction.toggleKapyAi || kapyAiAvailable) &&
+        (action != ShortcutAction.openMenuBarPanel || AppPlatform.isMacOS) &&
         (filter.isEmpty ||
             _shortcutLabel(action).toLowerCase().contains(filter) ||
             _keys(action).toLowerCase() == filter);
@@ -2230,6 +2238,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     final recording = _recording == action;
     final swap = recording ? _swap : null;
     void reset() => unawaited(_applyShortcuts({action: standard}));
+    final panelOff =
+        action == ShortcutAction.openMenuBarPanel &&
+        !widget.layoutPrefs.keepRunningInBackground;
     return _Setting(
       'shortcut-row-${action.name}',
       _shortcutLabel(action),
@@ -2245,7 +2256,15 @@ class _SettingsDialogState extends State<SettingsDialog>
         recording: recording,
         changed: changed,
         onReset: reset,
-        onPressed: () => recording ? _stopRecording() : _startRecording(action),
+        onPressed: panelOff
+            ? null
+            : () => recording ? _stopRecording() : _startRecording(action),
+        notice: panelOff
+            ? 'Needs Keep running in the menu bar'
+            : (widget.desktopIntegration?.isTaken(action) ?? false)
+            ? 'Taken by another app. The panel still opens from the menu bar '
+                  'icon.'
+            : null,
         onKey: _onRecordingKey,
         focusNode: _recordingFocus,
         swap: swap == null
@@ -3076,7 +3095,8 @@ extension on ShortcutAction {
   /// given a place here.
   _ShortcutGroup get group => switch (this) {
     ShortcutAction.openApp ||
-    ShortcutAction.newNoteAnywhere => _ShortcutGroup.fromAnywhere,
+    ShortcutAction.newNoteAnywhere ||
+    ShortcutAction.openMenuBarPanel => _ShortcutGroup.fromAnywhere,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
     ShortcutAction.newTask ||
@@ -3667,6 +3687,7 @@ class _ShortcutRow extends StatelessWidget {
     required this.focusNode,
     required this.swap,
     required this.error,
+    this.notice,
   });
 
   final ShortcutAction action;
@@ -3678,13 +3699,18 @@ class _ShortcutRow extends StatelessWidget {
   final bool recording;
   final bool changed;
   final VoidCallback onReset;
-  final VoidCallback onPressed;
+
+  /// Null while the shortcut cannot be used, which dims its keys.
+  final VoidCallback? onPressed;
   final FocusOnKeyEventCallback onKey;
   final FocusNode focusNode;
 
   /// The keys pressed, who has them now, and what that one would get.
   final ({String keys, String holder, String? given})? swap;
   final String? error;
+
+  /// Why the shortcut is not answering, under the row while not recording.
+  final String? notice;
 
   @override
   Widget build(BuildContext context) {
@@ -3698,9 +3724,12 @@ class _ShortcutRow extends StatelessWidget {
         key: ValueKey('shortcut-${action.name}'),
         onTap: onPressed,
         borderRadius: BorderRadius.circular(AppRadii.compact),
-        child: _Keycap(
-          binding?.displayLabel ?? (recording ? 'Press keys' : 'None'),
-          recording: recording,
+        child: Opacity(
+          opacity: onPressed == null ? 0.45 : 1,
+          child: _Keycap(
+            binding?.displayLabel ?? (recording ? 'Press keys' : 'None'),
+            recording: recording,
+          ),
         ),
       ),
     );
@@ -3732,6 +3761,14 @@ class _ShortcutRow extends StatelessWidget {
                 keys,
             ],
           ),
+          if (notice case final notice? when !recording) ...[
+            const SizedBox(height: 4),
+            Text(
+              notice,
+              key: ValueKey('shortcut-note-${action.name}'),
+              style: TextStyle(fontSize: 12, color: palette.textDescription),
+            ),
+          ],
           if (recording) ...[
             const SizedBox(height: 6),
             Row(

@@ -16,16 +16,27 @@ class AppTray with TrayListener {
   AppTray({
     required this.onOpen,
     required this.onNewNote,
+    required this.onNewTask,
+    required this.onSettings,
     required this.onQuit,
+    required this.onClick,
   });
 
   /// Bring the window forward. Also what a Windows tray click means.
   final VoidCallback onOpen;
   final VoidCallback onNewNote;
+  final VoidCallback onNewTask;
+  final VoidCallback onSettings;
   final VoidCallback onQuit;
+
+  /// A plain click on the macOS menu bar item: opens or closes the menu bar
+  /// panel and answers true, or answers false for the menu to open instead.
+  final Future<bool> Function() onClick;
 
   static const String _openKey = 'open';
   static const String _newNoteKey = 'new-note';
+  static const String _newTaskKey = 'new-task';
+  static const String _settingsKey = 'settings';
   static const String _quitKey = 'quit';
 
   /// Windows draws the notification area from an .ico and picks the size it
@@ -33,7 +44,7 @@ class AppTray with TrayListener {
   /// Linux panel scales one full-colour PNG, which reads on light panels and
   /// dark ones alike.
   static const String _icon = 'assets/branding/kapynotes_tray_windows.ico';
-  static const String _templateIcon =
+  static const String templateIcon =
       'assets/branding/kapynotes_tray_macos.png';
   static const String _linuxIcon = 'assets/branding/kapynotes_tray_linux.png';
 
@@ -44,7 +55,7 @@ class AppTray with TrayListener {
   /// Never throws. A tray is a convenience, and a host that refuses one —
   /// a Windows session with the notification area locked down, a macOS menu
   /// bar with no room left — must not take the app down with it.
-  Future<void> setVisible(bool visible) async {
+  Future<void> setVisible(bool visible, {String toolTip = 'Kapy Notes'}) async {
     if (visible == _visible) return;
     _visible = visible;
 
@@ -58,7 +69,7 @@ class AppTray with TrayListener {
       trayManager.addListener(this);
       await trayManager.setIcon(
         AppPlatform.isMacOS
-            ? _templateIcon
+            ? templateIcon
             : AppPlatform.isLinux
             ? _linuxIcon
             : _icon,
@@ -66,7 +77,7 @@ class AppTray with TrayListener {
       );
       // An indicator has no tooltip, and tray_manager's Linux side refuses
       // the call rather than ignoring it.
-      if (!AppPlatform.isLinux) await trayManager.setToolTip('Kapy Notes');
+      if (!AppPlatform.isLinux) await trayManager.setToolTip(toolTip);
       await trayManager.setContextMenu(_menu());
     } catch (error, stack) {
       // Leaves the flag where the caller asked for it: a second attempt is
@@ -88,22 +99,43 @@ class AppTray with TrayListener {
     items: [
       MenuItem(key: _openKey, label: 'Open Kapy Notes'),
       MenuItem(key: _newNoteKey, label: 'New Note'),
-      MenuItem.separator(),
+      if (AppPlatform.isMacOS) ...[
+        MenuItem(key: _newTaskKey, label: 'New Task'),
+        MenuItem.separator(),
+        MenuItem(key: _settingsKey, label: 'Settings…'),
+      ] else
+        MenuItem.separator(),
       // Always last, always present. This is the only way out of an app whose
       // window closes to the tray, so nothing may ever hide it.
       MenuItem(key: _quitKey, label: 'Quit Kapy Notes'),
     ],
   );
 
+  /// Changes what the icon says on hover, while it is showing.
+  Future<void> setToolTip(String toolTip) async {
+    if (!_visible) return;
+    try {
+      await trayManager.setToolTip(toolTip);
+    } catch (_) {
+      // Only the hover text; the icon itself is unaffected.
+    }
+  }
+
   @override
   void onTrayIconMouseDown() {
     // A Windows tray icon opens its app on click and its menu on right-click.
-    // A macOS menu bar item opens its menu either way.
+    // A macOS menu bar item opens the menu bar panel on click, and its menu on
+    // right-click, ⌃-click, or wherever there is no panel.
     if (AppPlatform.isMacOS) {
-      unawaited(_showMenu());
+      unawaited(_click());
       return;
     }
     onOpen();
+  }
+
+  Future<void> _click() async {
+    if (await onClick()) return;
+    await _showMenu();
   }
 
   @override
@@ -136,6 +168,10 @@ class AppTray with TrayListener {
         onOpen();
       case _newNoteKey:
         onNewNote();
+      case _newTaskKey:
+        onNewTask();
+      case _settingsKey:
+        onSettings();
       case _quitKey:
         onQuit();
     }

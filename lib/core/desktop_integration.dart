@@ -11,6 +11,7 @@ import 'app_tray.dart';
 import 'linux_autostart.dart';
 import 'linux_desktop.dart';
 import 'login_item.dart';
+import 'menu_bar_panel.dart';
 import 'platform.dart';
 import 'system_shutdown.dart';
 import 'window_pin.dart';
@@ -22,11 +23,18 @@ import 'window_placement.dart';
 /// note; and, for those who ask for it, staying alive in the tray once the
 /// window is closed.
 class DesktopIntegration extends ChangeNotifier with WindowListener {
-  DesktopIntegration({required this.layoutPrefs}) {
+  DesktopIntegration({
+    required this.layoutPrefs,
+    MenuBarPanelController? panel,
+  }) : panel = panel ?? MenuBarPanelController() {
     _tray = AppTray(
       onOpen: () => unawaited(_summon()),
       onNewNote: () => unawaited(_summonForNewNote()),
+      onNewTask: () => unawaited(openInWindow((window) => window.newTask())),
+      onSettings: () =>
+          unawaited(openInWindow((window) => window.openSettings())),
       onQuit: () => unawaited(quit()),
+      onClick: this.panel.click,
     );
     // Whoever changes the preference — the settings pane today, anything
     // else later — the OS follows from here, rather than every caller having
@@ -36,7 +44,18 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   final LayoutPrefs layoutPrefs;
 
+  /// The panel under the menu bar icon. It exists only on macOS, and only
+  /// while the icon does.
+  final MenuBarPanelController panel;
+
+  /// What the panel and the icon's menu ask of the window, answered by the
+  /// home page while it is mounted.
+  MenuBarWindowActions? window;
+
   late final AppTray _tray;
+  ShortcutPrefs? _shortcuts;
+  final Set<ShortcutAction> _taken = {};
+  bool _disposed = false;
 
   final Map<ShortcutAction, HotKey> _hotKeys = {};
   Timer? _windowGeometryDebounce;
@@ -77,6 +96,14 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   String? get registrationError => _registrationError;
 
+  /// Whether the OS refused [action]'s chord, because another app holds it.
+  bool isTaken(ShortcutAction action) => _taken.contains(action);
+
+  /// The panel's shortcut is registered only while there is a menu bar icon
+  /// for the panel to open under, which on Windows is not yet.
+  bool get _panelShortcutActive =>
+      AppPlatform.isMacOS && layoutPrefs.keepRunningInBackground;
+
   /// Whether this host can open the app at login. False on macOS 12 and on
   /// anything without a runner behind the channel, and the settings pane
   /// leaves the row out entirely rather than offer a switch that does nothing.
@@ -95,6 +122,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   bool get canKeepRunningInBackground => _trayHost;
 
   Future<void> initialize(ShortcutPrefs shortcuts) async {
+    _shortcuts = shortcuts;
     windowManager.addListener(this);
     // An installer, or a logoff, asking the app to end. It arrives as its own
     // message rather than as a close because the two want opposite things:
@@ -106,6 +134,8 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     WindowPin.listen(releaseAlwaysOnTop);
     if (AppPlatform.isLinux) await _initializeLinux();
     for (final action in _globalActions) {
+      // Registered with the menu bar icon instead, in _applyBackgroundBehavior.
+      if (action == ShortcutAction.openMenuBarPanel) continue;
       // The first refusal is the one worth reporting: it names a shortcut the
       // user can go and change, and the later ones may well be fine.
       _registrationError ??= await _replaceHotKey(
@@ -248,8 +278,16 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     // The tray goes up first, because whether it managed to is what decides
     // the rest: a close that hides the window is only safe while there is
     // something left on screen to bring it back.
-    await _tray.setVisible(keepRunning);
+    await _tray.setVisible(keepRunning, toolTip: _toolTip);
     _hidesOnClose = keepRunning && _tray.isVisible;
+    if (!keepRunning) await panel.close();
+    await _replaceHotKey(
+      ShortcutAction.openMenuBarPanel,
+      _panelShortcutActive
+          ? _shortcuts?.bindingFor(ShortcutAction.openMenuBarPanel)
+          : null,
+    );
+    if (!_disposed) notifyListeners();
     await windowManager.setPreventClose(_hidesOnClose);
 
     // Turning it off while the window is already tucked away would leave
@@ -308,10 +346,33 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     ShortcutAction action,
     ShortcutBinding? binding,
   ) async {
-    final error = await _replaceHotKey(action, binding);
+    final panelOff =
+        action == ShortcutAction.openMenuBarPanel && !_panelShortcutActive;
+    final error = await _replaceHotKey(action, panelOff ? null : binding);
     _registrationError = error;
+    if (action == ShortcutAction.openMenuBarPanel) {
+      await _tray.setToolTip(_toolTipFor(binding));
+    }
     notifyListeners();
     return error;
+  }
+
+  String get _toolTip =>
+      _toolTipFor(_shortcuts?.bindingFor(ShortcutAction.openMenuBarPanel));
+
+  String _toolTipFor(ShortcutBinding? panelKeys) =>
+      AppPlatform.isMacOS && panelKeys != null
+      ? 'Kapy Notes  ${panelKeys.keycapLabel}'
+      : 'Kapy Notes';
+
+  /// Closes the panel, brings the window forward, and has it do [action].
+  Future<void> openInWindow(
+    void Function(MenuBarWindowActions window) action,
+  ) async {
+    await panel.close();
+    await _summon(notifyOpen: false);
+    final window = this.window;
+    if (window != null) action(window);
   }
 
   static Iterable<ShortcutAction> get _globalActions =>
@@ -324,6 +385,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     if (_wayland) return null;
     final previous = _hotKeys.remove(action);
     if (previous != null) await hotKeyManager.unregister(previous);
+    _taken.remove(action);
     if (binding == null) return null;
 
     final candidate = HotKey(
@@ -340,6 +402,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
     if (await _register(action, candidate)) return null;
     if (previous != null) await _register(action, previous);
+    if (!_hotKeys.containsKey(action)) _taken.add(action);
     return AppPlatform.isLinux
         ? 'That shortcut is already used by your desktop or another app.'
         : 'That shortcut is already used by macOS, Windows, or another app.';
@@ -360,8 +423,14 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   Future<void> _fire(ShortcutAction action) => switch (action) {
     ShortcutAction.newNoteAnywhere => _summonForNewNote(),
+    ShortcutAction.openMenuBarPanel => _togglePanel(),
     _ => toggleWindow(),
   };
+
+  Future<void> _togglePanel() async {
+    if (await panel.isSupported) return panel.toggle();
+    await toggleWindow();
+  }
 
   /// Unlike the summon shortcut this one never hides the window. The press
   /// asked for somewhere to write, and a note behind the app you were in is
@@ -540,6 +609,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   @override
   void dispose() {
+    _disposed = true;
     _windowGeometryDebounce?.cancel();
     windowManager.removeListener(this);
     SystemShutdown.stopListening();
@@ -547,6 +617,8 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     LinuxDesktop.stopListening();
     layoutPrefs.removeListener(_onPrefsChanged);
     unawaited(_tray.dispose());
+    panel.dispose();
+    window = null;
     onNewNoteRequested = null;
     onOpenRequested = null;
     onBeforeQuit = null;

@@ -19,6 +19,7 @@ class _NativeRecorder {
 
   final String channel;
   final List<String> calls = [];
+  final List<MethodCall> log = [];
   final Map<String, Object?> answers = {};
 
   /// The arguments of the most recent call to each method. Keyed rather than
@@ -38,6 +39,7 @@ class _NativeRecorder {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(MethodChannel(channel), (call) async {
           calls.add(call.method);
+          log.add(call);
           lastArguments[call.method] = call.arguments;
           sequence.add('$channel.${call.method}');
           if (refuses.contains(call.method)) {
@@ -575,5 +577,84 @@ void main() {
     await second.initialize(ShortcutPrefs(_MemoryStore())..load());
 
     expect(window.calls, contains('setAlwaysOnTop'));
+  });
+
+  group('the menu bar panel', () {
+    late _NativeRecorder hotKeys;
+    late _NativeRecorder panel;
+    late DesktopIntegration subject;
+
+    setUp(() {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      hotKeys = _NativeRecorder(
+        'dev.leanflutter.plugins/hotkey_manager',
+        sequence: sequence,
+      )..install();
+      panel = _NativeRecorder('kapynotes/menubar_panel', sequence: sequence)
+        ..answers['isSupported'] = true
+        ..answers['isControlPressed'] = false
+        ..install();
+      // After the recorders, so that it is disposed while they still answer.
+      subject = DesktopIntegration(layoutPrefs: prefs);
+      addTearDown(subject.dispose);
+    });
+
+    List<String> held(String method) => [
+      for (final call in hotKeys.log)
+        if (call.method == method)
+          (call.arguments as Map)['identifier']! as String,
+    ];
+
+    test('its shortcut is registered only while the menu bar icon is', () async {
+      await subject.initialize(ShortcutPrefs(_MemoryStore())..load());
+      expect(held('register'), contains('kapynotes.openMenuBarPanel'));
+      expect(
+        subject.isTaken(ShortcutAction.openMenuBarPanel),
+        isFalse,
+      );
+
+      prefs.keepRunningInBackground = false;
+      await settle();
+      await settle();
+      expect(held('unregister'), contains('kapynotes.openMenuBarPanel'));
+
+      hotKeys.log.clear();
+      await subject.trySystemShortcut(
+        ShortcutAction.openMenuBarPanel,
+        ShortcutPrefs.defaultFor(ShortcutAction.openMenuBarPanel),
+      );
+      expect(
+        held('register'),
+        isEmpty,
+        reason: 'changed in Settings while the icon is off, it waits for it',
+      );
+    });
+
+    test('a chord another app holds is reported, and the icon still opens '
+        'the panel', () async {
+      hotKeys.refuses.add('register');
+      await subject.initialize(ShortcutPrefs(_MemoryStore())..load());
+
+      expect(subject.isTaken(ShortcutAction.openMenuBarPanel), isTrue);
+      await subject.panel.click();
+      expect(panel.calls, contains('show'));
+    });
+
+    test('with no multi-view switch in the engine there is no panel, and a '
+        'click on the icon opens the menu', () async {
+      panel.answers['isSupported'] = false;
+      await subject.initialize(ShortcutPrefs(_MemoryStore())..load());
+
+      expect(await subject.panel.click(), isFalse);
+      await subject.panel.open();
+      expect(panel.calls, isNot(contains('show')));
+    });
+
+    test('a ⌃-click opens the menu rather than the panel', () async {
+      panel.answers['isControlPressed'] = true;
+      expect(await subject.panel.click(), isFalse);
+      expect(panel.calls, isNot(contains('show')));
+    });
   });
 }

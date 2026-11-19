@@ -30,7 +30,14 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('tray_manager'), null);
   });
 
-  AppTray tray() => AppTray(onOpen: () {}, onNewNote: () {}, onQuit: () {});
+  AppTray tray({Future<bool> Function()? onClick}) => AppTray(
+    onOpen: () {},
+    onNewNote: () {},
+    onNewTask: () {},
+    onSettings: () {},
+    onQuit: () {},
+    onClick: onClick ?? () async => false,
+  );
 
   Object? frontArgOf(MethodCall call) =>
       (call.arguments as Map)['bringAppToFront'];
@@ -54,9 +61,12 @@ void main() {
   test('macOS is left alone, since the parameter is Windows-only', () async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
 
-    // On macOS the menu opens on a plain click too, and there is no
-    // foreground rule to satisfy: asking would be noise the platform ignores.
-    tray().onTrayIconMouseDown();
+    // A right-click is the menu on macOS as well, and there is no foreground
+    // rule to satisfy: asking would be noise the platform ignores. It never
+    // reaches the menu bar panel.
+    tray(
+      onClick: () async => fail('a right-click is the menu'),
+    ).onTrayIconRightMouseDown();
     await Future<void>.delayed(Duration.zero);
 
     expect(calls.single.method, 'popUpContextMenu');
@@ -86,11 +96,39 @@ void main() {
     AppTray(
       onOpen: () => opened++,
       onNewNote: () {},
+      onNewTask: () {},
+      onSettings: () {},
       onQuit: () {},
+      onClick: () async => fail('Windows has no menu bar panel'),
     ).onTrayIconMouseDown();
     await Future<void>.delayed(Duration.zero);
 
     expect(opened, 1);
     expect(calls, isEmpty, reason: 'a left click is not a menu on Windows');
+  });
+
+  test('a click on the Mac opens the menu bar panel, not the menu', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    var clicks = 0;
+
+    tray(
+      onClick: () async {
+        clicks++;
+        return true;
+      },
+    ).onTrayIconMouseDown();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(clicks, 1);
+    expect(calls, isEmpty);
+  });
+
+  test('with no panel to open, a click on the Mac opens the menu', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+    tray(onClick: () async => false).onTrayIconMouseDown();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(calls.single.method, 'popUpContextMenu');
   });
 }
