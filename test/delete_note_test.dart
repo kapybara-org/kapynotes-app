@@ -139,7 +139,10 @@ void main() {
     final first = _note('First');
     notes.togglePinned(first.id);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('sidebar-pinned-heading')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar-pinned-heading')),
+      findsOneWidget,
+    );
 
     await _rightClick(tester, 'First');
 

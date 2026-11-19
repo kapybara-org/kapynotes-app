@@ -932,30 +932,25 @@ void main() {
       'and only an editor of it may', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    final carol = Device(server, userId: 'user-3', device: 'c');
-    addTearDown(carol.dispose);
     late Note shared;
     late Note viewed;
     late Note own;
     await tester.runAsync(() async {
       await alice.boot();
       await bob.boot();
-      await carol.boot();
       shared = alice.notes.create(body: 'Edited together');
+      viewed = alice.notes.create(body: 'Read only');
       own = bob.notes.create(body: 'Bob alone');
       await alice.sync.syncNow();
       await alice.sharing.shareNoteWith(shared.id, email: bob.email);
       await bob.sharing.acceptInvite(server.outbox.last.token);
-      viewed = carol.notes.create(body: 'Read only');
-      await carol.sync.syncNow();
-      await carol.sharing.shareNoteWith(
+      await alice.sharing.shareNoteWith(
         viewed.id,
         email: bob.email,
         role: SpaceRole.viewer,
       );
       await bob.sharing.acceptInvite(server.outbox.last.token);
       await alice.sync.syncNow();
-      await carol.sync.syncNow();
       await bob.sync.syncNow();
     });
 
