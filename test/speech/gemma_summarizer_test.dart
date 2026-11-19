@@ -36,23 +36,26 @@ void main() {
     expect(await summarizer.readiness(), SummarizerReadiness.needsDownload);
   });
 
-  test('summarising without the model throws rather than loading one', () async {
-    final summarizer = GemmaSummarizer(models: models);
+  test(
+    'summarising without the model throws rather than loading one',
+    () async {
+      final summarizer = GemmaSummarizer(models: models);
 
-    await expectLater(
-      summarizer.summarize(text: 'a transcript', lang: 'en'),
-      throwsA(
-        isA<SummarizerUnavailable>()
-            .having(
-              (e) => e.readiness,
-              'readiness',
-              SummarizerReadiness.needsDownload,
-            )
-            // Worth coming back to, once the download has happened.
-            .having((e) => e.isTemporary, 'isTemporary', isTrue),
-      ),
-    );
-  });
+      await expectLater(
+        summarizer.summarize(text: 'a transcript', lang: 'en'),
+        throwsA(
+          isA<SummarizerUnavailable>()
+              .having(
+                (e) => e.readiness,
+                'readiness',
+                SummarizerReadiness.needsDownload,
+              )
+              // Worth coming back to, once the download has happened.
+              .having((e) => e.isTemporary, 'isTemporary', isTrue),
+        ),
+      );
+    },
+  );
 
   test('unloading something never loaded is not an error', () async {
     await GemmaSummarizer(models: models).unload();
@@ -107,5 +110,27 @@ void main() {
     // 30-minute recordings the app allows — which is why it is documented as
     // summarising from the beginning.
     expect(summarizer.maximumTranscriptChars, greaterThan(8000));
+  });
+
+  group('the summary prompt', () {
+    const language =
+        'Write in the language the transcript is in, unless asked otherwise '
+        'above.';
+
+    test('asks for the transcript\'s language after the default ask', () {
+      final prompt = GemmaSummarizer(
+        models: models,
+      ).summaryPrompt('कल दस बजे डॉक्टर', null);
+      expect(prompt, contains('beginning with "- ".\n$language\n\n'));
+      expect(prompt, endsWith('Transcript:\nकल दस बजे डॉक्टर'));
+    });
+
+    test('keeps a person\'s own instruction, which may name a language', () {
+      final prompt = GemmaSummarizer(
+        models: models,
+      ).summaryPrompt('Lunch at one', '  Summarise in French.  ');
+      expect(prompt, contains('Summarise in French.\n$language\n\n'));
+      expect(prompt, isNot(contains('beginning with "- "')));
+    });
   });
 }
