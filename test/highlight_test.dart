@@ -3,10 +3,11 @@ import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/calc/keyword_help.dart';
 import 'package:kapy_notes/calc/parser.dart';
+import 'package:kapy_notes/calc/phrases.dart';
 
 void main() {
   test('every colored calculator keyword has an explanation', () {
-    expect(calcKeywordHelp.keys.toSet(), calcKeywords);
+    expect(calcKeywordHelp.keys.toSet(), {...calcKeywords, ...Phrases.words});
   });
 
   test('highlights only the // suffix on prose and calculation lines', () {

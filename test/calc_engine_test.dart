@@ -47,7 +47,8 @@ void main() {
       expect(line('6k usd'), '6,000.00 USD');
       expect(line('6m'), '6,000,000');
       expect(line('2.5M USD'), '2,500,000.00 USD');
-      expect(line('6K'), '6 K', reason: 'uppercase K remains kelvin');
+      expect(line('6K'), '6,000', reason: 'attached, K is thousands');
+      expect(line('6 K'), '6 K', reason: 'a spaced K remains kelvin');
       expect(line('6 m'), '6 m', reason: 'a spaced m remains metres');
       expect(line('6km'), '6 km', reason: 'unit identifiers stay intact');
     });

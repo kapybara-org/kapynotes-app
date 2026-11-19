@@ -99,6 +99,7 @@ class ResultFormatter {
     DigitGrouping grouping = DigitGrouping.international,
   }) {
     if (value is BooleanValue) return value.value ? 'true' : 'false';
+    if (value is PhraseValue) return value.text;
     if (value is DateTimeValue) return _temporal(value);
     if (value is FormattedNumberValue) return _notation(value);
     if (value is PercentValue) {
@@ -131,6 +132,7 @@ class ResultFormatter {
   /// Ungrouped and full precision — what lands on the clipboard.
   static String copy(CalcValue value) {
     if (value is BooleanValue) return value.value ? 'true' : 'false';
+    if (value is PhraseValue) return value.text;
     if (value is DateTimeValue) return _temporal(value);
     if (value is FormattedNumberValue) return _notation(value);
     if (value is PercentValue) return _number(value.fraction, 12);
@@ -156,7 +158,7 @@ class ResultFormatter {
     CalcValue value, {
     DigitGrouping grouping = DigitGrouping.international,
   }) {
-    if (value is BooleanValue) return 'Copy result';
+    if (value is BooleanValue || value is PhraseValue) return 'Copy result';
 
     final raw = _rawNumber(value);
     if (raw == null) return 'Copy result';
@@ -210,6 +212,7 @@ class ResultFormatter {
     QuantityValue() => value.value,
     BooleanValue() => null,
     DateTimeValue() => null,
+    PhraseValue() => null,
   };
 
   static String _temporal(DateTimeValue value) {
