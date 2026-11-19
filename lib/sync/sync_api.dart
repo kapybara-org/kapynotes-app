@@ -746,6 +746,11 @@ abstract class SyncApi {
   });
   Future<void> removeMember(String spaceId, String userId);
 
+  /// Takes a note out of this account's own notes on all of its devices,
+  /// without deleting it for everyone. Anyone but the owner. A server from
+  /// before this answers 404.
+  Future<void> hideNote(String spaceId, String noteId);
+
   /// Owner only: what a member may do. A server from before this answers 404.
   Future<Space> changeRole(String spaceId, String userId, SpaceRole role);
   Future<List<WireNoteKey>> fetchNoteKeys(String spaceId);
@@ -1214,6 +1219,10 @@ class HttpSyncApi implements SyncApi {
   @override
   Future<void> removeMember(String spaceId, String userId) =>
       _send('DELETE', _baseUrl.resolve('spaces/$spaceId/members/$userId'));
+
+  @override
+  Future<void> hideNote(String spaceId, String noteId) =>
+      _send('PUT', _baseUrl.resolve('spaces/$spaceId/hidden/$noteId'));
 
   @override
   Future<Space> changeRole(

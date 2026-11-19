@@ -38,6 +38,7 @@ class NotesStore extends ChangeNotifier {
   static const String _nameHereKey = 'nameHereNoteIds.v1';
   static const String _privateCopiesKey = 'privateCopies.v1';
   static const String _dismissedKey = 'dismissed.v1';
+  static const String _dismissalSyncKey = 'dismissalSync.v1';
   static const int _nameHereLimit = 200;
 
   final LocalStore _store;
@@ -887,7 +888,96 @@ class NotesStore extends ChangeNotifier {
       _tombstones.where((s) => !(s.id == stone.id && s.spaceId == spaceId)),
     );
     _store.put(_dismissedKey, {..._dismissed, stone.id: spaceId});
+    _store.put(_dismissalSyncKey, {
+      ..._dismissalSync,
+      stone.id: stone.deletedAt.millisecondsSinceEpoch,
+    });
     _persist();
+  }
+
+  /// Where each dismissal stands with the server, by note id: [_synced] once
+  /// the space's list carries it, [_localOnly] when the server had no place
+  /// for it, and otherwise when it was made here, or nothing for one made by
+  /// a build from before, both still to send.
+  Map<String, Object> get _dismissalSync => {
+    if (_store.data[_dismissalSyncKey] case final Map raw)
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (key is String && value != null) key: value as Object,
+  };
+
+  static const String _synced = 'synced';
+  static const String _localOnly = 'local';
+
+  /// This account's dismissals no server has taken yet, as note id to its
+  /// space and when it was made, if known.
+  List<({String noteId, String spaceId, DateTime? at})> get unsentDismissals {
+    final sync = _dismissalSync;
+    return [
+      for (final MapEntry(:key, :value) in _dismissed.entries)
+        if (sync[key] case null || int _)
+          (
+            noteId: key,
+            spaceId: value,
+            at: switch (sync[key]) {
+              final int ms => DateTime.fromMillisecondsSinceEpoch(
+                ms,
+                isUtc: true,
+              ),
+              _ => null,
+            },
+          ),
+    ];
+  }
+
+  /// A server with no place for [noteId]'s dismissal: it stays on this
+  /// device alone, as before, and is not offered again.
+  void keepDismissalLocal(String noteId) {
+    if (!_dismissed.containsKey(noteId)) return;
+    _store.put(_dismissalSyncKey, {..._dismissalSync, noteId: _localOnly});
+  }
+
+  /// [spaceId]'s list of the notes this account took out of its own notes,
+  /// as the server holds it for every one of its devices. Those not yet kept
+  /// away here go, and ones the list no longer carries, which the server had
+  /// confirmed before, come back: the account left and was invited in again.
+  /// Dismissals still on their way up are left as they are.
+  ///
+  /// Returns the ids of the notes that came back.
+  List<String> applyHidden(String spaceId, Iterable<String> hidden) {
+    final ids = hidden.toSet();
+    final dismissed = _dismissed;
+    final sync = _dismissalSync;
+    final back = [
+      for (final MapEntry(:key, :value) in dismissed.entries)
+        if (value == spaceId && !ids.contains(key) && sync[key] == _synced) key,
+    ];
+    final away = {
+      for (final id in ids)
+        if (dismissed[id] != spaceId || sync[id] != _synced) id,
+    };
+    if (back.isEmpty && away.isEmpty) return const [];
+    for (final id in back) {
+      dismissed.remove(id);
+      sync.remove(id);
+    }
+    for (final id in away) {
+      dismissed[id] = spaceId;
+      sync[id] = _synced;
+    }
+    _notes = List.unmodifiable(
+      _notes.where((note) {
+        if (note.spaceId != spaceId || !away.contains(note.id)) return true;
+        _encoded.remove(note.id);
+        return false;
+      }),
+    );
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => s.spaceId != spaceId || !away.contains(s.id)),
+    );
+    _store.put(_dismissedKey, dismissed);
+    _store.put(_dismissalSyncKey, sync);
+    _persist();
+    return back;
   }
 
   /// Drops the dismissals [gone] matches: the note was deleted for everyone,
@@ -895,11 +985,21 @@ class NotesStore extends ChangeNotifier {
   void _undismiss(bool Function(String id, String spaceId) gone) {
     final dismissed = _dismissed;
     if (!dismissed.entries.any((e) => gone(e.key, e.value))) return;
-    _store.put(_dismissedKey, {
+    final kept = {
       for (final MapEntry(:key, :value) in dismissed.entries)
         if (!gone(key, value)) key: value,
+    };
+    _store.put(_dismissedKey, kept);
+    _store.put(_dismissalSyncKey, {
+      for (final MapEntry(:key, :value) in _dismissalSync.entries)
+        if (kept.containsKey(key)) key: value,
     });
   }
+
+  /// Brings back a dismissal made before this account last joined [spaceId]:
+  /// from an earlier membership, which the server has already let go of.
+  void undismissStale(String noteId, String spaceId) =>
+      _undismiss((id, inSpace) => id == noteId && inSpace == spaceId);
 
   // -------------------------------------------------------------------------
   // Sync

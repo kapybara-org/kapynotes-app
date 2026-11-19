@@ -78,9 +78,9 @@ class Sharing extends ChangeNotifier {
   /// Spaces this device is leaving, whose going is no news.
   final Set<String> _leaving = {};
 
-  /// Invitations this device has tried to accept by itself, once each.
   final bool _acceptOnTheirOwn;
 
+  /// Invitations this device has tried to accept by itself, once each.
   final Set<String> _autoAccepting = {};
 
   /// Spaces joined that way, whose notice offers to leave again.

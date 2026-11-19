@@ -670,12 +670,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (personal != null) _state.adoptPersonalSpace(personal.id);
       await _duties(vault);
       _forgetDepartedSpaces();
+      _applyHidden();
       if (_live) {
         _subscribeAll();
       } else if (_socket == null || _socketDown) {
         await _pullAllOverHttp();
       }
       _reconcileDirty();
+      await _sendHidden();
       await _drain();
       await _tasks?.run();
       _failures = 0;
@@ -2523,6 +2525,61 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           'this account left',
         );
       }
+    }
+  }
+
+  /// Each space's list of the notes this account took out of its own notes,
+  /// so a Delete on one device keeps the note away on all of them, and one
+  /// the server let go of comes back from its history.
+  void _applyHidden() {
+    for (final space in _keyring.spaces) {
+      final hidden = space.hiddenNotes;
+      if (hidden == null || !space.isTeam) continue;
+      _bringBack(_notes.applyHidden(space.id, hidden));
+    }
+  }
+
+  /// Sends the dismissals made on this device until a space's list carries
+  /// them. A server with no place for one keeps it on this device alone, as
+  /// before, and is not asked again. One made before this account last
+  /// joined the space belonged to the earlier membership, and is let go.
+  Future<void> _sendHidden() async {
+    for (final dismissal in _notes.unsentDismissals) {
+      final space = _keyring.byId(dismissal.spaceId);
+      if (space == null) continue;
+      final joined = space.member(_keyring.userId)?.joinedAt;
+      final at = dismissal.at;
+      if (at != null && joined != null && joined.isAfter(at)) {
+        _notes.undismissStale(dismissal.noteId, space.id);
+        _bringBack([dismissal.noteId]);
+        continue;
+      }
+      try {
+        await _api.hideNote(space.id, dismissal.noteId);
+      } on SyncRefusedException catch (error) {
+        debugPrint('KapyNotes: dismissal not sent: ${error.code}');
+        if (error.status == 404 || error.status == 409) {
+          _notes.keepDismissalLocal(dismissal.noteId);
+        }
+      }
+    }
+  }
+
+  /// Renders notes that are no longer kept away from their history, which
+  /// went on arriving while they were.
+  void _bringBack(List<String> noteIds) {
+    final personalId = _keyring.personal?.id;
+    for (final noteId in noteIds) {
+      final record = _docs.get(noteId);
+      final space = record == null ? null : _keyring.byId(record.spaceId);
+      if (space == null) continue;
+      _render(
+        noteId,
+        _Touched()..changed = true,
+        space: space,
+        storedSpaceId: space.isPersonal ? null : space.id,
+        personalId: personalId,
+      );
     }
   }
 
