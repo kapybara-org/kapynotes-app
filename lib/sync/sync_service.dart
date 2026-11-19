@@ -2092,7 +2092,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           s.id == noteId &&
           (s.spaceId ?? personalId) == (storedSpaceId ?? personalId),
     );
-    if (localStone.any((s) => s.isDirty)) return;
+    final pending = localStone.where((s) => s.isDirty).toList();
+    if (pending.isNotEmpty) {
+      // Unless somebody else wrote to the note since, and the delete has not
+      // gone up yet: then their newer words win, and the delete is dropped.
+      final unsent = record.outbox.every(
+        (entry) => entry.deleted != true || (!entry.sent && !entry.inFlight),
+      );
+      if (!touch.changed || !unsent) return;
+      record.outbox.removeWhere((entry) => entry.deleted == true);
+      _notes.dropTombstones(pending);
+    }
 
     if (!touch.changed && !touch.arrived && local != null) return;
 
