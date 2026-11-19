@@ -181,9 +181,11 @@ jobs:
       # Flutter's own Linux toolchain (clang, cmake, ninja, GTK 3), the
       # libraries the plugins link (the tray's ayatana-appindicator3, secure
       # storage's libsecret), libpulse for the ffmpeg that voice notes use,
-      # and the packaging and validation tools.
+      # and the packaging and validation tools. apt-mirrors.sh gives apt a
+      # fallback mirror list and retries, for this step and the ffmpeg below.
       - name: Install build dependencies
         run: |
+          sudo sh .github/apt-mirrors.sh
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev \
@@ -375,25 +377,10 @@ jobs:
           name: linux-x86_64-unsigned
           path: dist
 
-      # The runner's own apt (the AppImage entry's baseline and FUSE, and
-      # ImageMagick for the screenshots) reads /etc/apt/apt-mirrors.txt, which
-      # lists only the EC2 regional mirror, archive.ubuntu.com and
-      # security.ubuntu.com, so an outage of Ubuntu's hosts fails every
-      # job. It uses azure.archive.ubuntu.com instead, like the Ubuntu
-      # containers below, with the same retries.
-      - name: Point the runner's apt at azure.archive.ubuntu.com
-        run: |
-          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo 'http://azure.archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-          fi
-          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
-            if [ -f "$f" ]; then
-              sudo sed -i -E 's#https?://([a-z0-9-]+\.)*(archive|security)\.ubuntu\.com#http://azure.archive.ubuntu.com#' "$f"
-            fi
-          done
-          ! grep -rhoE '([a-z0-9-]+\.)*(archive|security)\.ubuntu\.com' /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null |
-            grep -vx 'azure\.archive\.ubuntu\.com' | grep -q .
+      # The runner's own apt installs the AppImage entry's baseline and FUSE,
+      # and ImageMagick for the screenshots.
+      - name: Give the runner's apt the fallback mirrors
+        run: sudo sh .github/apt-mirrors.sh
 
       # Every container job used to download its desktop baseline (85 to 95
       # MB on the Ubuntu images) from a distro mirror into a fresh container,
@@ -401,9 +388,8 @@ jobs:
       # now installed once, committed to an image and cached under a key of the
       # image digest and smoke_test.sh (which lists the packages), so a new
       # base image or a new package list rebuilds it and later runs load
-      # it from the Actions cache. A cache miss installs it with apt retries,
-      # and the Ubuntu images use azure.archive.ubuntu.com, the mirror GitHub's
-      # own runner images use.
+      # it from the Actions cache. A cache miss installs it through
+      # apt-mirrors.sh's retries and, on Ubuntu, its fallback mirror list.
       - name: Resolve the digest of ${{ matrix.image }}
         id: image
         if: matrix.image != ''
@@ -412,30 +398,21 @@ jobs:
           [[ "$digest" == sha256:* ]]
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      # Bump the v1 when the PREPARE script below changes: the key can't see it.
+      # Bump the v1 when the install command below changes: the key sees only
+      # the two scripts.
       - name: Restore the desktop baseline of ${{ matrix.image }}
         id: baseline
         if: matrix.image != ''
         uses: actions/cache/restore@v4
         with:
           path: baseline.tar.gz
-          key: smoke-baseline-v1-${{ matrix.image }}-${{ steps.image.outputs.digest }}-${{ hashFiles('packaging/linux/smoke_test.sh') }}
+          key: smoke-baseline-v1-${{ matrix.image }}-${{ steps.image.outputs.digest }}-${{ hashFiles('packaging/linux/smoke_test.sh', '.github/apt-mirrors.sh') }}
 
       - name: Install the desktop baseline in a clean ${{ matrix.image }}
         if: matrix.image != '' && steps.baseline.outputs.cache-hit != 'true'
         run: |
-          prepare=$(cat <<'PREPARE'
-          if [ -d /etc/apt/apt.conf.d ]; then
-            echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
-          fi
-          if grep -qi '^ID=ubuntu' /etc/os-release; then
-            sed -i -E 's#https?://(archive|security)\.ubuntu\.com#http://azure.archive.ubuntu.com#' \
-              /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
-          fi
-          PREPARE
-          )
-          docker run --name baseline -v "$PWD:/w" -w /w -e PREPARE="$prepare" "${{ matrix.image }}" bash -c \
-            'eval "$PREPARE" && packaging/linux/smoke_test.sh baseline && { apt-get clean || dnf clean all; }'
+          docker run --name baseline -v "$PWD:/w" -w /w "${{ matrix.image }}" bash -c \
+            'sh .github/apt-mirrors.sh && packaging/linux/smoke_test.sh baseline && { apt-get clean || dnf clean all; }'
           docker commit baseline smoke-baseline
           docker save smoke-baseline | gzip > baseline.tar.gz
 
