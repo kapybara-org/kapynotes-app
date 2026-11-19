@@ -749,13 +749,16 @@ class FolderStore extends ChangeNotifier {
   }
 
   /// Lets go of the records of folders deleted more than [deletedFolderKept]
-  /// ago, so they stop counting against [folderRecordsMax]. First, what
-  /// still reads past one into a live folder is written there, stamped just
-  /// past what it replaces, so any real change made since still wins; what
-  /// reads at the top goes on reading there unwritten. For sync to call once
-  /// what the server had is in.
-  void prune() {
-    final cutoff = _stamp() - deletedFolderKept.inMilliseconds;
+  /// ago, so they stop counting against [folderRecordsMax]. Ago by
+  /// [serverNow], the server's clock as of its last answer, wherever this
+  /// device's clock is ahead of it: a clock running fast here can't let a
+  /// folder go while its Undo may still come. First, what still reads past
+  /// one into a live folder is written there (see [_repoint]); what reads at
+  /// the top goes on reading there unwritten. For sync to call once what the
+  /// server had is in.
+  void prune(int serverNow) {
+    final cutoff =
+        min(_stamp(), serverNow) - deletedFolderKept.inMilliseconds;
     final gone = {
       for (final MapEntry(:key, value: slot) in _folders.slots.entries)
         if (!slot.deleted &&
@@ -765,40 +768,52 @@ class FolderStore extends ChangeNotifier {
     };
     if (gone.isEmpty) return;
     final nearest = tree._nearest;
+    _repoint({
+      for (final id in gone)
+        if (nearest[id] case final into?) id: into,
+    });
+    final now = _stamp();
+    for (final id in gone) {
+      _folders.delete(id, now);
+    }
+    _changed();
+  }
+
+  /// Writes each folder and filed note in a folder keyed in [into] into the
+  /// live folder it maps to, stamped just past what it replaces, so any real
+  /// change made since still wins. With [own], only those this device has
+  /// yet to send.
+  void _repoint(Map<String, String> into, {bool own = false}) {
     final now = _stamp();
     for (final MapEntry(:key, value: slot) in _folders.slots.entries.toList()) {
       final parent = slot.value.parent;
-      final into = nearest[parent.v];
-      if (slot.deleted ||
-          gone.contains(key) ||
-          !gone.contains(parent.v) ||
-          into == null) {
+      final to = into[parent.v];
+      if (to == null ||
+          slot.deleted ||
+          into.containsKey(key) ||
+          (own && !slot.dirty)) {
         continue;
       }
       _folders.write(
         key,
-        slot.value.copyWith(parent: Stamped(into, _past(parent.at))),
+        slot.value.copyWith(parent: Stamped(to, _past(parent.at))),
         now,
       );
     }
     for (final MapEntry(:key, value: slot) in _notes.slots.entries.toList()) {
       final folder = slot.value.folder;
-      final into = nearest[folder.v];
-      if (slot.deleted || !gone.contains(folder.v) || into == null) continue;
+      final to = into[folder.v];
+      if (to == null || slot.deleted || (own && !slot.dirty)) continue;
       _notes.write(
         key,
         NoteFolder(
           noteId: key,
-          folder: Stamped(into, _past(folder.at)),
+          folder: Stamped(to, _past(folder.at)),
           extra: slot.value.extra,
         ),
         now,
       );
     }
-    for (final id in gone) {
-      _folders.delete(id, now);
-    }
-    _changed();
   }
 
   /// A note deleted for good takes its placement with it, and once the
@@ -869,15 +884,37 @@ class FolderStore extends ChangeNotifier {
 
   /// A deleted record as the server holds it: a folder by its id, a
   /// placement by [noteId] where the record id is known to be that note's. A
-  /// newer local change survives it and goes up again.
+  /// newer local change survives it and goes up again. A folder's record is
+  /// deleted when another device's [prune] lets it go, having written what
+  /// was in it where that reads; whatever this device put in it and hasn't
+  /// sent goes there too.
   void applyRemoteDelete(String id, int updatedAt, {String? noteId}) {
-    if (_folders.applyRemoteDelete(id, updatedAt)) {
+    if (_folders.slots.containsKey(id)) {
+      String? into;
+      if (_owesInto(id)) {
+        final folder = tree.byId(id);
+        into = folder != null ? folder.parentId : tree._nearest[id];
+      }
+      if (!_folders.applyRemoteDelete(id, updatedAt)) return;
+      if (into != null) _repoint({id: into}, own: true);
       _changed();
     } else if (noteId != null && _notes.applyRemoteDelete(noteId, updatedAt)) {
       _letGo(noteId);
       _changed();
     }
   }
+
+  /// Whether this device has a folder or a filed note in [folderId] it has
+  /// yet to send.
+  bool _owesInto(String folderId) =>
+      _folders.slots.values.any(
+        (slot) =>
+            slot.dirty && !slot.deleted && slot.value.parent.v == folderId,
+      ) ||
+      _notes.slots.values.any(
+        (slot) =>
+            slot.dirty && !slot.deleted && slot.value.folder.v == folderId,
+      );
 
   /// Signing out: the folders stay, and everything live is owed to the next
   /// account, whose record ids are its own. A taken-out placement was this

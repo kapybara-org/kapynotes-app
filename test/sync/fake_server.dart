@@ -498,7 +498,11 @@ class FakeServer {
         socket._send({'t': 'tasks'});
       }
     }
-    return TasksPushResult(applied: applied, conflicts: conflicts);
+    return TasksPushResult(
+      applied: applied,
+      conflicts: conflicts,
+      serverTime: now(),
+    );
   }
 
   TasksPage pullTasks(String userId, int after) {
