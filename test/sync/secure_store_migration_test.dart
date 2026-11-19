@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -155,12 +156,49 @@ void main() {
       expect(macOsKeychain.usesDataProtectionKeychain, isTrue);
     });
 
-    test('macOS migrates; other platforms use their store as is', () {
+    test('macOS and iOS migrate; other platforms use their store as is', () {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       expect(platformSecureStore(), isA<MigratingSecureStore>());
 
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      expect(platformSecureStore(), isA<MigratingSecureStore>());
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
       expect(platformSecureStore(), isA<PlatformSecureStore>());
+    });
+
+    test('iOS entries stay on the device and open after the first unlock', () {
+      expect(
+        iosKeychain.toMap()['accessibility'],
+        KeychainAccessibility.first_unlock_this_device.name,
+      );
+      expect(
+        iosKeychain.toMap()['accountName'],
+        isNot(AppleOptions.defaultAccountName),
+        reason: 'the keychain keeps one entry per service and account',
+      );
+    });
+
+    test('the Android secure store stays out of backups and transfers', () {
+      final manifest = File(
+        'android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+      expect(manifest, contains('android:fullBackupContent="@xml/backup_rules"'));
+      expect(
+        manifest,
+        contains('android:dataExtractionRules="@xml/data_extraction_rules"'),
+      );
+      final legacy = File(
+        'android/app/src/main/res/xml/backup_rules.xml',
+      ).readAsStringSync();
+      final modern = File(
+        'android/app/src/main/res/xml/data_extraction_rules.xml',
+      ).readAsStringSync();
+      for (final prefs in ['FlutterSecureStorage', 'FlutterSecureKeyStorage']) {
+        final rule = '<exclude domain="sharedpref" path="$prefs.xml"/>';
+        expect(legacy, contains(rule));
+        expect(RegExp(RegExp.escape(rule)).allMatches(modern), hasLength(2));
+      }
     });
 
     test('only the Developer ID build claims a keychain group', () {

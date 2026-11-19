@@ -50,6 +50,21 @@ const MacOsOptions macOsKeychain = MacOsOptions(
   accountName: _service,
 );
 
+/// Where iOS keeps the master key and session: readable once the phone has
+/// been unlocked after a restart, so sync can run in the background, and
+/// never carried to another device in a backup.
+///
+/// Under a service name of its own. The keychain tells entries apart by
+/// service and account, not by accessibility, so rewriting an entry with a new
+/// level replaces it in place, and a failed write would lose it. Builds up to
+/// 1.33 filed entries under the plugin's default service at its default
+/// level; [MigratingSecureStore] copies each one here, reads it back, and only
+/// then deletes the old one.
+const IOSOptions iosKeychain = IOSOptions(
+  accountName: 'kapynotes.keychain.v2',
+  accessibility: KeychainAccessibility.first_unlock_this_device,
+);
+
 /// Keychain on Apple platforms, Keystore on Android, libsecret on Linux,
 /// DPAPI on Windows.
 ///
@@ -160,11 +175,23 @@ class MigratingSecureStore implements SecureStore {
       Future.wait([_current.delete(key), _legacy.delete(key)]);
 }
 
-/// The platform's store. On macOS it also moves entries out of the
-/// file-based keychain earlier versions used.
-SecureStore platformSecureStore() => AppPlatform.isMacOS
-    ? const MigratingSecureStore(PlatformSecureStore(), FileKeychainStore())
-    : const PlatformSecureStore();
+/// The platform's store. On macOS and iOS it also moves entries out of where
+/// earlier versions kept them.
+SecureStore platformSecureStore() {
+  if (AppPlatform.isMacOS) {
+    return const MigratingSecureStore(
+      PlatformSecureStore(),
+      FileKeychainStore(),
+    );
+  }
+  if (AppPlatform.isIOS) {
+    return const MigratingSecureStore(
+      PlatformSecureStore(FlutterSecureStorage(iOptions: iosKeychain)),
+      PlatformSecureStore(),
+    );
+  }
+  return const PlatformSecureStore();
+}
 
 /// Turns a broken keystore into an empty one.
 ///
