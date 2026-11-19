@@ -82,7 +82,11 @@ static void saved_cb(GObject* object, GAsyncResult* result,
   g_autoptr(GError) error = nullptr;
   g_autoptr(FlMethodResponse) response = fl_method_channel_invoke_method_finish(
       FL_METHOD_CHANNEL(object), result, &error);
-  if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) return;
+  // Cancelled only once the runner has gone, with nothing left to let go.
+  if (response == nullptr &&
+      g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+    return;
+  }
   release_logout(static_cast<SystemShutdown*>(user_data));
 }
 
