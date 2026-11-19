@@ -6,6 +6,7 @@ import '../ai/kapy_chat_book.dart';
 import '../billing/billing.dart';
 import '../billing/note_limit.dart';
 import '../billing/plan_terms.dart';
+import '../data/folders.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
 import '../data/tags.dart';
@@ -76,6 +77,7 @@ class Account extends ChangeNotifier {
     required LocalStore store,
     required TaskLibrary tasks,
     required TagStore tags,
+    FolderStore? folders,
     KapyChatBook? chats,
     SyncService Function({
       required SyncApi api,
@@ -91,6 +93,7 @@ class Account extends ChangeNotifier {
        _store = store,
        _tasks = tasks,
        _tags = tags,
+       _folders = folders,
        _chats = chats,
        _syncServiceFactory = syncServiceFactory;
 
@@ -158,6 +161,10 @@ class Account extends ChangeNotifier {
 
   /// The person's tags and which notes carry them, synced while signed in.
   final TagStore _tags;
+
+  /// The person's folders and where each note is filed, synced while signed
+  /// in; null in a test with none.
+  final FolderStore? _folders;
 
   /// Kapy AI's chats, synced while signed in with Pro; null in a build or a
   /// test with none.
@@ -228,10 +235,13 @@ class Account extends ChangeNotifier {
   Future<void> restore() async {
     // Loads the sync state with the documents, whose replica comes from it.
     await _tasks.load();
-    // A build from before tags read the record stream past any tag records
-    // without keeping them, so the first time this one runs it reads the
-    // stream again from the start. Tasks merge again to no effect.
-    if (!await _tags.load() && _tasks.index.cursor > 0) {
+    // A build from before tags, or before folders, read the record stream
+    // past their records without keeping them, so the first time this one
+    // runs it reads the stream again from the start. What it already holds
+    // merges again to no effect.
+    final tagsHeld = await _tags.load();
+    final foldersHeld = await _folders?.load() ?? true;
+    if (!(tagsHeld && foldersHeld) && _tasks.index.cursor > 0) {
       _tasks.index.recordCursor(0);
     }
     final token = await _keys.readToken();
@@ -469,6 +479,7 @@ class Account extends ChangeNotifier {
     _state.beginRejoin(generation);
     _tasks.index.clear();
     _tags.forgetAccount();
+    _folders?.forgetAccount();
     _chats?.forgetAccount();
   }
 
@@ -637,6 +648,7 @@ class Account extends ChangeNotifier {
     if (!keepLocalNotes) {
       _notes.forgetEverything();
       _tags.clear();
+      _folders?.clear();
       _chats?.forgetEverything();
     }
     _state.adopt(_user!.id);
@@ -667,6 +679,7 @@ class Account extends ChangeNotifier {
             vault: vault,
             index: _tasks.index,
             tags: _tags,
+            folders: _folders,
             chats: _chats,
             chatsOn: () => _billing?.hasPro ?? false,
             docs: docs,
@@ -791,6 +804,7 @@ class Account extends ChangeNotifier {
     // and until then the library rebuilds the index from the documents.
     _tasks.index.clear();
     _tags.forgetAccount();
+    _folders?.forgetAccount();
   }
 
   /// Signing out drops the session and the key. It never touches the notes:
