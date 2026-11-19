@@ -36,7 +36,13 @@ class McpServer {
 
   /// Every request a client got through with; [activity] is set for a tool
   /// call, with [refused] when the call came back as an error.
-  final void Function(String client, {String? activity, bool refused}) onCall;
+  final void Function(
+    String client, {
+    String? activity,
+    bool refused,
+    McpUndo? undo,
+  })
+  onCall;
 
   final String version;
 
@@ -236,7 +242,12 @@ class McpServer {
           return _json(response, _error(id, -32000, _slowDown), status: 429);
         }
         final result = tools.call(name, args, writes: writes());
-        onCall(client, activity: result.activity, refused: result.error != null);
+        onCall(
+          client,
+          activity: result.activity,
+          refused: result.error != null,
+          undo: result.undo,
+        );
         final output = result.output;
         return _json(
           response,

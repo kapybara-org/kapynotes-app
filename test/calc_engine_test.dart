@@ -638,11 +638,11 @@ void main() {
     test('brings the footer back when the total line goes, and back again', () {
       const body = 'Rent = 1200\nFood = 300\nPer person = Rent / 2';
       for (final (edited, expected) in [
-        (body, '1,500'),
+        (body, '900'),
         ('$body\ntotal', null),
-        (body, '1,500'),
+        (body, '900'),
         ('$body\nsum', null),
-        (body, '1,500'),
+        (body, '900'),
       ]) {
         expect(total(edited), expected, reason: edited);
         expect(total(edited), freshTotal(edited), reason: 'as a fresh engine');
@@ -661,21 +661,17 @@ void main() {
       expect(total('total = 5\nextra = 3'), '8');
     });
 
-    test('drops an add-on such as a tip, by design', () {
-      expect(
-        total('Dinner = 80\nTip = Dinner * 15%'),
-        '80',
-        reason: 'a total that counts a derived line twice is the worse error',
-      );
+    test('keeps an add-on such as a tip, which is a new amount', () {
+      expect(total('Dinner = 80\nTip = Dinner * 15%'), '92');
     });
 
     test('follows an edit that turns a plain line derived, and back', () {
       const lines = ['a = 10', 'b = 5', 'c = 7'];
       for (final (body, expected) in [
         (lines.join('\n'), '22'),
-        ('a = 10\nb = a + 5\nc = 7', '17'),
+        ('a = 10\nb = a * 2\nc = 7', '27'),
         (lines.join('\n'), '22'),
-        ('a = 10\nb = 5\nc = b * 2', '15'),
+        ('a = 10\nb = 5\nc = b * 2', '20'),
         (lines.join('\n'), '22'),
       ]) {
         expect(total(body), expected, reason: body);
@@ -685,14 +681,276 @@ void main() {
 
     test('follows a referenced variable being renamed or deleted', () {
       const body = 'price = 10\nitem = price * 2\nextra = 5';
-      expect(total(body), '15');
+      expect(total(body), '25');
       for (final (edited, expected) in [
         ('cost = 10\nitem = price * 2\nextra = 5', '15'),
         ('item = price * 2\nextra = 5', '5'),
-        (body, '15'),
+        (body, '25'),
       ]) {
         expect(total(edited), expected, reason: edited);
         expect(total(edited), freshTotal(edited), reason: 'as a fresh engine');
+      }
+    });
+  });
+
+  group('each amount counts once', () {
+    DocumentEvaluation read(String body, [CalcEngine? using]) =>
+        (using ?? engine).evaluateDocumentWithSummary(body);
+
+    String? total(String body) => read(body).totalText;
+
+    String? hover(String body, int index) =>
+        read(body).results[index]?.count?.text;
+
+    bool? marked(String body, int index) =>
+        read(body).results[index]?.count?.mark;
+
+    test(
+      'counts a conversion, a bare reference or a restating sum as nothing',
+      () {
+        const priced = 'price = 100 usd\nprice in eur\nprice';
+        expect(total(priced), '100.00 USD');
+        expect(hover(priced, 1), 'Not added again: restates price');
+        expect(hover(priced, 2), 'Not added again: restates price');
+        expect(marked(priced, 1), isFalse, reason: 'left out by rule, no mark');
+        const sums = 'rent = 1200\nfood = 300\nrent + food';
+        expect(total(sums), '1,500');
+        expect(hover(sums, 2), 'Not added again: restates rent and food');
+      },
+    );
+
+    test('counts only what an additive line adds', () {
+      expect(total('flights = 412 eur\nflights + 20 eur'), '432.00 EUR');
+      expect(total('flights = 412 eur\n20 eur + flights'), '432.00 EUR');
+      expect(total('flights = 412 eur\nflights - 10%'), '370.80 EUR');
+      expect(total('a = 10\nb = a + 5\nc = 7'), '22');
+    });
+
+    test('counts a line that makes a new amount, though it reads another', () {
+      expect(total('hotel = 96 eur * 7'), '672.00 EUR');
+      expect(total('dinner = 80\ntip = dinner * 15%'), '92');
+    });
+
+    test('counts a name that is redefined once', () {
+      const twice = 'flights = 412 eur\nflights = 412 eur';
+      expect(total(twice), '412.00 EUR');
+      expect(hover(twice, 0), 'Not in the total: replaced by a later flights');
+      expect(total('x = 5\nx = 7'), '7');
+      expect(total('x = 5\nx = x + 1'), '6', reason: 'it builds on the old x');
+    });
+
+    test('retires the amounts a budget total was built from', () {
+      const budget =
+          'rent = 1000 eur\nutilities = 200 eur\nmonthly = rent + utilities\n'
+          'yearly = monthly * 12';
+      expect(total(budget), '14,400.00 EUR');
+      expect(hover(budget, 0), 'Not in the total: used as a base by yearly');
+      expect(total('a = 10\nb = a + 5\nc = b * 2'), '30');
+      expect(total('a = 10\nb = a + 5\nb'), '15', reason: 'b only restates');
+    });
+
+    test('retires a name built up by its own redefinitions', () {
+      expect(total('x = 5\nx = x + 1\nx = x * 2'), '12');
+      expect(total('x = 5\nx = x + 1\ny = x / 2'), '3');
+    });
+
+    test('retires a running balance when it is multiplied', () {
+      const balance =
+          'balance = 100 eur\nbalance = balance - 20 eur\nbalance = balance * 2';
+      expect(total(balance), '160.00 EUR');
+    });
+
+    test('totals in money when any line has a currency amount', () {
+      const grocery = 'Flour 2 kg \$3\nSugar 1 kg \$2';
+      expect(total(grocery), '5.00 USD');
+      const mixed = '2 kg\n\$3\n1 kg\n\$2';
+      expect(total(mixed), '5.00 USD');
+      expect(marked(mixed, 0), isTrue);
+      expect(hover(mixed, 0), "Not in the total: kg doesn't add to USD");
+      expect(total('2 kg\n3 kg'), '5 kg', reason: 'no money, first unit');
+      expect(total('2 kg\n3 km'), '2 kg');
+    });
+
+    test('names a bounded number of amounts in the total hover', () {
+      final body = [for (var i = 1; i <= 25; i++) 'a$i = $i'].join('\n');
+      final detail = read(body).totalDetail!;
+      expect(detail, startsWith('25 amounts\n'));
+      expect(detail, contains('a20 20, and 5 more'));
+      expect(detail, isNot(contains('a21')));
+      final unjoined = [for (var i = 1; i <= 25; i++) '$i kg'].join('\n');
+      final left = read('\$1\n$unjoined').totalDetail!;
+      expect(left, contains('and 5 more'));
+    });
+
+    test('counts a conversion of a typed amount, not of a name', () {
+      const kitchen = 'Tiles 4200 eur to usd';
+      expect(total(kitchen), '8,400.00 USD');
+      expect(marked(kitchen, 0), isNull);
+      expect(
+        total('Tiles 4200 eur to usd\nLabor 800 usd'),
+        '9,200.00 USD',
+        reason: 'both count',
+      );
+      const rent = 'rent = 1000 eur\nrent to usd';
+      expect(total(rent), '1,000.00 EUR');
+      expect(hover(rent, 1), 'Not added again: restates rent');
+      expect(
+        total('rent = 1000 eur\nrent to usd\n5 km to miles'),
+        '1,000.00 EUR',
+      );
+    });
+
+    test('counts a labelled redefinition once', () {
+      const body = 'Lunch = \$10\nLunch = Burger \$12';
+      expect(total(body), '12.00 USD');
+      expect(hover(body, 0), 'Not in the total: replaced by a later Lunch');
+      expect(total('$body\nLunch = Pizza \$9'), '9.00 USD');
+    });
+
+    test('takes a rate as the input of a line that multiplies it', () {
+      const rate = 'nightly = 128 eur\nhotel = nightly * 7';
+      expect(total(rate), '896.00 EUR');
+      expect(hover(rate, 0), 'Not in the total: used as a rate by hotel');
+      expect(total('nightly = 128 eur\nhotel = 7 * nightly'), '896.00 EUR');
+    });
+
+    test(
+      'takes a rate and a unitless variable as the input of their product',
+      () {
+        const body = 'nightly = 128 eur\nnights = 7\nhotel = nightly * nights';
+        expect(total(body), '896.00 EUR');
+        expect(hover(body, 0), 'Not in the total: used as a rate by hotel');
+        expect(hover(body, 1), 'Not in the total: used as a count by hotel');
+      },
+    );
+
+    test('takes a base as the input of a share of it', () {
+      const body = 'dinner = 80\nshare = dinner / 2';
+      expect(total(body), '40');
+      expect(hover(body, 0), 'Not in the total: used as a base by share');
+    });
+
+    test('keeps the base of a percentage', () {
+      expect(total('dinner = 80\ntip = dinner * 15%'), '92');
+      expect(total('dinner = 80\ntip = 15% * dinner'), '92');
+    });
+
+    test('takes a rate and then lets a redefinition replace the result', () {
+      const body = 'nightly = 128 eur\nhotel = nightly * 7\nhotel = 800 eur';
+      expect(total(body), '800.00 EUR');
+      expect(hover(body, 1), 'Not in the total: replaced by a later hotel');
+    });
+
+    test('takes nothing from a divisor, or from two amounts alike', () {
+      expect(total('dinner = 80\nx = 160 / dinner'), '82');
+      expect(total('hours = 40\nrate = 25\npay = hours * rate'), '1,065');
+    });
+
+    test('adds each amount of a kind to the first amount that has a unit', () {
+      const body = 'a = 4 usd\nb = 3 eur\ntotal';
+      expect(total(body), isNull, reason: "the note's own total");
+      expect(read(body).results[2]!.text, '10.00 USD');
+      expect(read('b = 3 eur\na = 4 usd\ntotal').results[2]!.text, '5.00 EUR');
+    });
+
+    test('leaves out an amount of another kind, and marks it', () {
+      const body = 'a = 12 eur\nb = 5 kg\nc = 7';
+      expect(total(body), '12.00 EUR');
+      expect(hover(body, 1), "Not in the total: kg doesn't add to EUR");
+      expect(marked(body, 1), isTrue);
+      expect(
+        hover(body, 2),
+        "Not in the total: it has no unit, so it doesn't add to EUR",
+      );
+      expect(marked(body, 2), isTrue);
+      expect(marked(body, 0), isNull);
+    });
+
+    test('adds bare numbers as before where no amount has a unit', () {
+      const body = 'a = 5\nb = 7';
+      expect(total(body), '12');
+      expect(
+        read(body).results.values.map((r) => r.count),
+        everyElement(isNull),
+      );
+    });
+
+    test('lets a bare number in once the amount that set the kind is gone', () {
+      const body = 'a = 5 kg\na = 6\nb = 4';
+      expect(total(body), '10');
+    });
+
+    test('reads total, sum and avg from the same amounts', () {
+      const body = 'a = 10\nb = 20\nc = a\ntotal\nsum\navg';
+      final results = read(body).results;
+      expect(results[3]!.text, '30');
+      expect(results[4]!.text, '30');
+      expect(results[5]!.text, '15');
+    });
+
+    test("counts Sanjay's note once", () {
+      const body =
+          'flights = 412 eur\nflights to usd\nhotel = 96 eur * 7\ntotalLisbon trip\n'
+          'flights = 412 eur\nflights to usd\nhotel = 96 eur * 7 nights\n'
+          'food = 45 eur * 7\ntotal\ntotal to usd';
+      final results = read(body).results;
+      expect(results[8]!.text, '1,399.00 EUR');
+      expect(results[9]!.text, '2,798.00 USD');
+      expect(total(body), isNull, reason: "the note's own total");
+      expect(
+        results[8]!.count!.text,
+        '3 amounts · EUR\nflights 412.00 EUR, hotel 672.00 EUR, food 315.00 EUR',
+      );
+    });
+
+    test('totals the Lisbon note without the conversion, the rates or the 7', () {
+      const body =
+          'Lisbon trip budget\n\nFlights for two\nflights = 412 eur\nflights to usd\n\n'
+          'Hotel: 7 nights\nnightly = 128 eur\nnightly * 7\n\n'
+          'Food and getting around // rough guess\ndaily = 55 eur\ndaily * 7\n\n'
+          'total\ntotal to usd';
+      final results = read(body).results;
+      expect(results[14]!.text, '1,693.00 EUR');
+      expect(marked(body, 6), isTrue, reason: 'the bare 7 has no unit');
+    });
+
+    test('says which rates the total used, and from when', () {
+      final dated = CalcEngine(ratesPerUsd: _rates, ratesAsOf: '18 Nov 2026');
+      final detail = read('a = 4 usd\nb = 3 eur\ntotal', dated).results[2]!;
+      expect(
+        detail.count!.text,
+        '2 amounts · USD · EUR converted at 1 USD = 0.5 EUR '
+        '(rates of 18 Nov 2026)\na 4.00 USD, b 3.00 EUR',
+      );
+      final listed = read('a = 12 eur\nb = 5 kg\ntotal', dated).results[2]!;
+      expect(
+        listed.count!.text,
+        endsWith("Not in the total: line 2 (kg doesn't add to EUR)"),
+      );
+    });
+
+    test('shows the total hover in the footer', () {
+      const body = 'rent = 1200\nfood = 300';
+      expect(read(body).totalDetail, '2 amounts\nrent 1,200, food 300');
+    });
+
+    test('reads the same through an engine that has read other notes', () {
+      for (final body in [
+        'nightly = 128 eur\nhotel = nightly * 7\nhotel = 800 eur',
+        'a = 12 eur\nb = 5 kg\nc = 7\ntotal',
+        'price = 100 usd\nprice in eur\nprice',
+        'dinner = 80\nshare = dinner / 2\ntip = dinner * 15%',
+        'rent = 1000 eur\nutilities = 200 eur\nmonthly = rent + utilities\nyearly = monthly * 12',
+        'balance = 100 eur\nbalance = balance - 20 eur\nbalance = balance * 2',
+      ]) {
+        final fresh = read(body, CalcEngine(ratesPerUsd: _rates));
+        final again = read(body);
+        expect(again.totalDetail, fresh.totalDetail, reason: body);
+        expect(
+          again.results.map((k, v) => MapEntry(k, v.tooltipText)),
+          fresh.results.map((k, v) => MapEntry(k, v.tooltipText)),
+          reason: body,
+        );
       }
     });
   });

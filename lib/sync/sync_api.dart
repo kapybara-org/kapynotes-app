@@ -564,7 +564,15 @@ class SyncAuthException extends SyncException {
 
 /// A network failure, a 5xx, or a rate limit. Worth retrying with backoff.
 class SyncTransientException extends SyncException {
-  const SyncTransientException(super.message, {this.answered = false});
+  const SyncTransientException(
+    super.message, {
+    this.answered = false,
+    this.status,
+  });
+
+  /// The status the server answered with, when it answered: 429 is somebody
+  /// asking too often, which is worth saying differently from an outage.
+  final int? status;
 
   /// Whether the server answered at all.
   ///
@@ -634,7 +642,37 @@ abstract class SyncApi {
   /// exists; replacing one is a rotation, which has to prove knowledge of the
   /// current key.
   Future<void> createKeyBundle(KeyBundle bundle);
-  Future<void> rotateKeyBundle(KeyBundle bundle);
+
+  /// Emails the account's owner a one-time code for [action].
+  Future<void> sendKeyProof(KeyProofAction action);
+
+  /// Trades the emailed code for a proof that the next key change carries.
+  /// Refused with `code-wrong`, `code-expired` or `code-tries`.
+  Future<String> verifyKeyProof(KeyProofAction action, String code);
+
+  /// Replaces the passphrase's seal on the master key, if the bundle is still
+  /// at [expectedVersion]; refused with `bundle-changed` if not, and with
+  /// `proof-required` for a proof that has expired or been used. Returns the
+  /// bundle's new version.
+  Future<int> changePassphrase({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required String? device,
+  });
+
+  /// Replaces the recovery key's seal, or adds the first one. Either needs a
+  /// proof.
+  Future<int> changeRecoveryKey({
+    required int expectedVersion,
+    required String? proof,
+    required SealedBox recoveryWrappedMasterKey,
+    required String? device,
+  });
+
+  /// Names this device, so other devices can say where a change came from.
+  Future<void> reportDevice({required String name, required String platform});
 
   /// Publishes the identity keypairs for an account created before they
   /// existed. Refused once they exist.
@@ -900,8 +938,77 @@ class HttpSyncApi implements SyncApi {
       _send('POST', _baseUrl.resolve('keys'), payload: bundle.toJson());
 
   @override
-  Future<void> rotateKeyBundle(KeyBundle bundle) =>
-      _send('PUT', _baseUrl.resolve('keys'), payload: bundle.toJson());
+  Future<void> sendKeyProof(KeyProofAction action) => _send(
+    'POST',
+    _baseUrl.resolve('keys/proof'),
+    payload: {'action': action.wire},
+  );
+
+  @override
+  Future<String> verifyKeyProof(KeyProofAction action, String code) async {
+    final body = await _send(
+      'POST',
+      _baseUrl.resolve('keys/proof/verify'),
+      payload: {'action': action.wire, 'code': code},
+    );
+    final proof = body['proof'];
+    if (proof is! String) throw const SyncProtocolException('no proof');
+    return proof;
+  }
+
+  @override
+  Future<int> changePassphrase({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required String? device,
+  }) async => _version(
+    await _send(
+      'POST',
+      _baseUrl.resolve('keys/passphrase'),
+      payload: {
+        'expectedVersion': expectedVersion,
+        'proof': proof,
+        'wrappedMasterKey': wrappedMasterKey.toJson(),
+        'kdf': kdf.toJson(),
+        'device': device,
+      },
+    ),
+  );
+
+  @override
+  Future<int> changeRecoveryKey({
+    required int expectedVersion,
+    required String? proof,
+    required SealedBox recoveryWrappedMasterKey,
+    required String? device,
+  }) async => _version(
+    await _send(
+      'POST',
+      _baseUrl.resolve('keys/recovery'),
+      payload: {
+        'expectedVersion': expectedVersion,
+        'proof': ?proof,
+        'recoveryWrappedMasterKey': recoveryWrappedMasterKey.toJson(),
+        'device': device,
+      },
+    ),
+  );
+
+  static int _version(Map<String, Object?> body) {
+    final version = body['version'];
+    if (version is! int) throw const SyncProtocolException('no version');
+    return version;
+  }
+
+  @override
+  Future<void> reportDevice({required String name, required String platform}) =>
+      _send(
+        'PUT',
+        _baseUrl.resolve('keys/device'),
+        payload: {'name': name, 'platform': platform},
+      );
 
   @override
   Future<void> publishIdentity(WireIdentity identity) => _send(
@@ -1377,7 +1484,11 @@ class HttpSyncApi implements SyncApi {
     if (status == 404 && absentIsNull) return const {};
     // 429 and 5xx are the server asking for patience, not a bad request.
     if (status == 429 || status >= 500) {
-      throw SyncTransientException('server returned $status', answered: true);
+      throw SyncTransientException(
+        'server returned $status',
+        answered: true,
+        status: status,
+      );
     }
     if (status >= 400) {
       final body = _decode(response.body);

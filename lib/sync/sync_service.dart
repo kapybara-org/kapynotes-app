@@ -128,7 +128,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
        _vault = vault,
        _now = now ?? DateTime.now {
     _notes.addListener(_onNotesChanged);
-    _docs.beforeFlush = _state.cursorsToSave;
+    _docs.beforeFlush = () {
+      final saveCursors = _state.cursorsToSave();
+      final absorbed = {..._absorbed};
+      _absorbed.clear();
+      return () {
+        saveCursors();
+        _notes.outboxWritten(absorbed.difference(_absorbed));
+      };
+    };
     tasks?.onRefusal = () {
       if (_status == SyncStatus.idle || _status == SyncStatus.failed) _settle();
     };
@@ -163,6 +171,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// to write it also writes a snapshot, so a device that has been away can
   /// take one document instead of replaying a year of keystrokes.
   final int snapshotEvery;
+
+  /// Notes absorbed into an outbox that is not on disk yet. A flush that
+  /// writes their records tells the notes store, unless a note was absorbed
+  /// again after that flush began.
+  final Set<String> _absorbed = {};
 
   Vault? _vault;
   SyncSocket? _socket;
@@ -1128,7 +1141,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       } else {
         _reconcileInto(record, current, spaceId);
       }
-      _notes.markSynced(notes: [current]);
+      _notes.markAbsorbed([current]);
+      _absorbed.add(current.id);
+      _docs.markDirty(current.id);
       _tasks?.schedule();
     }
 
@@ -1842,15 +1857,33 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (!item.isMarker && item.epoch > record.serverEpoch) {
         record.serverEpoch = item.epoch;
       }
-      if (record.spaceId != batch.spaceId && !(item.isMarker && item.deleted)) {
+      if (record.spaceId != batch.spaceId &&
+          !(item.isMarker && item.deleted) &&
+          !record.outbox.any((entry) => entry.from == batch.spaceId)) {
         // The log says the note is here now, wherever the local copy sits.
         // Not a tombstone marker, which says the opposite: the note left this
         // space, and the record already points wherever it went. Taking the
         // old space back would make the next edit a move the server refuses.
+        // Nor the note's history read back while its move out of this space
+        // is still on its way: the record already points where it is going,
+        // and taking it back would leave the next move unsent.
         record.spaceId = batch.spaceId;
       }
 
       if (item.isMarker) {
+        // The note left this space. When its own history, read back after
+        // the move was already answered, took the record back here, the
+        // record goes on to where the note is now: otherwise the next move
+        // from there would never be sent.
+        final local = _notes.byId(noteId);
+        final there = local == null ? null : local.spaceId ?? personalId;
+        if (item.deleted &&
+            record.spaceId == batch.spaceId &&
+            there != null &&
+            there != batch.spaceId &&
+            !local!.isDirty) {
+          record.spaceId = there;
+        }
         _docs.markDirty(noteId);
         continue;
       }
@@ -1969,7 +2002,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           s.id == noteId &&
           (s.spaceId ?? personalId) == (storedSpaceId ?? personalId),
     );
-    if (localStone.any((s) => s.isDirty)) return;
+    final pending = localStone.where((s) => s.isDirty).toList();
+    if (pending.isNotEmpty) {
+      // Unless somebody else wrote to the note since, and the delete has not
+      // gone up yet: then their newer words win, and the delete is dropped.
+      final unsent = record.outbox.every(
+        (entry) => entry.deleted != true || (!entry.sent && !entry.inFlight),
+      );
+      if (!touch.changed || !unsent) return;
+      record.outbox.removeWhere((entry) => entry.deleted == true);
+      _notes.dropTombstones(pending);
+    }
 
     if (!touch.changed && !touch.arrived && local != null) return;
 

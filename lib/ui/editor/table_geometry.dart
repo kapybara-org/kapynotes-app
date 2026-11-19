@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'markdown_editing.dart';
 import 'markdown_syntax.dart';
 
 /// How a run of a cell's words is drawn, given the markdown over them.
@@ -42,6 +43,7 @@ class TableGeometry {
     this.fitToWidth,
     this.fill = false,
     this.minRowHeight = 0,
+    TableGeometry? reuse,
   }) {
     final fitting = fitToWidth != null;
     final count = table.rows.fold<int>(
@@ -54,7 +56,22 @@ class TableGeometry {
     final longestWord = List<double>.filled(count, 0);
 
     for (final row in table.rows) {
+      final source = analysis.text.substring(row.start, row.end);
+      _rowWords[row] = source;
+      final kept = reuse?._take(source, header: row.header);
+      if (kept != null) {
+        _cells[row] = kept.painters;
+        _sources[row] = kept.sources;
+        _widths[row] = kept.widths;
+        for (var c = 0; c < kept.widths.length; c++) {
+          natural[c] = math.max(natural[c], kept.widths[c].natural);
+          longestWord[c] = math.max(longestWord[c], kept.widths[c].longestWord);
+        }
+        continue;
+      }
       final painters = <TextPainter>[];
+      final sources = <List<int>>[];
+      final widths = <({double natural, double longestWord})>[];
       for (var c = 0; c < row.cells.length; c++) {
         final cell = row.cells[c];
         final words = [
@@ -83,11 +100,29 @@ class TableGeometry {
         natural[c] = math.max(natural[c], painter.width);
         longestWord[c] = math.max(longestWord[c], painter.minIntrinsicWidth);
         painters.add(painter);
+        sources.add(_sourcesOf(analysis, cell, painter.plainText));
+        widths.add((
+          natural: painter.width,
+          longestWord: painter.minIntrinsicWidth,
+        ));
       }
       _cells[row] = painters;
+      _sources[row] = sources;
+      _widths[row] = widths;
     }
 
-    columns = fitting
+    charWidth = _averageCharWidth(base, scaler);
+    final dashes = markdownTableDashes(analysis.text, table);
+    final set = [
+      for (var c = 0; c < count; c++)
+        c < dashes.length ? markdownTableColumnWidth(dashes[c]) : null,
+    ];
+    columns = fitting && set.any((width) => width != null)
+        ? _preferred([
+            for (var c = 0; c < count; c++)
+              (set[c] == null ? natural[c] : set[c]! * charWidth) + padding * 2,
+          ], fitToWidth!)
+        : fitting
         ? _fitted(
             [for (final width in natural) width + padding * 2],
             [for (final width in longestWord) width + padding * 2],
@@ -95,7 +130,8 @@ class TableGeometry {
             minColumnWidth,
           )
         : [for (final width in natural) width + padding * 2];
-    if (fill && fitting) {
+    // A table someone has sized keeps those sizes rather than stretching.
+    if (fill && fitting && set.every((width) => width == null)) {
       final spare = fitToWidth! - width;
       if (spare > 0) columns[0] += spare;
     }
@@ -126,11 +162,18 @@ class TableGeometry {
       fill = measured.fill,
       minRowHeight = measured.minRowHeight {
     columns = measured.columns;
+    charWidth = measured.charWidth;
     for (var i = 0; i < table.rows.length; i++) {
       final row = measured.table.rows[i];
       final cells = measured._cells[row];
+      final sources = measured._sources[row];
+      final widths = measured._widths[row];
+      final words = measured._rowWords[row];
       final height = measured._rowHeights[row];
       if (cells != null) _cells[table.rows[i]] = cells;
+      if (sources != null) _sources[table.rows[i]] = sources;
+      if (widths != null) _widths[table.rows[i]] = widths;
+      if (words != null) _rowWords[table.rows[i]] = words;
       if (height != null) _rowHeights[table.rows[i]] = height;
     }
   }
@@ -150,6 +193,34 @@ class TableGeometry {
 
   final MarkdownTable table;
 
+  /// One character of the cells' face, on average: what one dash past the
+  /// third in the delimiter row is worth when a column's width is set.
+  late final double charWidth;
+
+  static double _averageCharWidth(TextStyle base, TextScaler scaler) {
+    const sample = 'abcdefghijklmnopqrstuvwxyz';
+    final painter = TextPainter(
+      text: TextSpan(text: sample, style: base),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final width = painter.width / sample.length;
+    painter.dispose();
+    return width;
+  }
+
+  /// Widths someone set, kept while they fit in [available], and all scaled
+  /// down together when they do not: a set width is a preference, and a table
+  /// never runs out of the column it is written in.
+  static List<double> _preferred(List<double> wanted, double available) {
+    final total = wanted.fold<double>(0, (sum, width) => sum + width);
+    if (total <= available) return wanted;
+    return [
+      for (final width in wanted)
+        math.max(minColumnWidth, width * available / total),
+    ];
+  }
+
   /// The width the table is fitted into, or null to let it be its natural size.
   final double? fitToWidth;
 
@@ -166,6 +237,45 @@ class TableGeometry {
   late final List<double> columns;
 
   final Map<MarkdownTableRow, List<TextPainter>> _cells = {};
+  final Map<MarkdownTableRow, List<List<int>>> _sources = {};
+  final Map<MarkdownTableRow, List<({double natural, double longestWord})>>
+  _widths = {};
+  final Map<MarkdownTableRow, String> _rowWords = {};
+
+  /// The measured cells of a row whose source is [words], taken out of this
+  /// grid for a new one to keep, so a row nobody edited is not measured again.
+  /// This grid draws nothing afterwards, and is only disposed.
+  ({
+    List<TextPainter> painters,
+    List<List<int>> sources,
+    List<({double natural, double longestWord})> widths,
+  })?
+  _take(String words, {required bool header}) {
+    final index = _rowsByWords ??= () {
+      final index = <({bool header, String words}), List<MarkdownTableRow>>{};
+      // Reversed, so that a row's duplicates are taken top first.
+      for (final row in table.rows.reversed) {
+        final words = _rowWords[row];
+        if (words == null) continue;
+        (index[(header: row.header, words: words)] ??= []).add(row);
+      }
+      return index;
+    }();
+    final rows = index[(header: header, words: words)];
+    if (rows == null || rows.isEmpty) return null;
+    final row = rows.removeLast();
+    final painters = _cells.remove(row);
+    final sources = _sources.remove(row);
+    final widths = _widths.remove(row);
+    _rowWords.remove(row);
+    if (painters == null || sources == null || widths == null) return null;
+    return (painters: painters, sources: sources, widths: widths);
+  }
+
+  /// This grid's rows by their source, built the first time a new grid asks
+  /// for one, so keeping rows costs one lookup each.
+  Map<({bool header, String words}), List<MarkdownTableRow>>? _rowsByWords;
+
   final Map<MarkdownTableRow, double> _rowHeights = {};
 
   /// How wide the whole grid is.
@@ -236,21 +346,86 @@ class TableGeometry {
     ];
   }
 
-  /// Where a source offset inside a cell falls in its painted words: by
-  /// progress through the source, since the words leave out its markers.
+  /// Where a source offset inside a cell falls in its painted words: past
+  /// every painted character whose source comes before it, so the markers the
+  /// words leave out take up no room.
   int _plainOffset(
     MarkdownTableRow row,
     int column,
     TextPainter painter,
     int sourceOffset,
   ) {
-    final source = row.cells[column];
-    final sourceLength = source.end - source.start;
-    final plainLength = painter.plainText.length;
-    final progress = sourceLength == 0
-        ? 0.0
-        : ((sourceOffset - source.start) / sourceLength).clamp(0.0, 1.0);
-    return (plainLength * progress).round().clamp(0, plainLength);
+    final sources = _sources[row]?.elementAtOrNull(column) ?? const <int>[];
+    final at = sourceOffset - row.cells[column].start;
+    var low = 0;
+    var high = sources.length;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (sources[middle] < at) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low;
+  }
+
+  /// Where each character of a cell's painted words, [plain], comes from in
+  /// its source, counted from the cell's start. The words are the source with
+  /// its markers hidden, each `<br>` read as a line break, and the spaces at
+  /// either end and around a break left out, so each painted character is
+  /// matched to the next source character it can be. An ellipsis, which the
+  /// source never holds, and what follows it map past the cell's end.
+  static List<int> _sourcesOf(
+    MarkdownAnalysis analysis,
+    MarkdownTableCell cell,
+    String plain,
+  ) {
+    final text = analysis.text;
+    final hidden = [
+      for (final conceal in analysis.conceals)
+        if (conceal.start < cell.end && conceal.end > cell.start) conceal,
+    ];
+    final breaks = [
+      for (final tag in analysis.lineBreaks)
+        if (tag.start >= cell.start && tag.end <= cell.end) tag,
+    ];
+    final sources = <int>[];
+    var at = cell.start;
+    for (var i = 0; i < plain.length; i++) {
+      final wanted = plain[i];
+      int? found;
+      while (at < cell.end) {
+        final tag = breaks.where((tag) => tag.start == at).firstOrNull;
+        if (tag != null) {
+          at = tag.end;
+          if (wanted == '\n') {
+            found = tag.start;
+            break;
+          }
+          continue;
+        }
+        final conceal = hidden
+            .where((conceal) => conceal.start <= at && at < conceal.end)
+            .firstOrNull;
+        if (conceal != null) {
+          at = conceal.end;
+          continue;
+        }
+        at++;
+        if (text[at - 1] == wanted) {
+          found = at - 1;
+          break;
+        }
+      }
+      if (found == null) {
+        at = cell.end;
+        sources.add(cell.end - cell.start);
+      } else {
+        sources.add(found - cell.start);
+      }
+    }
+    return sources;
   }
 
   /// Where a cell's words start, relative to the cell's top-left corner.
@@ -435,6 +610,10 @@ class TableGeometry {
       }
     }
     _cells.clear();
+    _sources.clear();
+    _widths.clear();
+    _rowWords.clear();
+    _rowsByWords = null;
     _rowHeights.clear();
   }
 }
@@ -544,7 +723,8 @@ class TableGeometryCache {
     );
     final measured = _geometry[key] ??=
         _previous.remove(key) ??
-        TableGeometry(
+        _measure(
+          key,
           table: table,
           analysis: analysis,
           base: base,
@@ -557,6 +737,49 @@ class TableGeometryCache {
     return identical(measured.table, table)
         ? measured
         : TableGeometry._movedTo(table, measured);
+  }
+
+  /// A new grid for [table], keeping the measured rows of the grid the same
+  /// table had in the note before, drawn the same way, wherever a row's
+  /// source is unchanged: typing in one cell of a long table measures that
+  /// row again and not the rest.
+  TableGeometry _measure(
+    _Key key, {
+    required MarkdownTable table,
+    required MarkdownAnalysis analysis,
+    required TextStyle base,
+    required TextScaler scaler,
+    required MarkdownRunStyle runStyle,
+    required double? fitToWidth,
+    required bool fill,
+    required double minRowHeight,
+  }) {
+    final before = _previous.entries
+        .where(
+          (entry) =>
+              entry.value.table.start == table.start &&
+              entry.key.$2 == key.$2 &&
+              entry.key.$3 == key.$3 &&
+              entry.key.$4 == key.$4 &&
+              entry.key.$5 == key.$5 &&
+              entry.key.$6 == key.$6 &&
+              entry.key.$7 == key.$7,
+        )
+        .firstOrNull;
+    if (before != null) _previous.remove(before.key);
+    final measured = TableGeometry(
+      table: table,
+      analysis: analysis,
+      base: base,
+      scaler: scaler,
+      runStyle: runStyle,
+      fitToWidth: fitToWidth,
+      fill: fill,
+      minRowHeight: minRowHeight,
+      reuse: before?.value,
+    );
+    before?.value.dispose();
+    return measured;
   }
 
   static void _release(Map<_Key, TableGeometry> geometry) {
