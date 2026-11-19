@@ -78,8 +78,10 @@ class NotePicks extends ChangeNotifier {
     extendTo(order, order[to], open: open);
   }
 
-  /// ⌘A, and Select all.
+  /// ⌘A, and Select all. A list with nothing in it has nothing to pick, so
+  /// it starts nothing.
   void all(List<String> order) {
+    if (order.isEmpty) return;
     _on = true;
     _ids.addAll(order);
     _kept = {..._ids};
