@@ -703,7 +703,7 @@ void main() {
       final note = await shareWithBob('Ours');
       final spaceId = alice.notes.byId(note.id)!.spaceId!;
       final sent = server.outbox.length;
-      server.failNext = const SyncRefusedException(404, 'no such space', {});
+      alice.api.failNext = const SyncRefusedException(404, 'no such space', {});
       await expectLater(
         alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.viewer),
         throwsA(isA<SyncRefusedException>()),
@@ -743,7 +743,7 @@ void main() {
         final note = await shareWithBob('Once');
         final spaceId = bob.notes.byId(note.id)!.spaceId!;
         bob.tick();
-        server.failNext = const SyncRefusedException(403, 'refused', {});
+        bob.api.failNext = const SyncRefusedException(403, 'refused', {});
         await expectLater(
           bob.sharing.leave(spaceId),
           throwsA(isA<SyncRefusedException>()),
@@ -789,8 +789,8 @@ void main() {
       final note = await shareWithBob('Safe');
       final spaceId = bob.notes.byId(note.id)!.spaceId!;
       bob.tick();
-      server.failNext = const SyncTransientException('offline');
-      server.failAfter = 1;
+      bob.api.failNext = const SyncTransientException('offline');
+      bob.api.failAfter = 1;
       await expectLater(
         bob.sharing.leave(spaceId),
         throwsA(isA<SyncTransientException>()),
@@ -1239,7 +1239,7 @@ void main() {
         bob.tick();
         bob.notes.updateBody(note.id, 'Ours, with my additions');
         // The edit is in Bob's outbox, not on the server, when he is removed.
-        server.failNext = const SyncTransientException('no route');
+        bob.api.failNext = const SyncTransientException('no route');
         await settle(server);
         expect(bob.sync.pendingCount, 1);
         await alice.sharing.removeMember(space.id, bob.userId);
@@ -1268,7 +1268,7 @@ void main() {
         final space = alice.sharing.teams.single;
         bob.tick();
         bob.notes.updateBody(note.id, 'Ours, with my additions');
-        server.failNext = const SyncTransientException('no route');
+        bob.api.failNext = const SyncTransientException('no route');
         await settle(server);
         expect(bob.sync.pendingCount, 1);
 
@@ -1282,7 +1282,7 @@ void main() {
         final again = alice.sharing.teams.single;
         bob.tick();
         bob.notes.updateBody(second.id, 'Theirs, edited');
-        server.failNext = const SyncTransientException('no route');
+        bob.api.failNext = const SyncTransientException('no route');
         await settle(server);
         await bob.sharing.leave(again.id, keepCopies: false);
         bob.tick();
@@ -1591,7 +1591,7 @@ void main() {
 
     test('a Free account is refused with nothing made or sent', () async {
       final note = await privateNote('Mine');
-      server.failNext = const SyncRefusedException(402, 'pro-required', {});
+      alice.api.failNext = const SyncRefusedException(402, 'pro-required', {});
       await expectLater(
         alice.sharing.addPerson(note.id, bob.email),
         refused('pro-required'),

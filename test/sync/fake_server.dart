@@ -2108,9 +2108,24 @@ class FakeApi implements SyncApi {
   /// The key generation every request names, as `HttpSyncApi` reads it.
   int Function() keyGeneration = () => 1;
 
+  /// Set to fail this device's next HTTP call, and no other device's: the
+  /// server-wide [FakeServer.failNext] goes to whichever device asks first,
+  /// which under load can be another device's timer.
+  SyncException? failNext;
+
+  /// This device's calls to let through before [failNext] is thrown.
+  int failAfter = 0;
+
   /// Every route but the key routes, sign-out and account deletion, which
   /// stay open to a device holding a key from before a reset.
   void _gate({bool keys = false}) {
+    final own = failNext;
+    if (own != null && failAfter > 0) {
+      failAfter--;
+    } else if (own != null) {
+      failNext = null;
+      throw own;
+    }
     final failure = server.failNext;
     if (failure != null && server.failAfter > 0) {
       server.failAfter--;
