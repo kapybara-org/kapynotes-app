@@ -16,7 +16,7 @@ class CloudTranscriber implements Transcriber {
   CloudTranscriber(this._api);
 
   /// One of the server's allowed models; the app offers no choice of them.
-  static const _model = 'stt-async-v6';
+  static const _model = 'microsoft/mai-transcribe-2';
 
   /// Read on every call rather than held: signing in and out replaces it, and
   /// a captured null would outlive the sign-in that fixed it.

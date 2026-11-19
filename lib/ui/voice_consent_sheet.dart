@@ -39,17 +39,14 @@ class _SpeechConsentSheet extends StatelessWidget {
             children: [
               Text(
                 'To transcribe a recording, Kapy Notes sends its audio through '
-                'our server to Soniox. Kapy Notes does not store the uploaded '
-                'audio on its server.',
+                "our server and OpenRouter to Microsoft's MAI-Transcribe 2. "
+                'Kapy Notes does not store the uploaded audio on its server.',
                 style: TextStyle(color: palette.textPrimary, height: 1.45),
               ),
               const SizedBox(height: 12),
               _Point(
                 text:
-                    'OpenRouter requests require zero-data-retention providers. '
-                    'Soniox files and jobs are deleted after processing; if '
-                    'cleanup fails, Soniox automatically deletes them within '
-                    '30 days.',
+                    'OpenRouter requests require zero-data-retention providers.',
               ),
               _Point(
                 text:

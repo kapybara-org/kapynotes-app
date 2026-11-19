@@ -153,7 +153,7 @@ class FakeSpeechApi implements SpeechApi {
     return TranscribeResult(
       jobId: '11111111-1111-4111-8111-111111111111',
       lang: 'en',
-      engine: 'soniox/stt-async-v6',
+      engine: 'openrouter/microsoft/mai-transcribe-2',
       segments: const [TranscriptSegment(s: 0, e: 900, t: 'hello there')],
       usage: SpeechUsage(
         usedSeconds: 12,
@@ -456,10 +456,10 @@ void main() {
     expect(api.languageSent, 'de');
   });
 
-  test('cloud transcription defaults to Soniox', () async {
+  test('cloud transcription asks for MAI-Transcribe 2', () async {
     queue.enqueue(noteId, 'v1');
     await queue.drain();
-    expect(api.modelSent, 'stt-async-v6');
+    expect(api.modelSent, 'microsoft/mai-transcribe-2');
   });
 
   test('offline shows waiting, not transcribing', () async {

@@ -59,7 +59,7 @@ class TranscriptDraft {
   });
 
   /// Goes into the ref, so a note can say what wrote it long after the
-  /// setting changed. `soniox/stt-async-v6` for the default server model,
+  /// setting changed. `openrouter/microsoft/mai-transcribe-2` for the server model,
   /// `apple/speech-analyzer`, `sherpa/parakeet-tdt-0.6b-v3-int8`.
   final String engine;
 
