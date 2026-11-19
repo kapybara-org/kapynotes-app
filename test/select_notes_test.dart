@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -265,10 +266,7 @@ void main() {
     final first = _note('First');
     expect(_picked(tester), ['Fourth', 'Third', 'First']);
     expect(_label(tester, _item('pin', first)), 'Pin 3 notes');
-    expect(
-      _label(tester, _item('hide', first)),
-      'Move 3 notes to Hidden Notes',
-    );
+    expect(_label(tester, _item('hide', first)), 'Hide 3 notes');
     expect(_label(tester, _item('archive', first)), 'Archive 3 notes');
     expect(_label(tester, _item('delete', first)), 'Delete 3 notes…');
     // A note's own items are not on offer for many.
@@ -293,6 +291,34 @@ void main() {
     await _click(tester, 'Third', holding: LogicalKeyboardKey.metaLeft);
     await _rightClick(tester, 'Fourth');
     expect(_label(tester, _item('unpin', _note('Fourth'))), 'Unpin 2 notes');
+  });
+
+  testWidgets('every item of the menu for many notes fits it', (tester) async {
+    await _pump(tester, bodies: [for (var i = 1; i <= 12; i++) 'Note $i']);
+    await _click(tester, 'Note 12');
+    await _chord(tester, LogicalKeyboardKey.keyA);
+    expect(find.text('12 selected'), findsOneWidget);
+
+    await _rightClick(tester, 'Note 12');
+    final rows = tester.widgetList<KapyMenuActionRow>(
+      find.byType(KapyMenuActionRow),
+    );
+    expect(
+      [for (final row in rows) row.action.label],
+      ['Pin 12 notes', 'Hide 12 notes', 'Archive 12 notes', 'Delete 12 notes…'],
+    );
+    for (final row in rows) {
+      final label = row.action.label;
+      final text = find.descendant(
+        of: find.byKey(const ValueKey('kapy-context-menu')),
+        matching: find.text(label),
+      );
+      expect(
+        tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+        isFalse,
+        reason: '$label fits the menu',
+      );
+    }
   });
 
   testWidgets('the bar archives every picked note in one change, and the open '

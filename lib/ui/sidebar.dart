@@ -484,7 +484,7 @@ extension on Sidebar {
   /// the question, and goes with it.
   String _deleteLabel(Note note) {
     final label = _theirs(note)
-        ? 'Remove from your notes'
+        ? 'Remove note'
         : _specialMode
         ? 'Delete permanently'
         : 'Delete note';
@@ -542,23 +542,25 @@ extension on Sidebar {
     ];
   }
 
-  /// What an action says it does, and to how many. One note deletes as a row
-  /// does, asking only if the reader still wants to be asked; more always
-  /// ask.
+  /// What an action says it does, and to how many, in the width of a menu.
+  /// One note deletes as a row does, asking only if the reader still wants
+  /// to be asked; more always ask.
   String _pickedLabel(PickedAction action, List<Note> notes) {
-    final count = notes.length == 1 ? 'note' : '${notes.length} notes';
+    final many = notes.length > 1;
+    final count = many ? '${notes.length} notes' : 'note';
     return switch (action) {
       PickedAction.pin => 'Pin $count',
       PickedAction.unpin => 'Unpin $count',
-      PickedAction.hide => 'Move $count to Hidden Notes',
-      PickedAction.unhide => 'Move $count to Notes',
+      PickedAction.hide => many ? 'Hide $count' : 'Move to Hidden Notes',
+      PickedAction.unhide =>
+        many ? 'Move ${notes.length} to Notes' : 'Move to Notes',
       PickedAction.archive => 'Archive $count',
       PickedAction.restore => 'Restore $count',
       PickedAction.delete =>
-        notes.length == 1
+        !many
             ? _deleteLabel(notes.single)
             : notes.every(_theirs)
-            ? 'Remove $count from your notes…'
+            ? 'Remove $count…'
             : 'Delete $count…',
     };
   }

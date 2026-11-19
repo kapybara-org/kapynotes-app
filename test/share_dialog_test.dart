@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -993,6 +994,14 @@ void main() {
                 )
                 .action
                 .label;
+      if (label != null) {
+        final text = find.descendant(of: item, matching: find.text(label));
+        expect(
+          tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+          isFalse,
+          reason: '$label fits the menu',
+        );
+      }
       await tester.tapAt(Offset.zero);
       await tester.pumpAndSettle();
       return label;
@@ -1000,13 +1009,13 @@ void main() {
 
     await pumpBob(asks: true);
     expect(bob.notes.byId(shared.id), isNotNull);
-    expect(await deleteLabel(shared), 'Remove from your notes…');
+    expect(await deleteLabel(shared), 'Remove note…');
     expect(await deleteLabel(own), 'Delete note…');
     // A viewer can't take it out of their notes, as before.
     expect(await deleteLabel(viewed), isNull);
 
     await pumpBob(asks: false);
-    expect(await deleteLabel(shared), 'Remove from your notes');
+    expect(await deleteLabel(shared), 'Remove note');
   });
 
   testWidgets('picked notes somebody shares with you are acted on only where '
@@ -1090,7 +1099,7 @@ void main() {
     // Pins are the reader's own, so every note takes one.
     expect(await label('pin'), 'Pin 3 notes');
     // Hidden Notes are only ever the reader's own notes.
-    expect(await label('hide'), 'Move note to Hidden Notes');
+    expect(await label('hide'), 'Move to Hidden Notes');
     // A viewer changes nothing: the note they may only read is left out.
     expect(await label('archive'), 'Archive 2 notes');
     expect(await label('delete'), 'Delete 2 notes…');
@@ -1119,7 +1128,7 @@ void main() {
           )
           .action
           .label,
-      'Remove from your notes…',
+      'Remove note…',
     );
   });
 
