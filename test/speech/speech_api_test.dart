@@ -18,8 +18,7 @@ void main() {
           jsonEncode({
             'jobId': '11111111-1111-4111-8111-111111111111',
             'lang': 'en',
-            'engine':
-                'openrouter/nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
+            'engine': 'openrouter/microsoft/mai-transcribe-2',
             'segments': [
               {'s': 0, 'e': 800, 't': 'hello'},
             ],
@@ -38,19 +37,13 @@ void main() {
     final result = await api.transcribe(
       audio: Uint8List.fromList([1, 2, 3]),
       requestId: '22222222-2222-4222-8222-222222222222',
-      model: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
+      model: 'microsoft/mai-transcribe-2',
     );
 
     expect(sent.url.path, '/speech/transcribe');
-    expect(
-      sent.headers['x-speech-model'],
-      'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
-    );
+    expect(sent.headers['x-speech-model'], 'microsoft/mai-transcribe-2');
     expect(sent.headers['content-type'], 'audio/mp4');
     expect(sent.bodyBytes, [1, 2, 3]);
-    expect(
-      result.engine,
-      'openrouter/nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
-    );
+    expect(result.engine, 'openrouter/microsoft/mai-transcribe-2');
   });
 }
