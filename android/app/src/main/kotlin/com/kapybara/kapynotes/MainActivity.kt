@@ -43,6 +43,7 @@ class MainActivity : FlutterFragmentActivity() {
         SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
         SystemRegion.register(flutterEngine.dartExecutor.binaryMessenger)
         contrastSetting = ContrastSetting.register(this, flutterEngine.dartExecutor.binaryMessenger)
+        StatusBar.register(flutterEngine.dartExecutor.binaryMessenger, this)
         noteTitles = NoteTitles.register(flutterEngine.dartExecutor.binaryMessenger)
         FileExport.register(flutterEngine.dartExecutor.binaryMessenger) { this }
         pendingLaunch = takeLaunchName(intent)
