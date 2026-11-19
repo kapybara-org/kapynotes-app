@@ -10,6 +10,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../calc/engine.dart';
+import '../data/layout_prefs.dart' show NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -29,10 +30,12 @@ import 'editor_panes.dart';
 import 'installed_version.dart';
 import 'keycap.dart';
 import 'member_avatars.dart';
+import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
 import 'streak_badge.dart';
+import 'tag_colours.dart';
 import 'tag_ui.dart';
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
@@ -146,6 +149,10 @@ class Sidebar extends StatelessWidget {
     this.controls,
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
+    this.grouping = NotesGrouping.byDate,
+    this.onGroupingChanged,
+    this.when = NotesWhen.anyTime,
+    this.onWhenChanged,
   });
 
   /// The notes to list, already narrowed to [tab] while the tabs are shown.
@@ -309,6 +316,16 @@ class Sidebar extends StatelessWidget {
   final bool pinnedOnly;
   final ValueChanged<bool>? onPinnedOnlyChanged;
 
+  /// How the list beside the rail groups what Pinned leaves, and the menu
+  /// on its first heading that changes it; without one there is no menu.
+  final NotesGrouping grouping;
+  final ValueChanged<NotesGrouping>? onGroupingChanged;
+
+  /// How far back the filter reaches, for an empty list to say so and to
+  /// offer any time again.
+  final NotesWhen when;
+  final ValueChanged<NotesWhen>? onWhenChanged;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -441,6 +458,18 @@ extension on Sidebar {
       !_specialMode && !_onSharedTab && query.trim().isEmpty;
 
   Widget _buildEmpty(BuildContext context) {
+    final onWhenChanged = this.onWhenChanged;
+    if (query.trim().isEmpty && when != NotesWhen.anyTime) {
+      return _SidebarEmpty(
+        message: 'No ${drawings ? 'drawings' : 'notes'} ${when.phrase}',
+        action: onWhenChanged == null
+            ? null
+            : (
+                label: NotesWhen.anyTime.label,
+                onPressed: () => onWhenChanged(NotesWhen.anyTime),
+              ),
+      );
+    }
     if (drawings && query.trim().isEmpty) {
       return _DrawingsEmpty(onNewDrawing: onNewDrawing);
     }
@@ -828,20 +857,29 @@ extension on Sidebar {
         );
         section(groups.bySpace[id]!);
       }
-      if (groups.mine.isNotEmpty || groups.pinned.isEmpty) {
+      final onGroupingChanged = this.onGroupingChanged;
+      final grouped = groupNotes(
+        groups.mine,
+        grouping,
+        today: dayShown(now(), displayTime),
+        displayTime: displayTime,
+        firstTag: (note) => TagMarks.of(context, note.id).firstOrNull?.name,
+      );
+      for (final (index, group) in grouped.indexed) {
         heading(
-          NotesListHeading(
-            key: const ValueKey('sidebar-notes-heading'),
-            label: drawings
-                ? 'Drawings'
-                : groups.hasSharedSections && !_tabbed
-                ? 'My notes'
-                : 'Notes',
-            count: groups.mine.length,
-            noun: noun,
+          NotesGroupHeading(
+            key: ValueKey('sidebar-group-${group.label}'),
+            label: group.label,
+            detail: group.detail,
+            trailing: index == 0 && onGroupingChanged != null
+                ? NotesGroupingMenu(
+                    grouping: grouping,
+                    onChanged: onGroupingChanged,
+                  )
+                : null,
           ),
         );
-        section(groups.mine);
+        section(group.notes);
       }
     }
 
@@ -3562,12 +3600,15 @@ class _DrawingsEmpty extends StatelessWidget {
 }
 
 class _SidebarEmpty extends StatelessWidget {
-  const _SidebarEmpty({required this.message, this.detail});
+  const _SidebarEmpty({required this.message, this.detail, this.action});
 
   final String message;
 
   /// A quieter line under [message], saying what will fill the space.
   final String? detail;
+
+  /// The one way back, where a filter left the list empty.
+  final ({String label, VoidCallback onPressed})? action;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -3593,6 +3634,14 @@ class _SidebarEmpty extends StatelessWidget {
                 fontSize: AppTypeScale.small,
                 color: context.palette.textTertiary,
               ),
+            ),
+          ],
+          if (action case final action?) ...[
+            const SizedBox(height: 12),
+            TonalButton(
+              key: const ValueKey('sidebar-empty-action'),
+              label: action.label,
+              onPressed: action.onPressed,
             ),
           ],
         ],

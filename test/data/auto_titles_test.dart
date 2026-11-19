@@ -205,10 +205,9 @@ void main() {
       expect(note.copyWith(body: 'Trip\nmilk').hasDefaultTitle, isFalse);
     });
 
-    test('turned into a drawing drops New Note', () {
+    test('a new drawing starts without New Note', () {
       final notes = NotesStore(_MemoryStore());
-      final note = notes.create(body: Note.blankBody, authored: false);
-      expect(notes.setDrawingMode(note.id, drawing: true), isTrue);
+      final note = notes.create(authored: false, drawing: true);
       expect(notes.byId(note.id)!.body, '');
       expect(notes.byId(note.id)!.title, 'Drawing');
     });
@@ -577,8 +576,7 @@ void main() {
           start(async);
           final plain = notes.create(body: Note.blankBody, authored: false);
           final hidden = notes.create(body: Note.blankBody, hidden: true);
-          final drawing = notes.create(body: Note.blankBody, authored: false);
-          notes.setDrawingMode(drawing.id, drawing: true);
+          final drawing = notes.create(authored: false, drawing: true);
           expect(namer.willName(plain), isTrue);
           expect(namer.willName(hidden), isFalse);
           expect(namer.willName(notes.byId(drawing.id)!), isFalse);

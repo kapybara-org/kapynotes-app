@@ -317,8 +317,7 @@ void _seedDrawings(NotesStore notes) {
       width: width,
       text: text,
     );
-    final note = notes.create();
-    notes.setDrawingMode(note.id, drawing: true);
+    final note = notes.create(drawing: true);
     notes.updateDrawing(
       note.id,
       NoteDrawing([
@@ -919,6 +918,30 @@ void main() {
     );
   });
 
+  // r4's 23HR-0: When's submenu beside the filter, with This week ticked
+  // and its chip beside the filter's button.
+  testWidgets('desktop dark When', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    for (final key in [
+      'sidebar-notes-filter',
+      'notes-filter-when',
+      'notes-filter-when-thisWeek',
+      'sidebar-notes-filter',
+      'notes-filter-when',
+    ]) {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_when.png'),
+    );
+  });
+
   testWidgets('desktop dark pinned cards', (tester) async {
     await pumpForGolden(
       tester,
@@ -1262,8 +1285,7 @@ void main() {
       notes.create(
         body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
       );
-      final drawing = notes.create();
-      notes.setDrawingMode(drawing.id, drawing: true);
+      final drawing = notes.create(drawing: true);
       notes.updateDrawing(
         drawing.id,
         NoteDrawing.empty,

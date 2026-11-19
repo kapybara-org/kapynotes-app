@@ -16,6 +16,18 @@ import 'time_zones.dart';
 /// device.
 enum NumberSystem { auto, international, indian }
 
+/// How the notes list groups what Pinned leaves: the choices on the menu at
+/// the end of its first heading.
+enum NotesGrouping {
+  byDate('By date'),
+  byTag('By tag'),
+  aToZ('A–Z');
+
+  const NotesGrouping(this.label);
+
+  final String label;
+}
+
 extension NumberSystemCopy on NumberSystem {
   String get label => switch (this) {
     NumberSystem.auto => 'Match my region',
@@ -97,6 +109,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _sidebarKey = 'sidebar.v1';
   static const String _hiddenFolderVisibleKey = 'hiddenFolderVisible.v1';
   static const String _noteCardsKey = 'noteCards.v1';
+  static const String _notesGroupingKey = 'notesGrouping.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
   static const String _windowXKey = 'windowX.v1';
@@ -149,6 +162,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _sidebarVisible = false;
   bool _hiddenFolderVisible = true;
   bool _noteCards = true;
+  NotesGrouping _notesGrouping = NotesGrouping.byDate;
   Size _windowSize = defaultWindowSize;
   Offset? _windowPosition;
   bool _readyToTypeOnOpen = true;
@@ -197,6 +211,10 @@ class LayoutPrefs extends ChangeNotifier {
   /// Whether the desktop notes list draws its notes as sticky cards rather
   /// than as rows. Cards are how the list first appears.
   bool get noteCards => _noteCards;
+
+  /// How the notes list groups its notes: by date until another way is
+  /// picked.
+  NotesGrouping get notesGrouping => _notesGrouping;
   Size get windowSize => _windowSize;
   Offset? get windowPosition => _windowPosition;
 
@@ -367,6 +385,11 @@ class LayoutPrefs extends ChangeNotifier {
     _sidebarVisible = false;
     _hiddenFolderVisible = _store.read<bool>(_hiddenFolderVisibleKey) ?? true;
     _noteCards = _store.read<bool>(_noteCardsKey) ?? true;
+    final grouping = _store.read<String>(_notesGroupingKey);
+    _notesGrouping = NotesGrouping.values.firstWhere(
+      (each) => each.name == grouping,
+      orElse: () => NotesGrouping.byDate,
+    );
     _windowSize = _clampWindowSize(
       Size(
         _readDouble(_windowWidthKey) ?? defaultWindowSize.width,
@@ -821,6 +844,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _noteCards) return;
     _noteCards = value;
     _store.putNow(_noteCardsKey, value);
+    notifyListeners();
+  }
+
+  set notesGrouping(NotesGrouping value) {
+    if (value == _notesGrouping) return;
+    _notesGrouping = value;
+    _store.putNow(_notesGroupingKey, value.name);
     notifyListeners();
   }
 

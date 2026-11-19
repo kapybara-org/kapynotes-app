@@ -52,7 +52,6 @@ class PageToolbar extends StatelessWidget {
     this.moreActions = const [],
     this.onMore,
     this.updates,
-    this.center,
     this.actions,
   });
 
@@ -114,10 +113,6 @@ class PageToolbar extends StatelessWidget {
   /// the app does not update itself.
   final UpdateChecker? updates;
 
-  /// Centred in the bar's empty middle, such as Write | Draw on a new note,
-  /// where its going leaves nothing else to move.
-  final Widget? center;
-
   /// A page that is not a note puts its own actions where a note's saved
   /// state, Share and Pin go, and has no More.
   final List<Widget>? actions;
@@ -147,7 +142,6 @@ class PageToolbar extends StatelessWidget {
     final showListShortcut = this.showListShortcut;
     final newNoteShortcut = this.newNoteShortcut;
     final updates = this.updates;
-    final center = this.center;
     // The window's own button takes room from Saved, so Saved gives way
     // that much sooner.
     final onTop = onToggleKeepOnTop == null ? 0.0 : actionExtent + 6;
@@ -338,7 +332,6 @@ class PageToolbar extends StatelessWidget {
               ),
             ),
           ),
-          if (center != null) Center(child: center),
         ],
       ),
     );
