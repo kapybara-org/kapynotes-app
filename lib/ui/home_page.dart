@@ -2727,6 +2727,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               for (final tag in widget.tags!.tagsOf(noteId)) tagMarkOf(tag),
             ],
       tagNote: _tasksMode ? null : _shownNote(_selectedId),
+      phone:
+          AppPlatform.isMobile &&
+          MediaQuery.sizeOf(context).width < kTwoPaneBreakpoint,
+      onSetTaskDone: _taskController?.setDone,
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,
         kapyAi: _kapyAi,
@@ -3632,6 +3636,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 label: 'Drawing',
                 icon: KapyIcons.penRounded,
               ),
+              const KapyMenuAction(
+                value: 'find',
+                label: 'Quick find',
+                icon: KapyIcons.searchRounded,
+              ),
             ],
             onCreateAction: _createFromPhone,
             child: SafeArea(
@@ -3661,6 +3670,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         });
       case 'drawing':
         _createNote(drawing: true);
+      case 'find':
+        unawaited(_openCommandMenu());
     }
   }
 

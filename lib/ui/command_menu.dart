@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/tags.dart';
 import '../data/task_board.dart';
+import 'compact_icon_button.dart';
 import 'keycap.dart';
 import 'notes_list.dart' show NotesShow;
 import 'settings_dialog.dart' show SettingsIndex, SettingsSection;
@@ -131,31 +133,63 @@ Future<CommandChoice?> showCommandMenu(
   TagShelf? tags,
   Note? tagNote,
   List<TagMark> Function(String noteId)? marksOf,
+  bool phone = false,
+  Future<void> Function(TaskItem item, {required bool done})? onSetTaskDone,
 }) {
-  final dark = context.palette.brightness == Brightness.dark;
+  final palette = context.palette;
+  final dark = palette.brightness == Brightness.dark;
+  Widget build(BuildContext context) {
+    final menu = CommandMenu(
+      notes: notes,
+      shortcuts: shortcuts,
+      space: space,
+      destinations: destinations,
+      recentIds: recentIds,
+      displayTime: displayTime,
+      taskLabel: taskLabel,
+      tasks: tasks,
+      showHidden: showHidden,
+      hiddenUnlocked: hiddenUnlocked,
+      askKapyAi: askKapyAi,
+      settingsIndex: settingsIndex,
+      tags: tags,
+      tagNote: tagNote,
+      phone: phone,
+      onSetTaskDone: onSetTaskDone,
+      onChosen: (choice) => Navigator.of(context).pop(choice),
+    );
+    return marksOf == null ? menu : TagMarks(marksOf: marksOf, child: menu);
+  }
+
+  if (phone && AppPlatform.isAndroid) {
+    return Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<CommandChoice>(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          backgroundColor: palette.paperColor,
+          body: SafeArea(child: build(context)),
+        ),
+      ),
+    );
+  }
+  if (phone) {
+    return showModalBottomSheet<CommandChoice>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: palette.paperColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+      ),
+      builder: (context) =>
+          FractionallySizedBox(heightFactor: 1, child: build(context)),
+    );
+  }
   return showDialog<CommandChoice>(
     context: context,
     barrierColor: dark ? const Color(0x990C0B09) : const Color(0x402A2620),
-    builder: (context) {
-      final menu = CommandMenu(
-        notes: notes,
-        shortcuts: shortcuts,
-        space: space,
-        destinations: destinations,
-        recentIds: recentIds,
-        displayTime: displayTime,
-        taskLabel: taskLabel,
-        tasks: tasks,
-        showHidden: showHidden,
-        hiddenUnlocked: hiddenUnlocked,
-        askKapyAi: askKapyAi,
-        settingsIndex: settingsIndex,
-        tags: tags,
-        tagNote: tagNote,
-        onChosen: (choice) => Navigator.of(context).pop(choice),
-      );
-      return marksOf == null ? menu : TagMarks(marksOf: marksOf, child: menu);
-    },
+    builder: build,
   );
 }
 
@@ -177,7 +211,17 @@ class CommandMenu extends StatefulWidget {
     this.settingsIndex,
     this.tags,
     this.tagNote,
+    this.phone = false,
+    this.onSetTaskDone,
   });
+
+  /// A phone's Quick find: full height, with Cancel (or Android's back
+  /// arrow), scope pills, and tasks that check off in place.
+  final bool phone;
+
+  /// Checks a task off, or back on, without leaving Quick find.
+  final Future<void> Function(TaskItem item, {required bool done})?
+  onSetTaskDone;
 
   final NotesStore notes;
   final ShortcutPrefs shortcuts;
@@ -220,6 +264,7 @@ class _Line {
       action = null,
       detail = null,
       task = null,
+      item = null,
       trailing = null,
       keycap = null,
       noteId = null,
@@ -233,6 +278,7 @@ class _Line {
     this.action,
     this.detail,
     this.task,
+    this.item,
     this.trailing,
     this.keycap,
     this.noteId,
@@ -255,6 +301,9 @@ class _Line {
 
   /// The note a task is in, named after the task's words.
   final Note? task;
+
+  /// The task a phone row checks off in place.
+  final TaskItem? item;
   final String? trailing;
   final String? keycap;
 
@@ -273,6 +322,14 @@ class _CommandMenuState extends State<CommandMenu> {
   late int _highlight = _rows.firstOrNull ?? 0;
 
   SettingsIndex? _settings;
+
+  /// What a phone's scope pills narrow the results to.
+  _Scope _scope = _Scope.all;
+
+  /// Tasks checked off here, which keep their rows until Quick find closes.
+  final Set<String> _done = {};
+
+  bool _shows(_Scope scope) => _scope == _Scope.all || _scope == scope;
 
   /// The tag list for the open note, once Tag note... is chosen: it takes
   /// the place of the menu's results and of its field.
@@ -322,6 +379,14 @@ class _CommandMenuState extends State<CommandMenu> {
     choice: OpenNoteChoice(note),
   );
 
+  _Line _taskRow(TaskItem task) => _Line.row(
+    icon: KapyIcons.tasksOutlined,
+    title: task.words,
+    task: task.note,
+    item: widget.phone && widget.onSetTaskDone != null ? task : null,
+    choice: OpenTaskChoice(task),
+  );
+
   /// A setting as settings search shows it: its category and heading under
   /// the name, and what it is set to at the end, as a key for a shortcut.
   _Line _settingRow(SettingsSearchEntry<SettingsSection> entry) {
@@ -355,9 +420,33 @@ class _CommandMenuState extends State<CommandMenu> {
     final recent = [
       for (final id in widget.recentIds)
         if (notes.byId(id) case final note?
-            when !note.isArchived && (!note.isHidden || widget.hiddenUnlocked))
+            when !note.isArchived &&
+                (!note.isHidden || widget.hiddenUnlocked) &&
+                switch (_scope) {
+                  _Scope.all => true,
+                  _Scope.notes => !note.isDrawing,
+                  _Scope.drawings => note.isDrawing,
+                  _Scope.tasks => false,
+                })
           note,
     ].take(CommandMenu.perKind);
+    if (_scope == _Scope.tasks) {
+      return [
+        const _Line.heading('Tasks'),
+        for (final task in (widget.tasks?.open ?? const <TaskItem>[]).take(
+          CommandMenu.perKind * 2,
+        ))
+          _taskRow(task),
+      ];
+    }
+    if (_scope != _Scope.all) {
+      return [
+        if (recent.isNotEmpty) ...[
+          const _Line.heading('Recent'),
+          for (final note in recent) _noteRow(note),
+        ],
+      ];
+    }
     return [
       if (recent.isNotEmpty) ...[
         const _Line.heading('Recent'),
@@ -479,51 +568,54 @@ class _CommandMenuState extends State<CommandMenu> {
         for (final entry in settings) _settingRow(entry),
       ],
     ];
+    final all = _scope == _Scope.all;
+    final make = widget.phone;
     return [
-      ...actions,
-      if (settingsFirst) ...settingsLines,
-      if (written.isNotEmpty) ...[
+      if (all) ...actions,
+      if (all && settingsFirst) ...settingsLines,
+      if (_shows(_Scope.notes) && written.isNotEmpty) ...[
         const _Line.heading('Notes'),
         for (final note in written.take(CommandMenu.perKind))
           _noteRow(note, detail: note.matchSnippet(text)),
       ],
-      if (tasks.isNotEmpty) ...[
+      if (_shows(_Scope.tasks) && tasks.isNotEmpty) ...[
         const _Line.heading('Tasks'),
-        for (final task in tasks)
-          _Line.row(
-            icon: KapyIcons.tasksOutlined,
-            title: task.words,
-            task: task.note,
-            choice: OpenTaskChoice(task),
-          ),
+        for (final task in tasks) _taskRow(task),
       ],
-      if (drawings.isNotEmpty) ...[
+      if (_shows(_Scope.drawings) && drawings.isNotEmpty) ...[
         const _Line.heading('Drawings'),
         for (final note in drawings.take(CommandMenu.perKind)) _noteRow(note),
       ],
-      if (!settingsFirst) ...settingsLines,
-      _Line.heading('Use “$text”'),
-      if (widget.tasks != null)
+      if (all && !settingsFirst) ...settingsLines,
+      _Line.heading(make ? 'Make' : 'Use “$text”'),
+      if (widget.tasks != null && (make ? _scope == _Scope.tasks : true))
         _Line.row(
           icon: KapyIcons.tasksOutlined,
-          title: 'New task: $text',
+          title: make ? 'New task “$text”' : 'New task: $text',
           keycap: _keycap(ShortcutAction.newTask),
           choice: NewTaskChoice(text),
         ),
-      _Line.row(
-        icon: KapyIcons.noteOutlined,
-        title: 'New note: $text',
-        keycap: _newNoteKey,
-        choice: NewNoteChoice(text),
-      ),
-      if (widget.askKapyAi)
+      if (!make || _shows(_Scope.notes))
+        _Line.row(
+          icon: KapyIcons.noteOutlined,
+          title: make ? 'New note “$text”' : 'New note: $text',
+          keycap: _newNoteKey,
+          choice: NewNoteChoice(text),
+        ),
+      if (make && _scope == _Scope.drawings)
+        const _Line.row(
+          icon: KapyIcons.penRounded,
+          title: 'New drawing',
+          choice: NewDrawingChoice(),
+        ),
+      if (all && widget.askKapyAi)
         _Line.row(
           icon: KapyIcons.sparklesOutlined,
           title: 'Ask Kapy AI: $text',
           keycap: 'tab',
           choice: AskKapyAiChoice(text),
         ),
-      if (archived > 0)
+      if (_shows(_Scope.notes) && archived > 0)
         _Line.row(
           icon: archiveIcon,
           title: '$archived more in Archive',
@@ -624,6 +716,37 @@ class _CommandMenuState extends State<CommandMenu> {
     final dark = palette.brightness == Brightness.dark;
     final top = (MediaQuery.sizeOf(context).height * 0.1).clamp(16.0, 88.0);
     final terms = noteSearchTerms(_field.text);
+    if (widget.phone) {
+      final picker = _picker;
+      final page = Material(
+        key: const ValueKey('command-menu'),
+        color: palette.paperColor,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _phoneField(palette),
+            if (picker == null) _scopePills(palette),
+            Expanded(
+              child: picker != null
+                  ? Column(children: [_tagList(picker, palette, dark)])
+                  : ListView(
+                      controller: _scroll,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
+                      children: [
+                        for (var index = 0; index < _lines.length; index++)
+                          _line(index, terms, palette, dark),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      );
+      final host = widget.settingsIndex;
+      if (host == null) return page;
+      return Stack(children: [page, host((index) => _settings = index)]);
+    }
     final menu = Align(
       alignment: Alignment.topCenter,
       child: Padding(
@@ -691,6 +814,168 @@ class _CommandMenuState extends State<CommandMenu> {
     final host = widget.settingsIndex;
     if (host == null) return menu;
     return Stack(children: [menu, host((index) => _settings = index)]);
+  }
+
+  /// A phone's field: a well with the sage ring of focus, then Cancel, or
+  /// Android's back arrow before it.
+  Widget _phoneField(CalcPalette palette) {
+    final picker = _picker;
+    final sage = Theme.of(context).colorScheme.primary;
+    final android = AppPlatform.isAndroid;
+    final style = TextStyle(
+      fontSize: 16,
+      height: 20 / 16,
+      color: palette.textPrimary,
+    );
+    void close() => unawaited(Navigator.of(context).maybePop());
+    return Padding(
+      padding: EdgeInsets.fromLTRB(android ? 4 : 16, 12, android ? 16 : 4, 4),
+      child: Row(
+        children: [
+          if (android)
+            CompactIconButton(
+              key: const ValueKey('command-menu-back'),
+              tooltip: 'Back',
+              extent: AppControlMetrics.iconButtonExtent,
+              foregroundColor: palette.textPrimary,
+              onPressed: close,
+              icon: const KapyIcon(
+                KapyIcons.arrowBackRounded,
+                size: 22,
+                strokeWidth: 1.8,
+              ),
+            ),
+          Expanded(
+            child: Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: palette.wellBackground,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: sage, width: 1.5),
+              ),
+              child: Row(
+                spacing: 8,
+                children: [
+                  KapyIcon(
+                    KapyIcons.searchRounded,
+                    size: 16,
+                    strokeWidth: 1.8,
+                    color: palette.textSecondary,
+                  ),
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey('command-menu-field'),
+                      controller: picker?.query ?? _field,
+                      autofocus: true,
+                      inputFormatters: picker == null
+                          ? null
+                          : [LengthLimitingTextInputFormatter(tagNameMax)],
+                      onChanged: picker == null
+                          ? _search
+                          : (_) => picker.typed(),
+                      onSubmitted: (_) => picker == null
+                          ? _choose(_highlight)
+                          : picker.activate(),
+                      textInputAction: TextInputAction.go,
+                      style: style,
+                      cursorHeight: 20,
+                      decoration: InputDecoration.collapsed(
+                        hintText: picker != null
+                            ? ''
+                            : widget.tasks == null
+                            ? 'Search notes'
+                            : 'Search notes and tasks',
+                        hintStyle: style.copyWith(color: palette.textTertiary),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (!android)
+            TextButton(
+              key: const ValueKey('command-menu-cancel'),
+              onPressed: close,
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: palette.accentText,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// All, Notes, Tasks, Drawings: what a phone's results are narrowed to.
+  Widget _scopePills(CalcPalette palette) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: Row(
+      spacing: 8,
+      children: [
+        for (final scope in _Scope.values)
+          if (scope != _Scope.tasks || widget.tasks != null)
+            Semantics(
+              button: true,
+              selected: scope == _scope,
+              label: scope.label,
+              excludeSemantics: true,
+              onTap: () => _setScope(scope),
+              child: GestureDetector(
+                key: ValueKey('command-scope-${scope.name}'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _setScope(scope),
+                child: SizedBox(
+                  height: AppControlMetrics.iconButtonExtent,
+                  child: Center(
+                    child: Container(
+                      height: 30,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: scope == _scope ? palette.textPrimary : null,
+                        border: scope == _scope
+                            ? null
+                            : Border.all(color: palette.controlBorder),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Text(
+                        scope.label,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: scope == _scope
+                              ? palette.paperColor
+                              : palette.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      ],
+    ),
+  );
+
+  void _setScope(_Scope scope) {
+    if (scope == _scope) return;
+    _scope = scope;
+    _search(_field.text);
+  }
+
+  /// Checks a task off in place, or back on; its row stays until Quick find
+  /// closes, so a mistaken tap can be undone where it was made.
+  void _tick(TaskItem item) {
+    final done = !_done.contains(item.id);
+    setState(() => done ? _done.add(item.id) : _done.remove(item.id));
+    unawaited(widget.onSetTaskDone!(item, done: done));
   }
 
   Widget _searchField(CalcPalette palette) {
@@ -790,8 +1075,11 @@ class _CommandMenuState extends State<CommandMenu> {
         : TagMarks.of(context, line.noteId!).firstOrNull;
     final detail = line.detail;
     final task = line.task;
+    final item = line.item;
+    final done = item != null && _done.contains(item.id);
     final trailing = line.trailing;
     final keycap = line.keycap;
+    final sage = Theme.of(context).colorScheme.primary;
     return MouseRegion(
       onEnter: (_) => setState(() => _highlight = index),
       child: GestureDetector(
@@ -800,7 +1088,11 @@ class _CommandMenuState extends State<CommandMenu> {
         onTap: () => _choose(index),
         child: Container(
           key: ValueKey('command-menu-row-${line.title}'),
-          constraints: BoxConstraints(minHeight: detail == null ? 40 : 52),
+          constraints: BoxConstraints(
+            minHeight: widget.phone
+                ? (detail == null ? 44 : 56)
+                : (detail == null ? 40 : 52),
+          ),
           margin: EdgeInsets.only(top: line.muted ? 4 : 0),
           padding: EdgeInsets.symmetric(
             horizontal: 12,
@@ -815,13 +1107,51 @@ class _CommandMenuState extends State<CommandMenu> {
           child: Row(
             spacing: 12,
             children: [
-              line.leading ??
-                  KapyIcon(
-                    line.icon!,
-                    size: 16,
-                    strokeWidth: 1.7,
-                    color: lit ? palette.textPrimary : palette.textSecondary,
+              if (item != null)
+                Semantics(
+                  checked: done,
+                  label: 'Done',
+                  onTap: () => _tick(item),
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    key: ValueKey('command-task-check-${item.id}'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _tick(item),
+                    child: SizedBox.square(
+                      dimension: AppControlMetrics.iconButtonExtent,
+                      child: Center(
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: done ? sage : null,
+                            border: Border.all(
+                              color: done ? sage : palette.checkboxBorder,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: done
+                              ? KapyIcon(
+                                  KapyIcons.checkRounded,
+                                  size: 14,
+                                  strokeWidth: 2.2,
+                                  color: palette.paperColor,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
                   ),
+                )
+              else
+                line.leading ??
+                    KapyIcon(
+                      line.icon!,
+                      size: 16,
+                      strokeWidth: 1.7,
+                      color: lit ? palette.textPrimary : palette.textSecondary,
+                    ),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -844,9 +1174,12 @@ class _CommandMenuState extends State<CommandMenu> {
                                 fontWeight: lit
                                     ? FontWeight.w500
                                     : FontWeight.w400,
-                                color: line.muted
+                                color: line.muted || done
                                     ? palette.textSecondary
                                     : palette.textPrimary,
+                                decoration: done
+                                    ? TextDecoration.lineThrough
+                                    : null,
                               ),
                               palette,
                             ),
@@ -1126,4 +1459,15 @@ class _CommandMenuState extends State<CommandMenu> {
       ),
     );
   }
+}
+
+enum _Scope {
+  all('All'),
+  notes('Notes'),
+  tasks('Tasks'),
+  drawings('Drawings');
+
+  const _Scope(this.label);
+
+  final String label;
 }
