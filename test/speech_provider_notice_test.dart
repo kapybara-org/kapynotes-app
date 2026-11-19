@@ -9,6 +9,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
+import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/ui/speech_provider_notice.dart';
 import 'package:kapy_notes/ui/voice_consent_sheet.dart';
@@ -262,7 +263,13 @@ void main() {
       await tester.tap(find.text('Turn off'));
       await tester.pumpAndSettle();
       expect(speech.sent, [0]);
-      expect(find.text('Cloud transcription turned off'), findsOneWidget);
+      expect(
+        find.text(
+          'Cloud transcription and summaries turned off. Turn them back on '
+          'in Settings › Voice & AI',
+        ),
+        findsOneWidget,
+      );
       expect(prefs.owesProviderNotice, isFalse);
       await settleToasts(tester);
 
@@ -287,8 +294,7 @@ void main() {
     for (final (name, close) in [
       (
         'Esc',
-        (WidgetTester tester) =>
-            tester.sendKeyEvent(LogicalKeyboardKey.escape),
+        (WidgetTester tester) => tester.sendKeyEvent(LogicalKeyboardKey.escape),
       ),
       ('back', (WidgetTester tester) => tester.binding.handlePopRoute()),
       ('a tap outside', (WidgetTester tester) => tester.tapAt(Offset.zero)),
@@ -310,6 +316,111 @@ void main() {
         expect(find.text(_notice), findsOneWidget);
       });
     }
+  });
+
+  group('Turn off stops what the notice names', () {
+    Future<VoicePrefs> turnOff(
+      WidgetTester tester,
+      TargetPlatform platform, {
+      SummaryEngine engine = SummaryEngine.cloud,
+    }) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      VoicePrefs(store)
+        ..load()
+        ..summaryEngine = engine;
+      final prefs = await launch(tester);
+      await tester.tap(find.text('Turn off'));
+      await tester.pumpAndSettle();
+      return prefs;
+    }
+
+    const both =
+        'Cloud transcription and summaries turned off. Turn them back on in '
+        'Settings › Voice & AI';
+
+    testWidgets('cloud summaries move to the device where it can summarise', (
+      tester,
+    ) async {
+      final prefs = await turnOff(tester, TargetPlatform.macOS);
+      expect(find.text(both), findsOneWidget);
+      expect(prefs.summaryEngine, SummaryEngine.device);
+      expect(prefs.summarize, isTrue);
+      await settleToasts(tester);
+    });
+
+    testWidgets('and stop where the device cannot summarise', (tester) async {
+      final prefs = await turnOff(tester, TargetPlatform.linux);
+      expect(find.text(both), findsOneWidget);
+      expect(prefs.summarize, isFalse);
+      await settleToasts(tester);
+    });
+
+    testWidgets('summaries already on the device are left alone', (
+      tester,
+    ) async {
+      final prefs = await turnOff(
+        tester,
+        TargetPlatform.android,
+        engine: SummaryEngine.device,
+      );
+      expect(
+        find.text(
+          'Cloud transcription turned off. Turn it back on in '
+          'Settings › Voice & AI',
+        ),
+        findsOneWidget,
+      );
+      expect(prefs.summaryEngine, SummaryEngine.device);
+      expect(prefs.summarize, isTrue);
+      await settleToasts(tester);
+    });
+
+    testWidgets('a Turn off that fails leaves summaries on the cloud', (
+      tester,
+    ) async {
+      speech.refuses = true;
+      final prefs = await turnOff(tester, TargetPlatform.macOS);
+      expect(prefs.summaryEngine, SummaryEngine.cloud);
+      expect(prefs.summarize, isTrue);
+      await settleToasts(tester);
+    });
+
+    testWidgets('Keep on leaves summaries on the cloud', (tester) async {
+      final prefs = await launch(tester);
+      await tester.tap(find.text('Keep on'));
+      await tester.pumpAndSettle();
+      expect(prefs.summaryEngine, SummaryEngine.cloud);
+      expect(prefs.summarize, isTrue);
+    });
+
+    testWidgets("Settings' Withdraw still turns off transcription only", (
+      tester,
+    ) async {
+      final prefs = VoicePrefs(store)..load();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.light(),
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => setCloudTranscription(
+                context,
+                speech: speech,
+                prefs: prefs,
+                on: false,
+              ),
+              child: const Text('withdraw'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('withdraw'));
+      await tester.pumpAndSettle();
+      expect(speech.sent, [0]);
+      expect(find.text('Cloud transcription turned off'), findsOneWidget);
+      expect(prefs.summaryEngine, SummaryEngine.cloud);
+      await settleToasts(tester);
+    });
   });
 
   group('first-time consent on this build', () {

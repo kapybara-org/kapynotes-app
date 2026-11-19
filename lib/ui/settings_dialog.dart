@@ -28,9 +28,8 @@ import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
 import '../data/voice_prefs.dart';
-import '../speech/apple_summarizer.dart';
 import '../speech/cloud_access.dart';
-import '../speech/gemma_summarizer.dart';
+import '../speech/device_summaries.dart';
 import '../speech/local_model_store.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_api.dart';
@@ -1703,10 +1702,6 @@ class _SettingsDialogState extends State<SettingsDialog>
         .firstOrNull;
     final builtInSpeech = _deviceTranscriptState == TranscriberReadiness.ready;
     final builtInSummary = _deviceSummaryState == SummarizerReadiness.ready;
-    // Linux has no summariser of its own and is not offered the downloaded
-    // one, so its summaries are the cloud's or none.
-    final deviceSummaries =
-        AppleSummarizer.isPossibleHere || GemmaSummarizer.isPossibleHere;
     final consented = _speechConsent?.isAccepted ?? false;
     final transcription = access?.transcription;
     final summaries = access?.summaries;
@@ -1834,7 +1829,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       _Group(
         'Summaries',
         [
-          if (deviceSummaries)
+          if (deviceSummariesPossible)
             _Setting(
               'summarise-with',
               'Summarise with',

@@ -77,13 +77,15 @@ Future<bool?> showSpeechProviderNotice(BuildContext context) =>
 ///
 /// Returns the account's new consent, or null when nothing changed because
 /// the sheet was declined or the server could not be reached; [onError] is
-/// told why in the second case.
+/// told why in the second case. [turnedOff] replaces the toast that confirms
+/// turning it off.
 Future<SpeechConsentStatus?> setCloudTranscription(
   BuildContext context, {
   required SpeechApi speech,
   required VoicePrefs? prefs,
   required bool on,
   void Function(String message)? onError,
+  String turnedOff = 'Cloud transcription turned off',
 }) async {
   if (on) {
     if (!await showSpeechConsentSheet(context)) {
@@ -101,9 +103,7 @@ Future<SpeechConsentStatus?> setCloudTranscription(
     final status = await speech.acceptConsent(on ? speechConsentVersion : 0);
     if (on) prefs?.consentGiven();
     if (context.mounted) {
-      progress.success(
-        on ? 'Cloud transcription turned on' : 'Cloud transcription turned off',
-      );
+      progress.success(on ? 'Cloud transcription turned on' : turnedOff);
     } else {
       progress.dismiss();
     }

@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import '../data/notes_store.dart';
 import '../data/onboarding.dart';
 import '../data/voice_prefs.dart';
+import '../speech/device_summaries.dart';
+import '../speech/summarizer.dart';
 import '../sync/account.dart';
 import 'voice_consent_sheet.dart';
 
@@ -105,13 +107,31 @@ class _SpeechProviderNoticeListenerState
       prefs.providerNoticeSeen();
       return;
     }
+    // The notice names MiniMax for cloud summaries, so turning it off stops
+    // those too. Settings' Withdraw does not: there, Summarise with is a row
+    // of its own.
+    final summaries =
+        prefs.summarize && prefs.summaryEngine == SummaryEngine.cloud;
     final status = await setCloudTranscription(
       context,
       speech: speech,
       prefs: prefs,
       on: false,
+      turnedOff: summaries
+          ? 'Cloud transcription and summaries turned off. Turn them back on '
+                'in Settings › Voice & AI'
+          : 'Cloud transcription turned off. Turn it back on in '
+                'Settings › Voice & AI',
     );
-    if (status != null && !status.isAccepted) prefs.providerNoticeSeen();
+    if (status == null || status.isAccepted) return;
+    if (summaries) {
+      if (deviceSummariesPossible) {
+        prefs.summaryEngine = SummaryEngine.device;
+      } else {
+        prefs.summarize = false;
+      }
+    }
+    prefs.providerNoticeSeen();
   }
 
   bool get _clear =>
