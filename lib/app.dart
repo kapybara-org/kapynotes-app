@@ -411,12 +411,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       // Which note that is depends on how the app was opened: every widget
       // action carries on the last one, and everything else starts a new one
       // exactly as it always has.
-      QuickCapture.file(
+      final welcomeOnly = Onboarding.holdsOnlyWelcome(widget.notes);
+      final filed = QuickCapture.file(
         widget.notes,
         capturedText,
         intent,
         target: openingNote,
       );
+      if (welcomeOnly) widget.prefs.lastOpenedNoteId = filed.id;
     } else if (_welcomeNoteId == null &&
         AppPlatform.isMobile &&
         widget.notes.isEmpty) {
