@@ -117,7 +117,7 @@ class _ThemeCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Row(
                         children: [
-                          Expanded(
+                          Flexible(
                             child: Text(
                               theme.label,
                               maxLines: 1,
@@ -131,24 +131,30 @@ class _ThemeCard extends StatelessWidget {
                             ),
                           ),
                           if (badge != null)
-                            Container(
-                              height: 18,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: ground.controlBackground,
-                                border: Border.all(color: ground.controlBorder),
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: Text(
-                                badge,
-                                style: TextStyle(
-                                  color: ground.textSecondary,
-                                  fontSize: 11,
-                                  height: 15 / 11,
-                                  fontWeight: FontWeight.w500,
+                            Flexible(
+                              child: Container(
+                                height: 18,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                ),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: ground.controlBackground,
+                                  border: Border.all(
+                                    color: ground.controlBorder,
+                                  ),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  badge,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: ground.textSecondary,
+                                    fontSize: 11,
+                                    height: 15 / 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
                             ),
@@ -302,14 +308,21 @@ class _ThemePreview extends StatelessWidget {
                     ],
                   ),
                   const Spacer(),
-                  Row(
-                    children: [
-                      block(sage, 16, 6, 3),
-                      const SizedBox(width: 4),
-                      block(TagColour.rust.card(p), 16, 6, 3),
-                      const Spacer(),
-                      block(p.accent, 18, 7, 3),
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      // The chips stand for totals, not content, so they give
+                      // way before the card overflows at a narrow window.
+                      final room = constraints.maxWidth >= 62;
+                      return Row(
+                        children: [
+                          block(sage, room ? 16 : 10, 6, 3),
+                          const SizedBox(width: 4),
+                          block(TagColour.rust.card(p), room ? 16 : 10, 6, 3),
+                          const Spacer(),
+                          block(p.accent, room ? 18 : 12, 7, 3),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
