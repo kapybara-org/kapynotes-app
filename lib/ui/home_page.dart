@@ -2527,6 +2527,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       .bindingFor(ShortcutAction.toggleAlwaysOnTop)
       ?.keycapLabel;
 
+  /// Keep on top as More offers it, on the note's page and on Tasks alike.
+  KapyMenuAction? get _onTopAction => _pinToggle == null
+      ? null
+      : KapyMenuAction(
+          value: 'on-top',
+          label: widget.prefs.alwaysOnTop
+              ? 'Stop keeping on top'
+              : 'Keep on top',
+          icon: KapyIcons.layersRounded,
+          hint: _pinShortcut,
+        );
+
   /// The editable chord shown on the notes-list button in both layouts.
   String? get _sidebarShortcut =>
       widget.shortcuts.bindingFor(ShortcutAction.toggleSidebar)?.displayLabel;
@@ -3524,7 +3536,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final removeShortcut = widget.shortcuts
         .bindingFor(ShortcutAction.deleteNote)
         ?.keycapLabel;
-    final alwaysOnTop = widget.prefs.alwaysOnTop;
     final pinned = note != null && widget.notes.isPinned(note.id);
     return [
       KapyMenuAction(
@@ -3538,13 +3549,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             : null,
         enabled: canSplit,
       ),
-      if (_pinToggle != null)
-        KapyMenuAction(
-          value: 'on-top',
-          label: alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
-          icon: KapyIcons.layersRounded,
-          hint: _pinShortcut,
-        ),
+      ?_onTopAction,
       if (note != null && !_specialMode)
         KapyMenuAction(
           value: 'pin',
@@ -3633,6 +3638,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             .bindingFor(ShortcutAction.newNote)
             ?.displayLabel,
         updates: widget.updates,
+        moreActions: [?_onTopAction],
+        onMore: _pinToggle == null
+            ? null
+            : (action) => _runPageAction(action, null),
         actions: [
           if (!filter.done)
             TextButton.icon(

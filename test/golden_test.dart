@@ -578,10 +578,11 @@ void main() {
       size: const Size(760, 520),
       brightness: Brightness.dark,
     );
-    // The pin is the only toolbar control with an on state, and the filled
-    // icon behind a selected surface is the whole signal that the window is
-    // now floating.
+    // Keep on top has no button in the bar, so More is where it says the
+    // window is floating: by offering to stop.
     goldenPrefs.toggleAlwaysOnTop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
@@ -653,7 +654,7 @@ void main() {
     );
   });
 
-  testWidgets('Tasks leaves Keep on top to Settings and its shortcut', (
+  testWidgets('Tasks keeps Keep on top under More, with its shortcut', (
     tester,
   ) async {
     await pumpForGolden(
@@ -661,6 +662,7 @@ void main() {
       size: const Size(1000, 640),
       brightness: Brightness.dark,
       withTasks: true,
+      platform: TargetPlatform.macOS,
     );
     await tester.tap(find.byKey(const ValueKey('rail-tasks')));
     await tester.pumpAndSettle();
@@ -672,7 +674,29 @@ void main() {
       ),
       findsNothing,
     );
-    expect(find.byKey(const ValueKey('page-more')), findsNothing);
+
+    final more = find.byKey(const ValueKey('page-more'));
+    final onTop = find.byKey(const ValueKey('page-more-on-top'));
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: onTop, matching: find.text('Keep on top')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: onTop, matching: find.text('⇧⌘T')),
+      findsOneWidget,
+    );
+    await tester.tap(onTop);
+    await tester.pumpAndSettle();
+    expect(goldenPrefs.alwaysOnTop, isTrue);
+
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: onTop, matching: find.text('Stop keeping on top')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('desktop dark narrow, results at line ends', (tester) async {

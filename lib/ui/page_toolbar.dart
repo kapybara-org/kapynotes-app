@@ -107,7 +107,8 @@ class PageToolbar extends StatelessWidget {
   final Widget? center;
 
   /// A page that is not a note puts its own actions where a note's saved
-  /// state and Share go, and has no More.
+  /// state and Share go. More still follows them when the page has something
+  /// to put there.
   final List<Widget>? actions;
 
   static const double height = 56;
@@ -231,9 +232,10 @@ class PageToolbar extends StatelessWidget {
                                   wide:
                                       constraints.maxWidth >= _updateLabelWidth,
                                 ),
-                              if (actions case final actions?)
-                                ...actions
-                              else ...[
+                              if (actions case final actions?) ...[
+                                ...actions,
+                                if (onMore != null) const SizedBox(width: 6),
+                              ] else ...[
                                 if (noteOpen &&
                                     constraints.maxWidth >=
                                         (unloadedPictures > 0
@@ -265,28 +267,25 @@ class PageToolbar extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 6),
                                 ?assistant,
-                                if (onMore case final onMore?)
-                                  Builder(
-                                    builder: (buttonContext) =>
-                                        CompactIconButton(
-                                          key: const ValueKey('page-more'),
-                                          tooltip: 'More',
-                                          extent: actionExtent,
-                                          radius: 10,
-                                          onPressed: moreActions.isEmpty
-                                              ? null
-                                              : () => _showMore(
-                                                  buttonContext,
-                                                  onMore,
-                                                ),
-                                          icon: KapyIcon(
-                                            KapyIcons.moreRounded,
-                                            size: AppControlMetrics.iconAction,
-                                            strokeWidth: 2.2,
-                                          ),
-                                        ),
-                                  ),
                               ],
+                              if (onMore case final onMore?)
+                                Builder(
+                                  builder: (buttonContext) => CompactIconButton(
+                                    key: const ValueKey('page-more'),
+                                    tooltip: 'More',
+                                    extent: actionExtent,
+                                    radius: 10,
+                                    onPressed: moreActions.isEmpty
+                                        ? null
+                                        : () =>
+                                              _showMore(buttonContext, onMore),
+                                    icon: KapyIcon(
+                                      KapyIcons.moreRounded,
+                                      size: AppControlMetrics.iconAction,
+                                      strokeWidth: 2.2,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
