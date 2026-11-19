@@ -231,6 +231,85 @@ void main() {
     },
   );
 
+  testWidgets('a new recovery key is still shown when the pane is rebuilt '
+      'away mid-dialog', (tester) async {
+    await size(tester, const Size(640, 900));
+    final server = FakeServer();
+    final account = await unlocked(tester, server);
+    final showPane = ValueNotifier(true);
+    addTearDown(showPane.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Scaffold(
+          body: ValueListenableBuilder(
+            valueListenable: showPane,
+            builder: (context, show, _) => show
+                ? SingleChildScrollView(child: SyncPane(account: account))
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await openFromSettings(tester, 'recovery-key');
+    await tester.tap(byKey('key-change-continue'));
+    await tester.pumpAndSettle();
+    await tester.enterText(byKey('key-change-code'), '123456');
+    showPane.value = false;
+    await tester.pump();
+    expect(find.byType(SyncPane), findsNothing);
+
+    await tapAndFinish(tester, byKey('key-change-confirm-code'));
+    expect(find.text('Save your new recovery key'), findsOneWidget);
+    await tester.tap(byKey('confirm-recovery-key-saved'));
+    await tester.pumpAndSettle();
+    expect(account.recoveryKeyUnsaved, isFalse);
+    account.dispose();
+  });
+
+  testWidgets('after a reset, Settings asks for the old passphrase to bring '
+      'back the notes from before it', (tester) async {
+    await size(tester, const Size(640, 900));
+    final server = FakeServer();
+    final writer = await unlocked(tester, server);
+    final account = device(server);
+    await tester.runAsync(() async {
+      await account.restore();
+      await account.signIn(email: 'a@b.co', password: 'x');
+      final prepared = await account.prepareReset('new passphrase');
+      expect(await account.sendKeyCode(KeyProofAction.reset), isNull);
+      final code = await account.verifyKeyCode(KeyProofAction.reset, '123456');
+      await account.commitReset(prepared, proof: code.proof!);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpWidget(pane(account));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Notes from before the reset'), findsOneWidget);
+    await openFromSettings(tester, 'restore');
+    expect(find.text('Bring back notes from before the reset'), findsOneWidget);
+    await tester.enterText(byKey('restore-secret'), 'nonsense');
+    await tapAndFinish(tester, byKey('restore-confirm'));
+    expect(
+      find.text(
+        "That doesn't open the notes from before the reset. Check it and "
+        'try again.',
+      ),
+      findsOneWidget,
+    );
+    await tester.enterText(byKey('restore-secret'), 'first passphrase');
+    await tapAndFinish(tester, byKey('restore-confirm'));
+    expect(find.text('Bring back notes from before the reset'), findsNothing);
+    expect(
+      find.text('Every note from before the reset is already here'),
+      findsOneWidget,
+    );
+    writer.dispose();
+    account.dispose();
+  });
+
   testWidgets('a recovery key made elsewhere a moment before is said calmly', (
     tester,
   ) async {
