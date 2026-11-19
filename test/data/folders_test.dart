@@ -245,10 +245,8 @@ void main() {
       final notes = NotesStore(store, now: tick);
       await notes.load();
       final a = notes.create(body: 'A');
-      final sketch = notes.create();
-      final loose = notes.create();
-      expect(notes.setDrawingMode(sketch.id, drawing: true), isTrue);
-      expect(notes.setDrawingMode(loose.id, drawing: true), isTrue);
+      final sketch = notes.create(drawing: true);
+      notes.create(drawing: true);
       final work = folders.create('Work')!;
       folders.file([a.id, sketch.id], work.id);
       final tree = folders.tree;

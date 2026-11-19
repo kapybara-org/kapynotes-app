@@ -4202,7 +4202,6 @@ void main() {
 
   group('draw mode', () {
     Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
-    Finder draw() => find.byKey(const ValueKey('note-mode-draw'));
 
     testWidgets('a stroke across a drawing on a phone stays a stroke', (
       tester,
@@ -4238,8 +4237,7 @@ void main() {
 
     test('restoring an archive over a drawing keeps the canvas', () async {
       await notes.load();
-      final note = notes.create();
-      notes.setDrawingMode(note.id, drawing: true);
+      final note = notes.create(drawing: true);
       notes.updateDrawing(
         note.id,
         NoteDrawing([
@@ -4260,35 +4258,13 @@ void main() {
       expect(notes.byId(note.id)!.body, 'Plan');
     });
 
-    testWidgets('a new note can become a drawing, and back while blank', (
-      tester,
-    ) async {
-      await pumpApp(tester);
-      await tester.tap(plus());
-      await tester.pumpAndSettle();
-      final id = notes.notes.first.id;
-      expect(draw(), findsOneWidget);
-
-      await tester.tap(draw());
-      await tester.pumpAndSettle();
-      expect(notes.byId(id)!.isDrawing, isTrue);
-      expect(find.byType(DrawingCanvas), findsOneWidget);
-      expect(find.byType(NoteEditor), findsNothing);
-      expect(notes.byId(id)!.title, 'Drawing');
-
-      await tester.tap(find.byKey(const ValueKey('note-mode-write')));
-      await tester.pumpAndSettle();
-      expect(notes.byId(id)!.isDrawing, isFalse);
-      expect(find.byType(NoteEditor), findsOneWidget);
-    });
-
     testWidgets('strokes and a title are saved to the note', (tester) async {
       await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
       await tester.tap(plus());
       await tester.pumpAndSettle();
       final id = notes.notes.first.id;
-      await tester.tap(draw());
-      await tester.pumpAndSettle();
 
       final surface = tester.getRect(
         find.byKey(const ValueKey('drawing-surface')),
@@ -4302,8 +4278,6 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
-      // Something is in it now, so the choice has been made.
-      expect(find.byKey(const ValueKey('note-mode-switch')), findsNothing);
 
       await tester.enterText(
         find.byKey(const ValueKey('drawing-title')),
@@ -4312,21 +4286,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.title, 'Garden plan');
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
-    });
-
-    testWidgets('a note with words in it offers no switch', (tester) async {
-      await pumpApp(tester);
-      await tester.tap(plus());
-      await tester.pumpAndSettle();
-      expect(draw(), findsOneWidget);
-
-      await tester.enterNote(
-        'Groceries',
-        find.descendant(of: find.byType(NoteEditor), matching: noteField),
-      );
-      await tester.pumpAndSettle();
-      expect(draw(), findsNothing);
-      expect(notes.notes.first.isDrawing, isFalse);
     });
   });
 
