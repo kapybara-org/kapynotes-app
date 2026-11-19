@@ -791,11 +791,11 @@ void main() {
         '9,200.00 USD',
         reason: 'both count',
       );
-      const rent = 'Rent = 1000 eur\nrent to usd';
+      const rent = 'rent = 1000 eur\nrent to usd';
       expect(total(rent), '1,000.00 EUR');
       expect(hover(rent, 1), 'Not added again: restates rent');
       expect(
-        total('Rent = 1000 eur\nrent to usd\n5 km to miles'),
+        total('rent = 1000 eur\nrent to usd\n5 km to miles'),
         '1,000.00 EUR',
       );
     });
