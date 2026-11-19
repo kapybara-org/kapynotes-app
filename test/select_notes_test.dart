@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -41,13 +42,15 @@ class _OpenGate implements HiddenNotesGate {
   Future<bool> changePin(BuildContext context) async => false;
 }
 
-/// The desktop app on a Mac with the list beside the page, holding [bodies]
-/// newest last: the list reads them bottom up.
+/// The desktop app, on a Mac unless [platform] says otherwise, with the list
+/// beside the page, holding [bodies] newest last: the list reads them bottom
+/// up.
 Future<void> _pump(
   WidgetTester tester, {
   List<String> bodies = const ['First', 'Second', 'Third', 'Fourth'],
+  TargetPlatform platform = TargetPlatform.macOS,
 }) async {
-  AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+  AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
   store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
   tester.view.physicalSize = const Size(1100, 760);
@@ -159,6 +162,71 @@ void main() {
     expect(_picked(tester), isEmpty);
     expect(find.text('2 selected'), findsNothing);
     expect(_open(tester, 'Second'), isTrue);
+  });
+
+  testWidgets('on Windows Ctrl picks as Cmd does on a Mac, and a click with '
+      'the Windows key only opens the note', (tester) async {
+    await _pump(tester, platform: TargetPlatform.windows);
+    await _click(tester, 'Second');
+
+    await _click(tester, 'Fourth', holding: LogicalKeyboardKey.metaLeft);
+    expect(_picked(tester), isEmpty);
+    expect(_open(tester, 'Fourth'), isTrue);
+
+    await _click(tester, 'Second', holding: LogicalKeyboardKey.controlLeft);
+    expect(_picked(tester), ['Fourth', 'Second']);
+    expect(find.text('2 selected'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(_picked(tester), isEmpty);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('4 selected'), findsOneWidget);
+  });
+
+  testWidgets('a row hands a ⌘-click with nothing picked to its one handler, '
+      'every click to picking once notes are picked, and Shift to a range '
+      'either way', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await notes.load();
+    final note = notes.create(body: 'Row');
+    final calls = <String>[];
+    Future<void> click({
+      required bool selecting,
+      LogicalKeyboardKey? holding,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Material(
+            child: NoteRow(
+              note: note,
+              query: '',
+              displayTime: (time) => time,
+              selected: false,
+              selecting: selecting,
+              onTap: () => calls.add('open'),
+              onToggleChecked: () => calls.add('pick'),
+              onCommandClick: () => calls.add('command'),
+              onPickTo: () => calls.add('range'),
+            ),
+          ),
+        ),
+      );
+      await _click(tester, 'Row', holding: holding);
+    }
+
+    await click(selecting: false, holding: LogicalKeyboardKey.metaLeft);
+    await click(selecting: false, holding: LogicalKeyboardKey.shiftLeft);
+    await click(selecting: false);
+    await click(selecting: true, holding: LogicalKeyboardKey.metaLeft);
+    await click(selecting: true, holding: LogicalKeyboardKey.shiftLeft);
+    await click(selecting: true);
+    expect(calls, ['command', 'range', 'open', 'pick', 'range', 'pick']);
   });
 
   testWidgets('a click with Shift picks from the open note, and the next one '

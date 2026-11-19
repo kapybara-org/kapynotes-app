@@ -663,6 +663,12 @@ extension on Sidebar {
     );
   }
 
+  /// A ⌘-click, or a Ctrl-click off a Mac, on a note while nothing is
+  /// picked: the one place that decides what it does. It starts picking with
+  /// the open note and this one, as Finder does.
+  void _commandClick(Note note) =>
+      picks!.toggle(note.id, open: _highlighted?.id);
+
   /// Lets a mouse press dragged down the rows pick every note it crosses.
   Widget _sweeps(Widget list) {
     final picks = this.picks;
@@ -788,9 +794,8 @@ extension on Sidebar {
     deleteLabel: _deleteLabel(note),
     selecting: _picking,
     checked: picks?.contains(note.id) ?? false,
-    onToggleChecked: picks == null
-        ? null
-        : () => picks!.toggle(note.id, open: _highlighted?.id),
+    onToggleChecked: picks == null ? null : () => picks!.toggle(note.id),
+    onCommandClick: picks == null ? null : () => _commandClick(note),
     onPickTo: picks == null || !AppPlatform.hasPointer
         ? null
         : () => picks!.extendTo(_order, note.id, open: _highlighted?.id),
@@ -2720,6 +2725,7 @@ class NoteRow extends StatefulWidget {
     this.selecting = false,
     this.checked = false,
     this.onToggleChecked,
+    this.onCommandClick,
     this.onPickTo,
     this.pickedActions,
     this.onPickedAction,
@@ -2774,9 +2780,12 @@ class NoteRow extends StatefulWidget {
   /// Whether this row is one of the picked ones.
   final bool checked;
 
-  /// Picks the note or lets it go: a tap while picking, and a click with ⌘
-  /// (Ctrl off a Mac) at any time.
+  /// Picks the note or lets it go while notes are being picked: what any
+  /// click on it does then, with ⌘ or Ctrl or without.
   final VoidCallback? onToggleChecked;
+
+  /// A click with ⌘ (Ctrl off a Mac) while nothing is picked.
+  final VoidCallback? onCommandClick;
 
   /// A click with Shift: picks every note from the last one picked, or the
   /// open one, to this.
@@ -2822,22 +2831,22 @@ class _NoteRowState extends State<NoteRow> {
       !widget.openElsewhere;
 
   /// A click opens the note where the focus is. Option- or Alt-click opens it
-  /// beside that instead, the way a code editor's file list does. With ⌘ or
-  /// Ctrl, or with Shift, it picks, as a file list does; and while notes are
-  /// picked, a plain click picks too.
+  /// beside that instead, the way a code editor's file list does. Shift picks
+  /// the range from the open note, as a file list does, and while notes are
+  /// picked any other click picks too. A click with ⌘ or Ctrl while nothing
+  /// is picked goes to [NoteRow.onCommandClick].
   void _open() {
     final keyboard = HardwareKeyboard.instance;
     final pickTo = widget.onPickTo;
     if (pickTo != null && keyboard.isShiftPressed) return pickTo();
-    final toggle = widget.onToggleChecked;
+    if (widget.selecting) return (widget.onToggleChecked ?? widget.onTap)();
+    final commandClick = widget.onCommandClick;
     final command = AppPlatform.isMacOS
         ? keyboard.isMetaPressed
         : keyboard.isControlPressed;
-    if (toggle != null &&
-        (widget.selecting || (command && AppPlatform.hasPointer))) {
-      return toggle();
+    if (commandClick != null && command && AppPlatform.hasPointer) {
+      return commandClick();
     }
-    if (widget.selecting) return widget.onTap();
     if (_canOpenToSide && keyboard.isAltPressed) {
       widget.onOpenToSide!();
       return;
