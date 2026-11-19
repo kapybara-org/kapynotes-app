@@ -10,12 +10,13 @@
 // so nothing on the Mac loses focus: each opening is timed (MENUBAR_OPEN_MS)
 // and capture, the tabs and checking are driven with synthetic events.
 //
-// With --dart-define=MENUBAR_REAL_KEYS=true it instead puts the real icon in
-// the menu bar, opens the panel as a click on it does, and waits, at most
-// 60 s, for an outside driver to type with real key events, then prints what
-// the panel saved (MENUBAR_KEYS).
-// The driver ends the wait by creating menubar-keys-done in the app's temp
-// directory.
+// With --dart-define=MENUBAR_DRIVEN=true it instead puts the real icon in
+// the menu bar and waits, at most 60 s, for an outside driver to work it
+// through accessibility, then prints what happened (MENUBAR_DRIVEN). The
+// driver, integration_test/menu_bar_icon_press.swift, presses the icon as
+// VoiceOver does, checks that the panel opens and that a second press closes
+// it, and ends the wait by creating menubar-driven-done in the app's temp
+// directory. The panel never becomes key, so nothing on the Mac loses focus.
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -35,7 +36,7 @@ import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
-const _realKeys = bool.fromEnvironment('MENUBAR_REAL_KEYS');
+const _driven = bool.fromEnvironment('MENUBAR_DRIVEN');
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'menu-bar-panel-integration.json');
@@ -244,12 +245,12 @@ void main() {
     } finally {
       await hotKeyManager.unregisterAll();
     }
-  }, skip: _realKeys);
+  }, skip: _driven);
 
-  testWidgets('the menu bar panel takes real keys', (tester) async {
+  testWidgets('the menu bar icon answers an outside driver', (tester) async {
     final (:notes, :tasks, :prefs, :controller, :opened) = await _pumpPanel(
       tester,
-      takesKey: true,
+      takesKey: false,
     );
     final tray = AppTray(
       onOpen: () => opened.add('open'),
@@ -261,22 +262,20 @@ void main() {
     );
     addTearDown(tray.dispose);
     await tray.setVisible(true);
-    // The icon takes no accessibility press (tray_manager reads mouse events
-    // on a view over the button), so the panel opens the way a click would.
-    expect(await controller.click(), isTrue);
-    stdout.writeln('MENUBAR_KEYS ready');
+    stdout.writeln('MENUBAR_DRIVEN ready');
 
-    final done = File('${Directory.systemTemp.path}/menubar-keys-done');
+    final done = File('${Directory.systemTemp.path}/menubar-driven-done');
     final until = DateTime.now().add(const Duration(seconds: 60));
     while (!done.existsSync() && DateTime.now().isBefore(until)) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     await tasks.reconcileNow();
     stdout.writeln(
-      'MENUBAR_KEYS notes=${notes.notes.map((note) => note.title).toList()} '
+      'MENUBAR_DRIVEN openings=${controller.openings} '
+      'open=${controller.isOpen} '
+      'notes=${notes.notes.map((note) => note.title).toList()} '
       'tasks=${tasks.read().open.map((item) => item.words).toList()} '
-      'open=${controller.isOpen} tasksTab=${prefs.menuBarOpensTasks} '
-      'window=$opened',
+      'tasksTab=${prefs.menuBarOpensTasks} window=$opened',
     );
-  }, skip: !_realKeys);
+  }, skip: !_driven);
 }

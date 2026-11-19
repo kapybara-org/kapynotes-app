@@ -115,4 +115,78 @@ void main() {
 
     expect(calls.single.method, 'popUpContextMenu');
   });
+
+  group('an accessibility press on the Mac icon', () {
+    const icon = MethodChannel('kapynotes/menubar_icon');
+    late List<String> iconCalls;
+
+    setUp(() {
+      iconCalls = [];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(icon, (call) async {
+            iconCalls.add(call.method);
+            return true;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(icon, null);
+    });
+
+    /// The icon's button saying it was pressed, as VoiceOver presses it.
+    Future<void> press() async {
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+            icon.name,
+            const StandardMethodCodec().encodeMethodCall(
+              const MethodCall('pressed'),
+            ),
+            (_) {},
+          );
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    test('opens the panel, as a click does', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      var clicks = 0;
+      final subject = tray(onClick: () async => ++clicks > 0);
+      await subject.setVisible(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(iconCalls, ['takePresses']);
+      calls.clear();
+
+      await press();
+      expect(clicks, 1);
+      expect(calls.map((call) => call.method), isNot(contains('popUpContextMenu')));
+    });
+
+    test('opens the menu where there is no panel', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      final subject = tray(onClick: () async => false);
+      await subject.setVisible(true);
+      calls.clear();
+
+      await press();
+      expect(calls.single.method, 'popUpContextMenu');
+    });
+
+    test('does nothing once the icon is gone', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      var clicks = 0;
+      final subject = tray(onClick: () async => ++clicks > 0);
+      await subject.setVisible(true);
+      await subject.setVisible(false);
+
+      await press();
+      expect(clicks, 0);
+    });
+
+    test('is not asked for on Windows', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      await tray().setVisible(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(iconCalls, isEmpty);
+    });
+  });
 }
