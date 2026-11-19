@@ -79,6 +79,22 @@ func inPanel(_ text: String) -> AXUIElement? {
   return element
 }
 
+/// The first element in the panel of this role, inside the panel's frame.
+func inPanel(role: String) -> AXUIElement? {
+  func first(_ node: AXUIElement, _ depth: Int) -> AXUIElement? {
+    if attribute(node, kAXRoleAttribute) as? String == role { return node }
+    guard depth < 40 else { return nil }
+    for child in attribute(node, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
+      if let found = first(child, depth + 1) { return found }
+    }
+    return nil
+  }
+  guard let window = panel(), let element = first(window, 0),
+        frame(window).insetBy(dx: -1, dy: -1).contains(frame(element))
+  else { return nil }
+  return element
+}
+
 func icon() -> AXUIElement? {
   guard let bar = attribute(app, "AXExtrasMenuBar") else { return nil }
   return (attribute(bar as! AXUIElement, kAXChildrenAttribute) as? [AXUIElement])?.first
@@ -107,15 +123,20 @@ guard AXUIElementPerformAction(item, kAXPressAction as CFString) == .success els
 guard waitFor(3, panelIsOpen) else { finish("FAIL a press did not open the panel", 1) }
 print("PRESS the panel opened")
 
+// The field carries no placeholder or value to macOS, so its role is what
+// says it is there.
 var tasks: AXUIElement?
-guard waitFor(5, { tasks = inPanel("Tasks"); return tasks != nil && inPanel("Write a note") != nil }),
-      let tasksTab = tasks
+guard waitFor(5, {
+        tasks = inPanel("Tasks")
+        return tasks != nil && inPanel("Notes") != nil && inPanel(role: kAXTextFieldRole) != nil
+      }), let tasksTab = tasks
 else { finish("FAIL the panel's tabs and field are not in its window", 1) }
 print("PRESS Tasks at \(frame(tasksTab)) in the panel at \(frame(panel()!))")
 guard AXUIElementPerformAction(tasksTab, kAXPressAction as CFString) == .success else {
   finish("FAIL the Tasks tab refused the press", 1)
 }
-guard waitFor(3, { inPanel("Add a task") != nil }) else { finish("FAIL a press on Tasks did not switch to it", 1) }
+// Only the Tasks tab has the picker that names its note.
+guard waitFor(3, { inPanel("Add to note") != nil }) else { finish("FAIL a press on Tasks did not switch to it", 1) }
 print("PRESS a press on Tasks switched to it")
 
 guard AXUIElementPerformAction(item, kAXPressAction as CFString) == .success else {
