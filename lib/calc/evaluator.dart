@@ -470,6 +470,9 @@ class Evaluator {
         if (readout && value is NumberValue && target.isCurrency) {
           return QuantityValue(value.value, target);
         }
+        if (target.simple?.rated == false) {
+          throw CalcError('no exchange rate for ${target.simple!.symbol}');
+        }
         return Arith.convert(value, target);
 
       case FormatNode():

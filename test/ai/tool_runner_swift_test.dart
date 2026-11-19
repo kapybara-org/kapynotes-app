@@ -42,17 +42,13 @@ void main() {
     expect(list('claude'), ClaudeCodeCli.lockedDown);
   });
 
-  test("Codex's pin is the helper's, nil while Dart's is null", () {
+  test("Codex's pin is the helper's", () {
     final match = RegExp(
-      r'static let codexTestedUpTo: \(major: Int, minor: Int\)\? = (nil|\((\d+), (\d+)\))',
+      r'static let codexTestedUpTo: \(major: Int, minor: Int\)\? = \((\d+), (\d+)\)',
     ).firstMatch(swift);
     expect(match, isNotNull);
-    final pin = CodexCli.testedUpTo;
-    if (pin == null) {
-      expect(match![1], 'nil');
-    } else {
-      expect([match![2], match[3]], ['${pin.$1}', '${pin.$2}']);
-    }
+    const pin = CodexCli.testedUpTo;
+    expect([match![1], match[2]], ['${pin.$1}', '${pin.$2}']);
   });
 
   test('the features Codex may show as on are the helper\'s', () {

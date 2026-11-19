@@ -132,7 +132,11 @@ bool get _desktop => switch (defaultTargetPlatform) {
 };
 
 class NoteFieldState extends State<NoteField>
-    with SingleTickerProviderStateMixin, TextInputClient, DeltaTextInputClient
+    with
+        SingleTickerProviderStateMixin,
+        TextInputClient,
+        DeltaTextInputClient,
+        WidgetsBindingObserver
     implements TextLayoutMetrics {
   /// The note as the field lays it out, kept equal to the controller's text.
   late final NoteLines _lines = NoteLines(_text);
@@ -230,6 +234,7 @@ class NoteFieldState extends State<NoteField>
     widget.focusNode.addListener(_didChangeFocus);
     clipboardStatus.addListener(_rebuildOverlay);
     _window = _placeWindow();
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
@@ -263,6 +268,7 @@ class NoteFieldState extends State<NoteField>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_didChangeValue);
     widget.focusNode.removeListener(_didChangeFocus);
     _closeConnection();
@@ -1618,6 +1624,21 @@ class NoteFieldState extends State<NoteField>
     ),
     affinity: position.affinity,
   );
+
+  /// How far up the window a soft keyboard reached when it last moved.
+  double _keyboard = 0;
+
+  /// Shows the caret again as a soft keyboard comes up, as [EditableText]
+  /// does. A phone gives the note only the room above the keyboard, so a
+  /// caret put near the bottom of the screen would otherwise stay under it
+  /// until something else moved the note. A keyboard going down only gives
+  /// the room back, and a desktop has no keyboard, so neither scrolls.
+  @override
+  void didChangeMetrics() {
+    final keyboard = View.of(context).viewInsets.bottom;
+    if (keyboard > _keyboard && widget.focusNode.hasFocus) _scheduleReveal();
+    _keyboard = keyboard;
+  }
 
   /// Shows the caret once the frame is laid out, and again after the next
   /// one if lines measured on the way moved it.

@@ -921,10 +921,10 @@ void main() {
       server.socketsAllowed = false;
       server.dropSockets();
       await settle(server);
-      two.api.failNext = const SyncTransientException('no route to host');
+      two.api.failAll = const SyncTransientException('no route to host');
       two.notes.updateBody(note.id, 'Start\nwritten in a tunnel');
       await settle(server);
-      expect(two.sync.status, SyncStatus.offline);
+      await until(() => two.sync.status == SyncStatus.offline);
       expect(two.sync.pendingCount, 1, reason: 'held, not lost');
       expect(
         server
@@ -938,9 +938,10 @@ void main() {
       await settle(server);
 
       server.socketsAllowed = true;
+      two.api.failAll = null;
       await until(() => two.sync.isLive);
       await settle(server);
-      expect(two.sync.status, SyncStatus.idle);
+      await until(() => two.sync.status == SyncStatus.idle);
       expect(two.sync.pendingCount, 0);
       expect(one.bodyOf(note.id), two.bodyOf(note.id));
       expect(one.bodyOf(note.id), contains('tunnel'));
