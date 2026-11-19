@@ -2456,7 +2456,8 @@ void main() {
       findsOneWidget,
     );
 
-    // More spells out Keep on top's shortcut, and keeps up with a new one.
+    // More prints Keep on top's shortcut as the keycaps do, and keeps up with
+    // a new one.
     Finder onTopHint(String label) => find.descendant(
       of: find.byKey(const ValueKey('page-more-on-top')),
       matching: find.text(label),
@@ -2464,7 +2465,7 @@ void main() {
     final pin = shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!;
     await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
-    expect(onTopHint(pin.displayLabel), findsOneWidget);
+    expect(onTopHint(pin.keycapLabel), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
@@ -2481,7 +2482,9 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
-    expect(onTopHint('Cmd + Shift + J'), findsOneWidget);
+    final rebound = shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!;
+    expect(rebound.keycapLabel, isNot(pin.keycapLabel));
+    expect(onTopHint(rebound.keycapLabel), findsOneWidget);
   });
 
   testWidgets('a shortcut can be removed, and then answers nothing', (
@@ -3282,9 +3285,14 @@ void main() {
       find.ancestor(of: menu, matching: find.byType(FadeTransition)),
       findsOneWidget,
     );
+    // As wide as its longest line, so none is cut short.
+    for (final line in tester.renderObjectList<RenderParagraph>(
+      find.descendant(of: menu, matching: find.byType(RichText)),
+    )) {
+      expect(line.didExceedMaxLines, isFalse, reason: line.text.toPlainText());
+    }
     final menuRect = tester.getRect(menu);
     final rowRect = tester.getRect(find.byType(Sidebar));
-    expect(menuRect.width, lessThanOrEqualTo(208));
     expect(menuRect.left, greaterThanOrEqualTo(rowRect.left));
     expect(menuRect.right, lessThanOrEqualTo(rowRect.right));
   });
