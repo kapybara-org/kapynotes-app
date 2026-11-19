@@ -499,6 +499,9 @@ void main() {
         final old = a.folders.create('Old', parentId: work.id)!;
         await passes([a, b, a]);
 
+        final placement = placementOf(note.id);
+        server.deliverLive = false;
+        server.withheld = (id) => id == placement;
         b.folders.file([note.id], old.id);
         a.folders.delete(old.id);
         await a.pass();
@@ -508,7 +511,14 @@ void main() {
         a.folders.create('Later');
         await passes([a, a]);
         expect(stored()[old.id]!.record.deletedAt, isNotNull);
+        expect(
+          stored()[placement],
+          isNull,
+          reason: 'the filing has not reached the server yet',
+        );
 
+        server.deliverLive = true;
+        server.withheld = null;
         await passes([b, a, b]);
         expect(shape(a, [note.id]), 'Later\nWork\nPlan: Work');
         expectSettled(a, b, [note.id]);
