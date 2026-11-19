@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Kapybara LLC -->
+<component type="desktop-application">
+  <id>com.kapybara.kapynotes</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+
+  <name>Kapy Notes</name>
+  <summary>Notes where every line is a live calculator</summary>
+  <developer id="com.kapybara">
+    <name>Kapybara LLC</name>
+  </developer>
+
+  <description>
+    <p>
+      Kapy Notes is a fast, private notebook with a calculator built into every
+      line. Write a thought, type a calculation, and see the result right beside
+      it, with no mode switching and no formulas to set up.
+    </p>
+    <ul>
+      <li>Arithmetic, percentages and running totals that update as you type</li>
+      <li>Unit, temperature, time and currency conversions</li>
+      <li>Markdown headings, emphasis, lists, links and tables</li>
+      <li>Checklists and tasks, tags, search and an archive</li>
+      <li>Drawings, images and file attachments inside a note</li>
+      <li>Voice notes, transcribed on your device</li>
+      <li>Export and import as plain Markdown files</li>
+    </ul>
+    <p>
+      Notes stay on your computer and work offline. Sync between your devices is
+      optional and end-to-end encrypted, so nobody else can read your notes.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.kapybara.kapynotes.desktop</launchable>
+  <provides>
+    <binary>kapynotes</binary>
+  </provides>
+
+  <url type="homepage">https://kapynotes.com</url>
+  <url type="help">https://kapynotes.com/support</url>
+  <url type="bugtracker">https://github.com/kapybara-org/kapynotes-app/issues</url>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#FBF1E3</color>
+    <color type="primary" scheme_preference="dark">#E8772E</color>
+  </branding>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">mild</content_attribute>
+  </content_rating>
+
+  <!-- The release this build is, from pubspec.yaml's version, written in by
+       linux/CMakeLists.txt at build time. -->
+  <releases>
+    <release version="@RELEASE_VERSION@" date="@RELEASE_DATE@"/>
+  </releases>
+</component>

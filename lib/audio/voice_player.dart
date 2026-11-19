@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../core/platform.dart';
+import 'linux_voice_player.dart';
+
 /// What playing a recording needs from an audio engine.
 ///
 /// Behind an interface so the chip, the dialog and the follow-along transcript
@@ -22,6 +25,8 @@ abstract class VoicePlayerBackend {
   Future<void> dispose();
 }
 
+/// just_audio, everywhere but Linux, which it has no implementation for: see
+/// [LinuxVoicePlayerBackend].
 class JustAudioBackend implements VoicePlayerBackend {
   AudioPlayer? _player;
 
@@ -102,7 +107,11 @@ class VoicePlayer extends ChangeNotifier {
     VoicePlayerBackend? backend,
     this.idleTimeout = const Duration(minutes: 5),
   }) : _files = files,
-       _backend = backend ?? JustAudioBackend();
+       _backend =
+           backend ??
+           (AppPlatform.isLinux
+               ? LinuxVoicePlayerBackend()
+               : JustAudioBackend());
 
   final VoiceFileLocator _files;
   final VoicePlayerBackend _backend;

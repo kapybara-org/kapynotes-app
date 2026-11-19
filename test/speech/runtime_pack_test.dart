@@ -84,7 +84,7 @@ LocalSpeechModel _model(String id, Map<String, List<int>> files) =>
         for (final entry in files.entries)
           LocalModelFile(
             name: entry.key,
-            url: 'https://models.test/$id/${entry.key}',
+            urls: ['https://models.test/$id/${entry.key}'],
             bytes: entry.value.length,
             sha256: sha256.convert(entry.value).toString(),
           ),

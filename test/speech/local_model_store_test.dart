@@ -17,8 +17,12 @@ import '../fake_mobile_data.dart';
 ///
 /// Real hashes matter: the point of this store is that it trusts the checksum
 /// and not the host, and a test with made-up hashes would exercise the
-/// opposite code path from the shipping one.
-LocalSpeechModel _model(Map<String, List<int>> files) => LocalSpeechModel(
+/// opposite code path from the shipping one. Each file is fetched from
+/// [hosts] in order, the way the app tries its own copy before Hugging Face.
+LocalSpeechModel _model(
+  Map<String, List<int>> files, {
+  List<String> hosts = const ['models.test'],
+}) => LocalSpeechModel(
   id: 'test-model',
   name: 'Test Model',
   vendor: 'Nobody',
@@ -37,7 +41,7 @@ LocalSpeechModel _model(Map<String, List<int>> files) => LocalSpeechModel(
     for (final entry in files.entries)
       LocalModelFile(
         name: entry.key,
-        url: 'https://models.test/${entry.key}',
+        urls: [for (final host in hosts) 'https://$host/${entry.key}'],
         bytes: entry.value.length,
         sha256: sha256.convert(entry.value).toString(),
       ),
@@ -75,7 +79,12 @@ class _Server {
   /// checked rather than inferred.
   final Map<String, int> served = {};
 
-  http.Client get client => MockClient.streaming((request, _) async {
+  http.Client get client => MockClient.streaming(handle);
+
+  Future<http.StreamedResponse> handle(
+    http.BaseRequest request,
+    http.ByteStream _,
+  ) async {
     requests.add(request);
     final name = request.url.pathSegments.last;
     final body = bodies[name]!;
@@ -99,7 +108,7 @@ class _Server {
       range != null && honoursRange ? 206 : 200,
       contentLength: payload.length,
     );
-  });
+  }
 
   Stream<List<int>> _chunked(List<int> payload) async* {
     const size = 64;
@@ -110,6 +119,18 @@ class _Server {
     }
   }
 }
+
+/// One connection that reaches a different server per host, the way the app
+/// reaches dl.kapynotes.com and Hugging Face. A host with no server here
+/// cannot be reached at all.
+http.Client _hosts(Map<String, _Server> servers) =>
+    MockClient.streaming((request, body) async {
+      final server = servers[request.url.host];
+      if (server == null) {
+        throw http.ClientException('Failed host lookup', request.url);
+      }
+      return server.handle(request, body);
+    });
 
 void main() {
   late Directory temp;
@@ -455,5 +476,152 @@ void main() {
     expect(seen.first, lessThan(1));
     expect(seen.last, 1);
     expect(seen, isNot(contains(greaterThan(1.0))));
+  });
+
+  group('our copy first, then Hugging Face', () {
+    final bodies = {
+      'encoder.onnx': _bytes(300),
+      'tokens.txt': _bytes(90, seed: 7),
+    };
+    final model = _model(bodies, hosts: const ['copy.test', 'origin.test']);
+    // Same length, different content: only the hash can tell.
+    final wrong = {...bodies, 'encoder.onnx': _bytes(300, seed: 99)};
+
+    LocalModelStore storeWith(_Server? copy, _Server origin) {
+      final store = storeFor(
+        model,
+        _hosts({'copy.test': ?copy, 'origin.test': origin}),
+      );
+      addTearDown(store.dispose);
+      return store;
+    }
+
+    Future<LocalModelStore> fetch(_Server? copy, _Server origin) async {
+      final store = storeWith(copy, origin);
+      await store.download(model);
+      return store;
+    }
+
+    Future<void> expectLanded(LocalModelStore store) async {
+      expect(store.stateOf(model).status, LocalModelStatus.ready);
+      final dir = await store.directoryFor(model);
+      for (final entry in bodies.entries) {
+        expect(File('${dir.path}/${entry.key}').readAsBytesSync(), entry.value);
+      }
+    }
+
+    test('Hugging Face is never asked while our copy delivers', () async {
+      final copy = _Server(bodies);
+      final origin = _Server(bodies);
+
+      await expectLanded(await fetch(copy, origin));
+
+      expect(copy.requests, hasLength(2));
+      expect(origin.requests, isEmpty);
+    });
+
+    test('a copy that refuses hands over to Hugging Face', () async {
+      final origin = _Server(bodies);
+
+      await expectLanded(await fetch(_Server(bodies, status: 404), origin));
+
+      expect(origin.requests, hasLength(2));
+    });
+
+    test('a copy that cannot be reached hands over to Hugging Face', () async {
+      final origin = _Server(bodies);
+
+      await expectLanded(await fetch(null, origin));
+
+      expect(origin.requests, hasLength(2));
+    });
+
+    test('Hugging Face picks up where a dropped copy stopped', () async {
+      final origin = _Server(bodies);
+
+      await expectLanded(await fetch(_Server(bodies, truncateTo: 200), origin));
+
+      expect(origin.requests.single.headers['range'], 'bytes=200-');
+      expect(origin.served['encoder.onnx'], 100, reason: 'only the remainder');
+    });
+
+    test('a copy that fails its checksum is thrown away and fetched again '
+        'from Hugging Face', () async {
+      final origin = _Server(bodies);
+      final store = storeWith(_Server(wrong), origin);
+      final statuses = <LocalModelStatus>[];
+      store.addListener(() {
+        final status = store.stateOf(model).status;
+        if (statuses.isEmpty || statuses.last != status) statuses.add(status);
+      });
+
+      await store.download(model);
+
+      await expectLanded(store);
+      final retry = origin.requests.single;
+      expect(retry.url.pathSegments.last, 'encoder.onnx');
+      expect(retry.headers['range'], isNull, reason: 'none of the bad copy');
+      // Back to downloading for the second fetch, rather than a bar that
+      // moves while the card says it is checking.
+      expect(statuses, [
+        LocalModelStatus.downloading,
+        LocalModelStatus.verifying,
+        LocalModelStatus.downloading,
+        LocalModelStatus.verifying,
+        LocalModelStatus.ready,
+      ]);
+    });
+
+    test('when Hugging Face fails the checksum too, nothing is kept and it '
+        'says so', () async {
+      final origin = _Server(wrong);
+
+      final store = await fetch(_Server(wrong), origin);
+
+      final state = store.stateOf(model);
+      expect(state.status, LocalModelStatus.failed);
+      expect(state.error, contains('checksum'));
+      expect(origin.requests, hasLength(1), reason: 'one more try, no loop');
+      final dir = await store.directoryFor(model);
+      expect(File('${dir.path}/encoder.onnx').existsSync(), isFalse);
+    });
+
+    test("when both refuse, the error shown is Hugging Face's", () async {
+      final store = await fetch(
+        _Server(bodies, status: 404),
+        _Server(bodies, status: 503),
+      );
+
+      expect(store.stateOf(model).status, LocalModelStatus.failed);
+      expect(store.stateOf(model).error, contains('503'));
+    });
+
+    test('a host that sends more than the file is cut off, and the next one '
+        'finishes it', () async {
+      final longer = {
+        ...bodies,
+        'encoder.onnx': [...bodies['encoder.onnx']!, ..._bytes(100, seed: 5)],
+      };
+      final origin = _Server(bodies);
+
+      await expectLanded(await fetch(_Server(longer), origin));
+
+      // Four 64-byte chunks fit in the 300-byte file and the fifth did not,
+      // so the copy was stopped there rather than read to its end.
+      expect(origin.requests.single.headers['range'], 'bytes=256-');
+    });
+
+    test('cancelling while the copy downloads does not go on to Hugging '
+        'Face', () async {
+      late LocalModelStore store;
+      final copy = _Server(bodies, onChunk: () => store.cancel(model));
+      final origin = _Server(bodies);
+      store = storeWith(copy, origin);
+
+      await store.download(model);
+
+      expect(store.stateOf(model).status, LocalModelStatus.absent);
+      expect(origin.requests, isEmpty);
+    });
   });
 }

@@ -704,6 +704,12 @@ void main() {
       'Ctrl+K',
     );
     expect(everything.keycapLabel, 'Ctrl+Alt+Shift+Win+K');
+
+    // The same key is Super on a Linux desktop, which is what its own
+    // keyboard settings, and this app's recorder, call it.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    expect(everything.displayLabel, 'Ctrl + Alt + Shift + Super + K');
+    expect(everything.keycapLabel, 'Ctrl+Alt+Shift+Super+K');
   });
 
   test('Hidden Notes uses Cmd or Ctrl H', () {

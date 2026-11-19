@@ -22,10 +22,12 @@ abstract interface class TitleModel {
   Future<String> name({required String instructions, required String prompt});
 }
 
-/// The model this platform has, or one that says why there is none.
-TitleModel platformTitleModel() {
+/// The model this platform has, or one that says why there is none. Linux
+/// has no built-in model to wait for, so nothing there offers to name notes.
+TitleModel? platformTitleModel() {
   if (AppleSummarizer.isPossibleHere) return AppleTitleModel();
   if (AppPlatform.isAndroid) return GeminiNanoTitleModel();
+  if (AppPlatform.isLinux) return null;
   return const NoTitleModel('Needs a built-in on-device model');
 }
 

@@ -12,10 +12,10 @@ import 'summarizer.dart';
 
 /// A downloaded language model, writing summaries on this device.
 ///
-/// This is the fallback for everyone the platform does not cover: Windows and
-/// Linux, and every Mac and phone without Apple Intelligence. It costs a
-/// download the platform model does not, so everything here is arranged
-/// around not making anyone pay for it twice:
+/// This is the fallback for everyone the platform does not cover: Windows, and
+/// every Mac and phone without Apple Intelligence. It costs a download the
+/// platform model does not, so everything here is arranged around not making
+/// anyone pay for it twice:
 ///
 ///   * **Nothing loads until a summary is asked for.** No engine, no weights,
 ///     no native library. A user who never summarises on the device pays the
@@ -75,7 +75,8 @@ class GemmaSummarizer implements Summarizer {
   int get maximumTranscriptChars => (_model.contextTokens * 4 * 2) ~/ 3;
 
   /// Everywhere the LiteRT-LM runtime is in the build, which is everywhere
-  /// but iOS.
+  /// but iOS, except Linux: it has the runtime, and does not offer the model
+  /// yet.
   ///
   /// iOS is the one platform where the runtime could neither be fetched
   /// later — the App Store forbids loading code it did not deliver — nor be
@@ -84,7 +85,7 @@ class GemmaSummarizer implements Summarizer {
   /// summariser does not cover. Those phones summarise in the cloud, as they
   /// did before this existed. The frameworks are dropped from the iOS build
   /// by a script phase on the Runner target.
-  static bool get isPossibleHere => !AppPlatform.isIOS;
+  static bool get isPossibleHere => !AppPlatform.isIOS && !AppPlatform.isLinux;
 
   /// Gemma is multilingual, and the fallback for every language Apple's
   /// model lacks.

@@ -12,6 +12,7 @@ import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
 import '../core/editor_font.dart';
+import '../core/linux_desktop.dart';
 import '../core/mobile_data.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
@@ -27,7 +28,9 @@ import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
 import '../data/voice_prefs.dart';
+import '../speech/apple_summarizer.dart';
 import '../speech/cloud_access.dart';
+import '../speech/gemma_summarizer.dart';
 import '../speech/local_model_store.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_api.dart';
@@ -1101,6 +1104,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         _swap = null;
         _recordError = AppPlatform.isMacOS
             ? 'Include Command, Control, Option or Shift.'
+            : AppPlatform.isLinux
+            ? 'Include Ctrl, Alt, Shift or Super.'
             : 'Include Ctrl, Alt, Shift or Windows.';
       });
       return KeyEventResult.handled;
@@ -1567,15 +1572,16 @@ class _SettingsDialogState extends State<SettingsDialog>
             byDefault: true,
             keywords: ['md', 'syntax', 'headings', 'bold', 'lists', 'checkbox'],
           ),
-          _toggle(
-            'spell-check-toggle',
-            'Check spelling',
-            'Underline words that may be misspelled',
-            value: prefs.spellCheckEnabled,
-            onChanged: (value) => prefs.spellCheckEnabled = value,
-            byDefault: true,
-            keywords: ['spellcheck', 'spell check', 'typos', 'dictionary'],
-          ),
+          if (LayoutPrefs.supportsSpellCheck)
+            _toggle(
+              'spell-check-toggle',
+              'Check spelling',
+              'Underline words that may be misspelled',
+              value: prefs.spellCheckEnabled,
+              onChanged: (value) => prefs.spellCheckEnabled = value,
+              byDefault: true,
+              keywords: ['spellcheck', 'spell check', 'typos', 'dictionary'],
+            ),
           _toggle(
             'daily-separators-toggle',
             'Daily separators',
@@ -1726,6 +1732,10 @@ class _SettingsDialogState extends State<SettingsDialog>
         .firstOrNull;
     final builtInSpeech = _deviceTranscriptState == TranscriberReadiness.ready;
     final builtInSummary = _deviceSummaryState == SummarizerReadiness.ready;
+    // Linux has no summariser of its own and is not offered the downloaded
+    // one, so its summaries are the cloud's or none.
+    final deviceSummaries =
+        AppleSummarizer.isPossibleHere || GemmaSummarizer.isPossibleHere;
     final consented = _speechConsent?.isAccepted ?? false;
     final transcription = access?.transcription;
     final summaries = access?.summaries;
@@ -1853,50 +1863,65 @@ class _SettingsDialogState extends State<SettingsDialog>
       _Group(
         'Summaries',
         [
-          _Setting(
-            'summarise-with',
-            'Summarise with',
-            subtitle:
-                summaries?.note ??
-                ((AppPlatform.isMacOS || AppPlatform.isIOS)
-                    ? 'This device uses Apple Intelligence or a downloaded model'
-                    : 'This device uses a downloaded model'),
-            keywords: ['summary', 'apple intelligence', 'offline', 'local'],
-            value: cloudSummarises ? 'Cloud' : 'This device',
-            wide: true,
-            control: SettingsSegmented<SummaryEngine>(
-              options: SummaryEngine.values,
-              selected: cloudSummarises
-                  ? SummaryEngine.cloud
-                  : SummaryEngine.device,
-              labelFor: engineLabel,
-              keyFor: (engine) => ValueKey('summarise-with-${engine.name}'),
-              enabledFor: (engine) => engine == SummaryEngine.cloud
-                  ? signedIn && (summaries?.cloudSelectable ?? true)
-                  : _deviceReady(summaryModel, builtIn: builtInSummary),
-              onSelected: (engine) => prefs.summaryEngine = engine,
+          if (deviceSummaries)
+            _Setting(
+              'summarise-with',
+              'Summarise with',
+              subtitle:
+                  summaries?.note ??
+                  ((AppPlatform.isMacOS || AppPlatform.isIOS)
+                      ? 'This device uses Apple Intelligence or a downloaded model'
+                      : 'This device uses a downloaded model'),
+              keywords: ['summary', 'apple intelligence', 'offline', 'local'],
+              value: cloudSummarises ? 'Cloud' : 'This device',
+              wide: true,
+              control: SettingsSegmented<SummaryEngine>(
+                options: SummaryEngine.values,
+                selected: cloudSummarises
+                    ? SummaryEngine.cloud
+                    : SummaryEngine.device,
+                labelFor: engineLabel,
+                keyFor: (engine) => ValueKey('summarise-with-${engine.name}'),
+                enabledFor: (engine) => engine == SummaryEngine.cloud
+                    ? signedIn && (summaries?.cloudSelectable ?? true)
+                    : _deviceReady(summaryModel, builtIn: builtInSummary),
+                onSelected: (engine) => prefs.summaryEngine = engine,
+              ),
+              below: builtInSummary
+                  ? null
+                  : _DeviceEngineLine(
+                      key: const ValueKey('local-summary-line'),
+                      store: store,
+                      model: summaryModel,
+                      blockedReason: summaryModel == null
+                          ? null
+                          : _downloadBlockedReason(summaryModel),
+                      unavailableNote: switch (_deviceSummaryState) {
+                        SummarizerReadiness.needsSystemFeature =>
+                          'Turn on Apple Intelligence in System Settings',
+                        SummarizerReadiness.preparing =>
+                          'Apple Intelligence is still preparing',
+                        _ => null,
+                      },
+                      onDownload: summaryModel == null || store == null
+                          ? null
+                          : () =>
+                                unawaited(_startDownload(store, summaryModel)),
+                    ),
+            )
+          else
+            _Setting(
+              'summarise-with',
+              'Summarise with',
+              subtitle:
+                  summaries?.note ??
+                  (signedIn
+                      ? 'This computer has no model of its own for summaries'
+                      : 'Made in the cloud once you sign in'),
+              keywords: ['summary', 'cloud'],
+              value: 'Cloud',
+              control: const SettingsValue('Cloud'),
             ),
-            below: builtInSummary
-                ? null
-                : _DeviceEngineLine(
-                    key: const ValueKey('local-summary-line'),
-                    store: store,
-                    model: summaryModel,
-                    blockedReason: summaryModel == null
-                        ? null
-                        : _downloadBlockedReason(summaryModel),
-                    unavailableNote: switch (_deviceSummaryState) {
-                      SummarizerReadiness.needsSystemFeature =>
-                        'Turn on Apple Intelligence in System Settings',
-                      SummarizerReadiness.preparing =>
-                        'Apple Intelligence is still preparing',
-                      _ => null,
-                    },
-                    onDownload: summaryModel == null || store == null
-                        ? null
-                        : () => unawaited(_startDownload(store, summaryModel)),
-                  ),
-          ),
           _Setting(
             'summary-instructions',
             'Summary instructions',
@@ -2082,26 +2107,27 @@ class _SettingsDialogState extends State<SettingsDialog>
       _Group(
         'Running',
         [
-          _toggle(
-            'keep-running-toggle',
-            AppPlatform.isMacOS
-                ? 'Keep running in the menu bar'
-                : 'Keep running in the tray',
-            AppPlatform.isMacOS
-                ? switch (widget.shortcuts.bindingFor(
-                    ShortcutAction.openMenuBarPanel,
-                  )) {
-                    final keys? =>
-                      'Click the icon or press ${keys.keycapLabel} for quick '
-                          'notes and tasks',
-                    null => 'Click the icon for quick notes and tasks',
-                  }
-                : 'Shortcuts keep working after the window closes',
-            value: prefs.keepRunningInBackground,
-            onChanged: _setKeepRunning,
-            byDefault: true,
-            keywords: ['background', 'menu bar', 'tray', 'close', 'quit'],
-          ),
+          if (integration?.canKeepRunningInBackground ?? true)
+            _toggle(
+              'keep-running-toggle',
+              AppPlatform.isMacOS
+                  ? 'Keep running in the menu bar'
+                  : 'Keep running in the tray',
+              AppPlatform.isMacOS
+                  ? switch (widget.shortcuts.bindingFor(
+                      ShortcutAction.openMenuBarPanel,
+                    )) {
+                      final keys? =>
+                        'Click the icon or press ${keys.keycapLabel} for quick '
+                            'notes and tasks',
+                      null => 'Click the icon for quick notes and tasks',
+                    }
+                  : 'Shortcuts keep working after the window closes',
+              value: prefs.keepRunningInBackground,
+              onChanged: _setKeepRunning,
+              byDefault: true,
+              keywords: ['background', 'menu bar', 'tray', 'close', 'quit'],
+            ),
           // Absent rather than disabled where the OS has no mechanism this
           // app is allowed to use: macOS 12 predates the one the sandbox
           // permits.
@@ -2156,9 +2182,13 @@ class _SettingsDialogState extends State<SettingsDialog>
         (filter.isEmpty ||
             _shortcutLabel(action).toLowerCase().contains(filter) ||
             _keys(action).toLowerCase() == filter);
+    final systemShortcuts =
+        widget.desktopIntegration?.systemShortcutsSupported ?? true;
     return [
       for (final group in _ShortcutGroup.values)
-        if (ShortcutAction.values
+        if (group == _ShortcutGroup.fromAnywhere && !systemShortcuts) ...[
+          if (filter.isEmpty) _Group(group.title, [_systemShortcut()]),
+        ] else if (ShortcutAction.values
                 .where((action) => action.group == group && shows(action))
                 .toList()
             case final actions when actions.isNotEmpty)
@@ -2170,6 +2200,35 @@ class _SettingsDialogState extends State<SettingsDialog>
                 : null,
           ),
     ];
+  }
+
+  /// Wayland keeps keys pressed in other apps for the desktop itself, so the
+  /// shortcuts that work from anywhere are the desktop's own, set to run the
+  /// app. A launch while it is running hands over to the running copy.
+  _Setting _systemShortcut() {
+    final command = LinuxDesktop.shortcutCommand();
+    return _Setting(
+      'system-shortcut-setting',
+      'Use a system shortcut',
+      subtitle:
+          'Add one in your system’s keyboard settings that runs $command, '
+          'or $command --new-note for a new note',
+      keywords: ['shortcut', 'hotkey', 'keyboard', 'wayland', 'global'],
+      control: SettingsRowButton(
+        key: const ValueKey('copy-system-shortcut'),
+        label: 'Copy',
+        onPressed: () {
+          unawaited(
+            Clipboard.setData(ClipboardData(text: '$command --new-note')),
+          );
+          Toast.show(
+            context,
+            'Copied the new note command',
+            icon: KapyIcons.checkRounded,
+          );
+        },
+      ),
+    );
   }
 
   _Setting _shortcut(ShortcutAction action) {
@@ -2202,10 +2261,12 @@ class _SettingsDialogState extends State<SettingsDialog>
             : () => recording ? _stopRecording() : _startRecording(action),
         notice: panelOff
             ? 'Needs Keep running in the menu bar'
-            : (widget.desktopIntegration?.isTaken(action) ?? false)
-            ? 'Taken by another app. The panel still opens from the menu bar '
-                  'icon.'
-            : null,
+            : !(widget.desktopIntegration?.isTaken(action) ?? false)
+            ? null
+            : AppPlatform.isLinux
+            ? 'Taken by your desktop or another app.'
+            : 'Taken by another app. The panel still opens from the menu bar '
+                  'icon.',
         onKey: _onRecordingKey,
         focusNode: _recordingFocus,
         swap: swap == null
@@ -2234,21 +2295,23 @@ class _SettingsDialogState extends State<SettingsDialog>
             value: updates.currentVersion,
             row: _VersionRow(updates: updates),
           ),
-          _Setting(
-            'update-row',
-            'Check for updates',
-            keywords: ['update', 'upgrade', 'new version'],
-            row: _UpdateRow(updates: updates),
-          ),
-          _toggle(
-            'update-auto-download',
-            'Download updates automatically',
-            'So updating takes one click',
-            value: updates.autoDownload,
-            onChanged: (value) => updates.autoDownload = value,
-            byDefault: true,
-            keywords: ['auto update', 'automatic', 'background', 'restart'],
-          ),
+          if (!AppPlatform.isFlatpak)
+            _Setting(
+              'update-row',
+              'Check for updates',
+              keywords: ['update', 'upgrade', 'new version'],
+              row: _UpdateRow(updates: updates),
+            ),
+          if (AppPlatform.hasAutoUpdate)
+            _toggle(
+              'update-auto-download',
+              'Download updates automatically',
+              'So updating takes one click',
+              value: updates.autoDownload,
+              onChanged: (value) => updates.autoDownload = value,
+              byDefault: true,
+              keywords: ['auto update', 'automatic', 'background', 'restart'],
+            ),
         ],
         after: [SettingsNote(_updatesNote(updates))],
       ),
@@ -2259,6 +2322,14 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// platforms: Sparkle installs a downloaded release whenever the app quits,
   /// and the Windows installer only runs when asked.
   static String _updatesNote(UpdateChecker updates) {
+    if (AppPlatform.isFlatpak) {
+      return 'Flatpak keeps Kapy Notes up to date, through your software '
+          'center or flatpak update.';
+    }
+    if (AppPlatform.isLinux) {
+      return 'Checks for updates daily. Download opens the new version in '
+          'your browser, to install the same way as this one.';
+    }
     if (!updates.autoDownload) {
       return 'Checks for updates daily. Nothing downloads until you choose '
           'Download.';
@@ -4435,8 +4506,7 @@ class _UpdateRow extends StatelessWidget {
     };
   }
 
-  Future<void> _openNotes(BuildContext context) async {
-    final raw = updates.available?.notesUrl ?? '';
+  Future<void> _openLink(BuildContext context, String raw) async {
     final url = Uri.tryParse(raw);
     if (url == null || raw.isEmpty) return;
     var opened = false;
@@ -4461,7 +4531,11 @@ class _UpdateRow extends StatelessWidget {
       await updates.installAndRestart();
       return;
     }
-    if (updates.available != null) {
+    if (updates.available case final available?) {
+      if (AppPlatform.isLinux) {
+        await _openLink(context, available.downloadPage);
+        return;
+      }
       await updates.download();
       return;
     }
@@ -4506,7 +4580,7 @@ class _UpdateRow extends StatelessWidget {
                 const SizedBox(width: 4),
                 IconButton(
                   key: const ValueKey('update-release-notes'),
-                  onPressed: () => _openNotes(context),
+                  onPressed: () => _openLink(context, available.notesUrl),
                   icon: const KapyIcon(KapyIcons.openExternalRounded, size: 15),
                   color: palette.textTertiary,
                   tooltip: "What's new",

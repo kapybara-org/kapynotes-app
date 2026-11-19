@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/foundation.dart';
 
@@ -8,6 +8,9 @@ class AppPlatform {
 
   @visibleForTesting
   static TargetPlatform? debugTargetPlatformOverride;
+
+  @visibleForTesting
+  static bool? debugIsFlatpakOverride;
 
   static bool _is(TargetPlatform target, bool hostValue) =>
       !kIsWeb &&
@@ -23,6 +26,16 @@ class AppPlatform {
 
   static bool get isDesktop => isMacOS || isWindows || isLinux;
   static bool get isMobile => isIOS || isAndroid;
+
+  /// The Flatpak: a Linux build in Flatpak's sandbox, which Flatpak keeps up
+  /// to date and whose own paths mean nothing outside it. Flatpak names the
+  /// app in FLATPAK_ID and mounts /.flatpak-info in every sandbox it starts.
+  static bool get isFlatpak =>
+      isLinux && (debugIsFlatpakOverride ?? _inFlatpakSandbox);
+
+  static final bool _inFlatpakSandbox =
+      Platform.environment.containsKey('FLATPAK_ID') ||
+      File('/.flatpak-info').existsSync();
 
   /// Where the app updates itself: Sparkle on macOS, and on Windows the
   /// app's own download of the signed installer. Linux has no equivalent,

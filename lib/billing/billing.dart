@@ -140,8 +140,7 @@ class Billing extends ChangeNotifier {
   bool get canPurchase => _store.isSupported || usesWebCheckout;
 
   /// Desktop builds ship outside a store and hand Pro Lifetime to the browser.
-  bool get usesWebCheckout =>
-      !_store.isSupported && (AppPlatform.isMacOS || AppPlatform.isWindows);
+  bool get usesWebCheckout => !_store.isSupported && AppPlatform.isDesktop;
 
   /// Packs remain native-store purchases for now.
   bool get canBuyPacks => _store.isSupported;

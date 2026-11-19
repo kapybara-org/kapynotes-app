@@ -47,6 +47,13 @@ class UpdateChecker extends ChangeNotifier {
   /// build number where the manifest leads with the release triple.
   static const String feedUrl = 'https://dl.kapynotes.com/appcast-macos.xml';
 
+  /// Linux's own manifest. Released builds read `latest.json` and the two
+  /// appcasts, and none of them has been shown to ignore a Linux entry, so
+  /// Linux is announced in a file only Linux reads.
+  static final Uri linuxManifestUrl = Uri.parse(
+    'https://dl.kapynotes.com/latest-linux.json',
+  );
+
   static const Duration checkEvery = Duration(hours: 24);
   static const Duration retryAfter = Duration(hours: 2);
   static const Duration timeout = Duration(seconds: 8);
@@ -253,7 +260,12 @@ class UpdateChecker extends ChangeNotifier {
   }
 
   Future<bool> check() async {
-    if (_disposed || _checking || !AppPlatform.hasAutoUpdate) return false;
+    if (_disposed ||
+        _checking ||
+        !AppPlatform.isDesktop ||
+        AppPlatform.isFlatpak) {
+      return false;
+    }
     _timer?.cancel();
     _checking = true;
     notifyListeners();
@@ -264,7 +276,9 @@ class UpdateChecker extends ChangeNotifier {
       if (_disposed) return false;
 
       final client = _client ??= http.Client();
-      final response = await client.get(manifestUrl).timeout(timeout);
+      final response = await client
+          .get(AppPlatform.isLinux ? linuxManifestUrl : manifestUrl)
+          .timeout(timeout);
       if (_disposed) return false;
       if (response.statusCode != 200) {
         debugPrint(

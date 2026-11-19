@@ -249,7 +249,6 @@ class LocalModelStore extends ChangeNotifier {
     _lastProgressAt = DateTime.fromMillisecondsSinceEpoch(0);
 
     final total = model.bytes;
-    var carried = 0;
 
     try {
       // The engine first, where it is not in the app. Its stage owns the
@@ -281,55 +280,77 @@ class LocalModelStore extends ChangeNotifier {
       final dir = await directoryFor(model);
       await dir.create(recursive: true);
 
-      for (final file in model.files) {
-        final target = File('${dir.path}/${file.name}');
-
-        // Already here and the right length: this is a resumed download
-        // finishing the files it had not reached yet.
-        if (await _looksComplete(target, file)) {
-          carried += file.bytes;
-          _progress(model, carried, total);
-          continue;
-        }
-
-        await _fetch(model, file, target, carried, total);
-        if (_cancelling.contains(model.id)) {
+      // A file that fails its checksum is fetched again from the hosts after
+      // the first, so a bad copy on our mirror costs one more download from
+      // Hugging Face rather than failing every attempt from then on.
+      final installed = <String, String>{};
+      for (var skip = 0; installed.length < model.files.length; skip++) {
+        if (skip > 0) {
           _set(
             model,
             LocalModelState(
-              status: LocalModelStatus.absent,
+              status: LocalModelStatus.downloading,
               receivedBytes: await _bytesOnDisk(model),
               totalBytes: total,
             ),
           );
-          return;
         }
-        carried += file.bytes;
-        _progress(model, carried, total);
-      }
 
-      _set(
-        model,
-        LocalModelState(
-          status: LocalModelStatus.verifying,
-          receivedBytes: total,
-          totalBytes: total,
-        ),
-      );
+        var carried = 0;
+        for (final file in model.files) {
+          final target = File('${dir.path}/${file.name}');
 
-      final installed = <String, String>{};
-      for (final file in model.files) {
-        final target = File('${dir.path}/${file.name}');
-        final digest = await BlobStore.hashFile(target);
-        if (digest != file.sha256) {
+          // Already here and the right length: this is a resumed download
+          // finishing the files it had not reached yet.
+          if (await _looksComplete(target, file)) {
+            carried += file.bytes;
+            _progress(model, carried, total);
+            continue;
+          }
+
+          final urls = file.urls.sublist(skip);
+          await _fetch(model, file, urls, target, carried, total);
+          if (_cancelling.contains(model.id)) {
+            _set(
+              model,
+              LocalModelState(
+                status: LocalModelStatus.absent,
+                receivedBytes: await _bytesOnDisk(model),
+                totalBytes: total,
+              ),
+            );
+            return;
+          }
+          carried += file.bytes;
+          _progress(model, carried, total);
+        }
+
+        _set(
+          model,
+          LocalModelState(
+            status: LocalModelStatus.verifying,
+            receivedBytes: total,
+            totalBytes: total,
+          ),
+        );
+
+        for (final file in model.files) {
+          if (installed.containsKey(file.name)) continue;
+          final target = File('${dir.path}/${file.name}');
+          final digest = await BlobStore.hashFile(target);
+          if (digest == file.sha256) {
+            installed[file.name] = digest;
+            continue;
+          }
           // Do not keep bytes that failed their own checksum: a retry has to
           // start clean, and a half-right model is worse than none.
           await _quietlyDelete(target);
-          throw const _ModelError(
-            'The download did not match its checksum. Try again.',
-          );
+          if (skip + 1 >= file.urls.length) {
+            throw const _ModelError(
+              'The download did not match its checksum. Try again.',
+            );
+          }
         }
-        installed[file.name] = digest;
       }
       await _writeMarker(dir, installed);
 
@@ -496,10 +517,37 @@ class LocalModelStore extends ChangeNotifier {
     return false;
   }
 
-  /// One file, resuming from whatever is already in its part file.
+  /// One file, from the first of [urls] that delivers all of it.
+  ///
+  /// The hosts serve the same bytes, so each picks up from whatever the one
+  /// before it left in the part file; the checksum afterwards is what says
+  /// whether they really were the same.
   Future<void> _fetch(
     DownloadableModel model,
     LocalModelFile file,
+    List<String> urls,
+    File target,
+    int carried,
+    int total,
+  ) async {
+    for (final (index, url) in urls.indexed) {
+      try {
+        await _fetchFrom(model, file, url, target, carried, total);
+        return;
+      } catch (_) {
+        if (index == urls.length - 1 || _cancelling.contains(model.id)) {
+          rethrow;
+        }
+      }
+    }
+  }
+
+  /// One file from one host, resuming from whatever is already in its part
+  /// file.
+  Future<void> _fetchFrom(
+    DownloadableModel model,
+    LocalModelFile file,
+    String url,
     File target,
     int carried,
     int total,
@@ -515,7 +563,7 @@ class LocalModelStore extends ChangeNotifier {
       }
     }
 
-    final request = http.Request('GET', Uri.parse(file.url));
+    final request = http.Request('GET', Uri.parse(url));
     if (have > 0) request.headers['range'] = 'bytes=$have-';
 
     final response = await _client.send(request).timeout(_stallTimeout);
@@ -538,6 +586,13 @@ class LocalModelStore extends ChangeNotifier {
     try {
       await for (final chunk in response.stream.timeout(_stallTimeout)) {
         if (_cancelling.contains(model.id)) break;
+        // More than the file is: whatever this is, it must not get to fill
+        // the disk before the length check below finds out.
+        if (written + chunk.length > file.bytes) {
+          throw const _ModelError(
+            'The download server sent the wrong file. Try again later.',
+          );
+        }
         sink.add(chunk);
         written += chunk.length;
         _progress(model, carried + written, total);

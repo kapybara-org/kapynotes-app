@@ -6,7 +6,8 @@ import 'package:tray_manager/tray_manager.dart';
 
 import 'platform.dart';
 
-/// The notification-area icon on Windows, the menu bar item on macOS.
+/// The notification-area icon on Windows, the menu bar item on macOS, and
+/// on Linux the indicator a panel draws.
 ///
 /// It exists only while the app is set to keep running past its window, and
 /// that is not a coincidence: a hidden window with nothing in the tray is an
@@ -40,10 +41,13 @@ class AppTray with TrayListener {
   static const String _quitKey = 'quit';
 
   /// Windows draws the notification area from an .ico and picks the size it
-  /// wants out of it; macOS is handed one template image and tints it.
+  /// wants out of it; macOS is handed one template image and tints it. A
+  /// Linux panel scales one full-colour PNG, which reads on light panels and
+  /// dark ones alike.
   static const String _icon = 'assets/branding/kapynotes_tray_windows.ico';
   static const String templateIcon =
       'assets/branding/kapynotes_tray_macos.png';
+  static const String _linuxIcon = 'assets/branding/kapynotes_tray_linux.png';
 
   /// The icon's own button, which takes a press through accessibility
   /// (macos/Runner/MenuBarIcon.swift). tray_manager only hears the mouse.
@@ -70,10 +74,16 @@ class AppTray with TrayListener {
 
       trayManager.addListener(this);
       await trayManager.setIcon(
-        AppPlatform.isMacOS ? templateIcon : _icon,
+        AppPlatform.isMacOS
+            ? templateIcon
+            : AppPlatform.isLinux
+            ? _linuxIcon
+            : _icon,
         isTemplate: true,
       );
-      await trayManager.setToolTip(toolTip);
+      // An indicator has no tooltip, and tray_manager's Linux side refuses
+      // the call rather than ignoring it.
+      if (!AppPlatform.isLinux) await trayManager.setToolTip(toolTip);
       await trayManager.setContextMenu(_menu());
       if (AppPlatform.isMacOS) unawaited(_takePresses());
     } catch (error, stack) {

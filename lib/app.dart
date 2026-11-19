@@ -203,7 +203,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// Kapy AI, built only in builds that carry it. Held here for the reason
   /// [_localModels] is: closing the panel must not drop a chat mid-answer.
   KapyAi? _kapyAi;
-  late final TitleModel _titleModel = widget.titleModel ?? platformTitleModel();
+  late final TitleModel? _titleModel =
+      widget.titleModel ?? platformTitleModel();
 
   /// The MCP server and its settings, on the Mac and Windows only: the
   /// computers an assistant runs on, and where the app can listen locally.
@@ -428,8 +429,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     }
     widget.rates.loadCache();
     _engines = EngineProvider(widget.rates, widget.prefs, widget.notes.now);
-    if ((AppPlatform.isMacOS || AppPlatform.isWindows) &&
-        !AppPlatform.isFlutterTest) {
+    if (AppPlatform.isDesktop && !AppPlatform.isFlutterTest) {
       final engines = _engines!;
       _mcp = McpService(
         store: widget.store,
