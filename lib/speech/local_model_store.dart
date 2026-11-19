@@ -364,13 +364,17 @@ class LocalModelStore extends ChangeNotifier {
       );
     } catch (error) {
       if (_disposed) return;
+      // A host that fails after Cancel was pressed, before the loop could
+      // see it, has still been cancelled: the card goes back to absent,
+      // keeping what arrived, rather than reporting the host's error.
+      final cancelled = _cancelling.contains(model.id);
       _set(
         model,
         LocalModelState(
-          status: LocalModelStatus.failed,
+          status: cancelled ? LocalModelStatus.absent : LocalModelStatus.failed,
           receivedBytes: await _bytesOnDisk(model),
           totalBytes: total,
-          error: _messageFor(error),
+          error: cancelled ? null : _messageFor(error),
         ),
       );
     }

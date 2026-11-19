@@ -350,8 +350,9 @@ class CalcEngine {
     Evaluator evaluator,
     CalcScope scope,
   ) {
-    final source = _prepare(rawLine, scope);
-    if (source == null) return null;
+    final prepared = _prepare(rawLine, scope);
+    if (prepared == null) return null;
+    final source = Phrases.spoken(prepared) ?? prepared;
 
     return _evaluateExpression(source, index, evaluator, scope) ??
         _labelledAssignment(source, index, evaluator, scope) ??

@@ -49,6 +49,7 @@ class HighlightingController extends TextEditingController {
   List<NoteFormatRange> _formats;
   bool _markdown;
   final MarkdownAnalyzer _markdownAnalyzer = MarkdownAnalyzer();
+  final MarkdownAnalyzer _holdingAnalyzer = MarkdownAnalyzer();
   final NoteLinkFinder _linkFinder = NoteLinkFinder();
   Map<int, NoteImageSpan> _imageSpans = const {};
   final NoteMath _math = NoteMath();
@@ -116,8 +117,77 @@ class HighlightingController extends TextEditingController {
   /// and nothing else — see [MarkdownAnalysis.tablesOnly]. Headings, lists,
   /// code, links and spelling therefore behave exactly as they did before.
   MarkdownAnalysis markdownFor(String source) {
-    final analysis = _markdownAnalyzer.analyze(source);
+    var analysis = _markdownAnalyzer.analyze(source);
+    final held = _held;
+    if (held != null && source == text) {
+      if (!identical(_holdingFor, analysis) || _holdingAt != held) {
+        final newline = source.indexOf('\n', held);
+        _holdingFor = analysis;
+        _holdingAt = held;
+        _holding = _holdingAnalyzer.analyzeHolding(
+          source,
+          TextRange(start: held, end: newline < 0 ? source.length : newline),
+        );
+      }
+      analysis = _holding!;
+    }
     return _markdown ? analysis : analysis.tablesOnly;
+  }
+
+  /// The start of the table line being typed by hand, while it is.
+  ///
+  /// `| --- | -` already finishes a table and `|` already is one more row of
+  /// the table above it, so read as written the grid would take the line
+  /// under the writer's hands and the rest of it would land outside. A line
+  /// that typing makes part of a table stays text until the caret leaves it,
+  /// by Return or by moving off it.
+  int? _held;
+  MarkdownAnalysis? _holdingFor;
+  int? _holdingAt;
+  MarkdownAnalysis? _holding;
+
+  @override
+  set value(TextEditingValue newValue) {
+    final held = _holdFor(value, newValue);
+    if (held != _held) {
+      _held = held;
+      _invalidate();
+    }
+    super.value = newValue;
+  }
+
+  int? _holdFor(TextEditingValue old, TextEditingValue now) {
+    final selection = now.selection;
+    if (!selection.isValid) return null;
+    final text = now.text;
+    final typed = old.text != text;
+    final previous = _held;
+    if (previous == null && !typed) return null;
+    int lineOf(int offset) =>
+        offset == 0 ? 0 : text.lastIndexOf('\n', offset - 1) + 1;
+    final lineStart = lineOf(selection.start);
+    // A selection inside the line, to fix a typo, still holds it.
+    if (lineOf(selection.end) != lineStart) return null;
+    final newline = text.indexOf('\n', lineStart);
+    final line = text.substring(lineStart, newline < 0 ? text.length : newline);
+    if (!line.contains('|')) return null;
+    if (previous != null) {
+      // Carried through an edit before it, such as a collaborator's.
+      final shifted = previous + text.length - old.text.length;
+      final held = text.startsWith(old.text.substring(0, previous))
+          ? previous
+          : shifted >= 0 &&
+                text.substring(shifted) == old.text.substring(previous)
+          ? shifted
+          : null;
+      if (lineStart == held) return held;
+    }
+    if (!typed || !selection.isCollapsed) return null;
+    bool inTable(MarkdownAnalysis analysis) => analysis.tables.any(
+      (table) => lineStart > table.start && lineStart <= table.end,
+    );
+    if (!inTable(_markdownAnalyzer.analyze(now.text))) return null;
+    return inTable(_markdownAnalyzer.analyze(old.text)) ? null : lineStart;
   }
 
   /// When hidden markdown is shown as written: blocks while the note is being

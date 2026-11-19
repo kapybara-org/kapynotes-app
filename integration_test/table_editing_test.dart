@@ -15,6 +15,7 @@
 //
 // A phone has no column border to drag, so resize runs on desktops only.
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -97,7 +98,7 @@ void main() {
     await settle(tester);
   }
 
-  Future<void> open(WidgetTester tester) async {
+  Future<void> open(WidgetTester tester, {String body = _body}) async {
     await tester.pumpWidget(const SizedBox.shrink());
     final engine = CalcEngine();
     await tester.pumpWidget(
@@ -107,7 +108,7 @@ void main() {
           body: NoteEditor(
             key: UniqueKey(),
             noteId: 'table-editing',
-            initialBody: _body,
+            initialBody: body,
             engine: engine,
             highlighter: Highlighter(engine.registry),
             resultsVisible: true,
@@ -121,7 +122,7 @@ void main() {
       ),
     );
     await settle(tester);
-    await reach(tester, 1);
+    if (body == _body) await reach(tester, 1);
   }
 
   Future<void> tapKey(WidgetTester tester, String key) async {
@@ -193,6 +194,39 @@ void main() {
       ),
     );
   }, skip: phone);
+
+  testWidgets('a table typed by hand forms as each line is finished', (
+    tester,
+  ) async {
+    const header = 'Title\n| Item | Qty |\n';
+    await open(tester, body: header);
+    // Focused, so the field has a connection to the platform's keyboard.
+    final note = tester.widget<NoteField>(find.byType(NoteField));
+    note.focusNode.requestFocus();
+    await settle(tester);
+    final controller = note.controller;
+    controller.selection = const TextSelection.collapsed(offset: header.length);
+    await settle(tester);
+    // One character at a time, as the platform's keyboard sends them.
+    final field = tester.state<NoteFieldState>(find.byType(NoteField));
+    for (final character in '| --- | --- |\n| Tea | 2 |\n'.split('')) {
+      final value = controller.value;
+      final at = value.selection.baseOffset;
+      field.updateEditingValueWithDeltas([
+        TextEditingDeltaInsertion(
+          oldText: value.text,
+          textInserted: character,
+          insertionOffset: at,
+          selection: TextSelection.collapsed(offset: at + 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      await tester.pump();
+    }
+    await settle(tester);
+    expect(text(tester), '$header| --- | --- |\n| Tea | 2 |\n');
+    expect(frameOf(tester).rowEdges, hasLength(3));
+  });
 
   testWidgets('a column border drags a width into the dashes', (tester) async {
     await open(tester);
