@@ -268,8 +268,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// accessibility features cannot say.
   final SystemContrast _systemContrast = SystemContrast();
 
-  /// Fires at the next start or end of the night while At night is on.
+  /// Reads the clock on each whole minute while At night is on.
   Timer? _nightTimer;
+
+  /// Whether the clock was last read inside the night.
+  bool _atNight = false;
   late final HiddenNotesGate _hiddenNotesGate;
 
   @override
@@ -559,17 +562,26 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     if (on != _glassBehindWindow) setState(() => _glassBehindWindow = on);
   }
 
-  /// Rebuilds the window at the next start or end of the night, so At night
-  /// comes and goes on time while the app sits open.
+  /// Reads the clock on every whole minute while At night is on, and
+  /// rebuilds the window when the night begins or ends. One long timer would
+  /// run late after a sleep, a clock or time zone change, or a spring-forward
+  /// night, and Flutter reports none of those on the desktop.
   void _followNight() {
     _nightTimer?.cancel();
     final night = widget.prefs.nightTheme;
+    final now = widget.notes.now();
+    final atNight = night.activeAt(now);
+    if (atNight != _atNight) setState(() => _atNight = atNight);
     if (!night.enabled) return;
-    _nightTimer = Timer(night.untilChange(widget.notes.now()), () {
-      if (!mounted) return;
-      setState(() {});
-      _followNight();
-    });
+    _nightTimer = Timer(
+      const Duration(minutes: 1) -
+          Duration(
+            seconds: now.second,
+            milliseconds: now.millisecond,
+            microseconds: now.microsecond,
+          ),
+      _followNight,
+    );
   }
 
   @override
@@ -644,10 +656,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       _scheduleBackgroundFetches();
       // A suspended phone fires no timers, so the night may have begun or
       // ended while nothing was running to notice.
-      if (widget.prefs.nightTheme.enabled) {
-        setState(() {});
-        _followNight();
-      }
+      _followNight();
       sync?.resume();
       // Coming back is the likeliest moment for another device to have moved
       // on without us.

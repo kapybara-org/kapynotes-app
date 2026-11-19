@@ -230,14 +230,7 @@ void main() {
       );
     });
 
-    test('knows how long until it next starts or ends', () {
-      expect(night.untilChange(at(21, 59)), const Duration(minutes: 1));
-      expect(night.untilChange(at(22, 0)), const Duration(hours: 8));
-      expect(
-        night.untilChange(DateTime(2026, 11, 20, 5, 59, 30)),
-        const Duration(seconds: 30),
-      );
-      expect(night.untilChange(at(12, 0)), const Duration(hours: 10));
+    test('covers hours within a day as well as across midnight', () {
       const daytime = NightTheme(enabled: true, from: 6 * 60, to: 22 * 60);
       expect(daytime.covers(at(12, 0)), isTrue);
       expect(daytime.covers(at(23, 0)), isFalse);

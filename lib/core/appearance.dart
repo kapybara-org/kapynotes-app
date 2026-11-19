@@ -93,24 +93,6 @@ class NightTheme {
   /// Whether the night theme is on screen at [wallClock].
   bool activeAt(DateTime wallClock) => enabled && covers(wallClock);
 
-  /// How long after [wallClock] the night next begins or ends.
-  Duration untilChange(DateTime wallClock) {
-    final now = Duration(
-      hours: wallClock.hour,
-      minutes: wallClock.minute,
-      seconds: wallClock.second,
-      milliseconds: wallClock.millisecond,
-      microseconds: wallClock.microsecond,
-    );
-    Duration until(int minute) {
-      final wait = Duration(minutes: minute) - now;
-      return wait > Duration.zero ? wait : wait + const Duration(days: 1);
-    }
-
-    final start = until(from), end = until(to);
-    return start < end ? start : end;
-  }
-
   /// A minute after midnight as the picker writes it: 22:00.
   static String clock(int minute) =>
       '${(minute ~/ 60).toString().padLeft(2, '0')}:'

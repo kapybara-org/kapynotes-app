@@ -1476,9 +1476,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         _Setting(
           'theme-setting',
           'Theme',
-          subtitle:
-              'Changes apply right away. Each theme has a dark and a light '
-              'side; Midnight is dark only.',
+          subtitle: 'Each comes in dark and light; Midnight is dark only.',
           keywords: [
             'colour',
             'color',

@@ -7039,6 +7039,39 @@ void main() {
       );
     });
 
+    testWidgets('At night catches up when the app resumes or the clock jumps', (
+      tester,
+    ) async {
+      var clock = DateTime(2026, 11, 19, 21);
+      notes = NotesStore(store, now: () => clock);
+      await pumpApp(tester);
+      prefs.nightTheme = const NightTheme(enabled: true);
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.light);
+
+      clock = DateTime(2026, 11, 19, 23, 30);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(
+        side(tester),
+        Brightness.dark,
+        reason: 'a phone that slept through 22:00 resumes at 23:30',
+      );
+
+      clock = DateTime(2026, 11, 20, 6);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pumpAndSettle();
+      expect(
+        side(tester),
+        Brightness.light,
+        reason:
+            'the clock reached 06:00 while the timers counted only minutes: '
+            'a Mac waking from sleep, a clock or time zone change, or a '
+            'spring-forward night',
+      );
+    });
+
     testWidgets('At night shows its theme and hours once it is on, and both '
         'can be changed', (tester) async {
       await pumpApp(tester);
