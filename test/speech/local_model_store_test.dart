@@ -8,6 +8,11 @@ import 'package:http/testing.dart';
 import 'package:kapy_notes/speech/local_model_store.dart';
 import 'package:kapy_notes/speech/local_models.dart';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:kapy_notes/core/mobile_data.dart';
+
+import '../fake_mobile_data.dart';
+
 /// A model made of whatever bytes a test wants, hashed for real.
 ///
 /// Real hashes matter: the point of this store is that it trusts the checksum
@@ -120,6 +125,134 @@ void main() {
         directory: temp,
         client: client,
       );
+
+  group('waiting for Wi-Fi', () {
+    final bodies = {'encoder.onnx': _bytes(300)};
+
+    LocalModelStore storeOn(
+      LocalSpeechModel model,
+      FakeMobileData mobile,
+      http.Client client,
+    ) => LocalModelStore(
+      catalogue: [model],
+      directory: temp,
+      client: client,
+      mobileData: mobile,
+    );
+
+    test('holds the download until the phone leaves mobile data', () async {
+      final model = _model(bodies);
+      final mobile = FakeMobileData(onlyMobile: true);
+      var fetches = 0;
+      final store = storeOn(
+        model,
+        mobile,
+        MockClient((_) async {
+          fetches++;
+          return http.Response('', 503);
+        }),
+      );
+      addTearDown(store.dispose);
+
+      await store.downloadOnWifi(model);
+      expect(store.stateOf(model).status, LocalModelStatus.waitingForWifi);
+
+      // A tunnel, a VPN with nothing under it, and mobile data again: none
+      // of them is Wi-Fi, so none of them starts it.
+      for (final results in [
+        [ConnectivityResult.none],
+        [ConnectivityResult.vpn],
+        [ConnectivityResult.vpn, ConnectivityResult.mobile],
+      ]) {
+        mobile.move(results);
+        await Future<void>.delayed(Duration.zero);
+        expect(fetches, 0, reason: '$results');
+        expect(
+          store.stateOf(model).status,
+          LocalModelStatus.waitingForWifi,
+          reason: '$results',
+        );
+      }
+
+      mobile.move([ConnectivityResult.wifi]);
+      await Future<void>.delayed(Duration.zero);
+      await store.download(model);
+      expect(fetches, greaterThan(0));
+      expect(store.stateOf(model).status, isNot(LocalModelStatus.waitingForWifi));
+    });
+
+    test('already on Wi-Fi, it downloads straight away', () async {
+      final model = _model(bodies);
+      final store = storeOn(model, FakeMobileData(), _Server(bodies).client);
+      addTearDown(store.dispose);
+
+      await store.downloadOnWifi(model);
+      await store.download(model);
+
+      expect(store.stateOf(model).status, LocalModelStatus.ready);
+    });
+
+    test('cancelling the wait downloads nothing, even on Wi-Fi', () async {
+      final model = _model(bodies);
+      final mobile = FakeMobileData(onlyMobile: true);
+      final store = storeOn(
+        model,
+        mobile,
+        MockClient((_) async => fail('a cancelled wait must fetch nothing')),
+      );
+      addTearDown(store.dispose);
+
+      await store.downloadOnWifi(model);
+      store.cancel(model);
+      expect(store.stateOf(model).status, LocalModelStatus.absent);
+
+      mobile.move([ConnectivityResult.wifi]);
+      await Future<void>.delayed(Duration.zero);
+      expect(store.stateOf(model).status, LocalModelStatus.absent);
+    });
+
+    test('with no connection at all, it waits rather than failing', () async {
+      final model = _model(bodies);
+      final mobile = FakeMobileData()..move([ConnectivityResult.none]);
+      final store = storeOn(
+        model,
+        mobile,
+        MockClient((_) async => fail('nothing is fetched offline')),
+      );
+      addTearDown(store.dispose);
+
+      await store.downloadOnWifi(model);
+
+      expect(store.stateOf(model).status, LocalModelStatus.waitingForWifi);
+    });
+  });
+
+  group('which connections cost by the byte', () {
+    const mobile = ConnectivityResult.mobile;
+    const wifi = ConnectivityResult.wifi;
+    const ethernet = ConnectivityResult.ethernet;
+    const vpn = ConnectivityResult.vpn;
+    const none = ConnectivityResult.none;
+
+    test('asks only on mobile data with nothing cheaper beside it', () {
+      expect(MobileData.isOnlyMobile([mobile]), isTrue);
+      expect(MobileData.isOnlyMobile([vpn, mobile]), isTrue);
+      expect(MobileData.isOnlyMobile([wifi, mobile]), isFalse);
+      expect(MobileData.isOnlyMobile([ethernet]), isFalse);
+      expect(MobileData.isOnlyMobile([vpn]), isFalse);
+      expect(MobileData.isOnlyMobile([none]), isFalse);
+    });
+
+    test('starts a wait only on Wi-Fi or Ethernet', () {
+      expect(MobileData.isUnmetered([wifi]), isTrue);
+      expect(MobileData.isUnmetered([wifi, mobile]), isTrue);
+      expect(MobileData.isUnmetered([ethernet]), isTrue);
+      expect(MobileData.isUnmetered([mobile]), isFalse);
+      expect(MobileData.isUnmetered([vpn, mobile]), isFalse);
+      expect(MobileData.isUnmetered([vpn]), isFalse);
+      expect(MobileData.isUnmetered([none]), isFalse);
+    });
+  });
 
   test('downloads every file, checks it, and reports it ready', () async {
     final bodies = {

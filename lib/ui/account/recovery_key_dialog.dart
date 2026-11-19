@@ -20,6 +20,8 @@ Future<void> showRecoveryKeyDialog(
   BuildContext context,
   RecoveryKey key, {
   TextFileSaver? saveTextFile,
+  String title = 'Save your recovery key',
+  bool replacesOld = false,
 }) {
   return showDialog<void>(
     context: context,
@@ -27,6 +29,8 @@ Future<void> showRecoveryKeyDialog(
     builder: (context) => _RecoveryKeyDialog(
       recoveryKey: key,
       saveTextFile: saveTextFile ?? TextFileExport.save,
+      title: title,
+      replacesOld: replacesOld,
     ),
   );
 }
@@ -35,10 +39,16 @@ class _RecoveryKeyDialog extends StatefulWidget {
   const _RecoveryKeyDialog({
     required this.recoveryKey,
     required this.saveTextFile,
+    required this.title,
+    required this.replacesOld,
   });
 
   final RecoveryKey recoveryKey;
   final TextFileSaver saveTextFile;
+  final String title;
+
+  /// Whether a key saved before this one has just stopped working.
+  final bool replacesOld;
 
   @override
   State<_RecoveryKeyDialog> createState() => _RecoveryKeyDialogState();
@@ -84,7 +94,7 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
       // it worth getting to yet.
       canPop: false,
       child: AlertDialog(
-        title: const Text('Save your recovery key'),
+        title: Text(widget.title),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
           child: Column(
@@ -93,7 +103,8 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
             children: [
               Text(
                 'Keep this with your passphrase. It unlocks your notes if '
-                'you forget the passphrase.',
+                'you forget the passphrase.'
+                '${widget.replacesOld ? ' Your old recovery key no longer works.' : ''}',
                 style: TextStyle(
                   fontSize: AppTypeScale.body,
                   color: palette.textSecondary,

@@ -33,6 +33,10 @@ import 'package:kapy_notes/sync/vault.dart';
 /// that empties.
 class FakeServer {
   final Map<String, FakeUser> users = {};
+
+  /// Runs once, just before the next passphrase or recovery key write: the
+  /// moment another device's change can land between a read and a write.
+  void Function(FakeUser user)? beforeKeyChange;
   final Map<String, FakeSpace> spaces = {};
 
   /// Requests recorded in order, so a test can assert on what was sent.
@@ -1355,6 +1359,13 @@ class FakeUser {
   KeyBundle? bundle;
   bool deleted = false;
 
+  /// The newest emailed code per action, and the proofs it was traded for.
+  final Map<KeyProofAction, String> codes = {};
+  final Map<String, KeyProofAction> proofs = {};
+
+  /// What each device last reported itself as, by device id.
+  final Map<String, String> devices = {};
+
   /// Accepted by default, because almost every test is about something else.
   /// Set to 0 for an account that has agreed to nothing.
   int termsVersion = sharingTermsVersion;
@@ -2031,15 +2042,105 @@ class FakeApi implements SyncApi {
   }
 
   @override
-  Future<void> rotateKeyBundle(KeyBundle bundle) async {
+  Future<void> sendKeyProof(KeyProofAction action) async {
     _gate();
-    final existing = server.user(userId).bundle;
+    _record('sendKeyProof:${action.wire}');
+    server.user(userId).codes[action] = '123456';
+  }
+
+  @override
+  Future<String> verifyKeyProof(KeyProofAction action, String code) async {
+    _gate();
+    final account = server.user(userId);
+    final sent = account.codes[action];
+    if (sent == null) throw const SyncRefusedException(400, 'code-expired', {});
+    if (sent != code) throw const SyncRefusedException(400, 'code-wrong', {});
+    account.codes.remove(action);
+    final proof = 'proof-${account.proofs.length}';
+    account.proofs[proof] = action;
+    return proof;
+  }
+
+  KeyBundle _changeable(int expectedVersion) {
+    final hook = server.beforeKeyChange;
+    server.beforeKeyChange = null;
+    hook?.call(server.user(userId));
+    final bundle = server.user(userId).bundle;
+    if (bundle == null) {
+      throw const SyncRefusedException(404, 'no key bundle', {});
+    }
+    if (bundle.version != expectedVersion) {
+      throw SyncRefusedException(409, 'bundle-changed', {
+        'version': bundle.version,
+      });
+    }
+    return bundle;
+  }
+
+  void _useProof(String? proof, KeyProofAction action) {
+    if (server.user(userId).proofs.remove(proof) != action) {
+      throw const SyncRefusedException(403, 'proof-required', {});
+    }
+  }
+
+  @override
+  Future<int> changePassphrase({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required String? device,
+  }) async {
+    _gate();
+    _record('changePassphrase:$expectedVersion');
+    final bundle = _changeable(expectedVersion);
+    _useProof(proof, KeyProofAction.passphrase);
+    server.user(userId).bundle = KeyBundle(
+      wrappedMasterKey: wrappedMasterKey,
+      kdf: kdf,
+      recoveryWrappedMasterKey: bundle.recoveryWrappedMasterKey,
+      identity: bundle.identity,
+      version: bundle.version + 1,
+      changes: KeyChanges(
+        passphrase: KeyChange(at: DateTime.now(), device: device),
+        recoveryKey: bundle.changes.recoveryKey,
+      ),
+    );
+    return bundle.version + 1;
+  }
+
+  @override
+  Future<int> changeRecoveryKey({
+    required int expectedVersion,
+    required String? proof,
+    required SealedBox recoveryWrappedMasterKey,
+    required String? device,
+  }) async {
+    _gate();
+    _record('changeRecoveryKey:$expectedVersion');
+    final bundle = _changeable(expectedVersion);
+    _useProof(proof, KeyProofAction.recoveryKey);
     server.user(userId).bundle = KeyBundle(
       wrappedMasterKey: bundle.wrappedMasterKey,
       kdf: bundle.kdf,
-      recoveryWrappedMasterKey: bundle.recoveryWrappedMasterKey,
-      identity: existing?.identity,
+      recoveryWrappedMasterKey: recoveryWrappedMasterKey,
+      identity: bundle.identity,
+      version: bundle.version + 1,
+      changes: KeyChanges(
+        passphrase: bundle.changes.passphrase,
+        recoveryKey: KeyChange(at: DateTime.now(), device: device),
+      ),
     );
+    return bundle.version + 1;
+  }
+
+  @override
+  Future<void> reportDevice({
+    required String name,
+    required String platform,
+  }) async {
+    _gate();
+    server.user(userId).devices[device] = name;
   }
 
   @override
@@ -2058,6 +2159,8 @@ class FakeApi implements SyncApi {
       kdf: existing.kdf,
       recoveryWrappedMasterKey: existing.recoveryWrappedMasterKey,
       identity: identity,
+      version: existing.version,
+      changes: existing.changes,
     );
   }
 

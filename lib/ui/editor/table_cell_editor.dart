@@ -3,13 +3,13 @@ import 'dart:ui' show BoxHeightStyle, BoxWidthStyle;
 
 // Needed for the key types the Tab handling below reads: material_ui does not
 // re-export KeyDownEvent, LogicalKeyboardKey or HardwareKeyboard.
-import 'package:flutter/rendering.dart' show RenderEditable;
+import 'package:flutter/rendering.dart'
+    show BoxHitTestResult, RenderEditable, RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../core/theme.dart';
-import '../compact_icon_button.dart';
-import 'markdown_syntax.dart';
+import '../../core/platform.dart';
+import 'table_controls.dart';
 
 /// The field that opens over one cell of a table.
 ///
@@ -33,15 +33,10 @@ import 'markdown_syntax.dart';
 class TableCellEditor extends ChangeNotifier {
   OverlayEntry? _entry;
   Rect _anchor = Rect.zero;
-  Rect? _bounds;
-  double _tableLeft = 0;
-  double _tableTop = 0;
   TextStyle _style = const TextStyle();
   TextAlign _textAlign = TextAlign.left;
   double _padding = 10;
-  bool _showToolbar = true;
   Color _background = const Color(0x00000000);
-  Color _toolbarBackground = const Color(0x00000000);
 
   final TextEditingController field = TextEditingController();
 
@@ -57,19 +52,18 @@ class TableCellEditor extends ChangeNotifier {
   ValueChanged<String>? _onChanged;
   VoidCallback? _onDone;
   ValueChanged<Offset>? _onTapOutside;
+
+  /// Presses the field lets through to what is under it: a phone's table
+  /// grips, whose finger-sized targets reach over the cell's edge.
+  bool Function(Offset global)? _passThrough;
   ValueChanged<bool>? _onTab;
   VoidCallback? _onEnter;
   ValueChanged<AxisDirection>? _onArrow;
-  VoidCallback? _onAddRowAbove;
-  VoidCallback? _onAddRow;
-  VoidCallback? _onRemoveRow;
-  VoidCallback? _onAddColumnBefore;
-  VoidCallback? _onAddColumn;
-  VoidCallback? _onRemoveColumn;
-  ValueChanged<MarkdownCellAlign>? _onAlign;
+  ValueChanged<TableCommand>? _onCommand;
+  ValueChanged<({Offset at, List<ContextMenuButtonItem> items})>?
+  _onContextMenu;
   VoidCallback? _onUndo;
   VoidCallback? _onRedo;
-  MarkdownCellAlign _alignment = MarkdownCellAlign.start;
 
   /// Claims Tab, Shift+Tab, Return, Escape, undo and redo, and an arrow key
   /// pressed at the edge of the cell's words; every other key belongs to the
@@ -80,6 +74,13 @@ class TableCellEditor extends ChangeNotifier {
   /// an arrow still extends a selection.
   bool _handleKey(KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+    // A table's own shortcuts first: they are chords nothing in a cell uses.
+    // Moving a column is not among them, because in a cell those keys extend
+    // the selection by a word.
+    if (tableCommandFor(event, columnMoves: false) case final command?) {
+      _onCommand?.call(command);
+      return true;
+    }
     final key = event.logicalKey;
     final keyboard = HardwareKeyboard.instance;
     final command = keyboard.isControlPressed || keyboard.isMetaPressed;
@@ -184,66 +185,47 @@ class TableCellEditor extends ChangeNotifier {
   void show(
     BuildContext context, {
     required Rect anchor,
-    required Rect? bounds,
-    required double tableLeft,
-    required double tableTop,
     required String text,
     required bool caretAtStart,
     required bool reset,
     required TextStyle style,
     required TextAlign textAlign,
     required double padding,
-    required bool showToolbar,
     required Color cursorColor,
     required Color background,
     required Color border,
-    required Color toolbarBackground,
     required ValueChanged<String> onChanged,
     required VoidCallback onDone,
     required ValueChanged<Offset> onTapOutside,
     required ValueChanged<bool> onTab,
     required VoidCallback onEnter,
     required ValueChanged<AxisDirection> onArrow,
-    required VoidCallback? onAddRowAbove,
-    required VoidCallback onAddRow,
-    required VoidCallback? onRemoveRow,
-    required VoidCallback onAddColumnBefore,
-    required VoidCallback onAddColumn,
-    required VoidCallback? onRemoveColumn,
-    required ValueChanged<MarkdownCellAlign> onAlign,
+    required ValueChanged<TableCommand> onCommand,
+    required ValueChanged<({Offset at, List<ContextMenuButtonItem> items})>
+    onContextMenu,
     required VoidCallback onUndo,
     required VoidCallback onRedo,
-    required MarkdownCellAlign alignment,
+    bool Function(Offset global)? passThrough,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
 
+    _passThrough = passThrough;
     _anchor = anchor;
-    _bounds = bounds;
-    _tableLeft = tableLeft;
-    _tableTop = tableTop;
     _style = style;
     _textAlign = textAlign;
     _padding = padding;
-    _showToolbar = showToolbar;
     _background = background;
-    _toolbarBackground = toolbarBackground;
     _onChanged = onChanged;
     _onDone = onDone;
     _onTapOutside = onTapOutside;
     _onTab = onTab;
     _onEnter = onEnter;
     _onArrow = onArrow;
-    _onAddRowAbove = onAddRowAbove;
-    _onAddRow = onAddRow;
-    _onRemoveRow = onRemoveRow;
-    _onAddColumnBefore = onAddColumnBefore;
-    _onAddColumn = onAddColumn;
-    _onRemoveColumn = onRemoveColumn;
-    _onAlign = onAlign;
+    _onCommand = onCommand;
+    _onContextMenu = onContextMenu;
     _onUndo = onUndo;
     _onRedo = onRedo;
-    _alignment = alignment;
     if (reset || field.text != text) {
       field.value = TextEditingValue(
         text: text,
@@ -273,23 +255,9 @@ class TableCellEditor extends ChangeNotifier {
   }
 
   /// Moves an already open editor, for a scroll or a re-layout.
-  void moveTo(
-    Rect anchor, {
-    Rect? bounds,
-    double? tableLeft,
-    double? tableTop,
-  }) {
-    if (_entry == null) return;
-    if (anchor == _anchor &&
-        (bounds == null || bounds == _bounds) &&
-        (tableLeft == null || tableLeft == _tableLeft) &&
-        (tableTop == null || tableTop == _tableTop)) {
-      return;
-    }
+  void moveTo(Rect anchor) {
+    if (_entry == null || anchor == _anchor) return;
     _anchor = anchor;
-    _bounds = bounds ?? _bounds;
-    _tableLeft = tableLeft ?? _tableLeft;
-    _tableTop = tableTop ?? _tableTop;
     _entry!.markNeedsBuild();
   }
 
@@ -303,13 +271,8 @@ class TableCellEditor extends ChangeNotifier {
     _onTab = null;
     _onEnter = null;
     _onArrow = null;
-    _onAddRowAbove = null;
-    _onAddRow = null;
-    _onRemoveRow = null;
-    _onAddColumnBefore = null;
-    _onAddColumn = null;
-    _onRemoveColumn = null;
-    _onAlign = null;
+    _onCommand = null;
+    _onContextMenu = null;
     _onUndo = null;
     _onRedo = null;
     notifyListeners();
@@ -384,105 +347,60 @@ class _TableCellEditorBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final anchor = editor._anchor;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const gap = 2.0;
-        const screenGap = 8.0;
-        final bounds =
-            editor._bounds ??
-            Rect.fromLTWH(0, 0, constraints.maxWidth, constraints.maxHeight);
-
-        // Above the table where there is room, so that no row of it is covered.
-        // With the top of a long table scrolled away, it stays at the top of
-        // the note instead — unless the cell being edited is up there, when it
-        // goes under that cell.
-        final above = editor._tableTop - _TableToolbar.height - gap;
-        final double toolbarTop;
-        if (above >= bounds.top) {
-          toolbarTop = above;
-        } else if (bounds.top + gap + _TableToolbar.height + gap <=
-            anchor.top) {
-          toolbarTop = bounds.top + gap;
-        } else {
-          toolbarTop = anchor.bottom + gap;
-        }
-        final toolbarLeft = editor._tableLeft
-            .clamp(
-              screenGap,
-              math.max(
-                screenGap,
-                constraints.maxWidth - _TableToolbar.width - screenGap,
-              ),
-            )
-            .toDouble();
-
-        return Stack(
-          children: [
-            Positioned(
-              left: anchor.left,
-              top: anchor.top,
-              width: anchor.width,
-              // Deliberately no height. The cell is at least as tall as its
-              // painted row, and grows with its words rather than scrolling them
-              // away, exactly as the row itself will once they reach the note.
-              child: TapRegion(
-                groupId: editor,
-                // This remains active even while the field briefly loses
-                // focus during a note rebuild. Unlike a full-screen Listener,
-                // it observes the press without blocking the note underneath.
-                onTapOutside: (event) =>
-                    editor._onTapOutside?.call(event.position),
-                child: Material(
-                  // A TextField requires a Material ancestor, and the root
-                  // overlay sits above the one the Scaffold provides. Opaque:
-                  // the painted words under it must not show through.
-                  color: editor._background,
-                  child: DecoratedBox(
-                    // In front of the words rather than around them, so the
-                    // outline takes no room and moves nothing.
-                    position: DecorationPosition.foreground,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: border, width: 1.5),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: anchor.height),
-                      child: Align(
-                        // Centred in the row, as the grid centres its words.
-                        alignment: Alignment.centerLeft,
-                        heightFactor: 1,
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            editor._padding,
-                            0,
-                            math.max(0, editor._padding - _caretMargin),
-                            0,
-                          ),
-                          child: _field(),
+    return Stack(
+      children: [
+        Positioned(
+          left: anchor.left,
+          top: anchor.top,
+          width: anchor.width,
+          // Deliberately no height. The cell is at least as tall as its
+          // painted row, and grows with its words rather than scrolling them
+          // away, exactly as the row itself will once they reach the note.
+          child: _PassThrough(
+            test: editor._passThrough,
+            child: TapRegion(
+              groupId: editor,
+              // This remains active even while the field briefly loses
+              // focus during a note rebuild. Unlike a full-screen Listener,
+              // it observes the press without blocking the note underneath.
+              onTapOutside: (event) =>
+                  editor._onTapOutside?.call(event.position),
+              child: Material(
+                // A TextField requires a Material ancestor, and the root
+                // overlay sits above the one the Scaffold provides. Opaque:
+                // the painted words under it must not show through.
+                color: editor._background,
+                child: DecoratedBox(
+                  // In front of the words rather than around them, so the
+                  // outline takes no room and moves nothing.
+                  position: DecorationPosition.foreground,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: border, width: 1.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: anchor.height),
+                    child: Align(
+                      // Centred in the row, as the grid centres its words.
+                      alignment: Alignment.centerLeft,
+                      heightFactor: 1,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          editor._padding,
+                          0,
+                          math.max(0, editor._padding - _caretMargin),
+                          0,
                         ),
+                        child: _field(),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-            if (editor._showToolbar)
-              Positioned(
-                left: toolbarLeft,
-                top: toolbarTop,
-                child: TextFieldTapRegion(
-                  groupId: editor,
-                  child: ExcludeFocus(
-                    child: _TableToolbar(
-                      editor: editor,
-                      background: editor._toolbarBackground,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
   }
 
@@ -504,6 +422,20 @@ class _TableCellEditorBody extends StatelessWidget {
     textInputAction: TextInputAction.next,
     onSubmitted: (_) => editor._onEnter?.call(),
     onChanged: (value) => editor._onChanged?.call(value),
+    // With a pointer, a right-click in the cell gets the table's own menu,
+    // which leads with this field's Cut, Copy and Paste. A phone keeps its
+    // familiar toolbar around the selection handles.
+    contextMenuBuilder: AppPlatform.hasPointer
+        ? (context, state) {
+            final items = state.contextMenuButtonItems;
+            final at = state.contextMenuAnchors.primaryAnchor;
+            state.hideToolbar(false);
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => editor._onContextMenu?.call((at: at, items: items)),
+            );
+            return const SizedBox.shrink();
+          }
+        : null,
     inputFormatters: const [_TableCellInputFormatter()],
     // The same refusals the note itself makes: the calculator must never have
     // a value, operator or unit rewritten.
@@ -526,145 +458,29 @@ class _TableCellEditorBody extends StatelessWidget {
   );
 }
 
-/// What can be done to the table around the open cell: add a row above or
-/// below it, a column either side, align its column, or take its row or column
-/// away.
-///
-/// Desktop only. On a phone the same actions sit in the note's footer, above
-/// the keyboard, where a thumb already is — a bar floating over the note there
-/// would cover the rows being edited.
-class _TableToolbar extends StatelessWidget {
-  const _TableToolbar({required this.editor, required this.background});
+/// Its child, except where [test] says a press belongs to what is under it.
+class _PassThrough extends SingleChildRenderObjectWidget {
+  const _PassThrough({required this.test, required super.child});
 
-  final TableCellEditor editor;
-  final Color background;
-
-  static const double _button = 26;
-  static const double _divider = 9;
-  static const double height = _button + 2;
-  static const double width = 9 * _button + 2 * _divider + 2;
+  final bool Function(Offset global)? test;
 
   @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final alignment = editor._alignment;
-    Widget button(
-      String key,
-      KapyIconData icon,
-      String tooltip,
-      VoidCallback? onPressed, {
-      bool selected = false,
-    }) => CompactIconButton(
-      key: ValueKey(key),
-      extent: _button,
-      tooltip: tooltip,
-      selected: selected,
-      foregroundColor: onPressed == null
-          ? palette.textTertiary.withValues(alpha: 0.38)
-          : selected
-          ? palette.textPrimary
-          : palette.textSecondary,
-      onPressed: onPressed,
-      icon: KapyIcon(icon, size: 15),
-    );
-    Widget align(
-      String key,
-      KapyIconData icon,
-      String tooltip,
-      MarkdownCellAlign to,
-    ) => button(
-      key,
-      icon,
-      tooltip,
-      editor._onAlign == null ? null : () => editor._onAlign!(to),
-      selected: alignment == to,
-    );
-    final divider = SizedBox(
-      width: _divider,
-      height: _button - 10,
-      child: Center(
-        child: SizedBox(
-          width: 1,
-          height: double.infinity,
-          child: ColoredBox(color: palette.controlBorder),
-        ),
-      ),
-    );
+  _RenderPassThrough createRenderObject(BuildContext context) =>
+      _RenderPassThrough(test);
 
-    return Material(
-      key: const ValueKey('table-cell-toolbar'),
-      color: background,
-      elevation: 3,
-      shadowColor: Colors.black26,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        side: BorderSide(color: palette.controlBorder),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(1),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            button(
-              'table-add-row-above',
-              KapyIcons.tableRowAbove,
-              'Insert row above',
-              editor._onAddRowAbove,
-            ),
-            button(
-              'table-add-row',
-              KapyIcons.tableRowBelow,
-              'Insert row below',
-              editor._onAddRow,
-            ),
-            button(
-              'table-add-column-before',
-              KapyIcons.tableColumnLeft,
-              'Insert column left',
-              editor._onAddColumnBefore,
-            ),
-            button(
-              'table-add-column',
-              KapyIcons.tableColumnRight,
-              'Insert column right',
-              editor._onAddColumn,
-            ),
-            divider,
-            align(
-              'table-align-left',
-              KapyIcons.alignLeft,
-              'Align column left',
-              MarkdownCellAlign.start,
-            ),
-            align(
-              'table-align-center',
-              KapyIcons.alignCenter,
-              'Center column',
-              MarkdownCellAlign.center,
-            ),
-            align(
-              'table-align-right',
-              KapyIcons.alignRight,
-              'Align column right',
-              MarkdownCellAlign.end,
-            ),
-            divider,
-            button(
-              'table-remove-row',
-              KapyIcons.tableDeleteRow,
-              'Delete row',
-              editor._onRemoveRow,
-            ),
-            button(
-              'table-remove-column',
-              KapyIcons.tableDeleteColumn,
-              'Delete column',
-              editor._onRemoveColumn,
-            ),
-          ],
-        ),
-      ),
-    );
+  @override
+  void updateRenderObject(BuildContext context, _RenderPassThrough render) =>
+      render.test = test;
+}
+
+class _RenderPassThrough extends RenderProxyBox {
+  _RenderPassThrough(this.test);
+
+  bool Function(Offset global)? test;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (test?.call(localToGlobal(position)) ?? false) return false;
+    return super.hitTest(result, position: position);
   }
 }
