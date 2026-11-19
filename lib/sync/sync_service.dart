@@ -2425,6 +2425,136 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     }
   }
 
+  /// Brings back what the personal space held before a reset: the log the
+  /// reset set aside, read with [old], the key from before it. [pull] hands
+  /// over its pages.
+  ///
+  /// Merged into the notes here as ordinary edits, which go up to the new
+  /// log. A note this device lacks comes back whole; one it holds gains only
+  /// what it is missing, since the documents share their history; and
+  /// nothing deleted here comes back, neither a note nor words in one.
+  /// Returns how many notes came back and how many changed, or null when
+  /// this device holds no key to write them with, and nothing was read.
+  Future<({int added, int changed})?> restoreArchive(
+    Vault old,
+    Future<OpsBatch?> Function(int after) pull,
+  ) async {
+    final personal = _keyring.personal;
+    if (personal == null || _vault == null) return null;
+    await _docs.load();
+    _reconcileDirty();
+
+    final docs = <String, NoteDoc>{};
+    final gone = <String>{};
+    var after = 0;
+    while (true) {
+      final batch = await pull(after);
+      if (batch == null) break;
+      final items = <_LogItem>[
+        for (final op in batch.ops) _LogItem.op(op),
+        for (final snap in batch.snapshots) _LogItem.snapshot(snap),
+      ]..sort((a, b) => a.seq.compareTo(b.seq));
+      for (final item in items) {
+        if (item.isMarker) {
+          if (item.deleted) gone.add(item.noteId);
+          continue;
+        }
+        gone.remove(item.noteId);
+        if (item.engine != fugueEngine) continue;
+        final opened = await old.openRaw(item.payload, null);
+        if (opened == null) continue;
+        Object? decoded;
+        try {
+          decoded = jsonDecode(utf8.decode(opened));
+        } on FormatException {
+          continue;
+        }
+        if (decoded is! Map) continue;
+        final doc = docs.putIfAbsent(
+          item.noteId,
+          () => NoteDoc(replica: 'restore'),
+        );
+        final ops = decoded['ops'];
+        final snap = decoded['snap'];
+        if (ops is List) {
+          doc.apply(ops);
+        } else if (snap is Map) {
+          doc.mergeSnapshot(Map<String, Object?>.of(snap.cast()));
+        }
+      }
+      if (!batch.hasMore || batch.cursor <= after) break;
+      after = batch.cursor;
+    }
+
+    final deletedHere = {for (final stone in _notes.tombstones) stone.id};
+    final at = _now();
+    final arrived = <Note>[];
+    var changed = 0;
+    for (final MapEntry(key: id, value: doc) in docs.entries) {
+      if (gone.contains(id) || deletedHere.contains(id)) continue;
+      final local = _notes.byId(id);
+      final record = _docs.get(id);
+      if (local == null) {
+        if (record != null) continue;
+        // Seeded with the history it had, so a device that rejoins later
+        // holding the same note adds nothing twice.
+        final created = _docs.create(id, personal.id);
+        created.doc.mergeSnapshot(doc.toSnapshot());
+        final view = created.doc.view;
+        final note = Note(
+          id: id,
+          body: view.body,
+          formats: view.formats,
+          attachments: view.attachments,
+          drawing: view.drawing,
+          createdAt: view.createdAt ?? at,
+          updatedAt: at,
+          archivedAt: view.archivedAt,
+          hiddenAt: view.hiddenAt,
+        );
+        _seed(note, personal.id, created);
+        arrived.add(note);
+        continue;
+      }
+      if (local.spaceId != null || record == null) continue;
+      if (record.spaceId != personal.id) continue;
+      final state = doc.stateOps().toList();
+      var grew = false;
+      for (final ops in state) {
+        if (record.doc.apply(ops)) grew = true;
+      }
+      if (!grew) continue;
+      for (final ops in state) {
+        record.outbox.add(
+          OutboxEntry(
+            id: _nextRequestId(),
+            spaceId: personal.id,
+            ops: ops,
+            deviceSeq: ++record.deviceSeq,
+          ),
+        );
+      }
+      _docs.markDirty(id);
+      _render(
+        id,
+        _Touched()
+          ..changed = true
+          ..at = at,
+        space: personal,
+        storedSpaceId: null,
+        personalId: personal.id,
+      );
+      changed++;
+    }
+    if (arrived.isNotEmpty) _notes.importNotes(arrived);
+    if (arrived.isNotEmpty || changed > 0) {
+      notifyListeners();
+      _scheduleReconcile();
+      _scheduleSend();
+    }
+    return (added: arrived.length, changed: changed);
+  }
+
   /// Ends a team space and brings its notes home: every note moves to the
   /// personal space as a seed under the master key, over HTTP, one at a
   /// time, and then the space goes. Nothing is deleted. Returns false if

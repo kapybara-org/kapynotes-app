@@ -370,6 +370,7 @@ class FakeServer {
       wrappedMasterKey: old.wrappedMasterKey,
       kdf: old.kdf,
       recoveryWrappedMasterKey: old.recoveryWrappedMasterKey,
+      retiredAt: DateTime.now().toUtc(),
     );
     final bundle = KeyBundle(
       wrappedMasterKey: wrappedMasterKey,
@@ -902,6 +903,19 @@ class FakeServer {
     final snaps = space.snapshots.values.where((s) => s.seq > after).toList()
       ..sort((a, b) => a.seq.compareTo(b.seq));
     return _pageOf(spaceId, after, min(limit, pageSize), ops, snaps);
+  }
+
+  /// Like `GET /keys/archive/log`: the retired personal space's log, while
+  /// the archive is kept.
+  OpsBatch? archiveLog(String userId, int after, int limit) {
+    final account = user(userId);
+    final retired = account.retired;
+    if (account.archive == null || retired == null) return null;
+    final ops = retired.ops.where((op) => op.seq > after).toList()
+      ..sort((a, b) => a.seq.compareTo(b.seq));
+    final snaps = retired.snapshots.values.where((s) => s.seq > after).toList()
+      ..sort((a, b) => a.seq.compareTo(b.seq));
+    return _pageOf(retired.id, after, min(limit, pageSize), ops, snaps);
   }
 
   OpsBatch _rangeOps(String spaceId, int from, int to) {
@@ -2142,9 +2156,24 @@ class FakeApi implements SyncApi {
   /// The key generation every request names, as `HttpSyncApi` reads it.
   int Function() keyGeneration = () => 1;
 
+  /// Set to fail this device's next HTTP call, and no other device's: the
+  /// server-wide [FakeServer.failNext] goes to whichever device asks first,
+  /// which under load can be another device's timer.
+  SyncException? failNext;
+
+  /// This device's calls to let through before [failNext] is thrown.
+  int failAfter = 0;
+
   /// Every route but the key routes, sign-out and account deletion, which
   /// stay open to a device holding a key from before a reset.
   void _gate({bool keys = false}) {
+    final own = failNext;
+    if (own != null && failAfter > 0) {
+      failAfter--;
+    } else if (own != null) {
+      failNext = null;
+      throw own;
+    }
     final failure = server.failNext;
     if (failure != null && server.failAfter > 0) {
       server.failAfter--;
@@ -2395,6 +2424,16 @@ class FakeApi implements SyncApi {
   Future<KeyArchive?> fetchKeyArchive() async {
     _gate(keys: true);
     return server.user(userId).archive;
+  }
+
+  @override
+  Future<OpsBatch?> pullArchiveLog({
+    int after = 0,
+    int limit = opsPullDefaultLimit,
+  }) async {
+    _gate(keys: true);
+    _record('archiveLog:$after');
+    return server.archiveLog(userId, after, limit);
   }
 
   @override

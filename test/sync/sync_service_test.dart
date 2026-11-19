@@ -647,7 +647,7 @@ void main() {
       // down; the pass the drop starts finds no network either.
       server.socketsAllowed = false;
       server.dropBeforeAck = true;
-      server.failNext = const SyncTransientException('no route to host');
+      one.api.failNext = const SyncTransientException('no route to host');
       one.notes.updateBody(note.id, 'Start, sent');
       await until(() => two.bodyOf(note.id) == 'Start, sent');
       await until(() => one.sync.status == SyncStatus.offline);
@@ -921,7 +921,7 @@ void main() {
       server.socketsAllowed = false;
       server.dropSockets();
       await settle(server);
-      server.failNext = const SyncTransientException('no route to host');
+      two.api.failNext = const SyncTransientException('no route to host');
       two.notes.updateBody(note.id, 'Start\nwritten in a tunnel');
       await settle(server);
       expect(two.sync.status, SyncStatus.offline);

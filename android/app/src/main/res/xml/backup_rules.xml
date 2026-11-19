@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backups on Android 11 and below. The secure store (session, master key,
+     Hidden Notes PIN) is sealed with a Keystore key that never leaves this
+     device, so a copy restored elsewhere can't be opened and the plugin wipes
+     it. It stays out; notes and settings are backed up as before. Keep in
+     step with data_extraction_rules.xml. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml"/>
+    <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml"/>
+    <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration.xml"/>
+    <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:FlutterSecureStorage.xml"/>
+</full-backup-content>

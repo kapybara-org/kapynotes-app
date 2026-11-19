@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/platform.dart';
@@ -34,51 +35,68 @@ Future<void> openChangelogPage(BuildContext context) async {
 
 /// One quiet line at the top of the phone's Settings: what the running
 /// version brought, with the changelog behind it. A phone updates through its
-/// store, so there is no card and nothing to restart.
-class SettingsWhatsNewRow extends StatelessWidget {
-  const SettingsWhatsNewRow({super.key, required this.updates});
-
-  final UpdateChecker updates;
+/// store, so there is no card and nothing to restart, and the row needs no
+/// update checker: it only reads the version this build is.
+class SettingsWhatsNewRow extends StatefulWidget {
+  const SettingsWhatsNewRow({super.key});
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: updates,
-    builder: (context, _) {
-      final version = updates.currentVersion;
-      if (version.isEmpty) return const SizedBox.shrink();
-      final palette = context.palette;
-      return InkWell(
-        key: const ValueKey('settings-whats-new-row'),
-        onTap: () => unawaited(openChangelogPage(context)),
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    "What's new in $version",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                      color: palette.textDescription,
-                    ),
+  State<SettingsWhatsNewRow> createState() => _SettingsWhatsNewRowState();
+}
+
+class _SettingsWhatsNewRowState extends State<SettingsWhatsNewRow> {
+  String _version = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_readVersion());
+  }
+
+  Future<void> _readVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _version = info.version);
+    } catch (_) {
+      // No version to name, so no row.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_version.isEmpty) return const SizedBox.shrink();
+    final palette = context.palette;
+    return InkWell(
+      key: const ValueKey('settings-whats-new-row'),
+      onTap: () => unawaited(openChangelogPage(context)),
+      borderRadius: BorderRadius.circular(AppRadii.control),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "What's new in $_version",
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                    color: palette.textDescription,
                   ),
                 ),
-                KapyIcon(
-                  KapyIcons.openExternalRounded,
-                  size: 15,
-                  color: palette.textTertiary,
-                ),
-              ],
-            ),
+              ),
+              KapyIcon(
+                KapyIcons.openExternalRounded,
+                size: 15,
+                color: palette.textTertiary,
+              ),
+            ],
           ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  }
 }
 
 /// The one card at the foot of the Settings rail.
