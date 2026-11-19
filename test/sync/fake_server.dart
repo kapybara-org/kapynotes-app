@@ -2131,9 +2131,15 @@ class FakeApi implements SyncApi {
   /// This device's calls to let through before [failNext] is thrown.
   int failAfter = 0;
 
+  /// Set to fail every one of this device's HTTP calls until it is cleared:
+  /// a network that is down, rather than one request that was lost.
+  SyncException? failAll;
+
   /// Every route but the key routes, sign-out and account deletion, which
   /// stay open to a device holding a key from before a reset.
   void _gate({bool keys = false}) {
+    final down = failAll;
+    if (down != null) throw down;
     final own = failNext;
     if (own != null && failAfter > 0) {
       failAfter--;
