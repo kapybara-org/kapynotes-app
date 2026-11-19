@@ -161,20 +161,8 @@ class Phrases {
   /// number or a currency word or code after the scale, so '2 lakh people'
   /// stays prose.
   static final RegExp _scaled = _spokenPattern(
-    r'(?:(?<=[$€£¥₹]\s*)|(?=\d+(?:\.\d+)?\s*(?:' +
-        _scale +
-        r')' +
-        _end +
-        r'\s*(?:' +
-        _currency +
-        r')' +
-        _end +
-        '))' +
-        _number +
-        r'\s*(' +
-        _scale +
-        r')' +
-        _end,
+    '(?:(?<=[\$€£¥₹]\\s*)|(?=\\d+(?:\\.\\d+)?\\s*(?:$_scale)$_end\\s*(?:$_currency)$_end))'
+    '$_number\\s*($_scale)$_end',
   );
 
   static final RegExp _minorAlone = _spokenPattern(
