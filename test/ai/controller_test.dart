@@ -8,6 +8,7 @@ import 'package:kapy_notes/ai/answer_engine.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
 import 'package:kapy_notes/ai/kapy_chat_book.dart';
+import 'package:kapy_notes/ai/local_tools.dart';
 import 'package:kapy_notes/ai/tool_helper.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -488,23 +489,29 @@ void main() {
         (a) => a.kind == KapyAccountKind.claudeCode,
       );
       expect(claudeAccount.status, KapyAccountStatus.connected);
-      // No Codex canary has passed, so no Codex version is accepted yet.
-      expect(
-        ai.accounts.firstWhere((a) => a.kind == KapyAccountKind.codex).status,
-        KapyAccountStatus.error,
+      final codexAccount = ai.accounts.firstWhere(
+        (a) => a.kind == KapyAccountKind.codex,
       );
-      expect(
-        helper.requests.where((r) => r.tool == 'codex').map((r) => r.arguments),
-        [
-          ['--version'],
-        ],
-      );
+      expect(codexAccount.status, KapyAccountStatus.connected);
 
       ai.pickModel(claudeAccount.models.first);
       await ai.ask('Lisbon?');
       await ai.proceed();
       expect(ai.current!.messages.last.text, 'helper answer');
       expect(helper.requests.last.expectedVersion, '2.1.326 (Claude Code)');
+
+      ai.pickModel(codexAccount.models.first);
+      await ai.ask('Porto?');
+      await ai.proceed();
+      expect(ai.current!.messages.last.text, 'helper answer');
+      expect(helper.requests.last.arguments, [
+        'exec',
+        '--model',
+        'gpt-x',
+        ...CodexCli.lockedDown,
+        '-',
+      ]);
+      expect(helper.requests.last.expectedVersion, 'codex-cli 0.160.0');
     });
 
     test(
