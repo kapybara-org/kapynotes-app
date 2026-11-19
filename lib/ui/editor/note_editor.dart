@@ -6976,7 +6976,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   /// Splices what the cell now says back into the one note string, per
   /// keystroke, exactly as typing into the note does — so the CRDT, presence and
-  /// undo all behave as they always have.
+  /// undo all behave as they always have. A cell that grows as it wraps is
+  /// kept clear of a soft keyboard, as the note's caret is.
   void _commitCellText(String text) {
     final cell = _editingCell;
     if (cell == null || widget.readOnly) return;
@@ -6995,7 +6996,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       column: cell.column,
       text: text,
     );
-    if (edit.changesText) _applyTableEdit(edit);
+    if (!edit.changesText) return;
+    _applyTableEdit(edit);
+    if (_keyboardInset > 0) _ensureCellVisible();
   }
 
   /// A press outside the open cell finishes it — unless it is on the same
