@@ -179,6 +179,16 @@ class Vault {
 
   List<int>? _noteTagsIdKey;
 
+  /// The id of the record saying which folder [noteId] is filed in, in the
+  /// same way under a key of its own. Mirrors
+  /// `packages/contract/src/folders.ts`.
+  String noteFolderRecordId(String noteId) => _recordId(
+    _noteFolderIdKey ??= _idKey('kapynotes note folder ids v1'),
+    noteId,
+  );
+
+  List<int>? _noteFolderIdKey;
+
   /// The id of the record holding a Kapy AI chat, in the same way under a key
   /// of its own. Mirrors `packages/contract/src/chats.ts`.
   String chatRecordId(String chatId) => _recordId(

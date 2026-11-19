@@ -19,6 +19,7 @@ import 'core/font_licenses.dart';
 import 'core/platform.dart';
 import 'core/quick_capture.dart';
 import 'core/window_placement.dart';
+import 'data/folders.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
 import 'data/notes_store.dart';
@@ -102,6 +103,7 @@ Future<void> main([List<String> args = const []]) async {
           store: store,
           tasks: tasks,
           tags: tags,
+          folders: FolderStore(store),
           chats: chats,
         )
       : null;
