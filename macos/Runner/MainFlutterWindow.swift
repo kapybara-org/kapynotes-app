@@ -16,6 +16,7 @@ class MainFlutterWindow: NSWindow {
   private var systemRegionChannel: FlutterMethodChannel?
   private var updaterChannel: FlutterMethodChannel?
   private var toolRunnerChannel: FlutterMethodChannel?
+  private var menuBarPanel: MenuBarPanel?
 
   override func awakeFromNib() {
     let flutterViewController = KapyFlutterViewController()
@@ -85,6 +86,8 @@ class MainFlutterWindow: NSWindow {
     toolRunnerChannel = ToolRunnerClient.register(
       with: flutterViewController.engine.binaryMessenger
     )
+
+    menuBarPanel = MenuBarPanel(engine: flutterViewController.engine)
 
     super.awakeFromNib()
   }

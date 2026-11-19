@@ -52,6 +52,8 @@ import '../ai/kapy_ai.dart';
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
+import '../sync/key_bundle.dart';
+import 'account/encryption_pane.dart';
 import '../sync/presence.dart';
 import '../sync/spaces.dart';
 import '../data/rates.dart';
@@ -393,10 +395,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
     widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
+    widget.account?.addListener(_offerRecoveryKey);
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
     widget.desktopIntegration?.onOpenRequested = _beginOpenSession;
+    widget.desktopIntegration?.window = (
+      openNote: _openTaskNote,
+      openTasks: () => _showSpace(LibrarySpace.tasks),
+      find: () => unawaited(_openCommandMenu()),
+      newTask: _newTask,
+      openSettings: _showSettings,
+      explainNoteLimit: () => unawaited(_explainNoteLimit(creating: true)),
+    );
     // The controller owns the microphone but knows nothing about notes or
     // editors; this is where a finished recording becomes a ref in one.
     widget.recording?.onFinished = _deliverRecording;
@@ -425,8 +436,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
+    widget.account?.removeListener(_offerRecoveryKey);
     widget.desktopIntegration?.onNewNoteRequested = null;
     widget.desktopIntegration?.onOpenRequested = null;
+    widget.desktopIntegration?.window = null;
     _kapyIdleTimer?.cancel();
     _kapyHeader.dispose();
     _desktopShortcutFocus.dispose();
@@ -2354,6 +2367,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (!mounted || !wantsPro || billing == null) return;
     unawaited(showProSheet(context, billing: billing));
+  }
+
+  final DateTime _openedAt = DateTime.now();
+
+  /// The one quiet suggestion for an account from before recovery keys: a
+  /// toast, once, never in the first minute and never while somebody is
+  /// typing. If the moment does not come, the next change of state tries
+  /// again; Settings → Sync keeps the row until a key exists.
+  void _offerRecoveryKey() {
+    final account = widget.account;
+    if (!mounted || account == null || !account.offersRecoveryNudge) return;
+    if (DateTime.now().difference(_openedAt) < const Duration(minutes: 1)) {
+      return;
+    }
+    final focus = FocusManager.instance.primaryFocus?.context;
+    if (focus?.findAncestorWidgetOfExactType<EditableText>() != null) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    account.recoveryNudgeShown();
+    Toast.show(
+      context,
+      'Add a recovery key, so a forgotten passphrase never locks you out.',
+      action: 'Set up',
+      onAction: () =>
+          showKeyChangeDialog(context, account, KeyProofAction.recoveryKey),
+    );
   }
 
   void _onNoteLimitChanged() {

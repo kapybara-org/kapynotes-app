@@ -11,6 +11,7 @@ import '../data/notes_store.dart';
 import '../data/tags.dart';
 import '../data/task_library.dart';
 import 'auth_api.dart';
+import 'device_name.dart';
 import 'key_bundle.dart';
 import 'task_sync.dart';
 import 'image_sync.dart';
@@ -23,6 +24,7 @@ import '../speech/speech_api.dart';
 import 'sync_api.dart';
 import 'sync_service.dart';
 import 'sync_state.dart';
+import 'sealed_box.dart';
 import 'trust.dart';
 import 'vault.dart';
 
@@ -422,6 +424,7 @@ class Account extends ChangeNotifier {
     if (cached != null) return _start(Vault.fromMasterKey(cached));
 
     final bundle = await _syncApiFor(_token!).fetchKeyBundle();
+    _bundle = bundle;
     _moveTo(
       bundle == null ? AccountState.needsPassphrase : AccountState.locked,
     );
@@ -484,8 +487,13 @@ class Account extends ChangeNotifier {
       _moveTo(AccountState.needsPassphrase);
       return false;
     }
+    _bundle = bundle;
     final vault = await open(bundle);
-    if (vault == null) return false;
+    if (vault == null) {
+      notifyListeners();
+      return false;
+    }
+    _markSeen(bundle);
 
     await _keys.writeMasterKey(vault.masterKeyForKeystore);
     await _start(vault);
@@ -573,7 +581,9 @@ class Account extends ChangeNotifier {
     // of the user by the time this runs, and a change that lands while that
     // pass is in flight would otherwise have nothing to arrive on.
     service.resume();
+    unawaited(_refreshKeys());
     await service.syncNow();
+    unawaited(_reportDevice());
   }
 
   void _teardownSync() {
@@ -738,6 +748,269 @@ class Account extends ChangeNotifier {
   /// The shared spaces the last deletion attempt was refused over, by name.
   List<String> get ownedSpacesBlockingDeletion => _ownedSpacesBlockingDeletion;
 
+  // -------------------------------------------------------------------------
+  // Changing the passphrase and the recovery key, from an unlocked device.
+  //
+  // Both re-seal the master key this device already holds and nothing else,
+  // so no note is re-encrypted and every other unlocked device carries on
+  // untouched. Neither asks for the old passphrase — forgetting it is the
+  // usual reason to change it — so the server asks for an emailed code
+  // instead, and every write names the bundle version it read.
+
+  KeyBundle? _bundle;
+
+  /// The key bundle as this device last read it. Null until the first read.
+  KeyBundle? get keyBundle => _bundle;
+
+  bool get hasRecoveryKey => _bundle?.recoveryWrappedMasterKey != null;
+
+  /// What this device calls itself in "changed from Sanjay's MacBook".
+  /// Replaceable for tests, where there is no platform to ask.
+  Future<String?> Function(String? ownerName) deviceName = (owner) =>
+      thisDeviceName(ownerName: owner);
+
+  static const String _seenEntry = 'keys.seen.v1';
+  static const String _unsavedEntry = 'keys.recoveryUnsaved.v1';
+  static const String _nudgedEntry = 'keys.recoveryNudged.v1';
+  static const String _reportedEntry = 'keys.deviceReported.v1';
+
+  Object? _forThisAccount(String entry) {
+    final saved = _store.read<Map<String, Object?>>(entry);
+    return saved != null && saved['account'] == _user?.id
+        ? saved['value']
+        : null;
+  }
+
+  void _putForThisAccount(String entry, Object? value) => _store.put(
+    entry,
+    value == null ? null : {'account': _user?.id, 'value': value},
+  );
+
+  void _markSeen(KeyBundle bundle) =>
+      _putForThisAccount(_seenEntry, bundle.version);
+
+  /// The passphrase change made on another device since this one last
+  /// unlocked, for a locked device to explain before anything is typed. Null
+  /// on a device that never unlocked, which has nothing to compare against.
+  KeyChange? get passphraseChangedSinceUnlock {
+    final seen = _forThisAccount(_seenEntry);
+    final bundle = _bundle;
+    if (seen is! int || bundle == null || bundle.version <= seen) return null;
+    return bundle.changes.passphrase;
+  }
+
+  /// A recovery key was committed and the person never confirmed saving it,
+  /// most likely because the app stopped in between. The old key no longer
+  /// works, so Settings asks for another.
+  bool get recoveryKeyUnsaved => _forThisAccount(_unsavedEntry) == true;
+
+  /// The one quiet suggestion an account from before recovery keys gets.
+  bool get offersRecoveryNudge =>
+      _accountState == AccountState.ready &&
+      _bundle != null &&
+      !hasRecoveryKey &&
+      _forThisAccount(_nudgedEntry) != true;
+
+  void recoveryNudgeShown() {
+    _putForThisAccount(_nudgedEntry, true);
+    notifyListeners();
+  }
+
+  Future<void> _refreshKeys() async {
+    final token = _token;
+    if (token == null) return;
+    try {
+      final bundle = await _syncApiFor(token).fetchKeyBundle();
+      if (bundle == null || _token != token) return;
+      _bundle = bundle;
+      _markSeen(bundle);
+      notifyListeners();
+    } on SyncException {
+      // Offline: Settings shows what it last knew, and the next start asks.
+    }
+  }
+
+  /// At most hourly, so a sync pass costs nothing extra.
+  Future<void> _reportDevice() async {
+    final token = _token;
+    if (token == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = _forThisAccount(_reportedEntry);
+    if (last is int && now - last < Duration.millisecondsPerHour) return;
+    final name = await deviceName(_user?.name);
+    if (name == null || _token != token) return;
+    try {
+      await _syncApiFor(
+        token,
+      ).reportDevice(name: name, platform: thisDevicePlatform);
+      _putForThisAccount(_reportedEntry, now);
+    } on SyncException {
+      // Only ever a nicer sentence on another device; the next pass retries.
+    }
+  }
+
+  /// Emails a code for [action]. Null when it is on its way.
+  Future<KeyCodeProblem?> sendKeyCode(KeyProofAction action) async {
+    final token = _token;
+    if (token == null) return KeyCodeProblem.offline;
+    try {
+      await _syncApiFor(token).sendKeyProof(action);
+      return null;
+    } on SyncTransientException catch (error) {
+      return error.status == 429
+          ? KeyCodeProblem.tooSoon
+          : KeyCodeProblem.offline;
+    } on SyncException {
+      return KeyCodeProblem.offline;
+    }
+  }
+
+  /// Trades the emailed code for the proof a change carries.
+  Future<({String? proof, KeyCodeProblem? problem})> verifyKeyCode(
+    KeyProofAction action,
+    String code,
+  ) async {
+    final token = _token;
+    if (token == null) return (proof: null, problem: KeyCodeProblem.offline);
+    try {
+      final proof = await _syncApiFor(
+        token,
+      ).verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
+      return (proof: proof, problem: null);
+    } on SyncRefusedException catch (error) {
+      return (
+        proof: null,
+        problem: switch (error.code) {
+          'code-expired' => KeyCodeProblem.expired,
+          'code-tries' => KeyCodeProblem.tooManyTries,
+          _ => KeyCodeProblem.wrong,
+        },
+      );
+    } on SyncException {
+      return (proof: null, problem: KeyCodeProblem.offline);
+    }
+  }
+
+  /// Seals the master key under [passphrase], ready to send — and to send
+  /// again, unchanged, if the first attempt never reached the server.
+  Future<PreparedPassphrase?> preparePassphrase(String passphrase) async {
+    final vault = await _copyOfVault();
+    if (vault == null) return null;
+    try {
+      final sealed = await vault.rewrapForPassphrase(passphrase);
+      return PreparedPassphrase._(sealed.wrappedMasterKey, sealed.kdf);
+    } finally {
+      vault.wipe();
+    }
+  }
+
+  /// A new recovery key and the master key sealed under it. Shown only once
+  /// the server has taken it; zeroed by [recoveryKeySaved].
+  Future<PreparedRecoveryKey?> prepareRecoveryKey() async {
+    final vault = await _copyOfVault();
+    if (vault == null) return null;
+    try {
+      final made = await vault.rewrapForRecoveryKey();
+      return PreparedRecoveryKey._(
+        RecoveryKey(made.recoveryKey),
+        made.recoveryWrappedMasterKey,
+      );
+    } finally {
+      vault.wipe();
+    }
+  }
+
+  Future<Vault?> _copyOfVault() async {
+    final cached = await _keys.readMasterKey();
+    return cached == null
+        ? null
+        : Vault.fromMasterKey(Uint8List.fromList(cached));
+  }
+
+  /// Sends a prepared change, on the bundle version as the server has it now.
+  ///
+  /// A change that lost to one made elsewhere to something else — the
+  /// passphrase here, the recovery key there — goes through once more on the
+  /// new version, since neither undoes the other. One that lost to a change
+  /// of the same thing is reported, never pressed over the top of it.
+  Future<KeyChangeResult> commitKeyChange(
+    PreparedKeyChange change, {
+    String? proof,
+  }) async {
+    final token = _token;
+    if (token == null) return const KeyChangeOffline();
+    final api = _syncApiFor(token);
+    final recovery = change is PreparedRecoveryKey;
+    if (recovery) _putForThisAccount(_unsavedEntry, true);
+    final device = await deviceName(_user?.name);
+
+    KeyChangeResult settle(KeyChangeResult result) {
+      if (recovery && result is! KeyChangeDone && result is! KeyChangeOffline) {
+        _putForThisAccount(_unsavedEntry, null);
+      }
+      notifyListeners();
+      return result;
+    }
+
+    try {
+      var bundle = await api.fetchKeyBundle();
+      for (var attempt = 0; ; attempt++) {
+        if (bundle == null) return settle(const KeyChangeRefused());
+        _bundle = bundle;
+        if (change._appliedTo(bundle)) return settle(const KeyChangeDone());
+        try {
+          switch (change) {
+            case PreparedPassphrase():
+              await api.changePassphrase(
+                expectedVersion: bundle.version,
+                proof: proof ?? '',
+                wrappedMasterKey: change.wrappedMasterKey,
+                kdf: change.kdf,
+                device: device,
+              );
+            case PreparedRecoveryKey():
+              await api.changeRecoveryKey(
+                expectedVersion: bundle.version,
+                proof: proof,
+                recoveryWrappedMasterKey: change.recoveryWrappedMasterKey,
+                device: device,
+              );
+          }
+          await _refreshKeys();
+          return settle(const KeyChangeDone());
+        } on SyncRefusedException catch (error) {
+          if (error.code == 'proof-required') {
+            return settle(const KeyChangeNeedsCode());
+          }
+          if (error.code != 'bundle-changed' || attempt > 0) {
+            return settle(const KeyChangeRefused());
+          }
+          final before = change._sameKind(bundle.changes);
+          bundle = await api.fetchKeyBundle();
+          final after = bundle == null
+              ? null
+              : change._sameKind(bundle.changes);
+          if (after != null && after != before) {
+            _bundle = bundle;
+            _markSeen(bundle!);
+            return settle(KeyChangeLostRace(after));
+          }
+        }
+      }
+    } on SyncTransientException {
+      return settle(const KeyChangeOffline());
+    } on SyncException {
+      return settle(const KeyChangeRefused());
+    }
+  }
+
+  /// The person has the recovery key somewhere safe. Its bytes go now.
+  void recoveryKeySaved(PreparedRecoveryKey change) {
+    change.key.bytes.fillRange(0, change.key.bytes.length, 0);
+    _putForThisAccount(_unsavedEntry, null);
+    notifyListeners();
+  }
+
   void _moveTo(AccountState next) {
     if (_accountState == next) {
       notifyListeners();
@@ -768,4 +1041,76 @@ class RecoveryKey {
   String get formatted => formatRecoveryKey(bytes);
 
   static Uint8List? parse(String typed) => parseRecoveryKey(typed);
+}
+
+/// Why an emailed code did not come, or did not work.
+enum KeyCodeProblem { offline, tooSoon, wrong, expired, tooManyTries }
+
+/// A key change sealed and ready to send. Built once, so a retry after a
+/// dropped connection sends exactly the same thing — and can tell, from the
+/// bundle, that the first attempt had already landed.
+sealed class PreparedKeyChange {
+  const PreparedKeyChange();
+
+  bool _appliedTo(KeyBundle bundle);
+  KeyChange? _sameKind(KeyChanges changes);
+}
+
+class PreparedPassphrase extends PreparedKeyChange {
+  const PreparedPassphrase._(this.wrappedMasterKey, this.kdf);
+  final SealedBox wrappedMasterKey;
+  final KdfParams kdf;
+
+  @override
+  bool _appliedTo(KeyBundle bundle) =>
+      _same(bundle.wrappedMasterKey, wrappedMasterKey);
+
+  @override
+  KeyChange? _sameKind(KeyChanges changes) => changes.passphrase;
+}
+
+class PreparedRecoveryKey extends PreparedKeyChange {
+  const PreparedRecoveryKey._(this.key, this.recoveryWrappedMasterKey);
+  final RecoveryKey key;
+  final SealedBox recoveryWrappedMasterKey;
+
+  @override
+  bool _appliedTo(KeyBundle bundle) {
+    final current = bundle.recoveryWrappedMasterKey;
+    return current != null && _same(current, recoveryWrappedMasterKey);
+  }
+
+  @override
+  KeyChange? _sameKind(KeyChanges changes) => changes.recoveryKey;
+}
+
+bool _same(SealedBox a, SealedBox b) =>
+    listEquals(a.cipherText, b.cipherText) && listEquals(a.nonce, b.nonce);
+
+sealed class KeyChangeResult {
+  const KeyChangeResult();
+}
+
+class KeyChangeDone extends KeyChangeResult {
+  const KeyChangeDone();
+}
+
+/// The proof expired or was used; a fresh code puts it right.
+class KeyChangeNeedsCode extends KeyChangeResult {
+  const KeyChangeNeedsCode();
+}
+
+/// Another device changed the same thing first. Nothing changed here.
+class KeyChangeLostRace extends KeyChangeResult {
+  const KeyChangeLostRace(this.change);
+  final KeyChange change;
+}
+
+/// Nobody answered. Nothing changed yet, as far as this device knows.
+class KeyChangeOffline extends KeyChangeResult {
+  const KeyChangeOffline();
+}
+
+class KeyChangeRefused extends KeyChangeResult {
+  const KeyChangeRefused();
 }

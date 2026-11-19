@@ -7,6 +7,7 @@ import 'local_store.dart';
 enum ShortcutAction {
   openApp,
   newNoteAnywhere,
+  openMenuBarPanel,
   newNote,
   findNotes,
   newTask,
@@ -52,6 +53,7 @@ extension ShortcutActionCopy on ShortcutAction {
   String get label => switch (this) {
     ShortcutAction.openApp => 'Open Kapy Notes',
     ShortcutAction.newNoteAnywhere => 'New note from anywhere',
+    ShortcutAction.openMenuBarPanel => 'Menu bar panel',
     ShortcutAction.newNote => 'New note',
     ShortcutAction.findNotes => 'Search',
     ShortcutAction.newTask => 'New task',
@@ -96,6 +98,7 @@ extension ShortcutActionCopy on ShortcutAction {
   String get description => switch (this) {
     ShortcutAction.openApp => 'Show or hide Kapy Notes from anywhere',
     ShortcutAction.newNoteAnywhere => 'Open a blank note from anywhere',
+    ShortcutAction.openMenuBarPanel => 'Open the menu bar panel from anywhere',
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes =>
       'Find notes, tasks and drawings, or make one, from anywhere',
@@ -163,7 +166,9 @@ extension ShortcutActionCopy on ShortcutAction {
   /// answers while another app is in front — and can be refused outright if
   /// something else already holds the chord.
   bool get isGlobal => switch (this) {
-    ShortcutAction.openApp || ShortcutAction.newNoteAnywhere => true,
+    ShortcutAction.openApp ||
+    ShortcutAction.newNoteAnywhere ||
+    ShortcutAction.openMenuBarPanel => true,
     _ => false,
   };
 
@@ -565,6 +570,18 @@ class ShortcutPrefs extends ChangeNotifier {
       ShortcutAction.newNoteAnywhere => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyN,
         physicalKey: PhysicalKeyboardKey.keyN,
+        meta: useMeta,
+        alt: true,
+        shift: true,
+      ),
+      // The third of the family, over Space because it summons. None of
+      // macOS' own Space chords (⌘, ⌥⌘, ⌃, ⌃⌥, ⌃⌘) nor the usual summon
+      // defaults (1Password's ⇧⌘, ⌥ for Raycast and Alfred, Things' ⌃) is
+      // Shift+Option+Cmd. On Windows, Alt+Space is the window menu and
+      // PowerToys Run, Win+Space the input language; Alt+Shift+Space is free.
+      ShortcutAction.openMenuBarPanel => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.space,
+        physicalKey: PhysicalKeyboardKey.space,
         meta: useMeta,
         alt: true,
         shift: true,

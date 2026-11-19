@@ -981,6 +981,64 @@ void main() {
     );
 
     test(
+      'a note shared into a space that already exists goes home when un-shared',
+      () async {
+        // Its own seed comes back from Alice's log in the same pass that
+        // moves it, and must not pull the note's record back home with it.
+        final one = await shareWithBob('One');
+        final spaceId = alice.notes.byId(one.id)!.spaceId!;
+        final two = alice.notes.create(body: 'Two');
+        await alice.sync.syncNow();
+        alice.tick();
+        await alice.sharing.shareNoteWith(two.id, email: bob.email);
+        expect(alice.notes.byId(two.id)!.spaceId, spaceId);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.notes.byId(two.id), isNotNull);
+
+        alice.tick();
+        await alice.sharing.unshareNote(two.id);
+        final personal = alice.keyring.personal!.id;
+        expect(server.rowsIn(personal)[two.id]!.isTombstone, isFalse);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.notes.byId(two.id), isNull);
+        expect(bob.notes.byId(one.id), isNotNull);
+      },
+    );
+
+    test(
+      'and so does one whose move is answered before its own seed comes back',
+      () async {
+        final one = await shareWithBob('One');
+        final spaceId = alice.notes.byId(one.id)!.spaceId!;
+        final personal = alice.keyring.personal!.id;
+        await alice.goLive();
+        // The page that carries Two's seed back to Alice is still on its way
+        // when the answer to the move arrives.
+        server.holdPagesOf.add(personal);
+        final two = alice.notes.create(body: 'Two');
+        await alice.sync.syncNow();
+        await settle(server);
+        expect(server.rowsIn(personal)[two.id]!.isTombstone, isFalse);
+        alice.tick();
+        await alice.sharing.shareNoteWith(two.id, email: bob.email);
+        await settle(server);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+        server.holdPagesOf.clear();
+        server.releaseFrames(alice.api.device);
+        await settle(server);
+
+        alice.tick();
+        await alice.sharing.unshareNote(two.id);
+        await settle(server);
+        expect(server.rowsIn(personal)[two.id]!.isTombstone, isFalse);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
+      },
+    );
+
+    test(
       'the last member leaving leaves the owner owed a trip home, taken on the next sync',
       () async {
         final note = await shareWithBob('Lonely');
