@@ -75,36 +75,46 @@ class SettingsLabel extends StatelessWidget {
     final detail = this.detail;
     final caption = this.caption;
     if (AppPlatform.hasPointer) {
-      final heading = Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Text(
-            text,
-            style: TextStyle(
-              fontFamily: 'Shantell Sans',
-              fontSize: SettingsMetrics.sectionLabelSize,
-              fontWeight: FontWeight.w500,
-              height: 18 / 14,
-              color: palette.textSubheading,
+      final label = Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: 'Shantell Sans',
+          fontSize: SettingsMetrics.sectionLabelSize,
+          fontWeight: FontWeight.w500,
+          height: 18 / 14,
+          color: palette.textSubheading,
+        ),
+      );
+      final heading = LayoutBuilder(
+        builder: (context, box) => Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: math.max(0, box.maxWidth - (detail == null ? 0 : 8)),
+              ),
+              child: label,
             ),
-          ),
-          if (detail != null) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                detail,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 16 / 12,
-                  color: palette.textTertiary,
+            if (detail != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 16 / 12,
+                    color: palette.textTertiary,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       );
       return Padding(
         padding: const EdgeInsets.only(left: 2, bottom: 8),
@@ -301,9 +311,13 @@ class SettingsRowCopy extends StatelessWidget {
             ],
             if (tag != null) ...[
               const SizedBox(width: 7),
-              Text(
-                tag,
-                style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              Flexible(
+                child: Text(
+                  tag,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: palette.textTertiary),
+                ),
               ),
             ],
           ],
@@ -388,7 +402,7 @@ class SettingsRow extends StatelessWidget {
               SettingsResetButton(onPressed: onReset),
               if (control != null && !under) ...[
                 const SizedBox(width: 4),
-                control,
+                Flexible(child: control),
               ],
             ],
           );
@@ -400,25 +414,35 @@ class SettingsRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: SettingsRowCopy(
-                  title: title,
-                  subtitle: subtitle,
-                  tag: tag,
-                  changed: changed,
-                  titleColor: destructive ? danger : null,
+          LayoutBuilder(
+            builder: (context, box) => Row(
+              children: [
+                Expanded(
+                  child: SettingsRowCopy(
+                    title: title,
+                    subtitle: subtitle,
+                    tag: tag,
+                    changed: changed,
+                    titleColor: destructive ? danger : null,
+                  ),
                 ),
-              ),
-              if (under && onReset != null) ...[
-                SizedBox(width: SettingsMetrics.gap),
-                SettingsResetButton(onPressed: onReset),
-              ] else if (!under && trailing != null) ...[
-                SizedBox(width: SettingsMetrics.gap),
-                trailing,
+                if (under && onReset != null) ...[
+                  SizedBox(width: SettingsMetrics.gap),
+                  SettingsResetButton(onPressed: onReset),
+                ] else if (!under && trailing != null) ...[
+                  SizedBox(width: SettingsMetrics.gap),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: math.max(
+                        0,
+                        box.maxWidth - SettingsMetrics.gap - 12,
+                      ),
+                    ),
+                    child: trailing,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
           if (under && control != null) ...[
             const SizedBox(height: 10),
