@@ -140,6 +140,16 @@ class FakeServer {
   /// and not applied, as `applyOps` answers them.
   int guestDeletes = 0;
 
+  /// A server from before hidden notes: no list in the spaces it serves, and
+  /// hiding a note is a 404.
+  bool beforeHiddenNotes = false;
+
+  /// Notes hidden, each time the server was asked.
+  int hides = 0;
+
+  /// Hides answered 429 before one goes through.
+  int busyHides = 0;
+
   /// How many task records one pull returns.
   int taskPageSize = 1 << 30;
 
@@ -1054,6 +1064,12 @@ class FakeServer {
     ],
     liveNotes: _liveNotes(space.id).length,
     hasLink: space.hasLink,
+    hiddenNotes: beforeHiddenNotes
+        ? null
+        : [
+            for (final id in space.hidden[userId] ?? const <String>{})
+              if (space.notes[id] case final row? when !row.isTombstone) id,
+          ],
     createdAt: DateTime.utc(2026, 9, 1),
   );
 
@@ -1224,6 +1240,7 @@ class FakeServer {
     }
     if (!space.members.containsKey(target)) _refuse(404, 'not a member');
     space.members.remove(target);
+    space.hidden.remove(target);
     space.keys.remove(target);
     space.rotationPending = true;
     announceUsers([target]);
@@ -1375,8 +1392,30 @@ class FakeServer {
     space.ownerId = target;
     space.members[userId] = SpaceRole.member;
     space.members[target] = SpaceRole.owner;
+    space.hidden.remove(target);
     announceSpace(spaceId);
     return _wire(space, userId);
+  }
+
+  void hideNote(String userId, String spaceId, String noteId) {
+    calls.add('hide:$noteId');
+    if (busyHides > 0) {
+      busyHides--;
+      throw const SyncTransientException(
+        'too many requests',
+        answered: true,
+        status: 429,
+      );
+    }
+    if (beforeHiddenNotes) _refuse(404, 'not found');
+    final space = _member(userId, spaceId);
+    if (space.members[userId] == SpaceRole.owner) {
+      _refuse(409, 'the owner deletes notes for everyone');
+    }
+    final row = space.notes[noteId];
+    if (row == null || row.isTombstone) _refuse(404, 'no such note');
+    hides++;
+    if ((space.hidden[userId] ??= {}).add(noteId)) announceUsers([userId]);
   }
 
   /// Ends a space. Under protocol 3 the notes have already gone home as
@@ -1427,6 +1466,7 @@ class FakeServer {
     for (final space in spaces.values.toList()) {
       if (space.kind == SpaceKind.team && space.members.containsKey(userId)) {
         space.members.remove(userId);
+        space.hidden.remove(userId);
         space.keys.remove(userId);
         space.rotationPending = true;
         _reapIfEmpty(space.id);
@@ -1560,6 +1600,10 @@ class FakeSpace {
   final Map<String, SealedToPublicKey> keys = {};
   final Map<String, ({String email, SpaceRole role})> invites = {};
   final Map<String, FakeNoteKey> noteKeys = {};
+
+  /// The notes each member took out of their own notes, by member. Goes
+  /// with the membership.
+  final Map<String, Set<String>> hidden = {};
 
   /// The space's clock: the last seq handed out.
   int opSeq = 0;
@@ -2508,6 +2552,12 @@ class FakeApi implements SyncApi {
       server.loseRemovalAnswer = null;
       throw lost;
     }
+  }
+
+  @override
+  Future<void> hideNote(String spaceId, String noteId) async {
+    _gate();
+    server.hideNote(userId, spaceId, noteId);
   }
 
   @override

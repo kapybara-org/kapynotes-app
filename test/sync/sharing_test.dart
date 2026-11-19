@@ -46,6 +46,7 @@ class Person {
     required this.device,
     this.typingIdle = const Duration(milliseconds: 300),
     bool acceptOnTheirOwn = false,
+    Duration minRetry = const Duration(seconds: 5),
   }) {
     server.seedBundle(userId);
     store = MemoryStore();
@@ -72,6 +73,7 @@ class Person {
       presenceThrottle: const Duration(milliseconds: 1),
       typingIdle: typingIdle,
       presenceLinger: const Duration(milliseconds: 60),
+      minRetry: minRetry,
     );
     sharing = Sharing(
       api: api,
@@ -1434,6 +1436,235 @@ void main() {
       await bob.syncAndSettle();
       expect(bob.notes.isDismissed(note.id, spaceId), isFalse);
       expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+    });
+
+    group('on every device of the guest', () {
+      late Person mac;
+
+      setUp(() async {
+        mac = Person(server, userId: bob.userId, device: 'bob-mac');
+        await mac.boot();
+      });
+
+      tearDown(() => mac.dispose());
+
+      int hidesOf(String noteId) =>
+          server.calls.where((call) => call == 'hide:$noteId').length;
+
+      test('a guest\'s delete reaches their other devices, and nobody '
+          'else\'s', () async {
+        final (note, spaceId) = await sharedWithBoth();
+        await mac.syncAndSettle();
+        expect(mac.bodyOf(note.id), 'Ours');
+
+        bob.tick();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+        expect(server.spaces[spaceId]!.hidden[bob.userId], {note.id});
+        await bob.syncAndSettle();
+        expect(hidesOf(note.id), 1, reason: 'sent once, then confirmed');
+
+        await mac.syncAndSettle();
+        expect(mac.notes.byId(note.id), isNull);
+        expect(mac.notes.isDismissed(note.id, spaceId), isTrue);
+        expect(mac.notes.hasPendingChanges, isFalse);
+        expect(hidesOf(note.id), 1);
+
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Ours, edited');
+        await alice.syncAndSettle();
+        await carol.syncAndSettle();
+        await bob.syncAndSettle();
+        await mac.syncAndSettle();
+        expect(carol.bodyOf(note.id), 'Ours, edited');
+        expect(bob.notes.byId(note.id), isNull);
+        expect(mac.notes.byId(note.id), isNull);
+        expect(server.guestDeletes, 0);
+        expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+      });
+
+      test('removed and invited back, the note is back on every device, '
+          'the one that missed it all included', () async {
+        final (note, spaceId) = await sharedWithBoth();
+        await mac.syncAndSettle();
+        final edited = mac.notes.byId(note.id)!.updatedAt;
+        bob.tick();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+        await mac.syncAndSettle();
+        expect(mac.notes.byId(note.id), isNull);
+
+        // The Mac sleeps through the removal and the new invitation.
+        alice.tick();
+        await alice.sharing.removeMember(spaceId, bob.userId);
+        await alice.syncAndSettle();
+        await bob.syncAndSettle();
+        expect(bob.notes.isDismissed(note.id, spaceId), isFalse);
+        alice.tick();
+        final invite = await alice.sharing.invite(spaceId, bob.email);
+        await bob.sharing.acceptInvite(invite.token);
+        await alice.syncAndSettle();
+        await bob.syncAndSettle();
+        expect(bob.bodyOf(note.id), 'Ours');
+
+        await mac.syncAndSettle();
+        expect(mac.notes.isDismissed(note.id, spaceId), isFalse);
+        expect(mac.bodyOf(note.id), 'Ours');
+        expect(
+          mac.notes.byId(note.id)!.updatedAt.millisecondsSinceEpoch,
+          edited.millisecondsSinceEpoch,
+          reason: 'back in its place, not as just edited',
+        );
+      });
+
+      test(
+        'a delete made before leaving and being invited back is let go',
+        () async {
+          final (note, spaceId) = await sharedWithBoth();
+          await mac.syncAndSettle();
+
+          // Deleted on the Mac, which goes to sleep before it can sync.
+          final edited = mac.notes.byId(note.id)!.updatedAt;
+          mac.tick();
+          mac.notes.delete(note.id);
+
+          alice.tick();
+          await alice.sharing.removeMember(spaceId, bob.userId);
+          await alice.syncAndSettle();
+          await bob.syncAndSettle();
+          alice.tick();
+          final invite = await alice.sharing.invite(spaceId, bob.email);
+          await bob.sharing.acceptInvite(invite.token);
+          await alice.syncAndSettle();
+          await bob.syncAndSettle();
+
+          await mac.syncAndSettle();
+          expect(hidesOf(note.id), 0);
+          expect(server.spaces[spaceId]!.hidden[bob.userId], isNull);
+          expect(mac.notes.isDismissed(note.id, spaceId), isFalse);
+          expect(mac.bodyOf(note.id), 'Ours');
+          expect(
+            mac.notes.byId(note.id)!.updatedAt.millisecondsSinceEpoch,
+            edited.millisecondsSinceEpoch,
+          );
+          expect(bob.bodyOf(note.id), 'Ours');
+        },
+      );
+
+      test('against a server from before, the delete stays on the device it '
+          'was made on and is not offered again', () async {
+        final (note, spaceId) = await sharedWithBoth();
+        await mac.syncAndSettle();
+        server.beforeHiddenNotes = true;
+
+        bob.tick();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+        await bob.syncAndSettle();
+        expect(hidesOf(note.id), 1);
+        expect(bob.notes.byId(note.id), isNull);
+        expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+        expect(bob.notes.hasPendingChanges, isFalse);
+        expect(bob.sync.status, SyncStatus.idle);
+
+        await mac.syncAndSettle();
+        expect(mac.bodyOf(note.id), 'Ours');
+      });
+
+      test('a delete from a build before this goes up once the server has '
+          'a place for it', () async {
+        final (note, spaceId) = await sharedWithBoth();
+        await mac.syncAndSettle();
+        server.beforeHiddenNotes = true;
+        bob.tick();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+
+        // What a build before this left: the dismissal and nothing else.
+        bob.store.data.remove('dismissalSync.v1');
+        server.beforeHiddenNotes = false;
+        await bob.syncAndSettle();
+        expect(server.spaces[spaceId]!.hidden[bob.userId], {note.id});
+        await mac.syncAndSettle();
+        expect(mac.notes.byId(note.id), isNull);
+      });
+      test('a server asking for patience holds the dismissals back on their '
+          'own, and the pass stays healthy', () async {
+        final pad = Person(
+          server,
+          userId: bob.userId,
+          device: 'bob-pad',
+          minRetry: const Duration(milliseconds: 10),
+        );
+        await pad.boot();
+        addTearDown(pad.dispose);
+        final (note, spaceId) = await sharedWithBoth();
+        final ids = [note.id];
+        for (final body in ['Two', 'Three']) {
+          final more = alice.sharing.createNoteIn(spaceId);
+          alice.notes.updateBody(more.id, body);
+          ids.add(more.id);
+        }
+        await alice.syncAndSettle();
+        await pad.syncAndSettle();
+        expect(pad.bodies, containsAll(['Ours', 'Two', 'Three']));
+
+        server.busyHides = 4;
+        pad.tick();
+        pad.notes.deleteAll(ids);
+        await pad.syncAndSettle();
+        expect(pad.sync.status, SyncStatus.idle);
+        expect(pad.sync.lastError, isNull);
+        for (final id in ids) {
+          expect(pad.notes.byId(id), isNull);
+        }
+
+        for (
+          var wait = 0;
+          wait < 200 &&
+              (server.spaces[spaceId]!.hidden[bob.userId]?.length ?? 0) < 3;
+          wait++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(server.spaces[spaceId]!.hidden[bob.userId], ids.toSet());
+        expect(
+          server.calls.where((call) => call.startsWith('hide:')),
+          hasLength(7),
+          reason: 'each 429 holds the rest back until the next try',
+        );
+        expect(pad.sync.status, SyncStatus.idle);
+      });
+
+      test('a join time the server gives in microseconds still matches the '
+          'one the delete kept', () async {
+        server.now = () => now.add(const Duration(microseconds: 250));
+        final (note, spaceId) = await sharedWithBoth();
+        expect(
+          bob.keyring.byId(spaceId)!.member(bob.userId)!.joinedAt.microsecond,
+          250,
+        );
+        await mac.syncAndSettle();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+        expect(server.spaces[spaceId]!.hidden[bob.userId], {note.id});
+        expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+        await mac.syncAndSettle();
+        expect(mac.notes.byId(note.id), isNull);
+      });
+
+      test('a device clock behind the server does not make a fresh delete '
+          'look like one from an earlier membership', () async {
+        server.now = () => now.add(const Duration(hours: 6));
+        final (note, spaceId) = await sharedWithBoth();
+        await mac.syncAndSettle();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+        expect(server.spaces[spaceId]!.hidden[bob.userId], {note.id});
+        expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+        await mac.syncAndSettle();
+        expect(mac.notes.byId(note.id), isNull);
+      });
     });
 
     test('a delete in your own space, shared or not, is as before', () async {
