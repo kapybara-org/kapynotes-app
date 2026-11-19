@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:tray_manager/tray_manager.dart';
 
 import 'platform.dart';
@@ -44,6 +45,10 @@ class AppTray with TrayListener {
   static const String templateIcon =
       'assets/branding/kapynotes_tray_macos.png';
 
+  /// The icon's own button, which takes a press through accessibility
+  /// (macos/Runner/MenuBarIcon.swift). tray_manager only hears the mouse.
+  static const MethodChannel _button = MethodChannel('kapynotes/menubar_icon');
+
   bool _visible = false;
 
   bool get isVisible => _visible;
@@ -58,6 +63,7 @@ class AppTray with TrayListener {
     try {
       if (!visible) {
         trayManager.removeListener(this);
+        if (AppPlatform.isMacOS) _button.setMethodCallHandler(null);
         await trayManager.destroy();
         return;
       }
@@ -69,6 +75,7 @@ class AppTray with TrayListener {
       );
       await trayManager.setToolTip(toolTip);
       await trayManager.setContextMenu(_menu());
+      if (AppPlatform.isMacOS) unawaited(_takePresses());
     } catch (error, stack) {
       // Leaves the flag where the caller asked for it: a second attempt is
       // the user toggling the setting again, which should retry rather than
@@ -121,6 +128,18 @@ class AppTray with TrayListener {
       return;
     }
     onOpen();
+  }
+
+  /// A press on the icon through accessibility is a click on it.
+  Future<void> _takePresses() async {
+    _button.setMethodCallHandler((call) async {
+      if (call.method == 'pressed') await _click();
+    });
+    try {
+      await _button.invokeMethod<bool>('takePresses');
+    } on MissingPluginException {
+      // No native side, as under flutter test: only the mouse opens it.
+    }
   }
 
   Future<void> _click() async {

@@ -1021,7 +1021,7 @@ class FakeServer {
           name: user(entry.key).name,
           image: user(entry.key).image,
           role: entry.value,
-          joinedAt: DateTime.utc(2026, 9, 1),
+          joinedAt: space.joinedAt[entry.key] ?? DateTime.utc(2026, 9, 1),
           hasKey: space.keys.containsKey(entry.key),
           x25519Public: user(entry.key).bundle?.identity?.x25519Public,
           ed25519Public: user(entry.key).bundle?.identity?.ed25519Public,
@@ -1156,6 +1156,7 @@ class FakeServer {
       _requireTerms(userId);
       space.invites.remove(token);
       space.members[userId] = invite!.role;
+      space.joinedAt[userId] = now();
       announceSpace(space.id);
       return _wire(space, userId);
     }
@@ -1538,6 +1539,9 @@ class FakeSpace {
   /// live outside this fake, so a test that makes a link says so here.
   bool hasLink = false;
   final Map<String, SpaceRole> members = {};
+
+  /// When each member joined, where a test's clock was running.
+  final Map<String, DateTime> joinedAt = {};
   final Map<String, SealedToPublicKey> keys = {};
   final Map<String, ({String email, SpaceRole role})> invites = {};
   final Map<String, FakeNoteKey> noteKeys = {};
