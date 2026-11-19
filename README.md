@@ -144,7 +144,10 @@ AppImage's runtime, which links libfuse statically. Each package's
 source at the release tag, and points to
 `KapyNotes-<version>-linux-<arch>-source.tar`, which holds their complete
 source and which a release publishes beside the packages; the GPL-3, LGPL-2.1
-and LGPL-3 texts ship beside it. A bundled library needs a line in
+and LGPL-3 texts ship beside it. The tray's indicator and ido libraries are
+GPL-3, so the tarball, the AppImage and the Flatpak made from the tarball are
+each distributed as a whole under the GPL version 3, which their notices say;
+Kapy Notes' own code stays Apache-2.0. A bundled library needs a line in
 `packaging/linux/bundled_sources.txt` naming its Ubuntu source package, or the
 build fails, so a plugin cannot bring one in unnoticed.
 

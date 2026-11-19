@@ -300,6 +300,14 @@ jobs:
             grep -q 'libexec/ffmpeg$' "$doc/SOURCE"
           done
           grep -q "AppImage's type2-runtime" notices/squashfs-root/usr/share/doc/kapynotes/SOURCE
+          # The portable packages bundle GPL-3 libraries, so as a whole they
+          # are distributed under the GPL version 3; the .deb bundles none.
+          for doc in notices/kapynotes/share/doc/kapynotes notices/squashfs-root/usr/share/doc/kapynotes; do
+            grep -qF 'Flatpak made from the tar.gz are each distributed, as a whole, under the terms' "$doc/SOURCE"
+          done
+          if grep -qF 'as a whole' notices/usr/share/doc/kapynotes/SOURCE; then
+            echo "::error::the .deb bundles no GPL-3 library, so its notice must not put it under GPL-3"; exit 1
+          fi
           tar -tzf "$tarball" > tar-contents.txt
           for lib in $(awk '!/^#/ { print $1 }' packaging/linux/bundled_sources.txt); do
             grep -qx "kapynotes/lib/$lib" tar-contents.txt || continue

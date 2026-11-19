@@ -246,18 +246,20 @@ EOF
 }
 
 # SOURCE, and the GPL and LGPL texts beside it: what in the package is GPL or
-# LGPL, at which version, and where its source is. $1 is the file to write,
+# LGPL, at which version, and where its source is. A package that bundles a
+# GPL-3 library says it is distributed as a whole under the GPL version 3,
+# while the app's own code stays Apache-2.0. $1 is the file to write,
 # $2 the package's file name, $3 the app's folder inside the package, and the
 # rest are the bundled libraries, each "lib/<soname>|<source, version>|<licence>".
 write_source_notice() {
-  local dest="$1" package="$2" app="$3" entry path what licence
+  local dest="$1" package="$2" app="$3" entry path what licence gpl3=
   shift 3
   {
     cat <<EOF
 Source code for $package
 
-Kapy Notes is licensed under the Apache License, Version 2.0. This build is of
-the v$VERSION tag of its repository:
+Kapy Notes' own code is licensed under the Apache License, Version 2.0. This
+build is of the v$VERSION tag of its repository:
 
   $REPO/tree/v$VERSION
 
@@ -274,11 +276,23 @@ EOF
     for entry in "$@" "libexec/ffmpeg|FFmpeg $FFMPEG_VERSION|LGPL-2.1+"; do
       IFS='|' read -r path what licence <<<"$entry"
       printf '  %s%s\n      %s; %s\n' "$app" "$path" "$what" "$licence"
+      if [[ "$licence" == GPL-3* ]]; then gpl3=1; fi
     done
     if [[ "$package" == *.AppImage ]]; then
       printf '  the runtime at the start of the AppImage\n      %s; %s\n' \
         "AppImage's type2-runtime $RUNTIME_RELEASE, which links libfuse $LIBFUSE_VERSION statically" \
         "MIT, and LGPL-2.1 for libfuse"
+    fi
+    if [[ -n "$gpl3" ]]; then
+      cat <<'EOF'
+
+Because of the libraries above marked GPL-3, the tar.gz, the AppImage and the
+Flatpak made from the tar.gz are each distributed, as a whole, under the terms
+of the GNU GPL version 3. Kapy Notes' own code stays licensed under the Apache
+License, Version 2.0. The tag above pins the rest of the whole's source: its
+pubspec.lock the Dart packages compiled into lib/libapp.so, and its release
+workflow the Flutter version whose engine is lib/libflutter_linux_gtk.so.
+EOF
     fi
     cat <<'EOF'
 
