@@ -69,6 +69,9 @@ class _FixedSummarizer implements Summarizer {
   Future<SummarizerReadiness> readiness() async => state;
 
   @override
+  Future<bool> writes(String lang) async => true;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

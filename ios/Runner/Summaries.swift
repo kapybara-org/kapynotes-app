@@ -35,6 +35,8 @@ enum Summaries {
       switch call.method {
       case "availability":
         result(availability())
+      case "writes":
+        result(writes(call.arguments as? String))
       case "summarize":
         run(call.arguments, result, asSummary: true)
       case "rewrite":
@@ -80,6 +82,23 @@ enum Summaries {
       }
     #endif
     return "unsupported"
+  }
+
+  /// Whether the model writes `language`, an ISO 639-1 code such as `hi`.
+  ///
+  /// Apple Intelligence covers a fixed set of languages, and Hindi is not one
+  /// of them: asked anyway, it answers in English or not at all. The model's
+  /// own answer rather than a list kept on the Dart side, so a new OS that
+  /// adds a language is used the day it ships. No language is "the transcript
+  /// did not say", which the model may try.
+  private static func writes(_ language: String?) -> Bool {
+    guard let language, !language.isEmpty else { return true }
+    #if canImport(FoundationModels)
+      if #available(iOS 26.0, *) {
+        return SystemLanguageModel.default.supportsLocale(Locale(identifier: language))
+      }
+    #endif
+    return false
   }
 
   /// Both jobs, which differ only in the shape of the answer.

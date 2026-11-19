@@ -269,12 +269,14 @@ class _TotalHoverState extends State<_TotalHover> {
   @override
   void didUpdateWidget(_TotalHover oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.describe != oldWidget.describe) _detail = null;
+    if (widget.describe != oldWidget.describe && _detail != null) {
+      _detail = widget.describe?.call();
+    }
   }
 
   void _describe() {
     if (_detail != null) return;
-    setState(() => _detail = widget.describe?.call() ?? '');
+    setState(() => _detail = widget.describe?.call());
   }
 
   @override
@@ -282,6 +284,7 @@ class _TotalHoverState extends State<_TotalHover> {
     onPointerDown: (_) => _describe(),
     child: MouseRegion(
       onEnter: (_) => _describe(),
+      onExit: (_) => _detail = null,
       child: Tooltip(message: _detail ?? 'Total', child: widget.child),
     ),
   );

@@ -28,6 +28,10 @@ class AppleSummarizer implements Summarizer {
 
   final MethodChannel _channel;
 
+  /// The runner's answer per language. Apple Intelligence's languages are
+  /// fixed for the life of the OS, so asking once is enough.
+  final Map<String, bool> _writes = {};
+
   /// Apple only. Not a guess at eligibility — that is the runner's answer —
   /// just the platforms where the framework exists at all.
   static bool get isPossibleHere => AppPlatform.isMacOS || AppPlatform.isIOS;
@@ -49,6 +53,24 @@ class AppleSummarizer implements Summarizer {
       // An older runner, or a platform whose Runner has no such channel. Not
       // an error: it is the same answer as an ineligible Mac.
       return SummarizerReadiness.unsupported;
+    }
+  }
+
+  /// Asked of the model itself (`SystemLanguageModel.supportsLocale`), which
+  /// knows its languages better than a list kept here would. Anything short of
+  /// a clear no is a yes, as it was before the question existed.
+  @override
+  Future<bool> writes(String lang) async {
+    if (!isPossibleHere || lang.isEmpty) return true;
+    final known = _writes[lang];
+    if (known != null) return known;
+    try {
+      final answer = await _channel.invokeMethod<bool>('writes', lang);
+      return _writes[lang] = answer ?? true;
+    } on PlatformException {
+      return true;
+    } on MissingPluginException {
+      return true;
     }
   }
 

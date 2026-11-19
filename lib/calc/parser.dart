@@ -148,6 +148,15 @@ const Set<String> functionNames = {
   'sinh',
   'cosh',
   'tanh',
+  'cot',
+  'csc',
+  'sec',
+  'coth',
+  'csch',
+  'sech',
+  'asinh',
+  'acosh',
+  'atanh',
   'hypot',
   'gcd',
   'lcm',
@@ -184,6 +193,15 @@ const Set<String> prefixFunctionNames = {
   'sinh',
   'cosh',
   'tanh',
+  'cot',
+  'csc',
+  'sec',
+  'coth',
+  'csch',
+  'sech',
+  'asinh',
+  'acosh',
+  'atanh',
   'fact',
   'fromunix',
 };
@@ -362,7 +380,9 @@ class Parser {
       }
       if (_isConversionKeyword(node)) {
         _advance();
-        final unit = _parseUnitSpec(expectedDimension: _nodeDimension(node));
+        final unit =
+            _parseUnitSpec(expectedDimension: _nodeDimension(node)) ??
+            _parseUnitSpec();
         if (unit == null) throw const CalcError('expected a unit after "to"');
         node = ConvertNode(node, unit);
         continue;
@@ -423,9 +443,22 @@ class Parser {
     final word = _current.text.toLowerCase();
     if (word == 'to' || word == 'into') return true;
     if (word == 'in' || word == 'as') {
-      return _startsUnitSpec(1, expectedDimension: _nodeDimension(value));
+      final dimension = _nodeDimension(value);
+      return _startsUnitSpec(1, expectedDimension: dimension) ||
+          _isCompoundUnit(dimension);
     }
     return false;
+  }
+
+  /// Whether the words after the current one write a unit of [dimension] made
+  /// of others, as `kg*m/s^2` is for a force, where no single word names it.
+  bool _isCompoundUnit(Dimension? dimension) {
+    if (dimension == null) return false;
+    final save = _index;
+    _advance();
+    final unit = _parseUnitSpec();
+    _index = save;
+    return unit != null && unit.dimension == dimension;
   }
 
   bool _startsUnitSpec(int offset, {Dimension? expectedDimension}) {
