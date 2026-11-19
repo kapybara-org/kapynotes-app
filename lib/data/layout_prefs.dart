@@ -96,6 +96,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _resultsVisibleKey = 'resultsVisible.v2';
   static const String _sidebarKey = 'sidebar.v1';
   static const String _hiddenFolderVisibleKey = 'hiddenFolderVisible.v1';
+  static const String _askBeforeDeletingKey = 'askBeforeDeleting.v1';
   static const String _noteCardsKey = 'noteCards.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
@@ -148,6 +149,7 @@ class LayoutPrefs extends ChangeNotifier {
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = false;
   bool _hiddenFolderVisible = true;
+  bool _askBeforeDeleting = true;
   bool _noteCards = true;
   Size _windowSize = defaultWindowSize;
   Offset? _windowPosition;
@@ -193,6 +195,12 @@ class LayoutPrefs extends ChangeNotifier {
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
   bool get hiddenFolderVisible => _hiddenFolderVisible;
+
+  /// Whether deleting one note asks first. Turned off by the question's own
+  /// "Don't ask again", and back on from Settings. Deleting several notes at
+  /// once asks whatever this says. Kept on this device, as every other
+  /// preference here is.
+  bool get askBeforeDeleting => _askBeforeDeleting;
 
   /// Whether the desktop notes list draws its notes as sticky cards rather
   /// than as rows. Cards are how the list first appears.
@@ -366,6 +374,7 @@ class LayoutPrefs extends ChangeNotifier {
     // state for this session, not a preference carried into the next one.
     _sidebarVisible = false;
     _hiddenFolderVisible = _store.read<bool>(_hiddenFolderVisibleKey) ?? true;
+    _askBeforeDeleting = _store.read<bool>(_askBeforeDeletingKey) ?? true;
     _noteCards = _store.read<bool>(_noteCardsKey) ?? true;
     _windowSize = _clampWindowSize(
       Size(
@@ -814,6 +823,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _hiddenFolderVisible) return;
     _hiddenFolderVisible = value;
     _store.putNow(_hiddenFolderVisibleKey, value);
+    notifyListeners();
+  }
+
+  set askBeforeDeleting(bool value) {
+    if (value == _askBeforeDeleting) return;
+    _askBeforeDeleting = value;
+    _store.putNow(_askBeforeDeletingKey, value);
     notifyListeners();
   }
 
