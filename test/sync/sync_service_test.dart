@@ -531,6 +531,30 @@ void main() {
   });
 
   group('no edit is lost', () {
+    test('an edit made after an offline delete wins over it', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+      await two.docs.flush();
+
+      await two.relaunch(whileDown: () => two.notes.delete(note.id));
+      one.notes.updateBody(note.id, 'Start, edited later');
+      await settle(server);
+
+      await two.goLive();
+      await settle(server);
+      expect(two.bodyOf(note.id), 'Start, edited later', reason: 'the stale delete won');
+      expect(one.bodyOf(note.id), 'Start, edited later');
+      expect(two.notes.tombstones.where((s) => s.id == note.id), isEmpty);
+      one.dispose();
+      two.dispose();
+    });
+
     test('a crash before the outbox is written loses no edit', () async {
       final one = Device(server, name: 'one');
       final two = Device(server, name: 'two');
@@ -962,6 +986,27 @@ void main() {
   });
 
   group('two devices holding the same note', () {
+    test('a delete from a device whose clock runs slow still takes the note', () async {
+      server.now = () => DateTime.utc(2026, 9, 1);
+      final fast = Device(server, name: 'fast', startAt: DateTime.utc(2026, 9, 1, 6));
+      final slow = Device(server, name: 'slow', startAt: DateTime.utc(2026, 8, 31, 18));
+      await fast.boot();
+      await slow.boot();
+      await fast.goLive();
+      await slow.goLive();
+      final note = fast.notes.create(body: 'Delete me');
+      await until(() => slow.bodyOf(note.id) == 'Delete me');
+
+      slow.notes.delete(note.id);
+      await settle(server);
+      await until(
+        () => fast.notes.byId(note.id) == null,
+        reason: 'the fast clock kept a note deleted elsewhere',
+      );
+      fast.dispose();
+      slow.dispose();
+    });
+
     /// A note both devices already have — restored from a backup, or from
     /// the store as it was before sync existed.
     Note held(String id, String body, DateTime at) =>

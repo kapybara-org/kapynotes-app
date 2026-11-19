@@ -853,6 +853,16 @@ class NotesStore extends ChangeNotifier {
     return kept;
   }
 
+  /// Forgets deletions of this device's that never went up, because a later
+  /// edit from somebody else won over them.
+  void dropTombstones(List<Tombstone> stones) {
+    final keys = {for (final s in stones) _stoneKey(s.spaceId, s.id)};
+    _tombstones = List.unmodifiable(
+      _tombstones.where((s) => !keys.contains(_stoneKey(s.spaceId, s.id))),
+    );
+    _persist();
+  }
+
   /// Shared notes this account took out of its own notes without deleting
   /// them for everyone, by id, with the space each was in.
   Map<String, String> get _dismissed => {
@@ -1040,9 +1050,11 @@ class NotesStore extends ChangeNotifier {
         // about the note where it is now.
         if (local.spaceId != incoming.spaceId) {
           // Nothing to remove, but the record still travels.
-        } else if (local.updatedAt.isAfter(incoming.deletedAt)) {
+        } else if (local.isDirty &&
+            local.updatedAt.isAfter(incoming.deletedAt)) {
           // A local edit newer than the remote delete resurrects the note; it
-          // is still dirty, so the next push sends it back up.
+          // is still dirty, so the next push sends it back up. A clean copy
+          // goes whatever its clock says.
           continue;
         } else {
           removed.add(index);
