@@ -24,7 +24,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/core/app_tray.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/menu_bar_panel.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -99,7 +101,12 @@ Future<_Panel> _pumpPanel(WidgetTester tester, {required bool takesKey}) async {
     ViewAnchor(
       view: MenuBarPanelView(
         controller: controller,
-        prefs: prefs,
+        look: () => (
+          light: KapyTheme.light(),
+          dark: KapyTheme.dark(),
+          mode: prefs.appearance.themeMode,
+        ),
+        lookChanges: prefs.appearanceListenable,
         panel: (context) => MenuBarPanel(
           controller: controller,
           notes: notes,

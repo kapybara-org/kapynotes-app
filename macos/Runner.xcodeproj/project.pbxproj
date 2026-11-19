@@ -49,6 +49,7 @@
 		C1A0B0330000000000000002 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0330000000000000001 /* MenuBarIcon.swift */; };
 		C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* AccessibilityText.swift */; };
 		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
+		C1A0B0470000000000000002 /* ContrastSetting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0470000000000000001 /* ContrastSetting.swift */; };
 		C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00D0000000000000001 /* AppUpdater.swift */; };
 		C1A0B00E0000000000000002 /* AccessibilityTextMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */; };
 		C1A0B0F10000000000000002 /* RichClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F10000000000000001 /* RichClipboardTests.swift */; };
@@ -149,6 +150,7 @@
 		C1A0B0330000000000000001 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		C1A0B00B0000000000000001 /* AccessibilityText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityText.swift; sourceTree = "<group>"; };
 		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
+		C1A0B0470000000000000001 /* ContrastSetting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContrastSetting.swift; sourceTree = "<group>"; };
 		C1A0B00D0000000000000001 /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 		C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTextMirror.swift; sourceTree = "<group>"; };
 		C1A0B0F10000000000000001 /* RichClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardTests.swift; sourceTree = "<group>"; };
@@ -290,6 +292,7 @@
 				C1A0B0320000000000000001 /* MenuBarPanel.swift */,
 				D5F1EC0A0000000000000001 /* FileKeychain.swift */,
 				C1A0B00C0000000000000001 /* SystemRegion.swift */,
+				C1A0B0470000000000000001 /* ContrastSetting.swift */,
 				C1A0B00D0000000000000001 /* AppUpdater.swift */,
 				C1A0B0020000000000000001 /* RichClipboard.swift */,
 				C1A0B0030000000000000001 /* SpellCheck.swift */,
@@ -700,6 +703,7 @@
 				C1A0B0320000000000000002 /* MenuBarPanel.swift in Sources */,
 				D5F1EC0A0000000000000002 /* FileKeychain.swift in Sources */,
 				C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */,
+				C1A0B0470000000000000002 /* ContrastSetting.swift in Sources */,
 				C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */,
 				C1A0B0020000000000000002 /* RichClipboard.swift in Sources */,
 				C1A0B0030000000000000002 /* SpellCheck.swift in Sources */,

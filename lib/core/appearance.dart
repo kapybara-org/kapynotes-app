@@ -5,7 +5,7 @@ enum AppearanceMode { system, light, dark }
 
 extension AppearanceModeDetails on AppearanceMode {
   String get label => switch (this) {
-    AppearanceMode.system => 'Match the system',
+    AppearanceMode.system => 'System',
     AppearanceMode.light => 'Light',
     AppearanceMode.dark => 'Dark',
   };
@@ -21,6 +21,139 @@ extension AppearanceModeDetails on AppearanceMode {
     AppearanceMode.light => ThemeMode.light,
     AppearanceMode.dark => ThemeMode.dark,
   };
+}
+
+/// One of the six looks the app can wear (Themes r2, p-N-0). Each has a dark
+/// and a light side, except Midnight, which is dark only and uses Riverbank
+/// light by day. The choice belongs to the device and is not synced: a phone
+/// in bed and a desk by a window want different things.
+enum AppTheme { riverbank, graphite, midnight, dusk, lamplight, fjord }
+
+extension AppThemeDetails on AppTheme {
+  String get label => switch (this) {
+    AppTheme.riverbank => 'Riverbank',
+    AppTheme.graphite => 'Graphite',
+    AppTheme.midnight => 'Midnight',
+    AppTheme.dusk => 'Dusk',
+    AppTheme.lamplight => 'Lamplight',
+    AppTheme.fjord => 'Fjord',
+  };
+
+  /// The line under its name in the picker.
+  String get description => switch (this) {
+    AppTheme.riverbank => 'Warm paper and sage',
+    AppTheme.graphite => 'Pure greys, no tint at all',
+    AppTheme.midnight => 'True black for OLED screens',
+    AppTheme.dusk => 'Dim indigo, for reading in bed',
+    AppTheme.lamplight => 'Amber with no blue, for late night',
+    AppTheme.fjord => 'Cool sea-glass, crisp by day',
+  };
+
+  /// The word beside its name, where there is one to say.
+  String? get badge => switch (this) {
+    AppTheme.riverbank => 'Default',
+    AppTheme.midnight => 'Dark only',
+    AppTheme.fjord => 'New',
+    _ => null,
+  };
+}
+
+/// "At night, use a different theme": from [from] until [to], the window
+/// wears [theme]'s dark side whatever the mode, and goes back by itself in
+/// the morning.
+///
+/// Set hours only. The OS already turns light into dark at sunset, so this
+/// is about a different dark late at night, which is a matter of the clock.
+@immutable
+class NightTheme {
+  const NightTheme({
+    this.enabled = false,
+    this.theme = AppTheme.lamplight,
+    this.from = 22 * 60,
+    this.to = 6 * 60,
+  });
+
+  final bool enabled;
+  final AppTheme theme;
+
+  /// Minutes after midnight, on the clock the app shows.
+  final int from;
+  final int to;
+
+  /// Whether [wallClock] falls in the night: from [from] up to but not
+  /// including [to], across midnight when [to] comes first. The same two
+  /// times mean no night at all.
+  bool covers(DateTime wallClock) {
+    final minute = wallClock.hour * 60 + wallClock.minute;
+    return from <= to
+        ? minute >= from && minute < to
+        : minute >= from || minute < to;
+  }
+
+  /// Whether the night theme is on screen at [wallClock].
+  bool activeAt(DateTime wallClock) => enabled && covers(wallClock);
+
+  /// How long after [wallClock] the night next begins or ends.
+  Duration untilChange(DateTime wallClock) {
+    final now = Duration(
+      hours: wallClock.hour,
+      minutes: wallClock.minute,
+      seconds: wallClock.second,
+      milliseconds: wallClock.millisecond,
+      microseconds: wallClock.microsecond,
+    );
+    Duration until(int minute) {
+      final wait = Duration(minutes: minute) - now;
+      return wait > Duration.zero ? wait : wait + const Duration(days: 1);
+    }
+
+    final start = until(from), end = until(to);
+    return start < end ? start : end;
+  }
+
+  /// A minute after midnight as the picker writes it: 22:00.
+  static String clock(int minute) =>
+      '${(minute ~/ 60).toString().padLeft(2, '0')}:'
+      '${(minute % 60).toString().padLeft(2, '0')}';
+
+  NightTheme copyWith({bool? enabled, AppTheme? theme, int? from, int? to}) =>
+      NightTheme(
+        enabled: enabled ?? this.enabled,
+        theme: theme ?? this.theme,
+        from: from ?? this.from,
+        to: to ?? this.to,
+      );
+
+  Map<String, Object> toJson() => {
+    'enabled': enabled,
+    'theme': theme.name,
+    'from': from,
+    'to': to,
+  };
+
+  /// What was saved, with anything missing or unknown at its default.
+  factory NightTheme.fromJson(Object? json) {
+    if (json is! Map) return const NightTheme();
+    int minute(Object? value, int fallback) =>
+        value is int && value >= 0 && value < 24 * 60 ? value : fallback;
+    return NightTheme(
+      enabled: json['enabled'] == true,
+      theme: AppTheme.values.asNameMap()[json['theme']] ?? AppTheme.lamplight,
+      from: minute(json['from'], 22 * 60),
+      to: minute(json['to'], 6 * 60),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is NightTheme &&
+      other.enabled == enabled &&
+      other.theme == theme &&
+      other.from == from &&
+      other.to == to;
+
+  @override
+  int get hashCode => Object.hash(enabled, theme, from, to);
 }
 
 /// The reader's preferred size for text throughout the app.

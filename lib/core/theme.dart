@@ -2,10 +2,14 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'appearance.dart';
 import 'editor_font.dart';
 import 'platform.dart';
 
 export 'iconography.dart';
+
+/// A window's two themes and the mode that picks between them.
+typedef WindowLook = ({ThemeData light, ThemeData dark, ThemeMode mode});
 
 /// Colours for calculator-specific surfaces: syntax highlighting and result
 /// chips. Carried as a [ThemeExtension] so widgets read them from the theme
@@ -135,6 +139,43 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// dirt on the paper.
   final Color shadow;
 
+  /// What marks focus, the caret, the open note and whatever is on or done:
+  /// Riverbank's sage, and each theme's own accent.
+  final Color accent;
+
+  /// Ink set on [accent]: the check in a ticked box, a filled button's label.
+  final Color onAccent;
+
+  /// Code in a note, Paper's p-5-0: clay keywords, sage strings, ochre
+  /// numbers and teal built-ins, each a shade deeper in light.
+  final Color codeKeyword;
+  final Color codeString;
+  final Color codeNumber;
+  final Color codeBuiltIn;
+
+  /// The panel under a code block, a step below the page.
+  final Color codePanel;
+
+  /// The pill under inline code and a formula's TeX.
+  final Color codeChip;
+
+  /// The rail's icons and labels at rest. Paper's dark rail is a step
+  /// lighter than the tertiary ink the rest of the app shares.
+  final Color railInk;
+
+  /// A quote's bar, Paper's.
+  final Color quoteBar;
+
+  /// Each tag colour's card and dot, in tag order: mustard, rust, olive,
+  /// teal, sage, slate, plum and rose. A tag keeps its name in every theme;
+  /// only these change.
+  final List<Color> tagCards;
+  final List<Color> tagDots;
+
+  /// Whether this is Increase contrast's version of the palette, which also
+  /// draws keyboard focus as a ring rather than a tint.
+  final bool increasedContrast;
+
   /// The shadow a black at [alpha] casts in dark, scaled by [shadow]'s own
   /// strength so the dark values stay exact and light ones soften with it.
   Color shadowAt(int alpha) => shadow.withAlpha((shadow.a * alpha).round());
@@ -201,39 +242,69 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   Brightness get brightness =>
       ThemeData.estimateBrightnessForColor(editorBackground);
 
-  bool get _dark => brightness == Brightness.dark;
-
-  /// Code in a note, Paper's p-5-0: clay keywords, sage strings, ochre
-  /// numbers and teal built-ins, each a shade deeper in light.
-  Color get codeKeyword =>
-      _dark ? const Color(0xFFCF7A57) : const Color(0xFFB5552F);
-  Color get codeString =>
-      _dark ? const Color(0xFFB3C79C) : const Color(0xFF56703C);
-  Color get codeNumber =>
-      _dark ? const Color(0xFFD4B26A) : const Color(0xFF8A6A1E);
-  Color get codeBuiltIn =>
-      _dark ? const Color(0xFF8FB3B0) : const Color(0xFF3F7470);
-
-  /// The panel under a code block, a step below the page.
-  Color get codePanel =>
-      _dark ? const Color(0xFF1E1C19) : const Color(0xFFF6F2E8);
-
-  /// The pill under inline code and a formula's TeX.
-  Color get codeChip =>
-      _dark ? const Color(0xFF2E2A25) : const Color(0xFFEFEADD);
-
-  /// The rail's icons and labels at rest. Paper's dark rail is a step
-  /// lighter than the tertiary ink the rest of the app shares.
-  Color get railInk => _dark ? const Color(0xFF8F8778) : textTertiary;
-
-  /// A quote's bar, Paper's.
-  Color get quoteBar =>
-      _dark ? const Color(0xFF4A453D) : const Color(0xFFD0C8B5);
-
-  /// The same palette with every surface solid: what High Contrast, Reduce
-  /// Transparency and a desktop with no blur behind the window all ask for.
+  /// The same palette with every surface solid: what Increase contrast,
+  /// Reduce Transparency and a desktop with no blur behind the window all ask
+  /// for.
   CalcPalette get opaque =>
       isGlass ? copyWith(translucency: 1, paperTranslucency: 1) : this;
+
+  /// Increase contrast (Themes r2, p-N-0): one transform over whichever
+  /// palette is on screen, so no theme keeps a second set of colours in step.
+  ///
+  /// Body text, headings and card titles move 60% of the way to white in the
+  /// dark and to black in the light. Secondary text moves halfway to that new
+  /// ink, and muted and faint text 45%. Lines become mixes of the page and the
+  /// new ink: borders 42% in the dark and 52% in the light, hairlines 22%,
+  /// dividers 45%, checkbox outlines and a quote's bar 50%. The accent moves
+  /// 18% toward white or black, links 30% and the tonal button's label 45%.
+  /// Tag cards and dots stay as they are, so a tag looks the same and its
+  /// label, in the stronger ink, reads more easily. Channels are mixed in
+  /// whole steps and rounded half up, which is how the spec's table of
+  /// values was worked out.
+  CalcPalette withIncreasedContrast() {
+    if (increasedContrast) return this;
+    final dark = brightness == Brightness.dark;
+    final extreme = dark ? const Color(0xFFFFFFFF) : const Color(0xFF000000);
+    final ink = _mix(textPrimary, extreme, 0.6);
+    final faint = _mix(textTertiary, ink, 0.45);
+    final secondary = _mix(textSecondary, ink, 0.5);
+    final border = _mix(editorBackground, ink, dark ? 0.42 : 0.52);
+    final hairline = _mix(editorBackground, ink, 0.22);
+    final outline = _mix(editorBackground, ink, 0.5);
+    final strongAccent = _mix(accent, extreme, 0.18);
+    return copyWith(
+      number: ink,
+      keyword: ink,
+      function: ink,
+      variable: ink,
+      unit: faint,
+      currency: faint,
+      operator: faint,
+      comment: faint,
+      textPrimary: ink,
+      textHeading: ink,
+      cardTitle: ink,
+      textSubheading: _mix(textSubheading, extreme, 0.6),
+      textSecondary: secondary,
+      keycapText: secondary,
+      textDescription: _mix(textDescription, ink, 0.5),
+      textMuted: _mix(textMuted, ink, 0.45),
+      textTertiary: faint,
+      controlBorder: border,
+      paneEdge: border,
+      pageBorder: hairline,
+      paperRuling: hairline,
+      textDivider: _mix(editorBackground, ink, 0.45),
+      checkboxBorder: outline,
+      quoteBar: outline,
+      accent: strongAccent,
+      selectedBorder: strongAccent,
+      totalPillBackground: strongAccent,
+      accentText: _mix(accentText, extreme, 0.3),
+      tonalForeground: _mix(tonalForeground, extreme, 0.45),
+      increasedContrast: true,
+    );
+  }
 
   const CalcPalette({
     required this.number,
@@ -299,6 +370,19 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.wellBackground,
     required this.segmentSelected,
     required this.shadow,
+    required this.accent,
+    required this.onAccent,
+    required this.codeKeyword,
+    required this.codeString,
+    required this.codeNumber,
+    required this.codeBuiltIn,
+    required this.codePanel,
+    required this.codeChip,
+    required this.railInk,
+    required this.quoteBar,
+    required this.tagCards,
+    required this.tagDots,
+    this.increasedContrast = false,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -368,6 +452,19 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? wellBackground,
     Color? segmentSelected,
     Color? shadow,
+    Color? accent,
+    Color? onAccent,
+    Color? codeKeyword,
+    Color? codeString,
+    Color? codeNumber,
+    Color? codeBuiltIn,
+    Color? codePanel,
+    Color? codeChip,
+    Color? railInk,
+    Color? quoteBar,
+    List<Color>? tagCards,
+    List<Color>? tagDots,
+    bool? increasedContrast,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -434,6 +531,19 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     wellBackground: wellBackground ?? this.wellBackground,
     segmentSelected: segmentSelected ?? this.segmentSelected,
     shadow: shadow ?? this.shadow,
+    accent: accent ?? this.accent,
+    onAccent: onAccent ?? this.onAccent,
+    codeKeyword: codeKeyword ?? this.codeKeyword,
+    codeString: codeString ?? this.codeString,
+    codeNumber: codeNumber ?? this.codeNumber,
+    codeBuiltIn: codeBuiltIn ?? this.codeBuiltIn,
+    codePanel: codePanel ?? this.codePanel,
+    codeChip: codeChip ?? this.codeChip,
+    railInk: railInk ?? this.railInk,
+    quoteBar: quoteBar ?? this.quoteBar,
+    tagCards: tagCards ?? this.tagCards,
+    tagDots: tagDots ?? this.tagDots,
+    increasedContrast: increasedContrast ?? this.increasedContrast,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -509,6 +619,25 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       wellBackground: mix(wellBackground, other.wellBackground),
       segmentSelected: mix(segmentSelected, other.segmentSelected),
       shadow: mix(shadow, other.shadow),
+      accent: mix(accent, other.accent),
+      onAccent: mix(onAccent, other.onAccent),
+      codeKeyword: mix(codeKeyword, other.codeKeyword),
+      codeString: mix(codeString, other.codeString),
+      codeNumber: mix(codeNumber, other.codeNumber),
+      codeBuiltIn: mix(codeBuiltIn, other.codeBuiltIn),
+      codePanel: mix(codePanel, other.codePanel),
+      codeChip: mix(codeChip, other.codeChip),
+      railInk: mix(railInk, other.railInk),
+      quoteBar: mix(quoteBar, other.quoteBar),
+      tagCards: [
+        for (var i = 0; i < tagCards.length; i++)
+          mix(tagCards[i], other.tagCards[i]),
+      ],
+      tagDots: [
+        for (var i = 0; i < tagDots.length; i++)
+          mix(tagDots[i], other.tagDots[i]),
+      ],
+      increasedContrast: t < 0.5 ? increasedContrast : other.increasedContrast,
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -1047,17 +1176,6 @@ class AppFonts {
 class KapyTheme {
   const KapyTheme._();
 
-  /// Riverbank's sage, which marks what is on, done or open: checkboxes,
-  /// switches, progress and the open note. Deeper in light, where it carries
-  /// light ink.
-  static const _darkAccent = Color(0xFF7D9468);
-  static const _lightAccent = Color(0xFF56703C);
-
-  /// The accent the theme for [brightness] marks focus, the caret and what is
-  /// on with.
-  static Color accentFor(Brightness brightness) =>
-      brightness == Brightness.dark ? _darkAccent : _lightAccent;
-
   /// A filled control's background in each state: [fill] at rest, with a
   /// little of its [ink] laid over it when hovered or focused and a little
   /// more while pressed, and [disabled] when it has nothing to do. The accent
@@ -1079,19 +1197,88 @@ class KapyTheme {
   });
 
   static ThemeData light({
+    AppTheme theme = AppTheme.riverbank,
+    bool increaseContrast = false,
     bool transparency = false,
     double amount = defaultGlassAmount,
-  }) => _build(
-    Brightness.light,
-    transparency ? glassPalette(Brightness.light, amount) : lightPalette,
+  }) => _themed(
+    palette(theme, Brightness.light),
+    increaseContrast: increaseContrast,
+    transparency: transparency,
+    amount: amount,
   );
   static ThemeData dark({
+    AppTheme theme = AppTheme.riverbank,
+    bool increaseContrast = false,
     bool transparency = false,
     double amount = defaultGlassAmount,
-  }) => _build(
-    Brightness.dark,
-    transparency ? glassPalette(Brightness.dark, amount) : darkPalette,
+  }) => _themed(
+    palette(theme, Brightness.dark),
+    increaseContrast: increaseContrast,
+    transparency: transparency,
+    amount: amount,
   );
+
+  static ThemeData _themed(
+    CalcPalette palette, {
+    required bool increaseContrast,
+    required bool transparency,
+    required double amount,
+  }) {
+    final colours = increaseContrast
+        ? palette.withIncreasedContrast()
+        : palette;
+    return _build(transparency ? glassPalette(colours, amount) : colours);
+  }
+
+  /// [theme]'s palette for [brightness]. Midnight has no light side of its
+  /// own: by day it is Riverbank light.
+  static CalcPalette palette(AppTheme theme, Brightness brightness) {
+    final (dark, light) = _palettes[theme]!;
+    return brightness == Brightness.dark ? dark : light;
+  }
+
+  /// What a window wears for these choices at [wallClock], the time on the
+  /// clock the app shows: [theme]'s two sides in [mode], or, while At night
+  /// covers the hour, the night theme's dark side whatever the mode.
+  static WindowLook window({
+    required AppearanceMode mode,
+    required AppTheme theme,
+    required NightTheme night,
+    required DateTime wallClock,
+    bool increaseContrast = false,
+    bool transparency = false,
+    double amount = defaultGlassAmount,
+  }) {
+    final atNight = night.activeAt(wallClock);
+    return (
+      light: light(
+        theme: theme,
+        increaseContrast: increaseContrast,
+        transparency: transparency,
+        amount: amount,
+      ),
+      dark: dark(
+        theme: atNight ? night.theme : theme,
+        increaseContrast: increaseContrast,
+        transparency: transparency,
+        amount: amount,
+      ),
+      mode: atNight ? ThemeMode.dark : mode.themeMode,
+    );
+  }
+
+  static final Map<AppTheme, (CalcPalette, CalcPalette)> _palettes = {
+    AppTheme.riverbank: (darkPalette, lightPalette),
+    AppTheme.graphite: (_fromTones(_graphiteDark), _fromTones(_graphiteLight)),
+    AppTheme.midnight: (_fromTones(_midnightDark), lightPalette),
+    AppTheme.dusk: (_fromTones(_duskDark), _fromTones(_duskLight)),
+    AppTheme.lamplight: (
+      _fromTones(_lamplightDark),
+      _fromTones(_lamplightLight),
+    ),
+    AppTheme.fjord: (_fromTones(_fjordDark), _fromTones(_fjordLight)),
+  };
 
   /// Riverbank dark: warm charcoal, cream ink and a sage accent.
   ///
@@ -1164,6 +1351,36 @@ class KapyTheme {
     wellBackground: Color(0xFF1F1D19),
     segmentSelected: Color(0xFF35312B),
     shadow: Color(0xFF000000),
+    accent: Color(0xFF7D9468),
+    onAccent: Color(0xFF1C1A17),
+    codeKeyword: Color(0xFFCF7A57),
+    codeString: Color(0xFFB3C79C),
+    codeNumber: Color(0xFFD4B26A),
+    codeBuiltIn: Color(0xFF8FB3B0),
+    codePanel: Color(0xFF1E1C19),
+    codeChip: Color(0xFF2E2A25),
+    railInk: Color(0xFF8F8778),
+    quoteBar: Color(0xFF4A453D),
+    tagCards: [
+      Color(0xFF393425),
+      Color(0xFF372B26),
+      Color(0xFF2B3125),
+      Color(0xFF273133),
+      Color(0xFF25332A),
+      Color(0xFF282D38),
+      Color(0xFF322A37),
+      Color(0xFF38292D),
+    ],
+    tagDots: [
+      Color(0xFFC9A447),
+      Color(0xFFC4734F),
+      Color(0xFF8F9B55),
+      Color(0xFF4F9A9B),
+      Color(0xFF5FA071),
+      Color(0xFF6D88BE),
+      Color(0xFF9C77B4),
+      Color(0xFFC46F84),
+    ],
   );
 
   /// Riverbank light: warm paper, ink-brown text and a deeper sage.
@@ -1239,6 +1456,36 @@ class KapyTheme {
     wellBackground: Color(0xFFEFEADD),
     segmentSelected: Color(0xFFFCFAF4),
     shadow: Color(0x662A2620),
+    accent: Color(0xFF56703C),
+    onAccent: Color(0xFFFCFAF4),
+    codeKeyword: Color(0xFFB5552F),
+    codeString: Color(0xFF56703C),
+    codeNumber: Color(0xFF8A6A1E),
+    codeBuiltIn: Color(0xFF3F7470),
+    codePanel: Color(0xFFF6F2E8),
+    codeChip: Color(0xFFEFEADD),
+    railInk: Color(0xFF666054),
+    quoteBar: Color(0xFFD0C8B5),
+    tagCards: [
+      Color(0xFFF4EBC8),
+      Color(0xFFF2E0D4),
+      Color(0xFFE6EBD5),
+      Color(0xFFDCE8E6),
+      Color(0xFFD9EAD9),
+      Color(0xFFDEE4F0),
+      Color(0xFFEADFEC),
+      Color(0xFFF3DDE2),
+    ],
+    tagDots: [
+      Color(0xFFA88424),
+      Color(0xFFB5643F),
+      Color(0xFF6F7B38),
+      Color(0xFF3D8586),
+      Color(0xFF4B8A5D),
+      Color(0xFF5873A8),
+      Color(0xFF8A64A3),
+      Color(0xFFB25C72),
+    ],
   );
 
   /// Transparency mode.
@@ -1265,16 +1512,16 @@ class KapyTheme {
   /// thin still separates them from it. Somebody who wants the note to sit
   /// solid on the desktop turns the mode off; this scale is for people who
   /// want it to disappear into one.
-  static CalcPalette glassPalette(Brightness brightness, double amount) {
+  static CalcPalette glassPalette(CalcPalette base, double amount) {
     final t = amount.clamp(0.0, 1.0);
-    final dark = brightness == Brightness.dark;
+    final dark = base.brightness == Brightness.dark;
     final paper = dark ? _lerp(0.34, 0.05, t) : _lerp(0.44, 0.1, t);
     // The chrome is a step thinner than the paper: a row of buttons needs
     // less body under it than a paragraph does, and the difference is what
     // reads as layers rather than one flat tint. Proportional rather than a
     // fixed step, so the thin end of the scale cannot drive it through zero.
     final chrome = paper * 0.84;
-    return (dark ? darkPalette : lightPalette).copyWith(
+    return base.copyWith(
       translucency: chrome,
       paperTranslucency: paper,
       paperFiber: dark ? null : const Color(0x00000000),
@@ -1287,20 +1534,549 @@ class KapyTheme {
   static double _lerp(double a, double b, double t) => a + (b - a) * t;
 
   static final CalcPalette translucentDarkPalette = glassPalette(
-    Brightness.dark,
+    darkPalette,
     defaultGlassAmount,
   );
 
   static final CalcPalette translucentLightPalette = glassPalette(
-    Brightness.light,
+    lightPalette,
     defaultGlassAmount,
   );
 
-  static ThemeData _build(Brightness brightness, CalcPalette palette) {
+  // The other five themes, by the roles Themes r2 names (p-N-0). Each value
+  // is the spec's, except rose, the eighth tag colour, which the spec leaves
+  // out: it moves the way plum and rust move in that theme, and stays at
+  // least ΔE 15 from every other tag. Tags are in tag order: mustard, rust,
+  // olive, teal, sage, slate, plum and rose.
+
+  static const _graphiteDark = _Tones(
+    canvas: Color(0xFF151515),
+    rail: Color(0xFF111111),
+    page: Color(0xFF1B1B1B),
+    raised: Color(0xFF252525),
+    card: Color(0xFF212121),
+    key: Color(0xFF242424),
+    keyEdge: Color(0xFF2F2F2F),
+    border: Color(0xFF2A2A2A),
+    hair: Color(0xFF272727),
+    menuEdge: Color(0xFF2E2E2E),
+    divider: Color(0xFF505050),
+    switchOff: Color(0xFF333333),
+    text: Color(0xFFE6E6E6),
+    head: Color(0xFFDEDEDE),
+    subhead: Color(0xFFD7D7D7),
+    cardTitle: Color(0xFFDDDDDD),
+    muted: Color(0xFFBEBEBE),
+    sec: Color(0xFFA3A3A3),
+    icon: Color(0xFF929292),
+    faint: Color(0xFF8E8E8E),
+    dim: Color(0xFF5A5A5A),
+    dim2: Color(0xFF555555),
+    dim3: Color(0xFF434343),
+    box: Color(0xFF4B4B4B),
+    accent: Color(0xFFC2C2C2),
+    link: Color(0xFFB3C2D6),
+    chipText: Color(0xFFCBD2DC),
+    tb: Color(0xFF2D2D2D),
+    tf: Color(0xFFE2E2E2),
+    tkBg: Color(0xFF4B4B4B),
+    tkText: Color(0xFFD0D0D0),
+    onAccent: Color(0xFF151515),
+    clay: Color(0xFFD58B63),
+    codeBg: Color(0xFF292929),
+    tSage: Color(0xFF343434),
+    tags: [
+      Color(0xFF342F23),
+      Color(0xFF352924),
+      Color(0xFF2C2E24),
+      Color(0xFF232E2E),
+      Color(0xFF252F28),
+      Color(0xFF282C36),
+      Color(0xFF2E2A33),
+      Color(0xFF34282C),
+    ],
+    dots: [
+      Color(0xFFC2A04E),
+      Color(0xFFC77B55),
+      Color(0xFF8F9B55),
+      Color(0xFF4F9A9B),
+      Color(0xFF5FA071),
+      Color(0xFF6F8FD0),
+      Color(0xFF9C7FB8),
+      Color(0xFFC6778B),
+    ],
+  );
+
+  static const _graphiteLight = _Tones(
+    canvas: Color(0xFFF2F2F2),
+    rail: Color(0xFFEBEBEB),
+    page: Color(0xFFFFFFFF),
+    raised: Color(0xFFF0F0F0),
+    card: Color(0xFFF7F7F7),
+    key: Color(0xFFF6F6F6),
+    keyEdge: Color(0xFFE9E9E9),
+    border: Color(0xFFEFEFEF),
+    hair: Color(0xFFF2F2F2),
+    menuEdge: Color(0xFFEAEAEA),
+    divider: Color(0xFFC5C5C5),
+    switchOff: Color(0xFFE4E4E4),
+    text: Color(0xFF1E1E1E),
+    head: Color(0xFF262626),
+    subhead: Color(0xFF2C2C2C),
+    cardTitle: Color(0xFF272727),
+    muted: Color(0xFF434343),
+    sec: Color(0xFF5C5C5C),
+    icon: Color(0xFF676767),
+    faint: Color(0xFF6A6A6A),
+    dim: Color(0xFFADADAD),
+    dim2: Color(0xFFB5B5B5),
+    dim3: Color(0xFFCBCBCB),
+    box: Color(0xFFC0C0C0),
+    accent: Color(0xFF3A3A3A),
+    link: Color(0xFF2F5D99),
+    chipText: Color(0xFF2B4260),
+    tb: Color(0xFFE8E8E8),
+    tf: Color(0xFF262626),
+    tkBg: Color(0xFFC5C5C5),
+    tkText: Color(0xFF313131),
+    onAccent: Color(0xFFFFFFFF),
+    clay: Color(0xFFB5552E),
+    codeBg: Color(0xFFEFEFEF),
+    tSage: Color(0xFFE1E1E1),
+    tags: [
+      Color(0xFFEEEADE),
+      Color(0xFFF3E6E0),
+      Color(0xFFE9EAE0),
+      Color(0xFFDFEBEB),
+      Color(0xFFE2ECE5),
+      Color(0xFFE4E8F2),
+      Color(0xFFEBE6F0),
+      Color(0xFFF2E4EA),
+    ],
+    dots: [
+      Color(0xFF8F7420),
+      Color(0xFFB0582F),
+      Color(0xFF6A7530),
+      Color(0xFF2C7778),
+      Color(0xFF3E7F50),
+      Color(0xFF4A68A6),
+      Color(0xFF7A579B),
+      Color(0xFFA94E6A),
+    ],
+  );
+
+  static const _midnightDark = _Tones(
+    canvas: Color(0xFF000000),
+    rail: Color(0xFF000000),
+    page: Color(0xFF000000),
+    raised: Color(0xFF151515),
+    card: Color(0xFF0F0F0F),
+    key: Color(0xFF151515),
+    keyEdge: Color(0xFF2E2E2E),
+    border: Color(0xFF2A2A2A),
+    hair: Color(0xFF1F1F1F),
+    menuEdge: Color(0xFF2E2E2E),
+    divider: Color(0xFF3C3B39),
+    switchOff: Color(0xFF1C1B1A),
+    text: Color(0xFFE6E2DA),
+    head: Color(0xFFDEDAD2),
+    subhead: Color(0xFFD8D4CB),
+    cardTitle: Color(0xFFDDD9D1),
+    muted: Color(0xFFC1BCB4),
+    sec: Color(0xFFA8A39A),
+    icon: Color(0xFF959087),
+    faint: Color(0xFF908B82),
+    dim: Color(0xFF4F4C48),
+    dim2: Color(0xFF484641),
+    dim3: Color(0xFF32312E),
+    box: Color(0xFF3C3A37),
+    accent: Color(0xFF8BA374),
+    link: Color(0xFFA6BC8E),
+    chipText: Color(0xFFB4C99D),
+    tb: Color(0xFF1B2416),
+    tf: Color(0xFFC2D6AC),
+    tkBg: Color(0xFF313D29),
+    tkText: Color(0xFFA4BA8D),
+    onAccent: Color(0xFF000000),
+    clay: Color(0xFFCF7A57),
+    codeBg: Color(0xFF10100F),
+    tSage: Color(0xFF1C2117),
+    tags: [
+      Color(0xFF28210E),
+      Color(0xFF271710),
+      Color(0xFF1D1F11),
+      Color(0xFF101F1F),
+      Color(0xFF132017),
+      Color(0xFF161B26),
+      Color(0xFF1F1824),
+      Color(0xFF26161B),
+    ],
+    dots: [
+      Color(0xFFC9A447),
+      Color(0xFFC4734F),
+      Color(0xFF8F9B55),
+      Color(0xFF4F9A9B),
+      Color(0xFF5FA071),
+      Color(0xFF6D88BE),
+      Color(0xFF9C77B4),
+      Color(0xFFC46F84),
+    ],
+  );
+
+  static const _duskDark = _Tones(
+    canvas: Color(0xFF15151F),
+    rail: Color(0xFF111119),
+    page: Color(0xFF1A1A26),
+    raised: Color(0xFF232330),
+    card: Color(0xFF20202C),
+    key: Color(0xFF21212D),
+    keyEdge: Color(0xFF2B2B37),
+    border: Color(0xFF262633),
+    hair: Color(0xFF242430),
+    menuEdge: Color(0xFF2A2A36),
+    divider: Color(0xFF464653),
+    switchOff: Color(0xFF2E2E3B),
+    text: Color(0xFFC4C2D2),
+    head: Color(0xFFBFBDCE),
+    subhead: Color(0xFFBBB9CA),
+    cardTitle: Color(0xFFBEBCCD),
+    muted: Color(0xFFACAABC),
+    sec: Color(0xFF9C9AAE),
+    icon: Color(0xFF8F8DA2),
+    faint: Color(0xFF8C8A9F),
+    dim: Color(0xFF595869),
+    dim2: Color(0xFF535263),
+    dim3: Color(0xFF424150),
+    box: Color(0xFF4A4959),
+    accent: Color(0xFF9B92C9),
+    link: Color(0xFFB2AADA),
+    chipText: Color(0xFFBEB7E2),
+    tb: Color(0xFF2A2840),
+    tf: Color(0xFFC9C3EA),
+    tkBg: Color(0xFF413D5B),
+    tkText: Color(0xFFB0A8D8),
+    onAccent: Color(0xFF15151F),
+    clay: Color(0xFFC08A78),
+    codeBg: Color(0xFF262632),
+    tSage: Color(0xFF2D2C3E),
+    tags: [
+      Color(0xFF322F30),
+      Color(0xFF332A31),
+      Color(0xFF2C2D31),
+      Color(0xFF262E39),
+      Color(0xFF292F35),
+      Color(0xFF2A2C3D),
+      Color(0xFF2F2B3D),
+      Color(0xFF332A36),
+    ],
+    dots: [
+      Color(0xFFBBA468),
+      Color(0xFFBE8670),
+      Color(0xFF949A6E),
+      Color(0xFF6D9FA3),
+      Color(0xFF7FA488),
+      Color(0xFF8494C2),
+      Color(0xFFA88BBE),
+      Color(0xFFC58595),
+    ],
+  );
+
+  static const _duskLight = _Tones(
+    canvas: Color(0xFFECEBF2),
+    rail: Color(0xFFE5E4EC),
+    page: Color(0xFFF4F3F8),
+    raised: Color(0xFFE8E7EF),
+    card: Color(0xFFEFEEF4),
+    key: Color(0xFFECEBF1),
+    keyEdge: Color(0xFFE2E1E7),
+    border: Color(0xFFE6E5EB),
+    hair: Color(0xFFE9E8EE),
+    menuEdge: Color(0xFFE3E2E8),
+    divider: Color(0xFFC4C3CB),
+    switchOff: Color(0xFFDEDDE3),
+    text: Color(0xFF3B3A4A),
+    head: Color(0xFF3F3E4E),
+    subhead: Color(0xFF424051),
+    cardTitle: Color(0xFF3F3E4E),
+    muted: Color(0xFF4C4B5B),
+    sec: Color(0xFF585667),
+    icon: Color(0xFF605E70),
+    faint: Color(0xFF626072),
+    dim: Color(0xFFA4A2AE),
+    dim2: Color(0xFFABAAB5),
+    dim3: Color(0xFFC1C0C9),
+    box: Color(0xFFB7B5C0),
+    accent: Color(0xFF5E569A),
+    link: Color(0xFF5E569A),
+    chipText: Color(0xFF4F4789),
+    tb: Color(0xFFE2DFF0),
+    tf: Color(0xFF3F3878),
+    tkBg: Color(0xFFC8C4DF),
+    tkText: Color(0xFF50498B),
+    onAccent: Color(0xFFF4F3F8),
+    clay: Color(0xFFA65A3A),
+    codeBg: Color(0xFFE7E6EC),
+    tSage: Color(0xFFDEDBEA),
+    tags: [
+      Color(0xFFE4DFD8),
+      Color(0xFFE8DCDC),
+      Color(0xFFDFDFDB),
+      Color(0xFFD6DFE4),
+      Color(0xFFD9E1DF),
+      Color(0xFFD9DDEC),
+      Color(0xFFE1DCE9),
+      Color(0xFFE7DBE4),
+    ],
+    dots: [
+      Color(0xFF866F25),
+      Color(0xFFA55A3A),
+      Color(0xFF666F35),
+      Color(0xFF2E6F70),
+      Color(0xFF3F7A50),
+      Color(0xFF3F5FA7),
+      Color(0xFF755C93),
+      Color(0xFF9E546B),
+    ],
+  );
+
+  static const _lamplightDark = _Tones(
+    canvas: Color(0xFF1A130C),
+    rail: Color(0xFF150F09),
+    page: Color(0xFF20180F),
+    raised: Color(0xFF2A2016),
+    card: Color(0xFF261D13),
+    key: Color(0xFF292015),
+    keyEdge: Color(0xFF342A1D),
+    border: Color(0xFF2F2519),
+    hair: Color(0xFF2C2217),
+    menuEdge: Color(0xFF33291C),
+    divider: Color(0xFF554734),
+    switchOff: Color(0xFF382D20),
+    text: Color(0xFFEBCB9E),
+    head: Color(0xFFE6C69A),
+    subhead: Color(0xFFE2C296),
+    cardTitle: Color(0xFFE6C699),
+    muted: Color(0xFFD4B488),
+    sec: Color(0xFFC4A47A),
+    icon: Color(0xFFAF916A),
+    faint: Color(0xFFAA8C66),
+    dim: Color(0xFF6C583F),
+    dim2: Color(0xFF65523B),
+    dim3: Color(0xFF50412D),
+    box: Color(0xFF5A4934),
+    accent: Color(0xFFC89550),
+    link: Color(0xFFDDB173),
+    chipText: Color(0xFFE4BD82),
+    tb: Color(0xFF3A2A16),
+    tf: Color(0xFFEBC891),
+    tkBg: Color(0xFF563F22),
+    tkText: Color(0xFFD8AC6D),
+    onAccent: Color(0xFF1A130C),
+    clay: Color(0xFFD9804F),
+    codeBg: Color(0xFF2E2519),
+    tSage: Color(0xFF392B19),
+    tags: [
+      Color(0xFF3D3018),
+      Color(0xFF3C2618),
+      Color(0xFF292717),
+      Color(0xFF3A3024),
+      Color(0xFF312F1B),
+      Color(0xFF32261A),
+      Color(0xFF3B2821),
+      Color(0xFF3C261C),
+    ],
+    dots: [
+      Color(0xFFE2B94E),
+      Color(0xFFD9784A),
+      Color(0xFF5F7A45),
+      Color(0xFFCDB89A),
+      Color(0xFF93AE5C),
+      Color(0xFF9A7458),
+      Color(0xFFD2808A),
+      Color(0xFFDC7D6A),
+    ],
+  );
+
+  static const _lamplightLight = _Tones(
+    canvas: Color(0xFFEFE4CF),
+    rail: Color(0xFFE8DCC4),
+    page: Color(0xFFF7EEDC),
+    raised: Color(0xFFECE0C8),
+    card: Color(0xFFF2E7D2),
+    key: Color(0xFFEFE6D4),
+    keyEdge: Color(0xFFE4DAC9),
+    border: Color(0xFFE9E0CE),
+    hair: Color(0xFFECE3D1),
+    menuEdge: Color(0xFFE5DCCA),
+    divider: Color(0xFFC6BBAA),
+    switchOff: Color(0xFFE0D6C5),
+    text: Color(0xFF3A2A1A),
+    head: Color(0xFF3F2E1D),
+    subhead: Color(0xFF433220),
+    cardTitle: Color(0xFF402F1D),
+    muted: Color(0xFF533E28),
+    sec: Color(0xFF634B32),
+    icon: Color(0xFF6C543D),
+    faint: Color(0xFF6E5640),
+    dim: Color(0xFFAC9A86),
+    dim2: Color(0xFFB3A28E),
+    dim3: Color(0xFFC7B9A5),
+    box: Color(0xFFBDAE9A),
+    accent: Color(0xFF8A5A1E),
+    link: Color(0xFF8A5A1E),
+    chipText: Color(0xFF744B18),
+    tb: Color(0xFFEBD9B6),
+    tf: Color(0xFF5E3C12),
+    tkBg: Color(0xFFD8C098),
+    tkText: Color(0xFF764D19),
+    onAccent: Color(0xFFF7EEDC),
+    clay: Color(0xFFA84A22),
+    codeBg: Color(0xFFEAE0CE),
+    tSage: Color(0xFFE7D8C0),
+    tags: [
+      Color(0xFFE7DABE),
+      Color(0xFFEBD5C0),
+      Color(0xFFDDD9C2),
+      Color(0xFFEBDAC5),
+      Color(0xFFE0DDC0),
+      Color(0xFFE2D5C2),
+      Color(0xFFE9D5C9),
+      Color(0xFFEDD3C5),
+    ],
+    dots: [
+      Color(0xFF8A6A12),
+      Color(0xFFA84A22),
+      Color(0xFF4C6230),
+      Color(0xFFA86A40),
+      Color(0xFF5C7A24),
+      Color(0xFF6B4A30),
+      Color(0xFF9A4A5A),
+      Color(0xFFA6493D),
+    ],
+  );
+
+  static const _fjordDark = _Tones(
+    canvas: Color(0xFF0F1A1C),
+    rail: Color(0xFF0C1517),
+    page: Color(0xFF132124),
+    raised: Color(0xFF1B2B2E),
+    card: Color(0xFF182729),
+    key: Color(0xFF1B292C),
+    keyEdge: Color(0xFF273537),
+    border: Color(0xFF223032),
+    hair: Color(0xFF1F2D2F),
+    menuEdge: Color(0xFF263436),
+    divider: Color(0xFF475556),
+    switchOff: Color(0xFF2B393B),
+    text: Color(0xFFDCE8E6),
+    head: Color(0xFFD4E1DF),
+    subhead: Color(0xFFCEDCDA),
+    cardTitle: Color(0xFFD3E1DE),
+    muted: Color(0xFFB6C8C6),
+    sec: Color(0xFF9DB3B0),
+    icon: Color(0xFF8BA4A0),
+    faint: Color(0xFF86A09C),
+    dim: Color(0xFF526766),
+    dim2: Color(0xFF4D6160),
+    dim3: Color(0xFF3B4D4E),
+    box: Color(0xFF435656),
+    accent: Color(0xFF5FB3A6),
+    link: Color(0xFF7FC9BD),
+    chipText: Color(0xFF9BD6CC),
+    tb: Color(0xFF1D3A38),
+    tf: Color(0xFFB6E3DB),
+    tkBg: Color(0xFF2A524E),
+    tkText: Color(0xFF86C9BE),
+    onAccent: Color(0xFF0F1A1C),
+    clay: Color(0xFFE08E6D),
+    codeBg: Color(0xFF212F32),
+    tSage: Color(0xFF1E3738),
+    tags: [
+      Color(0xFF30362C),
+      Color(0xFF30302D),
+      Color(0xFF27352E),
+      Color(0xFF1C363A),
+      Color(0xFF213632),
+      Color(0xFF23333E),
+      Color(0xFF2B313D),
+      Color(0xFF372E2F),
+    ],
+    dots: [
+      Color(0xFFD3B05A),
+      Color(0xFFD7865F),
+      Color(0xFF9AA765),
+      Color(0xFF4FB0B8),
+      Color(0xFF6FB07E),
+      Color(0xFF7E9BD3),
+      Color(0xFFB08CC9),
+      Color(0xFFD98396),
+    ],
+  );
+
+  static const _fjordLight = _Tones(
+    canvas: Color(0xFFEDF4F3),
+    rail: Color(0xFFE5EFEE),
+    page: Color(0xFFFAFDFC),
+    raised: Color(0xFFE8F1F0),
+    card: Color(0xFFF2F8F7),
+    key: Color(0xFFF1F4F3),
+    keyEdge: Color(0xFFE3E9E7),
+    border: Color(0xFFEAEEED),
+    hair: Color(0xFFEDF1F0),
+    menuEdge: Color(0xFFE5EAE9),
+    divider: Color(0xFFBFC8C6),
+    switchOff: Color(0xFFDFE4E3),
+    text: Color(0xFF18302E),
+    head: Color(0xFF1D3634),
+    subhead: Color(0xFF223B39),
+    cardTitle: Color(0xFF1E3734),
+    muted: Color(0xFF314D4A),
+    sec: Color(0xFF42605C),
+    icon: Color(0xFF4D6A66),
+    faint: Color(0xFF506C68),
+    dim: Color(0xFF9DADAB),
+    dim2: Color(0xFFA5B5B2),
+    dim3: Color(0xFFBFCAC8),
+    box: Color(0xFFB3C0BE),
+    accent: Color(0xFF1F7A70),
+    link: Color(0xFF1D6C64),
+    chipText: Color(0xFF195E57),
+    tb: Color(0xFFD7EDE9),
+    tf: Color(0xFF145049),
+    tkBg: Color(0xFFB2D6D1),
+    tkText: Color(0xFF1A675E),
+    onAccent: Color(0xFFFFFFFF),
+    clay: Color(0xFFB5552E),
+    codeBg: Color(0xFFEAEFEE),
+    tSage: Color(0xFFD9E9E7),
+    tags: [
+      Color(0xFFE9E8DA),
+      Color(0xFFEFE4DD),
+      Color(0xFFE3E8DC),
+      Color(0xFFD8E8E9),
+      Color(0xFFDCEAE1),
+      Color(0xFFDEE6EF),
+      Color(0xFFE6E3ED),
+      Color(0xFFEEE2E7),
+    ],
+    dots: [
+      Color(0xFF87701C),
+      Color(0xFFAF5530),
+      Color(0xFF5E6E28),
+      Color(0xFF14737A),
+      Color(0xFF2F7D45),
+      Color(0xFF3F62A6),
+      Color(0xFF76509A),
+      Color(0xFFA74868),
+    ],
+  );
+
+  static ThemeData _build(CalcPalette palette) {
+    final brightness = palette.brightness;
     final dark = brightness == Brightness.dark;
     final compactControls = AppPlatform.isDesktop;
-    final accent = accentFor(brightness);
-    final onAccent = dark ? const Color(0xFF1C1A17) : const Color(0xFFFCFAF4);
+    final accent = palette.accent;
+    final onAccent = palette.onAccent;
     final buttonHeight = AppControlMetrics.buttonHeight;
     final iconButtonExtent = AppControlMetrics.iconButtonExtent;
     final tapTarget = compactControls
@@ -1733,4 +2509,211 @@ extension CalcPaletteAccess on BuildContext {
 extension MultipliedColorAlpha on Color {
   Color withMultipliedAlpha(double factor) =>
       withValues(alpha: (a * factor).clamp(0.0, 1.0));
+}
+
+/// One theme on one side, by the roles Themes r2 names (p-N-0). The palette
+/// the app reads is worked out from these in [_fromTones].
+class _Tones {
+  const _Tones({
+    required this.canvas,
+    required this.rail,
+    required this.page,
+    required this.raised,
+    required this.card,
+    required this.key,
+    required this.keyEdge,
+    required this.border,
+    required this.hair,
+    required this.menuEdge,
+    required this.divider,
+    required this.switchOff,
+    required this.text,
+    required this.head,
+    required this.subhead,
+    required this.cardTitle,
+    required this.muted,
+    required this.sec,
+    required this.icon,
+    required this.faint,
+    required this.dim,
+    required this.dim2,
+    required this.dim3,
+    required this.box,
+    required this.accent,
+    required this.link,
+    required this.chipText,
+    required this.tb,
+    required this.tf,
+    required this.tkBg,
+    required this.tkText,
+    required this.onAccent,
+    required this.clay,
+    required this.codeBg,
+    required this.tSage,
+    required this.tags,
+    required this.dots,
+  });
+
+  final Color canvas;
+  final Color rail;
+  final Color page;
+  final Color raised;
+  final Color card;
+  final Color key;
+  final Color keyEdge;
+  final Color border;
+  final Color hair;
+  final Color menuEdge;
+  final Color divider;
+  final Color switchOff;
+  final Color text;
+  final Color head;
+  final Color subhead;
+  final Color cardTitle;
+  final Color muted;
+  final Color sec;
+  final Color icon;
+  final Color faint;
+  final Color dim;
+  final Color dim2;
+  final Color dim3;
+  final Color box;
+  final Color accent;
+  final Color link;
+  final Color chipText;
+  final Color tb;
+  final Color tf;
+  final Color tkBg;
+  final Color tkText;
+  final Color onAccent;
+  final Color clay;
+  final Color codeBg;
+  final Color tSage;
+  final List<Color> tags;
+  final List<Color> dots;
+}
+
+/// A theme's palette from its roles, the way Paper's frames swapped
+/// Riverbank's colours role by role. The few colours the spec gives no role
+/// keep Riverbank's relation to the roles it does: the well and a code
+/// block's panel sit halfway between the window and the page in the dark,
+/// descriptions halfway between secondary and faint text, and a code
+/// block's colours and clay as words are deepened only as far as they need
+/// to read at 4.5:1.
+CalcPalette _fromTones(_Tones t) {
+  final dark = ThemeData.estimateBrightnessForColor(t.page) == Brightness.dark;
+  final well = dark ? _mix(t.canvas, t.page, 0.5) : t.raised;
+  final panel = dark ? well : t.card;
+  Color code(Color ink) => _legible(ink, [panel], toward: t.text);
+  return CalcPalette(
+    number: t.text,
+    keyword: t.text,
+    unit: t.faint,
+    currency: t.faint,
+    function: t.text,
+    variable: t.text,
+    operator: t.faint,
+    comment: t.faint,
+    chipNumber: t.chipText,
+    chipCurrency: t.chipText,
+    chipUnit: t.chipText,
+    chipBoolean: t.chipText,
+    chipOther: t.chipText,
+    textPrimary: t.text,
+    textSecondary: t.sec,
+    textTertiary: t.faint,
+    separator: t.menuEdge,
+    sidebarBackground: t.canvas,
+    editorBackground: t.page,
+    gutterBackground: t.page,
+    surfaceBackground: t.page,
+    controlBackground: t.raised,
+    controlBorder: t.border,
+    selectedBackground: t.keyEdge,
+    selectedBorder: t.accent,
+    selection: t.accent.withAlpha(dark ? 0x4D : 0x33),
+    hover: t.hair,
+    paperFiber: dark ? const Color(0x00000000) : t.muted.withAlpha(0x08),
+    paperRuling: t.hair,
+    railBackground: t.rail,
+    railBorder: t.text.withAlpha(0x0F),
+    tonalBackground: t.tb,
+    tonalForeground: t.tf,
+    tonalKeyBackground: t.tkBg,
+    tonalKeyText: t.tkText,
+    keycapBackground: t.key,
+    keycapBorder: t.keyEdge,
+    keycapText: t.sec,
+    scrim: dark
+        ? _mix(t.rail, const Color(0xFF000000), 0.5).withAlpha(0xB3)
+        : t.text.withAlpha(0x33),
+    resultPillBackground: t.tSage,
+    resultPillText: t.chipText,
+    totalPillBackground: t.accent,
+    totalPillText: t.onAccent,
+    clay: t.clay,
+    clayText: _legible(t.clay, [t.page, t.card], toward: t.text),
+    textHeading: t.head,
+    textSubheading: t.subhead,
+    textMuted: t.muted,
+    textDescription: _mix(t.sec, t.faint, 0.5),
+    cardBackground: t.card,
+    paneEdge: dark ? t.hair : t.border,
+    switchTrackOff: t.switchOff,
+    checkboxBorder: t.dim2,
+    lineCommand: t.dim,
+    writingHint: t.dim3,
+    cardTitle: t.cardTitle,
+    accentText: t.link,
+    pageBorder: t.hair,
+    textDivider: t.divider,
+    switchThumb: dark ? t.text : t.page,
+    wellBackground: well,
+    segmentSelected: dark ? t.menuEdge : t.page,
+    shadow: dark ? const Color(0xFF000000) : t.text.withAlpha(0x66),
+    accent: t.accent,
+    onAccent: t.onAccent,
+    codeKeyword: code(t.clay),
+    codeString: code(dark ? t.chipText : t.link),
+    codeNumber: code(t.dots[0]),
+    codeBuiltIn: code(t.dots[3]),
+    codePanel: panel,
+    codeChip: t.codeBg,
+    railInk: t.icon,
+    quoteBar: t.box,
+    tagCards: t.tags,
+    tagDots: t.dots,
+  );
+}
+
+/// [a] moved [t] of the way to [b], channel by channel in whole steps.
+Color _mix(Color a, Color b, double t) {
+  int channel(double from, double to) {
+    final start = (from * 255).round();
+    return (start + ((to * 255).round() - start) * t).round();
+  }
+
+  return Color.fromARGB(
+    (a.a * 255).round(),
+    channel(a.r, b.r),
+    channel(a.g, b.g),
+    channel(a.b, b.b),
+  );
+}
+
+/// [ink] where it already reads at 4.5:1 on every one of [grounds], and
+/// otherwise moved toward [toward] only as far as that takes.
+Color _legible(Color ink, List<Color> grounds, {required Color toward}) {
+  double contrast(Color a, Color b) {
+    final x = a.computeLuminance(), y = b.computeLuminance();
+    return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05);
+  }
+
+  for (var step = 0; step <= 20; step++) {
+    final candidate = _mix(ink, toward, step / 20);
+    if (grounds.every((ground) => contrast(candidate, ground) >= 4.5)) {
+      return candidate;
+    }
+  }
+  return toward;
 }
