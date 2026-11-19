@@ -193,6 +193,33 @@ void main() {
       expect(await QuickCapture.launchIntent(), LaunchIntent.open);
     });
 
+    test("a cold start's action comes with Dart's arguments", () async {
+      stubLaunchIntent('capture');
+      QuickCapture.startedWith(['dictate']);
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.dictate);
+      // Collected once: the next question is the channel's again.
+      expect(await QuickCapture.launchIntent(), LaunchIntent.capture);
+    });
+
+    test(
+      'an argument this version has never heard of opens normally',
+      () async {
+        stubLaunchIntent('capture');
+        QuickCapture.startedWith(['teleport']);
+
+        expect(await QuickCapture.launchIntent(), LaunchIntent.open);
+        expect(await QuickCapture.launchIntent(), LaunchIntent.capture);
+      },
+    );
+
+    test('with no arguments the channel is asked', () async {
+      stubLaunchIntent('continueWriting');
+      QuickCapture.startedWith(const []);
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.continueWriting);
+    });
+
     test('desktop never asks at all', () async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       stubLaunchIntent('continueWriting');
