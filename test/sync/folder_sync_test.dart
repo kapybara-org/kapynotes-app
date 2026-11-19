@@ -441,6 +441,7 @@ void main() {
       'a folder deleted over 30 days ago leaves the server, and what was in it stays where it read',
       () async {
         final (a, b) = await pair();
+        server.now = () => a.clock;
         final note = a.notes.create(body: 'Plan');
         final work = a.folders.create('Work')!;
         final old = a.folders.create('Old', parentId: work.id)!;
@@ -452,9 +453,74 @@ void main() {
         for (final d in [a, b]) {
           d.clock = d.clock.add(const Duration(days: 31));
         }
+        a.folders.create('Later');
         await passes([a, b, a, b]);
         expect(stored()[old.id]!.record.deletedAt, isNotNull);
-        expect(shape(b, [note.id]), 'Work\nPlan: Work');
+        expect(shape(b, [note.id]), 'Later\nWork\nPlan: Work');
+        expectSettled(a, b, [note.id]);
+        a.dispose();
+        b.dispose();
+      },
+    );
+
+    test(
+      'a clock a month fast lets a deleted folder go no sooner than the server\'s clock says, so its Undo still lands',
+      () async {
+        final (a, b) = await pair();
+        server.now = () => a.clock;
+        final note = a.notes.create(body: 'Plan');
+        final work = a.folders.create('Work')!;
+        final old = a.folders.create('Old', parentId: work.id)!;
+        a.folders.file([note.id], old.id);
+        await passes([a, b]);
+
+        b.clock = b.clock.add(const Duration(days: 31));
+        a.folders.delete(old.id);
+        b.folders.create('Later');
+        await passes([a, b, b]);
+        expect(stored()[old.id]!.record.deletedAt, isNull);
+
+        a.folders.restore(old.id);
+        await passes([a, b]);
+        expect(shape(b, [note.id]), 'Later\nWork\n  Old\nPlan: Work › Old');
+        expectSettled(a, b, [note.id]);
+        a.dispose();
+        b.dispose();
+      },
+    );
+
+    test(
+      'a device back after a month puts what it filed offline in a pruned folder where that folder\'s notes went',
+      () async {
+        final (a, b) = await pair();
+        server.now = () => a.clock;
+        final note = b.notes.create(body: 'Plan');
+        final work = a.folders.create('Work')!;
+        final old = a.folders.create('Old', parentId: work.id)!;
+        await passes([a, b, a]);
+
+        final placement = placementOf(note.id);
+        server.deliverLive = false;
+        server.withheld = (id) => id == placement;
+        b.folders.file([note.id], old.id);
+        a.folders.delete(old.id);
+        await a.pass();
+        for (final d in [a, b]) {
+          d.clock = d.clock.add(const Duration(days: 31));
+        }
+        a.folders.create('Later');
+        await passes([a, a]);
+        expect(stored()[old.id]!.record.deletedAt, isNotNull);
+        expect(
+          stored()[placement],
+          isNull,
+          reason: 'the filing has not reached the server yet',
+        );
+
+        server.deliverLive = true;
+        server.withheld = null;
+        await passes([b, a, b]);
+        expect(shape(a, [note.id]), 'Later\nWork\nPlan: Work');
         expectSettled(a, b, [note.id]);
         a.dispose();
         b.dispose();

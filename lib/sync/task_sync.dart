@@ -83,6 +83,10 @@ class TaskSync {
   final Map<String, String> _noteOfPlacement = {};
   bool _placementsNamed = false;
 
+  /// The server's clock as of the last push it answered, which a clock that
+  /// runs ahead here can't move on (see `FolderStore.prune`).
+  int? _serverNow;
+
   /// How long [schedule] waits, so a burst of typing is one pass.
   final Duration delay;
 
@@ -310,6 +314,7 @@ class TaskSync {
           );
         }
         final result = await _api.pushTasks(records);
+        _serverNow = result.serverTime?.millisecondsSinceEpoch ?? _serverNow;
         _index.hold();
         _tags.hold();
         _folders?.hold();
@@ -354,7 +359,8 @@ class TaskSync {
       if (!page.hasMore) break;
     }
     _tags.settle();
-    _folders?.prune();
+    final serverNow = _serverNow;
+    if (serverNow != null) _folders?.prune(serverNow);
   }
 
   /// One record as the server holds it, to the task index, the tags or the
