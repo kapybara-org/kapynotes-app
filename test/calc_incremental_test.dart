@@ -183,6 +183,18 @@ const _corpus = [
   '0 / 0',
   'flights = 412 eur',
   'flights to usd',
+  '20% vat in 120',
+  '15% decrease from 813',
+  r'$10K',
+  '20 cents',
+  '145 mins to timespan',
+  '1.75 as fraction',
+  'days until 31 Mar',
+  'days left in this month',
+  'week 44 2026',
+  'monday in 3 weeks',
+  '10pm to 2am',
+  'total in eur',
   'flights + 20 eur',
   'flights - 10%',
   'hotel = 96 eur * 7',
@@ -233,6 +245,7 @@ String _value(CalcValue? value) => switch (value) {
     'quantity $value ${[for (final term in unit.terms) '${term.def.symbol}^${term.exponent} '
           '(${term.def.factor}, ${term.def.offset}, ${term.def.category})']}',
   BooleanValue(:final value) => 'boolean $value',
+  PhraseValue(:final text) => 'phrase $text',
   DateTimeValue(:final instant, :final timeZoneId, :final display) =>
     'date $instant in $timeZoneId as $display',
 };

@@ -30,6 +30,32 @@ const Map<String, String> calcKeywordHelp = {
   'divided': 'Divides the value on the left by the value on the right.',
   'by': 'Completes a written multiplication or division phrase.',
   'over': 'Divides the value on the left by the value on the right.',
+  'vat':
+      'Finds the tax inside a price that already includes it: 20% vat in 120.',
+  'split': 'Divides the result between a number of people: 25% off 60 split 3.',
+  'decrease':
+      'Takes a percentage off the value that follows from: 15% decrease from 813.',
+  'increase':
+      'Adds a percentage to the value that follows from: 15% increase from 813.',
+  'from':
+      'Names the starting value, or the first time of a span: from 1700000000 to 1700003600.',
+  'until': 'Counts the days from today to a date: days until 31 Mar.',
+  'since': 'Counts the days from a date to today: days since march.',
+  'left': 'Counts what remains of this month: days left in this month.',
+  'week': 'Gives the dates of a numbered week: week 44 2026.',
+  'timespan':
+      'Writes a duration in days, hours, minutes and seconds: 145 mins to timespan.',
+  'mixed':
+      'Writes a value as whole parts and a remainder: 90 seconds to mixed, 7/4 as mixed.',
+  'fraction':
+      'Writes a decimal as a whole number and a fraction: 1.75 as fraction.',
+  'improper': 'Writes a decimal as a single fraction: 1.75 as improper.',
+  'power':
+      'Raises the value on the left to the power on the right: 2 power 10.',
+  'root':
+      'Takes the square root of the value that follows: square root of 625.',
+  'square':
+      'Takes the square root of the value that follows: square root of 625.',
   'percent': 'Treats the number as a percentage.',
   'pct': 'Treats the number as a percentage.',
   'binary': 'Writes the result in base 2.',

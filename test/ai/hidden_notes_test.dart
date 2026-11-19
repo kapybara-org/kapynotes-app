@@ -10,6 +10,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
 import 'package:kapy_notes/ai/local_tools.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/speech/apple_summarizer.dart';
 import 'package:kapy_notes/speech/gemma_summarizer.dart';
 import 'package:kapy_notes/speech/local_model_store.dart';
@@ -58,13 +59,14 @@ void main() {
 
   Future<KapyAiController> build({
     required bool pro,
+    NotesStore? notes,
     DeviceModel? device,
     LocalTool? codex,
     LocalTool? claudeCode,
   }) async {
     final ai = KapyAiController(
       store: store,
-      notes: await notesWith(_notes(), store: store),
+      notes: notes ?? await notesWith(_notes(), store: store),
       device: device ?? FakeDeviceModel(),
       billing: await billingOn(pro: pro),
       token: () => 'session-token',
@@ -118,6 +120,60 @@ void main() {
     expect(((jsonDecode(call.body) as Map)['notes'] as List).length, 1);
     expect(ai.current!.messages.last.read.map((n) => n.noteId), ['open']);
     expect(ai.current!.messages.last.matching, 1);
+  });
+
+  test('an answer that read a note hidden since is not sent again', () async {
+    final notes = await notesWith([
+      ..._notes(),
+      noteJson('flight', 'Lisbon flight at 9:40'),
+    ], store: store);
+    final ai = await build(pro: true, notes: notes);
+    await ai.ask(_question);
+    notes.hide('open');
+    await ai.ask('And when do I fly?');
+
+    final second =
+        jsonDecode(web.where((r) => r.url.path == '/ai/answer').last.body)
+            as Map;
+    expect(second['history'], [
+      {'role': 'user', 'text': _question},
+    ]);
+  });
+
+  test('nothing after an answer that read a note hidden since is sent '
+      'again, since a later answer may repeat it', () async {
+    final notes = await notesWith([
+      ..._notes(),
+      noteJson('dentist', 'Dentist appointment Tuesday 4pm'),
+    ], store: store);
+    final ai = await build(pro: true, notes: notes);
+    await ai.ask(_question);
+    await ai.ask('When is the dentist?');
+    expect(ai.current!.messages.last.read.map((n) => n.noteId), ['dentist']);
+    notes.hide('open');
+    await ai.ask('When is the dentist again?');
+
+    final third =
+        jsonDecode(web.where((r) => r.url.path == '/ai/answer').last.body)
+            as Map;
+    expect(third['history'], [
+      {'role': 'user', 'text': _question},
+    ]);
+  });
+
+  test('a link may come from the question or a note still open', () async {
+    final notes = await notesWith(_notes(), store: store);
+    final ai = await build(pro: true, notes: notes);
+    await ai.ask(_question);
+    final chat = ai.current!;
+    final answer = chat.messages.last;
+
+    expect(ai.linkSources(chat, answer), contains(_question));
+    expect(ai.linkSources(chat, answer), contains('flights on Friday'));
+    expect(ai.linkSources(chat, answer), isNot(contains(_secret)));
+
+    notes.hide('open');
+    expect(ai.linkSources(chat, answer), isNot(contains('flights on Friday')));
   });
 
   test(

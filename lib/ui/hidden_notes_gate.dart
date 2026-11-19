@@ -99,7 +99,7 @@ class DefaultHiddenNotesGate implements HiddenNotesGate {
     bool? useSystemAuthentication,
     Future<Uint8List> Function(String pin, Uint8List salt)? pinDeriver,
     DateTime Function()? now,
-  }) : _store = store ?? platformSecureStore(),
+  }) : _store = store ?? hiddenNotesSecureStore(),
        _deviceAuthenticator = deviceAuthenticator ?? LocalDeviceAuthenticator(),
        _pinDeriver = pinDeriver ?? _derivePin,
        _useSystemAuthentication =

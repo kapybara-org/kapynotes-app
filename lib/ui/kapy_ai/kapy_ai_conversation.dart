@@ -193,6 +193,7 @@ class KapyAiConversation extends StatelessWidget {
             ? _Question(message.text)
             : _Answer(
                 message: message,
+                sources: kapyAi.linkSources(chat, message),
                 noteTitle: noteTitle,
                 onOpenNote: onOpenNote,
                 now: now,
@@ -265,12 +266,14 @@ class _Question extends StatelessWidget {
 class _Answer extends StatelessWidget {
   const _Answer({
     required this.message,
+    required this.sources,
     required this.noteTitle,
     required this.onOpenNote,
     required this.now,
   });
 
   final KapyMessage message;
+  final String sources;
   final String? Function(String noteId) noteTitle;
   final ValueChanged<String> onOpenNote;
   final DateTime now;
@@ -282,7 +285,7 @@ class _Answer extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        KapyAiMarkdown(message.text),
+        KapyAiMarkdown(message.text, sources: sources),
         const SizedBox(height: 10),
         if (message.read.isNotEmpty) ...[
           _NotesRead(

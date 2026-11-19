@@ -50,6 +50,21 @@ const MacOsOptions macOsKeychain = MacOsOptions(
   accountName: _service,
 );
 
+/// Where iOS keeps the master key and session: readable once the phone has
+/// been unlocked after a restart, so sync can run in the background, and
+/// never carried to another device in a backup.
+///
+/// Under a service name of its own. The keychain tells entries apart by
+/// service and account, not by accessibility, so rewriting an entry with a new
+/// level replaces it in place, and a failed write would lose it. Builds up to
+/// 1.33 filed entries under the plugin's default service at its default
+/// level; [MigratingSecureStore] copies each one here, reads it back, and only
+/// then deletes the old one.
+const IOSOptions iosKeychain = IOSOptions(
+  accountName: 'kapynotes.keychain.v2',
+  accessibility: KeychainAccessibility.first_unlock_this_device,
+);
+
 /// Keychain on Apple platforms, Keystore on Android, libsecret on Linux,
 /// DPAPI on Windows.
 ///
@@ -120,10 +135,20 @@ class FileKeychainStore implements SecureStore {
 /// both, so a sign-out can't be undone by migrating the old session back on
 /// the next launch.
 class MigratingSecureStore implements SecureStore {
-  const MigratingSecureStore(this._current, this._legacy);
+  const MigratingSecureStore(this._current, this._legacy, {this.sweep = false});
 
   final SecureStore _current;
   final SecureStore _legacy;
+
+  /// Whether a read that finds the new copy also deletes an old one left
+  /// behind, as a crash between the move's write and its delete leaves it.
+  /// Once per key per process.
+  final bool sweep;
+
+  static final Set<String> _swept = {};
+
+  @visibleForTesting
+  static void debugForgetSwept() => _swept.clear();
 
   @override
   Future<String?> read(String key) async {
@@ -136,7 +161,16 @@ class MigratingSecureStore implements SecureStore {
       );
       return _legacy.read(key);
     }
-    if (current != null) return current;
+    if (current != null) {
+      if (sweep && _swept.add(key)) {
+        try {
+          await _legacy.delete(key);
+        } catch (error) {
+          debugPrint('KapyNotes: old keystore entry not cleared ($key): $error');
+        }
+      }
+      return current;
+    }
 
     final legacy = await _legacy.read(key);
     if (legacy == null) return null;
@@ -160,11 +194,39 @@ class MigratingSecureStore implements SecureStore {
       Future.wait([_current.delete(key), _legacy.delete(key)]);
 }
 
-/// The platform's store. On macOS it also moves entries out of the
-/// file-based keychain earlier versions used.
-SecureStore platformSecureStore() => AppPlatform.isMacOS
-    ? const MigratingSecureStore(PlatformSecureStore(), FileKeychainStore())
-    : const PlatformSecureStore();
+/// The platform's store. On macOS and iOS it also moves entries out of where
+/// earlier versions kept them.
+SecureStore platformSecureStore() {
+  if (AppPlatform.isMacOS) {
+    return const MigratingSecureStore(
+      PlatformSecureStore(),
+      FileKeychainStore(),
+    );
+  }
+  if (AppPlatform.isIOS) {
+    return const MigratingSecureStore(
+      PlatformSecureStore(FlutterSecureStorage(iOptions: iosKeychain)),
+      PlatformSecureStore(),
+      sweep: true,
+    );
+  }
+  return const PlatformSecureStore();
+}
+
+/// Where the Hidden Notes PIN lives. On iOS it stays where 1.33 kept it, in
+/// the old service at WhenUnlocked, so a restored iPhone still asks for the
+/// old PIN. Moved to a device-only entry, a restored phone would have no PIN,
+/// and whoever opened Hidden Notes would set one and see them.
+SecureStore hiddenNotesSecureStore() =>
+    AppPlatform.isIOS ? const PlatformSecureStore() : platformSecureStore();
+
+/// Moves each of [keys] now rather than on its next read, so nothing waits
+/// in an old store that backups carry.
+Future<void> moveEntries(SecureStore store, Iterable<String> keys) async {
+  for (final key in keys) {
+    await store.read(key);
+  }
+}
 
 /// Turns a broken keystore into an empty one.
 ///
@@ -241,6 +303,9 @@ class KeyStore {
   static const String _tokenEntry = 'kapynotes.sessionToken';
   static const String _userEntry = 'kapynotes.sessionUser';
   static const String _pendingKeyEntry = 'kapynotes.pendingMasterKey';
+
+  /// Every entry this store keeps.
+  static const List<String> entries = [_masterKeyEntry, _tokenEntry, _userEntry];
 
   Uint8List? _masterKey;
   String? _token;

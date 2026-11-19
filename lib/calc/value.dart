@@ -99,6 +99,16 @@ class PercentValue extends CalcValue {
   ResultKind get kind => ResultKind.number;
 }
 
+/// A result a phrase gives in words, such as `2 h 25 min` or `1 ¾`: shown and
+/// copied as [text], and not a number that later lines can add.
+class PhraseValue extends CalcValue {
+  final String text;
+  const PhraseValue(this.text);
+
+  @override
+  ResultKind get kind => ResultKind.other;
+}
+
 class BooleanValue extends CalcValue {
   final bool value;
   const BooleanValue(this.value);
