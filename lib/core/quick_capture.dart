@@ -50,12 +50,28 @@ class QuickCapture {
 
   /// How long the platform gets to say why the app was opened.
   ///
-  /// It knows the answer before Dart starts, so this is never actually
-  /// waited out. The deadline is here so that a host which somehow never
-  /// replies costs a fraction of a second rather than stranding the app on
-  /// its launch surface — and even that fraction is spent on a surface the
-  /// user can already type into.
+  /// The deadline is here so that a host which somehow never replies costs a
+  /// fraction of a second rather than stranding the app on its launch
+  /// surface — and even that fraction is spent on a surface the user can
+  /// already type into. A busy main thread can miss it, which is why Android
+  /// hands a cold start's action over with Dart's arguments instead.
   static const Duration _answerDeadline = Duration(milliseconds: 400);
+
+  /// The action the platform named as it started Dart, until it is collected.
+  static LaunchIntent? _startedWith;
+
+  /// Takes the action from `main`'s arguments, where Android puts a cold
+  /// start's widget action.
+  ///
+  /// Asking over the channel instead means asking a main thread that is, at
+  /// that moment, bringing up the window and the keyboard. On an emulator its
+  /// answer missed [_answerDeadline] in two cold launches out of three, which
+  /// dropped Dictate and Capture and held Write back by the whole deadline.
+  /// The activity takes the action off its intent as it hands it over, so the
+  /// channel never answers it a second time.
+  static void startedWith(List<String> args) {
+    if (args.isNotEmpty) _startedWith = _named(args.first);
+  }
 
   /// Why the app was opened, according to the platform.
   ///
@@ -69,6 +85,11 @@ class QuickCapture {
   /// next gets it, and nobody gets it twice.
   static Future<LaunchIntent> launchIntent() async {
     if (!AppPlatform.isMobile) return LaunchIntent.open;
+    final started = _startedWith;
+    if (started != null) {
+      _startedWith = null;
+      return started;
+    }
     try {
       final name = await channel
           .invokeMethod<String>('launchIntent')
