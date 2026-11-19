@@ -3417,7 +3417,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// What the page's More menu offers: the window's own actions, then the
   /// open note's, in the order and on the terms of that note's menu in the
   /// list.
-  List<KapyMenuAction> _pageActions(Note? note) {
+  List<KapyMenuAction> _pageActions(Note? note, {bool phone = false}) {
     final splitBlocker = _specialMode
         ? null
         : _workspace.paneCount >= EditorWorkspace.maxPanes
@@ -3432,15 +3432,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ?.displayLabel;
     final alwaysOnTop = widget.prefs.alwaysOnTop;
     return [
-      KapyMenuAction(
-        value: 'split',
-        label: canSplit ? 'Split view' : splitBlocker ?? 'Split view',
-        icon: KapyIcons.viewColumnOutlined,
-        hint: canSplit
-            ? widget.shortcuts.hintFor(ShortcutAction.splitEditor)?.displayLabel
-            : null,
-        enabled: canSplit,
-      ),
+      if (!phone)
+        KapyMenuAction(
+          value: 'split',
+          label: canSplit ? 'Split view' : splitBlocker ?? 'Split view',
+          icon: KapyIcons.viewColumnOutlined,
+          hint: canSplit
+              ? widget.shortcuts
+                    .hintFor(ShortcutAction.splitEditor)
+                    ?.displayLabel
+              : null,
+          enabled: canSplit,
+        ),
       if (_pinToggle != null)
         KapyMenuAction(
           value: 'on-top',
@@ -3862,7 +3865,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onTogglePin: _specialMode
                   ? null
                   : () => _togglePinnedNote(note.id),
-              moreActions: _pageActions(note),
+              moreActions: _pageActions(note, phone: true),
               onMore: (action) => _runPageAction(action, note),
               updates: widget.updates,
             ),

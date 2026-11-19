@@ -2,6 +2,7 @@ import 'dart:ui' show SemanticsRole;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
 
 /// The quiet desktop menu used by note rows and things embedded in a note.
@@ -53,7 +54,10 @@ class KapyContextMenuSurface extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(vertical: 4),
   });
 
-  static const constraints = BoxConstraints(minWidth: 144, maxWidth: 208);
+  static BoxConstraints get constraints => BoxConstraints(
+    minWidth: 144,
+    maxWidth: AppPlatform.hasPointer ? 208 : 256,
+  );
 
   final Widget child;
   final EdgeInsetsGeometry padding;

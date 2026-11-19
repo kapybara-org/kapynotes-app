@@ -28,7 +28,6 @@ import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
-import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
@@ -779,36 +778,6 @@ void main() {
     );
   });
 
-  testWidgets('first launch, phone light', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(390, 760),
-      brightness: Brightness.light,
-      platform: TargetPlatform.iOS,
-      withNote: false,
-      firstRun: true,
-    );
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/welcome_phone_light.png'),
-    );
-  });
-
-  testWidgets('first launch, phone dark', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(390, 760),
-      brightness: Brightness.dark,
-      platform: TargetPlatform.iOS,
-      withNote: false,
-      firstRun: true,
-    );
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/welcome_phone_dark.png'),
-    );
-  });
-
   testWidgets('desktop dark empty state', (tester) async {
     await pumpForGolden(
       tester,
@@ -1163,142 +1132,162 @@ void main() {
     );
   });
 
-  testWidgets('phone editor', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(390, 760),
-      brightness: Brightness.dark,
-      platform: TargetPlatform.iOS,
-    );
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/phone_editor.png'),
-    );
-  });
+  // Phone · v2 on the three phones it is drawn for, an iPhone 15, a Pixel 8
+  // and an iPhone SE, every screen and menu in both themes. A golden has no
+  // keyboard to draw, so the room it takes is left empty under the page.
+  for (final (phone, size, platform, keyboard) in const [
+    ('iphone', Size(393, 852), TargetPlatform.iOS, 336.0),
+    ('android', Size(412, 915), TargetPlatform.android, 300.0),
+    ('se', Size(375, 667), TargetPlatform.iOS, 260.0),
+  ]) {
+    for (final brightness in Brightness.values) {
+      final name = '${phone}_${brightness.name}';
 
-  testWidgets('phone settings', (tester) async {
-    // A touch screen gets the sheet: a list of categories, one pushed at a
-    // time. Declared, because these run on a desktop host.
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await pumpForGolden(
-      tester,
-      size: const Size(390, 760),
-      brightness: Brightness.dark,
-      platform: TargetPlatform.iOS,
-    );
-    await tapSettings(tester);
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/phone_settings.png'),
-    );
-  });
+      Future<void> pumpPhone(
+        WidgetTester tester, {
+        bool firstRun = false,
+      }) async {
+        PackageInfo.setMockInitialValues(
+          appName: 'Kapy Notes',
+          packageName: 'com.kapybara.kapynotes',
+          version: '1.33.0',
+          buildNumber: '1',
+          buildSignature: '',
+        );
+        await pumpForGolden(
+          tester,
+          size: size,
+          brightness: brightness,
+          platform: platform,
+          withNote: !firstRun,
+          firstRun: firstRun,
+          withPinnedNote: !firstRun,
+          withTasks: !firstRun,
+          withDrawings: !firstRun,
+        );
+      }
 
-  testWidgets('phone settings, a category opened', (tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await pumpForGolden(
-      tester,
-      size: const Size(390, 760),
-      brightness: Brightness.dark,
-      platform: TargetPlatform.iOS,
-    );
-    await tapSettings(tester);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('settings-section-appearance')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/phone_settings_appearance.png'),
-    );
-  });
+      Future<void> tapAndSettle(WidgetTester tester, String key) async {
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+      }
 
-  for (final brightness in Brightness.values) {
-    testWidgets('phone drawings, ${brightness.name}', (tester) async {
-      await pumpForGolden(
-        tester,
-        size: const Size(393, 852),
-        brightness: brightness,
-        platform: TargetPlatform.iOS,
-        withDrawings: true,
-      );
-      await tester.tap(find.byKey(const ValueKey('page-back')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
-      await tester.pumpAndSettle();
-      await expectLater(
+      Future<void> matches(String screen) => expectLater(
         find.byType(KapyNotesApp),
-        matchesGoldenFile('goldens/phone_drawings_${brightness.name}.png'),
+        matchesGoldenFile('goldens/phone_${screen}_$name.png'),
       );
-    });
+
+      testWidgets('phone first launch, $name', (tester) async {
+        await pumpPhone(tester, firstRun: true);
+        await matches('first_launch');
+      });
+
+      testWidgets('phone page with the keyboard up, $name', (tester) async {
+        await pumpPhone(tester);
+        tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pumpAndSettle();
+        await matches('page');
+      });
+
+      testWidgets('phone page menu, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-more');
+        await matches('page_menu');
+      });
+
+      testWidgets('phone notes home, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-back');
+        await matches('notes_home');
+      });
+
+      testWidgets('phone notes filter, $name', (tester) async {
+        await pumpPhone(tester);
+        for (final tag in ['Work', 'Travel', 'Money']) {
+          goldenTags.setTags(goldenNotes.notes.first.id, [
+            goldenTags.create(tag)!.id,
+          ]);
+        }
+        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'sidebar-notes-filter');
+        await matches('notes_filter');
+      });
+
+      testWidgets('phone new menu, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-back');
+        await tester.longPress(find.byKey(const ValueKey('phone-new')));
+        await tester.pumpAndSettle();
+        await matches('new_menu');
+      });
+
+      testWidgets('phone quick find, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'sidebar-search-field');
+        await matches('quick_find');
+      });
+
+      testWidgets('phone tasks, $name', (tester) async {
+        await pumpPhone(tester);
+        goldenNotes.create(
+          body: 'Lisbon trip\n☐ Sintra train tickets\n☐ Pack adapters',
+        );
+        goldenNotes.create(body: 'Home budget\n☐ Pay the electricity bill');
+        await tester.runAsync(goldenTasks.reconcileNow);
+        await tester.pumpAndSettle();
+        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'bar-tasks');
+        await matches('tasks');
+      });
+
+      testWidgets('phone drawings, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'bar-drawings');
+        await matches('drawings');
+      });
+
+      testWidgets('phone settings, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'bar-settings');
+        expect(
+          find.byKey(const ValueKey('settings-whats-new-row')),
+          findsOneWidget,
+        );
+        await matches('settings');
+      });
+
+      testWidgets('phone settings, a category opened, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'bar-settings');
+        await tapAndSettle(tester, 'settings-section-appearance');
+        await matches('settings_appearance');
+      });
+    }
   }
 
+  // From 720 pt a tablet keeps the desktop layout: the list beside the page
+  // and no phone bar.
   for (final brightness in Brightness.values) {
-    testWidgets('phone tasks, ${brightness.name}', (tester) async {
+    testWidgets('tablet at 744 pt, ${brightness.name}', (tester) async {
       await pumpForGolden(
         tester,
-        size: const Size(393, 852),
-        brightness: brightness,
-        platform: TargetPlatform.iOS,
-        withTasks: true,
-      );
-      goldenNotes.create(
-        body: 'Lisbon trip\n☐ Sintra train tickets\n☐ Pack adapters',
-      );
-      goldenNotes.create(body: 'Home budget\n☐ Pay the electricity bill');
-      goldenNotes.create(body: 'Groceries\n☐ Buy coffee beans');
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('page-back')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('bar-tasks')));
-      await tester.pumpAndSettle();
-      await expectLater(
-        find.byType(KapyNotesApp),
-        matchesGoldenFile('goldens/phone_tasks_${brightness.name}.png'),
-      );
-    });
-  }
-
-  for (final brightness in Brightness.values) {
-    testWidgets('phone notes home, ${brightness.name}', (tester) async {
-      await pumpForGolden(
-        tester,
-        size: const Size(393, 852),
+        size: const Size(744, 1133),
         brightness: brightness,
         platform: TargetPlatform.iOS,
         withPinnedNote: true,
-        withTasks: true,
       );
-      await tester.tap(find.byKey(const ValueKey('page-back')));
-      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-bar')), findsNothing);
       await expectLater(
         find.byType(KapyNotesApp),
-        matchesGoldenFile('goldens/phone_notes_home_${brightness.name}.png'),
+        matchesGoldenFile('goldens/tablet_${brightness.name}.png'),
       );
     });
   }
-
-  testWidgets('phone note actions', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(390, 760),
-      brightness: Brightness.dark,
-      platform: TargetPlatform.iOS,
-    );
-    await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
-    await tester.pumpAndSettle();
-    final note = goldenNotes.notes.single;
-    await tester.tap(find.byKey(ValueKey('note-actions-${note.id}')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/phone_note_actions.png'),
-    );
-  });
 
   group('⌘K menu', () {
     /// The trip notes p-7-0 searches: two notes, two tasks in one of them, a
@@ -1418,112 +1407,4 @@ void main() {
       );
     });
   });
-
-  group('phone filter sheet', () {
-    Future<void> openSheet(WidgetTester tester, Brightness brightness) async {
-      await pumpForGolden(
-        tester,
-        size: const Size(390, 760),
-        brightness: brightness,
-        platform: TargetPlatform.iOS,
-        withNote: false,
-      );
-      final work = goldenTags.create('Work')!;
-      final money = goldenTags.create('Money')!;
-      final travel = goldenTags.create('Travel')!;
-      goldenTags.create('Ideas');
-      for (final (body, tags) in [
-        ('SnowSEO Issues\nAutomate Backlink Outreach', [work]),
-        ('SnowAnalytic Design\nMoodboard, palette, first', [work, money]),
-        ('Trip budget\n₹28,000', [travel, money]),
-        ('Todos\nRenew domain, gym', <Tag>[]),
-      ]) {
-        final note = goldenNotes.create(body: body);
-        goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
-      }
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
-      await tester.pumpAndSettle();
-    }
-
-    for (final (name, brightness) in [
-      ('dark', Brightness.dark),
-      ('light', Brightness.light),
-    ]) {
-      testWidgets('Show, Media and Tags, $name', (tester) async {
-        await openSheet(tester, brightness);
-        await expectLater(
-          find.byType(KapyNotesApp),
-          matchesGoldenFile('goldens/phone_filter_$name.png'),
-        );
-      });
-    }
-
-    testWidgets('the Tags page, dark', (tester) async {
-      await openSheet(tester, Brightness.dark);
-      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
-      await tester.pumpAndSettle();
-      for (final tag in ['Work', 'Travel']) {
-        await tester.tap(
-          find.byKey(ValueKey('tag-filter-${goldenTags.named(tag)!.id}')),
-        );
-        await tester.pumpAndSettle();
-      }
-      await expectLater(
-        find.byType(KapyNotesApp),
-        matchesGoldenFile('goldens/phone_filter_tags_dark.png'),
-      );
-    });
-  });
-
-  // The largest phone the app ships to, and the one where desktop-scale chrome
-  // was most obviously wrong: a 40pt footer of 17px glyphs reads as a toolbar
-  // belonging to some other, smaller application. Held at the full 932pt so
-  // the bars are judged against the screen they actually sit on.
-  testWidgets('phone editor at iPhone Pro Max size', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(430, 932),
-      brightness: Brightness.dark,
-      platform: TargetPlatform.iOS,
-    );
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/phone_editor_large.png'),
-    );
-  });
-
-  // The formatting bar on a phone's keyboard. The golden has no keyboard to
-  // draw, so the room it takes is left empty under the bar.
-  for (final (name, brightness, platform, keyboard, list) in [
-    ('iphone_dark', Brightness.dark, TargetPlatform.iOS, 336.0, false),
-    ('iphone_light', Brightness.light, TargetPlatform.iOS, 336.0, false),
-    ('android_dark', Brightness.dark, TargetPlatform.android, 300.0, false),
-    ('iphone_dark_list', Brightness.dark, TargetPlatform.iOS, 336.0, true),
-  ]) {
-    testWidgets('phone formatting bar, $name', (tester) async {
-      await pumpForGolden(
-        tester,
-        size: const Size(390, 844),
-        brightness: brightness,
-        platform: platform,
-      );
-      tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
-      addTearDown(tester.view.resetViewInsets);
-      await tester.pumpAndSettle();
-      if (list) {
-        tester.widget<NoteField>(find.byType(NoteField)).controller.selection =
-            TextSelection.collapsed(offset: _body.indexOf('Hotel'));
-        await tester.pump();
-        await tester.tap(find.byKey(const ValueKey('format-bullets')));
-        await tester.pumpAndSettle();
-      }
-      await expectLater(
-        find.byType(KapyNotesApp),
-        matchesGoldenFile('goldens/phone_format_bar_$name.png'),
-      );
-    });
-  }
 }
