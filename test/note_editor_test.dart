@@ -3030,6 +3030,31 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('a phone shows a long week result whole (KAP-143)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      harness('Phrases\nweek 44 2026', keepResultRoom: true),
+    );
+    await tester.pumpAndSettle();
+
+    final result = find.descendant(
+      of: find.byType(ResultChip),
+      matching: find.byType(RichText),
+    );
+    expect(
+      tester.widget<RichText>(result).text.toPlainText(),
+      startsWith('Oct 26'),
+    );
+    expect(
+      tester.renderObject<RenderParagraph>(result).didExceedMaxLines,
+      isFalse,
+    );
+  });
+
   testWidgets('a phone keeps room for a result at each text size', (
     tester,
   ) async {

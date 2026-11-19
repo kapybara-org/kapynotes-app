@@ -8003,7 +8003,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                   final result when widget.keepResultRoom => (
                                     child: ResultChip(
                                       result: result,
-                                      collapsedWidth: contentWidth / 2,
+                                      collapsedWidth: contentWidth * 2 / 3,
                                     ),
                                     leader: null,
                                     right: contentWidth,
@@ -8011,7 +8011,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     room:
                                         math.min(
                                           ResultChip.widthOf(context, result),
-                                          contentWidth / 2,
+                                          contentWidth * 2 / 3,
                                         ) +
                                         lineTrailingGap,
                                   ),
