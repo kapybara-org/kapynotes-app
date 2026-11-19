@@ -66,10 +66,150 @@ class Phrases {
   static final RegExp _codeShorthand = RegExp(
     r'^(?:([A-Z]{3})\s*(\d+(?:\.\d+)?)\s*([KM])?)$',
   );
-  static final RegExp _minorUnit = RegExp(
-    r'(\d+(?:\.\d+)?)\s*(euro\s+cents?|cents?|pence|pennies|penny)\b',
-    caseSensitive: false,
+
+  /// The currency each word for a whole unit of money stands for, in English,
+  /// Hindi and Hinglish.
+  static const Map<String, String> _majors = {
+    'dollars': 'usd',
+    'dollar': 'usd',
+    'bucks': 'usd',
+    'buck': 'usd',
+    'डॉलर': 'usd',
+    'rupees': 'inr',
+    'rupee': 'inr',
+    'rupaye': 'inr',
+    'rupay': 'inr',
+    'rs.': 'inr',
+    'rs': 'inr',
+    'रुपये': 'inr',
+    'रुपए': 'inr',
+    'रुपया': 'inr',
+    'रु.': 'inr',
+    'रु': 'inr',
+    'euros': 'eur',
+    'euro': 'eur',
+    'pounds': 'gbp',
+    'pound': 'gbp',
+  };
+
+  /// The words the registry has no unit for, which are rewritten to a code.
+  static const Set<String> _unknownMajors = {
+    'डॉलर',
+    'rupaye',
+    'rupay',
+    'rs.',
+    'rs',
+    'रुपये',
+    'रुपए',
+    'रुपया',
+    'रु.',
+    'रु',
+  };
+
+  /// The words for a hundredth of a unit, each with the currencies it is a
+  /// hundredth of; the first is the one it stands for on its own.
+  static const Map<String, Set<String>> _minors = {
+    'cents': {'usd', 'eur'},
+    'cent': {'usd', 'eur'},
+    'सेंट': {'usd', 'eur'},
+    'paise': {'inr'},
+    'paisa': {'inr'},
+    'पैसे': {'inr'},
+    'पैसा': {'inr'},
+    'pence': {'gbp'},
+    'pennies': {'gbp'},
+    'penny': {'gbp'},
+  };
+
+  static String _alternatives(Iterable<String> words) =>
+      (words.toList()..sort((a, b) => b.length.compareTo(a.length)))
+          .map(RegExp.escape)
+          .join('|');
+
+  static const String _end = r'(?![\p{L}\p{M}\p{N}])';
+
+  static RegExp _spokenPattern(String source) =>
+      RegExp(source, caseSensitive: false, unicode: true);
+
+  static final RegExp _compoundAmount = _spokenPattern(
+    '$_number\\s*(${_alternatives(_majors.keys)})$_end'
+    '\\s*(?:(?:and|और)\\s+)?$_number\\s*(${_alternatives(_minors.keys)})$_end',
   );
+
+  /// The words that scale the number before them, as in '2.5 lakh'.
+  static const Map<String, double> _scales = {
+    'lakhs': 1e5,
+    'lakh': 1e5,
+    'lacs': 1e5,
+    'lac': 1e5,
+    'लाख': 1e5,
+    'crores': 1e7,
+    'crore': 1e7,
+    'करोड\u093C': 1e7,
+    'करोड': 1e7,
+    'हज\u093Cार': 1e3,
+    'हजार': 1e3,
+  };
+
+  static final RegExp _scaled = _spokenPattern(
+    '$_number\\s*(${_alternatives(_scales.keys)})$_end',
+  );
+
+  static final RegExp _minorAlone = _spokenPattern(
+    '$_number\\s*(euro\\s+cents?|${_alternatives(_minors.keys)})$_end',
+  );
+  static final RegExp _majorAlone = _spokenPattern(
+    '$_number\\s*(${_alternatives(_unknownMajors)})$_end',
+  );
+
+  /// [text] with the Devanagari letters that carry a dot written as the letter
+  /// and the dot, so a word reads the same however it was typed.
+  static String _decomposed(String text) => text.replaceAllMapped(
+    RegExp('[\u0958-\u095F]'),
+    (m) => String.fromCharCodes([
+      const [
+        0x0915,
+        0x0916,
+        0x0917,
+        0x091C,
+        0x0921,
+        0x0922,
+        0x092B,
+        0x092F,
+      ][m.group(0)!.codeUnitAt(0) - 0x0958],
+      0x093C,
+    ]),
+  );
+
+  /// [text] with its spoken amounts written as ordinary ones, '15 dollars and
+  /// 20 cents' as '15.2 usd', or null where it holds none.
+  static String? spoken(String source) {
+    final text = _decomposed(source);
+    var written = text.replaceAllMapped(
+      _scaled,
+      (m) =>
+          '${double.parse(m.group(1)!) * _scales[m.group(2)!.toLowerCase()]!}',
+    );
+    written = written.replaceAllMapped(_compoundAmount, (m) {
+      final code = _majors[m.group(2)!.toLowerCase()]!;
+      if (!_minors[m.group(4)!.toLowerCase()]!.contains(code)) {
+        return m.group(0)!;
+      }
+      final whole = double.parse(m.group(1)!);
+      return '${whole + double.parse(m.group(3)!) / 100} $code';
+    });
+    written = written.replaceAllMapped(_minorAlone, (m) {
+      final name = m.group(2)!.toLowerCase();
+      final code = name.startsWith('euro') ? 'eur' : _minors[name]!.first;
+      return '${double.parse(m.group(1)!) / 100} $code';
+    });
+    written = written.replaceAllMapped(
+      _majorAlone,
+      (m) => '${m.group(1)} ${_majors[m.group(2)!.toLowerCase()]}',
+    );
+    return written == _decomposed(source) ? null : written;
+  }
+
   static final RegExp _squareRoot = _re(r'square\s+root\s+of\s+(.+)');
   static final RegExp _power = _re(r'(.+?)\s+power\s+(.+)');
   static final RegExp _fraction = _re(
@@ -119,8 +259,7 @@ class Phrases {
   /// does not.
   static bool recognizes(String line) {
     final text = line.trim();
-    return _wholeLine.any((pattern) => pattern.hasMatch(text)) ||
-        _minorUnit.hasMatch(text);
+    return _wholeLine.any((pattern) => pattern.hasMatch(text));
   }
 
   /// What [source] says as a phrase, or null if it is not one. [evaluate]
@@ -167,20 +306,6 @@ class Phrases {
         '${double.parse(match.group(2)!) * scale} ${match.group(1)}',
       );
       return value is QuantityValue && value.unit.isCurrency ? value : null;
-    }
-    if (_minorUnit.hasMatch(text)) {
-      return evaluate(
-        text.replaceAllMapped(_minorUnit, (m) {
-          final whole = double.parse(m.group(1)!) / 100;
-          final name = m.group(2)!.toLowerCase();
-          final code = name.startsWith('euro')
-              ? 'eur'
-              : name.startsWith('pen')
-              ? 'gbp'
-              : 'usd';
-          return '$whole $code';
-        }),
-      );
     }
     if ((match = _squareRoot.firstMatch(text)) != null) {
       return evaluate('sqrt(${match!.group(1)})');
