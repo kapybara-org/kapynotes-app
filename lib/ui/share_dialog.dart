@@ -15,6 +15,7 @@ import '../sync/sync_api.dart' show SyncRefusedException;
 import '../sync/spaces.dart';
 import '../sync/trust.dart';
 import 'collaborator_colors.dart';
+import 'account/encryption_pane.dart' show changeDate;
 import 'control_surface.dart';
 import 'member_avatars.dart';
 import 'profile_avatar.dart';
@@ -1000,11 +1001,19 @@ class _Members extends StatelessWidget {
         for (final warning in warnings.values)
           _Banner(
             icon: KapyIcons.warningRounded,
-            isWarning: true,
-            text:
-                "${space.member(warning.userId)?.displayName ?? warning.email}'s "
-                'key changed. If they set up a new account, compare this '
-                'fingerprint with them before trusting it: ${warning.current}',
+            isWarning: space.member(warning.userId)?.identityResetAt == null,
+            text: switch (space.member(warning.userId)) {
+              SpaceMember(:final displayName, :final identityResetAt?) =>
+                '$displayName reset encryption on ${changeDate(identityResetAt)}, '
+                    "so their safety code changed. Shared notes aren't "
+                    'affected. Compare safety codes with them before trusting '
+                    'it: ${warning.current}',
+              final member =>
+                "${member?.displayName ?? warning.email}'s "
+                    'key changed. If they set up a new account, compare this '
+                    'fingerprint with them before trusting it: '
+                    '${warning.current}',
+            },
             action: TextButton(
               onPressed: () => onTrust(warning),
               child: const Text('Trust the new key'),

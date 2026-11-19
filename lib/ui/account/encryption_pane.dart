@@ -9,8 +9,10 @@ import '../../core/text_file_export.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../sync/account.dart';
+import '../../sync/device_name.dart';
 import '../../sync/key_bundle.dart';
 import '../../sync/recovery_key.dart';
+import '../../sync/sync_api.dart' show protocolVersion;
 import '../control_surface.dart';
 import '../settings_rows.dart';
 import 'recovery_key_dialog.dart';
@@ -151,7 +153,7 @@ Future<void> showKeyChangeDialog(
 }) async {
   final save = saveTextFile ?? TextFileExport.save;
   final replacesOld = account.hasRecoveryKey || account.recoveryKeyUnsaved;
-  final made = await showDialog<PreparedRecoveryKey>(
+  final made = await showDialog<Object>(
     context: context,
     barrierDismissible: false,
     builder: (context) => _KeyChangeDialog(
@@ -162,18 +164,54 @@ Future<void> showKeyChangeDialog(
     ),
   );
   if (made == null || !context.mounted) return;
+  final reset = made is PreparedReset ? made : null;
   await showRecoveryKeyDialog(
     context,
-    made.key,
+    reset?.recoveryKey ?? (made as PreparedRecoveryKey).key,
     saveTextFile: save,
     title: 'Save your new recovery key',
-    replacesOld: replacesOld,
+    replacesOld: reset != null || replacesOld,
   );
-  account.recoveryKeySaved(made);
+  if (reset != null) {
+    account.resetRecoveryKeySaved(reset);
+    if (context.mounted) {
+      Toast.show(context, 'Encryption reset. Uploading your notes…');
+    }
+    return;
+  }
+  account.recoveryKeySaved(made as PreparedRecoveryKey);
   if (context.mounted) Toast.show(context, 'New recovery key saved');
 }
 
-enum _Step { intro, code, passphrase }
+/// Where a device stands after a reset: a build older than [protocolVersion]
+/// keeps its notes but cannot sync until it is updated to [release].
+String resetDeviceLine(ResetDevice device, String? release, {DateTime? now}) {
+  final ago = (now ?? DateTime.now()).difference(device.lastSeenAt);
+  final synced = ago.inMinutes < 1
+      ? 'synced just now'
+      : ago.inHours < 1
+      ? 'synced ${ago.inMinutes} min ago'
+      : ago.inDays < 1
+      ? 'synced ${ago.inHours} ${ago.inHours == 1 ? 'hour' : 'hours'} ago'
+      : 'synced ${ago.inDays} ${ago.inDays == 1 ? 'day' : 'days'} ago';
+  final protocol = device.protocol;
+  if (release == null || protocol == null || protocol >= protocolVersion) {
+    return synced;
+  }
+  return '$synced · needs Kapy Notes $release to sync after a reset';
+}
+
+String resetDeviceName(ResetDevice device) =>
+    device.name ??
+    switch (device.platform) {
+      'macos' => 'A Mac',
+      'windows' => 'A Windows PC',
+      'ios' => 'An iPhone or iPad',
+      'android' => 'An Android device',
+      _ => 'Another device',
+    };
+
+enum _Step { first, explain, intro, code, passphrase }
 
 class _KeyChangeDialog extends StatefulWidget {
   const _KeyChangeDialog({
@@ -200,14 +238,34 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
       widget.account.keyBundle != null &&
       !widget.account.hasRecoveryKey;
 
-  _Step _step = _Step.intro;
+  late _Step _step = _resets ? _Step.first : _Step.intro;
   String? _proof;
-  PreparedKeyChange? _prepared;
+  Object? _prepared;
+  ResetPreview? _preview;
+
+  bool get _resets => widget.action == KeyProofAction.reset;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_resets) unawaited(_loadPreview());
+  }
+
+  Future<void> _loadPreview() async {
+    final preview = await widget.account.resetPreview();
+    if (!mounted) return;
+    setState(() {
+      _preview = preview;
+      _problem = preview == null ? _offline : null;
+    });
+  }
+
   String? _problem;
   bool _busy = false;
   bool _savingFile = false;
 
-  bool get _changesPassphrase => widget.action == KeyProofAction.passphrase;
+  bool get _changesPassphrase =>
+      widget.action == KeyProofAction.passphrase || _resets;
 
   String get _email => maskedEmail(widget.account.user?.email ?? '');
 
@@ -263,21 +321,28 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
 
   Future<void> _commit() async {
     final account = widget.account;
-    final prepared = _prepared ??= _changesPassphrase
+    final prepared = _prepared ??= _resets
+        ? await account.prepareReset(_passphrase)
+        : _changesPassphrase
         ? await account.preparePassphrase(_passphrase)
         : await account.prepareRecoveryKey();
-    if (prepared == null) {
-      if (mounted) setState(() => _problem = _refused);
-      return;
-    }
-    final result = await account.commitKeyChange(prepared, proof: _proof);
+    final result = switch (prepared) {
+      PreparedReset() => await account.commitReset(prepared, proof: _proof!),
+      PreparedKeyChange() => await account.commitKeyChange(
+        prepared,
+        proof: _proof,
+      ),
+      _ => const KeyChangeRefused(),
+    };
     if (!mounted) return;
     switch (result) {
       case KeyChangeDone():
-        if (_changesPassphrase) Toast.show(context, 'Passphrase changed');
+        if (prepared is PreparedPassphrase) {
+          Toast.show(context, 'Passphrase changed');
+        }
         Navigator.of(
           context,
-        ).pop(prepared is PreparedRecoveryKey ? prepared : null);
+        ).pop(prepared is PreparedPassphrase ? null : prepared);
       case KeyChangeNeedsCode():
         setState(() {
           _proof = null;
@@ -285,6 +350,14 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
           _step = _Step.code;
           _problem = keyCodeProblemText(KeyCodeProblem.expired);
         });
+      case KeyChangeLostRace(:final change, :final byReset) when _resets:
+        setState(
+          () => _problem = byReset
+              ? 'Encryption was just reset on ${changeDevice(change)}, so '
+                    'nothing was reset here. Enter the new passphrase.'
+              : 'Your passphrase was just changed on ${changeDevice(change)}, '
+                    'so nothing was reset. Try the new passphrase.',
+        );
       case KeyChangeLostRace(:final change):
         setState(
           () => _problem = _changesPassphrase
@@ -304,6 +377,8 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
   @override
   Widget build(BuildContext context) {
     final (title, lines, actions) = switch (_step) {
+      _Step.first => _first(),
+      _Step.explain => _explain(),
       _Step.intro => _intro(),
       _Step.code => _codeStep(),
       _Step.passphrase => _newPassphrase(),
@@ -345,6 +420,109 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
     onPressed: _busy ? null : () => Navigator.of(context).pop(),
     child: const Text('Cancel'),
   );
+
+  Widget _next(VoidCallback? onPressed, String label) => FilledButton(
+    key: const ValueKey('key-change-continue'),
+    onPressed: _busy ? null : onPressed,
+    child: Text(label),
+  );
+
+  (String, List<Widget>, List<Widget>) _first() {
+    final preview = _preview;
+    final devices = preview?.devices ?? const <ResetDevice>[];
+    return (
+      'Try these first',
+      [
+        const _Line(
+          'Resetting is the last resort. Your notes are safe either way.',
+        ),
+        if (devices.isNotEmpty) ...[
+          const _Line(
+            'If Kapy Notes is still open on one of these, change your '
+            'passphrase there instead. No reset needed:',
+          ),
+          SettingsGroup(
+            children: [
+              for (final device in devices)
+                SettingsRow(
+                  title: resetDeviceName(device),
+                  subtitle: resetDeviceLine(device, preview?.release),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
+        const _Line(
+          'Look for your recovery key: a file named '
+          'kapy-notes-recovery-key.txt, or wherever you wrote it down.',
+          last: true,
+        ),
+      ],
+      [
+        _cancel(),
+        _next(
+          preview == null
+              ? () => _run(_loadPreview)
+              : () => setState(() => _step = _Step.explain),
+          'Continue',
+        ),
+      ],
+    );
+  }
+
+  (String, List<Widget>, List<Widget>) _explain() {
+    final preview = _preview!;
+    final missing = widget.account.notesOnlyOnServer(preview);
+    final kind = thisDeviceKind;
+    return (
+      'What a reset does',
+      [
+        _Line(
+          "On this $kind: every note stays. They're uploaded again under "
+          'your new passphrase.',
+        ),
+        const _Line(
+          'On your other devices: their notes stay too. Each asks once for '
+          'the new passphrase or recovery key, then adds its notes back.',
+        ),
+        if (preview.release != null &&
+            preview.devices.any(
+              (d) => d.protocol != null && d.protocol! < protocolVersion,
+            ))
+          _Line(
+            'A device on an older version keeps its notes, and syncs again '
+            'once it has Kapy Notes ${preview.release} or later.',
+          ),
+        const _Line(
+          'Shared notes: you stay in every shared space. The people you '
+          'share with see that you reset, and their app gives you access '
+          'again the next time it syncs.',
+        ),
+        if (preview.orphanedSpaces.isNotEmpty)
+          _Line(
+            "In a space where nobody else can give you access, this $kind "
+            'gives it a new key. Notes there that aren\'t on this $kind '
+            "can't be read after a reset.",
+          ),
+        if (missing > 0)
+          _Line(
+            '${missing == 1 ? '1 note is' : '$missing notes are'} on the '
+            'server but not on this $kind. If another device has them, they '
+            'come back when you unlock it. If none does, they can\'t be read '
+            'after a reset.',
+          ),
+        const _Line("Your account, plan and purchases don't change."),
+        _Line("To check it's you, we'll email a code to $_email.", last: true),
+      ],
+      [
+        TextButton(
+          onPressed: _busy ? null : () => setState(() => _step = _Step.first),
+          child: const Text('Back'),
+        ),
+        _next(_sendCode, 'Send code'),
+      ],
+    );
+  }
 
   (String, List<Widget>, List<Widget>) _intro() {
     return (
@@ -437,7 +615,7 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
       FilledButton(
         key: const ValueKey('confirm-new-passphrase'),
         onPressed: _busy || _savingFile ? null : () => _run(_commit),
-        child: const Text('Change passphrase'),
+        child: Text(_resets ? 'Reset encryption' : 'Change passphrase'),
       ),
     ],
   );

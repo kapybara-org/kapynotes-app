@@ -240,6 +240,7 @@ class KeyStore {
   static const String _masterKeyEntry = 'kapynotes.masterKey';
   static const String _tokenEntry = 'kapynotes.sessionToken';
   static const String _userEntry = 'kapynotes.sessionUser';
+  static const String _pendingKeyEntry = 'kapynotes.pendingMasterKey';
 
   Uint8List? _masterKey;
   String? _token;
@@ -271,6 +272,25 @@ class KeyStore {
     _masterKeyRead = true;
     await _store.write(_masterKeyEntry, base64.encode(key));
   }
+
+  /// A reset's new master key, written before the reset is sent: if the app
+  /// stops between the server taking it and this device adopting it, the
+  /// next launch can still adopt it. Read once, and only then.
+  Future<Uint8List?> readPendingMasterKey() async {
+    final stored = await _store.read(_pendingKeyEntry);
+    if (stored == null) return null;
+    try {
+      final bytes = base64.decode(stored);
+      return bytes.length == 32 ? bytes : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> writePendingMasterKey(Uint8List key) =>
+      _store.write(_pendingKeyEntry, base64.encode(key));
+
+  Future<void> forgetPendingMasterKey() => _store.delete(_pendingKeyEntry);
 
   Future<String?> readToken() async {
     if (_tokenRead) return _token;
@@ -346,6 +366,7 @@ class KeyStore {
     _tokenRead = true;
     _userRead = true;
     await _store.delete(_masterKeyEntry);
+    await _store.delete(_pendingKeyEntry);
     await _store.delete(_tokenEntry);
     await _store.delete(_userEntry);
   }
