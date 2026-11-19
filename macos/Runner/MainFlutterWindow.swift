@@ -14,6 +14,7 @@ class MainFlutterWindow: NSWindow {
   private var windowMaterialChannel: FlutterMethodChannel?
   private var windowPinChannel: FlutterMethodChannel?
   private var systemRegionChannel: FlutterMethodChannel?
+  private var contrastChannel: FlutterMethodChannel?
   private var updaterChannel: FlutterMethodChannel?
   private var toolRunnerChannel: FlutterMethodChannel?
   private var menuBarPanel: MenuBarPanel?
@@ -79,6 +80,9 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.engine.binaryMessenger
     )
     systemRegionChannel = SystemRegion.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
+    contrastChannel = ContrastSetting.register(
       with: flutterViewController.engine.binaryMessenger
     )
     updaterChannel = AppUpdater.register(
