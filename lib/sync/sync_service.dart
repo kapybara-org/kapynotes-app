@@ -222,6 +222,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// the server already, and the seed would be refused.
   final Set<String> _caughtUp = {};
 
+  final StreamController<SharedChange> _sharedChanges =
+      StreamController.broadcast();
+
+  /// Notes that reached this device, or left it, in shared spaces somebody
+  /// else owns, one batch at a time: what the in-app notices are made from.
+  Stream<SharedChange> get sharedChanges => _sharedChanges.stream;
+
   /// Spaces the server will not sync until somebody in them has Pro, as it
   /// last said.
   ///
@@ -1183,7 +1190,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       final spaceId = stone.spaceId ?? personal.id;
       if (_needsPro.contains(spaceId)) continue;
       final space = _keyring.byId(spaceId);
-      if (space == null || !space.canEdit) continue;
+      if (space == null) continue;
       final record = _docs.get(stone.id);
       // A tombstone beside a live copy elsewhere is a move, and the move's
       // own entry tells the server where the note went.
@@ -1193,15 +1200,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _notes.markSynced(tombstones: [stone]);
         continue;
       }
+      if (space.isTeam && !space.isOwner) {
+        // Only the owner deletes a shared note for everyone. Anyone else's
+        // Delete takes it out of their own notes and is never sent, so it
+        // needs no right to edit: a viewer's is dismissed the same way.
+        _notes.dismiss(stone);
+        continue;
+      }
+      if (!space.canEdit) continue;
       if (record == null) {
         // Deleted before it was ever seeded: the server never had it.
         _notes.markSynced(tombstones: [stone]);
-        continue;
-      }
-      if (space.isTeam && !space.isOwner) {
-        // Only the owner deletes a shared note for everyone. Anyone else's
-        // Delete takes it out of their own notes and is never sent.
-        _notes.dismiss(stone);
         continue;
       }
       if (record.outbox.any((entry) => entry.deleted == true)) continue;
@@ -2038,6 +2047,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _docs.markDirty(noteId);
     }
 
+    final guest = space.isTeam && !space.isOwner;
+    final held = {
+      if (guest)
+        for (final id in touched.keys)
+          if (_notes.byId(id) case final note? when note.spaceId == space.id)
+            id: note,
+    };
+    final wholeHistory = _state.cursorFor(batch.spaceId) == 0;
     for (final entry in touched.entries) {
       _render(
         entry.key,
@@ -2046,6 +2063,24 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         storedSpaceId: storedSpaceId,
         personalId: personalId,
       );
+    }
+    if (guest) {
+      bool here(String id) => _notes.byId(id)?.spaceId == space.id;
+      final change = SharedChange(
+        spaceId: space.id,
+        arrived: [
+          for (final id in touched.keys)
+            if (!held.containsKey(id) && here(id)) _notes.byId(id)!,
+        ],
+        removed: [
+          for (final note in held.values)
+            if (!here(note.id)) note,
+        ],
+        wholeHistory: wholeHistory,
+      );
+      if (change.arrived.isNotEmpty || change.removed.isNotEmpty) {
+        _sharedChanges.add(change);
+      }
     }
     _state.recordCursor(batch.spaceId, batch.cursor);
     if (touched.isNotEmpty) {
@@ -2562,8 +2597,32 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _disconnect();
     _tasks?.dispose();
     _caretPulse.dispose();
+    unawaited(_sharedChanges.close());
     super.dispose();
   }
+}
+
+/// What one batch did to the notes this device holds in a shared space
+/// somebody else owns.
+class SharedChange {
+  const SharedChange({
+    required this.spaceId,
+    required this.arrived,
+    required this.removed,
+    required this.wholeHistory,
+  });
+
+  final String spaceId;
+
+  /// Notes that are here now and were not before the batch.
+  final List<Note> arrived;
+
+  /// Notes that were here before the batch, as they were, and are gone.
+  final List<Note> removed;
+
+  /// Whether the batch started from nothing: the space's whole history, as
+  /// a device pulls it when it first sees the space.
+  final bool wholeHistory;
 }
 
 /// A [ChangeNotifier] anyone holding it may fire.
