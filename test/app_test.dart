@@ -5626,6 +5626,24 @@ void main() {
       semantics.dispose();
     });
 
+    testWidgets('pins from the page menu; the bar has no Pin button', (
+      tester,
+    ) async {
+      await pumpApp(tester, size: const Size(393, 852));
+      expect(find.byKey(const ValueKey('page-pin')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('Pin note'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('page-more-pin')));
+      await tester.pumpAndSettle();
+      expect(notes.pinnedNoteIds, contains('phone-shell'));
+
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('Unpin note'), findsOneWidget);
+    });
+
     testWidgets('the system back gesture leaves the page for the list', (
       tester,
     ) async {

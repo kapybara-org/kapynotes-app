@@ -3431,7 +3431,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .hintFor(ShortcutAction.deleteNote)
         ?.displayLabel;
     final alwaysOnTop = widget.prefs.alwaysOnTop;
+    final pinned = note != null && widget.notes.pinnedNoteIds.contains(note.id);
     return [
+      if (phone && note != null && !_specialMode)
+        KapyMenuAction(
+          value: 'pin',
+          label: pinned ? 'Unpin note' : 'Pin note',
+          icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
+        ),
       if (!phone)
         KapyMenuAction(
           value: 'split',
@@ -3489,6 +3496,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (note == null) return;
     switch (action) {
+      case 'pin':
+        _togglePinnedNote(note.id);
       case 'hide':
         unawaited(_hideNote(note.id));
       case 'restore':
@@ -3861,10 +3870,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 extent: AppControlMetrics.iconButtonExtent,
                 gap: 2,
               ),
-              pinned: widget.notes.pinnedNoteIds.contains(note.id),
-              onTogglePin: _specialMode
-                  ? null
-                  : () => _togglePinnedNote(note.id),
+              showPin: false,
               moreActions: _pageActions(note, phone: true),
               onMore: (action) => _runPageAction(action, note),
               updates: widget.updates,

@@ -44,6 +44,7 @@ class PageToolbar extends StatelessWidget {
     this.noteShared = false,
     this.onShare,
     this.pinned = false,
+    this.showPin = true,
     this.onTogglePin,
     this.keepOnTop = false,
     this.onToggleKeepOnTop,
@@ -94,6 +95,9 @@ class PageToolbar extends StatelessWidget {
 
   final bool pinned;
   final VoidCallback? onTogglePin;
+
+  /// A phone pins from the More menu, so its page bar has no Pin button.
+  final bool showPin;
 
   /// Whether the window floats over other apps, and the toggle that turns it
   /// on or off. Null off the desktop, where there is no window to float; it
@@ -298,19 +302,20 @@ class PageToolbar extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     ?assistant,
-                    CompactIconButton(
-                      key: const ValueKey('page-pin'),
-                      tooltip: pinned ? 'Unpin note' : 'Pin note',
-                      extent: actionExtent,
-                      radius: 10,
-                      foregroundColor: pinned ? palette.clay : null,
-                      onPressed: onTogglePin,
-                      icon: KapyIcon(
-                        KapyIcons.pinOutlined,
-                        size: AppControlMetrics.iconAction,
-                        strokeWidth: 1.9,
+                    if (showPin)
+                      CompactIconButton(
+                        key: const ValueKey('page-pin'),
+                        tooltip: pinned ? 'Unpin note' : 'Pin note',
+                        extent: actionExtent,
+                        radius: 10,
+                        foregroundColor: pinned ? palette.clay : null,
+                        onPressed: onTogglePin,
+                        icon: KapyIcon(
+                          KapyIcons.pinOutlined,
+                          size: AppControlMetrics.iconAction,
+                          strokeWidth: 1.9,
+                        ),
                       ),
-                    ),
                   ],
                   if (onToggleKeepOnTop case final toggle?) ...[
                     const SizedBox(width: 6),
