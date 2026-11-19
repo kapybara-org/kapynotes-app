@@ -527,7 +527,12 @@ class NotesStore extends ChangeNotifier {
       ..._tombstones.where(
         (stone) => !(stone.id == id && stone.spaceId == note.spaceId),
       ),
-      Tombstone(id: id, deletedAt: _now(), spaceId: note.spaceId),
+      Tombstone(
+        id: id,
+        deletedAt: _now(),
+        spaceId: note.spaceId,
+        editedAt: note.spaceId == null ? null : note.updatedAt,
+      ),
     ]);
     _persist();
   }
@@ -562,7 +567,12 @@ class NotesStore extends ChangeNotifier {
         ),
       ),
       for (final note in going)
-        Tombstone(id: note.id, deletedAt: at, spaceId: note.spaceId),
+        Tombstone(
+          id: note.id,
+          deletedAt: at,
+          spaceId: note.spaceId,
+          editedAt: note.spaceId == null ? null : note.updatedAt,
+        ),
     ]);
     _persist();
     return going.length;
@@ -881,59 +891,69 @@ class NotesStore extends ChangeNotifier {
   /// it out of this account's own notes. Only a space's owner deletes a note
   /// for everyone, so [stone] is dropped unsent, and the note stays away
   /// however it changes in that space.
-  void dismiss(Tombstone stone) {
+  ///
+  /// [joinedAt] is when this account joined the space, as the server said:
+  /// a later membership makes the dismissal one of an earlier one.
+  void dismiss(Tombstone stone, {DateTime? joinedAt}) {
     final spaceId = stone.spaceId;
     if (spaceId == null) return;
     _tombstones = List.unmodifiable(
       _tombstones.where((s) => !(s.id == stone.id && s.spaceId == spaceId)),
     );
-    _store.put(_dismissedKey, {..._dismissed, stone.id: spaceId});
-    _store.put(_dismissalSyncKey, {
-      ..._dismissalSync,
-      stone.id: stone.deletedAt.millisecondsSinceEpoch,
-    });
+    _putDismissals(
+      {..._dismissed, stone.id: spaceId},
+      {
+        ..._dismissalSync,
+        stone.id: _DismissalSync(
+          _Standing.owed,
+          joinedAt: joinedAt,
+          editedAt: stone.editedAt,
+        ),
+      },
+    );
     _persist();
   }
 
-  /// Where each dismissal stands with the server, by note id: [_synced] once
-  /// the space's list carries it, [_localOnly] when the server had no place
-  /// for it, and otherwise when it was made here, or nothing for one made by
-  /// a build from before, both still to send.
-  Map<String, Object> get _dismissalSync => {
+  /// Where each dismissal stands with the server, by note id. One with no
+  /// entry, as a build from before left it, is still to send.
+  Map<String, _DismissalSync> get _dismissalSync => {
     if (_store.data[_dismissalSyncKey] case final Map raw)
       for (final MapEntry(:key, :value) in raw.entries)
-        if (key is String && value != null) key: value as Object,
+        if (key is String) key: ?_DismissalSync.fromJson(value),
   };
 
-  static const String _synced = 'synced';
-  static const String _localOnly = 'local';
+  void _putDismissals(
+    Map<String, String> dismissed,
+    Map<String, _DismissalSync> sync,
+  ) {
+    _store.put(_dismissedKey, dismissed);
+    _store.put(_dismissalSyncKey, {
+      for (final MapEntry(:key, :value) in sync.entries)
+        if (dismissed.containsKey(key)) key: value.toJson(),
+    });
+  }
 
-  /// This account's dismissals no server has taken yet, as note id to its
-  /// space and when it was made, if known.
-  List<({String noteId, String spaceId, DateTime? at})> get unsentDismissals {
+  /// This account's dismissals no server has taken yet: the note, its space
+  /// and when the account had joined it then, if known.
+  List<({String noteId, String spaceId, DateTime? joinedAt})>
+  get unsentDismissals {
     final sync = _dismissalSync;
     return [
       for (final MapEntry(:key, :value) in _dismissed.entries)
-        if (sync[key] case null || int _)
-          (
-            noteId: key,
-            spaceId: value,
-            at: switch (sync[key]) {
-              final int ms => DateTime.fromMillisecondsSinceEpoch(
-                ms,
-                isUtc: true,
-              ),
-              _ => null,
-            },
-          ),
+        if ((sync[key]?.standing ?? _Standing.owed) == _Standing.owed)
+          (noteId: key, spaceId: value, joinedAt: sync[key]?.joinedAt),
     ];
   }
 
-  /// A server with no place for [noteId]'s dismissal: it stays on this
+  /// A server that would not take [noteId]'s dismissal: it stays on this
   /// device alone, as before, and is not offered again.
   void keepDismissalLocal(String noteId) {
-    if (!_dismissed.containsKey(noteId)) return;
-    _store.put(_dismissalSyncKey, {..._dismissalSync, noteId: _localOnly});
+    final dismissed = _dismissed;
+    if (!dismissed.containsKey(noteId)) return;
+    final sync = _dismissalSync;
+    sync[noteId] = (sync[noteId] ?? const _DismissalSync(_Standing.owed))
+        .copyWith(standing: _Standing.local);
+    _putDismissals(dismissed, sync);
   }
 
   /// [spaceId]'s list of the notes this account took out of its own notes,
@@ -942,27 +962,41 @@ class NotesStore extends ChangeNotifier {
   /// confirmed before, come back: the account left and was invited in again.
   /// Dismissals still on their way up are left as they are.
   ///
-  /// Returns the ids of the notes that came back.
-  List<String> applyHidden(String spaceId, Iterable<String> hidden) {
+  /// Returns the notes that came back, with their last edit as this device
+  /// saw it, so each can take its place again.
+  List<({String id, DateTime? editedAt})> applyHidden(
+    String spaceId,
+    Iterable<String> hidden,
+  ) {
     final ids = hidden.toSet();
     final dismissed = _dismissed;
     final sync = _dismissalSync;
     final back = [
       for (final MapEntry(:key, :value) in dismissed.entries)
-        if (value == spaceId && !ids.contains(key) && sync[key] == _synced) key,
+        if (value == spaceId &&
+            !ids.contains(key) &&
+            sync[key]?.standing == _Standing.synced)
+          (id: key, editedAt: sync[key]!.editedAt),
     ];
     final away = {
       for (final id in ids)
-        if (dismissed[id] != spaceId || sync[id] != _synced) id,
+        if (dismissed[id] != spaceId || sync[id]?.standing != _Standing.synced)
+          id,
     };
     if (back.isEmpty && away.isEmpty) return const [];
-    for (final id in back) {
+    for (final (:id, editedAt: _) in back) {
       dismissed.remove(id);
       sync.remove(id);
     }
     for (final id in away) {
       dismissed[id] = spaceId;
-      sync[id] = _synced;
+      final live = byId(id);
+      sync[id] = _DismissalSync(
+        _Standing.synced,
+        editedAt: live != null && live.spaceId == spaceId
+            ? live.updatedAt
+            : sync[id]?.editedAt,
+      );
     }
     _notes = List.unmodifiable(
       _notes.where((note) {
@@ -974,10 +1008,20 @@ class NotesStore extends ChangeNotifier {
     _tombstones = List.unmodifiable(
       _tombstones.where((s) => s.spaceId != spaceId || !away.contains(s.id)),
     );
-    _store.put(_dismissedKey, dismissed);
-    _store.put(_dismissalSyncKey, sync);
+    _putDismissals(dismissed, sync);
     _persist();
     return back;
+  }
+
+  /// A change to a note kept away, remembered so it takes its place by it if
+  /// the note ever comes back.
+  void _editedWhileDismissed(Note note) {
+    final sync = _dismissalSync;
+    final known = sync[note.id] ?? const _DismissalSync(_Standing.owed);
+    final last = known.editedAt;
+    if (last != null && !note.updatedAt.isAfter(last)) return;
+    sync[note.id] = known.copyWith(editedAt: note.updatedAt);
+    _putDismissals(_dismissed, sync);
   }
 
   /// Drops the dismissals [gone] matches: the note was deleted for everyone,
@@ -985,21 +1029,20 @@ class NotesStore extends ChangeNotifier {
   void _undismiss(bool Function(String id, String spaceId) gone) {
     final dismissed = _dismissed;
     if (!dismissed.entries.any((e) => gone(e.key, e.value))) return;
-    final kept = {
+    _putDismissals({
       for (final MapEntry(:key, :value) in dismissed.entries)
         if (!gone(key, value)) key: value,
-    };
-    _store.put(_dismissedKey, kept);
-    _store.put(_dismissalSyncKey, {
-      for (final MapEntry(:key, :value) in _dismissalSync.entries)
-        if (kept.containsKey(key)) key: value,
-    });
+    }, _dismissalSync);
   }
 
-  /// Brings back a dismissal made before this account last joined [spaceId]:
-  /// from an earlier membership, which the server has already let go of.
-  void undismissStale(String noteId, String spaceId) =>
-      _undismiss((id, inSpace) => id == noteId && inSpace == spaceId);
+  /// Brings back a dismissal made under an earlier membership of [spaceId],
+  /// which the server has already let go of. Returns the note's last edit as
+  /// this device saw it.
+  DateTime? undismissStale(String noteId, String spaceId) {
+    final editedAt = _dismissalSync[noteId]?.editedAt;
+    _undismiss((id, inSpace) => id == noteId && inSpace == spaceId);
+    return editedAt;
+  }
 
   // -------------------------------------------------------------------------
   // Sync
@@ -1191,7 +1234,10 @@ class NotesStore extends ChangeNotifier {
   /// here does. A tombstone the server has confirmed for this note in this
   /// space is dropped: the log says the note is live, and the log is later.
   void applyDoc(Note note) {
-    if (isDismissed(note.id, note.spaceId)) return;
+    if (isDismissed(note.id, note.spaceId)) {
+      _editedWhileDismissed(note);
+      return;
+    }
     final index = indexOf(note.id);
     final remaining = index < 0
         ? List<Note>.of(_notes)
@@ -1486,5 +1532,49 @@ class NotesStore extends ChangeNotifier {
   void dispose() {
     _store.dispose();
     super.dispose();
+  }
+}
+
+enum _Standing { owed, synced, local }
+
+/// One dismissal's standing with the server: [_Standing.owed] until a
+/// space's list carries it, then [_Standing.synced], or [_Standing.local]
+/// when the server would not take it and it stays on this device alone.
+class _DismissalSync {
+  const _DismissalSync(this.standing, {this.joinedAt, this.editedAt});
+
+  final _Standing standing;
+
+  /// When the account had joined the space, as the server said when the
+  /// note was taken out here.
+  final DateTime? joinedAt;
+
+  /// The note's last edit as this device saw it.
+  final DateTime? editedAt;
+
+  _DismissalSync copyWith({_Standing? standing, DateTime? editedAt}) =>
+      _DismissalSync(
+        standing ?? this.standing,
+        joinedAt: joinedAt,
+        editedAt: editedAt ?? this.editedAt,
+      );
+
+  Map<String, Object?> toJson() => {
+    'standing': standing.name,
+    'joinedAt': ?joinedAt?.millisecondsSinceEpoch,
+    'editedAt': ?editedAt?.millisecondsSinceEpoch,
+  };
+
+  static _DismissalSync? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final standing = _Standing.values.asNameMap()[raw['standing']];
+    if (standing == null) return null;
+    DateTime? at(Object? ms) =>
+        ms is int ? DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true) : null;
+    return _DismissalSync(
+      standing,
+      joinedAt: at(raw['joinedAt']),
+      editedAt: at(raw['editedAt']),
+    );
   }
 }

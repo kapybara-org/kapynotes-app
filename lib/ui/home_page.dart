@@ -1919,7 +1919,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       title: owner == null ? 'Delete note?' : 'Remove from your notes?',
       body: owner == null
           ? 'Permanently deletes $name from every synced device.'
-          : 'Removes $name from your notes on all your devices. $owner and '
+          : 'Removes $name from your notes, and from your other devices '
+                'once they are up to date. $owner and '
                 "everyone it's shared with keep it.",
       action: owner == null ? 'Delete' : 'Remove',
     );
@@ -1946,8 +1947,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .where((id) => _sharedBy(widget.notes.byId(id)) != null)
         .length;
     const shared =
-        'Notes shared with you are removed from your notes on all your '
-        'devices, and their owners keep them.';
+        'Notes shared with you are removed from your notes, and from your '
+        'other devices once they are up to date. Their owners keep them.';
     if (theirs == 0) {
       return 'Permanently deletes ${_noteCount(ids.length).toLowerCase()} '
           'from every synced device.';

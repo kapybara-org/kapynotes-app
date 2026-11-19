@@ -187,6 +187,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   StreamSubscription<SocketEvent>? _socketEvents;
   Timer? _sendTimer;
   Timer? _retryTimer;
+
+  /// Dismissals sent again on their own, and how many times in a row the
+  /// server has asked them to wait.
+  Timer? _hideRetry;
+  int _hideFailures = 0;
   Timer? _poll;
   bool _foreground = false;
   bool _reconcileScheduled = false;
@@ -677,9 +682,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         await _pullAllOverHttp();
       }
       _reconcileDirty();
-      await _sendHidden();
       await _drain();
       await _tasks?.run();
+      await _sendHidden();
       _failures = 0;
       _state.recordSync(_now());
       _settle();
@@ -1206,7 +1211,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         // Only the owner deletes a shared note for everyone. Anyone else's
         // Delete takes it out of their own notes and is never sent, so it
         // needs no right to edit: a viewer's is dismissed the same way.
-        _notes.dismiss(stone);
+        _notes.dismiss(
+          stone,
+          joinedAt: space.member(_keyring.userId)?.joinedAt,
+        );
         continue;
       }
       if (!space.canEdit) continue;
@@ -2670,42 +2678,64 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   }
 
   /// Sends the dismissals made on this device until a space's list carries
-  /// them. A server with no place for one keeps it on this device alone, as
-  /// before, and is not asked again. One made before this account last
-  /// joined the space belonged to the earlier membership, and is let go.
+  /// them, last in a pass so nothing else waits on them. A server that will
+  /// not take one keeps it on this device alone, as before, and is not asked
+  /// again; one that cannot be reached is asked on the next pass. One made
+  /// under an earlier membership of the space is let go.
   Future<void> _sendHidden() async {
     for (final dismissal in _notes.unsentDismissals) {
       final space = _keyring.byId(dismissal.spaceId);
       if (space == null) continue;
       final joined = space.member(_keyring.userId)?.joinedAt;
-      final at = dismissal.at;
-      if (at != null && joined != null && joined.isAfter(at)) {
-        _notes.undismissStale(dismissal.noteId, space.id);
-        _bringBack([dismissal.noteId]);
+      final then = dismissal.joinedAt;
+      if (then != null && joined != null && !joined.isAtSameMomentAs(then)) {
+        final editedAt = _notes.undismissStale(dismissal.noteId, space.id);
+        _bringBack([(id: dismissal.noteId, editedAt: editedAt)]);
         continue;
       }
       try {
         await _api.hideNote(space.id, dismissal.noteId);
       } on SyncRefusedException catch (error) {
         debugPrint('KapyNotes: dismissal not sent: ${error.code}');
-        if (error.status == 404 || error.status == 409) {
-          _notes.keepDismissalLocal(dismissal.noteId);
-        }
+        _notes.keepDismissalLocal(dismissal.noteId);
+      } on SyncTransientException {
+        _retryHidden();
+        return;
       }
     }
+    _hideFailures = 0;
+  }
+
+  /// Sends the dismissals again on their own, backing off as the note sync
+  /// does, while the server asks for patience: a pass goes on without them.
+  void _retryHidden() {
+    if (_disposed || _hideRetry != null) return;
+    _hideFailures++;
+    final backoff = minRetry * pow(2, min(_hideFailures - 1, 10)).toDouble();
+    _hideRetry = Timer(backoff > maxRetry ? maxRetry : backoff, () {
+      _hideRetry = null;
+      unawaited(
+        _sendHidden().catchError(
+          (Object error) =>
+              debugPrint('KapyNotes: dismissals not sent: $error'),
+        ),
+      );
+    });
   }
 
   /// Renders notes that are no longer kept away from their history, which
   /// went on arriving while they were.
-  void _bringBack(List<String> noteIds) {
+  void _bringBack(List<({String id, DateTime? editedAt})> notes) {
     final personalId = _keyring.personal?.id;
-    for (final noteId in noteIds) {
+    for (final (id: noteId, :editedAt) in notes) {
       final record = _docs.get(noteId);
       final space = record == null ? null : _keyring.byId(record.spaceId);
       if (space == null) continue;
       _render(
         noteId,
-        _Touched()..changed = true,
+        _Touched()
+          ..changed = true
+          ..at = editedAt,
         space: space,
         storedSpaceId: space.isPersonal ? null : space.id,
         personalId: personalId,
@@ -2779,6 +2809,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _notes.removeListener(_onNotesChanged);
     _sendTimer?.cancel();
     _retryTimer?.cancel();
+    _hideRetry?.cancel();
     _presenceExpiryTimer?.cancel();
     _stopPolling();
     _disconnect();

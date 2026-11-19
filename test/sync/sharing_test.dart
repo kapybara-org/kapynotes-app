@@ -46,6 +46,7 @@ class Person {
     required this.device,
     this.typingIdle = const Duration(milliseconds: 300),
     bool acceptOnTheirOwn = false,
+    Duration minRetry = const Duration(seconds: 5),
   }) {
     server.seedBundle(userId);
     store = MemoryStore();
@@ -72,6 +73,7 @@ class Person {
       presenceThrottle: const Duration(milliseconds: 1),
       typingIdle: typingIdle,
       presenceLinger: const Duration(milliseconds: 60),
+      minRetry: minRetry,
     );
     sharing = Sharing(
       api: api,
@@ -1485,6 +1487,7 @@ void main() {
           'the one that missed it all included', () async {
         final (note, spaceId) = await sharedWithBoth();
         await mac.syncAndSettle();
+        final edited = mac.notes.byId(note.id)!.updatedAt;
         bob.tick();
         bob.notes.delete(note.id);
         await bob.syncAndSettle();
@@ -1507,6 +1510,11 @@ void main() {
         await mac.syncAndSettle();
         expect(mac.notes.isDismissed(note.id, spaceId), isFalse);
         expect(mac.bodyOf(note.id), 'Ours');
+        expect(
+          mac.notes.byId(note.id)!.updatedAt.millisecondsSinceEpoch,
+          edited.millisecondsSinceEpoch,
+          reason: 'back in its place, not as just edited',
+        );
       });
 
       test(
@@ -1516,6 +1524,7 @@ void main() {
           await mac.syncAndSettle();
 
           // Deleted on the Mac, which goes to sleep before it can sync.
+          final edited = mac.notes.byId(note.id)!.updatedAt;
           mac.tick();
           mac.notes.delete(note.id);
 
@@ -1534,6 +1543,10 @@ void main() {
           expect(server.spaces[spaceId]!.hidden[bob.userId], isNull);
           expect(mac.notes.isDismissed(note.id, spaceId), isFalse);
           expect(mac.bodyOf(note.id), 'Ours');
+          expect(
+            mac.notes.byId(note.id)!.updatedAt.millisecondsSinceEpoch,
+            edited.millisecondsSinceEpoch,
+          );
           expect(bob.bodyOf(note.id), 'Ours');
         },
       );
@@ -1572,6 +1585,66 @@ void main() {
         server.beforeHiddenNotes = false;
         await bob.syncAndSettle();
         expect(server.spaces[spaceId]!.hidden[bob.userId], {note.id});
+        await mac.syncAndSettle();
+        expect(mac.notes.byId(note.id), isNull);
+      });
+      test('a server asking for patience holds the dismissals back on their '
+          'own, and the pass stays healthy', () async {
+        final pad = Person(
+          server,
+          userId: bob.userId,
+          device: 'bob-pad',
+          minRetry: const Duration(milliseconds: 10),
+        );
+        await pad.boot();
+        addTearDown(pad.dispose);
+        final (note, spaceId) = await sharedWithBoth();
+        final ids = [note.id];
+        for (final body in ['Two', 'Three']) {
+          final more = alice.sharing.createNoteIn(spaceId);
+          alice.notes.updateBody(more.id, body);
+          ids.add(more.id);
+        }
+        await alice.syncAndSettle();
+        await pad.syncAndSettle();
+        expect(pad.bodies, containsAll(['Ours', 'Two', 'Three']));
+
+        server.busyHides = 4;
+        pad.tick();
+        pad.notes.deleteAll(ids);
+        await pad.syncAndSettle();
+        expect(pad.sync.status, SyncStatus.idle);
+        expect(pad.sync.lastError, isNull);
+        for (final id in ids) {
+          expect(pad.notes.byId(id), isNull);
+        }
+
+        for (
+          var wait = 0;
+          wait < 200 &&
+              (server.spaces[spaceId]!.hidden[bob.userId]?.length ?? 0) < 3;
+          wait++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(server.spaces[spaceId]!.hidden[bob.userId], ids.toSet());
+        expect(
+          server.calls.where((call) => call.startsWith('hide:')),
+          hasLength(7),
+          reason: 'each 429 holds the rest back until the next try',
+        );
+        expect(pad.sync.status, SyncStatus.idle);
+      });
+
+      test('a device clock behind the server does not make a fresh delete '
+          'look like one from an earlier membership', () async {
+        server.now = () => now.add(const Duration(hours: 6));
+        final (note, spaceId) = await sharedWithBoth();
+        await mac.syncAndSettle();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+        expect(server.spaces[spaceId]!.hidden[bob.userId], {note.id});
+        expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
         await mac.syncAndSettle();
         expect(mac.notes.byId(note.id), isNull);
       });

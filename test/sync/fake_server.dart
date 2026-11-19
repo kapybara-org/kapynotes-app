@@ -147,6 +147,9 @@ class FakeServer {
   /// Notes hidden, each time the server was asked.
   int hides = 0;
 
+  /// Hides answered 429 before one goes through.
+  int busyHides = 0;
+
   /// How many task records one pull returns.
   int taskPageSize = 1 << 30;
 
@@ -1396,6 +1399,14 @@ class FakeServer {
 
   void hideNote(String userId, String spaceId, String noteId) {
     calls.add('hide:$noteId');
+    if (busyHides > 0) {
+      busyHides--;
+      throw const SyncTransientException(
+        'too many requests',
+        answered: true,
+        status: 429,
+      );
+    }
     if (beforeHiddenNotes) _refuse(404, 'not found');
     final space = _member(userId, spaceId);
     if (space.members[userId] == SpaceRole.owner) {
