@@ -29,9 +29,9 @@ void main() {
     // The keycap glyphs a Mac's menus print, which no loaded test face has.
     final symbols = FontLoader('Noto Sans')
       ..addFont(
-        File(
-          '/System/Library/Fonts/Apple Symbols.ttf',
-        ).readAsBytes().then(ByteData.sublistView),
+        File('/System/Library/Fonts/Apple Symbols.ttf')
+            .readAsBytes()
+            .then(ByteData.sublistView),
       );
     await symbols.load();
   });
@@ -772,6 +772,20 @@ void main() {
       );
     }, variant: _phone);
 
+    testWidgets('a column grip stays below the line above the table', (
+      tester,
+    ) async {
+      final desk = await editCell(tester);
+      final frame = frameOf(desk);
+      final grip = tester.getRect(
+        find.byKey(const ValueKey('table-column-grip-0')),
+      );
+      expect(
+        grip.top,
+        greaterThanOrEqualTo(frame.grid.top),
+        reason: 'the line above the table is clear of the grip',
+      );
+    }, variant: _phone);
     testWidgets('grips are at least 44 points', (tester) async {
       await editCell(tester);
       for (final key in ['table-row-grip-2', 'table-column-grip-0']) {

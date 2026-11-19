@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/scheduler.dart';
@@ -1086,10 +1087,11 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
         height: 44,
       );
       // Never past the screen's edge, where a finger finds only half of it
-      // and the system's back swipe the rest.
-      return target.left >= _left
-          ? target
-          : target.shift(Offset(_left - target.left, 0));
+      // and the system's back swipe the rest, and never above the table,
+      // where the line the table follows is.
+      return target
+          .shift(Offset(math.max(0, _left - target.left), 0))
+          .shift(Offset(0, math.max(0, grid.top - target.top)));
     }
     return axis == TableAxis.row
         ? Rect.fromCenter(
@@ -1107,11 +1109,12 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
   static const double _touchOutset = 11;
 
   /// Where a phone grip's chip is drawn: just outside the grid, clear of the
-  /// open cell's field.
+  /// open cell's field, and never above the table, where the line the table
+  /// follows is.
   static Offset _chipCenter(TableFrame frame, TableAxis axis, Rect band) =>
       axis == TableAxis.row
       ? Offset(frame.grid.left - _touchOutset, band.center.dy)
-      : Offset(band.center.dx, frame.grid.top - _touchOutset);
+      : Offset(band.center.dx, frame.grid.top + _touchOutset);
 
   /// The left edge of the layer, in global coordinates, as of its last build.
   double _left = 0;
