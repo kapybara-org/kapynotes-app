@@ -50,6 +50,26 @@ void main() {
       expect(_line('5 euro cents in eur'), '0.05 EUR');
     });
 
+    test('reads a code before the number only in capitals', () {
+      expect(_line('USD 5'), '5.00 USD');
+      for (final word in [
+        'Top 10',
+        'Bob 3',
+        'Try 2',
+        'Cup 2',
+        'All 4',
+        'usd1k',
+      ]) {
+        expect(_line(word) ?? '', isNot(contains('TOP')), reason: word);
+        expect(_line(word) ?? '', isNot(contains('BOB')), reason: word);
+        expect(_line(word) ?? '', isNot(contains('TRY')), reason: word);
+        expect(_line(word) ?? '', isNot(contains('CUP')), reason: word);
+        expect(_line(word) ?? '', isNot(contains('ALL')), reason: word);
+        expect(_line(word) ?? '', isNot(contains('USD')), reason: word);
+      }
+      expect(_line('5 usd'), '5.00 USD', reason: 'a code after the number');
+    });
+
     test('leaves a word that is not a currency alone', () {
       expect(_line('Foo12'), isNull);
       expect(_line('Row 3'), isNull);
@@ -113,22 +133,23 @@ void main() {
 
   group('date phrases', () {
     test('counts days until and since a date', () {
-      expect(_line('days until 31 Mar'), '203 day');
-      expect(_line('days until Mar 31'), '203 day');
-      expect(_line('days since march'), '192 day');
-      expect(_line('days until december'), '83 day');
-      expect(_line('days until 31 Mar 2028'), '569 day');
+      expect(_line('days until 31 Mar'), '203 days');
+      expect(_line('days until Mar 31'), '203 days');
+      expect(_line('days since march'), '192 days');
+      expect(_line('days until december'), '83 days');
+      expect(_line('days until 31 Mar 2028'), '569 days');
     });
 
     test('counts the days left in this month', () {
-      expect(_line('days left in this month'), '21 day');
+      expect(_line('days left in this month'), '21 days');
       expect(_line('workdays left in this month'), '15 workdays');
     });
 
     test('gives the dates of a numbered week', () {
       expect(_line('week 44 2026'), 'Oct 26 – Nov 1, 2026');
       expect(_line('week 1 2026'), 'Dec 29, 2025 – Jan 4, 2026');
-      expect(_line('week 37'), 'Sep 7 – 13, 2026');
+      expect(_line('week 37 2026'), 'Sep 7 – 13, 2026');
+      expect(_line('week 37'), isNull, reason: 'a heading, not a phrase');
       expect(_line('week 54 2026'), isNull);
     });
 
@@ -148,13 +169,13 @@ void main() {
     test('reads the clock again on every pass', () {
       var today = DateTime.utc(2026, 9, 9, 12);
       final engine = _engine(() => today);
-      expect(_line('days until 31 Mar', engine), '203 day');
+      expect(_line('days until 31 Mar', engine), '203 days');
       today = DateTime.utc(2026, 9, 10, 12);
-      expect(_line('days until 31 Mar', engine), '202 day');
+      expect(_line('days until 31 Mar', engine), '202 days');
     });
 
     test('rolls an undated month into next year', () {
-      expect(_line('days until january'), '114 day');
+      expect(_line('days until january'), '114 days');
     });
   });
 

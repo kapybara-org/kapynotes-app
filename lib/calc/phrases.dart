@@ -63,8 +63,8 @@ class Phrases {
   );
   static final RegExp _asPercent = _re(r'(.+?)\s+(?:as|is\s+what)\s+%');
   static final RegExp _thousands = _re(r'([$€£¥₹])?\s*(\d+(?:\.\d+)?)K');
-  static final RegExp _codeShorthand = _re(
-    r'([A-Za-z]{3})\s*(\d+(?:\.\d+)?)\s*([KM])?',
+  static final RegExp _codeShorthand = RegExp(
+    r'^(?:([A-Z]{3})\s*(\d+(?:\.\d+)?)\s*([KM])?)$',
   );
   static final RegExp _minorUnit = RegExp(
     r'(\d+(?:\.\d+)?)\s*(euro\s+cents?|cents?|pence|pennies|penny)\b',
@@ -83,7 +83,7 @@ class Phrases {
   static final RegExp _daysLeft = _re(
     r'(work)?days\s+left\s+in\s+(?:this|the)\s+month',
   );
-  static final RegExp _week = _re(r'week\s+(\d{1,2})(?:\s+(\d{4}))?');
+  static final RegExp _week = _re(r'week\s+(\d{1,2})\s+(\d{4})');
   static final RegExp _weekdayIn = _re(
     r'(mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+in\s+(\d+)\s+weeks?',
   );
@@ -158,7 +158,7 @@ class Phrases {
       return evaluate('${match.group(1) ?? ''}$amount');
     }
     if ((match = _codeShorthand.firstMatch(text)) != null) {
-      final scale = switch (match!.group(3)?.toUpperCase()) {
+      final scale = switch (match!.group(3)) {
         'K' => 1e3,
         'M' => 1e6,
         _ => 1.0,
@@ -250,9 +250,8 @@ class Phrases {
           : PhraseValue('$days ${days == 1 ? 'workday' : 'workdays'}');
     }
     if ((match = _week.firstMatch(text)) != null) {
-      usesClock();
       final number = int.parse(match!.group(1)!);
-      final year = int.tryParse(match.group(2) ?? '') ?? today.year;
+      final year = int.parse(match.group(2)!);
       if (number < 1 || number > 53) return null;
       final january = DateTime.utc(year, 1, 4);
       final first = january.subtract(Duration(days: january.weekday - 1));
@@ -310,12 +309,8 @@ class Phrases {
     return DateTime.utc(wall.year, wall.month, wall.day);
   }
 
-  QuantityValue? _days(int days) {
-    final day = registry.lookup('day');
-    return day == null
-        ? null
-        : QuantityValue(days.toDouble(), Unit.single(day));
-  }
+  static PhraseValue _days(int days) =>
+      PhraseValue('$days ${days == 1 ? 'day' : 'days'}');
 
   QuantityValue? _hours(double hours) {
     final hour = registry.lookup('h');
