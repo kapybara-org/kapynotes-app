@@ -245,7 +245,8 @@ class NotesStore extends ChangeNotifier {
   /// minting one is the sync layer's job.
   ///
   /// A [body] counts towards the streak as writing unless [authored] is false,
-  /// which is for words the app put there rather than the person.
+  /// which is for words the app put there rather than the person. With
+  /// [drawing] it starts as a blank drawing instead.
   Note create({
     String body = '',
     String? spaceId,
@@ -253,6 +254,7 @@ class NotesStore extends ChangeNotifier {
     int keyGeneration = 1,
     bool authored = true,
     bool hidden = false,
+    bool drawing = false,
   }) {
     assert((spaceId == null) == (contentKey == null));
     final now = _now();
@@ -265,6 +267,7 @@ class NotesStore extends ChangeNotifier {
       spaceId: spaceId,
       contentKey: contentKey,
       contentKeyGeneration: keyGeneration,
+      drawing: drawing ? NoteDrawing.empty : null,
     );
     _notes = [note, ..._notes];
     if (authored && !note.isEmpty) _recordWriting([WritingStreak.dayOf(now)]);
@@ -393,27 +396,6 @@ class NotesStore extends ChangeNotifier {
   /// taking the change in to diff inside; see [diffTexts]. Null when some
   /// change came without one, and the whole body is diffed.
   TextEdit? takeEdit(String id) => _edits.remove(id);
-
-  /// Turns a new note into a drawing, or a blank drawing back into a note.
-  ///
-  /// Only while there is nothing in it to lose: no words, no attachments and
-  /// no strokes. Returns whether the note changed.
-  bool setDrawingMode(String id, {required bool drawing}) {
-    final index = indexOf(id);
-    if (index < 0) return false;
-    final existing = _notes[index];
-    if (existing.isDrawing == drawing) return false;
-    if (!existing.isEmpty || existing.attachments.isNotEmpty) return false;
-    _replace(
-      index,
-      existing.copyWith(
-        body: drawing ? '' : null,
-        drawing: drawing ? NoteDrawing.empty : null,
-        updatedAt: _now(),
-      ),
-    );
-    return true;
-  }
 
   /// Gives a blank note left by an older build the [Note.blankBody] a new
   /// note starts with, as it is taken for a new one. The app's own words, so

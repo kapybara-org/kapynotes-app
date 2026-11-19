@@ -23,7 +23,6 @@ import 'tag_ui.dart';
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
 enum NoteMedia {
-  drawing('Drawing', KapyIcons.penRounded),
   voice('Voice', KapyIcons.micRounded),
   video('Video', KapyIcons.videoOutlined),
   image('Image', KapyIcons.photoLibraryOutlined);
@@ -34,7 +33,6 @@ enum NoteMedia {
   final KapyIconData icon;
 
   static Set<NoteMedia> inNote(Note note) => {
-    if (note.isDrawing) drawing,
     for (final ref in note.attachments)
       if (ref is NoteVoiceRef)
         voice

@@ -71,8 +71,7 @@ void main() {
           'Trip budget\nGo to Sintra on a weekday. The weekend queues are '
           'brutal.\n☐ Book the Sintra train tickets',
     );
-    final drawing = notes.create();
-    notes.setDrawingMode(drawing.id, drawing: true);
+    final drawing = notes.create(drawing: true);
     notes.updateDrawing(
       drawing.id,
       NoteDrawing.empty,

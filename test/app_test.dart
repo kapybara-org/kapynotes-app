@@ -34,6 +34,7 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
@@ -3769,32 +3770,18 @@ void main() {
     },
   );
 
-  group('draw mode', () {
+  group('drawings', () {
     Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
-    Finder draw() => find.byKey(const ValueKey('note-mode-draw'));
+    Finder modeSwitch() => find.byKey(const ValueKey('note-mode-switch'));
+    List<String> titles(WidgetTester tester) => [
+      for (final row in tester.widgetList<NoteRow>(find.byType(NoteRow)))
+        row.note.title,
+    ];
 
-    testWidgets('Write | Draw keeps clear of the rest of the bar, at every '
-        'desktop width', (tester) async {
-      // It was drawn on the bar's centre over whatever was there: Share at
-      // the 600 a new window opens at, Saved further out.
+    testWidgets('the bar over a new note holds no Write | Draw, and keeps '
+        'Share and More on it, at every desktop width', (tester) async {
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       final bar = find.byKey(const ValueKey('page-toolbar'));
-      final modeSwitch = find.byKey(const ValueKey('note-mode-switch'));
-      final rest = find.descendant(
-        of: bar,
-        matching: find.byWidgetPredicate(
-          (widget) => switch (widget.key) {
-            ValueKey<String>(:final value) =>
-              value.startsWith('page-') || value.startsWith('toolbar-'),
-            _ => false,
-          },
-        ),
-      );
-      Rect rectOf(Element element) {
-        final box = element.renderObject! as RenderBox;
-        return box.localToGlobal(Offset.zero) & box.size;
-      }
-
       for (final platform in [
         TargetPlatform.macOS,
         TargetPlatform.windows,
@@ -3819,30 +3806,237 @@ void main() {
             final reason =
                 '${platform.name}, ${width.round()} wide, list '
                 '${listShown ? 'shown' : 'hidden'}';
-            expect(modeSwitch.hitTestable(), findsOneWidget, reason: reason);
-            final switchRect = tester.getRect(modeSwitch);
-            expect(
-              tester.getRect(bar).intersect(switchRect),
-              switchRect,
-              reason: reason,
-            );
-            for (final element in rest.evaluate()) {
+            expect(modeSwitch(), findsNothing, reason: reason);
+            for (final key in ['page-share', 'page-more']) {
+              final control = tester.getRect(find.byKey(ValueKey(key)));
               expect(
-                rectOf(element).overlaps(switchRect),
-                isFalse,
-                reason:
-                    '${(element.widget.key! as ValueKey<String>).value} is '
-                    'under Write | Draw, $reason',
+                tester.getRect(bar).intersect(control),
+                control,
+                reason: '$key, $reason',
               );
             }
           }
-          // With room to spare it keeps to the bar's centre.
-          expect(
-            tester.getCenter(modeSwitch).dx,
-            closeTo(tester.getCenter(bar).dx, 0.5),
-          );
         }
       }
+    });
+
+    testWidgets('a new note has no Write | Draw, and New in Drawings starts a '
+        'drawing', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsOneWidget);
+      expect(modeSwitch(), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(notes.notes.first.isDrawing, isTrue);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+      expect(modeSwitch(), findsNothing);
+    });
+
+    testWidgets('a new note on a phone has no Write | Draw over it', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester, size: const Size(420, 800));
+      await tester.pumpAndSettle();
+      expect(notes.notes.single.isEmpty, isTrue);
+      expect(find.byType(NoteEditor), findsOneWidget);
+      expect(modeSwitch(), findsNothing);
+    });
+
+    testWidgets('Notes lists and counts notes, and Drawings drawings, in the '
+        'archive too', (tester) async {
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(id: 'plain', body: 'Groceries', createdAt: at, updatedAt: at),
+        Note(
+          id: 'sketch',
+          body: 'Floor plan',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+        Note(
+          id: 'old-plain',
+          body: 'Old list',
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: at,
+        ),
+        Note(
+          id: 'old-sketch',
+          body: 'Old plan',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: at,
+        ),
+      ]);
+      await pumpApp(tester);
+      Future<void> showArchive() async {
+        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+        await tester.pumpAndSettle();
+      }
+
+      expect(titles(tester), ['Groceries']);
+      expect(spaceCount(tester), '1');
+      await showArchive();
+      expect(titles(tester), ['Old list']);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(titles(tester), ['Floor plan']);
+      expect(spaceCount(tester), '1');
+      await showArchive();
+      expect(titles(tester), ['Old plan']);
+    });
+
+    testWidgets('search finds drawings beside notes, and opens each where it '
+        'lives', (tester) async {
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(
+          id: 'plain',
+          body: 'Garden tools\nrake and twine',
+          createdAt: at,
+          updatedAt: at,
+        ),
+        Note(
+          id: 'sketch',
+          body: 'Garden plan',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+      ]);
+      await pumpApp(tester);
+      Finder row(String title) =>
+          find.byKey(ValueKey('command-menu-row-$title'));
+      Future<void> search(String text) async {
+        await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          text,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      expect(titles(tester), ['Garden tools']);
+      await search('Garden');
+      expect(row('Garden tools'), findsOneWidget);
+      expect(row('Garden plan'), findsOneWidget);
+      await tester.tap(row('Garden plan'));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'Drawings');
+      expect(titles(tester), ['Garden plan']);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+
+      await search('Garden');
+      await tester.tap(row('Garden tools'));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'My notes');
+      expect(titles(tester), ['Garden tools']);
+      expect(find.byType(DrawingCanvas), findsNothing);
+      expect(openNoteBody(tester), 'Garden tools\nrake and twine');
+    });
+
+    testWidgets('a phone keeps Drawings open from search as the keyboard comes '
+        'up and the phone turns', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'plain',
+          'body': 'Groceries',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+        {
+          'id': 'sketch',
+          'body': 'Floor plan',
+          'createdAt': 2000,
+          'updatedAt': 2000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      await pumpApp(tester, size: const Size(420, 800));
+      Future<Set<String>> listed() async {
+        final page = tester.firstState<ScaffoldState>(find.byType(Scaffold));
+        if (!page.isDrawerOpen) {
+          await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+          await tester.pumpAndSettle();
+        }
+        return titles(tester).toSet();
+      }
+
+      // Phone-only until Phone v2's Drawings tab: Notes keeps the drawings.
+      expect(await listed(), {'Groceries', 'Floor plan'});
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CommandMenu),
+          matching: find.text('Drawings'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(await listed(), {'Floor plan'});
+      expect(
+        find.descendant(
+          of: find.byType(Sidebar),
+          matching: find.text('Drawings'),
+        ),
+        findsOneWidget,
+      );
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
+      expect(await listed(), {'Floor plan'});
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      tester.view.physicalSize = const Size(800, 420);
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(420, 800);
+      await tester.pumpAndSettle();
+      expect(await listed(), {'Floor plan'});
+    });
+
+    testWidgets('a drawing that a sync race left words beside is in Notes for '
+        'them, and on the canvas in Drawings', (tester) async {
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(
+          id: 'both',
+          body: 'Garden\nTomatoes by the shed',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+      ]);
+      await pumpApp(tester);
+      expect(titles(tester), ['Garden']);
+      await tester.tap(find.widgetWithText(NoteRow, 'Garden'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawingCanvas), findsNothing);
+      expect(openNoteBody(tester), 'Garden\nTomatoes by the shed');
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(titles(tester), ['Garden']);
+      await tester.tap(find.widgetWithText(NoteRow, 'Garden'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawingCanvas), findsOneWidget);
     });
 
     testWidgets('a stroke across a drawing on a phone stays a stroke', (
@@ -3879,8 +4073,7 @@ void main() {
 
     test('restoring an archive over a drawing keeps the canvas', () async {
       await notes.load();
-      final note = notes.create();
-      notes.setDrawingMode(note.id, drawing: true);
+      final note = notes.create(drawing: true);
       notes.updateDrawing(
         note.id,
         NoteDrawing([
@@ -3901,35 +4094,13 @@ void main() {
       expect(notes.byId(note.id)!.body, 'Plan');
     });
 
-    testWidgets('a new note can become a drawing, and back while blank', (
-      tester,
-    ) async {
-      await pumpApp(tester);
-      await tester.tap(plus());
-      await tester.pumpAndSettle();
-      final id = notes.notes.first.id;
-      expect(draw(), findsOneWidget);
-
-      await tester.tap(draw());
-      await tester.pumpAndSettle();
-      expect(notes.byId(id)!.isDrawing, isTrue);
-      expect(find.byType(DrawingCanvas), findsOneWidget);
-      expect(find.byType(NoteEditor), findsNothing);
-      expect(notes.byId(id)!.title, 'Drawing');
-
-      await tester.tap(find.byKey(const ValueKey('note-mode-write')));
-      await tester.pumpAndSettle();
-      expect(notes.byId(id)!.isDrawing, isFalse);
-      expect(find.byType(NoteEditor), findsOneWidget);
-    });
-
     testWidgets('strokes and a title are saved to the note', (tester) async {
       await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
       await tester.tap(plus());
       await tester.pumpAndSettle();
       final id = notes.notes.first.id;
-      await tester.tap(draw());
-      await tester.pumpAndSettle();
 
       final surface = tester.getRect(
         find.byKey(const ValueKey('drawing-surface')),
@@ -3943,8 +4114,6 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
-      // Something is in it now, so the choice has been made.
-      expect(find.byKey(const ValueKey('note-mode-switch')), findsNothing);
 
       await tester.enterText(
         find.byKey(const ValueKey('drawing-title')),
@@ -3953,21 +4122,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.title, 'Garden plan');
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
-    });
-
-    testWidgets('a note with words in it offers no switch', (tester) async {
-      await pumpApp(tester);
-      await tester.tap(plus());
-      await tester.pumpAndSettle();
-      expect(draw(), findsOneWidget);
-
-      await tester.enterNote(
-        'Groceries',
-        find.descendant(of: find.byType(NoteEditor), matching: noteField),
-      );
-      await tester.pumpAndSettle();
-      expect(draw(), findsNothing);
-      expect(notes.notes.first.isDrawing, isFalse);
     });
   });
 
@@ -6271,8 +6425,7 @@ void main() {
 
     testWidgets('Drawings is thumbnail cards, two to a row', (tester) async {
       for (final title in ['Garden plan', 'Living room', 'App wireframe']) {
-        final drawing = notes.create();
-        notes.setDrawingMode(drawing.id, drawing: true);
+        final drawing = notes.create(drawing: true);
         notes.updateDrawing(drawing.id, NoteDrawing.empty, title: title);
       }
       await pumpApp(tester, size: const Size(393, 852));
@@ -6463,7 +6616,7 @@ void main() {
         },
       ];
       await pumpApp(tester);
-      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+      expect(rowTitles(tester), ['Words']);
 
       await openSpace(tester, 'drawings');
       expect(rowTitles(tester), ['Sketch']);
@@ -6471,7 +6624,7 @@ void main() {
       expect(spaceCount(tester), '1');
 
       await openSpace(tester, 'notes');
-      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+      expect(rowTitles(tester), ['Words']);
       expect(spaceTitle(tester), 'My notes');
 
       // New in Drawings makes a drawing, so the list stays where it is.
@@ -6650,7 +6803,9 @@ void main() {
         await openSpace(tester, 'notes');
         expect(noteField, findsNothing);
         expect(find.text('Words'), findsNothing);
-        expect(find.byType(DrawingCanvas), findsOneWidget);
+        // Nor does the drawing take its place: Notes has nothing to open.
+        expect(find.byType(DrawingCanvas), findsNothing);
+        expect(find.byType(EmptyState), findsOneWidget);
       });
     }
 
@@ -6761,9 +6916,19 @@ void main() {
         notes.importNotes([
           Note(id: 'plain', body: 'Groceries', createdAt: at, updatedAt: at),
           Note(
-            id: 'sketch',
-            body: 'Floor plan',
-            drawing: NoteDrawing.empty,
+            id: 'receipt',
+            body: 'Receipt\n${NoteAttachmentRef.placeholder}',
+            attachments: [
+              NoteImageRef(
+                offset: 8,
+                hash: 'abc123',
+                key: Uint8List(32),
+                mime: 'image/png',
+                width: 10,
+                height: 20,
+                bytes: 100,
+              ),
+            ],
             createdAt: at,
             updatedAt: at,
           ),
@@ -6777,22 +6942,25 @@ void main() {
 
         await tester.tap(filter);
         await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('media-filter-drawing')),
+          findsNothing,
+        );
         await tick('voice');
         await tick('video');
-        await tick('image');
-        expect(rowTitles(tester), ['Floor plan']);
+        expect(rowTitles(tester), ['Receipt']);
         expect(
-          find.descendant(of: filter, matching: find.text('Drawing')),
+          find.descendant(of: filter, matching: find.text('Image')),
           findsOneWidget,
         );
 
         // The last kind ticked stays ticked: nothing ticked would read as a
         // library that had lost its notes.
-        await tick('drawing');
-        expect(rowTitles(tester), ['Floor plan']);
+        await tick('image');
+        expect(rowTitles(tester), ['Receipt']);
 
         await tick('all');
-        expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
+        expect(rowTitles(tester).toSet(), {'Groceries', 'Receipt'});
         expect(
           find.descendant(of: filter, matching: find.text('All notes')),
           findsOneWidget,
