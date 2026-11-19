@@ -335,6 +335,7 @@ class CalcScope {
         (QuantityValue x, QuantityValue y) =>
           _sameNumber(x.value, y.value) && _sameUnit(x.unit, y.unit),
         (BooleanValue x, BooleanValue y) => x.value == y.value,
+        (PhraseValue x, PhraseValue y) => x.text == y.text,
         (DateTimeValue x, DateTimeValue y) =>
           x.instant == y.instant &&
               x.timeZoneId == y.timeZoneId &&
@@ -459,10 +460,17 @@ class Evaluator {
         return value;
 
       case ConvertNode():
-        return Arith.convert(
-          evaluate(node.value),
-          _contextualUnit(node.target),
-        );
+        final value = evaluate(node.value);
+        final target = _contextualUnit(node.target);
+        final readout = switch (node.value) {
+          IdentifierNode(:final name) =>
+            !scope.defines(name) && aggregateNames.contains(name.toLowerCase()),
+          _ => false,
+        };
+        if (readout && value is NumberValue && target.isCurrency) {
+          return QuantityValue(value.value, target);
+        }
+        return Arith.convert(value, target);
 
       case FormatNode():
         final value = evaluate(node.value);
@@ -833,6 +841,28 @@ class Evaluator {
         final x = arg(0);
         final ex = math.exp(2 * x);
         return NumberValue((ex - 1) / (ex + 1));
+      case 'cot':
+        return NumberValue(1 / math.tan(_angle(args, 0)));
+      case 'csc':
+        return NumberValue(1 / math.sin(_angle(args, 0)));
+      case 'sec':
+        return NumberValue(1 / math.cos(_angle(args, 0)));
+      case 'coth':
+        final y = math.exp(2 * arg(0));
+        return NumberValue((y + 1) / (y - 1));
+      case 'csch':
+        return NumberValue(2 / (math.exp(arg(0)) - math.exp(-arg(0))));
+      case 'sech':
+        return NumberValue(2 / (math.exp(arg(0)) + math.exp(-arg(0))));
+      case 'asinh':
+        final z = arg(0);
+        return NumberValue(math.log(z + math.sqrt(z * z + 1)));
+      case 'acosh':
+        final z = arg(0);
+        return NumberValue(math.log(z + math.sqrt(z * z - 1)));
+      case 'atanh':
+        final z = arg(0);
+        return NumberValue(0.5 * math.log((1 + z) / (1 - z)));
       case 'hypot':
         return NumberValue(math.sqrt(arg(0) * arg(0) + arg(1) * arg(1)));
       case 'gcd':

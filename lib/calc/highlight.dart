@@ -3,6 +3,7 @@ import '../core/note_link.dart';
 import 'engine.dart';
 import 'lexer.dart';
 import 'parser.dart';
+import 'phrases.dart';
 import 'unit_registry.dart';
 
 /// Semantic categories the editor paints. Kept separate from colours so the
@@ -271,10 +272,17 @@ class Highlighter {
     List<HighlightSpan> out,
   ) {
     final tokens = Lexer(line).tokenize();
+    final phrase = Phrases.recognizes(line);
 
     for (var i = 0; i < tokens.length; i++) {
       final token = tokens[i];
-      final kind = _classify(token, tokens, i, knownNames);
+      var kind = _classify(token, tokens, i, knownNames);
+      if (phrase &&
+          token.type == TokenType.identifier &&
+          kind != HighlightKind.variable &&
+          Phrases.words.contains(token.text.toLowerCase())) {
+        kind = HighlightKind.keyword;
+      }
       if (kind == HighlightKind.plain) continue;
       out.add(HighlightSpan(offset + token.start, offset + token.end, kind));
     }

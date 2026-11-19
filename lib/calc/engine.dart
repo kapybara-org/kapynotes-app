@@ -4,6 +4,7 @@ import 'evaluator.dart';
 import 'format.dart';
 import 'lexer.dart';
 import 'parser.dart';
+import 'phrases.dart';
 import 'temporal.dart';
 import 'unit_registry.dart';
 import 'value.dart';
@@ -162,6 +163,12 @@ class CalcEngine {
 
   /// The date the exchange rates are from, as the total's hover says it.
   final String? ratesAsOf;
+
+  late final Phrases _phrases = Phrases(
+    registry: registry,
+    now: _now,
+    timeZoneId: timeZoneId,
+  );
 
   final _LineMemo _memo = _LineMemo();
 
@@ -536,13 +543,33 @@ class CalcEngine {
           isAggregateReadout: false,
         );
       }
-      final node = Parser(
-        source,
+      Node parse(String text) => Parser(
+        text,
         registry: registry,
         isBound: (name) =>
             !unitConfigurationNames.contains(name.toLowerCase()) &&
             scope.defines(name),
       ).parseLine();
+      final phrase = _phrases.read(source, (text) {
+        try {
+          return evaluator.evaluate(parse(text));
+        } on CalcError {
+          return null;
+        }
+      }, usesClock: scope.markUnrepeatable);
+      if (phrase != null) {
+        return _EvaluatedLine(
+          result: LineResult(
+            line: index,
+            value: phrase,
+            text: ResultFormatter.display(phrase, grouping: grouping),
+            copyText: ResultFormatter.copy(phrase),
+            grouping: grouping,
+          ),
+          isAggregateReadout: false,
+        );
+      }
+      final node = parse(source);
       final value = evaluator.evaluate(node);
       // Shown in the device's zone, a date reads the zone as it is written.
       if (value is DateTimeValue && value.timeZoneId == null) {
@@ -895,7 +922,7 @@ class CalcEngine {
           break;
       }
     }
-    return hasNumber || hasOperator || hasKnownName;
+    return hasNumber || hasOperator || hasKnownName || Phrases.recognizes(line);
   }
 }
 
