@@ -2129,6 +2129,23 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _notes.bringHome([noteId], at: at);
       } else if (local != null &&
           (local.spaceId ?? personalId) == (storedSpaceId ?? personalId)) {
+        final movedTo = record.spaceId == space.id
+            ? null
+            : _keyring.byId(record.spaceId);
+        if (movedTo != null) {
+          // Another device moved the note, and its history where it went
+          // arrived here first: the copy here goes there too.
+          _render(
+            noteId,
+            _Touched()
+              ..changed = true
+              ..at = at,
+            space: movedTo,
+            storedSpaceId: movedTo.isPersonal ? null : movedTo.id,
+            personalId: personalId,
+          );
+          return;
+        }
         _notes.applyRemote(
           tombstones: [
             Tombstone(id: noteId, deletedAt: at, spaceId: storedSpaceId),
