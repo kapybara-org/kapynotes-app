@@ -2664,9 +2664,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                               title: 'Settings',
                               bottomInset: bottomInset,
                               children: [
-                                if (widget.updates case final updates?)
-                                  if (!_searching)
-                                    SettingsWhatsNewRow(updates: updates),
+                                if (!_searching) const SettingsWhatsNewRow(),
                                 // No autofocus: a keyboard that rises the
                                 // moment settings opens would cover the very
                                 // list it is there to search.
