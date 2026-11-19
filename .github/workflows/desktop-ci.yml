@@ -375,11 +375,64 @@ jobs:
           name: linux-x86_64-unsigned
           path: dist
 
+      # Every container job used to download its desktop baseline (85 to 95
+      # MB on the Ubuntu images) from a distro mirror into a fresh container,
+      # and a slow mirror alone pushed the job past its limit. The baseline is
+      # now installed once, committed to an image and cached under a key of the
+      # image digest and smoke_test.sh (which lists the packages), so a new
+      # base image or a new package list rebuilds it and later runs load
+      # it from the Actions cache. A cache miss installs it with apt retries,
+      # and the Ubuntu images use azure.archive.ubuntu.com, the mirror GitHub's
+      # own runner images use.
+      - name: Resolve the digest of ${{ matrix.image }}
+        id: image
+        if: matrix.image != ''
+        run: |
+          digest=$(docker buildx imagetools inspect "${{ matrix.image }}" --format '{{.Manifest.Digest}}')
+          [[ "$digest" == sha256:* ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # Bump the v1 when the PREPARE script below changes: the key can't see it.
+      - name: Restore the desktop baseline of ${{ matrix.image }}
+        id: baseline
+        if: matrix.image != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: baseline.tar.gz
+          key: smoke-baseline-v1-${{ matrix.image }}-${{ steps.image.outputs.digest }}-${{ hashFiles('packaging/linux/smoke_test.sh') }}
+
+      - name: Install the desktop baseline in a clean ${{ matrix.image }}
+        if: matrix.image != '' && steps.baseline.outputs.cache-hit != 'true'
+        run: |
+          prepare=$(cat <<'PREPARE'
+          if [ -d /etc/apt/apt.conf.d ]; then
+            echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+          fi
+          if grep -qi '^ID=ubuntu' /etc/os-release; then
+            sed -i -E 's#https?://(archive|security)\.ubuntu\.com#http://azure.archive.ubuntu.com#' \
+              /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+          fi
+          PREPARE
+          )
+          docker run --name baseline -v "$PWD:/w" -w /w -e PREPARE="$prepare" "${{ matrix.image }}" bash -c \
+            'eval "$PREPARE" && packaging/linux/smoke_test.sh baseline && { apt-get clean || dnf clean all; }'
+          docker commit baseline smoke-baseline
+          docker save smoke-baseline | gzip > baseline.tar.gz
+
+      - name: Cache the desktop baseline of ${{ matrix.image }}
+        if: matrix.image != '' && steps.baseline.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: baseline.tar.gz
+          key: ${{ steps.baseline.outputs.cache-primary-key }}
+
       - name: Start the packages in a clean ${{ matrix.image }}
         if: matrix.image != ''
         run: |
-          docker run --rm -v "$PWD:/w" -w /w "${{ matrix.image }}" bash -c \
-            'packaging/linux/smoke_test.sh baseline && packaging/linux/smoke_test.sh all dist smoke-out'
+          gzip -dc baseline.tar.gz | docker load
+          docker run --rm -v "$PWD:/w" -w /w smoke-baseline bash -c \
+            'if command -v apt-get >/dev/null; then apt-get update -q; fi
+             packaging/linux/smoke_test.sh all dist smoke-out'
 
       - name: Mount the AppImage through FUSE
         if: matrix.image == ''

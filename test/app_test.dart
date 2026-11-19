@@ -10,6 +10,7 @@ import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/quick_capture.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
@@ -439,6 +440,211 @@ void main() {
       expect(tester.testTextInput.isVisible, isTrue);
     },
   );
+
+  group('a widget launch puts the caret in first', () {
+    late DeferredMemoryStore deferredStore;
+    late NotesStore deferredNotes;
+    late TaskLibrary tasks;
+    late Note last;
+
+    setUp(() async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await notes.load();
+      notes.create(body: 'Older');
+      last = notes.create(body: 'Groceries\n☐ Milk');
+      store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
+    });
+
+    tearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      stubLaunchIntent(null, respond: false);
+    });
+
+    /// Made inside the test, so the load it holds back completes in the
+    /// test's own fake time rather than the real zone setUp runs in.
+    void prepareStores() {
+      deferredStore = DeferredMemoryStore()..data.addAll(store.data);
+      deferredNotes = NotesStore(deferredStore);
+      tasks = TaskLibrary(
+        notes: deferredNotes,
+        store: deferredStore,
+        storage: MemoryDocStorage(),
+      );
+    }
+
+    Future<void> launch(WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(420, 800);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        KapyNotesApp(
+          store: deferredStore,
+          notes: deferredNotes,
+          rates: RatesRepository(deferredStore),
+          prefs: LayoutPrefs(deferredStore),
+          shortcuts: ShortcutPrefs(deferredStore),
+          tasks: tasks,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('instant-capture-editor')),
+        findsOneWidget,
+      );
+    }
+
+    /// Pumps until the note editor has drawn its first frame.
+    Future<void> pumpToEditor(WidgetTester tester) async {
+      for (
+        var i = 0;
+        i < 10 && find.byType(NoteEditor).evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.byType(NoteEditor), findsOneWidget);
+    }
+
+    testWidgets(
+      'a tap that lands before storage loads opens the last note with its '
+      'caret at the end, and the task index waits behind it',
+      (tester) async {
+        stubLaunchIntent('continueWriting');
+        prepareStores();
+        bool? caretWhenTasksLoaded;
+        tasks.addListener(
+          () => caretWhenTasksLoaded ??= tester
+              .widget<NoteField>(noteField)
+              .focusNode
+              .hasFocus,
+        );
+        await launch(tester);
+
+        deferredStore.completeLoad();
+        await pumpToEditor(tester);
+        expect(tasks.isLoaded, isFalse);
+
+        await tester.pumpAndSettle();
+        // The task documents' own coalesced write.
+        await tester.pump(const Duration(seconds: 1));
+        final field = tester.widget<NoteField>(noteField);
+        expect(field.controller.text, startsWith(last.body));
+        expect(field.focusNode.hasFocus, isTrue);
+        expect(
+          field.controller.selection,
+          TextSelection.collapsed(offset: field.controller.text.length),
+        );
+        expect(deferredNotes.notes, hasLength(2));
+        expect(
+          tester.widget<HomePage>(find.byType(HomePage)).launchIntent,
+          LaunchIntent.continueWriting,
+        );
+        expect(tasks.isLoaded, isTrue);
+        expect(caretWhenTasksLoaded, isTrue);
+      },
+    );
+
+    testWidgets('an action this version does not know opens normally', (
+      tester,
+    ) async {
+      stubLaunchIntent('teleport');
+      prepareStores();
+      await launch(tester);
+
+      deferredStore.completeLoad();
+      await pumpToEditor(tester);
+      await tester.pumpAndSettle();
+      // The task documents' own coalesced write.
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(
+        tester.widget<HomePage>(find.byType(HomePage)).launchIntent,
+        LaunchIntent.open,
+      );
+      expect(deferredNotes.notes, hasLength(2));
+      expect(tasks.isLoaded, isTrue);
+    });
+
+    testWidgets('a host that never answers still opens the editor', (
+      tester,
+    ) async {
+      stubLaunchIntent(null, respond: false);
+      prepareStores();
+      await launch(tester);
+
+      deferredStore.completeLoad();
+      await tester.pump(const Duration(milliseconds: 500));
+      await pumpToEditor(tester);
+      await tester.pumpAndSettle();
+      // The task documents' own coalesced write.
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(
+        tester.widget<HomePage>(find.byType(HomePage)).launchIntent,
+        LaunchIntent.open,
+      );
+      expect(tester.widget<NoteField>(noteField).focusNode.hasFocus, isTrue);
+      expect(tasks.isLoaded, isTrue);
+    });
+
+    testWidgets(
+      "an action that came with Dart's arguments waits on no answer from "
+      'the host',
+      (tester) async {
+        stubLaunchIntent(null, respond: false);
+        QuickCapture.startedWith(['continueWriting']);
+        prepareStores();
+        await launch(tester);
+
+        deferredStore.completeLoad();
+        await tester.pump();
+        await tester.pump();
+        expect(find.byType(NoteEditor), findsOneWidget);
+        expect(
+          tester.widget<HomePage>(find.byType(HomePage)).launchIntent,
+          LaunchIntent.continueWriting,
+        );
+
+        await tester.pumpAndSettle();
+        // The task documents' own coalesced write.
+        await tester.pump(const Duration(seconds: 1));
+        final field = tester.widget<NoteField>(noteField);
+        expect(field.controller.text, startsWith(last.body));
+        expect(field.focusNode.hasFocus, isTrue);
+      },
+    );
+  });
+
+  testWidgets('with the notes loaded first, the task index still waits for '
+      'the frame after the first', (tester) async {
+    final tasks = TaskLibrary(
+      notes: notes,
+      store: store,
+      storage: MemoryDocStorage(),
+    );
+    await notes.load();
+    notes.create(body: 'Groceries\n☐ Milk');
+    store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
+    prefs.load();
+    shortcuts.load();
+    await tester.pumpWidget(
+      KapyNotesApp(
+        store: store,
+        notes: notes,
+        rates: rates,
+        prefs: prefs,
+        shortcuts: shortcuts,
+        tasks: tasks,
+      ),
+    );
+    expect(find.byType(HomePage), findsOneWidget);
+    expect(tasks.isLoaded, isFalse);
+
+    await tester.pumpAndSettle();
+    expect(tasks.isLoaded, isTrue);
+    // The task documents' own coalesced write.
+    await tester.pump(const Duration(seconds: 1));
+  });
 
   group('voice choices survive a relaunch', () {
     void saveChoices(LocalStore saved) {

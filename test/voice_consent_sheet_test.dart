@@ -32,6 +32,15 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('DeepSeek'), findsNothing);
+    expect(find.textContaining('Soniox'), findsNothing);
+    expect(
+      find.textContaining(
+        "through our server and OpenRouter to Microsoft's MAI-Transcribe 2, "
+        "or, when that model is busy or unavailable, to NVIDIA's Nemotron 3.5 "
+        'Transcribe.',
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('Settings › Voice & AI'), findsOneWidget);
   });
 
