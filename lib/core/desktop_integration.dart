@@ -86,6 +86,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   Future<void> Function()? onBeforeClose;
 
   Future<void>? _quitting;
+  Future<void>? _saving;
   bool? _appliedKeepRunning;
   bool? _appliedAlwaysOnTop;
   bool _hidesOnClose = false;
@@ -126,8 +127,9 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     windowManager.addListener(this);
     // An installer, or a logoff, asking the app to end. It arrives as its own
     // message rather than as a close because the two want opposite things:
-    // this one is not allowed to become a hide.
-    SystemShutdown.listen(quit);
+    // this one is not allowed to become a hide. A Linux logout asks first,
+    // while the user can still call it off, and that one only wants the save.
+    SystemShutdown.listen(quit: quit, save: save);
     // The runner's own windows — the About panel today — open at the ordinary
     // level, so it asks for the pin before it puts one up rather than let it
     // arrive underneath this one. See [releaseAlwaysOnTop].
@@ -309,7 +311,14 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// destroying a window twice is a crash.
   Future<void> quit() => _quitting ??= _quit();
 
-  Future<void> _quit() async {
+  /// Saves what quitting saves, and leaves the app running: a Linux logout
+  /// that has only asked so far, which the user can still call off.
+  ///
+  /// A quit that arrives while it runs waits for it, rather than writing the
+  /// same notes twice at once.
+  Future<void> save() => _saving ??= _save().whenComplete(() => _saving = null);
+
+  Future<void> _save() async {
     // Catch a last Linux move whose debounced event has not landed yet, and
     // make tray quits just as faithful as closing a visible window.
     await _rememberWindowBounds();
@@ -318,6 +327,10 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     } catch (error) {
       debugPrint('KapyNotes: could not finish saving before quit: $error');
     }
+  }
+
+  Future<void> _quit() async {
+    await save();
     try {
       await _tray.dispose();
     } catch (error) {

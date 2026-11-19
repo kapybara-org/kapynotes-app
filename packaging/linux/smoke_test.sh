@@ -19,9 +19,9 @@
 #
 # "baseline" installs only what every GNOME or KDE desktop has (GTK 3,
 # libpulse, Mesa's GL and GLES, a font, Python) plus the test's own tools
-# (Xvfb, D-Bus, xwininfo, xwd), and never the libraries the portable packages
-# bundle, so a missing one shows up. The .deb is installed with apt and without
-# Recommends, which proves its Depends alone are enough.
+# (Xvfb, D-Bus, xwininfo, xwd, PyGObject), and never the libraries the
+# portable packages bundle, so a missing one shows up. The .deb is installed
+# with apt and without Recommends, which proves its Depends alone are enough.
 #
 # Each run gets a fresh HOME, its own Xvfb and its own session bus (started
 # directly rather than through xvfb-run and dbus-run-session, so the app's own
@@ -34,8 +34,13 @@
 #     to load,
 #   - exit 0 within 5 seconds of being asked to quit, half the runner's own
 #     deadline, so an app that never answered does not pass: the tarball by
-#     closing its window, the way a user does, the others by SIGTERM, the way
-#     a logout or `kill` does.
+#     closing its window, the way a user does, the .deb by SIGTERM, the way
+#     `kill` does, and the AppImage by logging out.
+# The AppImage logs out of session_manager.py, which stands in for
+# gnome-session. A logout asks first, and the user can still cancel it: the
+# app must hold the logout with an inhibitor until it has saved and go on
+# running, then go on running when it is cancelled, and leave when the session
+# does end.
 # A screenshot of the screen goes to <out-dir>/<kind>.xwd (and .png when
 # ImageMagick is there), the app's output to <out-dir>/<kind>.log.
 #
@@ -58,16 +63,19 @@ trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 install_baseline() {
   if command -v apt-get >/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -q
     apt-get install -y -q --no-install-recommends \
       ca-certificates libgtk-3-0 libpulse0 libegl1 libgl1 libgles2 libgl1-mesa-dri fonts-dejavu-core \
-      python3 xvfb xauth x11-utils x11-apps dbus
+      python3 python3-gi xvfb xauth x11-utils x11-apps dbus
   elif command -v dnf >/dev/null; then
     dnf -y -q install --setopt=install_weak_deps=False \
       gtk3 pulseaudio-libs mesa-dri-drivers mesa-libEGL mesa-libGL libglvnd-gles dejavu-sans-fonts python3 \
+      python3-gobject-base \
       xorg-x11-server-Xvfb /usr/bin/xwininfo /usr/bin/xwd /usr/bin/dbus-daemon /usr/bin/ldd findutils
   else
     fail "no apt-get or dnf here"
@@ -193,6 +201,27 @@ app_pid() {
   done
 }
 
+# Fails unless the next thing the stand-in session manager hears, within five
+# seconds, matches the pattern $1, and leaves it in $event.
+expect_session() {
+  read -r -t 5 event <&"${SESSION[0]}" || fail "$kind: the session manager heard nothing, waiting for $1"
+  # shellcheck disable=SC2053
+  [[ "$event" == $1 ]] || fail "$kind: the session manager heard '$event', waiting for $1"
+}
+
+# The question a logout starts with. The app must hold the logout while it
+# saves, let it go, and go on running.
+ask_to_log_out() {
+  local pid="$1" cookie
+  echo query >&"${SESSION[1]}"
+  expect_session "inhibit * 1 Saving notes"
+  cookie="$(cut -d' ' -f2 <<<"$event")"
+  expect_session "response true"
+  expect_session "uninhibit $cookie"
+  sleep 1
+  kill -0 "$pid" 2>/dev/null || fail "$kind quit on a logout that had only asked"
+}
+
 # run_app <kind> <out-dir> <root-of-shipped-files> <command...>
 run_app() {
   local kind="$1" out="$2" root="$3"
@@ -214,6 +243,14 @@ run_app() {
   local bus=$!
   started+=("$bus")
   for _ in $(seq 50); do [[ -S "$runtime/bus" ]] && break; sleep 0.1; done
+
+  # GTK registers with a session manager only if one is there when it starts.
+  local event
+  if [[ "$kind" == appimage* ]]; then
+    coproc SESSION { DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" exec python3 "$here/session_manager.py"; }
+    started+=("$SESSION_PID")
+    expect_session ready
+  fi
 
   say "$kind: starting $*"
   env HOME="$home" XDG_RUNTIME_DIR="$runtime" XDG_CONFIG_HOME="$home/.config" \
@@ -251,12 +288,28 @@ run_app() {
   check_ffmpeg "$root"
 
   local quit=SIGTERM
-  if [[ "$kind" == tar ]]; then
-    quit="closing the window"
-    close_window "$display" "$tree"
-  else
-    kill -TERM "$pid"
-  fi
+  case "$kind" in
+    tar)
+      quit="closing the window"
+      close_window "$display" "$tree"
+      ;;
+    appimage*)
+      quit="logging out"
+      expect_session "registered $APP_ID"
+      ask_to_log_out "$pid"
+      echo cancel >&"${SESSION[1]}"
+      sleep 1
+      kill -0 "$pid" 2>/dev/null || fail "$kind quit on a logout that was cancelled"
+      echo "  a logout held for the save, then cancelled: still running"
+      ask_to_log_out "$pid"
+      echo end >&"${SESSION[1]}"
+      expect_session "response true"
+      expect_session unregistered
+      ;;
+    *)
+      kill -TERM "$pid"
+      ;;
+  esac
   local status=
   for _ in $(seq 50); do
     if ! kill -0 "$launcher" 2>/dev/null; then
@@ -273,6 +326,10 @@ run_app() {
   [[ "$status" == 0 ]] || { cat "$log" >&2; fail "$kind exited $status on $quit"; }
   echo "  $quit: clean exit"
 
+  if [[ "$kind" == appimage* ]]; then
+    kill "$SESSION_PID" 2>/dev/null || true
+    wait "$SESSION_PID" 2>/dev/null || true
+  fi
   kill "$bus" "$xvfb" 2>/dev/null || true
   wait "$bus" "$xvfb" 2>/dev/null || true
   rm -rf "$home" "$runtime"

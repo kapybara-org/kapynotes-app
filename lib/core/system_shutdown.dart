@@ -1,9 +1,10 @@
 import 'package:flutter/services.dart';
 
-/// The one thing the Windows and Linux runners say without being asked: the
-/// session is ending, or — on Windows far more often — the installer's
-/// Restart Manager wants this process gone. On Linux it is also SIGTERM,
-/// SIGINT or SIGHUP, which a logout or `kill` sends.
+/// What the Windows and Linux runners say without being asked: the session is
+/// ending, or — on Windows far more often — the installer's Restart Manager
+/// wants this process gone. On Linux it is also SIGTERM, SIGINT or SIGHUP,
+/// which `kill` sends, and a logout asking first whether it may, which the
+/// user can still call off.
 ///
 /// It exists because a shutdown is not a close. "Keep running in the
 /// background" turns the close button into a hide, and the runner's window
@@ -22,15 +23,26 @@ class SystemShutdown {
   );
 
   /// Runs [quit] when the runner reports the session — or the installer — is
-  /// ending.
+  /// ending, and [save] when a Linux logout asks first.
   ///
   /// [quit] is expected to end the process. The runner gives it ten seconds
   /// before it leaves on its own terms, and Restart Manager gives the runner
   /// thirty before it stops asking.
-  static void listen(Future<void> Function() quit) {
+  ///
+  /// [save] is expected to leave the app running: the logout may yet be
+  /// called off. It waits for [save] to finish, for ten seconds at most, and
+  /// GTK ends the process itself if the logout goes ahead.
+  static void listen({
+    required Future<void> Function() quit,
+    required Future<void> Function() save,
+  }) {
     channel.setMethodCallHandler((call) async {
-      if (call.method != 'shutdown') return null;
-      await quit();
+      switch (call.method) {
+        case 'shutdown':
+          await quit();
+        case 'save':
+          await save();
+      }
       return null;
     });
   }

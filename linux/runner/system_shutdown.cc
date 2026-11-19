@@ -12,6 +12,9 @@ struct _SystemShutdown {
   guint deadline;
   gulong query_end;
   gulong delete_event;
+  guint logout_inhibit;
+  guint save_deadline;
+  GCancellable* cancellable;
 };
 
 // Every way out ends here. The main loop stops with the window still up:
@@ -65,8 +68,48 @@ static gboolean signal_cb(gpointer user_data) {
   return G_SOURCE_CONTINUE;
 }
 
+// Lets the logout that was waiting for the save go ahead.
+static void release_logout(SystemShutdown* shutdown) {
+  g_clear_handle_id(&shutdown->save_deadline, g_source_remove);
+  if (shutdown->logout_inhibit == 0) return;
+  gtk_application_uninhibit(GTK_APPLICATION(shutdown->application),
+                            shutdown->logout_inhibit);
+  shutdown->logout_inhibit = 0;
+}
+
+static void saved_cb(GObject* object, GAsyncResult* result,
+                     gpointer user_data) {
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(FlMethodResponse) response = fl_method_channel_invoke_method_finish(
+      FL_METHOD_CHANNEL(object), result, &error);
+  if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) return;
+  release_logout(static_cast<SystemShutdown*>(user_data));
+}
+
+static gboolean save_deadline_cb(gpointer user_data) {
+  SystemShutdown* shutdown = static_cast<SystemShutdown*>(user_data);
+  shutdown->save_deadline = 0;
+  release_logout(shutdown);
+  return G_SOURCE_REMOVE;
+}
+
+// A logout, restart or power-off that has only asked so far: the dialog the
+// session puts up next can still call it off, and an app that quit here would
+// be gone from a session that carries on, its tray icon and shortcuts with it.
+// GTK answers yes for the app as soon as this returns and quits the app itself
+// if the session does end, so the app saves now and goes on running, and an
+// inhibitor holds the logout until the save is done, or for ten seconds of one
+// that never finishes.
 static void query_end_cb(GtkApplication* application, gpointer user_data) {
-  request(static_cast<SystemShutdown*>(user_data));
+  SystemShutdown* shutdown = static_cast<SystemShutdown*>(user_data);
+  if (shutdown->save_deadline != 0) return;
+  shutdown->logout_inhibit =
+      gtk_application_inhibit(application, shutdown->window,
+                              GTK_APPLICATION_INHIBIT_LOGOUT, "Saving notes");
+  fl_method_channel_invoke_method(shutdown->channel, "save", nullptr,
+                                  shutdown->cancellable, saved_cb, shutdown);
+  shutdown->save_deadline =
+      g_timeout_add_seconds(10, save_deadline_cb, shutdown);
 }
 
 // A close the app has not taken over. window_manager's handler runs first and
@@ -93,6 +136,7 @@ SystemShutdown* system_shutdown_new(FlBinaryMessenger* messenger,
   fl_method_channel_set_method_call_handler(shutdown->channel, method_call_cb,
                                             shutdown, nullptr);
   shutdown->application = application;
+  shutdown->cancellable = g_cancellable_new();
   const int signals[] = {SIGTERM, SIGINT, SIGHUP};
   for (int i = 0; i < 3; i++) {
     shutdown->signal_sources[i] = g_unix_signal_add(signals[i], signal_cb, shutdown);
@@ -110,6 +154,11 @@ void system_shutdown_free(SystemShutdown* shutdown) {
     if (source != 0) g_source_remove(source);
   }
   if (shutdown->deadline != 0) g_source_remove(shutdown->deadline);
+  // The application has already shut down, so a logout still held is let go
+  // by the process ending rather than by asking GTK.
+  if (shutdown->save_deadline != 0) g_source_remove(shutdown->save_deadline);
+  g_cancellable_cancel(shutdown->cancellable);
+  g_clear_object(&shutdown->cancellable);
   if (shutdown->query_end != 0) {
     g_signal_handler_disconnect(shutdown->application, shutdown->query_end);
   }
