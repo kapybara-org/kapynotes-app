@@ -328,7 +328,6 @@ class TaskSync {
           await _take(conflict);
         }
         _tags.settle();
-        _folders?.settle();
       }
     }
   }
@@ -355,7 +354,7 @@ class TaskSync {
       if (!page.hasMore) break;
     }
     _tags.settle();
-    _folders?.settle();
+    _folders?.prune();
   }
 
   /// One record as the server holds it, to the task index, the tags or the
