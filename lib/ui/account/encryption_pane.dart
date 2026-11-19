@@ -814,6 +814,9 @@ class _RestoreDialogState extends State<_RestoreDialog> {
           "That doesn't open the notes from before the reset. Check it and "
               'try again.',
         RestoreGone() => 'The notes from before the reset are no longer kept.',
+        RestoreLocked() =>
+          "The notes from before the reset can't be read until sync is "
+              'unlocked on this device.',
         RestoreOffline() => _offline,
         RestoreRefused() || RestoreDone() => _refused,
       };

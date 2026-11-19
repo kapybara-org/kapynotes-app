@@ -2396,13 +2396,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// log. A note this device lacks comes back whole; one it holds gains only
   /// what it is missing, since the documents share their history; and
   /// nothing deleted here comes back, neither a note nor words in one.
-  /// Returns how many notes came back and how many changed.
-  Future<({int added, int changed})> restoreArchive(
+  /// Returns how many notes came back and how many changed, or null when
+  /// this device holds no key to write them with, and nothing was read.
+  Future<({int added, int changed})?> restoreArchive(
     Vault old,
     Future<OpsBatch?> Function(int after) pull,
   ) async {
     final personal = _keyring.personal;
-    if (personal == null || _vault == null) return (added: 0, changed: 0);
+    if (personal == null || _vault == null) return null;
     await _docs.load();
     _reconcileDirty();
 

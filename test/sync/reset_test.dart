@@ -250,6 +250,77 @@ void main() {
     a.dispose();
   });
 
+  test('a note already here gains the edits it missed before the reset, '
+      'and what was deleted here since stays deleted', () async {
+    final a = await unlocked('first passphrase', create: true);
+    a.notes.create(body: 'Rent and groceries');
+    await settle([a]);
+    final b = await unlocked('first passphrase');
+    await settle([a, b]);
+    final id = a.notes.notes.single.id;
+
+    // B's edit reaches the server while A is signed out, so A never sees it
+    // before it resets.
+    await a.account.signOut();
+    b.notes.updateBody(id, 'Rent and groceries and the phone bill');
+    await settle([b]);
+    await a.account.signIn(email: 'someone@example.com', password: 'x');
+    expect(await reset(a, 'new passphrase'), isA<KeyChangeDone>());
+    await settle([a]);
+    expect(a.notes.byId(id)!.body, 'Rent and groceries');
+    a.notes.updateBody(id, 'groceries');
+    await settle([a]);
+
+    final done = await a.account.restoreFromArchive('first passphrase');
+    expect((done as RestoreDone).added, 0);
+    expect(done.changed, 1);
+    expect(a.notes.byId(id)!.body, 'groceries and the phone bill');
+    await settle([a]);
+
+    // The edit went up: a device that only has the server sees it.
+    final d = await unlocked('new passphrase');
+    await settle([a, d]);
+    expect(d.notes.byId(id)?.body, 'groceries and the phone bill');
+    for (final x in [a, b, d]) {
+      x.dispose();
+    }
+  });
+
+  test('a device without the new key brings nothing back, says why, and '
+      'leaves the copy from before the reset as it was', () async {
+    final a = await unlocked('first passphrase', create: true);
+    a.notes.create(body: 'From before the reset');
+    await settle([a]);
+    final b = await unlocked('first passphrase');
+    await settle([a, b]);
+    await a.account.signOut();
+    await a.account.signIn(email: 'someone@example.com', password: 'x');
+    expect(await reset(a, 'new passphrase'), isA<KeyChangeDone>());
+    await settle([a]);
+
+    b.notes.create(body: 'Written on B after the reset');
+    await settle([b]);
+    expect(b.account.state, AccountState.keysChanged);
+    final archive = server.user('user-1').archive;
+    final retired = server.user('user-1').retired;
+    expect(
+      await b.account.restoreFromArchive('first passphrase'),
+      isA<RestoreLocked>(),
+    );
+    expect(server.user('user-1').archive, same(archive));
+    expect(server.user('user-1').retired, same(retired));
+    expect(retired!.notes, isNotEmpty);
+
+    expect(await b.account.unlock('new passphrase'), isTrue);
+    await settle([b]);
+    expect(
+      await b.account.restoreFromArchive('first passphrase'),
+      isA<RestoreDone>(),
+    );
+    a.dispose();
+    b.dispose();
+  });
+
   test(
     'a device already holding the new key carries on without asking',
     () async {

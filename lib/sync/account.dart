@@ -982,7 +982,10 @@ class Account extends ChangeNotifier {
   Future<RestoreResult> restoreFromArchive(String typed) async {
     final token = _token;
     final sync = _sync;
-    if (token == null || sync == null) return const RestoreOffline();
+    if (token == null) return const RestoreOffline();
+    if (sync == null || state != AccountState.ready) {
+      return const RestoreLocked();
+    }
     final api = _syncApiFor(token);
     try {
       final archive = _archive = await api.fetchKeyArchive();
@@ -997,6 +1000,7 @@ class Account extends ChangeNotifier {
           old,
           (after) => api.pullArchiveLog(after: after),
         );
+        if (restored == null) return const RestoreLocked();
         return RestoreDone(added: restored.added, changed: restored.changed);
       } finally {
         old.wipe();
@@ -1445,6 +1449,11 @@ class RestoreWrongKey extends RestoreResult {
 /// No longer kept: past its 30 days, or never there.
 class RestoreGone extends RestoreResult {
   const RestoreGone();
+}
+
+/// This device can't read or write notes until sync is unlocked here.
+class RestoreLocked extends RestoreResult {
+  const RestoreLocked();
 }
 
 class RestoreOffline extends RestoreResult {
