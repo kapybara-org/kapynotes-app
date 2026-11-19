@@ -13,6 +13,7 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
+import 'package:kapy_notes/ui/editor/highlighting_controller.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_sliver.dart';
@@ -1505,6 +1506,90 @@ void main() {
       // Straight under the last row, `x` would have been a third row.
       expect(latest, '$body\nx');
     });
+
+    testWidgets(
+      'a separator row typed by hand becomes a table on leaving it',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        const header = 'Title\n| Item | Qty |\n';
+        String? latest;
+        await tester.pumpWidget(
+          harness(
+            header,
+            autofocus: true,
+            onBodyChanged: (value) => latest = value,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final controller = controllerOf(tester) as HighlightingController;
+        controller.selection = const TextSelection.collapsed(
+          offset: header.length,
+        );
+        await tester.pump();
+        int tables() => controller.markdownFor(controller.text).tables.length;
+
+        // One character at a time, as a phone's keyboard sends them.
+        Future<void> type(String characters) async {
+          for (final character in characters.split('')) {
+            final value = controller.value;
+            final at = value.selection.baseOffset;
+            tester.testTextInput.updateEditingValue(
+              TextEditingValue(
+                text: value.text.replaceRange(at, at, character),
+                selection: TextSelection.collapsed(offset: at + 1),
+              ),
+            );
+            await tester.pump();
+          }
+          await tester.pumpAndSettle();
+        }
+
+        // `| --- | -` already finishes a table; the rest of the row stays on
+        // its line, and nothing turns into a grid while it is typed.
+        for (final character in '| --- | --- |'.split('')) {
+          await type(character);
+          expect(tables(), 0, reason: 'after typing "$character"');
+        }
+        expect(latest, '$header| --- | --- |');
+
+        await type('\n');
+        expect(tables(), 1);
+        // A row typed under it joins the table once it is finished too.
+        int rows() =>
+            controller.markdownFor(controller.text).tables.single.rows.length;
+        for (final character in '| Tea | 2 |'.split('')) {
+          await type(character);
+          expect(rows(), 1, reason: 'after typing "$character"');
+        }
+        await type('\n| Jam | 1 |');
+        expect(latest, '$header| --- | --- |\n| Tea | 2 |\n| Jam | 1 |');
+        expect(rows(), 2);
+        controller.selection = const TextSelection.collapsed(offset: 0);
+        await tester.pump();
+        expect(rows(), 3);
+
+        // Moving the caret off the line finishes it too.
+        const half = 'Title\n| A | B |\n| --- | -';
+        controller.value = const TextEditingValue(
+          text: 'Title\n| A | B |\n| --- |',
+        );
+        controller.selection = const TextSelection.collapsed(
+          offset: half.length - 2,
+        );
+        await tester.pump();
+        await type(' -');
+        expect(controller.text, half);
+        expect(tables(), 0);
+        controller.selection = const TextSelection.collapsed(offset: 0);
+        await tester.pump();
+        expect(tables(), 1);
+      },
+      variant: TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.macOS,
+      }),
+    );
 
     testWidgets('words typed after a table that ends the note stay in sight', (
       tester,
