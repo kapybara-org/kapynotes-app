@@ -132,10 +132,31 @@ void main() {
     notes.hide('open');
     await ai.ask('And when do I fly?');
 
-    final second = jsonDecode(
-      web.where((r) => r.url.path == '/ai/answer').last.body,
-    ) as Map;
+    final second =
+        jsonDecode(web.where((r) => r.url.path == '/ai/answer').last.body)
+            as Map;
     expect(second['history'], [
+      {'role': 'user', 'text': _question},
+    ]);
+  });
+
+  test('nothing after an answer that read a note hidden since is sent '
+      'again, since a later answer may repeat it', () async {
+    final notes = await notesWith([
+      ..._notes(),
+      noteJson('dentist', 'Dentist appointment Tuesday 4pm'),
+    ], store: store);
+    final ai = await build(pro: true, notes: notes);
+    await ai.ask(_question);
+    await ai.ask('When is the dentist?');
+    expect(ai.current!.messages.last.read.map((n) => n.noteId), ['dentist']);
+    notes.hide('open');
+    await ai.ask('When is the dentist again?');
+
+    final third =
+        jsonDecode(web.where((r) => r.url.path == '/ai/answer').last.body)
+            as Map;
+    expect(third['history'], [
       {'role': 'user', 'text': _question},
     ]);
   });
