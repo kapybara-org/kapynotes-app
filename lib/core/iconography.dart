@@ -79,34 +79,9 @@ class KapyIcons {
     0xE004,
     HugeIcons.strokeRoundedArrowLeft02,
   );
-  static const articleOutlined = KapyIconData(
-    0xE005,
-    HugeIcons.strokeRoundedFile02,
-  );
-  static const magicOutlined = KapyIconData(
-    0xE006,
-    HugeIcons.strokeRoundedAiMagic,
-  );
-  static const storiesOutlined = KapyIconData(
-    0xE007,
-    HugeIcons.strokeRoundedBookOpen01,
-  );
-  static const blockedRounded = KapyIconData(
-    0xE008,
-    HugeIcons.strokeRoundedBlocked,
-  );
-  static const blurRounded = KapyIconData(0xE009, HugeIcons.strokeRoundedBlur);
-  static const appearanceOutlined = KapyIconData(
-    0xE00A,
-    HugeIcons.strokeRoundedSun03,
-  );
   static const brokenImageOutlined = KapyIconData(
     0xE00B,
     HugeIcons.strokeRoundedImageNotFound01,
-  );
-  static const calendarOutlined = KapyIconData(
-    0xE00C,
-    HugeIcons.strokeRoundedCalendar03,
   );
   static const cameraOutlined = KapyIconData(
     0xE00D,
@@ -172,10 +147,6 @@ class KapyIcons {
     0xE016,
     HugeIcons.strokeRoundedCancel01,
   );
-  static const closeFullscreenRounded = KapyIconData(
-    0xE017,
-    HugeIcons.strokeRoundedMinimizeScreen,
-  );
   static const cloudRounded = KapyIconData(
     0xE0D3,
     HugeIcons.strokeRoundedCloud,
@@ -191,10 +162,6 @@ class KapyIcons {
   static const copyAllOutlined = KapyIconData(
     0xE01A,
     HugeIcons.strokeRoundedCopy02,
-  );
-  static const currencyExchangeRounded = KapyIconData(
-    0xE01B,
-    HugeIcons.strokeRoundedMoneyExchange01,
   );
   static const deleteForeverOutlined = KapyIconData(
     0xE01C,
@@ -265,18 +232,6 @@ class KapyIcons {
     0xE02C,
     HugeIcons.strokeRoundedLeftToRightListBullet,
   );
-  static const audioWaveRounded = KapyIconData(
-    0xE02D,
-    HugeIcons.strokeRoundedAudioWave01,
-  );
-  static const historyRounded = KapyIconData(
-    0xE02E,
-    HugeIcons.strokeRoundedTransactionHistory,
-  );
-  static const historyOffRounded = KapyIconData(
-    0xE02F,
-    HugeIcons.strokeRoundedClock05,
-  );
   static const hourglassRounded = KapyIconData(
     0xE030,
     HugeIcons.strokeRoundedHourglass,
@@ -308,10 +263,6 @@ class KapyIcons {
   static const lockRounded = KapyIconData(
     0xE037,
     HugeIcons.strokeRoundedSquareLock02,
-  );
-  static const loginRounded = KapyIconData(
-    0xE038,
-    HugeIcons.strokeRoundedLogin03,
   );
   static const logoutRounded = KapyIconData(
     0xE039,
@@ -353,15 +304,6 @@ class KapyIcons {
   static const noteOutlined = KapyIconData(
     0xE041,
     HugeIcons.strokeRoundedNote01,
-  );
-  static const notesRounded = KapyIconData(0xE042, HugeIcons.strokeRoundedNote);
-  static const numbersRounded = KapyIconData(
-    0xE043,
-    HugeIcons.strokeRoundedTextNumberSign,
-  );
-  static const opacityRounded = KapyIconData(
-    0xE044,
-    HugeIcons.strokeRoundedDroplet,
   );
   static const openInFullRounded = KapyIconData(
     0xE045,
@@ -408,10 +350,6 @@ class KapyIcons {
     HugeIcons.strokeRoundedImage02,
   );
   static const playRounded = KapyIconData(0xE04A, HugeIcons.strokeRoundedPlay);
-  static const publicRounded = KapyIconData(
-    0xE04B,
-    HugeIcons.strokeRoundedGlobe02,
-  );
   static const pinOutlined = KapyIconData(0xE04C, HugeIcons.strokeRoundedPin);
   static const pinRounded = KapyIconData(0xE04D, HugeIcons.strokeRoundedPin02);
   static const radioCheckedRounded = KapyIconData(
@@ -446,10 +384,6 @@ class KapyIcons {
     0xE055,
     HugeIcons.strokeRoundedSelect02,
   );
-  static const backupRestoreRounded = KapyIconData(
-    0xE056,
-    HugeIcons.strokeRoundedDatabaseRestore,
-  );
   static const settingsOutlined = KapyIconData(
     0xE057,
     HugeIcons.strokeRoundedSettings01,
@@ -458,19 +392,7 @@ class KapyIcons {
     0xE093,
     HugeIcons.strokeRoundedSettings02,
   );
-  static const spellcheckRounded = KapyIconData(
-    0xE058,
-    HugeIcons.strokeRoundedTextCheck,
-  );
   static const stopRounded = KapyIconData(0xE059, HugeIcons.strokeRoundedStop);
-  static const subjectRounded = KapyIconData(
-    0xE05A,
-    HugeIcons.strokeRoundedLeftToRightListDash,
-  );
-  static const syncRounded = KapyIconData(
-    0xE05B,
-    HugeIcons.strokeRoundedArrowReloadHorizontal,
-  );
   static const systemUpdateRounded = KapyIconData(
     0xE05C,
     HugeIcons.strokeRoundedDownloadSquare01,
@@ -493,29 +415,9 @@ class KapyIcons {
     0xE05F,
     HugeIcons.strokeRoundedText,
   );
-  static const textureRounded = KapyIconData(
-    0xE060,
-    HugeIcons.strokeRoundedMaterialAndTexture,
-  );
-  static const translateRounded = KapyIconData(
-    0xE061,
-    HugeIcons.strokeRoundedTranslate,
-  );
-  static const tuneRounded = KapyIconData(
-    0xE062,
-    HugeIcons.strokeRoundedPreferenceHorizontal,
-  );
-  static const verifiedOutlined = KapyIconData(
-    0xE063,
-    HugeIcons.strokeRoundedCheckmarkBadge01,
-  );
   static const viewColumnOutlined = KapyIconData(
     0xE064,
     HugeIcons.strokeRoundedLayout2Column,
-  );
-  static const viewSidebarOutlined = KapyIconData(
-    0xE065,
-    HugeIcons.strokeRoundedViewSidebarLeft,
   );
   static const visibilityOutlined = KapyIconData(
     0xE066,
@@ -524,10 +426,6 @@ class KapyIcons {
   static const warningRounded = KapyIconData(
     0xE067,
     HugeIcons.strokeRoundedAlert02,
-  );
-  static const wavingHandOutlined = KapyIconData(
-    0xE068,
-    HugeIcons.strokeRoundedWavingHand01,
   );
   static const attachFileRounded = KapyIconData(
     0xE071,
@@ -685,10 +583,6 @@ class KapyIcons {
     0xE085,
     HugeIcons.strokeRoundedHandGrab,
   );
-  static const fitRounded = KapyIconData(
-    0xE086,
-    HugeIcons.strokeRoundedZoomInArea,
-  );
 
   // The settings dialog's rail and General pane, as Riverbank draws them.
   static const paintBoardOutlined = KapyIconData(
@@ -702,35 +596,6 @@ class KapyIcons {
   static const refreshOutlined = KapyIconData(
     0xE0C2,
     HugeIcons.strokeRoundedRefresh,
-  );
-  static const textCursorOutlined = KapyIconData(
-    0xE0C3,
-    HugeIcons.strokeRoundedInputCursorText,
-  );
-  static const spellCheckOutlined = KapyIconData(0xE0C4, [
-    [
-      'path',
-      {
-        'd':
-            'M5.992 13h9m1 1.857l-2.61-7.033C12.187 4.607 11.59 2.998 10.55 3S8.918 4.612 7.732 7.833L3.993 18m9.999 1.393s1.2.652 1.8 1.607c0 0 1.8-3.75 4.2-5',
-        'stroke': 'currentColor',
-        'strokeWidth': '1.5',
-        'strokeLinecap': 'round',
-        'strokeLinejoin': 'round',
-      },
-    ],
-  ]);
-  static const hashtagOutlined = KapyIconData(
-    0xE0C5,
-    HugeIcons.strokeRoundedHashtag,
-  );
-  static const uploadOutlined = KapyIconData(
-    0xE0C6,
-    HugeIcons.strokeRoundedUpload04,
-  );
-  static const lockKeyOutlined = KapyIconData(
-    0xE0C7,
-    HugeIcons.strokeRoundedLockKey,
   );
   static const computerOutlined = KapyIconData(
     0xE0C8,
@@ -761,25 +626,4 @@ class KapyIcons {
     0xE0E2,
     HugeIcons.strokeRoundedWifiOff01,
   );
-  static const panelColumnsOutlined = KapyIconData(0xE0C9, [
-    [
-      'path',
-      {
-        'd':
-            'M20.109 3.891C21.5 5.282 21.5 7.521 21.5 12c0 4.478 0 6.718-1.391 8.109S16.479 21.5 12 21.5c-4.478 0-6.718 0-8.109-1.391S2.5 16.479 2.5 12c0-4.478 0-6.718 1.391-8.109S7.521 2.5 12 2.5c4.478 0 6.718 0 8.109 1.391',
-        'stroke': 'currentColor',
-        'strokeWidth': '1.5',
-        'strokeLinecap': 'round',
-        'strokeLinejoin': 'round',
-      },
-    ],
-    [
-      'path',
-      {
-        'd': 'M8.5 2.5v19m7-19v19',
-        'stroke': 'currentColor',
-        'strokeWidth': '1.5',
-      },
-    ],
-  ]);
 }
