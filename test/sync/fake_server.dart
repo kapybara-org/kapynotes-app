@@ -188,6 +188,11 @@ class FakeServer {
   /// otherwise does.
   final Set<String> holdFramesFor = {};
 
+  /// Spaces whose live pages are held back, for every device, until
+  /// [releaseFrames]: a page still on its way when the answer to a later
+  /// push overtakes it. Answers are never held.
+  final Set<String> holdPagesOf = {};
+
   /// Stops holding [device]'s frames and delivers every held one at once.
   void releaseFrames(String device) {
     holdFramesFor.remove(device);
@@ -1590,7 +1595,9 @@ class FakeSocket implements SyncSocket {
 
   void _emit(SocketEvent event) {
     if (event.kind == SocketEventKind.message &&
-        server.holdFramesFor.contains(device)) {
+        (server.holdFramesFor.contains(device) ||
+            (event.message?['t'] == 'ops' &&
+                server.holdPagesOf.contains(event.message?['spaceId'])))) {
       _held.add(event);
       return;
     }
