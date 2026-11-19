@@ -7,10 +7,9 @@ import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:material_ui/material_ui.dart';
 
 class _Host extends StatefulWidget {
-  const _Host({required this.initial, this.onSwitchToWrite});
+  const _Host({required this.initial});
 
   final NoteDrawing initial;
-  final VoidCallback? onSwitchToWrite;
 
   @override
   State<_Host> createState() => _HostState();
@@ -30,7 +29,6 @@ class _HostState extends State<_Host> {
       body: DrawingCanvas(
         drawing: drawing,
         title: title,
-        onSwitchToWrite: widget.onSwitchToWrite,
         onChanged: (next) => setState(() {
           drawing = next;
           reports++;
@@ -41,20 +39,11 @@ class _HostState extends State<_Host> {
   );
 }
 
-Future<_HostState> _pump(
-  WidgetTester tester, {
-  NoteDrawing? initial,
-  VoidCallback? onSwitchToWrite,
-}) async {
+Future<_HostState> _pump(WidgetTester tester, {NoteDrawing? initial}) async {
   tester.view.physicalSize = const Size(1000, 700);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(
-    _Host(
-      initial: initial ?? NoteDrawing.empty,
-      onSwitchToWrite: onSwitchToWrite,
-    ),
-  );
+  await tester.pumpWidget(_Host(initial: initial ?? NoteDrawing.empty));
   await tester.pumpAndSettle();
   return tester.state<_HostState>(find.byType(_Host));
 }
@@ -182,20 +171,6 @@ void main() {
     await _drag(tester, const [Offset(500, 500), Offset(600, 600)]);
     expect(host.drawing.elements.map((e) => e.id), contains('remote'));
     expect(host.drawing.elements, hasLength(2));
-  });
-
-  testWidgets('Write is offered only while the canvas is blank', (
-    tester,
-  ) async {
-    var switched = 0;
-    await _pump(tester, onSwitchToWrite: () => switched++);
-    expect(find.byKey(const ValueKey('note-mode-switch')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('note-mode-write')));
-    expect(switched, 1);
-
-    await _drag(tester, const [Offset(300, 300), Offset(350, 350)]);
-    await tester.pump();
-    expect(find.byKey(const ValueKey('note-mode-switch')), findsNothing);
   });
 
   testWidgets('two fingers pinch to zoom instead of drawing', (tester) async {

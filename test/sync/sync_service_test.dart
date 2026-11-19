@@ -446,8 +446,7 @@ void main() {
       await one.goLive();
       await two.goLive();
 
-      final note = one.notes.create();
-      one.notes.setDrawingMode(note.id, drawing: true);
+      final note = one.notes.create(drawing: true);
       await until(() => two.notes.byId(note.id)?.isDrawing ?? false);
 
       DrawElement line(String id, double y) => DrawElement(

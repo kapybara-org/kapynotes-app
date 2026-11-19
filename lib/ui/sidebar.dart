@@ -1137,9 +1137,13 @@ extension on Sidebar {
       if (mine.isNotEmpty || summary) ...[
         _GroupedLabel(
           _SectionLabel(
-            label: hasSharedSections && !_tabbed ? 'My notes' : 'Notes',
+            label: drawings
+                ? 'Drawings'
+                : hasSharedSections && !_tabbed
+                ? 'My notes'
+                : 'Notes',
             count: summary ? ownCount : null,
-            streak: summary ? streak : null,
+            streak: summary && !drawings ? streak : null,
           ),
         ),
         for (final note in mine)
