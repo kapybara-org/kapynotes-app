@@ -31,7 +31,9 @@
     <application
         android:label="Kapy Notes"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <!-- A copied image stays in app cache and is exposed only through the
              temporary read grant ClipboardManager gives its receiving app. -->
         <provider
