@@ -185,7 +185,7 @@ class PageToolbar extends StatelessWidget {
                       key: const ValueKey('page-show-list'),
                       tooltip: ['Show notes', ?showListShortcut].join('  '),
                       extent: AppControlMetrics.tonalButtonHeight,
-                      radius: 8,
+                      radius: AppRadii.control,
                       onPressed: onShowList,
                       icon: KapyIcon(
                         KapyIcons.menuOpenRounded,
@@ -471,6 +471,11 @@ class _SaveStatus extends StatelessWidget {
         KapyIcons.cloudOffRounded,
         'Offline',
         'Saved on this device. It syncs once you are back online.',
+      ),
+      SyncStatus.keysChanged => (
+        KapyIcons.cloudRounded,
+        'Saved',
+        'Saved on this device. It syncs once you enter your new passphrase.',
       ),
       _ => (KapyIcons.cloudRounded, 'Saved', null),
     };

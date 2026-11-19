@@ -133,8 +133,27 @@ class Vault {
       parallelism: KdfParams.defaultParallelism,
     );
     final kek = await _deriveKeyEncryptionKey(passphrase, kdf);
-    return (wrappedMasterKey: await sealBytes(_masterKey, kek), kdf: kdf);
+    try {
+      return (wrappedMasterKey: await sealBytes(_masterKey, kek), kdf: kdf);
+    } finally {
+      kek.fillRange(0, kek.length, 0);
+    }
   }
+
+  /// A new recovery key, and the master key sealed under it. The key is the
+  /// caller's to show once and then zero; it is never stored.
+  Future<({Uint8List recoveryKey, SealedBox recoveryWrappedMasterKey})>
+  rewrapForRecoveryKey() async {
+    final recoveryKey = randomBytes(keyLength);
+    return (
+      recoveryKey: recoveryKey,
+      recoveryWrappedMasterKey: await sealBytes(_masterKey, recoveryKey),
+    );
+  }
+
+  /// Zeroes this vault's copy of the master key. Only for a vault made for
+  /// one job from a copy of the key, never for the one sync is using.
+  void wipe() => _masterKey.fillRange(0, _masterKey.length, 0);
 
   Future<SealedBox> seal(NotePayload payload) async =>
       (await sealAll([payload])).single;

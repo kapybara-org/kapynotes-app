@@ -9,6 +9,7 @@ import 'package:kapy_notes/sync/aead.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/identity.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
+import 'package:kapy_notes/sync/safety.dart';
 import 'package:kapy_notes/sync/sealed_box.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
@@ -44,6 +45,7 @@ class Person {
     required this.userId,
     required this.device,
     this.typingIdle = const Duration(milliseconds: 300),
+    bool acceptOnTheirOwn = false,
   }) {
     server.seedBundle(userId);
     store = MemoryStore();
@@ -77,6 +79,8 @@ class Person {
       keyring: keyring,
       notes: notes,
       sync: sync,
+      now: () => now,
+      acceptOnTheirOwn: acceptOnTheirOwn,
     );
   }
 
@@ -981,6 +985,64 @@ void main() {
     );
 
     test(
+      'a note shared into a space that already exists goes home when un-shared',
+      () async {
+        // Its own seed comes back from Alice's log in the same pass that
+        // moves it, and must not pull the note's record back home with it.
+        final one = await shareWithBob('One');
+        final spaceId = alice.notes.byId(one.id)!.spaceId!;
+        final two = alice.notes.create(body: 'Two');
+        await alice.sync.syncNow();
+        alice.tick();
+        await alice.sharing.shareNoteWith(two.id, email: bob.email);
+        expect(alice.notes.byId(two.id)!.spaceId, spaceId);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.notes.byId(two.id), isNotNull);
+
+        alice.tick();
+        await alice.sharing.unshareNote(two.id);
+        final personal = alice.keyring.personal!.id;
+        expect(server.rowsIn(personal)[two.id]!.isTombstone, isFalse);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.notes.byId(two.id), isNull);
+        expect(bob.notes.byId(one.id), isNotNull);
+      },
+    );
+
+    test(
+      'and so does one whose move is answered before its own seed comes back',
+      () async {
+        final one = await shareWithBob('One');
+        final spaceId = alice.notes.byId(one.id)!.spaceId!;
+        final personal = alice.keyring.personal!.id;
+        await alice.goLive();
+        // The page that carries Two's seed back to Alice is still on its way
+        // when the answer to the move arrives.
+        server.holdPagesOf.add(personal);
+        final two = alice.notes.create(body: 'Two');
+        await alice.sync.syncNow();
+        await settle(server);
+        expect(server.rowsIn(personal)[two.id]!.isTombstone, isFalse);
+        alice.tick();
+        await alice.sharing.shareNoteWith(two.id, email: bob.email);
+        await settle(server);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isFalse);
+        server.holdPagesOf.clear();
+        server.releaseFrames(alice.api.device);
+        await settle(server);
+
+        alice.tick();
+        await alice.sharing.unshareNote(two.id);
+        await settle(server);
+        expect(server.rowsIn(personal)[two.id]!.isTombstone, isFalse);
+        expect(server.rowsIn(spaceId)[two.id]!.isTombstone, isTrue);
+      },
+    );
+
+    test(
       'the last member leaving leaves the owner owed a trip home, taken on the next sync',
       () async {
         final note = await shareWithBob('Lonely');
@@ -1197,11 +1259,36 @@ void main() {
         expect(kept.isDirty, isFalse);
         expect(server.rowsIn(bob.keyring.personal!.id)[kept.id], isNotNull);
       },
-      skip:
-          'SyncService._forgetDepartedSpaces keeps only notes that are '
-          'dirty, but an edit is absorbed into the document and marked synced '
-          'the moment it is made; one still waiting in the outbox is dropped '
-          'with the space',
+    );
+
+    test(
+      'leaving with an unsent edit keeps one copy with it, and leaving without copies keeps none',
+      () async {
+        final note = await shareWithBob('Ours');
+        final space = alice.sharing.teams.single;
+        bob.tick();
+        bob.notes.updateBody(note.id, 'Ours, with my additions');
+        server.failNext = const SyncTransientException('no route');
+        await settle(server);
+        expect(bob.sync.pendingCount, 1);
+
+        await bob.sharing.leave(space.id);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.bodies, ['Ours, with my additions']);
+        expect(bob.notes.notes.single.spaceId, isNull);
+
+        final second = await shareWithBob('Theirs');
+        final again = alice.sharing.teams.single;
+        bob.tick();
+        bob.notes.updateBody(second.id, 'Theirs, edited');
+        server.failNext = const SyncTransientException('no route');
+        await settle(server);
+        await bob.sharing.leave(again.id, keepCopies: false);
+        bob.tick();
+        await bob.sync.syncNow();
+        expect(bob.bodies, ['Ours, with my additions']);
+      },
     );
 
     test(
@@ -1241,6 +1328,126 @@ void main() {
         carol.dispose();
       },
     );
+  });
+
+  group('deleting a shared note', () {
+    late Person carol;
+
+    setUp(() async {
+      carol = Person(server, userId: 'user-3', device: 'carol-pad');
+      await carol.boot();
+    });
+
+    tearDown(() => carol.dispose());
+
+    /// Alice's note with Bob and Carol in it, everyone holding the key.
+    Future<(Note, String)> sharedWithBoth() async {
+      final note = await shareWithBob('Ours');
+      final spaceId = alice.notes.byId(note.id)!.spaceId!;
+      final invite = await alice.sharing.invite(spaceId, carol.email);
+      await carol.sharing.acceptInvite(invite.token);
+      await alice.sync.syncNow();
+      await carol.sync.syncNow();
+      expect(carol.bodyOf(note.id), 'Ours');
+      return (note, spaceId);
+    }
+
+    test('a viewer\'s delete is dismissed the same way and leaves nothing '
+        'pending', () async {
+      final (note, spaceId) = await sharedWithBoth();
+      await alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.viewer);
+      await bob.sharing.refresh();
+      bob.tick();
+      bob.notes.delete(note.id);
+      await bob.syncAndSettle();
+
+      expect(bob.notes.byId(note.id), isNull);
+      expect(bob.notes.hasPendingChanges, isFalse);
+      expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+      expect(server.guestDeletes, 0, reason: 'nothing went up');
+      expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+    });
+
+    test(
+      'a guest\'s delete takes it out of their notes only, and is never sent',
+      () async {
+        final (note, spaceId) = await sharedWithBoth();
+        bob.tick();
+        bob.notes.delete(note.id);
+        await bob.syncAndSettle();
+
+        expect(bob.notes.byId(note.id), isNull);
+        expect(bob.notes.hasPendingChanges, isFalse);
+        expect(server.guestDeletes, 0, reason: 'nothing went up');
+        expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+        await alice.syncAndSettle();
+        await carol.syncAndSettle();
+        expect(alice.bodyOf(note.id), 'Ours');
+        expect(carol.bodyOf(note.id), 'Ours');
+
+        // However it changes afterwards, it stays out of Bob's notes, here
+        // and after a restart.
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Ours, edited');
+        await alice.syncAndSettle();
+        await carol.syncAndSettle();
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ours, edited again');
+        await carol.syncAndSettle();
+        await bob.syncAndSettle();
+        expect(bob.notes.byId(note.id), isNull);
+        final restarted = NotesStore(bob.store, now: () => now);
+        await restarted.load();
+        expect(restarted.isDismissed(note.id, spaceId), isTrue);
+        expect(restarted.byId(note.id), isNull);
+        await alice.syncAndSettle();
+        expect(alice.bodyOf(note.id), 'Ours, edited again');
+      },
+    );
+
+    test('the owner still deletes it for everyone', () async {
+      final (note, spaceId) = await sharedWithBoth();
+      bob.notes.delete(note.id);
+      await bob.syncAndSettle();
+      expect(bob.notes.isDismissed(note.id, spaceId), isTrue);
+
+      alice.tick();
+      alice.notes.delete(note.id);
+      await alice.syncAndSettle();
+      await bob.syncAndSettle();
+      await carol.syncAndSettle();
+      expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isTrue);
+      expect(carol.notes.byId(note.id), isNull);
+      expect(alice.notes.byId(note.id), isNull);
+      expect(
+        bob.notes.isDismissed(note.id, spaceId),
+        isFalse,
+        reason: 'gone for everyone, so nothing is left to keep away',
+      );
+    });
+
+    test('leaving the space forgets what was taken out of it', () async {
+      final (note, spaceId) = await sharedWithBoth();
+      bob.notes.delete(note.id);
+      await bob.syncAndSettle();
+      await bob.sharing.leave(spaceId, keepCopies: false);
+      await bob.syncAndSettle();
+      expect(bob.notes.isDismissed(note.id, spaceId), isFalse);
+      expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+    });
+
+    test('a delete in your own space, shared or not, is as before', () async {
+      final mine = alice.notes.create(body: 'Mine');
+      await alice.sync.syncNow();
+      alice.tick();
+      alice.notes.delete(mine.id);
+      await alice.syncAndSettle();
+      expect(
+        server.rowsIn(alice.keyring.personal!.id)[mine.id]!.isTombstone,
+        isTrue,
+      );
+      expect(server.guestDeletes, 0);
+    });
   });
 
   group('people', () {
@@ -1477,6 +1684,173 @@ void main() {
           alice.sharing.spaceById(groupSpace)!.invites.single.email,
           carol(),
         );
+      },
+    );
+  });
+
+  group('notices and invitations accepted on their own', () {
+    /// Bob, on a build with invitations accepted on their own (D2) on.
+    Future<void> acceptingOnTheirOwn() async {
+      bob.dispose();
+      bob = Person(
+        server,
+        userId: 'user-2',
+        device: 'bob-phone',
+        acceptOnTheirOwn: true,
+      );
+      await bob.boot();
+    }
+
+    List<SharingNotice> listen(Person person) {
+      final heard = <SharingNotice>[];
+      final subscription = person.sharing.notices.listen(heard.add);
+      addTearDown(subscription.cancel);
+      return heard;
+    }
+
+    Future<Note> aliceShares(
+      String body, {
+      SpaceRole role = SpaceRole.member,
+    }) async {
+      final note = alice.notes.create(body: body);
+      await alice.sync.syncNow();
+      alice.tick();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email, role: role);
+      return note;
+    }
+
+    test('by default, an invitation waits for a tap', () async {
+      await shareWithBob('One');
+      await aliceShares('Two', role: SpaceRole.viewer);
+      await bob.sharing.refresh();
+      await settle(server);
+      expect(bob.sharing.invites, hasLength(1));
+      expect(bob.sharing.teams, hasLength(1));
+    });
+
+    test(
+      'an invitation from someone whose notes you are in is accepted on its own',
+      () async {
+        await acceptingOnTheirOwn();
+        await shareWithBob('One');
+        final heard = listen(bob);
+        final note = await aliceShares('Two', role: SpaceRole.viewer);
+
+        await bob.sharing.refresh();
+        await until(() => bob.sharing.invites.isEmpty);
+        expect(bob.sharing.teams, hasLength(2));
+        await alice.sync.syncNow();
+        await bob.syncAndSettle();
+        expect(bob.bodyOf(note.id), 'Two');
+        expect(heard.map((n) => n.message), ['Someone shared "Two" with you']);
+        expect(
+          heard.single.leaveSpaceId,
+          bob.notes.byId(note.id)!.spaceId,
+          reason: 'one click to leave again',
+        );
+      },
+    );
+
+    test('not from someone who is only in your notes, nor before the rules '
+        'are agreed', () async {
+      await acceptingOnTheirOwn();
+      final bobs = bob.notes.create(body: 'Bob\'s');
+      await bob.sync.syncNow();
+      bob.tick();
+      await bob.sharing.shareNoteWith(bobs.id, email: alice.email);
+      await alice.sharing.acceptInvite(server.outbox.last.token);
+      await aliceShares('Alice\'s');
+      await bob.sharing.refresh();
+      await settle(server);
+      expect(bob.sharing.invites, hasLength(1));
+
+      await bob.sharing.acceptInvite(bob.sharing.invites.single.token);
+      server.user(bob.userId).termsVersion = 0;
+      await bob.sharing.refreshSafety();
+      await aliceShares('Viewer', role: SpaceRole.viewer);
+      await bob.sharing.refresh();
+      await settle(server);
+      expect(bob.sharing.invites, hasLength(1));
+    });
+
+    test('nor from someone you have blocked', () async {
+      await acceptingOnTheirOwn();
+      await shareWithBob('One');
+      await bob.sharing.blockPerson(alice.email);
+      await aliceShares('Two', role: SpaceRole.viewer);
+      await bob.sharing.refresh();
+      await settle(server);
+      expect(bob.sharing.invites, isEmpty, reason: 'the server hides it');
+      expect(bob.sharing.teams, hasLength(1));
+    });
+
+    test(
+      'a refused automatic accept is tried once and left to the person',
+      () async {
+        await acceptingOnTheirOwn();
+        await shareWithBob('One');
+        server.user(bob.userId).termsVersion = 0;
+        await aliceShares('Two', role: SpaceRole.viewer);
+        await bob.sharing.refresh();
+        await settle(server);
+        expect(bob.sharing.invites, hasLength(1));
+
+        server.user(bob.userId).termsVersion = sharingTermsVersion;
+        await bob.sharing.refresh();
+        await settle(server);
+        expect(bob.sharing.invites, hasLength(1), reason: 'not tried again');
+        expect(bob.sharing.teams, hasLength(1));
+      },
+    );
+
+    test('says when a note arrives, access changes and access ends', () async {
+      final one = await shareWithBob('One');
+      final spaceId = alice.notes.byId(one.id)!.spaceId!;
+      final heard = listen(bob);
+
+      final two = await aliceShares('Two');
+      expect(alice.notes.byId(two.id)!.spaceId, spaceId);
+      await bob.syncAndSettle();
+      await alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.viewer);
+      await bob.sharing.refresh();
+      alice.tick();
+      await alice.sharing.unshareNote(two.id);
+      bob.tick();
+      await bob.syncAndSettle();
+      expect(bob.notes.byId(two.id), isNull);
+      await alice.sharing.removeMember(spaceId, bob.userId);
+      await bob.sharing.refresh();
+      await settle(server);
+
+      expect(heard.map((n) => n.message), [
+        'Someone shared "Two" with you',
+        'You can now only view notes from Someone',
+        '"Two" is no longer shared with you',
+        '"One" is no longer shared with you',
+      ]);
+      expect(heard.every((n) => n.leaveSpaceId == null), isTrue);
+    });
+
+    test(
+      'nothing to say when you leave, or when a new device catches up',
+      () async {
+        final one = await shareWithBob('One');
+        await aliceShares('Two');
+        await bob.syncAndSettle();
+
+        bob.tick();
+        final mac = Person(server, userId: bob.userId, device: 'bob-mac');
+        addTearDown(mac.dispose);
+        final heard = listen(mac);
+        await mac.boot();
+        await mac.sharing.refresh();
+        await mac.syncAndSettle();
+        expect(mac.bodies, containsAll(['One', 'Two']));
+
+        final spaceId = mac.notes.byId(one.id)!.spaceId!;
+        await mac.sharing.leave(spaceId, keepCopies: false);
+        await mac.syncAndSettle();
+        expect(heard, isEmpty);
       },
     );
   });

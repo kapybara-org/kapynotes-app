@@ -309,7 +309,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'encoder.int8.onnx',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/encoder.int8.onnx',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx',
       bytes: 652184281,
       sha256:
           'acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247',
@@ -317,7 +317,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'decoder.int8.onnx',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/decoder.int8.onnx',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx',
       bytes: 11845275,
       sha256:
           '179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e',
@@ -325,7 +325,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'joiner.int8.onnx',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/joiner.int8.onnx',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx',
       bytes: 6355277,
       sha256:
           '3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3',
@@ -333,7 +333,7 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     LocalModelFile(
       name: 'tokens.txt',
       url:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/tokens.txt',
+          'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt',
       bytes: 93939,
       sha256:
           'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d',
@@ -449,7 +449,7 @@ const List<LocalSummaryModel> localSummaryModels = <LocalSummaryModel>[
 /// four-times larger download and a better summariser by a wide margin, and —
 /// the part that decides it — its *runtime* cost is lower, not higher: the
 /// embedding parameters are memory-mapped rather than resident, so peak RAM is
-/// around 600–800 MB on a phone against the gigabyte-plus a naive 1B int4
+/// under 2 GB on a phone against the gigabyte-plus a naive 1B int4
 /// would hold. It is also Apache-2.0 and ungated, where Gemma 3 1B is behind
 /// a licence gate that would have made us a redistributor with terms to pass
 /// on. The one thing it costs is 2.6 GB of somebody's disk and data.
@@ -470,21 +470,23 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
       'notes with no account and no network at all.',
   detail:
       'Quantisation-aware trained at a mixture of 2, 4 and 8 bits. Its '
-      'embeddings are read from disk rather than held in memory, which is why '
-      'a 2.6 GB model needs well under a gigabyte to run. Loaded only while a '
-      'summary is being written, then unloaded again.',
+      'embeddings are read from disk rather than held in memory, which keeps '
+      'it under 3.5 GB while it runs. Loaded only while a summary is being '
+      'written, then unloaded again.',
   // Apache-2.0 asks nothing of a user, so there is nothing to agree to. The
   // mechanism stays for a model that does.
   terms: null,
-  // Peak measured by the publisher at 607 MB on an iPhone 17 Pro and 1.5 GB
-  // on a Raspberry Pi 5. Three gigabytes of device memory leaves room for
-  // that and for the rest of the app.
-  minimumMemoryBytes: 3 * 1000 * 1000 * 1000,
+  // Peak on the CPU in LiteRT-LM's own table: 736 MB on an M4 Max, 1.7 GB on
+  // a Galaxy S26 Ultra and 3.5 GB on an Intel Lunar Lake laptop. Five
+  // gigabytes covers the worst of those with room for the system and the rest
+  // of the app, and still admits a "6 GB" phone, whose kernel reports nearer
+  // 5.5 once its own reservations are taken.
+  minimumMemoryBytes: 5 * 1000 * 1000 * 1000,
   files: [
     LocalModelFile(
       name: 'gemma-4-E2B-it.litertlm',
       url:
-          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/2d74ac41a33d7da82f39f7d5720a04c68514a103/gemma-4-E2B-it.litertlm',
       bytes: 2588147712,
       sha256:
           '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',

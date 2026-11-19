@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
@@ -16,20 +18,26 @@ class Keycap extends StatelessWidget {
   /// second control beside it.
   final bool tonal;
 
-  /// How wide [label] prints in a keycap at the base text size, for a layout
-  /// that has to know before it builds one.
-  static double textWidth(String label, {bool tonal = false}) {
+  /// How wide a keycap printing [label] is, padding and border included, at
+  /// the reader's text size, for a layout that has to know before it builds
+  /// one.
+  static double widthOf(
+    BuildContext context,
+    String label, {
+    bool tonal = false,
+  }) {
     final painter = TextPainter(
       text: TextSpan(
         text: label,
         style: _style(tonal: tonal),
       ),
       textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,
     )..layout();
     final width = painter.width;
     painter.dispose();
-    return width;
+    return tonal ? width + 2 * 5 : math.max(20, width + 2 * 6 + 2);
   }
 
   static TextStyle _style({required bool tonal, Color? color}) => TextStyle(

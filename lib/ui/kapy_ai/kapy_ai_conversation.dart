@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../core/mobile_data.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../kapy_cursor_peek.dart';
+import '../mobile_data_sheet.dart';
 import '../settings_rows.dart' show SettingsPie;
 import 'kapy_ai_markdown.dart';
 import 'kapy_ai_parts.dart';
@@ -299,7 +301,7 @@ class _Answer extends StatelessWidget {
               tooltip: 'Copy',
               extent: 28,
               iconSize: 15,
-              radius: 8,
+              radius: AppRadii.control,
               color: palette.textTertiary,
               onPressed: () {
                 unawaited(Clipboard.setData(ClipboardData(text: message.text)));
@@ -553,7 +555,9 @@ class KapyAiNotice extends StatelessWidget {
           KapyAiButton(
             'Download ${kapyGigabytes(totalBytes)} GB',
             filled: true,
-            onPressed: () => unawaited(ai.proceed()),
+            onPressed: () => unawaited(
+              _download(context, ai, name: deviceName, bytes: totalBytes),
+            ),
           ),
           KapyAiButton('Not now', onPressed: ai.dismissPending),
         ],
@@ -739,4 +743,22 @@ class KapyAiNotice extends StatelessWidget {
     await check();
     await kapyAi.proceed();
   }
+}
+
+/// Downloads the device model, asking first when that would spend mobile
+/// data.
+Future<void> _download(
+  BuildContext context,
+  KapyAi ai, {
+  required String name,
+  required int bytes,
+}) async {
+  if (bytes > MobileData.askAboveBytes &&
+      await ai.deviceDownloadOnMobileData()) {
+    if (!context.mounted) return;
+    final choice = await showMobileDataSheet(context, name: name, bytes: bytes);
+    if (choice == MobileDataChoice.onWifi) ai.downloadDeviceModelOnWifi();
+    if (choice != MobileDataChoice.now) return;
+  }
+  await ai.proceed();
 }

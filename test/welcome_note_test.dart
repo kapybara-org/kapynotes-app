@@ -88,11 +88,11 @@ void main() {
       expect(_resultsByLine(rates: _rates), expected);
     });
 
-    test('agrees with the running total in the footer', () {
+    test('leaves the footer to its own total line', () {
       final evaluation = CalcEngine().evaluateDocumentWithSummary(
         welcomeNoteBody,
       );
-      expect(evaluation.totalText, '22.89');
+      expect(evaluation.totalText, isNull);
     });
 
     test('names no currency, which a new install cannot yet convert', () {

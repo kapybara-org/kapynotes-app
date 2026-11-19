@@ -73,6 +73,10 @@ jobs:
       # with macOS system fonts by design, so they cannot pass on Windows.
       - run: flutter analyze
 
+      # The one test that needs Windows itself: the memory probe calls kernel32,
+      # and only a Windows host shows that it reads a real number.
+      - run: flutter test test/core/device_memory_windows_test.dart
+
       # The same flags release.sh passes on every other platform: an
       # obfuscated snapshot with its symbols split out is about a sixth
       # smaller. See the header of packaging/release.sh.
@@ -128,6 +132,22 @@ jobs:
         env:
           FLUTTER: flutter
         run: packaging/release.sh mac-unsigned
+
+      # The menu bar panel stands on a private engine switch
+      # (macos/Runner/MenuBarPanel.swift). A Flutter upgrade that drops it
+      # fails here instead of quietly turning the panel back into a menu.
+      - name: Menu bar panel engine check
+        run: flutter test test/core/menu_bar_engine_test.dart
+
+      - name: Menu bar panel native check
+        working-directory: macos
+        run: >-
+          xcodebuild test -quiet
+          -workspace Runner.xcworkspace -scheme Runner -configuration Debug
+          -destination 'platform=macOS'
+          -only-testing:RunnerTests/RunnerTests/testMenuBarPanelNeedsTheEnginesMultiViewSwitch
+          -only-testing:RunnerTests/RunnerTests/testMenuBarPanelRefusesASwitchThatIsNotABool
+          CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
 
       - uses: actions/upload-artifact@v4
         with:

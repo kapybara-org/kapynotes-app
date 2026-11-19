@@ -1214,20 +1214,43 @@ class SidebarWindowBar extends StatelessWidget {
 
   static const double height = 52;
 
-  /// Narrower than these, New note gives up its keycap and then its word, so
-  /// the space's name keeps its room on a list dragged narrow. Measured at
-  /// the reader's text size, which the name and the button both grow with.
-  /// The keycap's is for a two-glyph chord like ⌘N, and rises by however
-  /// much wider the real one prints, as Ctrl+N does on Windows.
-  static const double _keycapWidth = 280;
-  static const double _labelWidth = 250;
-
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     const handwritten = WritingFont.handwritten;
     final newNoteShortcut = this.newNoteShortcut;
     final hideShortcut = this.hideShortcut;
+    final titleStyle = TextStyle(
+      fontFamily: handwritten.fontFamily,
+      fontFamilyFallback: handwritten.fontFamilyFallback,
+      fontVariations: handwritten.fontVariations,
+      fontSize: AppTypeScale.spaceTitle,
+      height: 1.3,
+      fontWeight: FontWeight.w500,
+      color: palette.textPrimary,
+    );
+    final countText = [count, ?countLabel].join(' ');
+    final countStyle = TextStyle(
+      fontSize: AppTypeScale.small,
+      fontWeight: FontWeight.w400,
+      color: palette.textTertiary,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    double widthOf(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: DefaultTextStyle.of(context).style.merge(style),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
     return SizedBox(
       height: AppControlMetrics.scaleBar(context, height),
       child: Stack(
@@ -1240,18 +1263,26 @@ class SidebarWindowBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final width =
-                      constraints.maxWidth /
-                      MediaQuery.textScalerOf(context).scale(1);
+                  // New note gives up its keycap and then its word and the
+                  // count, so the space's name keeps its room on a list
+                  // dragged narrow. Everything is measured as it prints, at
+                  // the reader's text size and with this platform's chord.
+                  final room =
+                      constraints.maxWidth -
+                      widthOf(title, titleStyle) -
+                      8 -
+                      8 -
+                      AppControlMetrics.tonalButtonHeight;
                   final chord = newNoteShortcut?.keycapLabel;
-                  final keycap =
-                      width >=
-                      _keycapWidth +
-                          (chord == null
-                              ? 0
-                              : Keycap.textWidth(chord, tonal: true) -
-                                    Keycap.textWidth('⌘N', tonal: true));
-                  final label = width >= _labelWidth;
+                  bool fits({String? shortcut}) =>
+                      room - 7 - widthOf(countText, countStyle) >=
+                      TonalButton.widthOf(
+                        context,
+                        'New $noun',
+                        shortcut: shortcut,
+                      );
+                  final keycap = chord != null && fits(shortcut: chord);
+                  final label = fits();
                   return Row(
                     children: [
                       Expanded(
@@ -1270,17 +1301,7 @@ class SidebarWindowBar extends StatelessWidget {
                                     key: const ValueKey('sidebar-space-title'),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontFamily: handwritten.fontFamily,
-                                      fontFamilyFallback:
-                                          handwritten.fontFamilyFallback,
-                                      fontVariations:
-                                          handwritten.fontVariations,
-                                      fontSize: AppTypeScale.spaceTitle,
-                                      height: 1.3,
-                                      fontWeight: FontWeight.w500,
-                                      color: palette.textPrimary,
-                                    ),
+                                    style: titleStyle,
                                   ),
                                 ),
                               ),
@@ -1295,17 +1316,10 @@ class SidebarWindowBar extends StatelessWidget {
                                     ?countLabel,
                                   ].join(' '),
                                   child: Text(
-                                    [count, ?countLabel].join(' '),
+                                    countText,
                                     key: const ValueKey('sidebar-space-count'),
                                     maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: AppTypeScale.small,
-                                      fontWeight: FontWeight.w400,
-                                      color: palette.textTertiary,
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures(),
-                                      ],
-                                    ),
+                                    style: countStyle,
                                   ),
                                 ),
                               ],
@@ -1336,7 +1350,7 @@ class SidebarWindowBar extends StatelessWidget {
                             ? 'Hide notes'
                             : 'Hide notes  ${hideShortcut.displayLabel}',
                         extent: AppControlMetrics.tonalButtonHeight,
-                        radius: 8,
+                        radius: AppRadii.control,
                         onPressed: onHide,
                         icon: KapyIcon(
                           KapyIcons.menuOpenRounded,
@@ -2010,7 +2024,9 @@ class _NoteRowState extends State<NoteRow> {
       return DecoratedBox(
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.dialog),
+          ),
         ),
         child: SafeArea(
           top: false,

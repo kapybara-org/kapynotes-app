@@ -54,8 +54,11 @@ import 'ui/home_page.dart';
 import 'ui/hidden_notes_gate.dart';
 import 'ui/join/join_link_listener.dart';
 import 'ui/join/joining_ui.dart';
+import 'ui/sharing_notice_listener.dart';
 import 'ui/instant_capture.dart';
 import 'ui/mcp_pane.dart';
+import 'ui/menu_bar_panel.dart';
+import 'ui/tasks/tasks_controller.dart';
 
 /// Root widget. Owns the app-wide singletons and the macOS menu bar.
 class KapyNotesApp extends StatefulWidget {
@@ -157,6 +160,25 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// this class can end one before the app goes away.
   late final VoiceRecordingController _recording =
       widget.recording ?? VoiceRecordingController();
+
+  /// The menu bar panel's Tasks, over the same library the Tasks page reads.
+  /// Only where there is a panel: macOS, with the desktop integration.
+  late final TasksController? _panelTasks =
+      switch ((widget.desktopIntegration, widget.tasks)) {
+        (_?, final tasks?) when AppPlatform.isMacOS => TasksController(
+          notes: widget.notes,
+          library: tasks,
+          canEdit: _panelCanEdit,
+          now: widget.notes.now,
+        ),
+        _ => null,
+      };
+
+  bool _panelCanEdit(Note note) => panelCanEdit(
+    note,
+    limit: widget.account?.noteLimit,
+    canEditShared: widget.account?.sharing?.canEdit,
+  );
 
   /// One player for the whole app: starting a second recording stops the
   /// first, and a phone never holds two claims on its audio session.
@@ -389,12 +411,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       // Which note that is depends on how the app was opened: every widget
       // action carries on the last one, and everything else starts a new one
       // exactly as it always has.
-      QuickCapture.file(
+      final welcomeOnly = Onboarding.holdsOnlyWelcome(widget.notes);
+      final filed = QuickCapture.file(
         widget.notes,
         capturedText,
         intent,
         target: openingNote,
       );
+      if (welcomeOnly) widget.prefs.lastOpenedNoteId = filed.id;
     } else if (_welcomeNoteId == null &&
         AppPlatform.isMobile &&
         widget.notes.isEmpty) {
@@ -413,6 +437,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         library: McpLibrary(
           notes: widget.notes,
           engine: () => engines.engine,
+          tags: widget.tags,
           canCreate: () => widget.account?.noteLimit?.canCreate ?? true,
           isLocked: (note) =>
               widget.account?.noteLimit?.isLocked(note) ?? false,
@@ -540,6 +565,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     widget.rates.dispose();
     widget.updates?.dispose();
     widget.desktopIntegration?.dispose();
+    _panelTasks?.dispose();
     super.dispose();
   }
 
@@ -597,6 +623,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       return InstantCaptureApp(controller: _launchController);
     }
 
+    final integration = widget.desktopIntegration;
+    final panelTasks = _panelTasks;
     final app = ListenableBuilder(
       listenable: Listenable.merge([
         widget.prefs.transparencyListenable,
@@ -655,40 +683,63 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         home: JoinLinkListener(
           links: widget.deepLinks,
           account: widget.account,
-          child: HomePage(
-            notes: widget.notes,
-            engines: _engines!,
-            rates: widget.rates,
-            prefs: widget.prefs,
-            shortcuts: widget.shortcuts,
-            updates: widget.updates,
-            desktopIntegration: widget.desktopIntegration,
+          child: SharingNoticeListener(
             account: widget.account,
-            tasks: widget.tasks,
-            tags: widget.tags,
-            store: widget.store,
-            welcomeNoteId: _welcomeNoteId,
-            launchIntent: _launchIntent,
-            recording: _recording,
-            player: _player,
-            transcriptions: _transcriptions,
-            voicePrefs: _voicePrefs,
-            cloudAccess: _cloudAccess,
-            localModels: _localModels,
-            deviceSummarizer: _deviceSummarizer,
-            deviceTranscriber: _deviceTranscriber,
-            summarizer: _summarizer,
-            transcriber: _transcriber,
-            imageAcquirer: widget.imageAcquirer,
-            lostImageRetriever: widget.lostImageRetriever,
-            hiddenNotesGate: _hiddenNotesGate,
-            kapyAi: _kapyAi,
-            titleModel: _titleModel,
+            child: HomePage(
+              notes: widget.notes,
+              engines: _engines!,
+              rates: widget.rates,
+              prefs: widget.prefs,
+              shortcuts: widget.shortcuts,
+              updates: widget.updates,
+              desktopIntegration: widget.desktopIntegration,
+              account: widget.account,
+              tasks: widget.tasks,
+              tags: widget.tags,
+              store: widget.store,
+              welcomeNoteId: _welcomeNoteId,
+              launchIntent: _launchIntent,
+              recording: _recording,
+              player: _player,
+              transcriptions: _transcriptions,
+              voicePrefs: _voicePrefs,
+              cloudAccess: _cloudAccess,
+              localModels: _localModels,
+              deviceSummarizer: _deviceSummarizer,
+              deviceTranscriber: _deviceTranscriber,
+              summarizer: _summarizer,
+              transcriber: _transcriber,
+              imageAcquirer: widget.imageAcquirer,
+              lostImageRetriever: widget.lostImageRetriever,
+              hiddenNotesGate: _hiddenNotesGate,
+              kapyAi: _kapyAi,
+              titleModel: _titleModel,
+            ),
           ),
         ),
       ),
     );
     final mcp = _mcp;
-    return mcp == null ? app : McpScope(service: mcp, child: app);
+    final scoped = mcp == null ? app : McpScope(service: mcp, child: app);
+    if (integration == null || panelTasks == null) return scoped;
+    return ViewAnchor(
+      view: MenuBarPanelView(
+        controller: integration.panel,
+        prefs: widget.prefs,
+        panel: (context) => MenuBarPanel(
+          controller: integration.panel,
+          notes: widget.notes,
+          tasks: panelTasks,
+          prefs: widget.prefs,
+          shortcuts: widget.shortcuts,
+          canEdit: _panelCanEdit,
+          inWindow: integration.openInWindow,
+          noteLimit: widget.account?.noteLimit,
+          recording: _recording,
+          now: widget.notes.now,
+        ),
+      ),
+      child: scoped,
+    );
   }
 }

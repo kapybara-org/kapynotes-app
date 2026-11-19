@@ -543,6 +543,7 @@ class _RailAccount extends StatelessWidget {
     SyncStatus.signedOut => 'Checking your sign-in. Will retry',
     SyncStatus.locked => 'Locked',
     SyncStatus.outdated => 'Sync needs a newer version',
+    SyncStatus.keysChanged => 'Waiting for your new passphrase',
     SyncStatus.failed => 'Sync failed',
   };
 
@@ -562,7 +563,7 @@ class _RailAccount extends StatelessWidget {
       null => null,
       SyncStatus.idle ||
       SyncStatus.syncing => Theme.of(context).colorScheme.primary,
-      SyncStatus.offline => palette.textTertiary,
+      SyncStatus.offline || SyncStatus.keysChanged => palette.textTertiary,
       _ => Theme.of(context).colorScheme.error,
     };
     final photo = user?.image;

@@ -564,7 +564,15 @@ class SyncAuthException extends SyncException {
 
 /// A network failure, a 5xx, or a rate limit. Worth retrying with backoff.
 class SyncTransientException extends SyncException {
-  const SyncTransientException(super.message, {this.answered = false});
+  const SyncTransientException(
+    super.message, {
+    this.answered = false,
+    this.status,
+  });
+
+  /// The status the server answered with, when it answered: 429 is somebody
+  /// asking too often, which is worth saying differently from an outage.
+  final int? status;
 
   /// Whether the server answered at all.
   ///
@@ -604,6 +612,17 @@ class SyncOutdatedException extends SyncException {
   final int minimum;
 }
 
+/// Encryption was reset on another device, so the key this device holds no
+/// longer belongs to the account. Nothing local is wrong: sync stops until
+/// the new passphrase or recovery key arrives.
+class SyncKeysChangedException extends SyncException {
+  const SyncKeysChangedException(this.generation, this.reset)
+    : super('encryption was reset');
+
+  final int generation;
+  final KeyChange? reset;
+}
+
 /// The sync endpoints. Abstract so the service can be tested end to end
 /// without a server, which is most of what there is to get wrong.
 abstract class SyncApi {
@@ -634,7 +653,59 @@ abstract class SyncApi {
   /// exists; replacing one is a rotation, which has to prove knowledge of the
   /// current key.
   Future<void> createKeyBundle(KeyBundle bundle);
-  Future<void> rotateKeyBundle(KeyBundle bundle);
+
+  /// Emails the account's owner a one-time code for [action].
+  Future<void> sendKeyProof(KeyProofAction action);
+
+  /// Trades the emailed code for a proof that the next key change carries.
+  /// Refused with `code-wrong`, `code-expired` or `code-tries`.
+  Future<String> verifyKeyProof(KeyProofAction action, String code);
+
+  /// Replaces the passphrase's seal on the master key, if the bundle is still
+  /// at [expectedVersion]; refused with `bundle-changed` if not, and with
+  /// `proof-required` for a proof that has expired or been used. Returns the
+  /// bundle's new version.
+  Future<int> changePassphrase({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required String? device,
+  });
+
+  /// Replaces the recovery key's seal, or adds the first one. Either needs a
+  /// proof.
+  Future<int> changeRecoveryKey({
+    required int expectedVersion,
+    required String? proof,
+    required SealedBox recoveryWrappedMasterKey,
+    required String? device,
+  });
+
+  /// Names this device, so other devices can say where a change came from.
+  Future<void> reportDevice({required String name, required String platform});
+
+  /// What a reset would touch: the other devices to try first, the personal
+  /// notes on the server, and the spaces only this account can grant in.
+  Future<ResetPreview> fetchResetPreview();
+
+  /// Replaces the master key itself, if the bundle is still at
+  /// [expectedVersion]. The server moves the old copy aside and starts the
+  /// account's next key generation. Returns the bundle's new version and
+  /// generation.
+  Future<({int version, int generation})> resetEncryption({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required SealedBox recoveryWrappedMasterKey,
+    required WireIdentity identity,
+    required String? device,
+  });
+
+  /// The seals from before the last reset, or null when there was none in
+  /// the last 30 days.
+  Future<KeyArchive?> fetchKeyArchive();
 
   /// Publishes the identity keypairs for an account created before they
   /// existed. Refused once they exist.
@@ -779,9 +850,16 @@ const String deviceHeader = 'x-kapynotes-device';
 /// refusal, because those builds answered it by asking again, forever; and it
 /// hides a link-kept space's notes from anything before 5, which would
 /// otherwise bring them home and end the space. Version 6 reads the task
-/// index, and only it is woken by the socket's `tasks` frame.
+/// index, and only it is woken by the socket's `tasks` frame. Version 7
+/// names the key generation it holds in [keyGenerationHeader], so after a
+/// reset the server answers a device still holding the old key with
+/// [SyncKeysChangedException] rather than taking what it sends.
 const String protocolHeader = 'x-kapynotes-protocol';
-const int protocolVersion = 6;
+const int protocolVersion = 7;
+
+/// The key generation this device's master key belongs to. Matches
+/// `KEY_GENERATION_HEADER`.
+const String keyGenerationHeader = 'x-kapynotes-key-generation';
 
 /// The server's refusal of a space nobody in it has Pro for. Matches
 /// `ProRequired`, on HTTP status 402 and as a socket error naming the space.
@@ -796,16 +874,19 @@ class HttpSyncApi implements SyncApi {
     required Uri baseUrl,
     required Future<String?> Function() token,
     required String deviceId,
+    int Function()? keyGeneration,
     http.Client? client,
     this.timeout = const Duration(seconds: 30),
   }) : _baseUrl = baseUrl,
        _token = token,
        _deviceId = deviceId,
+       _keyGeneration = keyGeneration ?? (() => 1),
        _client = client ?? http.Client();
 
   final Uri _baseUrl;
   final Future<String?> Function() _token;
   final String _deviceId;
+  final int Function() _keyGeneration;
   final http.Client _client;
   final Duration timeout;
 
@@ -882,7 +963,11 @@ class HttpSyncApi implements SyncApi {
   SyncSocket openSocket() => WebSocketSyncSocket(
     url: _baseUrl.resolve('sync/ws'),
     token: _token,
-    headers: {deviceHeader: _deviceId, protocolHeader: '$protocolVersion'},
+    headers: {
+      deviceHeader: _deviceId,
+      protocolHeader: '$protocolVersion',
+      keyGenerationHeader: '${_keyGeneration()}',
+    },
   );
 
   @override
@@ -900,8 +985,126 @@ class HttpSyncApi implements SyncApi {
       _send('POST', _baseUrl.resolve('keys'), payload: bundle.toJson());
 
   @override
-  Future<void> rotateKeyBundle(KeyBundle bundle) =>
-      _send('PUT', _baseUrl.resolve('keys'), payload: bundle.toJson());
+  Future<void> sendKeyProof(KeyProofAction action) => _send(
+    'POST',
+    _baseUrl.resolve('keys/proof'),
+    payload: {'action': action.wire},
+  );
+
+  @override
+  Future<String> verifyKeyProof(KeyProofAction action, String code) async {
+    final body = await _send(
+      'POST',
+      _baseUrl.resolve('keys/proof/verify'),
+      payload: {'action': action.wire, 'code': code},
+    );
+    final proof = body['proof'];
+    if (proof is! String) throw const SyncProtocolException('no proof');
+    return proof;
+  }
+
+  @override
+  Future<int> changePassphrase({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required String? device,
+  }) async => _version(
+    await _send(
+      'POST',
+      _baseUrl.resolve('keys/passphrase'),
+      payload: {
+        'expectedVersion': expectedVersion,
+        'proof': proof,
+        'wrappedMasterKey': wrappedMasterKey.toJson(),
+        'kdf': kdf.toJson(),
+        'device': device,
+      },
+    ),
+  );
+
+  @override
+  Future<int> changeRecoveryKey({
+    required int expectedVersion,
+    required String? proof,
+    required SealedBox recoveryWrappedMasterKey,
+    required String? device,
+  }) async => _version(
+    await _send(
+      'POST',
+      _baseUrl.resolve('keys/recovery'),
+      payload: {
+        'expectedVersion': expectedVersion,
+        'proof': ?proof,
+        'recoveryWrappedMasterKey': recoveryWrappedMasterKey.toJson(),
+        'device': device,
+      },
+    ),
+  );
+
+  static int _version(Map<String, Object?> body) {
+    final version = body['version'];
+    if (version is! int) throw const SyncProtocolException('no version');
+    return version;
+  }
+
+  @override
+  Future<void> reportDevice({required String name, required String platform}) =>
+      _send(
+        'PUT',
+        _baseUrl.resolve('keys/device'),
+        payload: {'name': name, 'platform': platform},
+      );
+
+  @override
+  Future<ResetPreview> fetchResetPreview() async {
+    final preview = ResetPreview.fromJson(
+      await _send('GET', _baseUrl.resolve('keys/reset/preview')),
+    );
+    if (preview == null) {
+      throw const SyncProtocolException('reset preview was malformed');
+    }
+    return preview;
+  }
+
+  @override
+  Future<({int version, int generation})> resetEncryption({
+    required int expectedVersion,
+    required String proof,
+    required SealedBox wrappedMasterKey,
+    required KdfParams kdf,
+    required SealedBox recoveryWrappedMasterKey,
+    required WireIdentity identity,
+    required String? device,
+  }) async {
+    final body = await _send(
+      'POST',
+      _baseUrl.resolve('keys/reset'),
+      payload: {
+        'expectedVersion': expectedVersion,
+        'proof': proof,
+        'wrappedMasterKey': wrappedMasterKey.toJson(),
+        'kdf': kdf.toJson(),
+        'recoveryWrappedMasterKey': recoveryWrappedMasterKey.toJson(),
+        'identity': identity.toJson(),
+        'device': device,
+      },
+    );
+    final generation = body['generation'];
+    if (generation is! int) throw const SyncProtocolException('no generation');
+    return (version: _version(body), generation: generation);
+  }
+
+  @override
+  Future<KeyArchive?> fetchKeyArchive() async {
+    final body = await _send(
+      'GET',
+      _baseUrl.resolve('keys/archive'),
+      absentIsNull: true,
+    );
+    return body.isEmpty ? null : KeyArchive.fromJson(body);
+  }
 
   @override
   Future<void> publishIdentity(WireIdentity identity) => _send(
@@ -1349,7 +1552,8 @@ class HttpSyncApi implements SyncApi {
       ..headers[deviceHeader] = _deviceId
       // Every request says which protocol it speaks, so a server that has
       // moved on can refuse it with 426 before doing any work.
-      ..headers[protocolHeader] = '$protocolVersion';
+      ..headers[protocolHeader] = '$protocolVersion'
+      ..headers[keyGenerationHeader] = '${_keyGeneration()}';
     if (payload != null) {
       request.headers['content-type'] = 'application/json';
       request.body = jsonEncode(payload);
@@ -1374,10 +1578,24 @@ class HttpSyncApi implements SyncApi {
       final minimum = body['minimum'];
       throw SyncOutdatedException(minimum is int ? minimum : protocolVersion);
     }
+    if (status == 409) {
+      final body = _decode(response.body);
+      final generation = body['generation'];
+      if (body['error'] == 'keys-changed' && generation is int) {
+        throw SyncKeysChangedException(
+          generation,
+          KeyChange.fromJson(body['reset']),
+        );
+      }
+    }
     if (status == 404 && absentIsNull) return const {};
     // 429 and 5xx are the server asking for patience, not a bad request.
     if (status == 429 || status >= 500) {
-      throw SyncTransientException('server returned $status', answered: true);
+      throw SyncTransientException(
+        'server returned $status',
+        answered: true,
+        status: status,
+      );
     }
     if (status >= 400) {
       final body = _decode(response.body);

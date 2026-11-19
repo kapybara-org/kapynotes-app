@@ -50,7 +50,8 @@ class SharingPane extends StatelessWidget {
                       'Finish your profile before sharing notes.',
                     AccountState.needsPassphrase =>
                       'Save your passphrase to start sharing notes.',
-                    AccountState.locked => 'Unlock your notes to share them.',
+                    AccountState.locked || AccountState.keysChanged =>
+                      'Unlock your notes to share them.',
                     _ =>
                       'Sharing becomes available once your notes are '
                           'unlocked.',
@@ -397,21 +398,21 @@ class _JoinRow extends StatelessWidget {
                 filled: true,
                 fillColor: palette.surfaceBackground,
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                   borderSide: BorderSide(
                     color: palette.controlBorder,
-                    width: 0.5,
+                    width: AppHairline.of(context),
                   ),
                 ),
                 disabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                   borderSide: BorderSide(
                     color: palette.controlBorder,
-                    width: 0.5,
+                    width: AppHairline.of(context),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                   borderSide: BorderSide(
                     color: palette.selectedBorder,
                     width: 0.75,
