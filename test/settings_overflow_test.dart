@@ -127,6 +127,23 @@ Map<String, Size> _windows(TargetPlatform platform) => {
       : LayoutPrefs.minimumWindowSize,
 };
 
+/// Every width from the smallest window up to 1200, at the smallest height:
+/// the least room a row has to fit its heading and its trailing control.
+const _sweptWidths = [
+  520.0,
+  580.0,
+  640.0,
+  700.0,
+  760.0,
+  820.0,
+  880.0,
+  940.0,
+  1000.0,
+  1060.0,
+  1130.0,
+  1200.0,
+];
+
 void main() {
   for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
     for (final MapEntry(key: name, value: size) in _windows(platform).entries) {
@@ -154,6 +171,30 @@ void main() {
         overflows.expectNone();
       });
     }
+  }
+
+  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+    testWidgets(
+      'on ${platform.name}, no section overflows at any width from the '
+      'smallest window up to 1200',
+      (tester) async {
+        final overflows = _Overflows();
+        for (final width in _sweptWidths) {
+          final size = Size(width, LayoutPrefs.minimumWindowSize.height);
+          for (final section in SettingsSection.values) {
+            await _open(
+              tester,
+              platform: platform,
+              size: size,
+              section: section,
+            );
+            await tester.tapAt(Offset.zero);
+            await tester.pumpAndSettle();
+            overflows.expectNone('${section.name} at $size');
+          }
+        }
+      },
+    );
   }
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {

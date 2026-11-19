@@ -2547,7 +2547,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     // but a margin of itself.
     final width = math.min(_dialogWidth, media.width - 48);
     final height = math.min(_dialogHeight, media.height - 48);
-    final paned = AppPlatform.isWindows || width >= _railBreakpoint;
+    // The rail needs the room a wide dialog has; a Windows window resized
+    // narrow stacks its sections like any other.
+    final paned = width >= _railBreakpoint;
     const corners = BorderRadius.all(Radius.circular(AppRadii.dialog));
 
     return Dialog(
