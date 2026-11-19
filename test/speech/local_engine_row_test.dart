@@ -97,7 +97,7 @@ LocalSpeechModel _tinyModel(Map<String, List<int>> files) => LocalSpeechModel(
     for (final entry in files.entries)
       LocalModelFile(
         name: entry.key,
-        url: 'https://models.test/${entry.key}',
+        urls: ['https://models.test/${entry.key}'],
         bytes: entry.value.length,
         sha256: sha256.convert(entry.value).toString(),
       ),
