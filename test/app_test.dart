@@ -5759,6 +5759,31 @@ void main() {
       expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
     });
 
+    testWidgets('Drawings is thumbnail cards, two to a row', (tester) async {
+      for (final title in ['Garden plan', 'Living room', 'App wireframe']) {
+        final drawing = notes.create();
+        notes.setDrawingMode(drawing.id, drawing: true);
+        notes.updateDrawing(drawing.id, NoteDrawing.empty, title: title);
+      }
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Search drawings'), findsOneWidget);
+      final cards = find.byType(DrawingCardFace);
+      expect(cards, findsNWidgets(3));
+      expect(
+        tester.getTopLeft(cards.at(0)).dy,
+        tester.getTopLeft(cards.at(1)).dy,
+      );
+      expect(tester.getSize(cards.first).width, (393 - 40 - 12) / 2);
+
+      await tester.tap(find.text('Living room'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('page-back')), findsOneWidget);
+    });
+
     testWidgets('a tag pill narrows the list, and a second tap widens it', (
       tester,
     ) async {

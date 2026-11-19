@@ -1215,6 +1215,26 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
+    testWidgets('phone drawings, ${brightness.name}', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(393, 852),
+        brightness: brightness,
+        platform: TargetPlatform.iOS,
+        withDrawings: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/phone_drawings_${brightness.name}.png'),
+      );
+    });
+  }
+
+  for (final brightness in Brightness.values) {
     testWidgets('phone tasks, ${brightness.name}', (tester) async {
       await pumpForGolden(
         tester,

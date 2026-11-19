@@ -3724,6 +3724,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onTabChanged: _setSidebarTab,
     searchPlaceholder: _kapyAiOn
         ? _searchPlaceholder
+        : _space == LibrarySpace.drawings
+        ? 'Search drawings'
         : _taskController == null
         ? 'Search notes'
         : 'Search notes and tasks',

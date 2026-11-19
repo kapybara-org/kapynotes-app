@@ -532,6 +532,8 @@ extension on Sidebar {
     final groups = _noteGroups;
     final pinned = _shownPinned(groups);
     final rows = <WidgetBuilder>[];
+    // A phone's Drawings is all thumbnails, two to a row.
+    final cards = this.cards || (phone && drawings);
     final style = switch ((cards, drawings)) {
       (true, true) => NoteRowStyle.drawingCard,
       (true, false) => NoteRowStyle.card,
