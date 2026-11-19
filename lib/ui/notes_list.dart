@@ -223,14 +223,17 @@ Border? _cardBorder(
 class _PickBox extends StatelessWidget {
   const _PickBox({required this.checked});
 
+  /// Its side, which a card's title leaves room for.
+  static const double size = 16;
+
   final bool checked;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      width: 16,
-      height: 16,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: checked ? palette.selectedBorder : null,
         border: checked
@@ -352,15 +355,20 @@ class NoteCardFace extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          note.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _handwritten(
-                            14,
-                            18,
-                            FontWeight.w500,
-                            palette.cardTitle,
+                        Padding(
+                          padding: EdgeInsets.only(
+                            right: picking == null ? 0 : _PickBox.size + 6,
+                          ),
+                          child: Text(
+                            note.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _handwritten(
+                              14,
+                              18,
+                              FontWeight.w500,
+                              palette.cardTitle,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 3),

@@ -4,6 +4,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_service.dart' show SyncStatus;
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/draw/note_mode_switch.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
@@ -46,7 +47,7 @@ void main() {
     VoidCallback? onShowList,
     VoidCallback? onCreate,
     Widget? assistant,
-    bool keepOnTop = false,
+    Widget? center,
   }) => PageToolbar(
     space: 'My notes',
     section: section,
@@ -61,12 +62,10 @@ void main() {
     members: members,
     currentUserId: 'me',
     onShare: () {},
-    pinned: true,
-    onTogglePin: () {},
-    onToggleKeepOnTop: keepOnTop ? () {} : null,
     assistant: assistant,
     moreActions: moreActions,
     onMore: onMore ?? (_) {},
+    center: center,
   );
 
   final showList = find.byKey(const ValueKey('page-show-list'));
@@ -163,7 +162,7 @@ void main() {
     await tester.pumpWidget(harness(toolbar(listVisible: false), width: 420));
 
     expect(saved, findsNothing);
-    for (final key in ['page-share', 'page-pin', 'page-more']) {
+    for (final key in ['page-share', 'page-more']) {
       expect(find.byKey(ValueKey(key)), findsOneWidget);
     }
     expect(tester.takeException(), isNull);
@@ -306,7 +305,6 @@ void main() {
               listVisible: listVisible,
               members: crowd,
               assistant: const SizedBox(width: 38, height: 32),
-              keepOnTop: true,
             ),
             width: width,
           ),
@@ -319,6 +317,52 @@ void main() {
           reason: 'More left the bar at $width',
         );
       }
+    });
+
+    testWidgets('leave Write | Draw the centre, or it steps aside rather than '
+        'run over them', (tester) async {
+      addTearDown(tester.view.reset);
+      tester.view.devicePixelRatio = 1;
+      final semantics = tester.ensureSemantics();
+      final modeSwitch = find.byKey(const ValueKey('note-mode-switch'));
+      final center = NoteModeSwitch(drawing: false, onChanged: (_) {});
+
+      tester.view.physicalSize = const Size(1440, 300);
+      await tester.pumpWidget(
+        harness(toolbar(members: members, center: center), width: 1440),
+      );
+      expect(modeSwitch.hitTestable(), findsOneWidget);
+      expect(find.semantics.byLabel('Note type'), findsOne);
+      expect(
+        tester.getCenter(modeSwitch).dx,
+        closeTo(
+          tester.getCenter(find.byKey(const ValueKey('page-toolbar'))).dx,
+          0.01,
+        ),
+      );
+
+      // The list's own buttons, the people in the note and Kapy AI leave a
+      // narrow bar no room for it.
+      tester.view.physicalSize = const Size(420, 300);
+      await tester.pumpWidget(
+        harness(
+          toolbar(
+            listVisible: false,
+            members: members,
+            assistant: const SizedBox(width: 38, height: 32),
+            center: center,
+          ),
+          width: 420,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(modeSwitch.hitTestable(), findsNothing);
+      expect(find.semantics.byLabel('Note type'), findsNothing);
+      expect(
+        tester.getTopRight(find.byKey(const ValueKey('page-more'))).dx,
+        lessThanOrEqualTo(420),
+      );
+      semantics.dispose();
     });
 
     for (final brightness in [Brightness.dark, Brightness.light]) {

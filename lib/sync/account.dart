@@ -306,6 +306,69 @@ class Account extends ChangeNotifier {
     () => _auth.resetPassword(email: email, code: code, password: password),
   );
 
+  /// Whether the account has a password, as the server said for this
+  /// session. Null until it has said.
+  bool? get hasPassword =>
+      _passwordAnswer?.token == _token ? _passwordAnswer?.has : null;
+  ({String token, bool has})? _passwordAnswer;
+
+  /// Asks the server whether the account has a password. When it can't be
+  /// asked, the last answer stands.
+  Future<void> checkPassword() async {
+    final token = _token;
+    if (token == null) return;
+    final has = await _auth.hasPassword(token);
+    if (has == null || _token != token || hasPassword == has) return;
+    _passwordAnswer = (token: token, has: has);
+    notifyListeners();
+  }
+
+  /// Emails the code [setPassword] needs to this account's address. Null
+  /// when it is on its way.
+  Future<PasswordProblem?> sendPasswordCode() async {
+    final email = _user?.email;
+    if (_token == null || email == null) return PasswordProblem.offline;
+    return _passwordProblem(await _auth.requestPasswordReset(email));
+  }
+
+  /// Creates the password, or replaces it, with the emailed code. The reset
+  /// carries this device's session, so the server keeps it and ends every
+  /// other session of the account. Null when it is done.
+  Future<PasswordProblem?> setPassword({
+    required String code,
+    required String password,
+  }) async {
+    final token = _token;
+    final email = _user?.email;
+    if (token == null || email == null) return PasswordProblem.offline;
+    final problem = _passwordProblem(
+      await _auth.resetPassword(
+        email: email,
+        code: code.replaceAll(RegExp(r'\s'), ''),
+        password: password,
+        token: token,
+      ),
+    );
+    if (problem == null && _token == token) {
+      _passwordAnswer = (token: token, has: true);
+      notifyListeners();
+    }
+    return problem;
+  }
+
+  static PasswordProblem? _passwordProblem(AuthResult result) =>
+      switch (result) {
+        AuthCodeSent() || AuthPasswordChanged() => null,
+        AuthRejected(status: 429) => PasswordProblem.tooSoon,
+        AuthRejected(code: 'INVALID_OTP') => PasswordProblem.wrongCode,
+        AuthRejected(code: 'OTP_EXPIRED') => PasswordProblem.codeExpired,
+        AuthRejected(code: 'TOO_MANY_ATTEMPTS') => PasswordProblem.tooManyTries,
+        AuthRejected(code: 'PASSWORD_TOO_SHORT') => PasswordProblem.tooShort,
+        AuthRejected(code: 'PASSWORD_TOO_LONG') => PasswordProblem.tooLong,
+        AuthRejected() => PasswordProblem.refused,
+        _ => PasswordProblem.offline,
+      };
+
   /// Runs something whose only outcomes are "it worked" and "here is why not".
   Future<bool> _reportable(Future<AuthResult> Function() attempt) async {
     _lastError = null;
@@ -1370,6 +1433,18 @@ class RecoveryKey {
 
 /// Why an emailed code did not come, or did not work.
 enum KeyCodeProblem { offline, tooSoon, wrong, expired, tooManyTries }
+
+/// Why a password couldn't be created or changed from Settings.
+enum PasswordProblem {
+  offline,
+  tooSoon,
+  wrongCode,
+  codeExpired,
+  tooManyTries,
+  tooShort,
+  tooLong,
+  refused,
+}
 
 /// A key change sealed and ready to send. Built once, so a retry after a
 /// dropped connection sends exactly the same thing — and can tell, from the

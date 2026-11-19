@@ -92,6 +92,16 @@ void main() {
     expect(heard, 2);
   });
 
+  test('all on an empty list picks nothing and starts nothing', () {
+    final picks = NotePicks();
+    var heard = 0;
+    picks.addListener(() => heard++);
+    picks.all(const []);
+    expect(picks.on, isFalse);
+    expect(picks.ids, isEmpty);
+    expect(heard, 0);
+  });
+
   test("start is the archive's Select: on, with nothing picked; clear ends "
       'it', () {
     final picks = NotePicks()..start();
