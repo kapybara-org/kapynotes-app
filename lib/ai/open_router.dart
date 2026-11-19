@@ -19,7 +19,7 @@ class OpenRouterAccount implements AnswerEngine {
   final SecureStore _secrets;
   final http.Client _client;
 
-  static const String _keyEntry = 'kapynotes.openRouterKey';
+  static const String keyEntry = 'kapynotes.openRouterKey';
   static final Uri _api = Uri.parse('https://openrouter.ai/api/v1/');
 
   /// What the picker offers, by name: a short list rather than OpenRouter's
@@ -71,7 +71,7 @@ class OpenRouterAccount implements AnswerEngine {
   /// Reads the saved key. Keychain only: which models OpenRouter still
   /// lists is asked when there is a reason to, not at launch.
   Future<void> load() async {
-    _key = await _secrets.read(_keyEntry);
+    _key = await _secrets.read(keyEntry);
   }
 
   /// Keeps [key] once OpenRouter has accepted it. False when it was
@@ -98,7 +98,7 @@ class OpenRouterAccount implements AnswerEngine {
           (response.statusCode == 401 || response.statusCode == 403);
       return false;
     }
-    await _secrets.write(_keyEntry, trimmed);
+    await _secrets.write(keyEntry, trimmed);
     _key = trimmed;
     _rejected = false;
     await refreshModels();
@@ -106,7 +106,7 @@ class OpenRouterAccount implements AnswerEngine {
   }
 
   Future<void> remove() async {
-    await _secrets.delete(_keyEntry);
+    await _secrets.delete(keyEntry);
     _key = null;
     _rejected = false;
     _models = curated;

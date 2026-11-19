@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'ai/kapy_chat_book.dart';
+import 'ai/open_router.dart';
 import 'app.dart';
 import 'billing/billing.dart';
 import 'billing/billing_api.dart';
@@ -76,6 +77,14 @@ Future<void> main() async {
   final tags = TagStore(store);
   // Kapy AI's chats: on this device, and synced while signed in with Pro.
   final chats = KapyChatBook(store, ready: () => notes.isLoaded);
+  if (AppPlatform.isIOS) {
+    unawaited(
+      moveEntries(defaultSecureStore(), [
+        ...KeyStore.entries,
+        OpenRouterAccount.keyEntry,
+      ]),
+    );
+  }
   final account = kSyncEnabled
       ? Account(
           auth: HttpAuthApi(baseUrl: Uri.parse(kApiBaseUrl)),
