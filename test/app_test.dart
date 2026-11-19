@@ -34,7 +34,6 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
-import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
@@ -3950,8 +3949,8 @@ void main() {
       expect(openNoteBody(tester), 'Garden tools\nrake and twine');
     });
 
-    testWidgets('a phone keeps Drawings open from search as the keyboard comes '
-        'up and the phone turns', (tester) async {
+    testWidgets('a phone keeps Drawings open as the keyboard comes up and the '
+        'phone turns', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       store.data['notes.v1'] = [
@@ -3970,25 +3969,14 @@ void main() {
         },
       ];
       await pumpApp(tester, size: const Size(420, 800));
-      Future<Set<String>> listed() async {
-        final page = tester.firstState<ScaffoldState>(find.byType(Scaffold));
-        if (!page.isDrawerOpen) {
-          await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
-          await tester.pumpAndSettle();
-        }
-        return titles(tester).toSet();
-      }
+      await showNotesList(tester);
+      Future<Set<String>> listed() async => titles(tester).toSet();
 
-      // Phone-only until Phone v2's Drawings tab: Notes keeps the drawings.
-      expect(await listed(), {'Groceries', 'Floor plan'});
-      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      // Drawings live in Drawings, as they do on a window.
+      await tester.tap(find.byKey(const ValueKey('bar-notes')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: find.byType(CommandMenu),
-          matching: find.text('Drawings'),
-        ),
-      );
+      expect(await listed(), {'Groceries'});
+      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
       await tester.pumpAndSettle();
       expect(await listed(), {'Floor plan'});
       expect(

@@ -1258,6 +1258,19 @@ void main() {
         await matches('notes_home');
       });
 
+      testWidgets('phone notes, two picked, $name', (tester) async {
+        await pumpPhone(tester);
+        await tapAndSettle(tester, 'page-back');
+        final rows = find.byType(NoteRow);
+        await tester.longPress(rows.last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Select'));
+        await tester.pumpAndSettle();
+        await tester.tap(rows.first);
+        await tester.pumpAndSettle();
+        await matches('notes_picked');
+      });
+
       testWidgets('phone notes filter, $name', (tester) async {
         await pumpPhone(tester);
         for (final tag in ['Work', 'Travel', 'Money']) {

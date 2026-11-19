@@ -3751,29 +3751,42 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _buildPhone(BuildContext context) {
     final selected = _shownNote(_selectedId);
     final pageOpen = _phonePageOpen && selected != null && !_tasksMode;
+    // Back, from Android's gesture or iOS's edge swipe, goes up one level:
+    // the note's page closes, then the picks let go, and only then does the
+    // app itself leave.
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: Theme.of(context).brightness == Brightness.dark
           ? SystemUiOverlayStyle.light
           : SystemUiOverlayStyle.dark,
-      child: NavigatorPopHandler(
-        enabled: pageOpen,
-        onPopWithResult: (_) => _phoneNavigator.currentState?.maybePop(),
-        child: Navigator(
-          key: _phoneNavigator,
-          pages: [
-            MaterialPage(key: _phoneListPage, child: _phoneList()),
-            if (pageOpen)
-              MaterialPage(
-                // One page whichever note is on it: a note opened over
-                // another replaces it in place rather than pushing a second
-                // editor beside the first.
-                key: const ValueKey('phone-page'),
-                child: _phonePage(selected),
-              ),
-          ],
-          onDidRemovePage: (page) {
-            if (page.key != _phoneListPage) _closePhonePage();
+      child: ListenableBuilder(
+        listenable: _picks,
+        builder: (context, _) => PopScope(
+          canPop: !pageOpen && !_picks.on,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            if (pageOpen) {
+              _phoneNavigator.currentState?.maybePop();
+            } else {
+              _picks.clear();
+            }
           },
+          child: Navigator(
+            key: _phoneNavigator,
+            pages: [
+              MaterialPage(key: _phoneListPage, child: _phoneList()),
+              if (pageOpen)
+                MaterialPage(
+                  // One page whichever note is on it: a note opened over
+                  // another replaces it in place rather than pushing a second
+                  // editor beside the first.
+                  key: const ValueKey('phone-page'),
+                  child: _phonePage(selected),
+                ),
+            ],
+            onDidRemovePage: (page) {
+              if (page.key != _phoneListPage) _closePhonePage();
+            },
+          ),
         ),
       ),
     );

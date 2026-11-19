@@ -2145,7 +2145,8 @@ class NoteRow extends StatefulWidget {
   final bool checked;
 
   /// Picks the note or lets it go while notes are being picked: what any
-  /// click on it does then, with ⌘ or Ctrl or without.
+  /// click on it does then, with ⌘ or Ctrl or without. On a phone its menu's
+  /// Select starts picking with it.
   final VoidCallback? onToggleChecked;
 
   /// A click with ⌘ (Ctrl off a Mac) while nothing is picked.
@@ -2219,6 +2220,12 @@ class _NoteRowState extends State<NoteRow> {
         ? widget.archiveShortcut
         : null;
     return [
+      if (AppPlatform.isMobile && widget.onToggleChecked != null)
+        const KapyMenuAction(
+          value: 'select',
+          label: 'Select',
+          icon: KapyIcons.checklistRounded,
+        ),
       if (_canOpenToSide)
         KapyMenuAction(
           value: 'open-side',
@@ -2405,6 +2412,7 @@ class _NoteRowState extends State<NoteRow> {
       if (choice != null) widget.onPickedAction?.call(choice);
       return;
     }
+    if (choice == 'select') widget.onToggleChecked?.call();
     if (choice == 'archive') widget.onArchive?.call();
     if (choice == 'restore') widget.onRestore?.call();
     if (choice == 'hide') widget.onHide?.call();

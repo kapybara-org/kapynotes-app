@@ -49,11 +49,12 @@ Future<void> _pump(
   WidgetTester tester, {
   List<String> bodies = const ['First', 'Second', 'Third', 'Fourth'],
   TargetPlatform platform = TargetPlatform.macOS,
+  Size size = const Size(1100, 760),
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
   store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
-  tester.view.physicalSize = const Size(1100, 760);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await notes.load();
@@ -73,6 +74,26 @@ Future<void> _pump(
       hiddenNotesGate: _OpenGate(),
     ),
   );
+  await tester.pumpAndSettle();
+}
+
+/// The app on a phone with the notes list open: a note's page has a back
+/// button, and the list is under it.
+Future<void> _pumpPhone(WidgetTester tester, TargetPlatform platform) async {
+  await _pump(tester, platform: platform, size: const Size(390, 760));
+  final back = find.byKey(const ValueKey('page-back'));
+  if (back.evaluate().isNotEmpty) {
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+  }
+}
+
+/// Starts picking on a phone the way a reader does: Select in the menu a
+/// long press on [title] opens.
+Future<void> _selectFromMenu(WidgetTester tester, String title) async {
+  await tester.longPress(_row(title));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(ValueKey('select-note-${_note(title).id}')));
   await tester.pumpAndSettle();
 }
 
@@ -508,6 +529,79 @@ void main() {
     await _click(tester, 'First', holding: LogicalKeyboardKey.metaLeft);
     expect(_picked(tester), isNotEmpty);
     await _show(tester, NotesShow.all);
+    expect(_picked(tester), isEmpty);
+  });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on a phone, Select in a long press menu picks the note, '
+        'taps pick more or let go, and the bar archives them '
+        '(${platform.name})', (tester) async {
+      await _pumpPhone(tester, platform);
+      await _selectFromMenu(tester, 'Second');
+      expect(_picked(tester), ['Second']);
+      expect(find.text('1 selected'), findsOneWidget);
+
+      await _click(tester, 'Fourth');
+      await _click(tester, 'First');
+      await _click(tester, 'First');
+      expect(_picked(tester), ['Fourth', 'Second']);
+      expect(_row('Third').hitTestable(), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('picked-archive')));
+      await tester.pumpAndSettle();
+      expect(_note('Fourth').isArchived, isTrue);
+      expect(_note('Second').isArchived, isTrue);
+      expect(_note('Third').isArchived, isFalse);
+      expect(find.text('2 selected'), findsNothing);
+      expect(_picked(tester), isEmpty);
+    });
+
+    testWidgets('on a phone, a long press while picking opens the menu for '
+        'every picked note, and deleting them asks with how many '
+        '(${platform.name})', (tester) async {
+      await _pumpPhone(tester, platform);
+      await _selectFromMenu(tester, 'Second');
+      await tester.longPress(_row('Third'));
+      await tester.pumpAndSettle();
+      expect(_picked(tester), ['Third', 'Second']);
+      final delete = _item('delete', _note('Third'));
+      expect(_label(tester, delete), 'Delete 2 notes…');
+
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete 2 notes?'), findsOneWidget);
+      expect(find.byKey(const ValueKey('delete-stop-asking')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(
+        notes.allNotes.map((note) => note.title),
+        unorderedEquals(['First', 'Fourth']),
+      );
+    });
+  }
+
+  testWidgets('on Android, Back lets go of the picks and leaves the list '
+      'open, and Done selecting lets go of them too', (tester) async {
+    // The pop reaches the root, where the phone keeps Back's order.
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    await _pumpPhone(tester, TargetPlatform.android);
+    await _selectFromMenu(tester, 'Second');
+    expect(find.text('1 selected'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(_picked(tester), isEmpty);
+    expect(find.text('1 selected'), findsNothing);
+    expect(_row('Third').hitTestable(), findsOneWidget);
+
+    await _selectFromMenu(tester, 'Third');
+    expect(find.text('1 selected'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pick-done')));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsNothing);
     expect(_picked(tester), isEmpty);
   });
 }
