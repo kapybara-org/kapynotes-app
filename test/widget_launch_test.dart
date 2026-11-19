@@ -39,8 +39,9 @@ Future<void> pumpLaunch(
   String? action,
   VoiceRecordingController? recording,
   LostImageRetriever? lostImageRetriever,
+  Duration answerAfter = Duration.zero,
 }) async {
-  stubLaunchIntent(action);
+  stubLaunchIntent(action, after: answerAfter);
   tester.view.physicalSize = const Size(400, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -168,6 +169,49 @@ void main() {
     // Through `runAsync` because cancelling touches the filesystem, and real
     // I/O never completes inside the fake-async zone `testWidgets` runs in.
     await tester.runAsync(recording.cancel);
+  });
+
+  group('an answer that misses the launch deadline (KAP-148)', () {
+    const late = Duration(milliseconds: 900);
+
+    testWidgets('still starts Dictate in the note it opened', (tester) async {
+      final recording = VoiceRecordingController(
+        recorder: _SilentRecorder(),
+        tempDirectory: Directory.systemTemp,
+      );
+      addTearDown(recording.dispose);
+
+      await pumpLaunch(
+        tester,
+        action: 'dictate',
+        recording: recording,
+        answerAfter: late,
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      expect(notes.notes.single.id, 'last');
+      expect(recording.isRecording, isTrue);
+      expect(recording.session!.noteId, 'last');
+      await tester.runAsync(recording.cancel);
+    });
+
+    testWidgets('still opens the camera for Capture', (tester) async {
+      await pumpLaunch(tester, action: 'capture', answerAfter: late);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      expect(imageRequests, ['camera']);
+    });
+
+    testWidgets('a late Write leaves the open note as it is', (tester) async {
+      await pumpLaunch(tester, action: 'continueWriting', answerAfter: late);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      expect(notes.notes.single.id, 'last');
+      expect(imageRequests, isEmpty);
+    });
   });
 
   testWidgets('a Dictate tap with no microphone opens the note anyway', (

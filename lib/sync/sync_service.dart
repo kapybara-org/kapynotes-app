@@ -681,6 +681,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       } else if (_socket == null || _socketDown) {
         await _pullAllOverHttp();
       }
+      await _finishLostUnshares();
       _reconcileDirty();
       await _drain();
       await _tasks?.run();
@@ -2664,6 +2665,92 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         );
       }
     }
+  }
+
+  /// Each owned space's count of live notes when it was last looked through
+  /// for un-shares that never went up.
+  final Map<String, int> _lostUnsharesChecked = {};
+
+  /// Finishes un-shares that builds 1.29 to 1.33 lost (KAP-110): the note
+  /// is back in this account's own notes, but the move never went up, so the
+  /// server still holds it live in the shared space and everyone there keeps
+  /// it. Its record names the space still, as 1.33 leaves it, or home. The
+  /// space's count of live notes running ahead of the notes this device holds
+  /// in it is the sign, and the space's note keys name what the server holds
+  /// there. A move already
+  /// queued is left to go on its own.
+  Future<void> _finishLostUnshares() async {
+    final personal = _keyring.personal;
+    if (personal == null) return;
+    for (final space in _keyring.spaces) {
+      if (!space.isTeam || !space.isOwner) continue;
+      if (_needsPro.contains(space.id) || !_caughtUp.contains(space.id)) {
+        continue;
+      }
+      if (_notes.notesIn(space.id).length >= space.liveNotes) continue;
+      if (_lostUnsharesChecked[space.id] == space.liveNotes) continue;
+      try {
+        await _finishLostUnsharesIn(space, personal.id);
+      } on SyncRefusedException catch (error) {
+        debugPrint('KapyNotes: un-shares in ${space.id}: ${error.code}');
+      } on SyncTransientException catch (error) {
+        debugPrint('KapyNotes: un-shares in ${space.id}: ${error.message}');
+      }
+    }
+  }
+
+  Future<void> _finishLostUnsharesIn(Space space, String personalId) async {
+    bool lost(String? noteId) {
+      final note = noteId == null ? null : _notes.byId(noteId);
+      final record = noteId == null ? null : _docs.get(noteId);
+      return note != null &&
+          record != null &&
+          note.spaceId == null &&
+          (record.spaceId == personalId || record.spaceId == space.id);
+    }
+
+    final rows = await _api.fetchNoteKeys(space.id);
+    final candidates = [
+      for (final row in rows)
+        if (lost(row.noteId)) row.noteId!,
+    ];
+    // Something on its way is looked at again on a later pass, after it has
+    // landed: a move of this device's own still queued, or the space's log or
+    // this account's own running ahead of this device. A note another of this
+    // account's devices has just shared into the space looks lost until both
+    // its seed and the marker it left at home arrive here, and must not be
+    // taken straight back. The server writes the two together.
+    var busy = false;
+    if (candidates.isNotEmpty) {
+      for (final log in [space.id, personalId]) {
+        final ahead = await _api.pullOps(
+          space: log,
+          after: _state.cursorFor(log),
+          limit: 1,
+        );
+        if (!ahead.isEmpty) busy = true;
+      }
+    }
+    for (final noteId in candidates) {
+      if (busy) break;
+      final note = _notes.byId(noteId);
+      final record = _docs.get(noteId);
+      if (!lost(noteId)) continue;
+      if (note!.isDirty || record!.hasPending) {
+        busy = true;
+        continue;
+      }
+      debugPrint('KapyNotes: finishing an un-share that never went up');
+      record.spaceId = space.id;
+      // Builds up to 1.30 that hold the note in the space take a seed with
+      // nothing new in it for no change, and the space's delete marker after
+      // it for a delete. The seed always carries a change, so they bring the
+      // note home before the marker comes.
+      record.doc.restamp(note.createdAt, _now());
+      _reconcileInto(record, note, personalId);
+      _docs.markDirty(noteId);
+    }
+    if (!busy) _lostUnsharesChecked[space.id] = space.liveNotes;
   }
 
   /// Each space's list of the notes this account took out of its own notes,

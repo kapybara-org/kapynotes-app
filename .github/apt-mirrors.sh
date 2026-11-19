@@ -2,8 +2,11 @@
 # Gives apt on Ubuntu a fallback list of mirrors through mirror+file:, so a
 # host that fails or stalls moves apt on to the next one instead of failing
 # the job: the Azure mirror GitHub's runners use, Ubuntu's own host, and an
-# independent mirror. The archive and security pockets both come from the
-# list, and apt retries each file. Runs as root, on a runner or in a
+# independent mirror. The priorities keep apt on the first that works;
+# without them apt spreads files across all three, and an index from one
+# mirror with package lists from another that is mid-sync hung apt-get
+# update for 30 minutes. The archive and security pockets both come from
+# the list, and apt retries each file. Runs as root, on a runner or in a
 # container; on Debian it sets only the retries, and without apt it does
 # nothing.
 set -eu
@@ -23,7 +26,11 @@ case "$(dpkg --print-architecture)" in
     set -- http://azure.ports.ubuntu.com/ubuntu-ports/ http://ports.ubuntu.com/ubuntu-ports/ \
       http://mirrors.mit.edu/ubuntu-ports/ ;;
 esac
-printf '%s\n' "$@" > /etc/apt/apt-mirrors.txt
+i=0
+for uri; do
+  i=$((i + 1))
+  printf '%s\tpriority:%d\n' "$uri" "$i"
+done > /etc/apt/apt-mirrors.txt
 
 for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
   [ -f "$f" ] || continue

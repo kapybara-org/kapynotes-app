@@ -122,6 +122,24 @@ void main() {
       expect(_line('meeting at five'), isNull);
     });
 
+    test('a spelled amount after not or or is not read', () {
+      expect(Phrases.spoken('not one dollar'), isNull);
+      expect(
+        Phrases.spoken('five rupees or ten rupees'),
+        '5 rupees or ten rupees',
+      );
+      expect(Phrases.spoken('नहीं पचास रुपये'), isNull);
+      expect(_line('not one dollar'), isNull);
+    });
+
+    test('a minor unit after and still joins its major', () {
+      expect(_line('chai twenty rupees and fifty paise'), '20.50 INR');
+      expect(
+        Phrases.spoken('ten dollars and fifteen dollars'),
+        '10 dollars and fifteen dollars',
+      );
+    });
+
     test('a weight in pounds is not money', () {
       expect(_line('I weigh seventy pounds'), isNull);
       expect(Phrases.spoken('I weigh seventy pounds'), isNull);
