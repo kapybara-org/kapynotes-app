@@ -777,9 +777,6 @@ void main() {
     ) async {
       final desk = await editCell(tester);
       final frame = frameOf(desk);
-      final grip = tester.getRect(
-        find.byKey(const ValueKey('table-column-grip-0')),
-      );
       // The grip's chip is what draws. Its target is larger, for a finger,
       // and only the chip of it may sit above the table.
       final chip = tester.getRect(
