@@ -54,7 +54,11 @@ class TaskDetailsIcon extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: Tooltip(
-        message: details.hasMedia ? 'Has a picture' : 'Has details',
+        message: details.hasVideo
+            ? 'Has a picture or video'
+            : details.hasPicture
+            ? 'Has a picture'
+            : 'Has details',
         child: KapyIcon(
           details.hasMedia
               ? KapyIcons.imageOutlined
