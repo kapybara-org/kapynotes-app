@@ -305,6 +305,15 @@ void main() {
       final box = find.byKey(const ValueKey('phone-details-box'));
       expect(tester.widget<GestureDetector>(box).onTap, isNull);
       expect(
+        find.descendant(
+          of: box,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
         tester
             .widget<Semantics>(
               find.ancestor(of: box, matching: find.byType(Semantics)).first,
@@ -318,6 +327,36 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.allNotes.first.body, before);
       expect(find.text('Open in note'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+    },
+  );
+
+  testWidgets(
+    'on a note shared to view only, a phone row\'s box is faint and takes no tap',
+    (tester) async {
+      await pumpPhone(tester, editable: false);
+      final box = find.byKey(
+        ValueKey('phone-task-box-${tasks.read().open.first.id}'),
+      );
+      expect(tester.widget<GestureDetector>(box).onTap, isNull);
+      expect(
+        tester
+            .widget<Semantics>(
+              find.ancestor(of: box, matching: find.byType(Semantics)).first,
+            )
+            .properties
+            .onTap,
+        isNull,
+      );
+      expect(
+        find.descendant(
+          of: box,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+          ),
+        ),
+        findsOneWidget,
+      );
       await tester.pump(const Duration(seconds: 3));
     },
   );

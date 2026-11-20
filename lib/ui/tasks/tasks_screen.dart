@@ -157,7 +157,7 @@ class TasksScreenState extends State<TasksScreen> {
   /// Done on Do now, from its button or the keyboard.
   void completeDoNow() {
     final item = _doNow(_open(_tasks.read()));
-    if (item == null) return;
+    if (item == null || !_tasks.canEdit(item.note)) return;
     _resumeAfter = item.entry.position;
     unawaited(_tasks.setDone(item, done: true));
   }
@@ -358,6 +358,7 @@ class TasksScreenState extends State<TasksScreen> {
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.space) {
+      if (!_tasks.canEdit(open[index].note)) return KeyEventResult.handled;
       unawaited(_tasks.setDone(open[index], done: !open[index].line.done));
       return KeyEventResult.handled;
     }
@@ -555,7 +556,9 @@ class TasksScreenState extends State<TasksScreen> {
               item: item,
               done: done,
               label: board.isHome(item) ? null : widget.labelOf(item.note),
-              onTick: () => _tick(item, open.indexOf(item), done: !done),
+              onTick: _tasks.canEdit(item.note)
+                  ? () => _tick(item, open.indexOf(item), done: !done)
+                  : null,
               onOpen: () => _openSheet(item),
               onMark: () => _cycleMark(item),
             )
@@ -568,7 +571,9 @@ class TasksScreenState extends State<TasksScreen> {
               label: board.isHome(item) ? null : widget.labelOf(item.note),
               wash: item.id == _washId,
               onMark: () => _cycleMark(item),
-              onTick: () => unawaited(_tasks.setDone(item, done: true)),
+              onTick: _tasks.canEdit(item.note)
+                  ? () => unawaited(_tasks.setDone(item, done: true))
+                  : null,
               onOpenNote: () => widget.onOpenNote(item.note.id),
               onOpen: () => _openSheet(item),
               onKeep: () => _tasks.keep(item),
@@ -741,7 +746,9 @@ class TasksScreenState extends State<TasksScreen> {
               key: ValueKey(item.id),
               item: item,
               label: board.isHome(item) ? null : widget.labelOf(item.note),
-              onUntick: () => unawaited(_tasks.setDone(item, done: false)),
+              onUntick: _tasks.canEdit(item.note)
+                  ? () => unawaited(_tasks.setDone(item, done: false))
+                  : null,
               onOpenNote: () => widget.onOpenNote(item.note.id),
             ),
         ],
@@ -1722,7 +1729,10 @@ class _Box extends StatelessWidget {
   });
 
   final bool done;
-  final VoidCallback onPressed;
+
+  /// Null on a note shared to view only: the box is drawn faint and takes no
+  /// tap.
+  final VoidCallback? onPressed;
   final String label;
 
   @override
@@ -1733,27 +1743,31 @@ class _Box extends StatelessWidget {
       checked: done,
       label: label,
       button: true,
+      enabled: onPressed != null,
       child: InkResponse(
         onTap: onPressed,
         radius: 16,
-        child: Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: done ? accent : palette.editorBackground,
-            border: done
-                ? null
-                : Border.all(color: palette.checkboxBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+        child: Opacity(
+          opacity: onPressed == null ? lockedBoxOpacity : 1,
+          child: Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: done ? accent : palette.editorBackground,
+              border: done
+                  ? null
+                  : Border.all(color: palette.checkboxBorder, width: 1.5),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
+            ),
+            child: done
+                ? KapyIcon(
+                    KapyIcons.checkRounded,
+                    size: 14,
+                    strokeWidth: 2.2,
+                    color: palette.paperColor,
+                  )
+                : null,
           ),
-          child: done
-              ? KapyIcon(
-                  KapyIcons.checkRounded,
-                  size: 14,
-                  strokeWidth: 2.2,
-                  color: palette.paperColor,
-                )
-              : null,
         ),
       ),
     );
@@ -1792,7 +1806,7 @@ class _TaskRow extends StatefulWidget {
 
   /// A click on the mark: picks the task, makes it Do now, or clears it.
   final VoidCallback onMark;
-  final VoidCallback onTick;
+  final VoidCallback? onTick;
   final VoidCallback onOpenNote;
   final VoidCallback onOpen;
   final VoidCallback onKeep;
@@ -2002,7 +2016,7 @@ class _DoneRow extends StatelessWidget {
 
   final TaskItem item;
   final String? label;
-  final VoidCallback onUntick;
+  final VoidCallback? onUntick;
   final VoidCallback onOpenNote;
 
   @override
@@ -2126,7 +2140,9 @@ class _PhoneTaskRow extends StatelessWidget {
   final TaskItem item;
   final bool done;
   final String? label;
-  final VoidCallback onTick;
+
+  /// Null on a note shared to view only.
+  final VoidCallback? onTick;
   final VoidCallback onOpen;
   final VoidCallback onMark;
 
@@ -2195,25 +2211,28 @@ class _PhoneTaskRow extends StatelessWidget {
                       dimension: 44,
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: done ? sage : null,
-                            border: Border.all(
-                              color: done ? sage : palette.checkboxBorder,
-                              width: 1.5,
+                        child: Opacity(
+                          opacity: onTick == null ? lockedBoxOpacity : 1,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: done ? sage : null,
+                              border: Border.all(
+                                color: done ? sage : palette.checkboxBorder,
+                                width: 1.5,
+                              ),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            borderRadius: BorderRadius.circular(6),
+                            child: done
+                                ? KapyIcon(
+                                    KapyIcons.checkRounded,
+                                    size: 15,
+                                    strokeWidth: 2.2,
+                                    color: palette.paperColor,
+                                  )
+                                : null,
                           ),
-                          child: done
-                              ? KapyIcon(
-                                  KapyIcons.checkRounded,
-                                  size: 15,
-                                  strokeWidth: 2.2,
-                                  color: palette.paperColor,
-                                )
-                              : null,
                         ),
                       ),
                     ),

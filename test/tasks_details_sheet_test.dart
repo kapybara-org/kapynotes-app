@@ -333,4 +333,59 @@ void main() {
     expect(pack.groupTotal, 3);
     await settle(tester);
   });
+
+  testWidgets(
+    'on a note shared to view only, a row\'s box is faint and takes no tap',
+    (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu', editable: false);
+      await pumpScreen(tester);
+      final faint = find.descendant(
+        of: rowOf(tasks.read().open.first.id),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+        ),
+      );
+      expect(faint, findsOneWidget);
+      expect(
+        tester
+            .widget<InkResponse>(
+              find
+                  .ancestor(of: faint, matching: find.byType(InkResponse))
+                  .first,
+            )
+            .onTap,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<Semantics>(
+              find.ancestor(
+                of: faint,
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Semantics && widget.properties.checked != null,
+                ),
+              ),
+            )
+            .properties
+            .enabled,
+        isFalse,
+      );
+      await settle(tester);
+    },
+  );
+
+  testWidgets('a row\'s box on a note you can change is drawn in full', (
+    tester,
+  ) async {
+    await setUpTasks(tester, 'Errands\n☐ Hide the menu');
+    await pumpScreen(tester);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+      ),
+      findsNothing,
+    );
+    await settle(tester);
+  });
 }
