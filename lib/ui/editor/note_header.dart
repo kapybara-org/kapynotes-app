@@ -53,6 +53,21 @@ class _UnderlinePainter extends CustomPainter {
       old.word != word || old.color != color;
 }
 
+/// What Saved says, for the date line to carry while the page is too narrow
+/// to show it in its bar.
+class DateLineSaved extends InheritedWidget {
+  const DateLineSaved({super.key, required this.saved, required super.child});
+
+  /// Null while the bar has room for Saved itself.
+  final ({String label, String? tooltip})? saved;
+
+  static ({String label, String? tooltip})? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DateLineSaved>()?.saved;
+
+  @override
+  bool updateShouldNotify(DateLineSaved oldWidget) => saved != oldWidget.saved;
+}
+
 /// The row under a note's title: when it was edited, how far its checklist
 /// has got, its running total, and who else is in it or why it cannot be
 /// changed.
@@ -117,8 +132,17 @@ class NoteMetaRow extends StatelessWidget {
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done${today ? ' today' : ''}';
+    final saved = DateLineSaved.of(context);
+    final savedLabel = saved == null
+        ? null
+        : Text(saved.label, key: const ValueKey('note-saved'), style: quiet);
     final items = <Widget>[
       Text(edited, key: const ValueKey('note-edited'), style: quiet),
+      if (savedLabel != null)
+        switch (saved?.tooltip) {
+          final tooltip? => Tooltip(message: tooltip, child: savedLabel),
+          null => savedLabel,
+        },
       if (tasks > 0)
         Semantics(
           label: progress,

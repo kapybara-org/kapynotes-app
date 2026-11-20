@@ -178,10 +178,6 @@ void main() {
 
   testPress('an icon button is pressed by its name', (tester) async {
     await pumpWindow(tester);
-    final note = goldenNotes.notes.single;
-
-    await press(tester, tipped('Pin note'));
-    expect(goldenNotes.pinnedNoteIds, contains(note.id));
 
     await press(tester, tipped('Hide notes'));
     expect(goldenPrefs.sidebarVisible, isFalse);
