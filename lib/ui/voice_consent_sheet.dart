@@ -16,8 +16,8 @@ const String _audioRoute =
     'never used to train AI.';
 
 const List<String> _cloudPoints = [
-  'A cloud summary sends the transcript to the same AI service. It is not '
-      'kept, and it is never used to train AI.',
+  'A cloud summary sends the transcript to an AI service too. It is not kept, '
+      'and it is never used to train AI.',
   'Your other notes stay private.',
 ];
 
