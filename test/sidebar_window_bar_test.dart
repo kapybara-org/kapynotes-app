@@ -20,7 +20,7 @@ void main() {
   ]) {
     for (final scale in [1.0, 1.3, 2.0]) {
       testWidgets(
-        '${platform.name} at ${scale}x text: from 200 to 440 px New note '
+        '${platform.name} at ${scale}x text: from 212 to 440 px New note '
         'gives up its keycap, then its word, before the list title truncates',
         (tester) async {
           AppPlatform.debugTargetPlatformOverride = platform;
@@ -28,7 +28,7 @@ void main() {
           var labelFrom = 0.0;
           var keycap = false;
           var label = false;
-          for (var width = 200.0; width <= 440; width++) {
+          for (var width = 212.0; width <= 440; width++) {
             await tester.pumpWidget(
               MaterialApp(
                 theme: KapyTheme.light(),
@@ -98,6 +98,7 @@ void main() {
                 tester.element(button),
                 'New note',
                 shortcut: keycap ? chord : null,
+                tall: true,
               ),
               0.01,
             ),

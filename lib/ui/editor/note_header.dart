@@ -2,9 +2,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../../data/folders.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
 import '../collaborator_colors.dart';
+import '../sidebar_timestamp.dart';
 import 'note_footer.dart' show typingStatusText;
 
 /// The note title's hand-drawn underline, under its last word: Paper's clay
@@ -54,6 +56,45 @@ class _UnderlinePainter extends CustomPainter {
       old.word != word || old.color != color;
 }
 
+/// What Saved says, for the date line to carry while the page is too narrow
+/// to show it in its bar.
+class DateLineSaved extends InheritedWidget {
+  const DateLineSaved({super.key, required this.saved, required super.child});
+
+  /// Null while the bar has room for Saved itself.
+  final ({String label, String? tooltip})? saved;
+
+  static ({String label, String? tooltip})? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DateLineSaved>()?.saved;
+
+  @override
+  bool updateShouldNotify(DateLineSaved oldWidget) => saved != oldWidget.saved;
+}
+
+/// The folders the notes on the page are filed in, for the line above each
+/// note's title while the page's days have the bar's top left.
+class NoteFolders extends InheritedWidget {
+  const NoteFolders({
+    super.key,
+    required this.tree,
+    required this.onOpenFolder,
+    required super.child,
+  });
+
+  final FolderTree tree;
+
+  /// Shows a folder from the line in this tab, or with behind in a new tab
+  /// behind it.
+  final void Function(String folderId, {required bool behind}) onOpenFolder;
+
+  static NoteFolders? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<NoteFolders>();
+
+  @override
+  bool updateShouldNotify(NoteFolders oldWidget) =>
+      tree != oldWidget.tree || onOpenFolder != oldWidget.onOpenFolder;
+}
+
 /// The row under a note's title: when it was edited, how far its checklist
 /// has got, its running total, and who else is in it or why it cannot be
 /// changed.
@@ -61,6 +102,7 @@ class NoteMetaRow extends StatelessWidget {
   const NoteMetaRow({
     super.key,
     required this.edited,
+    this.day,
     this.done = 0,
     this.tasks = 0,
     this.total,
@@ -74,6 +116,10 @@ class NoteMetaRow extends StatelessWidget {
   });
 
   final String edited;
+
+  /// The day the note was given, where it has one: a pill before the time, so
+  /// the line reads "Fri 21 · 9:41" rather than the day it was last edited.
+  final DateTime? day;
 
   /// Counts what was done today, as over Tasks' one list: "3 of 13 done
   /// today".
@@ -118,8 +164,34 @@ class NoteMetaRow extends StatelessWidget {
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done${today ? ' today' : ''}';
+    final saved = DateLineSaved.of(context);
+    final savedLabel = saved == null
+        ? null
+        : Text(saved.label, key: const ValueKey('note-saved'), style: quiet);
     final items = <Widget>[
+      if (day case final day?)
+        Container(
+          key: const ValueKey('note-day-pill'),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: palette.tonalBackground,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            SidebarTimestamp.weekdayAndDay(day),
+            maxLines: 1,
+            style: strong.copyWith(
+              color: palette.tonalForeground,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
       Text(edited, key: const ValueKey('note-edited'), style: quiet),
+      if (savedLabel != null)
+        switch (saved?.tooltip) {
+          final tooltip? => Tooltip(message: tooltip, child: savedLabel),
+          null => savedLabel,
+        },
       if (tasks > 0)
         Semantics(
           label: progress,
@@ -189,16 +261,6 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
-    final facts = [
-      for (final (index, item) in items.indexed) ...[
-        if (index > 0) ...[
-          const SizedBox(width: _gap),
-          dot,
-          const SizedBox(width: _gap),
-        ],
-        item,
-      ],
-    ];
     if (AppPlatform.isMobile) {
       // Grows with the text size and the tags' 44 pt targets rather than
       // clipping them to a fixed row.
@@ -207,7 +269,27 @@ class NoteMetaRow extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(height: 16, child: Row(children: facts)),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 16),
+              child: Wrap(
+                key: const ValueKey('note-facts'),
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  for (final (index, item) in items.indexed)
+                    index == 0
+                        ? item
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: _gap),
+                              dot,
+                              const SizedBox(width: _gap),
+                              item,
+                            ],
+                          ),
+                ],
+              ),
+            ),
             const SizedBox(height: 8),
             // The tags' own targets are 44 pt tall on a phone, so the row
             // gives them the room rather than clipping them to the pill.
@@ -220,7 +302,14 @@ class NoteMetaRow extends StatelessWidget {
       height: EditorMetrics.metaRow,
       child: Row(
         children: [
-          ...facts,
+          for (final (index, item) in items.indexed) ...[
+            if (index > 0) ...[
+              const SizedBox(width: _gap),
+              dot,
+              const SizedBox(width: _gap),
+            ],
+            item,
+          ],
           if (tags case final tags?) ...[
             const SizedBox(width: _gap),
             dot,

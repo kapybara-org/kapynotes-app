@@ -31,7 +31,6 @@ import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
-import 'package:kapy_notes/ui/notes_list.dart' show NotesListHeading;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -871,6 +870,89 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
+  testWidgets('Undo after Stop sharing puts a note back with exactly its '
+      'people, and nobody gets notes meant for someone else', (tester) async {
+    const dana = 'dana@example.com';
+    Future<void> accept(Device device, String token) async {
+      try {
+        await device.sharing.acceptInvite(token);
+      } on SyncRefusedException {
+        return;
+      }
+    }
+
+    late Note forBob;
+    late Note forCarol;
+    late Note ours;
+    await tester.runAsync(() async {
+      for (final device in [alice, bob, carol]) {
+        await device.boot();
+      }
+      forBob = alice.notes.create(body: 'Only for Bob');
+      forCarol = alice.notes.create(body: 'Only for Carol');
+      ours = alice.notes.create(body: 'For all of us');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(forBob.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWith(forCarol.id, email: carol.email);
+      await carol.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWithPeople(ours.id, {
+        bob.email: SpaceRole.member,
+        carol.email: SpaceRole.viewer,
+        dana: SpaceRole.member,
+      });
+      for (final invite in [...server.outbox]) {
+        if (invite.to == bob.email) await accept(bob, invite.token);
+        if (invite.to == carol.email) await accept(carol, invite.token);
+      }
+      for (final device in [alice, bob, carol, alice]) {
+        await device.sharing.refresh();
+        await device.sync.syncNow();
+      }
+    });
+    final home = alice.notes.byId(ours.id)!.spaceId!;
+    final people = alice.sharing.audienceOf(alice.sharing.spaceById(home)!);
+    expect(people, {
+      bob.email: SpaceRole.member,
+      carol.email: SpaceRole.viewer,
+      dana: SpaceRole.member,
+    });
+
+    await openSheet(tester, alice.notes.byId(ours.id)!, alice);
+    await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.widgetWithText(FilledButton, 'Stop sharing'));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(alice.notes.byId(ours.id)!.isShared, isFalse);
+
+    await tester.tap(find.text('Undo'));
+    final again = find.textContaining('Shared again with');
+    await until(tester, () => again.evaluate().isNotEmpty);
+    expect(again, findsOneWidget);
+    await tester.runAsync(() async {
+      for (final invite in [...server.outbox]) {
+        if (invite.to == bob.email) await accept(bob, invite.token);
+        if (invite.to == carol.email) await accept(carol, invite.token);
+      }
+      for (final device in [bob, carol, bob, carol]) {
+        await device.sharing.refresh();
+        await device.sync.syncNow();
+      }
+    });
+
+    expect(alice.notes.byId(ours.id)!.spaceId, home);
+    expect(alice.sharing.audienceOf(alice.sharing.spaceById(home)!), people);
+    expect(bob.notes.byId(ours.id)?.body, 'For all of us');
+    expect(carol.notes.byId(ours.id)?.body, 'For all of us');
+    expect(bob.notes.byId(forCarol.id), isNull);
+    expect(carol.notes.byId(forBob.id), isNull);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   group('the invite link', () {
     late Note note;
     late String spaceId;
@@ -1262,34 +1344,29 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('My notes'), findsOneWidget);
+    final today = find.byKey(const ValueKey('sidebar-group-Today'));
+    expect(today, findsOneWidget);
     // Bob has not joined yet.
     expect(find.text('Waiting for user-2'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Shared'), findsOneWidget);
 
-    // Pinned, then the shared groups, then your own. Shared notes lead the two
-    // ordinary sections because they are the ones that change while you are
-    // not looking; your own are where you left them.
+    // Pinned, then the shared groups, then your own under their days. Shared
+    // notes lead because they are the ones that change while you are not
+    // looking; your own are where you left them.
     double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    final ownDay = tester.getTopLeft(today).dy;
     expect(top('Pinned'), lessThan(top('Waiting for user-2')));
-    expect(top('Waiting for user-2'), lessThan(top('My notes')));
+    expect(top('Waiting for user-2'), lessThan(ownDay));
 
     // And a pinned note is lifted out of the section it came from rather
     // than repeated in it.
     expect(find.text('Kept at hand'), findsOneWidget);
     expect(top('Kept at hand'), lessThan(top('Waiting for user-2')));
 
-    // The own-notes heading counts the rows under it, so the pinned one it
-    // has lifted out is not in this number, and no shared note ever is.
-    expect(
-      tester
-          .widget<NotesListHeading>(
-            find.byKey(const ValueKey('sidebar-notes-heading')),
-          )
-          .count,
-      1,
-    );
+    // Your own day holds your own note, and the shared one stays in its group.
+    expect(top('Shared'), lessThan(ownDay));
+    expect(top('Private'), greaterThan(ownDay));
   });
 
   testWidgets('a shared group is headed by its people and their faces, says '
@@ -1617,9 +1694,9 @@ void main() {
     }
 
     // Pins are the reader's own, so every note takes one.
-    expect(await label('pin'), 'Pin 3 notes');
+    expect(await label('pin'), 'Pin');
     // Hidden Notes are only ever the reader's own notes.
-    expect(await label('hide'), 'Move to Hidden Notes');
+    expect(await label('hide'), 'Move 1 note to Hidden Notes');
     // A viewer changes nothing, so the note they may only read is left out of
     // Archive; but it leaves their notes with the rest, as its row's does.
     expect(await label('archive'), 'Archive 2 notes');

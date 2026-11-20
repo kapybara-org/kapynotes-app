@@ -12,6 +12,7 @@ import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -27,6 +28,7 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -67,6 +69,7 @@ late LayoutPrefs goldenPrefs;
 /// the list after it is on screen.
 late NotesStore goldenNotes;
 late TagStore goldenTags;
+late FolderStore goldenFolders;
 
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
@@ -104,6 +107,9 @@ Future<void> pumpForGolden(
 
   /// Tasks on the rail, read from the notes' checklist lines.
   bool withTasks = false,
+
+  /// Notes written earlier in the week, for the page's days and their dots.
+  bool withWeek = false,
 
   /// Which build the image is of.
   ///
@@ -219,6 +225,8 @@ Future<void> pumpForGolden(
   goldenNotes = notes;
   goldenTags = TagStore(store);
   await goldenTags.load();
+  goldenFolders = FolderStore(store);
+  await goldenFolders.load();
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
   final tasks = withTasks
@@ -230,6 +238,36 @@ Future<void> pumpForGolden(
         )
       : null;
 
+  if (withWeek) {
+    Map<String, Object?> note(String id, String body, DateTime edited) => {
+      'id': id,
+      'body': body,
+      'createdAt': edited.millisecondsSinceEpoch,
+      'updatedAt': edited.millisecondsSinceEpoch,
+    };
+    store.data['notes.v1'] = [
+      note(
+        'standup',
+        'Standup notes\nShip the week',
+        DateTime(2026, 8, 31, 10, 5),
+      ),
+      note(
+        'gym',
+        'Gym plan\nLegs, then a long walk',
+        DateTime(2026, 8, 31, 19, 30),
+      ),
+      note(
+        'books',
+        'Book ideas\nPiranesi, The Overstory',
+        DateTime(2026, 8, 31, 22, 10),
+      ),
+      note(
+        'pricing',
+        'Pricing ideas\n1,799 INR',
+        DateTime(2026, 8, 29, 16, 20),
+      ),
+    ];
+  }
   await notes.load();
   await tasks?.load();
   prefs.load();
@@ -263,6 +301,7 @@ Future<void> pumpForGolden(
       shortcuts: shortcuts,
       updates: updates,
       tags: goldenTags,
+      folders: goldenFolders,
       tasks: tasks,
       titleModel: _GoldenTitles(),
     ),
@@ -652,9 +691,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(NoteRow, 'Trip ideas'));
     await tester.pumpAndSettle();
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.tap(find.widgetWithText(NoteRow, 'Old receipts'));
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.pumpAndSettle();
   }
 
@@ -692,6 +731,41 @@ void main() {
       matchesGoldenFile('goldens/desktop_dark_notes_picked_menu.png'),
     );
   });
+
+  for (final scale in [1.0, 2.0, 3.1]) {
+    testWidgets('a phone pinned card holds its second line whole at '
+        '$scale× text', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpForGolden(
+        tester,
+        size: const Size(393, 852),
+        brightness: Brightness.light,
+        platform: TargetPlatform.iOS,
+        withPinnedNote: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.pumpAndSettle();
+
+      final pinned = find.byKey(const ValueKey('phone-pinned'));
+      if (scale == 1) expect(tester.getSize(pinned).height, 142);
+      final room = tester.getRect(
+        find.descendant(of: pinned, matching: find.byType(ClipRect)).first,
+      );
+      final snippet = tester.getRect(
+        find
+            .descendant(
+              of: pinned,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is Text && widget.maxLines == 2,
+              ),
+            )
+            .first,
+      );
+      expect(snippet.bottom, lessThanOrEqualTo(room.bottom + 0.5));
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('desktop dark pinned note section', (tester) async {
     await pumpForGolden(
@@ -736,7 +810,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(of: onTop, matching: find.text('⇧⌘T')),
+      find.descendant(of: onTop, matching: find.text('⌃⌘T')),
       findsOneWidget,
     );
     await tester.tap(onTop);
@@ -909,8 +983,176 @@ void main() {
     );
   });
 
+  // The Folders tab as r3's corrected 2GX5-0 draws it: a folder open two
+  // levels down with the open note inside, closed folders with their
+  // counts, New folder, then the notes in no folder.
+  testWidgets('desktop dark folders', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1100, 720),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final folders = goldenFolders;
+    final work = folders.create('Work')!;
+    final clients = folders.create('Clients', parentId: work.id)!;
+    final placed = {
+      'Acme kickoff\nAgenda for Monday': folders.create(
+        'Acme',
+        parentId: clients.id,
+      ),
+      'Roadmap\nQ1 themes': folders.create('Product', parentId: work.id),
+      'Gym plan\nVoice note': folders.create('Personal'),
+      'Reading list\nThe Overstory, Piranesi': folders.create('Reading'),
+      'Pricing ideas\n1,799 INR': clients,
+      'Call with Arjun\nPricing page by Friday': clients,
+      'Dentist\nThursday 4pm': null,
+      'Morning pages\nSlept badly, but the walk helped': null,
+    };
+    for (final MapEntry(key: body, value: folder) in placed.entries) {
+      final note = goldenNotes.create(body: body);
+      if (folder != null) folders.file([note.id], folder.id);
+    }
+    goldenPrefs
+      ..setFolderOpen(work.id, true)
+      ..setFolderOpen(clients.id, true)
+      ..foldersShown = true;
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('folders-tab')),
+        matching: find.text('Call with Arjun'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_folders.png'),
+    );
+  });
+
+  // r5's folder in a tab (26IU-0): a note's tab and the folder's in front,
+  // the page with the folder inside as a card and the notes at any depth,
+  // and the folder marked in the tree.
+  testWidgets('desktop dark folder in a tab', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1440, 900),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final folders = goldenFolders;
+    final work = folders.create('Work')!;
+    final clients = folders.create('Clients', parentId: work.id)!;
+    final acme = folders.create('Acme', parentId: clients.id)!;
+    final placed = {
+      'Acme kickoff\nScope, dates and the first invoice': acme,
+      'Invoice, March\nSent on the 3rd': acme,
+      'Logo feedback\nVoice note': acme,
+      'Roadmap\nQ1 themes': folders.create('Product', parentId: work.id),
+      'Gym plan\nVoice note': folders.create('Personal'),
+      'Reading list\nThe Overstory, Piranesi': folders.create('Reading'),
+      'Pricing ideas\n1,799 INR': clients,
+      'Call with Arjun\nPricing page by Friday': clients,
+      'Dentist\nThursday 4pm': null,
+      'Morning pages\nSlept badly, but the walk helped': null,
+    };
+    for (final MapEntry(key: body, value: folder) in placed.entries) {
+      final note = goldenNotes.create(body: body);
+      if (folder != null) folders.file([note.id], folder.id);
+    }
+    goldenPrefs
+      ..setFolderOpen(work.id, true)
+      ..setFolderOpen(clients.id, true)
+      ..foldersShown = true;
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('folders-tab')),
+        matching: find.text('Call with Arjun'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.tap(find.byKey(ValueKey('folder-${clients.id}')));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NoteTabRow),
+        matching: find.text('Clients'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_folder_in_a_tab.png'),
+    );
+  });
+
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, See all at the heading's end, and amounts in mono.
+  // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so the
+  // list is narrowed to it with its chip beside the filter, and the fill has
+  // left today, whose weekday stays sage.
+  for (final brightness in Brightness.values) {
+    testWidgets('desktop ${brightness.name} week, a day picked', (
+      tester,
+    ) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(1280, 800),
+        brightness: brightness,
+        withWeek: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile(
+          'goldens/desktop_${brightness.name}_week_day_picked.png',
+        ),
+      );
+    });
+  }
+
+  // The month under "Aug–Sep ▾", on the picked day's month, with the days
+  // that have notes brighter and September still to come.
+  testWidgets('desktop dark week, the month open', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+    );
+    for (final key in ['day-strip-2026-8-31', 'day-strip-month']) {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_week_month_open.png'),
+    );
+  });
+
+  // With the list hidden there is nothing to narrow, so a day lists its
+  // notes under the week.
+  testWidgets('desktop dark week, a day listed', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+      sidebarVisible: false,
+    );
+    await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_week_day_listed.png'),
+    );
+  });
+
   testWidgets('desktop dark tags', (tester) async {
     await pumpForGolden(
       tester,
@@ -941,6 +1183,30 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_tags.png'),
+    );
+  });
+
+  // r4's 23HR-0: When's submenu beside the filter, with This week ticked
+  // and its chip beside the filter's button.
+  testWidgets('desktop dark When', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    for (final key in [
+      'sidebar-notes-filter',
+      'notes-filter-when',
+      'notes-filter-when-thisWeek',
+      'sidebar-notes-filter',
+      'notes-filter-when',
+    ]) {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_when.png'),
     );
   });
 

@@ -121,6 +121,38 @@ class SidebarTimestamp {
     return shown.year == now.year ? day : '$day ${shown.year}';
   }
 
+  /// The heading over a day of notes, and the date beside it: "Today" with
+  /// "Thu 19 Nov", "Yesterday" with "Wed 18", then the weekday and the day
+  /// alone within the week ("Tue 17"), and the date before that, with the
+  /// year when it is not this one ("Mon 9 Nov").
+  static (String, String?) dayHeading(DateTime day, {required DateTime today}) {
+    final short = weekdayAndDay(day);
+    return switch (_daysBetween(day, today)) {
+      0 => ('Today', shortDay(day, now: today)),
+      1 => ('Yesterday', short),
+      > 1 && < 7 => (short, null),
+      _ => (shortDay(day, now: today), null),
+    };
+  }
+
+  /// A weekday in three letters: "Wed".
+  static String shortWeekday(DateTime day) => _weekdays[day.weekday - 1];
+
+  /// A weekday and its date alone, as within the week: "Wed 19".
+  static String weekdayAndDay(DateTime day) =>
+      '${_weekdays[day.weekday - 1]} ${day.day}';
+
+  /// A run of days in a few letters: "10–16 Nov", or "30 Nov – 6 Dec" across
+  /// two months.
+  static String dayRange(DateTime first, DateTime last) =>
+      first.month == last.month
+      ? '${first.day}–${last.day} ${_months[last.month - 1]}'
+      : '${first.day} ${_months[first.month - 1]} – '
+            '${last.day} ${_months[last.month - 1]}';
+
+  /// A month's name: "November".
+  static String monthName(DateTime day) => _monthNames[day.month - 1];
+
   /// The heading over a day of finished tasks: "Today", "Yesterday · Monday,
   /// 16 Nov", then "Sunday, 15 Nov", with the year when it is not this one.
   static String doneDay(DateTime shown, {required DateTime now}) {

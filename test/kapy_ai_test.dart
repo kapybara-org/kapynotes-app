@@ -588,9 +588,7 @@ void main() {
 
       expect(find.text('Before the first answer'), findsOneWidget);
       expect(
-        find.textContaining(
-          'through Kapy cloud',
-        ),
+        find.textContaining('where an AI service answers it'),
         findsOneWidget,
       );
       expect(
