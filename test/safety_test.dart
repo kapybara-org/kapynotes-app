@@ -362,6 +362,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const ValueKey('share-more')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('report-note')));
       await tester.pumpAndSettle();
 
@@ -405,6 +407,8 @@ void main() {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('share-more')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('report-note')));
       await tester.pumpAndSettle();

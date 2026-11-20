@@ -2779,7 +2779,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
       return;
     }
-    unawaited(showShareDialog(context, note: note, sharing: sharing));
+    unawaited(
+      showShareDialog(
+        context,
+        note: note,
+        sharing: sharing,
+        billing: account.billing,
+      ),
+    );
   }
 
   /// What stands between this account and sharing, as the step Account & sync
