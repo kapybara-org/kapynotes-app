@@ -268,9 +268,13 @@ class NoteCardFace extends StatelessWidget {
     this.locked = false,
     this.shared = false,
     this.picking,
+    this.square = false,
   });
 
   static const double height = 84;
+
+  /// A phone's pinned card: taller, with the pin over a two-line snippet.
+  static const double squareHeight = 142;
 
   final Note note;
   final NoteGlance glance;
@@ -293,6 +297,9 @@ class NoteCardFace extends StatelessWidget {
 
   /// Ticked or not while notes are being picked; null otherwise.
   final bool? picking;
+
+  /// Drawn as a phone's pinned card, [squareHeight] tall.
+  final bool square;
 
   /// What a card with no line of text says instead, by what the note holds.
   String get _noText {
@@ -321,7 +328,9 @@ class NoteCardFace extends StatelessWidget {
     ].take(2).toList();
 
     final card = Container(
-      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+      padding: square
+          ? const EdgeInsets.fromLTRB(14, 13, 14, 12)
+          : const EdgeInsets.fromLTRB(12, 11, 12, 10),
       decoration: BoxDecoration(
         color: hovering
             ? Color.alphaBlend(
@@ -329,7 +338,7 @@ class NoteCardFace extends StatelessWidget {
                 tint,
               )
             : tint,
-        borderRadius: _cardRadius,
+        borderRadius: square ? BorderRadius.circular(14) : _cardRadius,
         border: _cardBorder(
           palette,
           selected: selected || picking == true,
@@ -353,6 +362,15 @@ class NoteCardFace extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (square) ...[
+                          KapyIcon(
+                            KapyIcons.pinOutlined,
+                            size: 15,
+                            strokeWidth: 1.9,
+                            color: palette.clay,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         Padding(
                           padding: EdgeInsets.only(
                             right: picking == null ? 0 : _PickBox.size + 6,
@@ -361,18 +379,25 @@ class NoteCardFace extends StatelessWidget {
                             note.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: _handwritten(
-                              14,
-                              18,
-                              FontWeight.w500,
-                              palette.cardTitle,
-                            ),
+                            style: square
+                                ? _handwritten(
+                                    19,
+                                    24,
+                                    FontWeight.w400,
+                                    palette.cardTitle,
+                                  )
+                                : _handwritten(
+                                    14,
+                                    18,
+                                    FontWeight.w500,
+                                    palette.cardTitle,
+                                  ),
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        SizedBox(height: square ? 6 : 3),
                         Text(
                           result ?? text ?? _noText,
-                          maxLines: 1,
+                          maxLines: square && result == null ? 2 : 1,
                           overflow: TextOverflow.ellipsis,
                           style: result != null
                               ? TextStyle(
@@ -386,8 +411,8 @@ class NoteCardFace extends StatelessWidget {
                                   color: palette.resultPillText,
                                 )
                               : _figtree(
-                                  12,
-                                  15,
+                                  square ? 13.5 : 12,
+                                  square ? 18 : 15,
                                   FontWeight.w400,
                                   palette.textMuted,
                                 ).copyWith(
@@ -576,6 +601,7 @@ class NoteListRowFace extends StatelessWidget {
     this.locked = false,
     this.shared = false,
     this.picking,
+    this.touch = false,
   });
 
   final Note note;
@@ -589,6 +615,9 @@ class NoteListRowFace extends StatelessWidget {
   final bool shared;
   final bool? picking;
 
+  /// A phone's row: full width between hairlines, with a larger title.
+  final bool touch;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -601,22 +630,26 @@ class NoteListRowFace extends StatelessWidget {
     // The border is always there, clear until the row is open or ringed, so
     // opening a note does not nudge its text.
     return Container(
-      padding: const EdgeInsets.all(6.5),
+      padding: touch
+          ? const EdgeInsets.symmetric(horizontal: 20, vertical: 12)
+          : const EdgeInsets.all(6.5),
       decoration: BoxDecoration(
         color: marked
             ? tint
             : hovering
             ? palette.hover
             : null,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        border: Border.all(
-          color: marked
-              ? palette.selectedBorder
-              : ringed
-              ? palette.selectedBorder.withValues(alpha: 0.5)
-              : Colors.transparent,
-          width: 1.5,
-        ),
+        borderRadius: touch ? null : BorderRadius.circular(AppRadii.surface),
+        border: touch
+            ? null
+            : Border.all(
+                color: marked
+                    ? palette.selectedBorder
+                    : ringed
+                    ? palette.selectedBorder.withValues(alpha: 0.5)
+                    : Colors.transparent,
+                width: 1.5,
+              ),
       ),
       child: Row(
         children: [
@@ -632,27 +665,39 @@ class NoteListRowFace extends StatelessWidget {
                 Row(
                   children: [
                     // Untagged rows keep the dot's room, so titles line up.
-                    SizedBox(
-                      width: TagDots.size,
-                      child: first == null
-                          ? null
-                          : TagDots(
-                              tags: [first],
-                              ground: marked ? tint : palette.sidebarBackground,
-                            ),
-                    ),
-                    const SizedBox(width: 8),
+                    // A phone's rows start at the margin.
+                    if (!touch || first != null) ...[
+                      SizedBox(
+                        width: TagDots.size,
+                        child: first == null
+                            ? null
+                            : TagDots(
+                                tags: [first],
+                                ground: marked
+                                    ? tint
+                                    : palette.sidebarBackground,
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Expanded(
                       child: Text(
                         note.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _figtree(
-                          14,
-                          18,
-                          FontWeight.w500,
-                          palette.cardTitle,
-                        ),
+                        style: touch
+                            ? _figtree(
+                                15.5,
+                                20,
+                                FontWeight.w600,
+                                palette.textPrimary,
+                              )
+                            : _figtree(
+                                14,
+                                18,
+                                FontWeight.w500,
+                                palette.cardTitle,
+                              ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -660,7 +705,7 @@ class NoteListRowFace extends StatelessWidget {
                       date,
                       maxLines: 1,
                       style: _figtree(
-                        AppTypeScale.small,
+                        touch ? 12.5 : AppTypeScale.small,
                         16,
                         FontWeight.w400,
                         palette.textTertiary,
@@ -668,10 +713,10 @@ class NoteListRowFace extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
+                SizedBox(height: touch ? 4 : 3),
                 Row(
                   children: [
-                    const SizedBox(width: TagDots.size + 8),
+                    if (!touch) const SizedBox(width: TagDots.size + 8),
                     for (final mark in marks) ...[
                       KapyIcon(
                         mark,
@@ -687,8 +732,8 @@ class NoteListRowFace extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: _figtree(
-                          AppTypeScale.body,
-                          16,
+                          touch ? 13.5 : AppTypeScale.body,
+                          touch ? 18 : 16,
                           FontWeight.w400,
                           note.isEmpty
                               ? palette.textTertiary
@@ -1139,6 +1184,19 @@ enum NotesShow {
 
 /// The notes filter and the list/cards switch, on one row under the search,
 /// with the ✕ that clears the filter while anything is narrowed.
+/// Whether the list is narrowed beyond everything its space holds: another
+/// Show, some of the kinds, or a tag. What the filter row says it is doing,
+/// and what a phone's filter button carries a dot for while the row is put
+/// away.
+bool filtersNarrowed({
+  required NotesShow show,
+  required Set<NoteMedia>? media,
+  required TagFilter? tags,
+}) =>
+    show != NotesShow.all ||
+    (media != null && media.length < NoteMedia.values.length) ||
+    (tags?.narrowed ?? false);
+
 class NotesListControls extends StatelessWidget {
   const NotesListControls({
     super.key,
@@ -1155,9 +1213,14 @@ class NotesListControls extends StatelessWidget {
     this.onCardsChanged,
     this.tags,
     this.onTagsChanged,
+    this.phone = false,
   });
 
   final NotesShow show;
+
+  /// A phone's filter row: a filled pill for the menu, then a pill per tag,
+  /// scrolling sideways.
+  final bool phone;
 
   /// Whether the menu starts with the choice of which notes. Shared leaves it
   /// out: Hidden Notes are only ever the person's own, and the archive is
@@ -1245,31 +1308,58 @@ class NotesListControls extends StatelessWidget {
 
     final media = this.media;
     final everything = media == null ? 'All drawings' : NotesShow.all.label;
-    final narrowed =
-        show != NotesShow.all ||
-        (media != null && media.length < NoteMedia.values.length) ||
-        (tags?.narrowed ?? false);
+    final narrowed = filtersNarrowed(show: show, media: media, tags: tags);
+    final filter = _NotesFilter(
+      show: show,
+      offersShow: offersShow,
+      onShowChanged: onShowChanged,
+      hiddenListed: hiddenListed,
+      hiddenShortcut: hiddenShortcut,
+      archivedCount: archivedCount,
+      media: media,
+      onMediaChanged: onMediaChanged,
+      tags: tags,
+      onTagsChanged: onTagsChanged,
+      everything: everything,
+      narrowed: narrowed,
+      phone: phone,
+    );
+    if (phone) {
+      final tags = this.tags;
+      final onTagsChanged = this.onTagsChanged;
+      final shelf = tags == null || onTagsChanged == null
+          ? null
+          : TagShelf.maybeOf(context);
+      return SingleChildScrollView(
+        key: const ValueKey('phone-filter-row'),
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Row(
+          spacing: 8,
+          children: [
+            filter,
+            if (shelf != null)
+              for (final entry in shelf.listed())
+                _TagPill(
+                  tag: entry.tag,
+                  on:
+                      !tags!.none &&
+                      tags.ids.length == 1 &&
+                      tags.ids.contains(entry.tag.id),
+                  onChanged: (on) => onTagsChanged!(
+                    tags.copyWith(ids: on ? {entry.tag.id} : {}, none: false),
+                  ),
+                ),
+          ],
+        ),
+      );
+    }
     return Row(
       children: [
         Expanded(
           child: Row(
             children: [
-              Flexible(
-                child: _NotesFilter(
-                  show: show,
-                  offersShow: offersShow,
-                  onShowChanged: onShowChanged,
-                  hiddenListed: hiddenListed,
-                  hiddenShortcut: hiddenShortcut,
-                  archivedCount: archivedCount,
-                  media: media,
-                  onMediaChanged: onMediaChanged,
-                  tags: tags,
-                  onTagsChanged: onTagsChanged,
-                  everything: everything,
-                  narrowed: narrowed,
-                ),
-              ),
+              Flexible(child: filter),
               if (narrowed) ...[
                 const SizedBox(width: 4),
                 CompactIconButton(
@@ -1340,8 +1430,10 @@ class _NotesFilter extends StatefulWidget {
     required this.onTagsChanged,
     required this.everything,
     required this.narrowed,
+    this.phone = false,
   });
 
+  final bool phone;
   final NotesShow show;
   final bool offersShow;
   final ValueChanged<NotesShow> onShowChanged;
@@ -1387,34 +1479,71 @@ class _NotesFilterState extends State<_NotesFilter> {
   }
 
   void _toggle() {
-    if (AppPlatform.isMobile) return unawaited(_openSheet());
+    if (AppPlatform.isMobile) return unawaited(_openPopover());
     setState(() {
       _tagsOpen = false;
       _menu.isShowing ? _menu.hide() : _menu.show();
     });
   }
 
-  /// Nested menus don't work with touch, so on a phone the same choices
-  /// are a sheet.
-  Future<void> _openSheet() => showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    barrierColor: Theme.of(context).drawerTheme.scrimColor,
-    builder: (_) => _FilterSheet(
-      show: widget.show,
-      offersShow: widget.offersShow,
-      onShowChanged: widget.onShowChanged,
-      hiddenListed: widget.hiddenListed,
-      archivedCount: widget.archivedCount,
-      everything: widget.everything,
-      media: widget.media,
-      onMediaChanged: widget.onMediaChanged,
-      tags: widget.tags,
-      onTagsChanged: widget.onTagsChanged,
-      shelf: TagShelf.maybeOf(context),
-    ),
-  );
+  /// Nested menus don't work with touch, so on a touch screen the same
+  /// choices are a popover of touch rows under the button.
+  Future<void> _openPopover() {
+    final button = context.findRenderObject()! as RenderBox;
+    final origin = button.localToGlobal(Offset.zero);
+    final shelf = TagShelf.maybeOf(context);
+    return showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close the filter',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 140),
+      transitionBuilder: (context, animation, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+        child: child,
+      ),
+      pageBuilder: (context, _, _) {
+        final screen = MediaQuery.sizeOf(context);
+        final top = origin.dy + button.size.height + 4;
+        return Stack(
+          children: [
+            Positioned(
+              left: math.max(
+                12,
+                math.min(origin.dx, screen.width - _FilterPopover.width - 12),
+              ),
+              top: top,
+              width: _FilterPopover.width,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: math.max(
+                    160,
+                    screen.height -
+                        top -
+                        MediaQuery.paddingOf(context).bottom -
+                        12,
+                  ),
+                ),
+                child: _FilterPopover(
+                  show: widget.show,
+                  offersShow: widget.offersShow,
+                  onShowChanged: widget.onShowChanged,
+                  hiddenListed: widget.hiddenListed,
+                  archivedCount: widget.archivedCount,
+                  everything: widget.everything,
+                  media: widget.media,
+                  onMediaChanged: widget.onMediaChanged,
+                  tags: widget.tags,
+                  onTagsChanged: widget.onTagsChanged,
+                  shelf: shelf,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   void _close() {
     if (_menu.isShowing) setState(_menu.hide);
@@ -1490,6 +1619,59 @@ class _NotesFilterState extends State<_NotesFilter> {
         narrowed ? palette.tonalForeground : palette.textSubheading,
       ),
     );
+    if (widget.phone) {
+      final pill = _figtree(15, 20, FontWeight.w500, palette.paperColor);
+      final (:text, :dot) = _label(pill, double.infinity);
+      return Semantics(
+        button: true,
+        label: 'Notes filter, $text',
+        excludeSemantics: true,
+        onTap: _toggle,
+        child: GestureDetector(
+          key: const ValueKey('sidebar-notes-filter'),
+          onTap: _toggle,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: AppControlMetrics.iconButtonExtent,
+            child: Center(
+              child: Container(
+                height: 30,
+                padding: const EdgeInsets.only(left: 12, right: 10),
+                decoration: BoxDecoration(
+                  color: palette.textPrimary,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (dot != null) ...[
+                      TagDot(tagColourOf(dot.colour.v), size: 8),
+                      const SizedBox(width: 6),
+                    ],
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 200),
+                      child: Text(
+                        text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: pill,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    KapyIcon(
+                      KapyIcons.chevronDownRounded,
+                      size: 13,
+                      strokeWidth: 2,
+                      color: palette.paperColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     final button = LayoutBuilder(
       // A list dragged to its narrowest keeps the filter's icon, which still
       // opens the menu and still turns sage when the list is narrowed.
@@ -1638,6 +1820,71 @@ class _NotesFilterState extends State<_NotesFilter> {
             ),
           ),
           child: button,
+        ),
+      ),
+    );
+  }
+}
+
+/// A tag in a phone's filter row: a tap narrows the list to it, and
+/// another tap widens it again.
+class _TagPill extends StatelessWidget {
+  const _TagPill({
+    required this.tag,
+    required this.on,
+    required this.onChanged,
+  });
+
+  final Tag tag;
+  final bool on;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      button: true,
+      selected: on,
+      label: 'Tag ${tag.name.v}',
+      excludeSemantics: true,
+      onTap: () => onChanged(!on),
+      child: GestureDetector(
+        key: ValueKey('phone-tag-${tag.id}'),
+        onTap: () => onChanged(!on),
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          height: AppControlMetrics.iconButtonExtent,
+          child: Center(
+            child: Container(
+              height: 30,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: on ? palette.tonalBackground : null,
+                border: Border.all(
+                  color: on
+                      ? palette.tonalKeyBackground
+                      : palette.controlBorder,
+                ),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 7,
+                children: [
+                  TagDot(tagColourOf(tag.colour.v), size: 8),
+                  Text(
+                    tag.name.v,
+                    style: _figtree(
+                      15,
+                      20,
+                      FontWeight.w400,
+                      on ? palette.tonalForeground : palette.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -2332,8 +2579,8 @@ class _TagFilterRowState extends State<_TagFilterRow> {
 /// pushes a second page with the same tag list as the menu's submenu. Every
 /// choice applies at once, so Done only closes it; choosing what to show
 /// closes it too, as the menu does.
-class _FilterSheet extends StatefulWidget {
-  const _FilterSheet({
+class _FilterPopover extends StatefulWidget {
+  const _FilterPopover({
     required this.show,
     required this.offersShow,
     required this.onShowChanged,
@@ -2346,6 +2593,8 @@ class _FilterSheet extends StatefulWidget {
     required this.onTagsChanged,
     required this.shelf,
   });
+
+  static const double width = 262;
 
   final NotesShow show;
   final bool offersShow;
@@ -2363,10 +2612,10 @@ class _FilterSheet extends StatefulWidget {
   final TagShelf? shelf;
 
   @override
-  State<_FilterSheet> createState() => _FilterSheetState();
+  State<_FilterPopover> createState() => _FilterPopoverState();
 }
 
-class _FilterSheetState extends State<_FilterSheet> {
+class _FilterPopoverState extends State<_FilterPopover> {
   late Set<NoteMedia>? _media = widget.media;
   late TagFilter? _tags = widget.tags;
   bool _tagsPage = false;
@@ -2739,94 +2988,79 @@ class _FilterSheetState extends State<_FilterSheet> {
       FontWeight.w500,
       palette.accentText,
     );
-    return DecoratedBox(
-      key: const ValueKey('notes-filter-sheet'),
-      decoration: BoxDecoration(
-        color: palette.surfaceBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+    return Material(
+      key: const ValueKey('notes-filter-popover'),
+      color: palette.surfaceBackground,
+      elevation: 8,
+      shadowColor: palette.shadowAt(0x55),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: palette.controlBorder, width: 0.5),
       ),
-      child: SafeArea(
-        top: false,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  width: 34,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: palette.controlBorder,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              SizedBox(
-                height: 48,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Text(_tagsPage ? 'Tags' : 'Filter', style: title),
-                    if (_tagsPage)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: GestureDetector(
-                          key: const ValueKey('notes-filter-back'),
-                          onTap: () => setState(() => _tagsPage = false),
-                          behavior: HitTestBehavior.opaque,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              spacing: 4,
-                              children: [
-                                KapyIcon(
-                                  KapyIcons.chevronLeftRounded,
-                                  size: 14,
-                                  strokeWidth: 2,
-                                  color: palette.textSecondary,
-                                ),
-                                Text(
-                                  'Filter',
-                                  style: link.copyWith(
-                                    color: palette.textSecondary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 48,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Text(_tagsPage ? 'Tags' : 'Filter', style: title),
+                if (_tagsPage)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      key: const ValueKey('notes-filter-back'),
+                      onTap: () => setState(() => _tagsPage = false),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          spacing: 4,
+                          children: [
+                            KapyIcon(
+                              KapyIcons.chevronLeftRounded,
+                              size: 14,
+                              strokeWidth: 2,
+                              color: palette.textSecondary,
                             ),
-                          ),
-                        ),
-                      ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        key: const ValueKey('notes-filter-done'),
-                        onTap: () => Navigator.of(context).pop(),
-                        behavior: HitTestBehavior.opaque,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text('Done', style: link),
+                            Text(
+                              'Filter',
+                              style: link.copyWith(
+                                color: palette.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
+                  ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: GestureDetector(
+                    key: const ValueKey('notes-filter-done'),
+                    onTap: () => Navigator.of(context).pop(),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('Done', style: link),
+                    ),
+                  ),
                 ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-                  child: _tagsPage ? _tagsList() : _mainPage(),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+              child: _tagsPage ? _tagsList() : _mainPage(),
+            ),
+          ),
+        ],
       ),
     );
   }

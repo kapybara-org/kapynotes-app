@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/tags.dart';
@@ -582,7 +583,9 @@ class _NoteTagChipsState extends State<NoteTagChips> {
               onTap: () =>
                   setState(_picker.isShowing ? _picker.hide : _picker.show),
               child: Container(
-                height: 22,
+                // A phone's target is 44 pt tall; the pill stays small.
+                height: AppPlatform.hasPointer ? 22 : 44,
+                alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.only(left: 4, right: 6),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

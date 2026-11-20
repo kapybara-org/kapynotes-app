@@ -78,11 +78,15 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
-/// The app on a phone with the notes list open over the page.
+/// The app on a phone with the notes list open: a note's page has a back
+/// button, and the list is under it.
 Future<void> _pumpPhone(WidgetTester tester, TargetPlatform platform) async {
   await _pump(tester, platform: platform, size: const Size(390, 760));
-  await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
-  await tester.pumpAndSettle();
+  final back = find.byKey(const ValueKey('page-back'));
+  if (back.evaluate().isNotEmpty) {
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+  }
 }
 
 /// Starts picking on a phone the way a reader does: Select in the menu a
@@ -632,7 +636,12 @@ void main() {
   }
 
   testWidgets('on Android, Back lets go of the picks and leaves the list '
-      'open, and closing the list lets go of them too', (tester) async {
+      'open, and Done selecting lets go of them too', (tester) async {
+    // The pop reaches the root, where the phone keeps Back's order.
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
     await _pumpPhone(tester, TargetPlatform.android);
     await _selectFromMenu(tester, 'Second');
     expect(find.text('1 selected'), findsOneWidget);
@@ -645,10 +654,7 @@ void main() {
 
     await _selectFromMenu(tester, 'Third');
     expect(find.text('1 selected'), findsOneWidget);
-    await tester.tapAt(const Offset(380, 400));
-    await tester.pumpAndSettle();
-    expect(_row('Third').hitTestable(), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+    await tester.tap(find.byKey(const ValueKey('pick-done')));
     await tester.pumpAndSettle();
     expect(find.text('1 selected'), findsNothing);
     expect(_picked(tester), isEmpty);

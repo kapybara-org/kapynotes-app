@@ -182,7 +182,9 @@ void main() {
       await open(tester, 'Probe', markdown: markdown);
       final rows =
           tester.getRect(noteField).height ~/ NoteDriver(tester).rowHeight;
-      await open(tester, _lines(rows - 2), markdown: markdown);
+      // A phone writes the first line as the page's title, Newsreader 28/36
+      // with its underline, so the note keeps two rows of room for it.
+      await open(tester, _lines(rows - 4), markdown: markdown);
       expect(_scroll(tester).position.maxScrollExtent, 0);
 
       await tapWithKeyboardDown(tester, nearTheBottom(tester));
