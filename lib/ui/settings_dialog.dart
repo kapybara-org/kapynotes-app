@@ -2920,7 +2920,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                               title: 'Settings',
                               bottomInset: bottomInset,
                               children: [
-                                if (!_searching) const SettingsWhatsNewRow(),
+                                if (!_searching)
+                                  SettingsWhatsNewRow(prefs: widget.layoutPrefs),
                                 // No autofocus: a keyboard that rises the
                                 // moment settings opens would cover the very
                                 // list it is there to search.
@@ -3048,7 +3049,11 @@ class _SettingsDialogState extends State<SettingsDialog>
                           ),
                         ),
                         if (updates != null) ...[
-                          SettingsUpdateCard(updates: updates, maxHeight: left),
+                          SettingsUpdateCard(
+                            updates: updates,
+                            layoutPrefs: widget.layoutPrefs,
+                            maxHeight: left,
+                          ),
                           const SizedBox(height: 10),
                           _VersionStatus(updates: updates),
                         ],

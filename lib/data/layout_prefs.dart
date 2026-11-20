@@ -120,6 +120,10 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _slashCommandUsesKey = 'slashCommandUses.v1';
   static const String _lastSlashCommandKey = 'lastSlashCommand.v1';
 
+  /// The version whose "What's new" notice was closed. A later version shows
+  /// the notice again.
+  static const String _whatsNewDismissedKey = 'whatsNewDismissed.v1';
+
   /// How many times "/" opens Commands before an empty line stops saying so.
   static const int slashHintUses = 3;
   static const String _lastOpenedNoteKey = 'selectedNote.v1';
@@ -186,6 +190,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _menuBarOpensTasks = false;
   int _slashCommandUses = 0;
   String? _lastSlashCommand;
+  String? _dismissedWhatsNewVersion;
   bool _alwaysOnTop = false;
   String? _lastOpenedNoteId;
   List<String> _recentlyOpenedNoteIds = const [];
@@ -446,6 +451,10 @@ class LayoutPrefs extends ChangeNotifier {
     _menuBarOpensTasks = _store.read<bool>(_menuBarTasksKey) ?? false;
     _slashCommandUses = _store.read<int>(_slashCommandUsesKey) ?? 0;
     _lastSlashCommand = _store.read<String>(_lastSlashCommandKey);
+    final dismissed = _store.read<String>(_whatsNewDismissedKey)?.trim();
+    _dismissedWhatsNewVersion = dismissed == null || dismissed.isEmpty
+        ? null
+        : dismissed;
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;
     _lastOpenedNoteId = _readNoteId(_lastOpenedNoteKey);
     _recentlyOpenedNoteIds = _readRecentlyOpenedNoteIds();
@@ -861,6 +870,25 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _lastSlashCommand) return;
     _lastSlashCommand = value;
     _store.put(_lastSlashCommandKey, value ?? '');
+    notifyListeners();
+  }
+
+  /// The version whose "What's new" notice was closed, or null if it never was.
+  String? get dismissedWhatsNewVersion => _dismissedWhatsNewVersion;
+
+  /// Whether the notice for [version] should show. A newer version shows again.
+  bool showWhatsNew(String version) {
+    final trimmed = version.trim();
+    if (trimmed.isEmpty) return false;
+    return trimmed != _dismissedWhatsNewVersion;
+  }
+
+  /// Hides the "What's new" notice for [version] until a later version.
+  void dismissWhatsNew(String version) {
+    final trimmed = version.trim();
+    if (trimmed.isEmpty || trimmed == _dismissedWhatsNewVersion) return;
+    _dismissedWhatsNewVersion = trimmed;
+    _store.putNow(_whatsNewDismissedKey, trimmed);
     notifyListeners();
   }
 

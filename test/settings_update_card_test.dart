@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -62,20 +63,21 @@ class _MemoryStore extends LocalStore {
   void putNow(String key, Object? value) => data[key] = value;
 }
 
-UpdateChecker _checker(LocalStore store, {UpdateInstaller? installer}) =>
-    UpdateChecker(
-      store,
-      client: MockClient(
-        (_) async => throw StateError('no network in this test'),
-      ),
-      packageInfo: PackageInfo(
-        appName: 'Kapy Notes',
-        packageName: 'com.kapybara.kapynotes',
-        version: '1.0.0',
-        buildNumber: '1',
-      ),
-      installer: installer,
-    );
+UpdateChecker _checker(
+  LocalStore store, {
+  UpdateInstaller? installer,
+  String version = '1.0.0',
+}) => UpdateChecker(
+  store,
+  client: MockClient((_) async => throw StateError('no network in this test')),
+  packageInfo: PackageInfo(
+    appName: 'Kapy Notes',
+    packageName: 'com.kapybara.kapynotes',
+    version: version,
+    buildNumber: '1',
+  ),
+  installer: installer,
+);
 
 Future<(UpdateChecker, FakeUpdateInstaller)> _readyChecker(
   LocalStore store,
@@ -106,8 +108,10 @@ void main() {
   Future<void> pumpCard(
     WidgetTester tester,
     UpdateChecker updates, {
+    LayoutPrefs? prefs,
     ThemeData? theme,
   }) async {
+    final layoutPrefs = prefs ?? (LayoutPrefs(_MemoryStore())..load());
     tester.view.physicalSize = const Size(260, 300);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -124,7 +128,10 @@ void main() {
                   alignment: Alignment.bottomLeft,
                   child: Padding(
                     padding: const EdgeInsets.all(14),
-                    child: SettingsUpdateCard(updates: updates),
+                    child: SettingsUpdateCard(
+                      updates: updates,
+                      layoutPrefs: layoutPrefs,
+                    ),
                   ),
                 ),
               ),
@@ -150,6 +157,7 @@ void main() {
     expect(find.textContaining('later release'), findsNothing);
     expect(find.byKey(const ValueKey('settings-update-changelog')), findsOne);
     expect(find.byKey(const ValueKey('settings-update-restart')), findsNothing);
+    expect(find.byKey(const ValueKey('settings-whats-new-hide')), findsOneWidget);
   });
 
   testWidgets('with no changelog cached yet it is quiet about it', (
@@ -169,6 +177,7 @@ void main() {
 
     expect(find.text('Restart to update to 1.0.1'), findsOneWidget);
     expect(find.textContaining("What's new"), findsNothing);
+    expect(find.byKey(const ValueKey('settings-whats-new-hide')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('settings-update-restart')));
     await tester.pumpAndSettle();
@@ -394,6 +403,213 @@ void main() {
       );
     });
   }
+
+  const hideKey = ValueKey('settings-whats-new-hide');
+
+  testWidgets('close hides this version, and the changelog link still opens '
+      'when close is not pressed', (tester) async {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    final updates = _checker(store);
+    await pumpCard(tester, updates, prefs: prefs);
+
+    final launched = <Object?>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'launch') launched.add(call.arguments);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('settings-update-changelog')));
+    await tester.pumpAndSettle();
+    expect(launched, hasLength(1));
+    expect(find.text("What's new in 1.0.0"), findsOneWidget);
+
+    launched.clear();
+    await tester.tap(
+      find.descendant(of: find.byKey(hideKey), matching: find.byType(IconButton)),
+    );
+    await tester.pumpAndSettle();
+    expect(launched, isEmpty);
+    expect(find.text("What's new in 1.0.0"), findsNothing);
+    expect(find.byKey(_card), findsNothing);
+    expect(store.data['whatsNewDismissed.v1'], '1.0.0');
+  });
+
+  testWidgets('the close button is keyboard focusable and named', (
+    tester,
+  ) async {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    await pumpCard(tester, _checker(store), prefs: prefs);
+
+    expect(find.byTooltip("Hide what's new"), findsOneWidget);
+    final semanticsHandle = tester.ensureSemantics();
+    final semantics = tester.getSemantics(find.bySemanticsLabel("Hide what's new"));
+    semanticsHandle.dispose();
+    expect(semantics.flagsCollection.isButton, isTrue);
+    expect(semantics.label, "Hide what's new");
+
+    bool hideIsFocused() {
+      final context = tester.binding.focusManager.primaryFocus?.context;
+      if (context == null) return false;
+      if (context.widget.key == hideKey) return true;
+      var found = false;
+      context.visitAncestorElements((ancestor) {
+        if (ancestor.widget.key == hideKey) {
+          found = true;
+          return false;
+        }
+        return true;
+      });
+      return found;
+    }
+
+    for (var i = 0; i < 8 && !hideIsFocused(); i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+    expect(
+      hideIsFocused(),
+      isTrue,
+      reason: 'focused ${tester.binding.focusManager.primaryFocus?.debugLabel}',
+    );
+  });
+
+  testWidgets('a closed notice stays closed, and comes back for a newer '
+      'version that has notes', (tester) async {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    await pumpCard(tester, _checker(store), prefs: prefs);
+    await tester.tap(
+      find.descendant(of: find.byKey(hideKey), matching: find.byType(IconButton)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    final reloaded = LayoutPrefs(store)..load();
+    expect(reloaded.showWhatsNew('1.0.0'), isFalse);
+    await pumpCard(tester, _checker(store), prefs: reloaded);
+    expect(find.textContaining("What's new"), findsNothing);
+
+    store.put('changelog.v1', <String, Object?>{
+      'fetchedAt': DateTime.now().toIso8601String(),
+      'releases': [
+        <String, Object?>{
+          'version': '1.2.0',
+          'date': '2026-10-01',
+          'summary': 'A newer build.',
+          'highlights': ['Notes come back with the new version.'],
+          'changes': ['The rest of the notes.'],
+        },
+      ],
+    });
+    final nextPrefs = LayoutPrefs(store)..load();
+    final next = _checker(store, version: '1.2.0');
+    await next.history.load();
+    expect(next.history.releases, isNotEmpty);
+    await pumpCard(tester, next, prefs: nextPrefs);
+    expect(find.text("What's new in 1.2.0"), findsOneWidget);
+    expect(find.text('Notes come back with the new version.'), findsOneWidget);
+    expect(find.byKey(hideKey), findsOneWidget);
+  });
+
+  testWidgets('on a phone the close button is at least 44 pt and does not '
+      'open the row', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    PackageInfo.setMockInitialValues(
+      appName: 'Kapy Notes',
+      packageName: 'com.kapybara.kapynotes',
+      version: '1.0.0',
+      buildNumber: '1',
+      buildSignature: '',
+    );
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    tester.view.physicalSize = const Size(390, 200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final launched = <Object?>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'launch') launched.add(call.arguments);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    Future<void> pumpRow(LayoutPrefs rowPrefs) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(body: SettingsWhatsNewRow(prefs: rowPrefs)),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpRow(prefs);
+    expect(find.text("What's new in 1.0.0"), findsOneWidget);
+    final hide = find.byKey(hideKey);
+    final hideButton = find.descendant(
+      of: hide,
+      matching: find.byType(IconButton),
+    );
+    expect(tester.getSize(hideButton).shortestSide, greaterThanOrEqualTo(44));
+
+    await tester.tap(find.byKey(const ValueKey('settings-whats-new-row')));
+    await tester.pumpAndSettle();
+    expect(launched, hasLength(1));
+    expect(find.text("What's new in 1.0.0"), findsOneWidget);
+
+    launched.clear();
+    await tester.tap(hideButton);
+    await tester.pumpAndSettle();
+    expect(launched, isEmpty);
+    expect(find.textContaining("What's new"), findsNothing);
+    expect(store.data['whatsNewDismissed.v1'], '1.0.0');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpRow(LayoutPrefs(store)..load());
+    expect(find.textContaining("What's new"), findsNothing);
+
+    PackageInfo.setMockInitialValues(
+      appName: 'Kapy Notes',
+      packageName: 'com.kapybara.kapynotes',
+      version: '1.2.0',
+      buildNumber: '2',
+      buildSignature: '',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpRow(LayoutPrefs(store)..load());
+    expect(find.text("What's new in 1.2.0"), findsOneWidget);
+  });
+
+  testWidgets('the close button uses each theme’s quiet text color', (
+    tester,
+  ) async {
+    for (final theme in AppTheme.values) {
+      for (final dark in [false, true]) {
+        final data = dark
+            ? KapyTheme.dark(theme: theme)
+            : KapyTheme.light(theme: theme);
+        await pumpCard(tester, _checker(_MemoryStore()), theme: data);
+        final icon = tester.widget<KapyIcon>(
+          find.descendant(of: find.byKey(hideKey), matching: find.byType(KapyIcon)),
+        );
+        final palette = tester.element(find.byKey(hideKey)).palette;
+        expect(icon.color, palette.textTertiary, reason: '${theme.name} dark=$dark');
+      }
+    }
+  });
 
   for (final (name, theme) in [
     ('dark', KapyTheme.dark()),
