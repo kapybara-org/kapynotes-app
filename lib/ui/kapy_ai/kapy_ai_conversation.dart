@@ -504,9 +504,12 @@ class KapyAiNotice extends StatelessWidget {
     final pickAnother = KapyAiButton('Pick another', onPressed: onPickAnother);
     // The first two are the likeliest to work; the rest stay reachable through
     // the picker rather than crowding the card.
-    List<KapyAiButton> offersIn(List<KapyModel> fallbacks) => [
+    List<KapyAiButton> offersIn(
+      List<KapyModel> fallbacks, {
+      bool alwaysPick = false,
+    }) => [
       for (final other in fallbacks.take(2)) use(other),
-      if (fallbacks.length > 2) pickAnother,
+      if (alwaysPick || fallbacks.length > 2) pickAnother,
     ];
     final goAhead = KapyAiButton(
       'Go ahead',
@@ -631,9 +634,9 @@ class KapyAiNotice extends StatelessWidget {
             : '${kapyAccountName(account)} is signed out',
         [
           account == KapyAccountKind.openRouter
-              ? 'Check the key in Settings, or pick another model.'
+              ? 'Check the key in Settings.'
               : 'Sign in inside ${kapyAccountName(account)}, then check '
-                    'again, or pick another model.',
+                    'again.',
         ],
         [
           switch (account) {
@@ -650,8 +653,7 @@ class KapyAiNotice extends StatelessWidget {
               onPressed: () => unawaited(_checkThenAnswer(ai.checkClaudeCode)),
             ),
           },
-          ...offersIn(fallbacks),
-          pickAnother,
+          ...offersIn(fallbacks, alwaysPick: true),
         ],
       ),
       KapyFailed(:final message, :final fallbacks) => (

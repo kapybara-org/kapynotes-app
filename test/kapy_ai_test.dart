@@ -728,7 +728,7 @@ void main() {
       );
 
       expect(find.text('No answers left until 1 Dec'), findsOneWidget);
-      await tester.tap(find.text('Use Apple Intelligence'));
+      await tester.tap(find.text('Use this device'));
       expect(ai.calls, ['answerWith:apple']);
     });
 
@@ -782,7 +782,7 @@ void main() {
 
       expect(find.text('You’re offline'), findsOneWidget);
       await tester.tap(find.text('Try again'));
-      await tester.tap(find.text('Use Apple Intelligence'));
+      await tester.tap(find.text('Use this device'));
       expect(ai.calls, ['proceed', 'answerWith:apple']);
     });
 
@@ -800,7 +800,7 @@ void main() {
       expect(find.text('Codex is signed out'), findsOneWidget);
       expect(
         find.text(
-          'Sign in inside Codex, then check again, or pick another model.',
+          'Sign in inside Codex, then check again.',
         ),
         findsOneWidget,
       );
@@ -836,7 +836,7 @@ void main() {
       );
 
       expect(
-        find.text('Check the key in Settings, or pick another model.'),
+        find.text('Check the key in Settings.'),
         findsOneWidget,
       );
       await tester.tap(find.text('Open Settings'));
