@@ -55,6 +55,57 @@ void main() {
     );
   });
 
+  test(
+    'a note given a day sits under it, and one waiting for a later day folds into Upcoming',
+    () {
+      final notes = [
+        _note('call', 'Call with Arjun', DateTime(2026, 11, 19, 11, 40)),
+        _note('plan', 'Plan Friday', DateTime(2026, 11, 19, 9, 12)),
+        _note('tax', 'Last year', DateTime(2026, 11, 19, 9, 20)),
+        _note('trip', 'Packing', DateTime(2026, 11, 19, 9, 30)),
+      ];
+      final own = {
+        'plan': DateTime(2026, 11, 21),
+        'tax': DateTime(2026, 11, 17),
+        'trip': DateTime(2026, 11, 23),
+      };
+      final groups = groupNotes(
+        notes,
+        NotesGrouping.byDate,
+        today: today,
+        displayTime: shown,
+        firstTag: (_) => null,
+        ownDay: (note) => own[note.id],
+      );
+      expect(outline(groups), [
+        ('Upcoming', '2', 'plan trip'),
+        ('Today', 'Thu 19 Nov', 'call'),
+        ('Tue 17', null, 'tax'),
+      ]);
+      expect(
+        noteDay(notes[1], shown, ownDay: DateTime(2026, 11, 21)),
+        DateTime(2026, 11, 21),
+      );
+    },
+  );
+
+  test('a note on today\'s own day stays in Today, not in Upcoming', () {
+    final note = _note('call', 'Call', DateTime(2026, 11, 12, 8));
+    expect(
+      outline(
+        groupNotes(
+          [note],
+          NotesGrouping.byDate,
+          today: today,
+          displayTime: shown,
+          firstTag: (_) => null,
+          ownDay: (_) => DateTime(2026, 11, 19),
+        ),
+      ),
+      [('Today', 'Thu 19 Nov', 'call')],
+    );
+  });
+
   test('by tag: each first tag by name, then the untagged', () {
     final at = DateTime(2026, 11, 19);
     final notes = [
