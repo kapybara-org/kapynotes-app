@@ -1951,6 +1951,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     ]..sort((a, b) => a.seq.compareTo(b.seq));
 
     final touched = <String, _Touched>{};
+    final retried = <String>{};
     for (final item in items) {
       if (item.seq <= _state.cursorFor(batch.spaceId)) continue;
       final noteId = item.noteId;
@@ -2046,7 +2047,20 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           continue;
         }
       }
-      final opened = await vault.openRaw(item.payload, contentKey);
+      var opened = await vault.openRaw(item.payload, contentKey);
+      if (opened == null && contentKey != null && retried.add(noteId)) {
+        // A note that left this space and came back gets its key minted
+        // again from epoch one, so the key held here for this epoch can be
+        // the one from before. Asked again, once per note per page.
+        final fresh = await _contentKeyFor(
+          record,
+          noteId,
+          space,
+          item.epoch,
+          stale: contentKey,
+        );
+        if (fresh != null) opened = await vault.openRaw(item.payload, fresh);
+      }
       if (opened == null) {
         debugPrint('KapyNotes: could not open op ${item.seq} of $noteId');
         continue;
@@ -2255,12 +2269,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     DocRecord record,
     String noteId,
     Space space,
-    int epoch,
-  ) async {
+    int epoch, {
+    Uint8List? stale,
+  }) async {
     final cached = record.keys[epoch];
-    if (cached != null) return cached;
+    if (cached != null && !listEquals(cached, stale)) return cached;
     final local = _notes.byId(noteId);
-    if (local?.contentKey != null && local!.contentKeyEpoch == epoch) {
+    if (local?.contentKey != null &&
+        local!.contentKeyEpoch == epoch &&
+        !listEquals(local.contentKey, stale)) {
       record.keys[epoch] = local.contentKey!;
       return local.contentKey;
     }
@@ -2282,7 +2299,36 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     } on SyncException catch (error) {
       debugPrint('KapyNotes: note keys unavailable: ${error.message}');
     }
-    return record.keys[epoch];
+    final fetched = record.keys[epoch];
+    if (fetched == null || listEquals(fetched, stale)) return null;
+    if (stale != null &&
+        local != null &&
+        local.spaceId == space.id &&
+        local.contentKeyEpoch == epoch) {
+      // The copy here still holds the key from before, and would seal its
+      // next edit under it where nobody else can read it. Whatever it already
+      // sealed under the old one goes up again whole, under the new one. It
+      // covers nothing: ops this device could not open are not in it, and
+      // the server would drop them for every other reader.
+      _notes.adoptKey(
+        noteId,
+        contentKey: fetched,
+        contentKeyEpoch: epoch,
+        contentKeyGeneration: record.keyGeneration ?? space.keyGeneration,
+      );
+      record.outbox.add(
+        OutboxEntry(
+          id: _nextRequestId(),
+          spaceId: space.id,
+          snapshot: record.doc.toSnapshot(),
+          covers: 0,
+        ),
+      );
+      record.opsSinceSnapshot = 0;
+      record.ownOpsSinceSnapshot = 0;
+      _scheduleSend();
+    }
+    return fetched;
   }
 
   // -------------------------------------------------------------------------
