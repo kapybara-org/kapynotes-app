@@ -194,6 +194,7 @@ class NoteVoiceChip extends StatelessWidget {
       fontSize: 13,
       height: 16 / 12.5,
       fontWeight: FontWeight.w500,
+      fontVariations: AppWeight.variations(AppWeight.rowTitle),
       fontFeatures: const [FontFeature.tabularFigures()],
       color: palette.textSecondary,
     );

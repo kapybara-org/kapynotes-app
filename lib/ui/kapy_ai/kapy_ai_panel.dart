@@ -275,6 +275,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                   fontSize: 17,
                   height: 22 / 17,
                   fontWeight: FontWeight.w600,
+                  fontVariations: AppWeight.variations(AppWeight.section),
                   color: palette.textPrimary,
                 ),
               ),

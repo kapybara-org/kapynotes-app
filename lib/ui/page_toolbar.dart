@@ -341,7 +341,10 @@ class _Breadcrumb extends StatelessWidget {
             space,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: style.copyWith(fontWeight: FontWeight.w500),
+            style: style.copyWith(
+              fontWeight: FontWeight.w400,
+              fontVariations: AppWeight.variations(AppWeight.body),
+            ),
           ),
         ),
         if (section != null) ...[
@@ -357,6 +360,7 @@ class _Breadcrumb extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: style.copyWith(
                 fontWeight: FontWeight.w600,
+                fontVariations: AppWeight.variations(AppWeight.section),
                 color: palette.textSecondary,
               ),
             ),
@@ -414,6 +418,7 @@ class _SaveStatus extends StatelessWidget {
               fontSize: AppTypeScale.body,
               height: 16 / 12.5,
               fontWeight: FontWeight.w500,
+              fontVariations: AppWeight.variations(AppWeight.rowTitle),
               color: palette.textTertiary,
             ),
           ),

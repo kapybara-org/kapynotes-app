@@ -167,24 +167,22 @@ TextStyle _handwritten(
   Color color,
 ) {
   const face = WritingFont.handwritten;
-  return TextStyle(
-    fontFamily: face.fontFamily,
-    fontFamilyFallback: face.fontFamilyFallback,
-    fontVariations: face.fontVariations,
-    fontSize: size,
-    height: line / size,
-    leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: weight,
+  return chromeStyle(
+    size: size,
+    line: line,
+    weight: AppWeight.axisOf(weight),
     color: color,
+    family: face.fontFamily,
+    fallback: face.fontFamilyFallback,
+    extra: face.faceVariations,
   );
 }
 
 TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
-    TextStyle(
-      fontSize: size,
-      height: line / size,
-      leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: weight,
+    chromeStyle(
+      size: size,
+      line: line,
+      weight: AppWeight.axisOf(weight),
       color: color,
     );
 
@@ -375,15 +373,14 @@ class NoteCardFace extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: result != null
-                              ? TextStyle(
-                                  fontFamily: AppFonts.mono,
-                                  fontFamilyFallback: AppFonts.monoFallback,
-                                  fontSize: 12,
-                                  height: 15 / 12,
-                                  leadingDistribution:
-                                      TextLeadingDistribution.even,
-                                  fontWeight: FontWeight.w500,
+                              ? chromeStyle(
+                                  size: 12,
+                                  line: 15,
+                                  weight: AppWeight.page,
                                   color: palette.resultPillText,
+                                  family: AppFonts.mono,
+                                  fallback: AppFonts.monoFallback,
+                                  tabular: true,
                                 )
                               : _figtree(
                                   12,
@@ -650,7 +647,7 @@ class NoteListRowFace extends StatelessWidget {
                         style: _figtree(
                           14,
                           18,
-                          FontWeight.w500,
+                          FontWeight.w400,
                           palette.cardTitle,
                         ),
                       ),
@@ -1040,10 +1037,10 @@ class NotesListHeading extends StatelessWidget {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _handwritten(
+                      style: _figtree(
                         14,
                         20,
-                        FontWeight.w500,
+                        FontWeight.w600,
                         palette.textSubheading,
                       ),
                     ),
@@ -1058,7 +1055,7 @@ class NotesListHeading extends StatelessWidget {
                         _figtree(
                           AppTypeScale.small,
                           16,
-                          FontWeight.w500,
+                          FontWeight.w400,
                           palette.textTertiary,
                         ).copyWith(
                           fontFeatures: const [FontFeature.tabularFigures()],
@@ -1905,7 +1902,7 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
                     style: _figtree(
                       AppTypeScale.control,
                       16,
-                      chosen ? FontWeight.w500 : FontWeight.w400,
+                      chosen ? FontWeight.w600 : FontWeight.w400,
                       chosen ? palette.textPrimary : palette.textSubheading,
                     ),
                   ),
@@ -2050,7 +2047,7 @@ class _TagsMenuState extends State<_TagsMenu> {
             style: _figtree(
               AppTypeScale.small,
               16,
-              on ? FontWeight.w500 : FontWeight.w400,
+              on ? FontWeight.w600 : FontWeight.w400,
               on ? palette.textPrimary : palette.textSecondary,
             ),
           ),
@@ -2638,7 +2635,7 @@ class _FilterSheetState extends State<_FilterSheet> {
             style: _figtree(
               AppTypeScale.control,
               18,
-              on ? FontWeight.w500 : FontWeight.w400,
+              on ? FontWeight.w600 : FontWeight.w400,
               on ? palette.textPrimary : palette.textSecondary,
             ),
           ),
@@ -2796,6 +2793,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                                   style: link.copyWith(
                                     color: palette.textSecondary,
                                     fontWeight: FontWeight.w500,
+                                    fontVariations: AppWeight.variations(AppWeight.rowTitle),
                                   ),
                                 ),
                               ],

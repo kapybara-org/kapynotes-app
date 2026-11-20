@@ -40,16 +40,26 @@ String taskNoteLabel(Note note, Space? space) {
 }
 
 /// Shantell Sans, the hand the app titles things in.
-TextStyle handStyle(double size, double line, FontWeight weight, Color color) {
+///
+/// A page title and a note's name, not a meta line. Meta uses [uiStyle].
+TextStyle handStyle(
+  double size,
+  double line,
+  FontWeight weight,
+  Color color, {
+  double? axis,
+  bool tabular = false,
+}) {
   const hand = WritingFont.handwritten;
-  return TextStyle(
-    fontFamily: hand.fontFamily,
-    fontFamilyFallback: hand.fontFamilyFallback,
-    fontVariations: hand.fontVariations,
-    fontSize: size,
-    height: line / size,
-    fontWeight: weight,
+  return chromeStyle(
+    size: size,
+    line: line,
+    weight: axis ?? AppWeight.axisOf(weight),
     color: color,
+    family: hand.fontFamily,
+    fallback: hand.fontFamilyFallback,
+    extra: hand.faceVariations,
+    tabular: tabular,
   );
 }
 
@@ -85,15 +95,24 @@ class TaskDetailsIcon extends StatelessWidget {
 }
 
 /// Figtree, every label and every task's words.
-TextStyle uiStyle(double size, double line, FontWeight weight, Color color) =>
-    TextStyle(
-      fontFamily: AppFonts.ui,
-      fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: size,
-      height: line / size,
-      fontWeight: weight,
-      color: color,
-    );
+TextStyle uiStyle(
+  double size,
+  double line,
+  FontWeight weight,
+  Color color, {
+  double? axis,
+  bool tabular = false,
+}) => chromeStyle(
+  size: size,
+  line: line,
+  weight: axis ?? AppWeight.axisOf(weight),
+  color: color,
+  tabular: tabular,
+);
+
+/// A source mark, a date, a count: interface face, regular weight, quiet.
+TextStyle metaStyle(double size, double line, Color color, {bool tabular = false}) =>
+    uiStyle(size, line, FontWeight.w400, color, tabular: tabular);
 
 /// A note's quiet mark: its first tag's dot colour, as a small square, or a
 /// plain one when it has no coloured tag. A dashed one stands for no note.
@@ -196,12 +215,7 @@ class NoteMark extends StatelessWidget {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: handStyle(
-                      12.5,
-                      16,
-                      FontWeight.w500,
-                      palette.textSecondary,
-                    ),
+                    style: metaStyle(12.5, 16, palette.textSecondary),
                   ),
                 ),
               ],
