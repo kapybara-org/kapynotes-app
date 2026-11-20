@@ -52,10 +52,24 @@ void main() {
           // bar is scrolled to it.
           final cut = size.width < 2 || size.height < 2;
           if (!cut && (size.width < 43 || size.height < 43)) {
-            misses.add(
-              '$screen: ${data.label} is ${size.width.toStringAsFixed(1)} × '
-              '${size.height.toStringAsFixed(1)}',
-            );
+            // A sideways scroll clips a node's rect at the viewport edge,
+            // while the target itself is whole: the format bar's edge button
+            // is a 44 pt box with 11 of it showing. The box it was laid out
+            // in is what a finger has to hit, so measure that.
+            final whole = data.label.isEmpty
+                ? null
+                : find
+                      .bySemanticsLabel(RegExp.escape(data.label))
+                      .evaluate()
+                      .firstOrNull
+                      ?.renderObject;
+            final box = whole is RenderBox ? whole.size : null;
+            if (box == null || box.width < 43 || box.height < 43) {
+              misses.add(
+                '$screen: ${data.label} is ${size.width.toStringAsFixed(1)} × '
+                '${size.height.toStringAsFixed(1)}',
+              );
+            }
           }
         }
         node.visitChildren((child) {
