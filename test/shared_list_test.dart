@@ -83,6 +83,12 @@ void main() {
             tab: SidebarTab.shared,
             onTabChanged: (_) {},
             onOpenPerson: onOpenPerson,
+            windowBar: SidebarWindowBar(
+              title: 'Notes',
+              count: 0,
+              onCreate: () {},
+              onHide: () {},
+            ),
           ),
         ),
       ),
