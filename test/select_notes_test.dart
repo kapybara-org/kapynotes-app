@@ -449,9 +449,16 @@ void main() {
     await _rightClick(tester, 'First');
     final first = _note('First');
     expect(_picked(tester), ['Fourth', 'Third', 'First']);
-    expect(_label(tester, _item('pin', first)), 'Pin 3 notes');
-    expect(_label(tester, _item('hide', first)), 'Hide 3 notes');
-    expect(_label(tester, _item('archive', first)), 'Archive 3 notes');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('kapy-context-menu')),
+        matching: find.text('3 notes'),
+      ),
+      findsOneWidget,
+    );
+    expect(_label(tester, _item('pin', first)), 'Pin');
+    expect(_label(tester, _item('hide', first)), 'Move to Hidden Notes');
+    expect(_label(tester, _item('archive', first)), 'Archive');
     expect(_label(tester, _item('delete', first)), 'Delete 3 notes…');
     // A note's own items are not on offer for many.
     expect(find.byKey(ValueKey('share-note-${first.id}')), findsNothing);
@@ -475,7 +482,7 @@ void main() {
     expect(find.text('Select notes'), findsNothing);
     await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
     await _rightClick(tester, 'Fourth');
-    expect(_label(tester, _item('unpin', _note('Fourth'))), 'Unpin 2 notes');
+    expect(_label(tester, _item('unpin', _note('Fourth'))), 'Unpin');
   });
 
   testWidgets('every item of the menu for many notes fits it', (tester) async {
@@ -490,7 +497,13 @@ void main() {
     );
     expect(
       [for (final row in rows) row.action.label],
-      ['Pin 12 notes', 'Hide 12 notes', 'Archive 12 notes', 'Delete 12 notes…'],
+      [
+        'Open in tabs',
+        'Pin',
+        'Move to Hidden Notes',
+        'Archive',
+        'Delete 12 notes…',
+      ],
     );
     for (final row in rows) {
       final label = row.action.label;

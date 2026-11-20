@@ -1599,9 +1599,9 @@ void main() {
     }
 
     // Pins are the reader's own, so every note takes one.
-    expect(await label('pin'), 'Pin 3 notes');
+    expect(await label('pin'), 'Pin');
     // Hidden Notes are only ever the reader's own notes.
-    expect(await label('hide'), 'Move to Hidden Notes');
+    expect(await label('hide'), 'Move 1 note to Hidden Notes');
     // A viewer changes nothing: the note they may only read is left out.
     expect(await label('archive'), 'Archive 2 notes');
     expect(await label('delete'), 'Delete 2 notes…');

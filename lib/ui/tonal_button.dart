@@ -40,12 +40,13 @@ class TonalButton extends StatelessWidget {
   /// radius 8, 12 at either end and a 16 icon 4 from its label.
   final bool tall;
 
-  /// How wide a button with an icon, [label] and, if given, [shortcut]'s
-  /// keycap lays out at the reader's text size, for a bar that has to choose
-  /// what to show before it builds.
+  /// How wide a button with [label], an icon unless [icon] is false and, if
+  /// given, [shortcut]'s keycap lays out at the reader's text size, for a bar
+  /// that has to choose what to show before it builds.
   static double widthOf(
     BuildContext context,
     String label, {
+    bool icon = true,
     String? shortcut,
     bool tall = false,
   }) {
@@ -58,7 +59,11 @@ class TonalButton extends StatelessWidget {
     final text = painter.width;
     painter.dispose();
     final bar = tall && AppPlatform.hasPointer;
-    return (bar ? 12 + 16 + 4 : 9 + AppControlMetrics.iconControl + 6) +
+    return (!icon
+            ? 12
+            : bar
+            ? 12 + 16 + 4
+            : 9 + AppControlMetrics.iconControl + 6) +
         text +
         (shortcut == null
             ? 12

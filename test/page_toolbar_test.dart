@@ -60,7 +60,7 @@ void main() {
     int unloadedPictures = 0,
     List<SpaceMember> members = const [],
     List<KapyMenuAction> moreActions = const [],
-    ValueChanged<String>? onMore,
+    void Function(String value, Offset at)? onMore,
     VoidCallback? onShowList,
     void Function(String folderId, {required bool behind})? onOpenFolder,
     Widget? assistant,
@@ -80,7 +80,7 @@ void main() {
     onShare: () {},
     assistant: assistant,
     moreActions: moreActions,
-    onMore: onMore ?? (_) {},
+    onMore: onMore ?? (_, _) {},
   );
 
   final bar = find.byKey(const ValueKey('page-toolbar'));
@@ -405,7 +405,7 @@ void main() {
               destructive: true,
             ),
           ],
-          onMore: (value) => picked = value,
+          onMore: (value, _) => picked = value,
         ),
       ),
     );

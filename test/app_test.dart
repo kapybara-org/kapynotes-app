@@ -5514,9 +5514,8 @@ void main() {
     expect(notes.isPinned(note.id), isTrue);
   });
 
-  testWidgets('puts hiding above a red Archive note at the bottom', (
-    tester,
-  ) async {
+  testWidgets('puts hiding above Archive note at the bottom, where only '
+      'Delete is in the warning colour', (tester) async {
     await pumpApp(tester);
     final note = notes.create(body: 'Menu order');
     await tester.pumpAndSettle();
@@ -5527,17 +5526,19 @@ void main() {
 
     final hide = find.byKey(ValueKey('hide-note-${note.id}'));
     final archive = find.byKey(ValueKey('archive-note-${note.id}'));
+    final delete = find.byKey(ValueKey('delete-note-${note.id}'));
     expect(tester.getCenter(hide).dy, lessThan(tester.getCenter(archive).dy));
+    expect(tester.getCenter(archive).dy, lessThan(tester.getCenter(delete).dy));
 
-    final archiveLabel = find.descendant(
-      of: archive,
-      matching: find.text('Archive note'),
-    );
-    final archiveText = tester.widget<Text>(archiveLabel);
-    expect(
-      archiveText.style?.color,
-      Theme.of(tester.element(archiveLabel)).colorScheme.error,
-    );
+    Color? colour(Finder item) => tester
+        .widget<Text>(
+          find.descendant(of: item, matching: find.byType(Text)).first,
+        )
+        .style
+        ?.color;
+    final error = Theme.of(tester.element(archive)).colorScheme.error;
+    expect(colour(archive), isNot(error));
+    expect(colour(delete), error);
   });
 
   testWidgets('a failed unlock leaves Hidden Notes closed', (tester) async {

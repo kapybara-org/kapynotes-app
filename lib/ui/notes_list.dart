@@ -1137,21 +1137,18 @@ class SeeAllLink extends StatelessWidget {
 }
 
 /// The heading over one group of the notes list: a day with its date beside
-/// it, a tag or a letter, then a hairline to the edge, and at the end of the
-/// first heading the menu that picks the grouping.
+/// it, a tag or a letter, then a hairline to the edge.
 class NotesGroupHeading extends StatelessWidget {
   const NotesGroupHeading({
     super.key,
     required this.label,
     this.detail,
-    this.trailing,
     this.onTap,
     this.folded,
   });
 
   final String label;
   final String? detail;
-  final Widget? trailing;
 
   /// Opens or closes the fold this heading names, when it folds.
   final VoidCallback? onTap;
@@ -1223,8 +1220,6 @@ class NotesGroupHeading extends StatelessWidget {
             id: _GroupHeadingPart.rule,
             child: ColoredBox(color: palette.separator),
           ),
-          if (trailing case final trailing?)
-            LayoutId(id: _GroupHeadingPart.trailing, child: trailing),
         ],
       ),
     );
@@ -1238,12 +1233,11 @@ class NotesGroupHeading extends StatelessWidget {
   }
 }
 
-enum _GroupHeadingPart { label, detail, rule, trailing }
+enum _GroupHeadingPart { label, detail, rule }
 
-/// Lays a group heading out from its end: the grouping menu keeps its width,
-/// the label takes up to 200 of what is left, the date what the label leaves
-/// and the hairline the rest, so a narrow list shortens the words and never
-/// loses the menu.
+/// Lays a group heading out: the label takes up to 200, the date what the
+/// label leaves and the hairline the rest, so a narrow list shortens the
+/// words.
 class _GroupHeadingLayout extends MultiChildLayoutDelegate {
   @override
   void performLayout(Size size) {
@@ -1251,13 +1245,7 @@ class _GroupHeadingLayout extends MultiChildLayoutDelegate {
         Offset(x, (size.height - child.height) / 2);
     BoxConstraints upTo(double width) =>
         BoxConstraints(maxWidth: math.max(0, width), maxHeight: size.height);
-    var end = size.width;
-    if (hasChild(_GroupHeadingPart.trailing)) {
-      final trailing = layoutChild(_GroupHeadingPart.trailing, upTo(end));
-      end -= trailing.width;
-      positionChild(_GroupHeadingPart.trailing, centred(trailing, end));
-      end -= 8;
-    }
+    final end = size.width;
     final label = layoutChild(
       _GroupHeadingPart.label,
       upTo(math.min(end, 200)),
@@ -1280,8 +1268,8 @@ class _GroupHeadingLayout extends MultiChildLayoutDelegate {
   bool shouldRelayout(_GroupHeadingLayout oldDelegate) => false;
 }
 
-/// "By date ▾", at the end of the list's first heading: how the notes under
-/// Pinned are grouped.
+/// "By date ▾", in the list's controls row before the switch: how the notes
+/// under Pinned are grouped.
 class NotesGroupingMenu extends StatefulWidget {
   const NotesGroupingMenu({
     super.key,
@@ -1300,7 +1288,22 @@ class _NotesGroupingMenuState extends State<NotesGroupingMenu> {
   final _menu = OverlayPortalController();
   final _link = LayerLink();
 
-  void _toggle() => setState(_menu.isShowing ? _menu.hide : _menu.show);
+  static const double _width = 160;
+
+  /// Whether the menu opens rightwards from the button's left edge, where
+  /// the button sits too near the window's left for it to open leftwards
+  /// from its right edge, as it does at the end of the row.
+  bool _opensRight = false;
+
+  void _toggle() {
+    if (!_menu.isShowing) {
+      final box = context.findRenderObject() as RenderBox?;
+      _opensRight =
+          box != null &&
+          box.localToGlobal(box.size.topRight(Offset.zero)).dx < _width + 8;
+    }
+    setState(_menu.isShowing ? _menu.hide : _menu.show);
+  }
 
   void _close() {
     if (_menu.isShowing) setState(_menu.hide);
@@ -1328,8 +1331,12 @@ class _NotesGroupingMenuState extends State<NotesGroupingMenu> {
             alignment: Alignment.topLeft,
             child: CompositedTransformFollower(
               link: _link,
-              targetAnchor: Alignment.bottomRight,
-              followerAnchor: Alignment.topRight,
+              targetAnchor: _opensRight
+                  ? Alignment.bottomLeft
+                  : Alignment.bottomRight,
+              followerAnchor: _opensRight
+                  ? Alignment.topLeft
+                  : Alignment.topRight,
               offset: const Offset(0, 8),
               child: TapRegion(
                 groupId: _menu,
@@ -1341,7 +1348,7 @@ class _NotesGroupingMenuState extends State<NotesGroupingMenu> {
                     autofocus: true,
                     child: Container(
                       key: const ValueKey('notes-grouping-menu'),
-                      width: 160,
+                      width: _width,
                       padding: const EdgeInsets.all(6),
                       decoration: _menuSurface(palette),
                       child: Column(
@@ -1378,26 +1385,29 @@ class _NotesGroupingMenuState extends State<NotesGroupingMenu> {
                 key: const ValueKey('notes-grouping'),
                 onTap: _toggle,
                 behavior: HitTestBehavior.opaque,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      widget.grouping.label,
-                      style: _figtree(
-                        AppTypeScale.small,
-                        16,
-                        FontWeight.w500,
-                        color,
+                child: SizedBox(
+                  height: 28,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.grouping.label,
+                        style: _figtree(
+                          AppTypeScale.small,
+                          16,
+                          FontWeight.w500,
+                          color,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    KapyIcon(
-                      KapyIcons.chevronDownRounded,
-                      size: 12,
-                      strokeWidth: 2,
-                      color: color,
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      KapyIcon(
+                        KapyIcons.chevronDownRounded,
+                        size: 12,
+                        strokeWidth: 2,
+                        color: color,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1532,6 +1542,8 @@ class NotesListControls extends StatelessWidget {
     this.onWhenChanged,
     required this.today,
     this.weekShown,
+    this.grouping,
+    this.onGroupingChanged,
     this.alignEnd = false,
   });
 
@@ -1580,9 +1592,19 @@ class NotesListControls extends StatelessWidget {
   /// week for one button where it is short of room.
   final bool Function()? weekShown;
 
+  /// How the list groups what Pinned leaves, and the menu that changes it;
+  /// without a grouping there is no menu.
+  final NotesGrouping? grouping;
+  final ValueChanged<NotesGrouping>? onGroupingChanged;
+
   /// Whether the filter sits at the row's end beside the switch, as it does
   /// on a folder's page, rather than at its start.
   final bool alignEnd;
+
+  /// The row's narrowest that holds the sort beside the switch: the filter
+  /// with its label (72), the sort's longest (64) and the switch (60), with
+  /// the gaps between them.
+  static const double _sortBesideWidth = 72 + 4 + 64 + 8 + 60;
 
   @override
   Widget build(BuildContext context) {
@@ -1644,74 +1666,111 @@ class NotesListControls extends StatelessWidget {
         show != NotesShow.all ||
         (media != null && media.length < NoteMedia.values.length) ||
         (tags?.narrowed ?? false);
-    return Row(
-      children: [
-        Expanded(
-          // A line of its own for the chip where the list is too narrow to
-          // hold the filter and the span side by side.
-          child: Wrap(
-            alignment: alignEnd ? WrapAlignment.end : WrapAlignment.start,
-            spacing: 4,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _NotesFilter(
-                show: show,
-                offersShow: offersShow,
-                onShowChanged: onShowChanged,
-                hiddenListed: hiddenListed,
-                hiddenShortcut: hiddenShortcut,
-                archivedCount: archivedCount,
-                media: media,
-                onMediaChanged: onMediaChanged,
-                tags: tags,
-                onTagsChanged: onTagsChanged,
-                when: when,
-                onWhenChanged: onWhenChanged,
-                today: today,
-                weekShown: weekShown,
-                everything: everything,
-                narrowed: narrowed,
-              ),
-              if (narrowed)
-                CompactIconButton(
-                  key: const ValueKey('sidebar-filter-clear'),
-                  tooltip: 'Back to $everything',
-                  extent: 28,
-                  foregroundColor: palette.textSecondary,
-                  onPressed: onClear,
-                  icon: const KapyIcon(
-                    KapyIcons.closeRounded,
-                    size: 14,
-                    strokeWidth: 1.8,
+    final sort = switch ((grouping, onGroupingChanged)) {
+      (final grouping?, final onChanged?) => NotesGroupingMenu(
+        grouping: grouping,
+        onChanged: onChanged,
+      ),
+      _ => null,
+    };
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Too narrow to keep the filter's label beside the sort and the
+        // switch, the row puts the sort on a line of its own under them.
+        final sortBeside = constraints.maxWidth >= _sortBesideWidth;
+        final row = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              // A line of its own for the chip where the row is too narrow to
+              // hold it beside the filter, the sort and the switch.
+              child: Wrap(
+                alignment: alignEnd ? WrapAlignment.end : WrapAlignment.start,
+                spacing: 4,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _NotesFilter(
+                    show: show,
+                    offersShow: offersShow,
+                    onShowChanged: onShowChanged,
+                    hiddenListed: hiddenListed,
+                    hiddenShortcut: hiddenShortcut,
+                    archivedCount: archivedCount,
+                    media: media,
+                    onMediaChanged: onMediaChanged,
+                    tags: tags,
+                    onTagsChanged: onTagsChanged,
+                    when: when,
+                    onWhenChanged: onWhenChanged,
+                    today: today,
+                    weekShown: weekShown,
+                    everything: everything,
+                    narrowed: narrowed,
                   ),
-                ),
-              if (when case final span?
-                  when span != NotesWhen.anyTime && onWhenChanged != null)
-                _WhenChip(
-                  when: span,
-                  onClear: () => onWhenChanged(NotesWhen.anyTime),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 4),
-        if (onCardsChanged != null)
-          Container(
-            padding: const EdgeInsets.all(1),
-            decoration: BoxDecoration(
-              color: palette.cardBackground,
-              border: Border.all(color: palette.controlBorder),
-              borderRadius: BorderRadius.circular(8),
+                  if (narrowed)
+                    CompactIconButton(
+                      key: const ValueKey('sidebar-filter-clear'),
+                      tooltip: 'Back to $everything',
+                      extent: 28,
+                      foregroundColor: palette.textSecondary,
+                      onPressed: onClear,
+                      icon: const KapyIcon(
+                        KapyIcons.closeRounded,
+                        size: 14,
+                        strokeWidth: 1.8,
+                      ),
+                    ),
+                  if (when case final span?
+                      when span != NotesWhen.anyTime && onWhenChanged != null)
+                    _WhenChip(
+                      when: span,
+                      onClear: () => onWhenChanged(NotesWhen.anyTime),
+                    ),
+                ],
+              ),
             ),
-            child: Row(
-              children: [
-                segment(false, onCardsChanged),
-                segment(true, onCardsChanged),
-              ],
+            // The sort and the switch keep to the filter's line when the chip
+            // drops under it.
+            SizedBox(
+              height: _NotesFilter.lineHeight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 4),
+                  if (sort != null && sortBeside) ...[
+                    sort,
+                    const SizedBox(width: 8),
+                  ],
+                  if (onCardsChanged != null)
+                    Container(
+                      padding: const EdgeInsets.all(1),
+                      decoration: BoxDecoration(
+                        color: palette.cardBackground,
+                        border: Border.all(color: palette.controlBorder),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          segment(false, onCardsChanged),
+                          segment(true, onCardsChanged),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-      ],
+          ],
+        );
+        if (sort == null || sortBeside) return row;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: alignEnd
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [row, const SizedBox(height: 4), sort],
+        );
+      },
     );
   }
 }
@@ -1772,6 +1831,10 @@ class _NotesFilter extends StatefulWidget {
   final String everything;
   final bool narrowed;
 
+  /// The height of the filter's line: its 32 bar with a pointer, and its 28
+  /// button with 8 above and below for a finger.
+  static double get lineHeight => AppPlatform.hasPointer ? 32 : 28 + 2 * 8;
+
   @override
   State<_NotesFilter> createState() => _NotesFilterState();
 }
@@ -1789,9 +1852,10 @@ class _NotesFilterState extends State<_NotesFilter> {
   /// The submenu open beside the menu, if any.
   _FilterSubmenu? _submenu;
 
-  /// How far down the menu the open submenu's row sits, which the
-  /// submenu's top lines up with.
-  double _submenuTop = 0;
+  /// Where the open submenu's corner goes: beside the menu, level with the
+  /// row that opened it. A submenu that would run off the foot of the window
+  /// moves up until it fits.
+  Offset _submenuAt = Offset.zero;
 
   void _toggleSubmenu(_FilterSubmenu submenu, GlobalKey row) {
     final opener = row.currentContext?.findRenderObject() as RenderBox?;
@@ -1799,9 +1863,9 @@ class _NotesFilterState extends State<_NotesFilter> {
     setState(() {
       _submenu = _submenu == submenu ? null : submenu;
       if (opener != null && menu != null) {
-        _submenuTop = math.max(
-          0,
-          opener.localToGlobal(Offset.zero, ancestor: menu).dy - 6,
+        _submenuAt = Offset(
+          menu.localToGlobal(Offset(menu.size.width + 4, 0)).dx,
+          opener.localToGlobal(Offset.zero).dy - 6,
         );
       }
     });
@@ -2031,25 +2095,23 @@ class _NotesFilterState extends State<_NotesFilter> {
         link: _link,
         child: OverlayPortal(
           controller: _menu,
-          overlayChildBuilder: (context) => Align(
-            alignment: Alignment.topLeft,
-            child: CompositedTransformFollower(
-              link: _link,
-              targetAnchor: Alignment.bottomLeft,
-              offset: const Offset(0, 8),
-              child: TapRegion(
-                groupId: _menu,
-                child: CallbackShortcuts(
-                  bindings: {
-                    const SingleActivator(LogicalKeyboardKey.escape): _close,
-                  },
-                  child: Focus(
-                    autofocus: true,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _FilterMenu(
+          overlayChildBuilder: (context) => CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): _close,
+            },
+            child: Focus(
+              autofocus: true,
+              child: Stack(
+                children: [
+                  Align(
+                    alignment: Alignment.topLeft,
+                    child: CompositedTransformFollower(
+                      link: _link,
+                      targetAnchor: Alignment.bottomLeft,
+                      offset: const Offset(0, 8),
+                      child: TapRegion(
+                        groupId: _menu,
+                        child: _FilterMenu(
                           key: _menuKey,
                           show: widget.show,
                           offersShow: widget.offersShow,
@@ -2075,17 +2137,15 @@ class _NotesFilterState extends State<_NotesFilter> {
                           tagsRow: _tagsRow,
                           tags: widget.tags ?? const TagFilter(),
                         ),
-                        if (_openSubmenu case final submenu?) ...[
-                          const SizedBox(width: 4),
-                          Padding(
-                            padding: EdgeInsets.only(top: _submenuTop),
-                            child: submenu,
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                  if (_openSubmenu case final submenu?)
+                    CustomSingleChildLayout(
+                      delegate: PopoverAtPoint(_submenuAt),
+                      child: TapRegion(groupId: _menu, child: submenu),
+                    ),
+                ],
               ),
             ),
           ),

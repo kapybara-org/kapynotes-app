@@ -259,6 +259,71 @@ class KapyMenuAction {
   final bool enabled;
 }
 
+/// A note's actions menu: a heading that names what it acts on, where that
+/// isn't plain, then its groups, each set off from the next by a rule.
+typedef KapyMenu = ({String? heading, List<List<KapyMenuAction>> groups});
+
+/// [menu]'s lines for [showKapyContextMenu]: its heading, then its groups
+/// with a rule between each. [key] names a line by its action's value.
+List<PopupMenuEntry<String>> kapyMenuItems(
+  KapyMenu menu, {
+  required String Function(String value) key,
+}) {
+  final groups = [
+    for (final group in menu.groups)
+      if (group.isNotEmpty) group,
+  ];
+  return [
+    if (menu.heading case final heading?) _KapyMenuHeading(heading),
+    for (final (index, group) in groups.indexed) ...[
+      if (index > 0) const PopupMenuDivider(height: 9),
+      for (final action in group)
+        PopupMenuItem(
+          key: ValueKey(key(action.value)),
+          value: action.value,
+          height: 36,
+          child: KapyMenuActionRow(action, touch: false),
+        ),
+    ],
+  ];
+}
+
+/// The line over a menu's choices that names what they act on, such as
+/// "3 notes". It isn't a choice, so it takes no tap and no focus.
+class _KapyMenuHeading extends PopupMenuEntry<String> {
+  const _KapyMenuHeading(this.label);
+
+  final String label;
+
+  @override
+  double get height => 28;
+
+  @override
+  bool represents(String? value) => false;
+
+  @override
+  State<_KapyMenuHeading> createState() => _KapyMenuHeadingState();
+}
+
+class _KapyMenuHeadingState extends State<_KapyMenuHeading> {
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+      child: Text(
+        widget.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: AppTypeScale.small,
+          color: context.palette.textTertiary,
+        ),
+      ),
+    ),
+  );
+}
+
 /// A [KapyMenuAction] as drawn in a desktop menu or a touch sheet.
 class KapyMenuActionRow extends StatelessWidget {
   const KapyMenuActionRow(this.action, {super.key, required this.touch});
