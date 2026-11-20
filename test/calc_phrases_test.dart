@@ -309,6 +309,69 @@ void main() {
       }
     });
 
+    test(
+      'takes a code that is also a word only in capitals once it has a rate',
+      () {
+        final engine = CalcEngine(
+          ratesPerUsd: const {
+            'EUR': 0.5,
+            'ALL': 100.0,
+            'TRY': 30.0,
+            'BOB': 7.0,
+            'MAD': 10.0,
+            'GEL': 2.5,
+            'RON': 4.0,
+            'MOP': 8.0,
+            'PEN': 4.0,
+            'TOP': 2.0,
+            'SOS': 570.0,
+          },
+        );
+        for (final word in [
+          'all',
+          'All',
+          'try',
+          'Try',
+          'bob',
+          'mad',
+          'gel',
+          'ron',
+          'mop',
+          'pen',
+          'top',
+          'sos',
+        ]) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+        for (final code in [
+          'ALL',
+          'TRY',
+          'BOB',
+          'MAD',
+          'GEL',
+          'RON',
+          'MOP',
+          'PEN',
+          'TOP',
+          'SOS',
+        ]) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $code')[2]!.text,
+            '15.00 $code',
+            reason: code,
+          );
+        }
+        expect(engine.evaluateDocument('30 TRY in usd')[0]!.text, '1.00 USD');
+        expect(engine.evaluateDocument('5 try')[0]?.text, isNot('5.00 TRY'));
+        expect(engine.evaluateDocument('5 TRY')[0]!.text, '5.00 TRY');
+        expect(engine.evaluateDocument('\$5 in eur')[0]!.text, '2.50 EUR');
+      },
+    );
+
     test('has no rate to convert money with when there are none', () {
       expect(CalcEngine().evaluateDocument('\$10\n5\ntotal in eur')[2], isNull);
       expect(CalcEngine().evaluateDocument('100 usd in eur')[0], isNull);

@@ -11,6 +11,7 @@ import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/quick_capture.dart';
+import 'package:kapy_notes/core/status_bar.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
@@ -7234,6 +7235,426 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('note-total'))).bottom,
         lessThanOrEqualTo(size.height - keyboard),
       );
+    });
+  });
+
+  group('a phone on its side', () {
+    final phones = {
+      TargetPlatform.android: (
+        size: const Size(923, 411),
+        padding: const FakeViewPadding(top: 53, left: 53),
+        keyboard: 252.0,
+      ),
+      TargetPlatform.iOS: (
+        size: const Size(874, 402),
+        padding: const FakeViewPadding(left: 62, right: 62, bottom: 21),
+        keyboard: 209.0,
+      ),
+    };
+    final android = phones[TargetPlatform.android]!;
+
+    /// What the app has asked Android to do with its status bar, in order.
+    late List<String> statusBar;
+
+    setUp(() {
+      statusBar = [];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(StatusBar.channel, (call) async {
+            statusBar.add(call.method);
+            return null;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(StatusBar.channel, null);
+    });
+
+    /// Opens the keyboard on a note of thirty lines, with the caret at its end
+    /// and the note scrolled to the row being typed.
+    Future<void> typeAtTheEnd(WidgetTester tester, double keyboard) async {
+      await tester.tapAt(
+        tester.getRect(noteField).topLeft + const Offset(40, 12),
+      );
+      await tester.pump();
+      final text = [
+        for (var line = 1; line <= 30; line++) 'line $line',
+      ].join('\n');
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        ),
+      );
+      await tester.pumpAndSettle();
+      tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
+      await tester.pumpAndSettle();
+    }
+
+    /// An Android phone on its side, typing at the end of a long note, which
+    /// has just asked for the status bar to go.
+    Future<void> typeOnAndroid(WidgetTester tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.padding = android.padding;
+      addTearDown(tester.view.reset);
+      await pumpApp(tester, size: android.size, sidebarVisible: false);
+      await typeAtTheEnd(tester, android.keyboard);
+      expect(statusBar, ['hide']);
+    }
+
+    for (final MapEntry(key: platform, value: phone) in phones.entries) {
+      testWidgets('keeps the lines being typed in sight with the keyboard '
+          'up, on ${platform.name}', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        tester.view.padding = phone.padding;
+        addTearDown(tester.view.reset);
+        await pumpApp(tester, size: phone.size, sidebarVisible: false);
+        expect(find.byType(PageToolbar), findsOneWidget);
+
+        await typeAtTheEnd(tester, phone.keyboard);
+
+        expect(tester.testTextInput.isVisible, isTrue);
+        expect(find.byType(PageToolbar), findsNothing);
+        expect(tester.getTopLeft(find.byType(PageCard)).dy, phone.padding.top);
+        if (platform == TargetPlatform.android) {
+          expect(statusBar, ['hide']);
+          // Android takes the bar away, and the page moves up into its room.
+          tester.view.padding = FakeViewPadding(left: phone.padding.left);
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(find.byType(PageCard)).dy, 0);
+        } else {
+          expect(statusBar, isEmpty);
+        }
+
+        final driver = NoteDriver(tester);
+        final caret = driver
+            .caretRect(driver.value.selection.extent)
+            .shift(driver.toGlobal(Offset.zero));
+        final view = tester.getRect(noteField);
+        final card = tester.getRect(find.byType(PageCard));
+        final bar = tester.getRect(
+          find.byKey(const ValueKey('phone-format-bar')),
+        );
+        final shown = 'note $view, caret $caret, bar $bar, card $card';
+        expect(
+          bar.bottom,
+          lessThanOrEqualTo(phone.size.height - phone.keyboard),
+          reason: shown,
+        );
+        expect(caret.bottom, lessThanOrEqualTo(bar.top), reason: shown);
+        // The line being typed, and the two before it.
+        expect(
+          caret.top - 2 * driver.rowHeight,
+          greaterThanOrEqualTo(view.top),
+          reason: shown,
+        );
+        // The editor gives its top padding to the lines.
+        expect(
+          view.top - card.top,
+          lessThan(EditorMetrics.phonePadding.top),
+          reason: shown,
+        );
+
+        tester.view.viewInsets = FakeViewPadding.zero;
+        await tester.pumpAndSettle();
+        if (platform == TargetPlatform.android) {
+          expect(statusBar, ['hide', 'show']);
+          tester.view.padding = phone.padding;
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(PageToolbar), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.byType(PageCard)).dy,
+          phone.padding.top + 12,
+        );
+      });
+    }
+
+    testWidgets('gives the status bar back when the phone turns upright', (
+      tester,
+    ) async {
+      await typeOnAndroid(tester);
+
+      tester.view.physicalSize = android.size.flipped;
+      await tester.pumpAndSettle();
+      expect(statusBar, ['hide', 'show']);
+    });
+
+    testWidgets('gives the status bar back when the caret leaves the note', (
+      tester,
+    ) async {
+      await typeOnAndroid(tester);
+
+      // The keyboard stays up, as it does for a field the caret moves to.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      expect(tester.view.viewInsets.bottom, android.keyboard);
+      expect(statusBar, ['hide', 'show']);
+    });
+
+    testWidgets('gives the status bar back while the app is away', (
+      tester,
+    ) async {
+      await typeOnAndroid(tester);
+
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pump();
+      expect(statusBar, ['hide', 'show']);
+
+      for (final state in [
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pump();
+      // Back in the same note, still on its side with the keyboard up.
+      expect(statusBar, ['hide', 'show', 'hide']);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(statusBar, ['hide', 'show', 'hide', 'show']);
+    });
+
+    final tablets = {
+      TargetPlatform.android: (
+        size: const Size(1280, 800),
+        padding: const FakeViewPadding(top: 24, bottom: 48),
+        keyboard: 340.0,
+      ),
+      TargetPlatform.iOS: (
+        size: const Size(1194, 834),
+        padding: const FakeViewPadding(top: 24, bottom: 20),
+        keyboard: 398.0,
+      ),
+    };
+    for (final MapEntry(key: platform, value: tablet) in tablets.entries) {
+      testWidgets('a tablet keeps its page toolbar and status bar with the '
+          'keyboard up, on ${platform.name}', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        tester.view.padding = tablet.padding;
+        addTearDown(tester.view.reset);
+        await pumpApp(tester, size: tablet.size, sidebarVisible: false);
+
+        await typeAtTheEnd(tester, tablet.keyboard);
+
+        expect(tester.testTextInput.isVisible, isTrue);
+        expect(find.byType(PageToolbar), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.byType(PageCard)).dy,
+          tablet.padding.top + 12,
+        );
+        expect(statusBar, isEmpty);
+      });
+    }
+
+    testWidgets('keeps the rail clear of the camera cutout on either side', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      addTearDown(tester.view.reset);
+      const size = Size(923, 411);
+      const cutout = 53.0;
+      tester.view.padding = const FakeViewPadding(top: 53);
+      await pumpApp(tester, size: size, sidebarVisible: false);
+      final width = tester
+          .getSize(find.byKey(const ValueKey('rail-notes')))
+          .width;
+
+      for (final left in [true, false]) {
+        tester.view.padding = FakeViewPadding(
+          top: 53,
+          left: left ? cutout : 0,
+          right: left ? 0 : cutout,
+        );
+        await tester.pumpAndSettle();
+        final side = left ? 'left' : 'right';
+        final item = tester.getRect(find.byKey(const ValueKey('rail-notes')));
+        expect(item.width, width, reason: 'cutout on the $side');
+        expect(
+          item.left,
+          greaterThanOrEqualTo(left ? cutout : 0),
+          reason: 'cutout on the $side',
+        );
+        expect(
+          tester.getRect(find.byType(PageCard)).right,
+          lessThanOrEqualTo(size.width - (left ? 0 : cutout)),
+          reason: 'cutout on the $side',
+        );
+      }
+    });
+  });
+
+  group('themes', () {
+    CalcPalette palette(WidgetTester tester) => Theme.of(
+      tester.element(find.byType(HomePage)),
+    ).extension<CalcPalette>()!;
+
+    Brightness side(WidgetTester tester) =>
+        Theme.of(tester.element(find.byType(HomePage))).brightness;
+
+    Future<void> reveal(WidgetTester tester, String key) async {
+      await tester.ensureVisible(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a theme picked in Settings dresses the window at once and '
+        'is there on the next launch', (tester) async {
+      await pumpApp(tester);
+      await openSettings(tester);
+      await reveal(tester, 'theme-graphite');
+      await tester.tap(find.byKey(const ValueKey('theme-graphite')));
+      await tester.pumpAndSettle();
+
+      expect(prefs.theme, AppTheme.graphite);
+      expect(
+        palette(tester).editorBackground,
+        KapyTheme.palette(AppTheme.graphite, side(tester)).editorBackground,
+      );
+      expect((LayoutPrefs(store)..load()).theme, AppTheme.graphite);
+    });
+
+    testWidgets('Increase contrast follows the system until it is switched '
+        'by hand', (tester) async {
+      await pumpApp(tester);
+      expect(palette(tester).increasedContrast, isFalse);
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(highContrast: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pumpAndSettle();
+      expect(palette(tester).increasedContrast, isTrue);
+      expect(prefs.increaseContrast, isNull, reason: 'still following');
+
+      await openSettings(tester);
+      await reveal(tester, 'increase-contrast-setting');
+      final row = find.byKey(const ValueKey('increase-contrast-setting'));
+      bool shown() => tester
+          .widget<SettingsSwitch>(
+            find.descendant(of: row, matching: find.byType(SettingsSwitch)),
+          )
+          .value;
+      expect(shown(), isTrue);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(shown(), isFalse);
+      expect(prefs.increaseContrast, isFalse);
+      expect(
+        palette(tester).increasedContrast,
+        isFalse,
+        reason: 'the person can still turn it off',
+      );
+    });
+
+    testWidgets('At night takes over at 22:00 and lets go at 06:00', (
+      tester,
+    ) async {
+      var clock = DateTime(2026, 11, 19, 21, 59);
+      notes = NotesStore(store, now: () => clock);
+      await pumpApp(tester);
+      prefs.nightTheme = const NightTheme(enabled: true);
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.light);
+      expect(
+        palette(tester).editorBackground,
+        KapyTheme.lightPalette.editorBackground,
+      );
+
+      final lamplight = KapyTheme.palette(AppTheme.lamplight, Brightness.dark);
+      clock = DateTime(2026, 11, 19, 22);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.dark);
+      expect(palette(tester).editorBackground, lamplight.editorBackground);
+
+      clock = DateTime(2026, 11, 20, 5, 59);
+      await tester.pump(const Duration(hours: 7, minutes: 59));
+      await tester.pumpAndSettle();
+      expect(palette(tester).editorBackground, lamplight.editorBackground);
+
+      clock = DateTime(2026, 11, 20, 6);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.light);
+      expect(
+        palette(tester).editorBackground,
+        KapyTheme.lightPalette.editorBackground,
+      );
+    });
+
+    testWidgets('At night catches up when the app resumes or the clock jumps', (
+      tester,
+    ) async {
+      var clock = DateTime(2026, 11, 19, 21);
+      notes = NotesStore(store, now: () => clock);
+      await pumpApp(tester);
+      prefs.nightTheme = const NightTheme(enabled: true);
+      await tester.pumpAndSettle();
+      expect(side(tester), Brightness.light);
+
+      clock = DateTime(2026, 11, 19, 23, 30);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(
+        side(tester),
+        Brightness.dark,
+        reason: 'a phone that slept through 22:00 resumes at 23:30',
+      );
+
+      clock = DateTime(2026, 11, 20, 6);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pumpAndSettle();
+      expect(
+        side(tester),
+        Brightness.light,
+        reason:
+            'the clock reached 06:00 while the timers counted only minutes: '
+            'a Mac waking from sleep, a clock or time zone change, or a '
+            'spring-forward night',
+      );
+    });
+
+    testWidgets('At night shows its theme and hours once it is on, and both '
+        'can be changed', (tester) async {
+      await pumpApp(tester);
+      await openSettings(tester);
+      await reveal(tester, 'night-theme-setting');
+      expect(find.byKey(const ValueKey('night-theme-button')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('night-theme-setting')));
+      await tester.pumpAndSettle();
+      expect(prefs.nightTheme.enabled, isTrue);
+
+      await reveal(tester, 'night-theme-button');
+      await tester.tap(find.byKey(const ValueKey('night-theme-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('night-theme-midnight')));
+      await tester.pumpAndSettle();
+      expect(prefs.nightTheme.theme, AppTheme.midnight);
+
+      await reveal(tester, 'night-from-button');
+      await tester.tap(find.byKey(const ValueKey('night-from-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('night-hour-1380')));
+      await tester.pumpAndSettle();
+      expect(prefs.nightTheme.from, 23 * 60);
+      expect(find.text('23:00'), findsOneWidget);
+      expect((LayoutPrefs(store)..load()).nightTheme, prefs.nightTheme);
     });
   });
 }

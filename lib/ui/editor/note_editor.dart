@@ -183,6 +183,7 @@ class NoteEditor extends StatefulWidget {
     required this.engine,
     required this.highlighter,
     this.keepResultRoom = false,
+    this.cramped = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -341,6 +342,11 @@ class NoteEditor extends StatefulWidget {
   /// at the right of its first row, as a phone does. Otherwise the result
   /// follows the writing at the end of its line, on a leader.
   final bool keepResultRoom;
+
+  /// Whether the page around this editor is too short for its top and bottom
+  /// padding, as on a phone on its side with the keyboard up. The lines take
+  /// that room instead.
+  final bool cramped;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -485,6 +491,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// Whether this note is being written in: its own field has focus, or one of
   /// its cells does.
   bool get _editingNote => _focusNode.hasFocus || _editingCell != null;
+
+  /// Whether this note is being written in; see [_editingNote].
+  bool get writing => _editingNote;
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
@@ -7663,9 +7672,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // No home indicator inset here: the footer below runs under it and keeps
     // its own controls clear of it, so an inset on the text would only open a
     // second gap above a bar that already covers that strip.
-    final basePadding = AppPlatform.isMobile
+    var basePadding = AppPlatform.isMobile
         ? EditorMetrics.phonePadding
         : EditorMetrics.padding;
+    // A phone on its side, with the keyboard up, has no room to spare: the
+    // lines take the padding rather than being pushed out of sight.
+    if (widget.cramped) basePadding = basePadding.copyWith(top: 0, bottom: 0);
     final textStyle = EditorMetrics.textStyle(
       palette.textPrimary,
       widget.writingFont,

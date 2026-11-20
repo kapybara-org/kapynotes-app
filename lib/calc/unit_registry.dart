@@ -1,3 +1,4 @@
+import 'lexer.dart';
 import 'unit.dart';
 
 /// Every unit the engine knows about, indexed by exact and folded aliases.
@@ -129,14 +130,18 @@ class UnitRegistry {
       final upper = code.toUpperCase();
       if (upper == 'USD') return;
       if (!rate.isFinite || rate <= 0) return;
+      // A code that is also a word, such as ALL or TRY, is written in
+      // capitals only, so 'total in all' stays prose once its rate is known.
+      final wordLike = wordLikeCurrencyCodes.contains(upper);
       final def = UnitDef(
         symbol: upper,
         dimension: Dimension.base(Dimension.currency),
         factor: 1 / rate,
-        aliases: [upper.toLowerCase(), ..._symbolsFor(upper)],
+        aliases: [if (!wordLike) upper.toLowerCase(), ..._symbolsFor(upper)],
         category: 'currency',
       );
       _add(def);
+      if (wordLike) (_byExactAlias[upper] ??= []).add(def);
       _currencyCodes.add(upper);
     });
   }

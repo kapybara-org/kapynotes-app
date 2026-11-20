@@ -24,8 +24,16 @@ class McpScope extends InheritedNotifier<McpService> {
 
 const String mcpSectionLabel = 'MCP';
 const KapyIconData mcpSectionIcon = KapyIcons.mcpServer;
-const String mcpSectionSummary =
-    'Let the AI apps you use read and change your notes, on this computer only';
+
+/// The line under MCP in Settings. A phone has no server of its own, so it
+/// says where assistants connect instead, as the pane does.
+String get mcpSectionSummary => AppPlatform.isMobile
+    ? _connectElsewhere
+    : 'Let the AI apps you use read and change your notes, on this computer only';
+
+const String _connectElsewhere =
+    'Assistants connect through Kapy Notes on your Mac, Windows PC or Linux '
+    'computer';
 
 String get _computer => AppPlatform.isWindows
     ? 'this PC'
@@ -64,14 +72,7 @@ List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
     keywords: keywords,
   );
   if (service == null) {
-    return [
-      entry(
-        'AI assistants',
-        description:
-            'Assistants connect through Kapy Notes on your Mac or '
-            'Windows PC',
-      ),
-    ];
+    return [entry('AI assistants', description: _connectElsewhere)];
   }
   return [
     entry(
@@ -132,9 +133,7 @@ class _McpPaneState extends State<McpPane> {
   Widget build(BuildContext context) {
     final service = McpScope.maybeOf(context);
     if (service == null) {
-      return const SettingsNote(
-        'Assistants connect through Kapy Notes on your Mac or Windows PC.',
-      );
+      return const SettingsNote('$_connectElsewhere.');
     }
     final activity = service.activity;
     return Column(

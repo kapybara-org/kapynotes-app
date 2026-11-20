@@ -75,36 +75,47 @@ class SettingsLabel extends StatelessWidget {
     final detail = this.detail;
     final caption = this.caption;
     if (AppPlatform.hasPointer) {
-      final heading = Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Text(
-            text,
-            style: TextStyle(
-              fontFamily: 'Shantell Sans',
-              fontSize: SettingsMetrics.sectionLabelSize,
-              fontWeight: FontWeight.w500,
-              height: 18 / 14,
-              color: palette.textSubheading,
-            ),
-          ),
-          if (detail != null) ...[
-            const SizedBox(width: 8),
-            Expanded(
+      // The heading yields to the line beside it when the two cannot share
+      // the width; at every width they can, it keeps its natural size.
+      final heading = LayoutBuilder(
+        builder: (context, box) => Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: math.max(0, box.maxWidth - (detail == null ? 0 : 96)),
+              ),
               child: Text(
-                detail,
+                text,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
-                  height: 16 / 12,
-                  color: palette.textTertiary,
+                  fontFamily: 'Shantell Sans',
+                  fontSize: SettingsMetrics.sectionLabelSize,
+                  fontWeight: FontWeight.w500,
+                  height: 18 / 14,
+                  color: palette.textSubheading,
                 ),
               ),
             ),
+            if (detail != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 16 / 12,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       );
       return Padding(
         padding: const EdgeInsets.only(left: 2, bottom: 8),
@@ -301,9 +312,14 @@ class SettingsRowCopy extends StatelessWidget {
             ],
             if (tag != null) ...[
               const SizedBox(width: 7),
-              Text(
-                tag,
-                style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              Flexible(
+                child: Text(
+                  tag,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: TextStyle(fontSize: 11, color: palette.textTertiary),
+                ),
               ),
             ],
           ],
@@ -557,10 +573,19 @@ class SettingsMenuButton extends StatelessWidget {
     super.key,
     required this.label,
     required this.onPressed,
+    this.leading,
+    this.chevron = true,
   });
 
   final String label;
   final VoidCallback onPressed;
+
+  /// What goes before the label: a theme's accent.
+  final Widget? leading;
+
+  /// Whether a list is behind it. A time is chosen from one too, but reads
+  /// as a field.
+  final bool chevron;
 
   @override
   Widget build(BuildContext context) {
@@ -571,7 +596,7 @@ class SettingsMenuButton extends StatelessWidget {
         onPressed: onPressed,
         style: TextButton.styleFrom(
           minimumSize: Size(0, SettingsMetrics.controlHeight),
-          padding: const EdgeInsets.only(left: 10, right: 8),
+          padding: EdgeInsets.only(left: 10, right: chevron ? 8 : 10),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           backgroundColor: palette.wellBackground,
           foregroundColor: palette.textPrimary,
@@ -583,6 +608,10 @@ class SettingsMenuButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (leading case final leading?) ...[
+              leading,
+              const SizedBox(width: 8),
+            ],
             Flexible(
               child: Text(
                 label,
@@ -591,12 +620,14 @@ class SettingsMenuButton extends StatelessWidget {
                 style: TextStyle(fontSize: SettingsMetrics.buttonLabelSize),
               ),
             ),
-            const SizedBox(width: 6),
-            KapyIcon(
-              KapyIcons.chevronDownRounded,
-              size: 13,
-              color: palette.textTertiary,
-            ),
+            if (chevron) ...[
+              const SizedBox(width: 6),
+              KapyIcon(
+                KapyIcons.chevronDownRounded,
+                size: 13,
+                color: palette.textTertiary,
+              ),
+            ],
           ],
         ),
       ),

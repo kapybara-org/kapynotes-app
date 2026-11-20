@@ -24,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
     private var pendingLaunch: String? = null
     private var noteTitles: NoteTitles? = null
+    private var contrastSetting: ContrastSetting? = null
 
     /**
      * Lets code Play delivered after install — the speech runtime module —
@@ -41,6 +42,8 @@ class MainActivity : FlutterFragmentActivity() {
         AudioDecode.register(flutterEngine.dartExecutor.binaryMessenger)
         SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
         SystemRegion.register(flutterEngine.dartExecutor.binaryMessenger)
+        contrastSetting = ContrastSetting.register(this, flutterEngine.dartExecutor.binaryMessenger)
+        StatusBar.register(flutterEngine.dartExecutor.binaryMessenger, this)
         noteTitles = NoteTitles.register(flutterEngine.dartExecutor.binaryMessenger)
         FileExport.register(flutterEngine.dartExecutor.binaryMessenger) { this }
         pendingLaunch = takeLaunchName(intent)
@@ -100,6 +103,8 @@ class MainActivity : FlutterFragmentActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         noteTitles?.close()
         noteTitles = null
+        contrastSetting?.close()
+        contrastSetting = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

@@ -48,7 +48,10 @@ InputDecoration kapyFieldDecoration(
     disabledBorder: border(palette.controlBorder.withValues(alpha: 0.55)),
     focusedBorder: neutralFocus
         ? border(palette.controlBorder)
-        : border(palette.selectedBorder, width: 1.25),
+        : border(
+            palette.selectedBorder,
+            width: palette.increasedContrast ? 2 : 1.25,
+          ),
     errorBorder: border(error.withValues(alpha: 0.8)),
     focusedErrorBorder: border(error, width: 1.25),
   );

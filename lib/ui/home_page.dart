@@ -24,6 +24,7 @@ import '../speech/transcription_queue.dart';
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
 import '../core/quick_capture.dart';
+import '../core/status_bar.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/engine_provider.dart';
@@ -98,6 +99,18 @@ import 'draw/drawing_canvas.dart';
 /// phone switches to the compact editor with a notes drawer, while a desktop
 /// window keeps the rail and the page and opens the list over the page.
 const double kTwoPaneBreakpoint = 720;
+
+/// The height a page needs above a software keyboard to keep its toolbar, its
+/// margins and the editor's top and bottom padding. A phone on its side has
+/// less, and gives them up while the keyboard is up so the lines being typed
+/// stay in sight; a tablet has more. Measured from the top of the window, so
+/// hiding the status bar for the room does not change the answer.
+const double kCrampedPageHeight = 240;
+
+/// Whether a window of [size], [keyboardInset] of it under the keyboard,
+/// leaves a cramped page; see [kCrampedPageHeight].
+bool isCrampedPage(Size size, double keyboardInset) =>
+    keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -461,6 +474,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
+    _syncStatusBar();
     // A list opened over the page stays open as the window widens, beside the
     // page now that there is room for it.
     if (mounted && _listOverlaid && _listFits) {
@@ -3792,6 +3806,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// Whether this page has hidden Android's status bar; see [_syncStatusBar].
+  bool _statusBarHidden = false;
+
+  /// Hides Android's status bar while the keyboard leaves a phone on its side
+  /// a cramped page to write in, and shows it again as soon as that stops:
+  /// the keyboard closes, the phone turns upright, the caret leaves the note,
+  /// or the app leaves the foreground. iPhones hide it in landscape on their
+  /// own.
+  void _syncStatusBar() {
+    if (!AppPlatform.isAndroid || !mounted) return;
+    final view = View.of(context);
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    final hide =
+        (lifecycle == null || lifecycle == AppLifecycleState.resumed) &&
+        isCrampedPage(
+          view.physicalSize / view.devicePixelRatio,
+          view.viewInsets.bottom / view.devicePixelRatio,
+        ) &&
+        (_phonePageOpen || _selectedEditor?.writing == true);
+    if (hide == _statusBarHidden) return;
+    _statusBarHidden = hide;
+    unawaited(StatusBar.setHidden(hide));
+  }
+
   static const _phoneListPage = ValueKey('phone-list');
 
   /// Back from the page to the list it was pushed over.
@@ -3941,53 +3979,62 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     backgroundColor: context.palette.paperColor,
     body: ListenableBuilder(
       listenable: _toolbarSources,
-      builder: (context, _) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SafeArea(
-            bottom: false,
-            child: PageToolbar(
-              space: _specialMode
-                  ? _show.label
-                  : _space == LibrarySpace.notes
-                  ? 'Notes'
-                  : _space.title,
-              listVisible: true,
-              onShowList: _closePhonePage,
-              onBack: () => unawaited(_phoneNavigator.currentState?.maybePop()),
-              noun: note.isDrawing ? 'drawing' : 'note',
-              onCreate: _createInSpace,
-              noteOpen: true,
-              syncStatus: widget.account?.sync?.status,
-              members: _selectedMembers,
-              present: _selectedPresence,
-              currentUserId: widget.account?.sharing?.userId ?? '',
-              noteShared: note.isShared,
-              onShare: _shareSelected,
-              assistant: _kapyAiButton(
-                extent: AppControlMetrics.iconButtonExtent,
-                gap: 2,
-              ),
-              moreActions: _pageActions(note, phone: true),
-              onMore: (action) => _runPageAction(action, note),
-              updates: widget.updates,
-            ),
-          ),
-          Expanded(
-            child: SafeArea(
-              top: false,
-              // The footer insets its own controls past the home indicator,
-              // as the page bar does past the status bar.
+      builder: (context, _) {
+        // A phone on its side with the keyboard up has no room to spare: the
+        // bar steps aside and the lines take its room and the padding's.
+        final cramped = isCrampedPage(
+          MediaQuery.sizeOf(context),
+          MediaQuery.viewInsetsOf(context).bottom,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SafeArea(
               bottom: false,
-              child: _phoneEditor(note),
+              child: PageToolbar(
+                space: _specialMode
+                    ? _show.label
+                    : _space == LibrarySpace.notes
+                    ? 'Notes'
+                    : _space.title,
+                listVisible: true,
+                onShowList: _closePhonePage,
+                onBack: () =>
+                    unawaited(_phoneNavigator.currentState?.maybePop()),
+                noun: note.isDrawing ? 'drawing' : 'note',
+                onCreate: _createInSpace,
+                noteOpen: true,
+                syncStatus: widget.account?.sync?.status,
+                members: _selectedMembers,
+                present: _selectedPresence,
+                currentUserId: widget.account?.sharing?.userId ?? '',
+                noteShared: note.isShared,
+                onShare: _shareSelected,
+                assistant: _kapyAiButton(
+                  extent: AppControlMetrics.iconButtonExtent,
+                  gap: 2,
+                ),
+                moreActions: _pageActions(note, phone: true),
+                onMore: (action) => _runPageAction(action, note),
+                updates: widget.updates,
+              ),
             ),
-          ),
-        ],
-      ),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                // The footer insets its own controls past the home indicator,
+                // as the page bar does past the status bar.
+                bottom: false,
+                child: _phoneEditor(note, cramped: cramped),
+              ),
+            ),
+          ],
+        );
+      },
     ),
   );
 
-  Widget _phoneEditor(Note note) {
+  Widget _phoneEditor(Note note, {required bool cramped}) {
     if (_opensAsDrawing(note)) return _buildDrawing(note);
     return ListenableBuilder(
       listenable: widget.engines,
@@ -3995,6 +4042,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         listenable: _toolbarSources,
         builder: (context, _) => NoteEditor(
           key: _phoneEditorKey,
+          cramped: cramped,
           player: widget.player,
           voiceStateFor: _voiceStateFor,
           onOpenVoiceNote: _openVoiceNote,

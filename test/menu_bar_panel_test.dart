@@ -1,5 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui'
+    show
+        FlutterView,
+        Scene,
+        SemanticsAction,
+        SemanticsActionEvent,
+        SemanticsUpdate;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -133,6 +140,7 @@ void main() {
     WidgetTester tester, {
     Brightness brightness = Brightness.light,
     int opening = 0,
+    bool beside = false,
   }) async {
     // Loaded inside the test's fake clock: a future made in setUp is never
     // awaited to the end in here.
@@ -140,37 +148,54 @@ void main() {
     tester.view.physicalSize = const Size(360, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: brightness == Brightness.light
-            ? KapyTheme.light()
-            : KapyTheme.dark(),
-        home: MenuBarPanel(
-          key: ValueKey(opening),
-          controller: controller,
-          notes: notes,
-          tasks: tasks,
-          prefs: prefs,
-          shortcuts: shortcuts,
-          canEdit: (note) => panelCanEdit(
-            note,
-            limit: limit,
-            canEditShared: (note) => !viewOnly.contains(note.id),
-          ),
-          inWindow: (act) async => act((
-            openNote: (id) => window.add('note $id'),
-            openTasks: () => window.add('tasks'),
-            find: () => window.add('find'),
-            newTask: () => window.add('new task'),
-            openSettings: () => window.add('settings'),
-            explainNoteLimit: () => window.add('limit'),
-          )),
-          noteLimit: limit,
-          recording: recording,
-          now: () => clock,
+    final panel = MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: brightness == Brightness.light
+          ? KapyTheme.light()
+          : KapyTheme.dark(),
+      home: MenuBarPanel(
+        key: ValueKey(opening),
+        controller: controller,
+        notes: notes,
+        tasks: tasks,
+        prefs: prefs,
+        shortcuts: shortcuts,
+        canEdit: (note) => panelCanEdit(
+          note,
+          limit: limit,
+          canEditShared: (note) => !viewOnly.contains(note.id),
         ),
+        inWindow: (act) async => act((
+          openNote: (id) => window.add('note $id'),
+          openTasks: () => window.add('tasks'),
+          find: () => window.add('find'),
+          newTask: () => window.add('new task'),
+          openSettings: () => window.add('settings'),
+          explainNoteLimit: () => window.add('limit'),
+        )),
+        noteLimit: limit,
+        recording: recording,
+        now: () => clock,
       ),
+    );
+    // As in the app: the panel in its own view, beside the window's.
+    await tester.pumpWidget(
+      beside
+          ? ViewCollection(
+              views: [
+                View(
+                  view: tester.view,
+                  child: Semantics(
+                    label: 'Window',
+                    textDirection: TextDirection.ltr,
+                    child: const SizedBox(),
+                  ),
+                ),
+                View(view: _PanelView(tester.view), child: panel),
+              ],
+            )
+          : panel,
+      wrapWithView: !beside,
     );
     await settle(tester);
   }
@@ -231,6 +256,27 @@ void main() {
       expect(prefs.menuBarOpensTasks, isFalse);
     });
 
+    testWidgets('an accessibility press on Tasks switches to it', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPanel(tester, beside: true);
+      final tab = tester.getSemantics(
+        find.byKey(const ValueKey('menu-bar-tab-tasks')),
+      );
+      // The macOS engine names the window's view in every action.
+      tester.binding.platformDispatcher.onSemanticsActionEvent!(
+        SemanticsActionEvent(
+          type: SemanticsAction.tap,
+          viewId: tester.view.viewId,
+          nodeId: tab.id,
+        ),
+      );
+      await settle(tester);
+      expect(field('Add a task…'), findsOneWidget);
+      semantics.dispose();
+    });
+
     testWidgets('each tab keeps its own draft, and so does closing', (
       tester,
     ) async {
@@ -255,7 +301,11 @@ void main() {
     testWidgets('Return saves a note named by its first line', (tester) async {
       await pumpPanel(tester);
       await type(tester, 'Groceries\nmilk and eggs');
-      expect(find.text('Save'), findsOneWidget, reason: 'the hint while typing');
+      expect(
+        find.text('Save'),
+        findsOneWidget,
+        reason: 'the hint while typing',
+      );
       await press(tester);
 
       expect(notes.notes.single.title, 'Groceries');
@@ -363,7 +413,9 @@ void main() {
     });
 
     testWidgets('into the chosen note, which stays chosen', (tester) async {
-      final budget = await withTasks('Home budget', ['Pay the electricity bill']);
+      final budget = await withTasks('Home budget', [
+        'Pay the electricity bill',
+      ]);
       await pumpPanel(tester);
       await tester.tap(find.byKey(const ValueKey('menu-bar-note-chip')));
       await settle(tester);
@@ -375,14 +427,17 @@ void main() {
       await type(tester, 'Book the car service');
       await press(tester);
 
-      expect(notes.byId(budget.id)!.body, endsWith(
-        '☐ Call the bank about the card\n☐ Book the car service',
-      ));
+      expect(
+        notes.byId(budget.id)!.body,
+        endsWith('☐ Call the bank about the card\n☐ Book the car service'),
+      );
       expect(controller.taskNoteId, budget.id);
     });
 
     testWidgets('⌘Return adds and opens its note, or Tasks', (tester) async {
-      final budget = await withTasks('Home budget', ['Pay the electricity bill']);
+      final budget = await withTasks('Home budget', [
+        'Pay the electricity bill',
+      ]);
       await pumpPanel(tester);
       await type(tester, 'Buy coffee beans');
       await press(tester, meta: true);
@@ -437,7 +492,10 @@ void main() {
     testWidgets('checking a task keeps its row until the panel closes', (
       tester,
     ) async {
-      await withTasks('Home budget', ['Pay the electricity bill', 'Renew passport']);
+      await withTasks('Home budget', [
+        'Pay the electricity bill',
+        'Renew passport',
+      ]);
       await pumpPanel(tester);
       expect(find.text('0 of 2 done'), findsOneWidget);
       final item = tasks.read().open.first;
@@ -562,9 +620,9 @@ void main() {
         await settle(tester);
       }
       await expectLater(
-          find.byKey(const ValueKey('menu-bar-panel')),
-          matchesGoldenFile('goldens/menu_bar_panel_$name.png'),
-        );
+        find.byKey(const ValueKey('menu-bar-panel')),
+        matchesGoldenFile('goldens/menu_bar_panel_$name.png'),
+      );
     }
 
     Future<void> seedTasks() async {
@@ -576,7 +634,10 @@ void main() {
       await withTasks('Tasks', ['Return the library books']);
       final budget = notes.notes.firstWhere((n) => n.title == 'Home budget');
       notes.updateBody(budget.id, '${budget.body}\n☐ Book the car service');
-      await withTasks('Errands', ['Collect the dry cleaning', 'Water the plants']);
+      await withTasks('Errands', [
+        'Collect the dry cleaning',
+        'Water the plants',
+      ]);
     }
 
     testWidgets('Tasks, light, one just checked', (tester) async {
@@ -615,7 +676,12 @@ void main() {
     });
 
     testWidgets('Notes, dark', (tester) async {
-      for (final title in ['Freelance', 'Q4 planning', 'Groceries', 'Team offsite']) {
+      for (final title in [
+        'Freelance',
+        'Q4 planning',
+        'Groceries',
+        'Team offsite',
+      ]) {
         notes.create(body: title);
         later(const Duration(hours: 20));
       }
@@ -713,6 +779,25 @@ void main() {
 }
 
 /// A recorder with no microphone behind it, which only remembers its file.
+/// A second view on the test's window, as the panel is on the app's engine.
+class _PanelView extends TestFlutterView {
+  _PanelView(FlutterView view)
+    : super(
+        view: view,
+        platformDispatcher: view.platformDispatcher as TestPlatformDispatcher,
+        display: view.display as TestDisplay,
+      );
+
+  @override
+  int get viewId => 7;
+
+  @override
+  void render(Scene scene, {Size? size}) {}
+
+  @override
+  void updateSemantics(SemanticsUpdate update) {}
+}
+
 class _SilentRecorder implements VoiceRecorderBackend {
   bool permitted = true;
   String? startedAt;

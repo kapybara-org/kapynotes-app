@@ -26,6 +26,43 @@ final class MenuBarPanel: NSObject, NSWindowDelegate {
 
   static let width: CGFloat = 360
 
+  /// The engine hands every view's semantics to the window's controller,
+  /// whichever view they are for (update_semantics_callback2 in
+  /// FlutterEngine.mm only knows the implicit view), so the panel's controls
+  /// sat inside the window for VoiceOver and the panel had none. Each batch
+  /// does name its view: this sends it to that view's controller instead, and
+  /// drops one for a view with no controller here rather than mixing it into
+  /// the window's tree. False on an engine without the method, which keeps
+  /// its own behaviour.
+  static let routesSemantics: Bool = {
+    let selector = NSSelectorFromString("updateSemantics:")
+    guard let method = class_getInstanceMethod(FlutterViewController.self, selector),
+          method_getNumberOfArguments(method) == 3
+    else { return false }
+    typealias Update = @convention(c) (FlutterViewController, Selector, UnsafeRawPointer) -> Void
+    let update = unsafeBitCast(method_getImplementation(method), to: Update.self)
+    let routed: @convention(block) (FlutterViewController, UnsafeRawPointer) -> Void = { controller, batch in
+      guard let viewId = viewId(of: batch), viewId != controller.viewIdentifier else {
+        return update(controller, selector, batch)
+      }
+      guard let target = views.object(forKey: NSNumber(value: viewId)) else { return }
+      update(target, selector, batch)
+    }
+    method_setImplementation(method, imp_implementationWithBlock(routed))
+    return true
+  }()
+
+  /// The view a FlutterSemanticsUpdate2 is for: its last field, after
+  /// struct_size, node_count, nodes, custom_action_count and custom_actions.
+  /// Nil from an engine whose batches are too short to have one.
+  static func viewId(of batch: UnsafeRawPointer) -> Int64? {
+    let offset = 5 * MemoryLayout<Int>.size
+    guard batch.load(as: Int.self) >= offset + MemoryLayout<Int64>.size else { return nil }
+    return batch.load(fromByteOffset: offset, as: Int64.self)
+  }
+
+  private static let views = NSMapTable<NSNumber, FlutterViewController>.strongToWeakObjects()
+
   private let engine: FlutterEngine
   private let channel: FlutterMethodChannel
   private var panel: Panel?
@@ -97,7 +134,9 @@ final class MenuBarPanel: NSObject, NSWindowDelegate {
   private func ensurePanel() -> (Panel, Int64) {
     if let panel, let controller { return (panel, controller.viewIdentifier) }
     engine.setValue(true, forKey: Self.multiViewIvar)
+    _ = Self.routesSemantics
     let controller = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
+    Self.views.setObject(controller, forKey: NSNumber(value: controller.viewIdentifier))
     controller.backgroundColor = .clear
     let panel = Panel(
       contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 400),
