@@ -2542,7 +2542,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         SettingsSearchEntry(
           section: SettingsSection.about,
           sectionLabel: SettingsSection.about.label,
-          title: 'Release notes',
+          title: AppPlatform.isMobile ? "What's new" : 'Release notes',
           icon: SettingsSection.about.icon,
           target: 'changelog',
           keywords: const ['changelog', 'what’s new', 'versions', 'history'],
