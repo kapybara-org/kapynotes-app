@@ -382,7 +382,7 @@ void main() {
         reason: 'above the search',
       );
       expect(find.byKey(_card), findsNothing);
-      expect(find.text('About & updates'), findsNothing);
+      expect(find.text('About & updates'), findsOneWidget);
 
       final launched = <Object?>[];
       const channel = MethodChannel('plugins.flutter.io/url_launcher');
@@ -591,6 +591,74 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await pumpRow(LayoutPrefs(store)..load());
     expect(find.text("What's new in 1.2.0"), findsOneWidget);
+  });
+
+  testWidgets('on a phone, closing the notice leaves What\'s new in About', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    PackageInfo.setMockInitialValues(
+      appName: 'Kapy Notes',
+      packageName: 'com.kapybara.kapynotes',
+      version: '1.0.0',
+      buildNumber: '1',
+      buildSignature: '',
+    );
+    tester.view.physicalSize = const Size(400, 860);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = _MemoryStore();
+    final notes = NotesStore(store);
+    await notes.load();
+    final prefs = LayoutPrefs(store)..load();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Scaffold(
+          body: SettingsDialog(
+            layoutPrefs: prefs,
+            shortcuts: ShortcutPrefs(store)..load(),
+            rates: RatesRepository(store),
+            notes: notes,
+            asSheet: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final launched = <Object?>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'launch') launched.add(call.arguments);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    await tester.tap(
+      find.descendant(of: find.byKey(hideKey), matching: find.byType(IconButton)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text("What's new in 1.0.0"), findsNothing);
+
+    final about = find.byKey(const ValueKey('settings-section-about'));
+    await tester.ensureVisible(about);
+    await tester.tap(about);
+    await tester.pumpAndSettle();
+    expect(find.text("What's new"), findsOneWidget);
+    expect(find.text('See what changed'), findsOneWidget);
+    expect(find.byKey(hideKey), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('changelog')));
+    await tester.pumpAndSettle();
+    expect(
+      launched.single,
+      containsPair('url', 'https://kapynotes.com/changelog'),
+    );
   });
 
   testWidgets('the close button uses each theme’s quiet text color', (
