@@ -283,6 +283,9 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     // them, rather than one person's space with everybody else invited after.
     final group = _space == null && addresses.length > 1;
     await _run(() async {
+      if (_note.isHidden) {
+        throw const SyncRefusedException(409, 'hidden-note', {});
+      }
       if (group) {
         final made = await _sharing.createSpace(groupSpaceName(addresses));
         try {
@@ -2443,7 +2446,7 @@ class _LinkRow extends StatelessWidget {
             ],
           ),
         ),
-        if (on && opensMore != null) ...[
+        if (opensMore != null) ...[
           const SizedBox(height: 6),
           Text(
             opensMore!,

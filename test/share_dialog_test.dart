@@ -896,6 +896,7 @@ void main() {
           spaceId: spaceId,
         );
       });
+      final copied = captureClipboard(tester);
       final joining = joiningOver(FakeSend());
       addTearDown(joining.dispose);
       await openSheet(
@@ -904,6 +905,16 @@ void main() {
         alice,
         joining: joining,
       );
+      await tester.pumpAndSettle();
+
+      // Before the switch is touched, since turning it on copies the link.
+      expect(find.text('Off'), findsOneWidget);
+      expect(copied, isEmpty);
+      expect(
+        find.textContaining('The link opens all 2 notes here'),
+        findsOneWidget,
+      );
+
       await tester.runAsync(() async {
         await tester.tap(find.byKey(const ValueKey('share-link-switch')));
         await Future<void>.delayed(const Duration(milliseconds: 400));
