@@ -296,7 +296,7 @@ class _UpcomingRow extends StatelessWidget {
                 'Upcoming',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: uiStyle(
+                style: _figtree(
                   14,
                   18,
                   FontWeight.w500,
@@ -306,7 +306,7 @@ class _UpcomingRow extends StatelessWidget {
             ),
             Text(
               '$count',
-              style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+              style: _figtree(12, 16, FontWeight.w600, palette.textTertiary),
             ),
           ],
         ),

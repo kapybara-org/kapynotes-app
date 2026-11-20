@@ -667,7 +667,6 @@ class _DayPickerState extends State<DayPicker> {
       ...List.filled((month.weekday - widget.firstWeekday) % 7, null),
       ...days,
     ];
-    final current = month.year == today.year && month.month == today.month;
 
     Widget cell(DateTime? day) {
       if (day == null) return const SizedBox.square(dimension: 32);
