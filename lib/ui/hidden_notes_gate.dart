@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/keyring.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../sync/aead.dart' show randomBytes;
@@ -269,7 +270,9 @@ class DefaultHiddenNotesGate implements HiddenNotesGate {
       if (context.mounted) {
         await _showFailure(
           context,
-          'The secure credential store could not be read. Hidden Notes stayed locked.',
+          KeyringStatus.instance.available
+              ? 'The secure credential store could not be read. Hidden Notes stayed locked.'
+              : KeyringNotice.hiddenNotes,
         );
       }
       return const _ReadFailed();
@@ -284,7 +287,9 @@ class DefaultHiddenNotesGate implements HiddenNotesGate {
       if (context.mounted) {
         await _showFailure(
           context,
-          'The secure credential store could not save the Hidden Notes credential.',
+          KeyringStatus.instance.available
+              ? 'The secure credential store could not save the Hidden Notes credential.'
+              : KeyringNotice.hiddenNotes,
         );
       }
       return false;
