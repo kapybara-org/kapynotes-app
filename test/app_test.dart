@@ -24,6 +24,7 @@ import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
@@ -45,6 +46,7 @@ import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
@@ -132,6 +134,7 @@ Future<void> pumpApp(
   ImageFileAcquirer? imageAcquirer,
   Account? account,
   TagStore? tags,
+  FolderStore? folders,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
   VoiceRecordingController? recording,
 }) async {
@@ -164,6 +167,7 @@ Future<void> pumpApp(
       imageAcquirer: imageAcquirer,
       account: account,
       tags: tags,
+      folders: folders,
       titleModel: titleModel,
       recording: recording,
     ),
@@ -3596,7 +3600,7 @@ void main() {
 
     // Thursday 19 November, at noon. Call with Arjun was started on the 2nd
     // and last edited today.
-    Future<void> library(WidgetTester tester) async {
+    Future<void> library(WidgetTester tester, {FolderStore? folders}) async {
       int at(int month, int day, int hour) =>
           DateTime(2026, month, day, hour).millisecondsSinceEpoch;
       Map<String, Object?> note(String body, int created, int updated) => {
@@ -3612,7 +3616,7 @@ void main() {
         note('October plan', at(10, 20, 8), at(10, 20, 8)),
       ];
       notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
-      await pumpApp(tester, size: const Size(1400, 800));
+      await pumpApp(tester, size: const Size(1400, 800), folders: folders);
     }
 
     List<String> headings(WidgetTester tester) => [
@@ -3699,6 +3703,161 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('sidebar-empty-action')));
       await tester.pumpAndSettle();
       expect(headings(tester), hasLength(4));
+    });
+
+    Finder day(int date) => find.byKey(ValueKey('day-strip-2026-11-$date'));
+    Finder dots(int date) => find.descendant(
+      of: day(date),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is Container &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration! as BoxDecoration).shape == BoxShape.circle,
+      ),
+    );
+    final whenChip = find.byKey(const ValueKey('notes-when-chip'));
+    Future<void> tap(WidgetTester tester, Finder target) async {
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a day in the week narrows the list, a second click or its '
+        'chip lets it go, and a day and a span replace each other', (
+      tester,
+    ) async {
+      await library(tester);
+      expect(find.byType(DayStrip), findsOneWidget);
+
+      await tap(tester, day(18));
+      expect(headings(tester), ['Yesterday Wed 18']);
+      expect(
+        find.descendant(of: whenChip, matching: find.text('Wed 18')),
+        findsOneWidget,
+      );
+      await tap(tester, day(18));
+      expect(headings(tester), hasLength(4));
+      expect(whenChip, findsNothing);
+
+      await tap(tester, day(17));
+      expect(headings(tester), ['Tue 17']);
+      await tap(tester, whenChip);
+      expect(headings(tester), hasLength(4));
+
+      // When's menu points to the week for one day, and a span picked there
+      // takes the day's place.
+      await tap(tester, day(17));
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
+      expect(
+        find.text('For one day, click it in the week at the top of the page'),
+        findsOneWidget,
+      );
+      await tap(
+        tester,
+        find.byKey(const ValueKey('notes-filter-when-thisWeek')),
+      );
+      expect(
+        find.descendant(of: whenChip, matching: find.text('This week')),
+        findsOneWidget,
+      );
+      expect(headings(tester), hasLength(3));
+
+      // Today in the week is When's Today.
+      await tap(tester, day(19));
+      expect(
+        find.descendant(of: whenChip, matching: find.text('Today')),
+        findsOneWidget,
+      );
+      expect(headings(tester), ['Today Thu 19 Nov']);
+    });
+
+    testWidgets('the week counts what the filter shows, and is only in My '
+        'notes', (tester) async {
+      await library(tester);
+      expect(dots(18), findsOneWidget);
+
+      // Shown only notes with a voice note, the list is empty, and so is
+      // every day.
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('media-filter-video')));
+      await tap(tester, find.byKey(const ValueKey('media-filter-image')));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(headings(tester), isEmpty);
+      for (final date in [17, 18, 19]) {
+        expect(dots(date), findsNothing, reason: '$date November');
+      }
+
+      for (final (space, shown) in [('drawings', false), ('notes', true)]) {
+        await tap(tester, find.byKey(ValueKey('rail-$space')));
+        expect(
+          find.byType(DayStrip),
+          shown ? findsOneWidget : findsNothing,
+          reason: space,
+        );
+      }
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-filter-archive')));
+      expect(find.byType(DayStrip), findsNothing);
+    });
+
+    testWidgets('with the list hidden, a day lists its notes, and a click '
+        'opens one', (tester) async {
+      await library(tester);
+      prefs.toggleSidebar();
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(18));
+      expect(find.text('Wednesday, 18 November'), findsOneWidget);
+      expect(find.text('1 note'), findsOneWidget);
+      await tap(tester, find.byKey(const ValueKey('day-list-Standup notes')));
+      expect(openNoteBody(tester), 'Standup notes');
+      // Nothing was narrowed: there was no list to narrow.
+      expect(whenChip, findsNothing);
+    });
+
+    testWidgets('on a folder in front the week counts and narrows that folder '
+        'alone, with the list shown or hidden', (tester) async {
+      final folders = FolderStore(store);
+      await folders.load();
+      await library(tester, folders: folders);
+      final work = folders.create('Work')!;
+      folders.file(['Standup notes', 'Pricing ideas'], work.id);
+      prefs.foldersShown = true;
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+      final page = find.byKey(ValueKey('folder-page-${work.id}'));
+      expect(page, findsOneWidget);
+      Finder onPage(String title) =>
+          find.descendant(of: page, matching: find.text(title));
+
+      // Today's note is in no folder.
+      expect(dots(19), findsNothing);
+      expect(dots(18), findsOneWidget);
+      await tap(tester, day(18));
+      expect(onPage('Standup notes'), findsOneWidget);
+      expect(onPage('Pricing ideas'), findsNothing);
+
+      prefs.toggleSidebar();
+      await tester.pumpAndSettle();
+      await tap(tester, day(17));
+      expect(find.text('Tuesday, 17 November'), findsNothing);
+      expect(onPage('Pricing ideas'), findsOneWidget);
+      expect(onPage('Standup notes'), findsNothing);
+    });
+
+    testWidgets('on a narrow page the week is one button, and When no longer '
+        'points to it', (tester) async {
+      await library(tester);
+      tester.view.physicalSize = const Size(1040, 800);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('day-strip-date')), findsOneWidget);
+      expect(day(19), findsNothing);
+
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
+      expect(find.byKey(const ValueKey('notes-when-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('notes-when-footnote')), findsNothing);
     });
 
     testWidgets('the narrowest list keeps the grouping menu and the chip', (

@@ -71,16 +71,16 @@ class PagePath {
 };
 
 TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
-    TextStyle(
-      fontSize: size,
-      height: line / size,
-      leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: weight,
+    chromeStyle(
+      size: size,
+      line: line,
+      weight: AppWeight.axisOf(weight),
       color: color,
     );
 
-/// The bar across the top of the page: where the page is, then what can be
-/// done there, with Kapy AI at the far end.
+/// The bar across the top of the page: where the page is, the page's days
+/// where it has them, then what can be done there, with Kapy AI at the far
+/// end.
 ///
 /// While the notes list is hidden it leads with the way back to the list.
 /// Its empty stretches drag the window.
@@ -88,6 +88,7 @@ class PageToolbar extends StatelessWidget {
   const PageToolbar({
     super.key,
     required this.path,
+    this.days,
     required this.listVisible,
     required this.onShowList,
     this.showListShortcut,
@@ -109,6 +110,12 @@ class PageToolbar extends StatelessWidget {
   });
 
   final PagePath path;
+
+  /// The page's days, between the path and the actions with as much room on
+  /// either side: the week, or with compact one button for the day on a page
+  /// too narrow for it. They have the room the collaborators leave, and fit
+  /// themselves to it. Null on a page that has no days.
+  final Widget Function(bool compact)? days;
 
   /// Shows a folder from the path in this tab, or with behind in a new tab
   /// behind it.
@@ -158,16 +165,23 @@ class PageToolbar extends StatelessWidget {
 
   static const double height = 72;
 
-  /// Narrower than this, the path keeps its icon, a fold and its last level.
-  static const double _fullPathWidth = 720;
+  /// Narrower than this, the path keeps its icon, a fold and its last level,
+  /// and the week gives way to one button for the day.
+  static const double _fullWidth = 720;
 
   /// Narrower than this, Saved moves to the note's date line and the path
   /// keeps only its last level.
-  static const double savedWidth = 560;
+  static const double _savedWidth = 560;
 
   /// The count of pictures that didn't load stands in for Saved and is up to
   /// 125 wider, so it gives way that much sooner.
-  static const double _unloadedPicturesWidth = savedWidth + 125;
+  static const double _unloadedPicturesWidth = _savedWidth + 125;
+
+  /// Whether a page [width] wide has room in the bar for Saved, or for the
+  /// count of [unloadedPictures] that stands in for it. Where it hasn't,
+  /// Saved goes on the note's date line instead.
+  static bool savedFits(double width, {required int unloadedPictures}) =>
+      width >= (unloadedPictures > 0 ? _unloadedPicturesWidth : _savedWidth);
 
   /// Narrower than this, "Update and restart" shortens to "Update".
   static const double _updateLabelWidth = 680;
@@ -179,6 +193,7 @@ class PageToolbar extends StatelessWidget {
         ? 32.0
         : AppControlMetrics.iconButtonExtent;
     final showListShortcut = this.showListShortcut;
+    final days = this.days;
     return Container(
       key: const ValueKey('page-toolbar'),
       height: AppControlMetrics.scaleBar(context, height),
@@ -188,6 +203,7 @@ class PageToolbar extends StatelessWidget {
           final width = constraints.maxWidth;
           final avatars = actions == null && members.isNotEmpty;
           return Stack(
+            fit: StackFit.expand,
             children: [
               const Positioned.fill(
                 child: WindowDragArea(child: SizedBox.expand()),
@@ -216,16 +232,37 @@ class PageToolbar extends StatelessWidget {
                         builder: (context, slot) => Row(
                           children: [
                             Expanded(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: _Path(
-                                  path: path,
-                                  form: width >= _fullPathWidth
-                                      ? _PathForm.full
-                                      : width >= savedWidth
-                                      ? _PathForm.short
-                                      : _PathForm.last,
-                                  onOpenFolder: onOpenFolder,
+                              child: LayoutBuilder(
+                                builder: (context, rest) => Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Flexible(
+                                      child: _Path(
+                                        path: path,
+                                        form: width >= _fullWidth
+                                            ? _PathForm.full
+                                            : width >= _savedWidth
+                                            ? _PathForm.short
+                                            : _PathForm.last,
+                                        onOpenFolder: onOpenFolder,
+                                      ),
+                                    ),
+                                    if (days != null) ...[
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: rest.maxWidth,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 16,
+                                          ),
+                                          child: days(width < _fullWidth),
+                                        ),
+                                      ),
+                                      const SizedBox.shrink(),
+                                    ],
+                                  ],
                                 ),
                               ),
                             ),
@@ -276,10 +313,7 @@ class PageToolbar extends StatelessWidget {
         ...actions
       else ...[
         if (noteOpen &&
-            width >=
-                (unloadedPictures > 0
-                    ? _unloadedPicturesWidth
-                    : savedWidth)) ...[
+            savedFits(width, unloadedPictures: unloadedPictures)) ...[
           if (unloadedPictures > 0)
             UnloadedPicturesStatus(
               count: unloadedPictures,
