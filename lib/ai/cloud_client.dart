@@ -103,13 +103,13 @@ class KapyCloudClient implements AnswerEngine {
         this.usage = usage;
         throw AnswerLimitReached(usage);
       case 502:
-        throw const AnswerFailed("The model couldn't answer. Try again.");
+        throw const AnswerFailed("Couldn't answer just now. Try again.");
       default:
         throw const AnswerFailed(_busy);
     }
   }
 
-  static const String _broken = 'Kapy AI Cloud sent back something unreadable.';
+  static const String _broken = "Kapy AI couldn't answer. Try again.";
   static const String _busy = "Kapy AI Cloud can't answer right now.";
 
   static CloudUsage? _usageFrom(Object? raw) {

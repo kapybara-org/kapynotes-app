@@ -17,8 +17,8 @@ class KapyAiPicker extends StatelessWidget {
   final KapyAi kapyAi;
   final ValueChanged<KapyModel> onPick;
 
-  /// Settings › Voice & AI at Your accounts: where an OpenRouter key goes
-  /// in, and where every account is looked after.
+  /// Settings › Voice & AI at Your accounts: where a key goes in, and where
+  /// every account is looked after.
   final VoidCallback onManageAccounts;
 
   @override
@@ -33,10 +33,10 @@ class KapyAiPicker extends StatelessWidget {
     final accounts = [...ai.accounts]
       ..sort((a, b) => a.kind.index.compareTo(b.kind.index));
 
-    _Row modelRow(KapyModel model, String subline) => _Row(
+    _Row modelRow(KapyModel model, String subline, {String? title}) => _Row(
       key: ValueKey('kapy-ai-model-${model.kind.name}-${model.id}'),
       icon: kapyModelIcon(model.kind),
-      title: model.label,
+      title: title ?? model.plainLabel,
       subline: subline,
       selected: model == selected,
       onTap: () => onPick(model),
@@ -49,7 +49,13 @@ class KapyAiPicker extends StatelessWidget {
       if (account.status == KapyAccountStatus.connected) {
         if (kind != KapyAccountKind.openRouter && !account.enabled) continue;
         for (final model in account.models) {
-          accountRows.add(modelRow(model, model.whereItRuns(word)));
+          accountRows.add(
+            modelRow(
+              model,
+              model.whereItRuns(word),
+              title: kapyChoiceLabel(model, account.models),
+            ),
+          );
         }
         continue;
       }
@@ -59,11 +65,11 @@ class KapyAiPicker extends StatelessWidget {
           key: ValueKey('kapy-ai-connect-${kind.name}'),
           icon: kapyAccountIcon(kind),
           title: switch (kind) {
-            KapyAccountKind.openRouter => 'Add an OpenRouter key',
+            KapyAccountKind.openRouter => 'Add your key',
             _ => 'Use ${kapyAccountName(kind)}',
           },
           subline: switch (kind) {
-            KapyAccountKind.openRouter => 'Any model, billed to your key',
+            KapyAccountKind.openRouter => 'For answers you already pay for',
             _ => 'Install it and sign in there first',
           },
           chevron: true,
@@ -88,7 +94,7 @@ class KapyAiPicker extends StatelessWidget {
           DeviceModelStatus.needsSystemFeature => _Row(
             key: ValueKey('kapy-ai-model-device-${deviceModel.id}'),
             icon: KapyIcons.computerOutlined,
-            title: deviceModel.label,
+            title: deviceModel.plainLabel,
             subline: 'Turn it on in System Settings first',
           ),
           _ => modelRow(deviceModel, deviceModel.whereItRuns(word)),
@@ -100,7 +106,7 @@ class KapyAiPicker extends StatelessWidget {
             ? modelRow(
                 KapyModel.cloud,
                 usage == null
-                    ? 'Answers through Kapy’s server'
+                    ? 'Answers through Kapy cloud'
                     : '${usage.remaining} of ${usage.limit} answers left this month',
               )
             : _Row(
@@ -349,7 +355,14 @@ class KapyAiModelButton extends StatelessWidget {
                 const SizedBox(width: 5),
                 Flexible(
                   child: Text(
-                    spent ? '${model.label} · 0 left' : model.label,
+                    spent
+                        ? '${model.plainLabel} · 0 left'
+                        : kapyChoiceLabel(model, [
+                            for (final account in kapyAi.accounts)
+                              ...account.models,
+                            ?kapyAi.device.model,
+                            KapyModel.cloud,
+                          ]),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: kapyText(

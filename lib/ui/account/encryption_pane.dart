@@ -360,9 +360,8 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
         if (prepared is PreparedPassphrase) {
           Toast.show(context, 'Passphrase changed');
         }
-        Navigator.of(
-          context,
-        ).pop(prepared is PreparedPassphrase ? null : prepared);
+        Navigator.of(context)
+            .pop(prepared is PreparedPassphrase ? null : prepared);
       case KeyChangeNeedsCode():
         setState(() {
           _proof = null;
@@ -527,7 +526,7 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
         if (missing > 0)
           _Line(
             '${missing == 1 ? '1 note is' : '$missing notes are'} on the '
-            'server but not on this $kind. If another device has them, they '
+            'Kapy cloud but not on this $kind. If another device has them, they '
             'come back when you unlock it. If none does, they can\'t be read '
             "after a reset. You'll have 30 days to bring them back if you "
             'find your old passphrase or recovery key.',

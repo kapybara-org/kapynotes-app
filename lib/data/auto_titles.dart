@@ -63,8 +63,7 @@ class GeminiNanoTitleModel implements TitleModel {
   }) : _channel = channel;
 
   static const String channelName = 'kapynotes/titles';
-  static const String _missing =
-      'Needs Gemini Nano, which this phone doesn’t have';
+  static const String _missing = 'This phone can’t name notes on its own';
 
   final MethodChannel _channel;
 
@@ -74,7 +73,7 @@ class GeminiNanoTitleModel implements TitleModel {
       return switch (await _channel.invokeMethod<String>('availability')) {
         'available' => null,
         'downloadable' ||
-        'downloading' => 'Gemini Nano isn’t on this phone yet',
+        'downloading' => 'This phone isn’t ready to name notes yet',
         _ => _missing,
       };
     } on PlatformException {

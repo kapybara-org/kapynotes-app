@@ -192,7 +192,8 @@ class LocalSpeechModel implements DownloadableModel {
   ModelTerms? get terms => null;
 
   @override
-  String get subtitle => '$vendor · runs here, with no account and no minutes';
+  String get subtitle =>
+      'Turns speech into text on this device, with no account';
 
   @override
   List<ModelStat> get stats => [
@@ -206,14 +207,11 @@ class LocalSpeechModel implements DownloadableModel {
   ];
 
   @override
-  String get credit => '$parameters parameters · $architecture · $vendor · ';
+  String get credit => 'Turns speech into text on this device · ';
 
   @override
   String get detail =>
-      'Accuracy is $accuracySource: ${percent(englishWordErrorRate)} word '
-      'errors in English and ${percent(multilingualWordErrorRate)} across all '
-      '${languages.length} languages. Speed is for $speedSource; a phone is '
-      'slower.';
+      'Works offline. Nothing is uploaded. A phone is slower than a computer.';
 }
 
 /// A download's size, decimal, the way every other download is advertised.
@@ -251,7 +249,7 @@ const List<LocalSpeechModel> localSpeechModels = <LocalSpeechModel>[
 /// Whichever host answers, the bytes have to match [LocalModelFile.sha256].
 const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
   id: 'parakeet-tdt-0.6b-v3-int8',
-  name: 'Parakeet TDT 0.6B v3',
+  name: 'Speech model',
   vendor: 'NVIDIA',
   parameters: '600M',
   architecture: 'FastConformer-TDT',
@@ -420,28 +418,18 @@ class LocalSummaryModel implements DownloadableModel {
   int get bytes => files.fold(0, (total, file) => total + file.bytes);
 
   @override
-  String get subtitle => '$vendor · writes summaries with no account';
+  String get subtitle => 'Writes summaries on this device, with no account';
 
   @override
-  String get credit => '$parameters parameters · $quantisation · $vendor · ';
+  String get credit => 'Writes summaries on this device · ';
 
   @override
   List<ModelStat> get stats => [
     ModelStat(fileSize(bytes), 'to download'),
-    ModelStat('$parameters parameters', '$quantisation, by $vendor'),
-    ModelStat('${_thousands(contextTokens)} tokens', 'of transcript at a time'),
-    ModelStat('Offline', 'nothing is uploaded'),
+    ModelStat('On this device', 'nothing is uploaded'),
+    ModelStat('Offline', 'works with no account'),
+    ModelStat('Private', 'the transcript stays here'),
   ];
-
-  static String _thousands(int value) {
-    final digits = value.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < digits.length; i++) {
-      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
-      buffer.write(digits[i]);
-    }
-    return buffer.toString();
-  }
 }
 
 /// Every summary model on offer.
@@ -466,7 +454,7 @@ const List<LocalSummaryModel> localSummaryModels = <LocalSummaryModel>[
 /// on. The one thing it costs is 2.6 GB of somebody's disk and data.
 const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
   id: 'gemma-4-e2b-it-litertlm',
-  name: 'Gemma 4 E2B',
+  name: 'Summary model',
   vendor: 'Google',
   parameters: '2B effective',
   quantisation: 'mixed 2/4/8-bit',
@@ -480,10 +468,7 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
       'Writes the summary on this device, so a recording can be turned into '
       'notes with no account and no network at all.',
   detail:
-      'Quantisation-aware trained at a mixture of 2, 4 and 8 bits. Its '
-      'embeddings are read from disk rather than held in memory, which keeps '
-      'it under 3.5 GB while it runs. Loaded only while a summary is being '
-      'written, then unloaded again.',
+      'Writes the summary on this device, then unloads. Nothing is uploaded.',
   // Apache-2.0 asks nothing of a user, so there is nothing to agree to. The
   // mechanism stays for a model that does.
   terms: null,

@@ -67,7 +67,7 @@ class PlatformDeviceModel extends DeviceModel {
   static const KapyModel gemma = KapyModel(
     kind: KapyModelKind.device,
     id: 'gemma',
-    label: 'Gemma',
+    label: 'On this device',
   );
 
   /// Unknown until [refresh] has asked: both answers are a channel call or

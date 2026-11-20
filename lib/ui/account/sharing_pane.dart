@@ -330,13 +330,11 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
         // tap — but under the controls, where it no longer stands between
         // somebody and the thing they came to do.
         const SettingsNote(
-          'Shared notes are encrypted on your devices with keys only the '
-          'members hold. Our servers store and relay sealed bytes and cannot '
-          'read them. Until you have compared a member\'s key fingerprint '
-          'with them in person, this protects against a server that only '
-          'looks, not one that lies about whose key is whose. The app pins '
-          'every member\'s key the first time it sees it and warns if it '
-          'changes.',
+          'Shared notes stay private. Only the people in the space can read '
+          'them. Kapy cloud stores them but cannot read them. Until you have '
+          'checked a member\'s key with them in person, this protects against '
+          'someone who only looks, not someone who pretends to be a member. '
+          'Kapy Notes warns you if a member\'s key changes.',
           icon: KapyIcons.lockRounded,
         ),
         const SettingsNote(

@@ -495,7 +495,7 @@ class KapyAiNotice extends StatelessWidget {
       _ => device,
     };
     KapyAiButton use(KapyModel model) => KapyAiButton(
-      'Use ${model.label}',
+      'Use ${model.plainLabel}',
       onPressed: () => unawaited(ai.answerWith(model)),
     );
     final pickAnother = KapyAiButton('Pick another', onPressed: onPickAnother);
@@ -508,15 +508,17 @@ class KapyAiNotice extends StatelessWidget {
       'Try again',
       onPressed: () => unawaited(ai.proceed()),
     );
-    final deviceName = device?.label ?? 'The model';
+    final deviceName = device?.id == 'apple'
+        ? 'Apple Intelligence'
+        : 'the on-device model';
     final (icon, title, lines, actions) = switch (pending) {
       KapyCloudConsent() => (
         KapyIcons.cloudRounded,
         'Before the first answer',
         [
-          'Kapy AI Cloud sends your question and only the notes that match it '
-              'through Kapy’s server to the AI model that answers. Kapy keeps '
-              'nothing.',
+          'Kapy AI sends your question and only the notes that match it '
+              'through Kapy cloud. Kapy keeps nothing, and it is never used '
+              'to train AI.',
           'Hidden notes are never used, locked or unlocked.',
         ],
         [
@@ -530,19 +532,21 @@ class KapyAiNotice extends StatelessWidget {
       ),
       KapyAccountConsent(:final account) => (
         kapyAccountIcon(account),
-        'Goes to ${_provider(account)}',
+        'Leaves this $word',
         [
           switch (account) {
             KapyAccountKind.codex =>
-              'Your question and the notes it reads go to OpenAI through '
-                  'Codex on this $word, under your ChatGPT plan. Hidden notes '
-                  'never do.',
+              'Your question and the notes it reads leave this $word through '
+                  'Codex, under your ChatGPT plan. Hidden notes never do. '
+                  'Turn this off in Settings › Voice & AI.',
             KapyAccountKind.claudeCode =>
-              'Your question and the notes it reads go to Anthropic through '
-                  'Claude Code on this $word. Hidden notes never do.',
+              'Your question and the notes it reads leave this $word through '
+                  'Claude Code. Hidden notes never do. Turn this off in '
+                  'Settings › Voice & AI.',
             KapyAccountKind.openRouter =>
-              'Your question and the notes it reads go to OpenRouter'
-                  '${_maker(ai.model)} under your key. Hidden notes never do.',
+              'Your question and the notes it reads leave this $word through '
+                  'your key. Hidden notes never do. Turn this off in '
+                  'Settings › Voice & AI.',
           },
         ],
         [goAhead, pickAnother],
@@ -594,7 +598,7 @@ class KapyAiNotice extends StatelessWidget {
               'Kapy AI Cloud gives $limit answers a month.'
             else
               'Kapy AI Cloud’s answers for the month are used up.',
-            'Until then, ${fallback == null ? 'your accounts' : '${fallback.label} and your accounts'} '
+            'Until then, ${fallback == null ? 'your accounts' : '${fallback.plainLabel} and your accounts'} '
                 'still answer.',
           ].join(' '),
         ],
@@ -605,8 +609,8 @@ class KapyAiNotice extends StatelessWidget {
         'You’re offline',
         [
           [
-            '${ai.model.label} needs a connection.',
-            if (fallback != null) '${fallback.label} answers offline.',
+            '${ai.model.plainLabel} needs a connection.',
+            if (fallback != null) '${fallback.plainLabel} answers offline.',
           ].join(' '),
         ],
         [?(fallback == null ? null : use(fallback)), tryAgain],
@@ -614,7 +618,7 @@ class KapyAiNotice extends StatelessWidget {
       KapyAccountError(:final account) => (
         KapyIcons.warningRounded,
         account == KapyAccountKind.openRouter
-            ? 'OpenRouter rejected the key'
+            ? 'This key was rejected'
             : '${kapyAccountName(account)} is signed out',
         [
           account == KapyAccountKind.openRouter
@@ -712,32 +716,6 @@ class KapyAiNotice extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _provider(KapyAccountKind account) => switch (account) {
-    KapyAccountKind.codex => 'OpenAI',
-    KapyAccountKind.claudeCode => 'Anthropic',
-    KapyAccountKind.openRouter => 'OpenRouter',
-  };
-
-  /// " and Google" for an OpenRouter model id such as
-  /// google/gemini-3.8-flash: the company whose model reads the notes.
-  static String _maker(KapyModel model) {
-    if (model.kind != KapyModelKind.openRouter) return '';
-    final slash = model.id.indexOf('/');
-    if (slash <= 0) return '';
-    final maker = model.id.substring(0, slash);
-    return ' and ${switch (maker) {
-      'openai' => 'OpenAI',
-      'anthropic' => 'Anthropic',
-      'google' => 'Google',
-      'meta-llama' => 'Meta',
-      'mistralai' => 'Mistral',
-      'deepseek' => 'DeepSeek',
-      'x-ai' => 'xAI',
-      'qwen' => 'Qwen',
-      _ => maker[0].toUpperCase() + maker.substring(1),
-    }}';
   }
 
   /// Check again: looks for the tool once more, then answers the question
