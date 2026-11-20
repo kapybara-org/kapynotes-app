@@ -30,6 +30,7 @@ import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
@@ -933,6 +934,65 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_folders.png'),
+    );
+  });
+
+  // r5's folder in a tab (26IU-0): a note's tab and the folder's in front,
+  // the page with the folder inside as a card and the notes at any depth,
+  // and the folder marked in the tree.
+  testWidgets('desktop dark folder in a tab', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1440, 900),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final folders = goldenFolders;
+    final work = folders.create('Work')!;
+    final clients = folders.create('Clients', parentId: work.id)!;
+    final acme = folders.create('Acme', parentId: clients.id)!;
+    final placed = {
+      'Acme kickoff\nScope, dates and the first invoice': acme,
+      'Invoice, March\nSent on the 3rd': acme,
+      'Logo feedback\nVoice note': acme,
+      'Roadmap\nQ1 themes': folders.create('Product', parentId: work.id),
+      'Gym plan\nVoice note': folders.create('Personal'),
+      'Reading list\nThe Overstory, Piranesi': folders.create('Reading'),
+      'Pricing ideas\n1,799 INR': clients,
+      'Call with Arjun\nPricing page by Friday': clients,
+      'Dentist\nThursday 4pm': null,
+      'Morning pages\nSlept badly, but the walk helped': null,
+    };
+    for (final MapEntry(key: body, value: folder) in placed.entries) {
+      final note = goldenNotes.create(body: body);
+      if (folder != null) folders.file([note.id], folder.id);
+    }
+    goldenPrefs
+      ..setFolderOpen(work.id, true)
+      ..setFolderOpen(clients.id, true)
+      ..foldersShown = true;
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('folders-tab')),
+        matching: find.text('Call with Arjun'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.tap(find.byKey(ValueKey('folder-${clients.id}')));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NoteTabRow),
+        matching: find.text('Clients'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_folder_in_a_tab.png'),
     );
   });
 

@@ -47,8 +47,14 @@ List<List<String>> _tabsOf(EditorWorkspace workspace) => [
 ];
 
 /// The note each tab goes by, most recently used first.
-List<String> _recent(EditorWorkspace workspace) => [
+List<String?> _recent(EditorWorkspace workspace) => [
   for (final tab in workspace.recentTabs) tab.noteId,
+];
+
+/// What each tab shows, in the order the row shows the tabs: its folder, or
+/// its notes left to right.
+List<Object> _rowOf(EditorWorkspace workspace) => [
+  for (final tab in workspace.tabs) tab.folderId ?? tab.noteIds,
 ];
 
 void _expectEven(EditorWorkspace workspace) {
@@ -394,13 +400,14 @@ void main() {
       ]);
       expect(workspace.selectedNoteId, 'charlie');
 
-      expect(workspace.reopen(), 'alpha');
+      expect(workspace.reopen(), isTrue);
+      expect(workspace.selectedNoteId, 'alpha');
       expect(_notesIn(workspace), ['alpha', 'bravo']);
       expect(_tabsOf(workspace), [
         ['charlie'],
         ['alpha', 'bravo'],
       ]);
-      expect(workspace.reopen(), isNull);
+      expect(workspace.reopen(), isFalse);
     });
 
     test('a closed note opened again is no longer among the closed ones', () {
@@ -413,7 +420,7 @@ void main() {
 
       workspace.openInNewTab('bravo');
       expect(workspace.recentlyClosed, isEmpty);
-      expect(workspace.reopen(), isNull);
+      expect(workspace.reopen(), isFalse);
     });
 
     test(
@@ -641,6 +648,197 @@ void main() {
       ]);
       expect(restored.selectedNoteId, 'alpha');
       expect(restored.rollOver(_today), isNull);
+    });
+  });
+
+  group('folders', () {
+    test('a folder takes the place of a lone note, and a note takes its', () {
+      final workspace = _opened('alpha');
+      expect(workspace.openFolder('work'), isTrue);
+      expect(_rowOf(workspace), ['work']);
+      expect(workspace.selectedNoteId, isNull);
+      expect(workspace.openNoteIds, isEmpty);
+      expect(workspace.tabbedNoteIds, isEmpty);
+      expect(workspace.canSplit, isFalse);
+      expect(workspace.openFolder('work'), isFalse);
+
+      expect(workspace.open('bravo'), isTrue);
+      expect(_rowOf(workspace), [
+        ['bravo'],
+      ]);
+    });
+
+    test('notes side by side keep their tab, and a folder comes forward where '
+        'it is open', () {
+      final workspace = _opened('alpha')..openToSide('bravo');
+      expect(workspace.openFolder('work'), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha', 'bravo'],
+        'work',
+      ]);
+      expect(workspace.frontTabIndex, 1);
+
+      workspace.activateTab(0);
+      expect(workspace.openFolder('work'), isTrue);
+      expect(workspace.frontTabIndex, 1);
+      expect(workspace.tabs, hasLength(2));
+    });
+
+    test('a folder opens in a new tab behind the one in front, once', () {
+      final workspace = _opened('alpha');
+      expect(workspace.openFolderInNewTab('work'), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha'],
+        'work',
+      ]);
+      expect(workspace.selectedNoteId, 'alpha');
+      expect(workspace.folderTabOf('work'), 1);
+      expect(workspace.openFolderInNewTab('work'), isFalse);
+    });
+
+    test('a folder opens in a tab of its own when no tab is open', () {
+      final workspace = EditorWorkspace(_MemoryStore())
+        ..load(availableNoteIds: const [], today: _today);
+      expect(workspace.openFolder('work'), isTrue);
+      expect(_rowOf(workspace), ['work']);
+    });
+
+    test('a note opened to the side of a folder takes its place', () {
+      final workspace = _opened('alpha')..openFolder('work');
+      expect(workspace.openToSide('bravo'), isTrue);
+      expect(_rowOf(workspace), [
+        ['bravo'],
+      ]);
+      expect(workspace.paneCount, 1);
+    });
+
+    test('Back and Forward walk through folders too', () {
+      final workspace = _opened('alpha')
+        ..openFolder('work')
+        ..open('bravo');
+      expect(workspace.backNoteId, isNull, reason: 'Back shows a folder');
+
+      expect(workspace.back(), isTrue);
+      expect(_rowOf(workspace), ['work']);
+      expect(workspace.backNoteId, 'alpha');
+      expect(workspace.forwardNoteId, 'bravo');
+
+      expect(workspace.back(), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha'],
+      ]);
+      expect(workspace.canGoBack, isFalse);
+
+      expect(workspace.forward(), isTrue);
+      expect(_rowOf(workspace), ['work']);
+      expect(workspace.forward(), isTrue);
+      expect(_rowOf(workspace), [
+        ['bravo'],
+      ]);
+      expect(workspace.canGoForward, isFalse);
+    });
+
+    test('a closed folder reopens, and opening it again forgets it', () {
+      final workspace = _opened('alpha')
+        ..openFolderInNewTab('work')
+        ..closeTab(1);
+      expect(workspace.recentlyClosed, isEmpty);
+      expect(workspace.canReopen, isTrue);
+
+      expect(workspace.reopen(), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha'],
+        'work',
+      ]);
+      expect(workspace.frontTabIndex, 1);
+      expect(workspace.canReopen, isFalse);
+
+      workspace
+        ..closeTab(1)
+        ..openFolder('work');
+      expect(workspace.canReopen, isFalse);
+    });
+
+    test('folder tabs survive a restart, in a form older builds skip', () {
+      final store = _MemoryStore();
+      _opened('alpha', store: store)
+        ..openFolderInNewTab('work')
+        ..openFolderInNewTab('home')
+        ..closeTab(2)
+        ..activateTab(1);
+      final saved = store.data[EditorWorkspace.storeKey] as Map;
+      expect((saved['tabs'] as List).last, {'folder': 'work'});
+
+      final restored = _restored(store);
+      expect(_rowOf(restored), [
+        ['alpha'],
+        'work',
+      ]);
+      expect(restored.frontTabIndex, 1);
+      expect(restored.backNoteId, 'alpha');
+      expect(restored.reopen(), isTrue);
+      expect(_rowOf(restored), [
+        ['alpha'],
+        'work',
+        'home',
+      ]);
+    });
+
+    test('a deleted folder leaves the tabs, the closed ones and Back', () {
+      final workspace = _opened('alpha')
+        ..openToSide('bravo')
+        ..openFolder('work')
+        ..openFolderInNewTab('home')
+        ..closeTab(2);
+
+      expect(
+        workspace.reconcileFolders((id) => id != 'work' && id != 'home'),
+        isTrue,
+      );
+      expect(_rowOf(workspace), [
+        ['alpha', 'bravo'],
+      ]);
+      expect(workspace.selectedNoteId, 'bravo');
+      expect(workspace.canReopen, isFalse);
+      expect(workspace.backNoteId, 'alpha');
+      expect(workspace.reconcileFolders((_) => false), isFalse);
+    });
+
+    test('a new day closes folder tabs too, for Reopen to bring back', () {
+      final workspace = _opened('alpha')..openFolderInNewTab('work');
+      expect(workspace.rollOver(_today + 1), ['alpha']);
+      expect(workspace.tabs, isEmpty);
+      expect(workspace.recentlyClosed, [
+        ['alpha'],
+      ]);
+
+      expect(workspace.reopen(), isTrue);
+      expect(workspace.reopen(), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha'],
+        'work',
+      ]);
+      expect(workspace.canReopen, isFalse);
+    });
+
+    test("a held-key walk shows notes in a folder's place, and puts it "
+        'back', () {
+      final workspace = _opened('alpha')..openFolder('work');
+      final cancelled = workspace.beginPreviewSession();
+      expect(cancelled.preview('bravo'), isTrue);
+      expect(_rowOf(workspace), [
+        ['bravo'],
+      ]);
+      expect(cancelled.cancel(), isTrue);
+      expect(_rowOf(workspace), ['work']);
+
+      final committed = workspace.beginPreviewSession();
+      expect(committed.preview('bravo'), isTrue);
+      expect(committed.commit(), isTrue);
+      expect(_rowOf(workspace), [
+        ['bravo'],
+      ]);
+      expect(workspace.backNoteId, isNull, reason: 'Back shows the folder');
     });
   });
 }

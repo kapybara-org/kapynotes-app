@@ -94,14 +94,17 @@ SidebarTab sidebarTabOf(Note note, Sharing sharing) {
 /// The person's folders as the list beside the rail shows them: [shown]
 /// puts the folder tree in place of the notes, [onShown] is the Notes |
 /// Folders switch, left out where the list holds no folders (Drawings,
-/// Shared, Archive and Hidden Notes), and [open] and [onOpen] are the
-/// folders open in the tree.
+/// Shared, Archive and Hidden Notes), [open] and [onOpen] are the folders
+/// open in the tree, and [inFront] and [onTab] are the folder the tab in
+/// front shows and how a folder comes into a tab, left out without tabs.
 typedef SidebarFolders = ({
   FolderStore store,
   bool shown,
   ValueChanged<bool>? onShown,
   Set<String> open,
   void Function(String folderId, bool open) onOpen,
+  String? inFront,
+  void Function(String folderId, {required bool behind})? onTab,
 });
 
 /// The note list, under the field that opens search.
@@ -446,6 +449,15 @@ class Sidebar extends StatelessWidget {
       ),
     );
   }
+
+  /// A note's card, or its row in the list view, away from the list: on a
+  /// folder's page, with the face, clicks and menu it has here.
+  Widget noteTile(Note note) => _row(
+    note,
+    shared: sharing != null && note.isShared,
+    pinned: pinnedNoteIds.contains(note.id),
+    style: cards ? NoteRowStyle.card : NoteRowStyle.row,
+  );
 }
 
 extension on Sidebar {
@@ -956,6 +968,8 @@ extension on Sidebar {
         notes: notes,
         open: folders.open,
         onOpen: folders.onOpen,
+        inFront: folders.inFront,
+        onTab: folders.onTab,
         noteRow: (note, depth) => _row(
           note,
           shared: sharing != null && note.isShared,

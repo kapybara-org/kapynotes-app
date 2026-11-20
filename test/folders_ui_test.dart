@@ -1,15 +1,18 @@
-import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton, kSecondaryButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/folders_ui.dart';
+import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'app_test.dart' show MemoryStore;
+import 'app_test.dart' show MemoryStore, openNoteBody, pressShortcut;
 import 'golden_test.dart'
     show goldenFolders, goldenNotes, goldenPrefs, pumpForGolden;
 import 'test_fonts.dart';
@@ -116,6 +119,31 @@ void main() {
       for (final folder in goldenFolders.tree.childrenOf(parentId)) folder.name,
     ];
 
+    Finder page() => find.byType(FolderPage);
+
+    Finder onPage(Finder finder) =>
+        find.descendant(of: page(), matching: finder);
+
+    String pageTitle(WidgetTester tester) => tester
+        .widget<Text>(find.byKey(const ValueKey('folder-page-title')))
+        .data!;
+
+    Finder tabRow() => find.byType(NoteTabRow);
+
+    List<String> tabTitles(WidgetTester tester) => [
+      for (final tab in tester.widget<NoteTabRow>(tabRow()).tabs) tab.title,
+    ];
+
+    Future<void> press(WidgetTester tester, ShortcutAction action) =>
+        pressShortcut(tester, ShortcutPrefs.defaultFor(action));
+
+    Future<void> commandClick(WidgetTester tester, Finder finder) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(finder);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('the switch at the foot puts the folder tree in place of the '
         'notes and their filter, and the notes come back as they were', (
       tester,
@@ -164,8 +192,8 @@ void main() {
       expect(find.byKey(const ValueKey('notes-folders-switch')), findsNothing);
     });
 
-    testWidgets('a folder opens and closes from its row, and opens as it '
-        'was left', (tester) async {
+    testWidgets('a folder opens and closes in the tree from its chevron, and '
+        'opens as it was left', (tester) async {
       await pumpWindow(tester);
       final work = goldenFolders.create('Work')!;
       final note = goldenNotes.create(body: 'Pricing ideas');
@@ -179,15 +207,149 @@ void main() {
       );
       expect(inTab(find.text('Pricing ideas')), findsNothing);
 
-      await tester.tap(row);
-      await tester.pumpAndSettle();
+      await tapKey(tester, 'folder-chevron-${work.id}');
       expect(inTab(find.text('Pricing ideas')), findsOneWidget);
       expect(goldenPrefs.openFolders, {work.id});
+      expect(page(), findsNothing);
 
-      await tester.tap(row);
-      await tester.pumpAndSettle();
+      await tapKey(tester, 'folder-chevron-${work.id}');
       expect(inTab(find.text('Pricing ideas')), findsNothing);
       expect(goldenPrefs.openFolders, isEmpty);
+    });
+
+    testWidgets('a click on a folder shows it in the tab in front and opens it '
+        'in the tree; its page has its folders as cards and its notes at any '
+        'depth, and its cards and Back move between folders', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final acme = goldenFolders.create('Acme', parentId: clients.id)!;
+      final roadmap = goldenNotes.create(body: 'Roadmap');
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      final kickoff = goldenNotes.create(body: 'Acme kickoff');
+      final receipts = goldenNotes.create(body: 'Old receipts');
+      final dentist = goldenNotes.create(body: 'Dentist');
+      goldenFolders
+        ..file([roadmap.id, receipts.id], work.id)
+        ..file([call.id], clients.id)
+        ..file([kickoff.id], acme.id);
+      goldenNotes.archive(receipts.id);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+
+      await tapKey(tester, 'folder-${work.id}');
+      expect(pageTitle(tester), 'Work');
+      expect(goldenPrefs.openFolders, {work.id});
+      expect(
+        onPage(find.text('3 notes and 1 folder, in My notes')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('folder-card-${clients.id}')),
+          matching: find.text('2 notes'),
+        ),
+        findsOneWidget,
+      );
+      for (final note in [roadmap, call, kickoff]) {
+        expect(onPage(rowOf(note.id)), findsOneWidget);
+      }
+      expect(onPage(rowOf(dentist.id)), findsNothing);
+      expect(onPage(rowOf(receipts.id)), findsNothing);
+      final name = tester.widget<Text>(
+        find.descendant(
+          of: find.byKey(ValueKey('folder-${work.id}')),
+          matching: find.text('Work'),
+        ),
+      );
+      expect(name.style!.fontWeight, FontWeight.w500);
+
+      await tapKey(tester, 'folder-card-${clients.id}');
+      expect(pageTitle(tester), 'Clients');
+      expect(
+        onPage(find.text('2 notes and 1 folder, in Work')),
+        findsOneWidget,
+      );
+      expect(tabRow(), findsNothing, reason: 'it showed in the same tab');
+
+      await press(tester, ShortcutAction.goBack);
+      expect(pageTitle(tester), 'Work');
+
+      await tester.tap(onPage(rowOf(roadmap.id)));
+      await tester.pumpAndSettle();
+      expect(page(), findsNothing);
+      expect(openNoteBody(tester), 'Roadmap');
+
+      await press(tester, ShortcutAction.goBack);
+      expect(pageTitle(tester), 'Work');
+    });
+
+    testWidgets('⌘-click or a middle click on a folder opens it in a tab '
+        'behind, once, under its icon and name', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+      await tester.tap(inTab(find.text('Dentist')));
+      await tester.pumpAndSettle();
+
+      await commandClick(tester, find.byKey(ValueKey('folder-${work.id}')));
+      expect(tabTitles(tester), ['Dentist', 'Work']);
+      expect(
+        tester.widget<NoteTabRow>(tabRow()).tabs.last.icon,
+        KapyIcons.folderOutlined,
+      );
+      expect(page(), findsNothing);
+      expect(openNoteBody(tester), 'Dentist');
+
+      await tester.tapAt(
+        tester.getCenter(find.byKey(ValueKey('folder-${personal.id}'))),
+        buttons: kMiddleMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await commandClick(tester, find.byKey(ValueKey('folder-${work.id}')));
+      expect(tabTitles(tester), ['Dentist', 'Work', 'Personal']);
+
+      goldenFolders.rename(work.id, 'Office');
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['Dentist', 'Office', 'Personal']);
+
+      await tester.tap(
+        find.descendant(of: tabRow(), matching: find.text('Office')),
+      );
+      await tester.pumpAndSettle();
+      expect(pageTitle(tester), 'Office');
+      expect(onPage(find.text('No notes, in My notes')), findsOneWidget);
+    });
+
+    testWidgets('a note made while a folder is in front goes into it and '
+        "takes the folder's place, and a deleted folder's tab closes", (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${work.id}');
+      final before = {for (final note in goldenNotes.notes) note.id};
+
+      await press(tester, ShortcutAction.newNote);
+      final made = goldenNotes.notes.singleWhere(
+        (note) => !before.contains(note.id),
+      );
+      expect(goldenFolders.tree.folderOf(made.id), work.id);
+      expect(page(), findsNothing);
+
+      await tapKey(tester, 'folder-${personal.id}');
+      expect(pageTitle(tester), 'Personal');
+      goldenFolders.delete(personal.id);
+      await tester.pumpAndSettle();
+      expect(page(), findsNothing);
+      expect(tabRow(), findsNothing);
     });
 
     testWidgets('New folder names a folder in place, says there why a name '

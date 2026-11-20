@@ -58,10 +58,12 @@ class EditorPane {
   String? get noteId => _noteId;
 }
 
-/// One tab: a note, or up to [EditorWorkspace.maxPanes] of them side by side.
+/// One tab: a note, up to [EditorWorkspace.maxPanes] of them side by side, or
+/// a folder.
 ///
-/// A tab always holds a note. A pane may wait empty beside one, but a tab
-/// whose last note leaves it closes.
+/// A tab of notes always holds a note. A pane may wait empty beside one, but
+/// a tab whose last note leaves it closes. A folder fills its tab: the tab's
+/// one pane stays empty, and nothing opens beside it.
 class EditorTab {
   EditorTab._(this.id);
 
@@ -73,6 +75,7 @@ class EditorTab {
   /// Each pane's share of the row, in the same order, summing to one.
   final List<double> _weights = [];
   int _active = 0;
+  String? _folderId;
 
   List<EditorPane> get panes => List.unmodifiable(_panes);
 
@@ -80,19 +83,29 @@ class EditorTab {
   List<String> get noteIds => [for (final pane in _panes) ?pane.noteId];
 
   /// The note the tab goes by: the focused pane's, or while that pane waits
-  /// for one, the first beside it.
-  String get noteId => _panes[_active].noteId ?? noteIds.first;
+  /// for one, the first beside it. Null in a folder's tab.
+  String? get noteId => _panes[_active].noteId ?? noteIds.firstOrNull;
+
+  /// The folder the tab shows, or null in a tab of notes.
+  String? get folderId => _folderId;
 
   int _paneOf(String noteId) =>
       _panes.indexWhere((pane) => pane.noteId == noteId);
 }
 
-/// The notes open on the desktop: the tabs over the page, the notes side by
-/// side in the tab in front, and how wide each of them is.
+/// A note or a folder, as Back's walk keeps them.
+typedef _Place = ({String id, bool folder});
+
+/// A closed tab: its notes left to right, or its folder.
+typedef _Closed = ({List<String> notes, String? folderId});
+
+/// The notes and folders open on the desktop: the tabs over the page, the
+/// notes side by side in the tab in front, and how wide each of them is.
 ///
 /// [open] shows a note in the tab in front, in place of the note there, and
-/// [openInNewTab] opens one in a tab of its own behind it. A note is open in
-/// one place at most: opening one that is open already brings it forward
+/// [openInNewTab] opens one in a tab of its own behind it. [openFolder] and
+/// [openFolderInNewTab] do the same with a folder. A note or a folder is open
+/// in one place at most: opening one that is open already brings it forward
 /// where it is.
 ///
 /// Tabs belong to this device and are never synced. They come back after a
@@ -123,15 +136,15 @@ class EditorWorkspace {
   final List<EditorTab> _recent = [];
   int _front = 0;
 
-  /// The notes shown, most recently first: what [back] walks.
-  final List<String> _used = [];
+  /// The notes and folders shown, most recently first: what [back] walks.
+  final List<_Place> _used = [];
 
   /// How far [back] has walked down [_used]. Anything else settles the walk,
-  /// so it always starts from the note on screen.
+  /// so it always starts from what is on screen.
   int _step = 0;
 
-  /// Closed tabs, most recently closed first, each as its notes left to right.
-  final List<List<String>> _closed = [];
+  /// Closed tabs, most recently closed first.
+  final List<_Closed> _closed = [];
 
   /// The day the tabs belong to.
   int? _day;
@@ -148,10 +161,16 @@ class EditorWorkspace {
   EditorTab? get frontTab => _tabs.isEmpty ? null : _tabs[_front];
   int get frontTabIndex => _front;
 
-  /// Closed tabs, most recently closed first, by the notes each one held.
+  /// Closed tabs of notes, most recently closed first, by the notes each one
+  /// held. Closed folders aren't listed, though [reopen] brings them back too.
+  @visibleForTesting
   List<List<String>> get recentlyClosed => [
-    for (final notes in _closed) List.unmodifiable(notes),
+    for (final tab in _closed)
+      if (tab.folderId == null) List.unmodifiable(tab.notes),
   ];
+
+  /// Whether [reopen] has a closed tab to bring back.
+  bool get canReopen => _closed.isNotEmpty;
 
   /// The blank note the day started on, so a restart can still tell it from
   /// a note somebody emptied on purpose.
@@ -164,11 +183,17 @@ class EditorWorkspace {
   bool get canGoBack => _step + 1 < _used.length;
   bool get canGoForward => _step > 0;
 
-  /// The note [back] would show, or null.
-  String? get backNoteId => canGoBack ? _used[_step + 1] : null;
+  /// The note [back] would show, or null where it shows a folder or nothing.
+  String? get backNoteId => canGoBack ? _noteAt(_step + 1) : null;
 
-  /// The note [forward] would show, or null.
-  String? get forwardNoteId => canGoForward ? _used[_step - 1] : null;
+  /// The note [forward] would show, or null where it shows a folder or
+  /// nothing.
+  String? get forwardNoteId => canGoForward ? _noteAt(_step - 1) : null;
+
+  String? _noteAt(int index) => switch (_used[index]) {
+    (:final id, folder: false) => id,
+    _ => null,
+  };
 
   /// The panes of the tab in front.
   List<EditorPane> get panes => List.unmodifiable(frontTab?._panes ?? const []);
@@ -204,6 +229,10 @@ class EditorWorkspace {
   int tabOf(String noteId) =>
       _tabs.indexWhere((tab) => tab._paneOf(noteId) >= 0);
 
+  /// The tab [folderId] is open in, or -1.
+  int folderTabOf(String folderId) =>
+      _tabs.indexWhere((tab) => tab._folderId == folderId);
+
   /// Whether another pane can open beside the focused one. Not beside an empty
   /// pane: a second blank next to the first is only another thing to close.
   bool get canSplit => paneCount < maxPanes && selectedNoteId != null;
@@ -213,8 +242,10 @@ class EditorWorkspace {
   EditorWorkspacePreviewSession beginPreviewSession() =>
       EditorWorkspacePreviewSession._(this);
 
-  /// Restores the tabs that still hold notes, then brings [openingNoteId]
-  /// forward: in its tab where it has one, in a new tab in front where not.
+  /// Restores the tabs that still hold notes, and the folders' tabs, which
+  /// [reconcileFolders] checks once the folders are read. Then it brings
+  /// [openingNoteId] forward: in its tab where it has one, in a new tab in
+  /// front where not.
   ///
   /// A file written before there were tabs holds one tab's panes, and belongs
   /// to [today]. With nothing to restore, the first note opens.
@@ -236,9 +267,17 @@ class EditorWorkspace {
     final raw = _store.data[storeKey];
     if (raw is Map) {
       final placed = <String>{};
+      final placedFolders = <String>{};
       final saved = raw['tabs'];
       final restored = <int, EditorTab>{};
       for (final (index, entry) in (saved is List ? saved : [raw]).indexed) {
+        if (entry case {'folder': final String folderId}) {
+          if (!placedFolders.add(folderId)) continue;
+          final tab = _folderTab(folderId);
+          restored[index] = tab;
+          _tabs.add(tab);
+          continue;
+        }
         if (entry is! Map || entry['panes'] is! List) continue;
         final notes = entry['panes'] as List;
         final weights = entry['weights'];
@@ -276,21 +315,33 @@ class EditorWorkspace {
         ..._tabs,
       });
       _used.addAll(
-        {
-          ?selectedNoteId,
+        <_Place>{
+          if (frontTab?.folderId case final folderId?)
+            (id: folderId, folder: true)
+          else if (selectedNoteId case final id?)
+            (id: id, folder: false),
           if (raw['used'] case final List used)
-            for (final id in used)
-              if (id is String && available.contains(id)) id,
+            for (final entry in used)
+              if (entry is String && available.contains(entry))
+                (id: entry, folder: false)
+              else if (entry case {'folder': final String folderId})
+                (id: folderId, folder: true),
         }.take(historyLimit),
       );
       if (raw['closed'] case final List closed) {
-        for (final notes in closed) {
-          if (notes is! List) continue;
-          final kept = [
-            for (final id in notes)
-              if (id is String && available.contains(id) && placed.add(id)) id,
-          ];
-          if (kept.isNotEmpty) _closed.add(kept);
+        for (final entry in closed) {
+          if (entry case {'folder': final String folderId}) {
+            if (placedFolders.add(folderId)) {
+              _closed.add((notes: [], folderId: folderId));
+            }
+          } else if (entry is List) {
+            final kept = [
+              for (final id in entry)
+                if (id is String && available.contains(id) && placed.add(id))
+                  id,
+            ];
+            if (kept.isNotEmpty) _closed.add((notes: kept, folderId: null));
+          }
           if (_closed.length == closedLimit) break;
         }
       }
@@ -311,10 +362,10 @@ class EditorWorkspace {
   }
 
   /// The first open of [today], when the tabs belong to an earlier day: every
-  /// tab closes into [recentlyClosed], the most recently used first, Back's
-  /// walk starts over, and the row is left empty for the caller to start the
-  /// day in. Returns the notes that closed, or null on the day the tabs
-  /// already belong to.
+  /// tab closes for [reopen] to bring back, the most recently used first,
+  /// Back's walk starts over, and the row is left empty for the caller to
+  /// start the day in. Returns the notes that closed, or null on the day the
+  /// tabs already belong to.
   List<String>? rollOver(int today) {
     if (_day == today) return null;
     _settle();
@@ -340,7 +391,7 @@ class EditorWorkspace {
     _show(noteId);
     final moved =
         before != (frontTab, activePane, selectedNoteId) ||
-        _used.firstOrNull != noteId;
+        _used.firstOrNull != (id: noteId, folder: false);
     _use(noteId);
     _persist();
     return moved;
@@ -356,21 +407,49 @@ class EditorWorkspace {
     return true;
   }
 
-  /// Walks back to the note shown before the one on screen: where it is
-  /// open, or in the focused pane in front.
-  bool back() {
-    if (!canGoBack) return false;
-    _step++;
-    _show(_used[_step]);
+  /// Shows [folderId] in the tab in front, in place of what that tab shows,
+  /// or brings it forward where it has a tab. Notes side by side keep their
+  /// tab, and the folder opens in a new one in front of it. Returns whether
+  /// anything moved.
+  bool openFolder(String folderId) {
+    _settle();
+    final before = (frontTab, frontTab?.folderId);
+    _showFolder(folderId);
+    final moved =
+        before != (frontTab, frontTab?.folderId) ||
+        _used.firstOrNull != (id: folderId, folder: true);
+    _use(folderId, folder: true);
+    _persist();
+    return moved;
+  }
+
+  /// Opens [folderId] in a new tab at the end of the row, behind the tab in
+  /// front. False where it has a tab already.
+  bool openFolderInNewTab(String folderId) {
+    if (folderTabOf(folderId) >= 0) return false;
+    _settle();
+    if (_addTab(const [], front: false, folderId: folderId) == frontTab) {
+      _use(folderId, folder: true);
+    }
     _persist();
     return true;
   }
 
-  /// Walks forward again, towards the note shown last.
+  /// Walks back to the note or folder shown before what is on screen: where
+  /// it is open, or in front.
+  bool back() {
+    if (!canGoBack) return false;
+    _step++;
+    _showPlace(_used[_step]);
+    _persist();
+    return true;
+  }
+
+  /// Walks forward again, towards what was shown last.
   bool forward() {
     if (!canGoForward) return false;
     _step--;
-    _show(_used[_step]);
+    _showPlace(_used[_step]);
     _persist();
     return true;
   }
@@ -386,8 +465,8 @@ class EditorWorkspace {
     return moved;
   }
 
-  /// Closes the tab at [index] into [recentlyClosed]. Where it was in front,
-  /// the tab used before it takes its place.
+  /// Closes the tab at [index], for [reopen] to bring back. Where it was in
+  /// front, the tab used before it takes its place.
   bool closeTab(int index) {
     if (index < 0 || index >= _tabs.length) return false;
     _settle();
@@ -413,23 +492,24 @@ class EditorWorkspace {
     _persist();
   }
 
-  /// Opens the tab closed most recently, or the one at [index] in
-  /// [recentlyClosed], in front, with its notes side by side as they were. A
-  /// note opened elsewhere since stays where it is. Returns the note in front,
-  /// or null where there was nothing to reopen.
-  String? reopen([int index = 0]) {
-    if (index < 0 || index >= _closed.length) return null;
+  /// Opens the tab closed most recently again, in front: its notes side by
+  /// side as they were, or its folder. A note opened elsewhere since stays
+  /// where it is. Returns whether a tab came back.
+  bool reopen() {
+    if (_closed.isEmpty) return false;
     _settle();
-    final notes = [
-      for (final id in _closed.removeAt(index))
+    final (:notes, :folderId) = _closed.removeAt(0);
+    final kept = [
+      for (final id in notes)
         if (tabOf(id) < 0) id,
     ];
-    if (notes.isNotEmpty) {
-      _addTab(notes, front: true);
+    final back = folderId != null || kept.isNotEmpty;
+    if (back) {
+      _addTab(kept, front: true, folderId: folderId);
       _useFront();
     }
     _persist();
-    return notes.isEmpty ? null : selectedNoteId;
+    return back;
   }
 
   /// Opens an empty pane to the right of the focused one, and focuses it.
@@ -446,10 +526,11 @@ class EditorWorkspace {
   /// Puts [noteId] beside the focused note in the tab in front: into an empty
   /// pane if one is waiting, into a new pane while there is room for one, and
   /// into the neighbouring pane once three are open. A note open in another
-  /// tab moves here.
+  /// tab moves here. A folder fills its tab, so there the note opens in the
+  /// folder's place.
   bool openToSide(String noteId) {
     final tab = frontTab;
-    if (tab == null) return open(noteId);
+    if (tab == null || tab.folderId != null) return open(noteId);
     _settle();
     final existing = tab._paneOf(noteId);
     if (existing >= 0) {
@@ -619,15 +700,16 @@ class EditorWorkspace {
   }) {
     final available = availableNoteIds.toSet();
     bool gone(String id) => !available.contains(id);
+    bool goneNote(_Place place) => !place.folder && gone(place.id);
     final leaving = tabbedNoteIds.where(gone).toList();
-    var changed = leaving.isNotEmpty || _used.any(gone);
+    var changed = leaving.isNotEmpty || _used.any(goneNote);
     _settle();
-    _used.removeWhere(gone);
-    for (final notes in _closed) {
-      if (notes.any(gone)) changed = true;
-      notes.removeWhere(gone);
+    _used.removeWhere(goneNote);
+    for (final tab in _closed) {
+      if (tab.notes.any(gone)) changed = true;
+      tab.notes.removeWhere(gone);
     }
-    _closed.removeWhere((notes) => notes.isEmpty);
+    _closed.removeWhere((tab) => tab.folderId == null && tab.notes.isEmpty);
     if (_draft case final draft? when gone(draft)) _draft = null;
     for (final id in leaving) {
       _detach(id);
@@ -642,6 +724,31 @@ class EditorWorkspace {
     }
     if (changed && persist) _persist();
     return changed;
+  }
+
+  /// Takes folders that were deleted out of the tabs, the closed ones and
+  /// Back's walk. A folder's tab closes without counting as closed. Returns
+  /// whether anything changed.
+  bool reconcileFolders(bool Function(String folderId) live) {
+    bool gone(String? folderId) => folderId != null && !live(folderId);
+    bool goneFolder(_Place place) => place.folder && gone(place.id);
+    final leaving = [
+      for (final tab in _tabs)
+        if (gone(tab.folderId)) tab,
+    ];
+    if (leaving.isEmpty &&
+        !_closed.any((tab) => gone(tab.folderId)) &&
+        !_used.any(goneFolder)) {
+      return false;
+    }
+    _settle();
+    for (final tab in leaving) {
+      _removeTab(_tabs.indexOf(tab));
+    }
+    _closed.removeWhere((tab) => gone(tab.folderId));
+    _used.removeWhere(goneFolder);
+    _persist();
+    return true;
   }
 
   /// Sets each pane's share of the row, left to right. A divider sets this on
@@ -682,7 +789,7 @@ class EditorWorkspace {
   }
 
   /// Puts [noteId] on screen: where it is open, or in the focused pane in
-  /// front.
+  /// front, in place of the note or folder there.
   void _show(String noteId) {
     if (_reveal(noteId)) return;
     final tab = frontTab;
@@ -691,13 +798,40 @@ class EditorWorkspace {
       return;
     }
     _forgetClosed(noteId);
+    tab._folderId = null;
     tab._panes[tab._active]._noteId = noteId;
   }
 
-  /// A new tab at the end of the row holding [noteIds] side by side, in front
-  /// or right behind the tab in front.
-  EditorTab _addTab(List<String> noteIds, {required bool front}) {
-    final tab = EditorTab._(_nextId++);
+  /// Puts [folderId] on screen: where it has a tab, or in the tab in front in
+  /// place of what it shows. Notes side by side keep their tab, and the
+  /// folder takes a new one in front.
+  void _showFolder(String folderId) {
+    final index = folderTabOf(folderId);
+    final tab = frontTab;
+    if (index >= 0) {
+      _front = index;
+    } else if (tab == null || tab._panes.length > 1) {
+      _addTab(const [], front: true, folderId: folderId);
+    } else {
+      _forgetClosedFolder(folderId);
+      tab._panes.single._noteId = null;
+      tab._folderId = folderId;
+    }
+  }
+
+  void _showPlace(_Place place) =>
+      place.folder ? _showFolder(place.id) : _show(place.id);
+
+  /// A new tab at the end of the row holding [noteIds] side by side, or with
+  /// [folderId] that folder, in front or right behind the tab in front.
+  EditorTab _addTab(
+    List<String> noteIds, {
+    required bool front,
+    String? folderId,
+  }) {
+    final tab = folderId == null
+        ? EditorTab._(_nextId++)
+        : _folderTab(folderId);
     for (final id in noteIds) {
       tab._panes.add(_newPane(id));
       tab._weights.add(1);
@@ -714,13 +848,27 @@ class EditorWorkspace {
     return tab;
   }
 
-  /// Takes the tab at [index] off the row, and its notes out of Back's walk.
-  /// Where it was in front, the tab used before it takes its place.
+  /// A tab showing [folderId] in its one pane. The folder is no longer among
+  /// the closed ones.
+  EditorTab _folderTab(String folderId) {
+    _forgetClosedFolder(folderId);
+    return EditorTab._(_nextId++)
+      .._folderId = folderId
+      .._panes.add(_newPane(null))
+      .._weights.add(1);
+  }
+
+  /// Takes the tab at [index] off the row, and its notes or folder out of
+  /// Back's walk. Where it was in front, the tab used before it takes its
+  /// place.
   void _removeTab(int index) {
     final tab = _tabs.removeAt(index);
     final notes = tab.noteIds;
     _recent.remove(tab);
-    _used.removeWhere(notes.contains);
+    _used.removeWhere(
+      (place) =>
+          place.folder ? place.id == tab.folderId : notes.contains(place.id),
+    );
     if (notes.contains(_draft)) _draft = null;
     if (_tabs.isEmpty) {
       _front = 0;
@@ -746,49 +894,56 @@ class EditorWorkspace {
   }
 
   void _remember(EditorTab tab) {
-    _closed.insert(0, tab.noteIds);
+    _closed.insert(0, (notes: tab.noteIds, folderId: tab.folderId));
     if (_closed.length > closedLimit) _closed.length = closedLimit;
   }
 
   /// A note open again is no longer among the closed ones.
   void _forgetClosed(String noteId) {
-    for (final notes in _closed) {
-      notes.remove(noteId);
+    for (final tab in _closed) {
+      tab.notes.remove(noteId);
     }
-    _closed.removeWhere((notes) => notes.isEmpty);
+    _closed.removeWhere((tab) => tab.folderId == null && tab.notes.isEmpty);
   }
 
-  /// Counts [noteId] as shown last, and its tab as used last.
-  void _use(String noteId) {
+  /// Nor is a folder.
+  void _forgetClosedFolder(String folderId) =>
+      _closed.removeWhere((tab) => tab.folderId == folderId);
+
+  /// Counts [id], a note's or with [folder] a folder's, as shown last, and
+  /// its tab as used last.
+  void _use(String id, {bool folder = false}) {
+    final place = (id: id, folder: folder);
     _used
-      ..remove(noteId)
-      ..insert(0, noteId);
+      ..remove(place)
+      ..insert(0, place);
     if (_used.length > historyLimit) _used.length = historyLimit;
-    final index = tabOf(noteId);
+    final index = folder ? folderTabOf(id) : tabOf(id);
     if (index < 0) return;
     _recent
       ..remove(_tabs[index])
       ..insert(0, _tabs[index]);
   }
 
-  /// Counts the tab in front as used last, by its focused note where it has
-  /// one.
+  /// Counts the tab in front as used last, by its folder or its focused note
+  /// where it has one.
   void _useFront() {
     final tab = frontTab;
     if (tab == null) return;
+    if (tab.folderId case final id?) return _use(id, folder: true);
     if (tab._panes[tab._active].noteId case final id?) return _use(id);
     _recent
       ..remove(tab)
       ..insert(0, tab);
   }
 
-  /// Ends a walk with Back where it stands: the note it reached becomes the
-  /// one shown last.
+  /// Ends a walk with Back where it stands: what it reached becomes what was
+  /// shown last.
   void _settle() {
     if (_step == 0) return;
-    final id = _used[_step];
+    final (:id, :folder) = _used[_step];
     _step = 0;
-    _use(id);
+    _use(id, folder: folder);
   }
 
   EditorPane _newPane(String? noteId) => EditorPane._(_nextId++, noteId);
@@ -838,19 +993,27 @@ class EditorWorkspace {
     final value = <String, Object?>{
       'tabs': [
         for (final tab in _tabs)
-          {
-            'panes': tab.noteIds,
-            'weights': [
-              for (final (index, pane) in tab._panes.indexed)
-                if (pane.noteId != null) tab._weights[index],
-            ],
-            'active': ?tab._panes[tab._active].noteId,
-          },
+          if (tab.folderId case final folderId?)
+            {'folder': folderId}
+          else
+            {
+              'panes': tab.noteIds,
+              'weights': [
+                for (final (index, pane) in tab._panes.indexed)
+                  if (pane.noteId != null) tab._weights[index],
+              ],
+              'active': ?tab._panes[tab._active].noteId,
+            },
       ],
       'tab': _front,
       'recent': [for (final tab in _recent) _tabs.indexOf(tab)],
-      'used': List.of(_used),
-      'closed': [for (final notes in _closed) List.of(notes)],
+      'used': [
+        for (final (:id, :folder) in _used) folder ? {'folder': id} : id,
+      ],
+      'closed': [
+        for (final (:notes, :folderId) in _closed)
+          folderId == null ? List.of(notes) : {'folder': folderId},
+      ],
       'day': ?_day,
       'draft': ?_draft,
     };
@@ -867,22 +1030,25 @@ class EditorWorkspace {
 /// A held-key walk through the recently used notes. Each step shows another
 /// note without counting it as shown, and only the note the walk ends on
 /// counts. A note open in a tab comes forward there; any other note shows in
-/// the pane that was focused when the walk began, in place of its note. Every
-/// step starts again from how the walk found the tabs, so a walk never leaves
-/// notes behind in other panes, and cancelling puts it all back.
+/// the pane that was focused when the walk began, in place of its note or
+/// folder. Every step starts again from how the walk found the tabs, so a
+/// walk never leaves notes behind in other panes, and cancelling puts it all
+/// back.
 class EditorWorkspacePreviewSession {
   EditorWorkspacePreviewSession._(this._workspace)
     : _start = _workspace.frontTab,
       _startNotes = [...?_workspace.frontTab?.noteIds],
+      _startFolder = _workspace.frontTab?.folderId,
       _anchor = _workspace.activePane,
       _anchorNote = _workspace.selectedNoteId,
       _actives = {for (final tab in _workspace._tabs) tab: tab._active};
 
   final EditorWorkspace _workspace;
 
-  /// The tab in front when the walk began, and its notes then.
+  /// The tab in front when the walk began, and its notes or folder then.
   final EditorTab? _start;
   final List<String> _startNotes;
+  final String? _startFolder;
 
   /// The pane a note with no tab shows in, and the note it held.
   final int _anchor;
@@ -930,7 +1096,10 @@ class EditorWorkspacePreviewSession {
       return false;
     }
     _restore();
-    if (!_workspace._reveal(noteId)) start._panes[_anchor]._noteId = noteId;
+    if (!_workspace._reveal(noteId)) {
+      start._folderId = null;
+      start._panes[_anchor]._noteId = noteId;
+    }
     return true;
   }
 
@@ -960,6 +1129,7 @@ class EditorWorkspacePreviewSession {
     if (_anchor < start._panes.length) {
       start._panes[_anchor]._noteId = _anchorNote;
     }
+    start._folderId = _startFolder;
     for (final MapEntry(key: tab, value: active) in _actives.entries) {
       if (active < tab._panes.length) tab._active = active;
     }
