@@ -13,6 +13,7 @@ class CompactIconButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.semanticLabel,
     this.selected = false,
     this.foregroundColor,
     this.extent,
@@ -24,6 +25,11 @@ class CompactIconButton extends StatelessWidget {
   final Widget icon;
   final String tooltip;
   final VoidCallback? onPressed;
+
+  /// What a screen reader says. Defaults to [tooltip] on a pointer device,
+  /// where the tooltip is the name, and to nothing on touch, where the
+  /// tooltip is not shown.
+  final String? semanticLabel;
   final bool selected;
   final Color? foregroundColor;
   final double? extent;
@@ -45,11 +51,18 @@ class CompactIconButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final extent = this.extent ?? AppControlMetrics.iconButtonExtent;
 
+    final label = semanticLabel ?? (AppPlatform.isDesktop ? tooltip : null);
+    // An explicit name has to sit on the button itself. The default desktop
+    // label already merges with the icon button, and marking it again would
+    // split every toolbar button into two.
+    final named = semanticLabel != null && onPressed != null;
     return MergeSemantics(
       child: Tooltip(
         message: tooltip,
         child: Semantics(
-          label: AppPlatform.isDesktop ? tooltip : null,
+          label: label,
+          button: named ? true : null,
+          focusable: named ? true : null,
           selected: selected,
           child: IconButton(
             onPressed: onPressed,
