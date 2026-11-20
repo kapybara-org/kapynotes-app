@@ -186,8 +186,12 @@ void main() {
 
     // Aoife has joined and Kwame not yet: the group is still theirs, with
     // Kwame named by his address until he joins and says who he is.
-    expect(find.text('With Aoife and kwame.mensah'), findsOneWidget);
-    expectUnder(tester, 'Flat 4B bills', 'With Aoife and kwame.mensah');
+    expect(find.text('With Aoife, waiting for kwame.mensah'), findsOneWidget);
+    expectUnder(
+      tester,
+      'Flat 4B bills',
+      'With Aoife, waiting for kwame.mensah',
+    );
     expect(find.text('From Wen'), findsOneWidget);
     expectUnder(tester, 'Marathon training log', 'From Wen');
     expect(find.text('Waiting for tomas.lind'), findsOneWidget);
@@ -198,7 +202,7 @@ void main() {
     );
 
     // A group opens the first person it names.
-    await tester.tap(find.text('With Aoife and kwame.mensah'));
+    await tester.tap(find.text('With Aoife, waiting for kwame.mensah'));
     expect(opened, aoife.email);
     await tester.tap(find.text('From Wen'));
     expect(opened, wen.email);
@@ -280,5 +284,33 @@ void main() {
       'Waiting for tomas.lind',
     );
     expect(ShareGroup(ShareGroupKind.from, [wen]).title, 'From Wen');
+  });
+
+  test('a heading keeps people who have not joined apart, and does not '
+      'shorten a name to an initial', () {
+    const invited = SharePerson(
+      email: 'tomas.lind@example.org',
+      name: 'tomas.lind',
+    );
+    const priya = SharePerson(
+      email: 'priya.nair@example.com',
+      name: 'Priya Nair',
+      userId: 'user-2',
+    );
+    const initial = SharePerson(
+      email: 'j.okafor@example.com',
+      name: 'J. Okafor',
+      userId: 'user-6',
+    );
+    expect(
+      ShareGroup(ShareGroupKind.sharedWith, [priya, invited]).title,
+      'With Priya, waiting for tomas.lind',
+    );
+    expect(
+      ShareGroup(ShareGroupKind.sharedWith, [initial]).title,
+      'With J. Okafor',
+    );
+    expect(initial.firstName, 'J. Okafor');
+    expect(priya.firstName, 'Priya');
   });
 }

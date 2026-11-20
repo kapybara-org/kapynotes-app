@@ -511,10 +511,10 @@ class Sharing extends ChangeNotifier {
           : ShareGroup(ShareGroupKind.from, [_personOf(owner)]);
     }
     final joined = space.othersThan(userId);
-    final people = _byName([
-      ...joined.map(_personOf),
-      ...space.invites.map(_invited),
-    ]);
+    final people = [
+      ..._byName(joined.map(_personOf)),
+      ..._byName(space.invites.map(_invited)),
+    ];
     if (people.isEmpty) return null;
     return ShareGroup(
       joined.isEmpty ? ShareGroupKind.waiting : ShareGroupKind.sharedWith,
@@ -982,8 +982,13 @@ class SharePerson {
 
   bool get isInvited => userId == null;
 
-  /// What to call them in a heading, where a full name would crowd it.
-  String get firstName => name.trim().split(RegExp(r'\s')).first;
+  /// What to call them in a heading, where a full name would crowd it: the
+  /// first word, unless that is only an initial and says nothing alone.
+  String get firstName {
+    final whole = name.trim();
+    final first = whole.split(RegExp(r'\s+')).first;
+    return first.replaceAll('.', '').length > 1 ? first : whole;
+  }
 }
 
 /// How a group in the Shared list stands to this account.
@@ -1012,25 +1017,32 @@ class ShareGroup {
   String get key =>
       '${kind.name}:${[for (final person in people) person.email].join('+')}';
 
-  /// "With Priya", "With Aoife and Kwame", "From Wen", "Waiting for tomas".
+  /// "With Priya", "With Aoife and Kwame", "From Wen", "Waiting for tomas",
+  /// and "With Aoife, waiting for kwame" while only some have joined.
   String get title {
     final firsts = [for (final person in people) person.firstName];
-    final names = [
-      for (final (index, person) in people.indexed)
+    String nameOf(int index) =>
         firsts.where((first) => first == firsts[index]).length > 1
-            ? person.name
-            : firsts[index],
+        ? people[index].name
+        : firsts[index];
+    String list(Iterable<String> names) => switch (names.toList()) {
+      [final one] => one,
+      [final one, final two] => '$one and $two',
+      [final one, final two, final three] => '$one, $two and $three',
+      final many => '${many[0]}, ${many[1]} and ${many.length - 2} others',
+    };
+    final all = [for (var i = 0; i < people.length; i++) nameOf(i)];
+    if (kind == ShareGroupKind.from) return 'From ${list(all)}';
+    if (kind == ShareGroupKind.waiting) return 'Waiting for ${list(all)}';
+    final invited = [
+      for (var i = 0; i < people.length; i++)
+        if (people[i].isInvited) nameOf(i),
     ];
-    final who = switch (names.length) {
-      1 => names[0],
-      2 => '${names[0]} and ${names[1]}',
-      3 => '${names[0]}, ${names[1]} and ${names[2]}',
-      _ => '${names[0]}, ${names[1]} and ${names.length - 2} others',
-    };
-    return switch (kind) {
-      ShareGroupKind.sharedWith => 'With $who',
-      ShareGroupKind.waiting => 'Waiting for $who',
-      ShareGroupKind.from => 'From $who',
-    };
+    final joined = [
+      for (var i = 0; i < people.length; i++)
+        if (!people[i].isInvited) nameOf(i),
+    ];
+    if (invited.isEmpty || joined.isEmpty) return 'With ${list(all)}';
+    return 'With ${list(joined)}, waiting for ${list(invited)}';
   }
 }
