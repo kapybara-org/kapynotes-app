@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../data/folders.dart' show Folder, FolderTree;
 import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
@@ -31,6 +32,12 @@ sealed class CommandChoice {
 class OpenNoteChoice extends CommandChoice {
   const OpenNoteChoice(this.note);
   final Note note;
+}
+
+/// Show a folder in the tab in front.
+class OpenFolderChoice extends CommandChoice {
+  const OpenFolderChoice(this.folderId);
+  final String folderId;
 }
 
 /// Show a task in Tasks, among its note's.
@@ -108,7 +115,8 @@ class AskKapyAiChoice extends CommandChoice {
 /// [destinations] are the sections Go to lists, in order, before Hidden,
 /// listed only with [showHidden], and Archive. Hidden notes are searched
 /// only while [hiddenUnlocked], and [tasks] is null where there is no task
-/// list to search or add to. With [tags], # lists the tags to filter by, and
+/// list to search or add to. [folders] are found by name where a folder can
+/// open, and are null elsewhere. With [tags], # lists the tags to filter by, and
 /// [tagNote], the open note, can be tagged from the menu. A result shows the
 /// dot of the first of [marksOf]'s tags for its note: the dialog is a route
 /// of its own, so the page's own marks don't reach it. [askKapyAi] is whether
@@ -124,6 +132,7 @@ Future<CommandChoice?> showCommandMenu(
   required DateTime Function(DateTime) displayTime,
   required String Function(Note) taskLabel,
   TaskBoard? tasks,
+  FolderTree? folders,
   bool showHidden = false,
   bool hiddenUnlocked = false,
   bool askKapyAi = false,
@@ -146,6 +155,7 @@ Future<CommandChoice?> showCommandMenu(
         displayTime: displayTime,
         taskLabel: taskLabel,
         tasks: tasks,
+        folders: folders,
         showHidden: showHidden,
         hiddenUnlocked: hiddenUnlocked,
         askKapyAi: askKapyAi,
@@ -171,6 +181,7 @@ class CommandMenu extends StatefulWidget {
     required this.taskLabel,
     required this.onChosen,
     this.tasks,
+    this.folders,
     this.showHidden = false,
     this.hiddenUnlocked = false,
     this.askKapyAi = false,
@@ -188,6 +199,10 @@ class CommandMenu extends StatefulWidget {
   final String Function(Note) taskLabel;
   final ValueChanged<CommandChoice> onChosen;
   final TaskBoard? tasks;
+
+  /// The person's folders, which typing finds by name. Null where a folder
+  /// can't open.
+  final FolderTree? folders;
   final bool showHidden;
   final bool hiddenUnlocked;
   final bool askKapyAi;
@@ -443,6 +458,11 @@ class _CommandMenuState extends State<CommandMenu> {
       for (final task in widget.tasks?.open ?? const <TaskItem>[])
         if (terms.every(task.words.toLowerCase().contains)) task,
     ].take(CommandMenu.perKind);
+    final tree = widget.folders;
+    final folders = [
+      for (final folder in tree?.folders ?? const <Folder>[])
+        if (terms.every(folder.name.toLowerCase().contains)) folder,
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     final archived = notes.searchArchived(text).length;
     final settings = [
       for (final entry in searchSettings<SettingsSection>(
@@ -486,6 +506,21 @@ class _CommandMenuState extends State<CommandMenu> {
         const _Line.heading('Notes'),
         for (final note in written.take(CommandMenu.perKind))
           _noteRow(note, detail: note.matchSnippet(text)),
+      ],
+      if (tree != null && folders.isNotEmpty) ...[
+        const _Line.heading('Folders'),
+        for (final folder in folders.take(CommandMenu.perKind))
+          _Line.row(
+            icon: KapyIcons.folderOutlined,
+            title: folder.name,
+            trailing: switch (tree.pathOf(folder.id)) {
+              [...final above, _] when above.isNotEmpty => [
+                for (final place in above) place.name,
+              ].join(' › '),
+              _ => null,
+            },
+            choice: OpenFolderChoice(folder.id),
+          ),
       ],
       if (tasks.isNotEmpty) ...[
         const _Line.heading('Tasks'),

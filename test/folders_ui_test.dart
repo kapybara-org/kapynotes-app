@@ -325,6 +325,72 @@ void main() {
       expect(onPage(find.text('No notes, in My notes')), findsOneWidget);
     });
 
+    testWidgets('in the list view a filed note says where it is ahead of its '
+        'summary, and a note in no folder only has its summary', (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      goldenPrefs.noteCards = false;
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final call = goldenNotes.create(
+        body: 'Call with Arjun\nPricing page by Friday',
+      );
+      final dentist = goldenNotes.create(
+        body: 'Dentist\nBring the insurance card',
+      );
+      goldenFolders.file([call.id], clients.id);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: rowOf(call.id),
+          matching: find.text('Work › Clients · Pricing page by Friday'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: rowOf(dentist.id),
+          matching: find.text('Bring the insurance card'),
+        ),
+        findsOneWidget,
+      );
+
+      goldenFolders.file([call.id], null);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: rowOf(call.id),
+          matching: find.text('Pricing page by Friday'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the search field says it finds folders, and ⌘K shows one in '
+        'the tab in front, from Archive too', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      goldenNotes.archive(goldenNotes.create(body: 'Old receipts').id);
+      await tester.pumpAndSettle();
+      expect(find.text('Search notes and folders'), findsOneWidget);
+
+      await tapKey(tester, 'sidebar-notes-filter');
+      await tapKey(tester, 'notes-filter-archive');
+      expect(find.text('Search notes and folders'), findsNothing);
+
+      await press(tester, ShortcutAction.findNotes);
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'work',
+      );
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'command-menu-row-${work.name}');
+      expect(pageTitle(tester), 'Work');
+      expect(find.text('Search notes and folders'), findsOneWidget);
+    });
+
     testWidgets('a note made while a folder is in front goes into it and '
         "takes the folder's place, and a deleted folder's tab closes", (
       tester,

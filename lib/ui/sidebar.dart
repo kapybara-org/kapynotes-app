@@ -3097,6 +3097,12 @@ class _NoteRowState extends State<NoteRow> {
         glance: glance,
         date: date,
         snippet: snippet,
+        place: switch (widget.folders?.tree.pathOfNote(note.id)) {
+          final path? when path.isNotEmpty => [
+            for (final folder in path) folder.name,
+          ].join(' › '),
+          _ => null,
+        },
         selected: widget.selected,
         hovering: _hovering,
         ringed: ringed,

@@ -567,6 +567,7 @@ class NoteListRowFace extends StatelessWidget {
     required this.selected,
     required this.hovering,
     this.snippet,
+    this.place,
     this.ringed = false,
     this.locked = false,
     this.shared = false,
@@ -577,6 +578,10 @@ class NoteListRowFace extends StatelessWidget {
   final NoteGlance glance;
   final String date;
   final String? snippet;
+
+  /// The folders the note is in, as "Work › Clients", which start the second
+  /// line in the date's quieter ink. Null for a note in no folder.
+  final String? place;
   final bool selected;
   final bool hovering;
   final bool ringed;
@@ -677,8 +682,17 @@ class NoteListRowFace extends StatelessWidget {
                       const SizedBox(width: 5),
                     ],
                     Expanded(
-                      child: Text(
-                        summary,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            if (place case final place?)
+                              TextSpan(
+                                text: '$place · ',
+                                style: TextStyle(color: palette.textTertiary),
+                              ),
+                            TextSpan(text: summary),
+                          ],
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: _figtree(

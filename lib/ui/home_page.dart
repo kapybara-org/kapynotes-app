@@ -2942,8 +2942,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What the search fields read: they offer to ask Kapy AI only while it
   /// can be asked.
-  String get _searchPlaceholder =>
-      _kapyAiOn ? 'Search or Ask Kapy AI' : 'Search';
+  String get _searchPlaceholder => _kapyAiOn
+      ? 'Search or Ask Kapy AI'
+      : _offersFolders && !_usesCompactLayout
+      ? 'Search notes and folders'
+      : 'Search';
 
   /// Opens the panel, or the phone's sheet, from the note on screen so its
   /// chip is attached. With [question] it first starts a new chat and asks
@@ -3181,6 +3184,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       displayTime: widget.prefs.displayTime,
       taskLabel: _taskNoteLabel,
       tasks: _taskController?.read(),
+      folders: _usesCompactLayout ? null : widget.folders?.tree,
       showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
       askKapyAi: _kapyAiOn,
@@ -3225,6 +3229,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         } else {
           _openTaskNote(note.id);
         }
+      case OpenFolderChoice(:final folderId):
+        _showNotes(NotesShow.all);
+        _openFolder(folderId, behind: false);
       case OpenTaskChoice(:final task):
         _showSpace(LibrarySpace.tasks);
         setState(() => _taskFilter = TaskFilter.note(task.note.id));
