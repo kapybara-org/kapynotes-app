@@ -2112,15 +2112,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .toList();
     if (ids.isEmpty) return;
     _recordKapyActivity();
-    final theirs = _allSharedByOthers(ids);
+    final removed = _sharedByOthers(ids);
     final confirmed = await _confirmDelete(
       title: 'Empty Archived Notes?',
       body: _deleteBody(ids),
-      action: theirs ? 'Remove all' : 'Delete all',
+      action: removed == ids.length ? 'Remove all' : 'Delete all',
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceForgotten(ids);
+    _announceForgotten(ids.length, removed);
   }
 
   /// Throws picked notes away. One goes as its row's Delete does, asking
@@ -2133,7 +2133,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .toList();
     if (ids.isEmpty) return;
     _recordKapyActivity();
-    final theirs = _allSharedByOthers(ids);
+    final removed = _sharedByOthers(ids);
+    final theirs = removed == ids.length;
     final confirmed = await _confirmDelete(
       title: theirs
           ? 'Remove from your notes?'
@@ -2146,22 +2147,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!confirmed || !mounted) return;
     _forget(ids);
     _picks.clear();
-    _announceForgotten(ids);
+    _announceForgotten(ids.length, removed);
   }
 
-  bool _allSharedByOthers(List<String> ids) =>
-      ids.every((id) => _sharedBy(widget.notes.byId(id)) != null);
+  /// How many of [ids] somebody else shares with this account. Counted
+  /// before they go: once forgotten, a note is no longer here to ask.
+  int _sharedByOthers(List<String> ids) =>
+      ids.where((id) => _sharedBy(widget.notes.byId(id)) != null).length;
 
-  void _announceForgotten(List<String> ids) {
-    final removed = ids
-        .where((id) => _sharedBy(widget.notes.byId(id)) != null)
-        .length;
-    Toast.show(
-      context,
-      forgottenMessage(deleted: ids.length - removed, removed: removed),
-      icon: deleteIcon,
-    );
-  }
+  void _announceForgotten(int total, int removed) => Toast.show(
+    context,
+    forgottenMessage(deleted: total - removed, removed: removed),
+    icon: deleteIcon,
+  );
 
   /// The part every delete shares: take the notes out, drop whatever the
   /// selection and the editor were holding onto, and reclaim the pictures and
