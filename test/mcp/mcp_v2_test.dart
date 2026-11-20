@@ -17,6 +17,7 @@ void main() {
   setUp(() async {
     f = McpFixture();
     await f.tags.load();
+    await f.folders.load();
     tools = McpTools(f.library);
   });
 
@@ -51,6 +52,7 @@ void main() {
         'read_voice_note',
         'list_tasks',
         'list_tags',
+        'list_folders',
       });
       final before = [for (final note in f.notes.notes) note.body];
       for (final name in McpTools.writeTools) {
@@ -67,7 +69,7 @@ void main() {
 
     test('each tool says what it does to the notes', () {
       final all = tools.definitions(writes: true);
-      expect(all, hasLength(15));
+      expect(all, hasLength(18));
       for (final tool in all) {
         final hints = tool['annotations']! as Map<String, Object?>;
         final writes = McpTools.writeTools.contains(tool['name']);
@@ -78,6 +80,7 @@ void main() {
           const {
             'edit_note',
             'manage_tag',
+            'manage_folder',
             'edit_task',
             'draw',
           }.contains(tool['name']),
@@ -109,6 +112,7 @@ void main() {
       'set_task_done': {'task_id': '$h~x~0', 'done': true},
       'edit_task': {'task_id': '$h~x~0', 'remove': true},
       'draw': {'note_id': h, 'add': <Object?>[]},
+      'file_note': {'note_id': h, 'folder_id': 'x'},
     };
     for (final MapEntry(key: name, value: args) in calls.entries) {
       expect(refused(name, args), McpLibrary.notFound, reason: name);
@@ -811,5 +815,165 @@ void main() {
       refused('read_voice_note', {'note_id': id, 'voice_id': 'nope'}),
       contains('No voice note'),
     );
+  });
+
+  group('folders', () {
+    String idOf(Map<String, Object?> folder) => folder['id'] as String;
+
+    test('creates, renames, moves, deletes and restores, each undoable', () {
+      final created = ok('manage_folder', {'action': 'create', 'name': 'Work'});
+      final work = created['folder'] as Map<String, Object?>;
+      final workId = idOf(work);
+      expect(ok('list_folders', {})['folders'], [
+        {'id': workId, 'name': 'Work', 'parent_id': null, 'notes': <String>[]},
+      ]);
+      final listed = call('manage_folder', {
+        'action': 'create',
+        'name': 'Work',
+      });
+      expect(listed.error, 'A folder here already has that name.');
+
+      final renamed = ok('manage_folder', {
+        'action': 'rename',
+        'folder_id': workId,
+        'new_name': 'Office',
+      });
+      expect((renamed['folder'] as Map)['name'], 'Office');
+      final inner = ok('manage_folder', {
+        'action': 'create',
+        'name': 'Clients',
+      });
+      final clientsId = idOf(inner['folder'] as Map<String, Object?>);
+      final moved = call('manage_folder', {
+        'action': 'move',
+        'folder_id': workId,
+        'parent_id': clientsId,
+      });
+      expect(moved.error, isNull);
+      expect(
+        call('manage_folder', {
+          'action': 'move',
+          'folder_id': clientsId,
+          'parent_id': workId,
+        }).error,
+        'A folder can’t go inside itself.',
+      );
+      moved.undo!.run();
+
+      final deleted = call('manage_folder', {
+        'action': 'delete',
+        'folder_id': clientsId,
+      });
+      expect(deleted.error, isNull);
+      expect(
+        call('manage_folder', {
+          'action': 'rename',
+          'folder_id': clientsId,
+          'new_name': 'Acme',
+        }).error,
+        'That folder was deleted.',
+      );
+      expect(
+        (ok('list_folders', {})['folders'] as List).map(
+          (f) => (f as Map)['id'],
+        ),
+        [workId],
+      );
+      deleted.undo!.run();
+      expect(
+        (ok('list_folders', {})['folders'] as List)
+            .map((f) => (f as Map)['name'])
+            .toSet(),
+        {'Office', 'Clients'},
+      );
+    });
+
+    test(
+      'files a note, and refuses a drawing, an archived note and one shared with you',
+      () {
+        final workId = idOf(
+          (ok('manage_folder', {'action': 'create', 'name': 'Work'})['folder']
+              as Map<String, Object?>),
+        );
+        final filed = ok('file_note', {
+          'note_id': f.plain,
+          'folder_id': workId,
+        });
+        expect(filed['folder_id'], workId);
+        expect(
+          ((ok('list_folders', {})['folders'] as List).single as Map)['notes'],
+          [f.plain],
+        );
+        final back = call('file_note', {'note_id': f.plain});
+        expect(back.output!['folder_id'], isNull);
+        back.undo!.run();
+        expect(f.folders.tree.folderOf(f.plain), workId);
+
+        expect(
+          refused('file_note', {'note_id': f.hidden, 'folder_id': workId}),
+          McpLibrary.notFound,
+        );
+        expect(
+          refused('file_note', {'note_id': f.drawing, 'folder_id': workId}),
+          'Folders hold notes only.',
+        );
+        expect(
+          refused('file_note', {'note_id': f.archived, 'folder_id': workId}),
+          'Archived notes can’t be filed.',
+        );
+        expect(
+          refused('file_note', {'note_id': f.shared, 'folder_id': workId}),
+          'Notes shared with you can’t be filed.',
+        );
+        expect(f.folders.tree.folderOf(f.drawing), isNull);
+        expect(f.folders.tree.folderOf(f.shared), isNull);
+      },
+    );
+
+    test('a note the person owns in a shared space can be filed', () {
+      final own = McpLibrary(
+        notes: f.notes,
+        engine: () => f.engine,
+        tags: f.tags,
+        folders: f.folders,
+        sharedWithMe: (_) => false,
+      );
+      final tools = McpTools(own);
+      final work = f.folders.create('Mine')!;
+      final result = tools.call('file_note', {
+        'note_id': f.shared,
+        'folder_id': work.id,
+      }, writes: true);
+      expect(result.error, isNull);
+      expect(result.output!['folder_id'], work.id);
+    });
+
+    test('an empty name, a tenth level and a missing folder are refused', () {
+      expect(
+        refused('manage_folder', {'action': 'create', 'name': '   '}),
+        'Give the folder a name.',
+      );
+      String? parent;
+      for (var i = 0; i < 10; i++) {
+        final made = ok('manage_folder', {
+          'action': 'create',
+          'name': 'L$i',
+          'parent_id': parent,
+        });
+        parent = idOf(made['folder'] as Map<String, Object?>);
+      }
+      expect(
+        refused('manage_folder', {
+          'action': 'create',
+          'name': 'Too deep',
+          'parent_id': parent,
+        }),
+        'Folders go at most 10 levels deep.',
+      );
+      expect(
+        refused('manage_folder', {'action': 'move', 'folder_id': 'missing'}),
+        'That folder was deleted.',
+      );
+    });
   });
 }

@@ -168,16 +168,18 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
   /// The menu bar panel's Tasks, over the same library the Tasks page reads.
   /// Only where there is a panel: macOS, with the desktop integration.
-  late final TasksController? _panelTasks =
-      switch ((widget.desktopIntegration, widget.tasks)) {
-        (_?, final tasks?) when AppPlatform.isMacOS => TasksController(
-          notes: widget.notes,
-          library: tasks,
-          canEdit: _panelCanEdit,
-          now: widget.notes.now,
-        ),
-        _ => null,
-      };
+  late final TasksController? _panelTasks = switch ((
+    widget.desktopIntegration,
+    widget.tasks,
+  )) {
+    (_?, final tasks?) when AppPlatform.isMacOS => TasksController(
+      notes: widget.notes,
+      library: tasks,
+      canEdit: _panelCanEdit,
+      now: widget.notes.now,
+    ),
+    _ => null,
+  };
 
   bool _panelCanEdit(Note note) => panelCanEdit(
     note,
@@ -443,6 +445,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           notes: widget.notes,
           engine: () => engines.engine,
           tags: widget.tags,
+          folders: widget.folders,
+          sharedWithMe: (note) {
+            if (!note.isShared) return false;
+            final sharing = widget.account?.sharing;
+            if (sharing == null) return true;
+            final space = sharing.spaceOf(note);
+            return space == null || space.ownerId != sharing.userId;
+          },
           canCreate: () => widget.account?.noteLimit?.canCreate ?? true,
           isLocked: (note) =>
               widget.account?.noteLimit?.isLocked(note) ?? false,
