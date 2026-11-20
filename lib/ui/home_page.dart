@@ -3824,6 +3824,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           addFocus: _taskAddFocus,
           labelOf: _taskNoteLabel,
           onOpenNote: _openTaskNote,
+          images: widget.notes.blobs,
           newTaskShortcut: widget.shortcuts
               .bindingFor(ShortcutAction.newNote)
               ?.keycapLabel,

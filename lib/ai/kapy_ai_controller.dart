@@ -209,6 +209,16 @@ class KapyAiController extends KapyAi {
   KapyModel get defaultModel {
     final stored = _store.defaultModel;
     if (stored != null && _usable(stored)) return stored;
+    // Whatever someone picked stays their pick. Kapy AI says why it cannot
+    // answer and offers what else could, rather than switching for them. A
+    // device model that can answer is the same choice, not a different one.
+    if (stored != null) {
+      if (stored.kind == KapyModelKind.device) {
+        final device = _deviceModel;
+        if (device != null && _usable(device)) return device;
+      }
+      return stored;
+    }
     return isPro ? KapyModel.cloud : _fallback;
   }
 
@@ -223,14 +233,19 @@ class KapyAiController extends KapyAi {
   /// rather than the chat quietly moving to another model. A signed-in tool
   /// that no longer lists the model, because its catalogue changed or the
   /// model now brings a tool of its own, does not count.
+  /// Whether [model] can answer for this person right now.
   bool _usable(KapyModel model) => switch (model.kind) {
     KapyModelKind.cloud => isPro,
-    KapyModelKind.device => model == _deviceModel,
+    // A device model counts only when it can actually answer: the device may
+    // be reporting that nothing here can run, in [DeviceModelState.note].
+    KapyModelKind.device => model == _deviceModel && _device.state.note == null,
     KapyModelKind.codex => _toolModelUsable(KapyAccountKind.codex, model),
     KapyModelKind.claudeCode => _toolModelUsable(
       KapyAccountKind.claudeCode,
       model,
     ),
+    // A key is checked when it is used: a rejected one comes back as an
+    // account error, which is the card that offers the alternatives.
     KapyModelKind.openRouter => true,
   };
 
@@ -258,7 +273,16 @@ class KapyAiController extends KapyAi {
   @override
   KapyModel get model {
     final chosen = current?.model ?? _next ?? defaultModel;
-    return _usable(chosen) ? chosen : defaultModel;
+    if (_usable(chosen)) return chosen;
+    // A chat's own model is the person's choice too, so it is never swapped for
+    // another one: the pending state says why it cannot answer instead. A
+    // device model is the exception, because another one here is the same
+    // choice rather than a different model.
+    if (chosen.kind == KapyModelKind.device) {
+      final device = _deviceModel;
+      if (device != null && _usable(device)) return device;
+    }
+    return chosen;
   }
 
   @override
@@ -672,9 +696,13 @@ class KapyAiController extends KapyAi {
           models: const <KapyModel>[],
         );
       }
-      failed = KapyAccountError(account: rejected.account, model: using);
+      failed = KapyAccountError(
+        account: rejected.account,
+        model: using,
+        fallbacks: _alternativesTo(using),
+      );
     } on AnswerFailed catch (failure) {
-      failed = KapyFailed(failure.message);
+      failed = KapyFailed(failure.message, fallbacks: _alternativesTo(using));
     } catch (error) {
       debugPrint('KapyNotes: Kapy AI could not answer: ${error.runtimeType}');
       failed = const KapyFailed('Something went wrong. Try again.');
@@ -687,13 +715,38 @@ class KapyAiController extends KapyAi {
 
   /// What has to happen before [model] may answer, or null when nothing.
   KapyPending? _holdFor(KapyModel model) {
+    final blocked = _device.state.note;
+    // Nothing on this device can answer and the person is not on Pro: the
+    // note says more than "part of Pro" would, so it goes first.
+    if (blocked != null &&
+        !isPro &&
+        model.kind != KapyModelKind.codex &&
+        model.kind != KapyModelKind.claudeCode &&
+        model.kind != KapyModelKind.openRouter) {
+      return KapyFailed(blocked, fallbacks: _alternativesTo(model));
+    }
     final account = _accountOf(model.kind);
     if (account != null) {
+      // A choice that cannot answer right now says so, rather than asking
+      // consent for a send that would fail. The card offers what would work.
+      if (!_usable(model)) {
+        return KapyAccountError(
+          account: account,
+          model: model,
+          fallbacks: _alternativesTo(model),
+        );
+      }
       return _store.hasAccountConsent(account)
           ? null
           : KapyAccountConsent(account);
     }
     if (model.kind == KapyModelKind.cloud) {
+      if (!isPro) {
+        return KapyFailed(
+          'Kapy AI Cloud is part of Pro.',
+          fallbacks: _alternativesTo(model),
+        );
+      }
       return _store.cloudConsent ? null : const KapyCloudConsent();
     }
     final state = _device.state;
@@ -704,13 +757,31 @@ class KapyAiController extends KapyAi {
         received: state.receivedBytes,
         total: state.totalBytes,
       ),
-      DeviceModelStatus.needsSystemFeature => const KapyFailed(
-        'Turn on Apple Intelligence in System Settings, then try again.',
+      DeviceModelStatus.needsSystemFeature => KapyFailed(
+        state.note ?? PlatformDeviceModel.appleOffNoRoom,
+        fallbacks: _alternativesTo(model),
       ),
-      DeviceModelStatus.unavailable => const KapyFailed(
+      DeviceModelStatus.unavailable => KapyFailed(
         "This device can't run an on-device model.",
+        fallbacks: _alternativesTo(model),
       ),
     };
+  }
+
+  /// What could answer instead of [using], as choices for the person to make.
+  /// Never applied on their behalf: each still asks for its own consent.
+  List<KapyModel> _alternativesTo(KapyModel using) {
+    final out = <KapyModel>[];
+    final device = _deviceModel;
+    if (device != null && device != using && _usable(device)) out.add(device);
+    if (isPro && using.kind != KapyModelKind.cloud) out.add(KapyModel.cloud);
+    for (final account in accounts) {
+      if (!account.enabled) continue;
+      for (final model in account.models) {
+        if (model != using && _usable(model)) out.add(model);
+      }
+    }
+    return out;
   }
 
   static KapyAccountKind? _accountOf(KapyModelKind kind) => switch (kind) {

@@ -17,6 +17,7 @@ import '../data/shortcut_prefs.dart';
 import '../data/task_board.dart';
 import 'keycap.dart';
 import 'sidebar_timestamp.dart';
+import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
 
 /// Whether the panel may check [note]'s tasks or add one to it: not while the
@@ -445,13 +446,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
   }
 
   void _openTask(TaskItem item) {
-    final home = widget.tasks.read().home;
-    final noteId = item.note.id;
-    unawaited(
-      widget.inWindow(
-        (window) => noteId == home?.id ? window.openTasks() : window.openNote(noteId),
-      ),
-    );
+    widget.tasks.requestSheet(item.id);
+    unawaited(widget.inWindow((window) => window.openTasks()));
   }
 
   // ---------------------------------------------------------------------------
@@ -1220,6 +1216,7 @@ class _TaskRow extends StatelessWidget {
                   : null,
             ),
           ),
+          TaskDetailsIcon(item: item),
           const SizedBox(width: 10),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 120),

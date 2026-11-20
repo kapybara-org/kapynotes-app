@@ -270,6 +270,9 @@ void main() {
       addTearDown(device.dispose);
 
       final ai = await build(pro: false, device: device);
+      // The app asks the device what it can do before a chat takes a model, so
+      // the chat is not pinned to a default taken while that was unknown.
+      await device.refresh();
       await ai.ask(_question);
       expect(ai.current!.messages.last.text, 'apple answer');
       final call = seen.single;
