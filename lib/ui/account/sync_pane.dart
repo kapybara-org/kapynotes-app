@@ -324,8 +324,7 @@ class _SignInFormState extends State<_SignInForm> {
           'Enter the 6-digit code sent to $_address. It expires in 10 minutes.',
         _SignInStep.resetCode =>
           'Enter the code sent to $_address and choose a new password.',
-        _SignInStep.resetRequest =>
-          'We will email a reset code. Your passphrase and notes will not change.',
+        _SignInStep.resetRequest => 'We will email a reset code. Your passphrase and notes will not change.',
         _ =>
           widget.account.signedOutReason ??
               'Sync encrypted notes across your devices.',
@@ -1118,7 +1117,7 @@ class _ReadyState extends State<_Ready> {
           SignOutOthersRow(account: account),
           SettingsRow(
             title: 'Delete account',
-            subtitle: 'Deletes synced notes from the server, for good',
+            subtitle: 'Deletes synced notes from Kapy cloud, for good',
             destructive: true,
             trailing: SettingsRowButton(
               key: const ValueKey('delete-account'),
@@ -1220,7 +1219,7 @@ Future<void> _runAccountAction(
     await action();
     progress.success(done);
   } catch (_) {
-    progress.error('Could not reach the server. Try again.');
+    progress.error('Couldn’t reach Kapy cloud. Try again.');
   }
 }
 
@@ -1313,7 +1312,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
               // The honest version. Nobody can undo this, and saying so is
               // the same fact the passphrase design has been saying all along.
               'Notes stored on this device stay here. Everything deleted '
-              'from the server cannot be recovered.',
+              'from Kapy cloud cannot be recovered.',
               style: TextStyle(
                 fontSize: AppTypeScale.control,
                 color: palette.textSecondary,

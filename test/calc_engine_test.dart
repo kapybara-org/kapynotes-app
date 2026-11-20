@@ -1013,6 +1013,21 @@ void main() {
       },
     );
 
+    test('a whole-hour time in an expression matches a minuted one', () {
+      engine = clockEngine();
+      expect(line('4:00 pm - 3:00 pm'), isNull);
+      expect(line('4:30 pm * 2'), isNull);
+      expect(line('4 pm - 3 pm'), isNull);
+      expect(line('4pm - 3pm'), isNull);
+      expect(line('4pm*2'), isNull);
+      expect(line('4 pm * 2'), isNull);
+      expect(line('4 pm to 6 pm'), '2 h');
+      expect(line('4 pm in nm'), '0.004 nm');
+      expect(line('4 pm to m'), '4e-12 m');
+      expect(line('4 picometres in m'), '4e-12 m');
+      expect(line('4 picometers in meters'), '4e-12 m');
+    });
+
     test('converts current and stated times between named zones', () {
       engine = clockEngine();
       expect(line('PST time'), '5:00 AM PDT');

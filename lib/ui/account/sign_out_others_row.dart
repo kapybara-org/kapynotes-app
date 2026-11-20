@@ -57,7 +57,7 @@ class SignOutOthersRow extends StatelessWidget {
       case RevokeOthers.sessionEnded:
         progress.error("This device's session has ended. Sign in again.");
       case RevokeOthers.failed:
-        progress.error('Could not reach the server. Try again.');
+        progress.error('Couldn’t reach Kapy cloud. Try again.');
     }
   }
 }

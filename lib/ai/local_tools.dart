@@ -501,7 +501,7 @@ class CodexCli extends _Cli {
           KapyModel(
             kind: KapyModelKind.codex,
             id: raw['slug'] as String,
-            label: raw['display_name'] as String,
+            label: 'Codex',
           ),
     ];
     if (models.isEmpty) throw AnswerAccountRejected(kind);
@@ -749,12 +749,12 @@ class ClaudeCodeCli extends _Cli {
     KapyModel(
       kind: KapyModelKind.claudeCode,
       id: 'sonnet',
-      label: 'Claude Sonnet 5.5',
+      label: 'Claude Code',
     ),
     KapyModel(
       kind: KapyModelKind.claudeCode,
       id: 'opus',
-      label: 'Claude Opus 5.5',
+      label: 'Claude Code, deeper',
     ),
   ];
 

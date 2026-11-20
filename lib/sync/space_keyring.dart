@@ -97,7 +97,7 @@ class SpaceKeyring extends ChangeNotifier {
       final unwrapped = await IdentityKeys.unwrap(wire, master);
       if (unwrapped == null) {
         throw const SyncProtocolException(
-          'the identity keys on the server are sealed under a different key',
+          'This device can’t unlock your account. Sign in again with the passphrase that locked these notes.',
         );
       }
       _identity = unwrapped;
@@ -115,7 +115,9 @@ class SpaceKeyring extends ChangeNotifier {
           ? null
           : await IdentityKeys.unwrap(theirs, master);
       if (unwrapped == null) {
-        throw const SyncProtocolException('could not read the identity keys');
+        throw const SyncProtocolException(
+          'This device can’t unlock your account. Try again.',
+        );
       }
       _identity = unwrapped;
       return unwrapped;

@@ -375,12 +375,9 @@ void main() {
       await tester.pumpWidget(_harness(_panel(ai, controller)));
 
       expect(find.text('Kapy AI Cloud'), findsWidgets);
-      expect(find.text('GPT-5.5 · Codex on this Mac'), findsOneWidget);
-      expect(find.text('Sonnet 5.5 · Claude Code on this Mac'), findsOneWidget);
-      expect(
-        find.text('Gemini 3.8 Flash · your OpenRouter key'),
-        findsOneWidget,
-      );
+      expect(find.text('Codex on this Mac'), findsOneWidget);
+      expect(find.text('Claude Code on this Mac'), findsOneWidget);
+      expect(find.text('Through your key'), findsOneWidget);
     });
   });
 
@@ -432,7 +429,7 @@ void main() {
       expect(ai.calls, ['pickModel:cloud']);
     });
 
-    testWidgets('names the device, and where each account’s models run', (
+    testWidgets('names the device, and what each account model is good for', (
       tester,
     ) async {
       await open(
@@ -451,7 +448,7 @@ void main() {
       expect(find.text('Apple Intelligence'), findsWidgets);
       expect(find.text('Codex on this Mac'), findsNWidgets(2));
       expect(find.text('Claude Code on this Mac'), findsOneWidget);
-      expect(find.text('Your OpenRouter key'), findsOneWidget);
+      expect(find.text('Quick answers and short notes'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsOneWidget);
     });
 
@@ -488,7 +485,7 @@ void main() {
 
       expect(find.text('Use Codex'), findsOneWidget);
       expect(find.text('Use Claude Code'), findsOneWidget);
-      expect(find.text('Add an OpenRouter key'), findsOneWidget);
+      expect(find.text('Add your key'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('kapy-ai-connect-codex')));
@@ -516,7 +513,7 @@ void main() {
 
       expect(find.text('On-device model'), findsOneWidget);
       expect(find.text('Part of Pro'), findsOneWidget);
-      expect(find.text('Add an OpenRouter key'), findsOneWidget);
+      expect(find.text('Add your key'), findsOneWidget);
       expect(find.text('Use Codex'), findsNothing);
       expect(find.text('Use Claude Code'), findsNothing);
     });
@@ -555,7 +552,7 @@ void main() {
         ),
       );
 
-      expect(find.text('GPT-5.5'), findsNothing);
+      expect(find.text('Codex'), findsNothing);
     });
   });
 
@@ -592,7 +589,7 @@ void main() {
       expect(find.text('Before the first answer'), findsOneWidget);
       expect(
         find.textContaining(
-          'through Kapy’s server to the AI model that answers',
+          'through Kapy cloud',
         ),
         findsOneWidget,
       );
@@ -635,11 +632,10 @@ void main() {
         const KapyAccountConsent(KapyAccountKind.codex),
       );
 
-      expect(find.text('Goes to OpenAI'), findsOneWidget);
+      expect(find.text('Leaves this Mac'), findsOneWidget);
       expect(
-        find.text(
-          'Your question and the notes it reads go to OpenAI through Codex on '
-          'this Mac, under your ChatGPT plan. Hidden notes never do.',
+        find.textContaining(
+          'leave this Mac through Codex, under your ChatGPT plan',
         ),
         findsOneWidget,
       );
@@ -647,19 +643,17 @@ void main() {
       expect(ai.calls, ['proceed']);
     });
 
-    testWidgets('Claude Code’s first use names Anthropic', (tester) async {
-      await hold(tester, const KapyAccountConsent(KapyAccountKind.claudeCode));
-
-      expect(find.text('Goes to Anthropic'), findsOneWidget);
-      expect(
-        find.textContaining('through Claude Code on this Mac'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('OpenRouter’s first use names OpenRouter and the maker', (
+    testWidgets('Claude Code’s first use says the notes leave this Mac', (
       tester,
     ) async {
+      await hold(tester, const KapyAccountConsent(KapyAccountKind.claudeCode));
+
+      expect(find.text('Leaves this Mac'), findsOneWidget);
+      expect(find.textContaining('through Claude Code'), findsOneWidget);
+      expect(find.textContaining('Anthropic'), findsNothing);
+    });
+
+    testWidgets('a key’s first use does not name a provider', (tester) async {
       await hold(
         tester,
         const KapyAccountConsent(KapyAccountKind.openRouter),
@@ -667,8 +661,10 @@ void main() {
           ..set(model: FakeKapyAi.gemini),
       );
 
-      expect(find.text('Goes to OpenRouter'), findsOneWidget);
-      expect(find.textContaining('OpenRouter and Google'), findsOneWidget);
+      expect(find.text('Leaves this Mac'), findsOneWidget);
+      expect(find.textContaining('through your key'), findsOneWidget);
+      expect(find.textContaining('OpenRouter'), findsNothing);
+      expect(find.textContaining('Google'), findsNothing);
     });
 
     testWidgets('Pick another opens the picker', (tester) async {
@@ -695,7 +691,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Download Gemma first'), findsOneWidget);
+      expect(find.text('Download the on-device model first'), findsOneWidget);
       await tester.tap(find.text('Download 2.6 GB'));
       await tester.tap(find.text('Not now'));
       expect(ai.calls, ['proceed', 'dismissPending']);
@@ -715,7 +711,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Getting Gemma ready'), findsOneWidget);
+      expect(find.text('Getting the on-device model ready'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       expect(ai.calls, ['cancelDeviceDownload', 'dismissPending']);
     });
