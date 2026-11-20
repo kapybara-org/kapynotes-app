@@ -16,6 +16,7 @@ class CompactIconButton extends StatelessWidget {
     this.selected = false,
     this.foregroundColor,
     this.extent,
+    this.width,
     this.radius = 6,
     this.tapTargetSize,
     this.selectedBackground,
@@ -27,6 +28,10 @@ class CompactIconButton extends StatelessWidget {
   final bool selected;
   final Color? foregroundColor;
   final double? extent;
+
+  /// How wide it is where that differs from [extent]: the arrows beside the
+  /// page's days are narrower than they are tall.
+  final double? width;
 
   /// The corner of the surface it paints on hover, focus and selection.
   final double radius;
@@ -44,6 +49,7 @@ class CompactIconButton extends StatelessWidget {
     final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
     final extent = this.extent ?? AppControlMetrics.iconButtonExtent;
+    final size = Size(width ?? extent, extent);
 
     return MergeSemantics(
       child: Tooltip(
@@ -56,11 +62,11 @@ class CompactIconButton extends StatelessWidget {
             icon: icon,
             color: foregroundColor ?? palette.textSecondary,
             padding: EdgeInsets.zero,
-            constraints: BoxConstraints.tightFor(width: extent, height: extent),
+            constraints: BoxConstraints.tight(size),
             visualDensity: VisualDensity.standard,
             style: ButtonStyle(
-              minimumSize: WidgetStatePropertyAll(Size.square(extent)),
-              maximumSize: WidgetStatePropertyAll(Size.square(extent)),
+              minimumSize: WidgetStatePropertyAll(size),
+              maximumSize: WidgetStatePropertyAll(size),
               tapTargetSize:
                   tapTargetSize ?? AppControlMetrics.iconButtonTapTargetSize,
               backgroundColor: WidgetStateProperty.resolveWith((states) {

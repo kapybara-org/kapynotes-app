@@ -1970,8 +1970,8 @@ class _SettingsDialogState extends State<SettingsDialog>
           'kapy-ai-toggle',
           'Kapy AI',
           ai.device.status == DeviceModelStatus.unavailable
-              ? 'No on-device model here. Use an OpenRouter key, or Kapy AI '
-                    'Cloud on Pro'
+              ? 'No model on this device. Kapy AI Cloud on Pro still answers, '
+                    'and so does a key you add'
               : [
                   'Answers from your notes in a panel beside the page',
                   if (keys != null && AppPlatform.isDesktop) '$keys opens it',
@@ -4430,9 +4430,9 @@ class _ModelProgress extends StatelessWidget {
             // size is Play's to announce; until it has, there is no number
             // worth showing.
             LocalModelStatus.fetchingRuntime when state.totalBytes <= 0 =>
-              'Adding the on-device engine from Google Play',
+              'Getting this phone ready',
             LocalModelStatus.fetchingRuntime =>
-              'Adding the on-device engine: '
+              'Getting this phone ready: '
                   '${fileSize(state.receivedBytes)} of '
                   '${fileSize(state.totalBytes)}',
             _ =>

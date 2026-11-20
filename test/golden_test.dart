@@ -27,7 +27,6 @@ import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
-import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
@@ -108,6 +107,9 @@ Future<void> pumpForGolden(
 
   /// Tasks on the rail, read from the notes' checklist lines.
   bool withTasks = false,
+
+  /// Notes written earlier in the week, for the page's days and their dots.
+  bool withWeek = false,
 
   /// Which build the image is of.
   ///
@@ -236,6 +238,36 @@ Future<void> pumpForGolden(
         )
       : null;
 
+  if (withWeek) {
+    Map<String, Object?> note(String id, String body, DateTime edited) => {
+      'id': id,
+      'body': body,
+      'createdAt': edited.millisecondsSinceEpoch,
+      'updatedAt': edited.millisecondsSinceEpoch,
+    };
+    store.data['notes.v1'] = [
+      note(
+        'standup',
+        'Standup notes\nShip the week',
+        DateTime(2026, 8, 31, 10, 5),
+      ),
+      note(
+        'gym',
+        'Gym plan\nLegs, then a long walk',
+        DateTime(2026, 8, 31, 19, 30),
+      ),
+      note(
+        'books',
+        'Book ideas\nPiranesi, The Overstory',
+        DateTime(2026, 8, 31, 22, 10),
+      ),
+      note(
+        'pricing',
+        'Pricing ideas\n1,799 INR',
+        DateTime(2026, 8, 29, 16, 20),
+      ),
+    ];
+  }
   await notes.load();
   await tasks?.load();
   prefs.load();
@@ -584,10 +616,11 @@ void main() {
       size: const Size(760, 520),
       brightness: Brightness.dark,
     );
-    // The pin is the only toolbar control with an on state, and the filled
-    // icon behind a selected surface is the whole signal that the window is
-    // now floating.
+    // Keep on top has no button in the bar, so More is where it says the
+    // window is floating: by offering to stop.
     goldenPrefs.toggleAlwaysOnTop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('page-more')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
@@ -659,46 +692,49 @@ void main() {
     );
   });
 
-  for (final brightness in [Brightness.dark, Brightness.light]) {
-    for (final on in [false, true]) {
-      testWidgets(
-        'toolbar, Keep on top ${on ? 'on' : 'off'}, ${brightness.name}',
-        (tester) async {
-          await pumpForGolden(
-            tester,
-            size: const Size(760, 520),
-            brightness: brightness,
-            withPinnedNote: true,
-          );
-          if (on) goldenPrefs.alwaysOnTop = true;
-          await tester.pumpAndSettle();
-          await expectLater(
-            find.byKey(const ValueKey('page-toolbar')),
-            matchesGoldenFile(
-              'goldens/keep_on_top_${brightness.name}_${on ? 'on' : 'off'}.png',
-            ),
-          );
-        },
-      );
-    }
-  }
-
-  testWidgets('Tasks carries Keep on top too', (tester) async {
+  testWidgets('Tasks keeps Keep on top under More, with its shortcut', (
+    tester,
+  ) async {
     await pumpForGolden(
       tester,
       size: const Size(1000, 640),
       brightness: Brightness.dark,
       withTasks: true,
+      platform: TargetPlatform.macOS,
     );
     await tester.tap(find.byKey(const ValueKey('rail-tasks')));
     await tester.pumpAndSettle();
-    final button = find.byKey(const ValueKey('page-keep-on-top'));
-    expect(button, findsOneWidget);
-    expect(find.byKey(const ValueKey('page-more')), findsNothing);
-    await tester.tap(button);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip &&
+            (widget.message ?? '').startsWith('Keep on top'),
+      ),
+      findsNothing,
+    );
+
+    final more = find.byKey(const ValueKey('page-more'));
+    final onTop = find.byKey(const ValueKey('page-more-on-top'));
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: onTop, matching: find.text('Keep on top')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: onTop, matching: find.text('⌃⌘T')),
+      findsOneWidget,
+    );
+    await tester.tap(onTop);
     await tester.pumpAndSettle();
     expect(goldenPrefs.alwaysOnTop, isTrue);
-    expect(tester.widget<CompactIconButton>(button).selected, isTrue);
+
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: onTop, matching: find.text('Stop keeping on top')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('desktop dark narrow, results at line ends', (tester) async {
@@ -998,6 +1034,67 @@ void main() {
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, See all at the heading's end, and amounts in mono.
+  // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so the
+  // list is narrowed to it with its chip beside the filter, and the fill has
+  // left today, whose weekday stays sage.
+  for (final brightness in Brightness.values) {
+    testWidgets('desktop ${brightness.name} week, a day picked', (
+      tester,
+    ) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(1280, 800),
+        brightness: brightness,
+        withWeek: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile(
+          'goldens/desktop_${brightness.name}_week_day_picked.png',
+        ),
+      );
+    });
+  }
+
+  // The month under "Aug–Sep ▾", on the picked day's month, with the days
+  // that have notes brighter and September still to come.
+  testWidgets('desktop dark week, the month open', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+    );
+    for (final key in ['day-strip-2026-8-31', 'day-strip-month']) {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_week_month_open.png'),
+    );
+  });
+
+  // With the list hidden there is nothing to narrow, so a day lists its
+  // notes under the week.
+  testWidgets('desktop dark week, a day listed', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+      sidebarVisible: false,
+    );
+    await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_week_day_listed.png'),
+    );
+  });
+
   testWidgets('desktop dark tags', (tester) async {
     await pumpForGolden(
       tester,

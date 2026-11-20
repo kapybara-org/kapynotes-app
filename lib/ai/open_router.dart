@@ -28,17 +28,17 @@ class OpenRouterAccount implements AnswerEngine {
     KapyModel(
       kind: KapyModelKind.openRouter,
       id: 'google/gemini-3.8-flash',
-      label: 'Gemini 3.8 Flash',
+      label: 'Fast',
     ),
     KapyModel(
       kind: KapyModelKind.openRouter,
       id: 'openai/gpt-5.5',
-      label: 'GPT-5.5',
+      label: 'Strong',
     ),
     KapyModel(
       kind: KapyModelKind.openRouter,
       id: 'anthropic/claude-sonnet-5.5',
-      label: 'Claude Sonnet 5.5',
+      label: 'Careful',
     ),
   ];
 
@@ -171,11 +171,11 @@ class OpenRouterAccount implements AnswerEngine {
         _rejected = true;
         throw const AnswerAccountRejected(KapyAccountKind.openRouter);
       case 402:
-        throw const AnswerFailed('Your OpenRouter key is out of credits.');
+        throw const AnswerFailed('Your key is out of credits.');
       case 429:
-        throw const AnswerFailed('OpenRouter is busy. Try again in a moment.');
+        throw const AnswerFailed('Busy just now. Try again in a moment.');
       default:
-        throw const AnswerFailed("OpenRouter couldn't answer. Try again.");
+        throw const AnswerFailed("Couldn't answer. Try again.");
     }
     try {
       final body = jsonDecode(response.body) as Map;
@@ -185,6 +185,6 @@ class OpenRouterAccount implements AnswerEngine {
     } catch (_) {
       // Falls through to the same answer as an empty one.
     }
-    throw const AnswerFailed("OpenRouter couldn't answer. Try again.");
+    throw const AnswerFailed("Couldn't answer. Try again.");
   }
 }

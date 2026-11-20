@@ -4,8 +4,22 @@ import '../data/layout_prefs.dart';
 import '../data/note.dart';
 import 'sidebar_timestamp.dart';
 
+/// What When narrows the list to: a span from its menu, or one day picked
+/// in the week at the top of the page. Picking one replaces the other.
+sealed class WhenFilter {
+  /// What the chip beside the filter says: "This week", "Tue 17".
+  String get label;
+
+  /// How a sentence says it: "No notes this week", "No notes on Tue 17".
+  String get phrase;
+
+  /// The days it covers on [today], in weeks that start on [firstWeekday],
+  /// a [DateTime.weekday]; null for any time.
+  DaySpan? span({required DateTime today, required int firstWeekday});
+}
+
 /// How far back the notes list reaches: the notes filter's When menu.
-enum NotesWhen {
+enum NotesWhen implements WhenFilter {
   anyTime('Any time', 'at any time'),
   today('Today', 'today'),
   thisWeek('This week', 'this week'),
@@ -14,13 +28,13 @@ enum NotesWhen {
 
   const NotesWhen(this.label, this.phrase);
 
+  @override
   final String label;
 
-  /// How a sentence says it: "No notes this week".
+  @override
   final String phrase;
 
-  /// The days this span covers on [today], in weeks that start on
-  /// [firstWeekday], a [DateTime.weekday]; null for any time.
+  @override
   DaySpan? span({required DateTime today, required int firstWeekday}) {
     DateTime after(DateTime day, int days) =>
         DateTime(day.year, day.month, day.day + days);
@@ -48,6 +62,38 @@ enum NotesWhen {
       _ => SidebarTimestamp.dayRange(span.first, span.last),
     };
   }
+}
+
+/// One day picked at the top of the page, other than today, which is
+/// When's own [NotesWhen.today].
+final class WhenDay implements WhenFilter {
+  factory WhenDay(DateTime day, {required DateTime today}) {
+    final (heading, date) = SidebarTimestamp.dayHeading(day, today: today);
+    return WhenDay._(day, date ?? heading);
+  }
+
+  const WhenDay._(this.day, this.label);
+
+  final DateTime day;
+
+  /// As the list heads the day on the day it was picked, with the date in
+  /// place of "Yesterday": "Wed 18", "Tue 17", then "Mon 9 Nov" before the
+  /// week. None of it says how long ago, so it stays true past midnight.
+  @override
+  final String label;
+
+  @override
+  String get phrase => 'on $label';
+
+  @override
+  DaySpan span({required DateTime today, required int firstWeekday}) =>
+      DaySpan(day, day);
+
+  @override
+  bool operator ==(Object other) => other is WhenDay && other.day == day;
+
+  @override
+  int get hashCode => day.hashCode;
 }
 
 /// The days a When span reaches over, from [first] to [last].

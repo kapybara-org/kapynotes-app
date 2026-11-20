@@ -68,6 +68,7 @@ import '../data/writing_streak.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
+import 'editor/note_header.dart' show DateLineSaved;
 import 'editor/image_insertion.dart';
 import 'editor/slash_commands.dart';
 import 'editor_panes.dart';
@@ -77,6 +78,7 @@ import 'command_menu.dart';
 import 'empty_state.dart';
 import 'folders_ui.dart' show FolderPage, folderRefusalText;
 import 'context_menu.dart';
+import 'day_strip.dart';
 import 'hidden_notes_gate.dart';
 import 'kapy_ai/kapy_ai_panel.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
@@ -272,7 +274,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   TagFilter _tagFilter = const TagFilter();
 
   /// How far back that list reaches, kept the same way.
-  NotesWhen _when = NotesWhen.anyTime;
+  WhenFilter _when = NotesWhen.anyTime;
 
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
@@ -357,6 +359,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   TaskFilter _taskFilter = const TaskFilter.all();
   final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
   final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
+
+  /// The page's days, keyed so they keep their place in the week wherever
+  /// the bar is built, and so When can ask whether the week is on show.
+  final _dayStrip = GlobalKey();
   late final TasksController? _taskController = switch (widget.tasks) {
     final tasks? => TasksController(
       notes: widget.notes,
@@ -2499,7 +2505,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  void _setWhen(NotesWhen when) => setState(() => _when = when);
+  void _setWhen(WhenFilter when) => setState(() => _when = when);
 
   /// The tags the lists offer, in the person's order, each with how many
   /// notes carry it: the archived ones in Archive, and otherwise the rest,
@@ -2787,11 +2793,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   VoidCallback? get _pinToggle =>
       AppPlatform.isDesktop ? widget.prefs.toggleAlwaysOnTop : null;
 
-  /// Null once the pin's shortcut is cleared, which drops the chord from the
-  /// tooltip rather than leaving it promising a key that does nothing.
+  /// Null once the pin's shortcut is cleared, which drops the chord from
+  /// More rather than leaving it promising a key that does nothing.
   String? get _pinShortcut => widget.shortcuts
       .bindingFor(ShortcutAction.toggleAlwaysOnTop)
-      ?.displayLabel;
+      ?.keycapLabel;
+
+  /// Keep on top as More offers it, on the note's page and on Tasks alike.
+  KapyMenuAction? get _onTopAction => _pinToggle == null
+      ? null
+      : KapyMenuAction(
+          value: 'on-top',
+          label: widget.prefs.alwaysOnTop
+              ? 'Stop keeping on top'
+              : 'Keep on top',
+          icon: KapyIcons.layersRounded,
+          hint: _pinShortcut,
+        );
 
   /// The editable chord shown on the notes-list button in both layouts.
   String? get _sidebarShortcut =>
@@ -3019,7 +3037,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// The Sparkles button for a toolbar, or null where Kapy AI is not built.
-  Widget? _kapyAiButton({required double extent, required double gap}) {
+  /// In the page's bar it is a 32 control with a 16 icon, last behind a
+  /// hairline.
+  Widget? _kapyAiButton({
+    required double extent,
+    double gap = 0,
+    bool pageBar = false,
+  }) {
     final ai = _kapyAi;
     if (ai == null) return null;
     return KapyAiToolbarButton(
@@ -3030,7 +3054,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           .bindingFor(ShortcutAction.toggleKapyAi)
           ?.displayLabel,
       extent: extent,
+      radius: pageBar ? 8 : 10,
+      iconSize: pageBar ? 16 : 17,
       trailingGap: gap,
+      divided: pageBar,
     );
   }
 
@@ -3161,10 +3188,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     when: _when,
     onWhenChanged: _setWhen,
     today: dayShown(widget.notes.now(), widget.prefs.displayTime),
+    weekShown: () => DayStrip.showsWeek(_dayStrip),
     cards: widget.prefs.noteCards,
     onCardsChanged: cards ? (cards) => widget.prefs.noteCards = cards : null,
     alignEnd: onFolder,
   );
+
+  /// The page's days, in My notes and on a folder in front, counting and
+  /// narrowing what the list shows or what the folder holds. With the list
+  /// hidden and no folder in front, a day lists its notes instead.
+  Widget Function(bool compact)? _pageDays({required bool listVisible}) {
+    final folderId = _folderInFront;
+    if (folderId == null && (_space != LibrarySpace.notes || _specialMode)) {
+      return null;
+    }
+    final displayTime = widget.prefs.displayTime;
+    return (compact) => DayStrip(
+      key: _dayStrip,
+      compact: compact,
+      today: dayShown(widget.notes.now(), displayTime),
+      when: _when,
+      onWhenChanged: _setWhen,
+      notes: folderId == null
+          ? _filtered(widget.notes.search(''), anyTime: true)
+          : widget.folders!.tree.notesIn(
+              _filtered(_folderNotes, anyTime: true),
+              folderId,
+              deep: true,
+            ),
+      displayTime: displayTime,
+      firstWeekday: firstWeekday(context),
+      onOpenNote: listVisible || folderId != null ? null : _openFromDay,
+    );
+  }
+
+  /// Opens a note from a day's list under the page's days, or with [behind]
+  /// in a tab behind, as a click in the list would.
+  void _openFromDay(String id, {required bool behind}) =>
+      behind ? _openInNewTab(id) : _select(id);
 
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
   Future<void> _openCommandMenu() async {
@@ -3323,18 +3384,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// or Hidden or Archive while the filter has one chosen.
   String get _listTitle => _specialMode ? _show.label : _space.title;
 
-  /// [notes] narrowed to the space and to the media the filter has ticked.
-  /// Drawings has no media filter: every item in it is a drawing.
-  List<Note> _filtered(List<Note> notes) {
+  /// [notes] narrowed to the space, to the tags and media the filter has
+  /// ticked, and unless [anyTime] to When's days. Drawings has no media
+  /// filter: every item in it is a drawing.
+  List<Note> _filtered(List<Note> notes, {bool anyTime = false}) {
     final tags = widget.tags;
     final byTag = tags == null ? const TagFilter() : _tagsNarrowed;
     final byMedia =
         !_drawingsOnly && _mediaFilter.length < NoteMedia.values.length;
     final displayTime = widget.prefs.displayTime;
-    final span = _when.span(
-      today: dayShown(widget.notes.now(), displayTime),
-      firstWeekday: firstWeekday(context),
-    );
+    final span = anyTime
+        ? null
+        : _when.span(
+            today: dayShown(widget.notes.now(), displayTime),
+            firstWeekday: firstWeekday(context),
+          );
     return [
       for (final note in _narrowed(notes))
         if ((span == null || span.covers(noteDay(note, displayTime))) &&
@@ -3423,18 +3487,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? null
       : _workspace.frontTab?.folderId;
 
+  /// Whether folders hold [note]: one of the person's own notes, and not a
+  /// drawing.
+  bool _canFile(Note note) {
+    final sharing = widget.account?.sharing;
+    return !note.isDrawing &&
+        (sharing == null || sidebarTabOf(note, sharing) == SidebarTab.mine);
+  }
+
   /// The notes the folder tree files: the person's own, unfiltered. A
   /// drawing, an archived or Hidden note and a note shared with them never
   /// shows in a folder, so no count gives one away.
-  List<Note> get _folderNotes {
-    final sharing = widget.account?.sharing;
-    return [
-      for (final note in widget.notes.notes)
-        if (!note.isDrawing &&
-            (sharing == null || sidebarTabOf(note, sharing) == SidebarTab.mine))
-          note,
-    ];
-  }
+  List<Note> get _folderNotes => [
+    for (final note in widget.notes.notes)
+      if (_canFile(note)) note,
+  ];
 
   List<Note> get _visibleNotes {
     final notes = _filtered(
@@ -3564,9 +3631,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final space = _space;
             final listFits = _listFits;
             final listShown = _listShown;
-            final pinned =
-                selected != null &&
-                widget.notes.pinnedNoteIds.contains(selected.id);
+            final moreActions = _folderInFront == null
+                ? _pageActions(selected)
+                : [?_onTopAction];
             final unloaded = [
               for (final ref in selected?.attachments ?? const [])
                 if (ref case NoteImageRef(src: _?, isPreparing: false)) ref,
@@ -3577,7 +3644,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               extent: AppPlatform.hasPointer
                   ? 32
                   : AppControlMetrics.iconButtonExtent,
-              gap: 6,
+              pageBar: true,
             );
             final sidebar = Sidebar(
               notes: _foldersShown ? _folderNotes : _visibleNotes,
@@ -3771,24 +3838,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       )
                                     else ...[
                                       PageToolbar(
-                                        space: _listTitle,
-                                        section: switch (_folderInFront) {
-                                          final folderId? =>
-                                            widget.folders?.tree
-                                                .byId(folderId)
-                                                ?.name,
-                                          null => pinned ? 'Pinned' : null,
-                                        },
+                                        path: _pagePath(selected),
+                                        days: _pageDays(
+                                          listVisible: listFits && listShown,
+                                        ),
+                                        onOpenFolder: widget.folders == null
+                                            ? null
+                                            : _openFolder,
                                         listVisible: listFits && listShown,
                                         onShowList: _toggleList,
                                         showListShortcut: _sidebarShortcut,
-                                        noun: space == LibrarySpace.drawings
-                                            ? 'drawing'
-                                            : 'note',
-                                        onCreate: _createInSpace,
-                                        newNoteShortcut: widget.shortcuts
-                                            .bindingFor(ShortcutAction.newNote)
-                                            ?.displayLabel,
                                         noteOpen: selected != null,
                                         syncStatus: widget.account?.syncStatus,
                                         unloadedPictures: unloaded.length,
@@ -3808,24 +3867,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         assistant: assistant,
                                         actions: _folderInFront == null
                                             ? null
-                                            : [?assistant],
-                                        pinned: pinned,
-                                        onTogglePin:
-                                            selected == null || _specialMode
+                                            : const [],
+                                        moreActions: moreActions,
+                                        onMore: moreActions.isEmpty
                                             ? null
-                                            : () => _togglePinnedNote(
-                                                selected.id,
-                                              ),
-                                        keepOnTop: widget.prefs.alwaysOnTop,
-                                        onToggleKeepOnTop: _pinToggle,
-                                        keepOnTopShortcut: _pinShortcut,
-                                        moreActions: _pageActions(selected),
-                                        onMore: _folderInFront == null
-                                            ? (action) => _runPageAction(
+                                            : (action) => _runPageAction(
                                                 action,
                                                 selected,
-                                              )
-                                            : null,
+                                              ),
                                         updates: widget.updates,
                                       ),
                                       TabRowReveal(
@@ -3835,7 +3884,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         child: _buildTabRow(),
                                       ),
                                       Expanded(
-                                        child: _buildWideWorkspace(sidebar),
+                                        child: LayoutBuilder(
+                                          builder: (context, page) =>
+                                              DateLineSaved(
+                                                saved: _savedOnDateLine(
+                                                  selected,
+                                                  page.maxWidth,
+                                                  unloadedPictures:
+                                                      unloaded.length,
+                                                ),
+                                                child: _buildWideWorkspace(
+                                                  sidebar,
+                                                ),
+                                              ),
+                                        ),
                                       ),
                                     ],
                                   ],
@@ -3856,6 +3918,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// Where the page is, for its bar: the list's place, then the folder in
+  /// front with the folders it sits in, or the open note's folders, or a
+  /// drawing's name. Archived and Hidden notes are in no folder.
+  PagePath _pagePath(Note? note) {
+    final tree = widget.folders?.tree;
+    final folderId =
+        _folderInFront ??
+        (note == null || _specialMode || !_canFile(note)
+            ? null
+            : tree?.folderOf(note.id));
+    return PagePath(
+      icon: _archiveMode
+          ? archiveIcon
+          : _hiddenMode
+          ? hiddenIcon
+          : switch (_space) {
+              LibrarySpace.notes => KapyIcons.noteOutlined,
+              LibrarySpace.tasks => KapyIcons.tasksOutlined,
+              LibrarySpace.drawings => KapyIcons.penRounded,
+              LibrarySpace.shared => KapyIcons.groupOutlined,
+            },
+      root: _listTitle,
+      levels: [
+        if (tree != null && folderId != null)
+          for (final folder in tree.pathOf(folderId))
+            (name: folder.name, folderId: folder.id),
+        if (_folderInFront == null && note != null && note.isDrawing)
+          (name: note.title, folderId: null),
+      ],
+    );
+  }
+
+  /// Saved, for the open note's date line while the page is too narrow for
+  /// it in the bar, or for the count of pictures that didn't load that
+  /// stands in for it there.
+  ({String label, String? tooltip})? _savedOnDateLine(
+    Note? note,
+    double pageWidth, {
+    required int unloadedPictures,
+  }) {
+    if (note == null ||
+        _folderInFront != null ||
+        PageToolbar.savedFits(pageWidth, unloadedPictures: unloadedPictures)) {
+      return null;
+    }
+    final saved = savedState(widget.account?.syncStatus);
+    return (label: saved.label, tooltip: saved.tooltip);
+  }
+
   /// What the page's More menu offers: the window's own actions, then the
   /// open note's, in the order and on the terms of that note's menu in the
   /// list.
@@ -3871,8 +3982,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final mayEdit = note != null && _canEditNote(note);
     final removeShortcut = widget.shortcuts
         .bindingFor(ShortcutAction.deleteNote)
-        ?.displayLabel;
-    final alwaysOnTop = widget.prefs.alwaysOnTop;
+        ?.keycapLabel;
+    final pinned = note != null && widget.notes.isPinned(note.id);
     return [
       KapyMenuAction(
         value: 'split',
@@ -3881,16 +3992,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         hint: canSplit
             ? widget.shortcuts
                   .bindingFor(ShortcutAction.splitEditor)
-                  ?.displayLabel
+                  ?.keycapLabel
             : null,
         enabled: canSplit,
       ),
-      if (_pinToggle != null)
+      ?_onTopAction,
+      if (note != null && !_specialMode)
         KapyMenuAction(
-          value: 'on-top',
-          label: alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
-          icon: KapyIcons.layersRounded,
-          hint: _pinShortcut,
+          value: 'pin',
+          label: pinned ? 'Unpin note' : 'Pin note',
+          icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
       if (mayEdit && !_specialMode && !note.isShared)
         const KapyMenuAction(
@@ -3930,6 +4041,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (note == null) return;
     switch (action) {
+      case 'pin':
+        _togglePinnedNote(note.id);
       case 'hide':
         unawaited(_hideNote(note.id));
       case 'restore':
@@ -3957,24 +4070,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final palette = context.palette;
     return [
       PageToolbar(
-        space: LibrarySpace.tasks.title,
-        section: filter.done
-            ? 'Done'
-            : note == null || home
-            ? 'Today'
-            : _taskNoteLabel(note),
+        path: PagePath(
+          icon: KapyIcons.tasksOutlined,
+          root: LibrarySpace.tasks.title,
+          levels: [
+            (
+              name: filter.done
+                  ? 'Done'
+                  : note == null || home
+                  ? 'Today'
+                  : _taskNoteLabel(note),
+              folderId: null,
+            ),
+          ],
+        ),
         listVisible: listVisible,
         onShowList: _toggleList,
         showListShortcut: _sidebarShortcut,
-        noun: 'task',
-        onCreate: _createInSpace,
-        newNoteShortcut: widget.shortcuts
-            .bindingFor(ShortcutAction.newNote)
-            ?.displayLabel,
-        keepOnTop: widget.prefs.alwaysOnTop,
-        onToggleKeepOnTop: _pinToggle,
-        keepOnTopShortcut: _pinShortcut,
         updates: widget.updates,
+        moreActions: [?_onTopAction],
+        onMore: _pinToggle == null
+            ? null
+            : (action) => _runPageAction(action, null),
         actions: [
           if (!filter.done)
             TextButton.icon(
