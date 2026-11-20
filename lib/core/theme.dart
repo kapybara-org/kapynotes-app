@@ -679,6 +679,11 @@ class EditorMetrics {
   static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
+  /// While the page's days have the bar's top left, a filed note's folders
+  /// sit in a line of their own [pathGap] above its title.
+  static const double pathRow = 16;
+  static const double pathGap = 8;
+
   /// A heading against 16px writing: on the page 22, 19 and 17, each in a
   /// 28px line at the bottom of a row of 40 for the first level and 36 below
   /// it, and a step smaller on a phone. Set with proportional leading, nearly
@@ -1047,18 +1052,9 @@ class AppTypeScale {
       ? 12
       : 11;
 
-  /// The names under the spaces rail's tiles, and the streak's run of days.
-  /// A step under [caption], because each sits under its own icon rather
-  /// than being read on its own.
-  static double get railLabel => _touch
-      ? 13
-      : _windows
-      ? 12
-      : 11;
-
-  /// The figure in a count badge, such as the invitations on Shared. Smaller
-  /// than [micro], because it is bold, it sits in a coloured dot, and it is
-  /// never more than two digits.
+  /// The capitals over a group of an editor menu's rows, such as TURN INTO in
+  /// the selection bubble. Smaller than [micro], because spaced capitals
+  /// read larger than lower case at the same size.
   static double get badge => _touch
       ? 11
       : _windows
@@ -1120,8 +1116,8 @@ class AppTypeScale {
   static double get spaceTitle => _touch
       ? 20
       : _windows
-      ? 18
-      : 17;
+      ? 21
+      : 20;
 
   /// The brand lockup, which is set in its own face and carries its own
   /// optical size a half point off [title].
@@ -1161,6 +1157,88 @@ class AppFonts {
   /// The same for Geist Mono, which has no ⌘ or ⌥ of its own.
   static const List<String> monoFallback = AppPlatform.monoFontFallback;
 }
+
+/// The weight ladder for interface text. Same steps as main: rows 400,
+/// a selected row 460, a button or chip 500, a section label 520, a page
+/// title or a key number 600.
+class AppWeight {
+  const AppWeight._();
+
+  static const double body = 400;
+  static const double selected = 460;
+  static const double button = 500;
+
+  /// Old name for [button]. Buttons and chips sit here, not rows.
+  static const double rowTitle = button;
+  static const double section = 520;
+  static const double page = 600;
+
+  static double axisOf(FontWeight weight) {
+    final value = weight.value;
+    if (value < 400) return value.toDouble();
+    if (value <= 400) return body;
+    if (value <= 500) return button;
+    if (value <= 600) return section;
+    return page;
+  }
+
+  static FontWeight named(double axis) {
+    if (axis < 350) return FontWeight.w300;
+    if (axis < 450) return FontWeight.w400;
+    if (axis < 510) return FontWeight.w500;
+    if (axis < 560) return FontWeight.w600;
+    return FontWeight.w700;
+  }
+
+  /// [axis] as the platform's Bold Text setting wants it.
+  ///
+  /// `Text` honours Bold Text by merging `fontWeight: bold`, and an explicit
+  /// `wght` axis outranks that merge. A style built here therefore carries
+  /// its own bold step, or the whole interface would ignore the setting.
+  /// It rebuilds with the rest of the app on
+  /// `didChangeAccessibilityFeatures`.
+  ///
+  /// A consequence, taken deliberately: with Bold Text on, every step from
+  /// 500 up reaches 700, so a section label and a page title read alike.
+  /// Weight stops carrying their difference there; size and colour still do.
+  static double bold(double axis) {
+    final features = WidgetsBinding.instance.platformDispatcher
+        .accessibilityFeatures;
+    if (!features.boldText) return axis;
+    return math.min(axis + 200, 700);
+  }
+
+  static List<FontVariation> variations(
+    double axis, {
+    List<FontVariation> extra = const [],
+  }) => [
+    for (final variation in extra)
+      if (variation.axis != 'wght') variation,
+    FontVariation('wght', axis),
+  ];
+}
+
+TextStyle chromeStyle({
+  required double size,
+  required double line,
+  required double weight,
+  required Color color,
+  String? family,
+  List<String>? fallback,
+  List<FontVariation> extra = const [],
+  bool tabular = false,
+}) => TextStyle(
+  fontFamily: family ?? AppFonts.ui,
+  fontFamilyFallback: fallback ?? AppFonts.uiFallback,
+  fontSize: size,
+  height: line / size,
+  leadingDistribution: TextLeadingDistribution.even,
+  fontWeight: AppWeight.named(AppWeight.bold(weight)),
+  fontVariations: AppWeight.variations(AppWeight.bold(weight), extra: extra),
+  color: color,
+  letterSpacing: 0,
+  fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
+);
 
 class KapyTheme {
   const KapyTheme._();

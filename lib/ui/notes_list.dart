@@ -8,6 +8,7 @@ import '../calc/engine.dart';
 import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../data/layout_prefs.dart' show NotesGrouping;
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
@@ -16,6 +17,7 @@ import 'checklist_pie.dart';
 import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
+import 'notes_grouping.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'tag_colours.dart';
 import 'tag_ui.dart';
@@ -170,24 +172,22 @@ TextStyle _handwritten(
   Color color,
 ) {
   const face = WritingFont.handwritten;
-  return TextStyle(
-    fontFamily: face.fontFamily,
-    fontFamilyFallback: face.fontFamilyFallback,
-    fontVariations: face.fontVariations,
-    fontSize: size,
-    height: line / size,
-    leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: weight,
+  return chromeStyle(
+    size: size,
+    line: line,
+    weight: AppWeight.axisOf(weight),
     color: color,
+    family: face.fontFamily,
+    fallback: face.fontFamilyFallback,
+    extra: face.faceVariations,
   );
 }
 
 TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
-    TextStyle(
-      fontSize: size,
-      height: line / size,
-      leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: weight,
+    chromeStyle(
+      size: size,
+      line: line,
+      weight: AppWeight.axisOf(weight),
       color: color,
     );
 
@@ -489,9 +489,8 @@ class _MetaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final style = DefaultTextStyle.of(
-      context,
-    ).style.merge(_figtree(12, 16, FontWeight.w500, palette.textMuted));
+    final style = DefaultTextStyle.of(context).style
+        .merge(_figtree(12, 16, FontWeight.w500, palette.textMuted));
     final direction = Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     final first = tags.firstOrNull;
@@ -600,6 +599,7 @@ class NoteListRowFace extends StatelessWidget {
     required this.selected,
     required this.hovering,
     this.snippet,
+    this.place,
     this.ringed = false,
     this.locked = false,
     this.shared = false,
@@ -611,6 +611,10 @@ class NoteListRowFace extends StatelessWidget {
   final NoteGlance glance;
   final String date;
   final String? snippet;
+
+  /// The folders the note is in, as "Work › Clients", which start the second
+  /// line in the date's quieter ink. Null for a note in no folder.
+  final String? place;
   final bool selected;
   final bool hovering;
   final bool ringed;
@@ -730,8 +734,17 @@ class NoteListRowFace extends StatelessWidget {
                       const SizedBox(width: 5),
                     ],
                     Expanded(
-                      child: Text(
-                        summary,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            if (place case final place?)
+                              TextSpan(
+                                text: '$place · ',
+                                style: TextStyle(color: palette.textTertiary),
+                              ),
+                            TextSpan(text: summary),
+                          ],
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: _figtree(
@@ -1076,7 +1089,7 @@ class NotesListHeading extends StatelessWidget {
         children: [
           if (leading case final leading?) ...[
             leading,
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
           ],
           Expanded(
             child: Row(
@@ -1088,16 +1101,16 @@ class NotesListHeading extends StatelessWidget {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _handwritten(
-                        14,
-                        20,
-                        FontWeight.w500,
-                        palette.textSubheading,
+                      style: _figtree(
+                        AppTypeScale.body,
+                        16,
+                        FontWeight.w600,
+                        palette.textPrimary,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 7),
+                const SizedBox(width: 8),
                 Tooltip(
                   message: count == 1 ? '1 $noun' : '$count ${noun}s',
                   child: Text(
@@ -1170,6 +1183,375 @@ class SeeAllLink extends StatelessWidget {
   }
 }
 
+/// The heading over one group of the notes list: a day with its date beside
+/// it, a tag or a letter, then a hairline to the edge.
+class NotesGroupHeading extends StatelessWidget {
+  const NotesGroupHeading({
+    super.key,
+    required this.label,
+    this.detail,
+    this.onTap,
+    this.folded,
+  });
+
+  final String label;
+  final String? detail;
+
+  /// Opens or closes the fold this heading names, when it folds.
+  final VoidCallback? onTap;
+
+  /// Whether the notes under this heading are folded away: null when the
+  /// heading folds nothing.
+  final bool? folded;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final heading = SizedBox(
+      height: MediaQuery.textScalerOf(context).scale(16),
+      child: CustomMultiChildLayout(
+        delegate: _GroupHeadingLayout(),
+        children: [
+          LayoutId(
+            id: _GroupHeadingPart.label,
+            child: Semantics(
+              header: true,
+              button: folded != null,
+              expanded: folded == null ? null : !folded!,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (folded case final folded?)
+                    KapyIcon(
+                      folded
+                          ? KapyIcons.chevronRightRounded
+                          : KapyIcons.chevronDownRounded,
+                      size: 12,
+                      strokeWidth: 1.8,
+                      color: palette.textTertiary,
+                    ),
+                  if (folded != null) const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _figtree(
+                        AppTypeScale.body,
+                        16,
+                        FontWeight.w600,
+                        palette.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (detail case final detail?)
+            LayoutId(
+              id: _GroupHeadingPart.detail,
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _figtree(
+                  AppTypeScale.body,
+                  16,
+                  FontWeight.w400,
+                  palette.textTertiary,
+                ),
+              ),
+            ),
+          LayoutId(
+            id: _GroupHeadingPart.rule,
+            child: ColoredBox(color: palette.separator),
+          ),
+        ],
+      ),
+    );
+    final onTap = this.onTap;
+    if (onTap == null) return heading;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: heading,
+    );
+  }
+}
+
+enum _GroupHeadingPart { label, detail, rule }
+
+/// Lays a group heading out: the label takes up to 200, the date what the
+/// label leaves and the hairline the rest, so a narrow list shortens the
+/// words.
+class _GroupHeadingLayout extends MultiChildLayoutDelegate {
+  @override
+  void performLayout(Size size) {
+    Offset centred(Size child, double x) =>
+        Offset(x, (size.height - child.height) / 2);
+    BoxConstraints upTo(double width) =>
+        BoxConstraints(maxWidth: math.max(0, width), maxHeight: size.height);
+    final end = size.width;
+    final label = layoutChild(
+      _GroupHeadingPart.label,
+      upTo(math.min(end, 200)),
+    );
+    positionChild(_GroupHeadingPart.label, centred(label, 0));
+    var start = label.width + 8;
+    if (hasChild(_GroupHeadingPart.detail)) {
+      final detail = layoutChild(_GroupHeadingPart.detail, upTo(end - start));
+      positionChild(_GroupHeadingPart.detail, centred(detail, start));
+      start += detail.width + 8;
+    }
+    layoutChild(
+      _GroupHeadingPart.rule,
+      BoxConstraints.tightFor(width: math.max(0, end - start), height: 1),
+    );
+    positionChild(_GroupHeadingPart.rule, Offset(start, (size.height - 1) / 2));
+  }
+
+  @override
+  bool shouldRelayout(_GroupHeadingLayout oldDelegate) => false;
+}
+
+/// "By date ▾", in the list's controls row before the switch: how the notes
+/// under Pinned are grouped.
+class NotesGroupingMenu extends StatefulWidget {
+  const NotesGroupingMenu({
+    super.key,
+    required this.grouping,
+    required this.onChanged,
+  });
+
+  final NotesGrouping grouping;
+  final ValueChanged<NotesGrouping> onChanged;
+
+  @override
+  State<NotesGroupingMenu> createState() => _NotesGroupingMenuState();
+}
+
+class _NotesGroupingMenuState extends State<NotesGroupingMenu> {
+  final _menu = OverlayPortalController();
+  final _link = LayerLink();
+
+  static const double _width = 160;
+
+  /// Whether the menu opens rightwards from the button's left edge, where
+  /// the button sits too near the window's left for it to open leftwards
+  /// from its right edge, as it does at the end of the row.
+  bool _opensRight = false;
+
+  void _toggle() {
+    if (!_menu.isShowing) {
+      final box = context.findRenderObject() as RenderBox?;
+      _opensRight =
+          box != null &&
+          box.localToGlobal(box.size.topRight(Offset.zero)).dx < _width + 8;
+    }
+    setState(_menu.isShowing ? _menu.hide : _menu.show);
+  }
+
+  void _close() {
+    if (_menu.isShowing) setState(_menu.hide);
+  }
+
+  void _choose(NotesGrouping grouping) {
+    _close();
+    if (grouping != widget.grouping) widget.onChanged(grouping);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final color = _menu.isShowing
+        ? palette.textSecondary
+        : palette.textTertiary;
+    return TapRegion(
+      groupId: _menu,
+      onTapOutside: (_) => _close(),
+      child: CompositedTransformTarget(
+        link: _link,
+        child: OverlayPortal(
+          controller: _menu,
+          overlayChildBuilder: (context) => Align(
+            alignment: Alignment.topLeft,
+            child: CompositedTransformFollower(
+              link: _link,
+              targetAnchor: _opensRight
+                  ? Alignment.bottomLeft
+                  : Alignment.bottomRight,
+              followerAnchor: _opensRight
+                  ? Alignment.topLeft
+                  : Alignment.topRight,
+              offset: const Offset(0, 8),
+              child: TapRegion(
+                groupId: _menu,
+                child: CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(LogicalKeyboardKey.escape): _close,
+                  },
+                  child: Focus(
+                    autofocus: true,
+                    child: Container(
+                      key: const ValueKey('notes-grouping-menu'),
+                      width: _width,
+                      padding: const EdgeInsets.all(6),
+                      decoration: _menuSurface(palette),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final (index, grouping)
+                              in NotesGrouping.values.indexed) ...[
+                            if (index > 0) const SizedBox(height: 1),
+                            _ShowMenuRow(
+                              key: ValueKey('notes-grouping-${grouping.name}'),
+                              label: grouping.label,
+                              chosen: grouping == widget.grouping,
+                              onTap: () => _choose(grouping),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          child: Semantics(
+            button: true,
+            expanded: _menu.isShowing,
+            label: 'Group notes, ${widget.grouping.label}',
+            excludeSemantics: true,
+            onTap: _toggle,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                key: const ValueKey('notes-grouping'),
+                onTap: _toggle,
+                behavior: HitTestBehavior.opaque,
+                child: SizedBox(
+                  height: 28,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.grouping.label,
+                        style: _figtree(
+                          AppTypeScale.small,
+                          16,
+                          FontWeight.w500,
+                          color,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      KapyIcon(
+                        KapyIcons.chevronDownRounded,
+                        size: 12,
+                        strokeWidth: 2,
+                        color: color,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The ground of the list's menus: the filter's and the grouping's.
+BoxDecoration _menuSurface(CalcPalette palette) => BoxDecoration(
+  color: palette.controlBackground,
+  border: Border.all(color: palette.separator),
+  borderRadius: BorderRadius.circular(AppRadii.surface),
+  boxShadow: [
+    BoxShadow(
+      color: palette.shadowAt(0x80),
+      offset: const Offset(0, 12),
+      blurRadius: 28,
+      spreadRadius: -14,
+    ),
+  ],
+);
+
+/// The span When narrows the list to, beside the filter: "This week ×".
+/// Pressed, the list reaches back to any time again.
+class _WhenChip extends StatelessWidget {
+  const _WhenChip({required this.when, required this.onClear});
+
+  final WhenFilter when;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Tooltip(
+      message: 'Back to any time',
+      child: Semantics(
+        button: true,
+        label: '${when.label}, back to any time',
+        excludeSemantics: true,
+        onTap: onClear,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            key: const ValueKey('notes-when-chip'),
+            onTap: onClear,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: palette.tonalBackground,
+                border: Border.all(color: palette.tonalKeyBackground),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  KapyIcon(
+                    KapyIcons.calendarOutlined,
+                    size: 16,
+                    strokeWidth: 1.8,
+                    color: palette.tonalForeground,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      when.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _figtree(
+                        AppTypeScale.body,
+                        16,
+                        FontWeight.w500,
+                        palette.tonalForeground,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  KapyIcon(
+                    KapyIcons.closeRounded,
+                    size: 12,
+                    strokeWidth: 2,
+                    color: palette.tonalKeyText,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Which notes the list shows: the notes filter's first group. Hidden Notes
 /// and the archive are not places on the rail but this choice, so they combine
 /// with the media ticks and keep the space the list is in.
@@ -1216,6 +1598,13 @@ class NotesListControls extends StatelessWidget {
     this.onCardsChanged,
     this.tags,
     this.onTagsChanged,
+    this.when,
+    this.onWhenChanged,
+    required this.today,
+    this.weekShown,
+    this.grouping,
+    this.onGroupingChanged,
+    this.alignEnd = false,
     this.phone = false,
   });
 
@@ -1256,10 +1645,37 @@ class NotesListControls extends StatelessWidget {
   final TagFilter? tags;
   final ValueChanged<TagFilter>? onTagsChanged;
 
+  /// What When narrows the list to; null leaves When out of the menu.
+  final WhenFilter? when;
+  final ValueChanged<WhenFilter>? onWhenChanged;
+
+  /// The day When's spans count back from, as the list shows days.
+  final DateTime today;
+
+  /// Whether the page's bar shows the week, for When's menu to point there
+  /// for a single day. Asked as the menu opens, since the bar trades the
+  /// week for one button where it is short of room.
+  final bool Function()? weekShown;
+
+  /// How the list groups what Pinned leaves, and the menu that changes it;
+  /// without a grouping there is no menu.
+  final NotesGrouping? grouping;
+  final ValueChanged<NotesGrouping>? onGroupingChanged;
+
+  /// Whether the filter sits at the row's end beside the switch, as it does
+  /// on a folder's page, rather than at its start.
+  final bool alignEnd;
+
+  /// The row's narrowest that holds the sort beside the switch: the filter
+  /// with its label (72), the sort's longest (64) and the switch (60), with
+  /// the gaps between them.
+  static const double _sortBesideWidth = 72 + 4 + 64 + 8 + 60;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final onCardsChanged = this.onCardsChanged;
+    final onWhenChanged = this.onWhenChanged;
     Widget segment(bool forCards, ValueChanged<bool> onCardsChanged) {
       final on = cards == forCards;
       return Tooltip(
@@ -1278,8 +1694,8 @@ class NotesListControls extends StatelessWidget {
               ),
               onTap: on ? null : () => onCardsChanged(forCards),
               child: Container(
-                width: 26,
-                height: 24,
+                width: 28,
+                height: 28,
                 decoration: on
                     ? BoxDecoration(
                         color: palette.selectedBackground,
@@ -1298,7 +1714,7 @@ class NotesListControls extends StatelessWidget {
                   forCards
                       ? KapyIcons.gridViewRounded
                       : KapyIcons.listViewRounded,
-                  size: 14,
+                  size: 16,
                   strokeWidth: 1.8,
                   color: on ? palette.textPrimary : palette.textTertiary,
                 ),
@@ -1323,6 +1739,10 @@ class NotesListControls extends StatelessWidget {
       onMediaChanged: onMediaChanged,
       tags: tags,
       onTagsChanged: onTagsChanged,
+      when: when,
+      onWhenChanged: onWhenChanged,
+      today: today,
+      weekShown: weekShown,
       everything: everything,
       narrowed: narrowed,
       phone: phone,
@@ -1357,47 +1777,94 @@ class NotesListControls extends StatelessWidget {
         ),
       );
     }
-    return Row(
-      children: [
-        Expanded(
-          child: Row(
-            children: [
-              Flexible(child: filter),
-              if (narrowed) ...[
-                const SizedBox(width: 4),
-                CompactIconButton(
-                  key: const ValueKey('sidebar-filter-clear'),
-                  tooltip: 'Back to $everything',
-                  extent: 28,
-                  foregroundColor: palette.textSecondary,
-                  onPressed: onClear,
-                  icon: const KapyIcon(
-                    KapyIcons.closeRounded,
-                    size: 14,
-                    strokeWidth: 1.8,
-                  ),
-                ),
-              ],
-              const SizedBox(width: 4),
-            ],
-          ),
-        ),
-        if (onCardsChanged != null)
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: palette.cardBackground,
-              borderRadius: BorderRadius.circular(AppRadii.control),
+    final sort = switch ((grouping, onGroupingChanged)) {
+      (final grouping?, final onChanged?) => NotesGroupingMenu(
+        grouping: grouping,
+        onChanged: onChanged,
+      ),
+      _ => null,
+    };
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Too narrow to keep the filter's label beside the sort and the
+        // switch, the row puts the sort on a line of its own under them.
+        final sortBeside = constraints.maxWidth >= _sortBesideWidth;
+        final row = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              // A line of its own for the chip where the row is too narrow to
+              // hold it beside the filter, the sort and the switch.
+              child: Wrap(
+                alignment: alignEnd ? WrapAlignment.end : WrapAlignment.start,
+                spacing: 4,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  filter,
+                  if (narrowed)
+                    CompactIconButton(
+                      key: const ValueKey('sidebar-filter-clear'),
+                      tooltip: 'Back to $everything',
+                      extent: 28,
+                      foregroundColor: palette.textSecondary,
+                      onPressed: onClear,
+                      icon: const KapyIcon(
+                        KapyIcons.closeRounded,
+                        size: 14,
+                        strokeWidth: 1.8,
+                      ),
+                    ),
+                  if (when case final span?
+                      when span != NotesWhen.anyTime && onWhenChanged != null)
+                    _WhenChip(
+                      when: span,
+                      onClear: () => onWhenChanged(NotesWhen.anyTime),
+                    ),
+                ],
+              ),
             ),
-            child: Row(
-              children: [
-                segment(false, onCardsChanged),
-                const SizedBox(width: 2),
-                segment(true, onCardsChanged),
-              ],
+            // The sort and the switch keep to the filter's line when the chip
+            // drops under it.
+            SizedBox(
+              height: _NotesFilter.lineHeight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 4),
+                  if (sort != null && sortBeside) ...[
+                    sort,
+                    const SizedBox(width: 8),
+                  ],
+                  if (onCardsChanged != null)
+                    Container(
+                      padding: const EdgeInsets.all(1),
+                      decoration: BoxDecoration(
+                        color: palette.cardBackground,
+                        border: Border.all(color: palette.controlBorder),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          segment(false, onCardsChanged),
+                          segment(true, onCardsChanged),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-      ],
+          ],
+        );
+        if (sort == null || sortBeside) return row;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: alignEnd
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [row, const SizedBox(height: 4), sort],
+        );
+      },
     );
   }
 }
@@ -1416,9 +1883,9 @@ Set<NoteMedia>? tickedMedia(Set<NoteMedia> ticked, NoteMedia? media) {
   return ticked.length > 1 ? ({...ticked}..remove(media)) : null;
 }
 
-/// The notes filter's button and menu: one choice of which notes, then the
-/// media ticks. Every kind is ticked by default, and unticking kinds narrows
-/// the list to notes holding a kind still ticked.
+/// The notes filter's button and menu: one choice of which notes, When with
+/// its submenu, then the media ticks. Every kind is ticked by default, and
+/// unticking kinds narrows the list to notes holding a kind still ticked.
 class _NotesFilter extends StatefulWidget {
   const _NotesFilter({
     required this.show,
@@ -1431,6 +1898,10 @@ class _NotesFilter extends StatefulWidget {
     required this.onMediaChanged,
     required this.tags,
     required this.onTagsChanged,
+    required this.when,
+    required this.onWhenChanged,
+    required this.today,
+    required this.weekShown,
     required this.everything,
     required this.narrowed,
     this.phone = false,
@@ -1447,44 +1918,74 @@ class _NotesFilter extends StatefulWidget {
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
   final TagFilter? tags;
   final ValueChanged<TagFilter>? onTagsChanged;
+  final WhenFilter? when;
+  final ValueChanged<WhenFilter>? onWhenChanged;
+  final DateTime today;
+  final bool Function()? weekShown;
 
   /// What the button says while nothing is narrowed.
   final String everything;
   final bool narrowed;
 
+  /// The height of the filter's line: its 32 bar with a pointer, and its 28
+  /// button with 8 above and below for a finger.
+  static double get lineHeight => AppPlatform.hasPointer ? 32 : 28 + 2 * 8;
+
   @override
   State<_NotesFilter> createState() => _NotesFilterState();
 }
 
+/// The filter's submenus, each opened from its row in the menu.
+enum _FilterSubmenu { when, tags }
+
 class _NotesFilterState extends State<_NotesFilter> {
   final _menu = OverlayPortalController();
   final _link = LayerLink();
-  bool _tagsOpen = false;
   final _menuKey = GlobalKey();
+  final _whenRow = GlobalKey();
   final _tagsRow = GlobalKey();
 
-  /// How far down the menu the Tags row sits, which the submenu's top
-  /// lines up with.
-  double _tagsTop = 0;
+  /// The submenu open beside the menu, if any.
+  _FilterSubmenu? _submenu;
 
-  void _toggleTags() {
-    final row = _tagsRow.currentContext?.findRenderObject() as RenderBox?;
+  /// Where the open submenu's corner goes: beside the menu, level with the
+  /// row that opened it. A submenu that would run off the foot of the window
+  /// moves up until it fits.
+  Offset _submenuAt = Offset.zero;
+
+  void _toggleSubmenu(_FilterSubmenu submenu, GlobalKey row) {
+    final opener = row.currentContext?.findRenderObject() as RenderBox?;
     final menu = _menuKey.currentContext?.findRenderObject() as RenderBox?;
     setState(() {
-      _tagsOpen = !_tagsOpen;
-      if (row != null && menu != null) {
-        _tagsTop = math.max(
-          0,
-          row.localToGlobal(Offset.zero, ancestor: menu).dy - 6,
+      _submenu = _submenu == submenu ? null : submenu;
+      if (opener != null && menu != null) {
+        _submenuAt = Offset(
+          menu.localToGlobal(Offset(menu.size.width + 4, 0)).dx,
+          opener.localToGlobal(Offset.zero).dy - 6,
         );
       }
     });
   }
 
+  /// The open submenu, beside the row that opened it.
+  Widget? get _openSubmenu => switch (_submenu) {
+    _FilterSubmenu.when when widget.when != null => _WhenMenu(
+      when: widget.when!,
+      today: widget.today,
+      footnote: widget.weekShown?.call() ?? false,
+      onChanged: _chooseWhen,
+    ),
+    _FilterSubmenu.tags when widget.tags != null => _TagsMenu(
+      filter: widget.tags!,
+      onChanged: widget.onTagsChanged!,
+    ),
+    _ => null,
+  };
+
   void _toggle() {
     if (AppPlatform.isMobile) return unawaited(_openPopover());
     setState(() {
-      _tagsOpen = false;
+      _submenu = null;
       _menu.isShowing ? _menu.hide() : _menu.show();
     });
   }
@@ -1555,6 +2056,11 @@ class _NotesFilterState extends State<_NotesFilter> {
   void _choose(NotesShow show) {
     _close();
     if (show != widget.show) widget.onShowChanged(show);
+  }
+
+  void _chooseWhen(NotesWhen when) {
+    _close();
+    if (when != widget.when) widget.onWhenChanged!(when);
   }
 
   /// A kind is unticked only while another stays ticked: a list narrowed to
@@ -1681,8 +2187,11 @@ class _NotesFilterState extends State<_NotesFilter> {
       builder: (context, constraints) {
         if (constraints.maxWidth < 28) return const SizedBox.shrink();
         final roomy = constraints.maxWidth >= 72;
+        final bar = AppPlatform.hasPointer;
         // The padding, border, filter icon and chevron around the label.
-        const chrome = 9 + 8 + 2 + 14 + 6 + 6 + 13;
+        final chrome = bar
+            ? 8 + 8 + 2 + 16 + 4 + 4 + 12
+            : 9 + 8 + 2 + 14 + 6 + 6 + 13;
         final (:text, :dot) = roomy
             ? _label(style, constraints.maxWidth - chrome)
             : (text: widget.everything, dot: null);
@@ -1699,12 +2208,10 @@ class _NotesFilterState extends State<_NotesFilter> {
               onTap: _toggle,
               behavior: HitTestBehavior.opaque,
               child: Container(
-                height: 28,
-                margin: AppPlatform.hasPointer
-                    ? null
-                    : const EdgeInsets.symmetric(vertical: 8),
+                height: bar ? 32 : 28,
+                margin: bar ? null : const EdgeInsets.symmetric(vertical: 8),
                 padding: roomy
-                    ? const EdgeInsets.only(left: 9, right: 8)
+                    ? EdgeInsets.only(left: bar ? 8 : 9, right: 8)
                     : const EdgeInsets.symmetric(horizontal: 6),
                 decoration: BoxDecoration(
                   color: narrowed
@@ -1717,19 +2224,21 @@ class _NotesFilterState extends State<_NotesFilter> {
                         ? palette.tonalKeyBackground
                         : palette.controlBorder,
                   ),
-                  borderRadius: BorderRadius.circular(AppRadii.control),
+                  borderRadius: BorderRadius.circular(
+                    bar ? 8 : AppRadii.control,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     KapyIcon(
                       KapyIcons.filterRounded,
-                      size: 14,
+                      size: bar ? 16 : 14,
                       strokeWidth: 1.8,
                       color: narrowed ? style.color : palette.textSecondary,
                     ),
                     if (roomy) ...[
-                      const SizedBox(width: 6),
+                      SizedBox(width: bar ? 4 : 6),
                       if (dot != null) ...[
                         TagDot(tagColourOf(dot.colour.v), size: 7),
                         const SizedBox(width: 5),
@@ -1742,10 +2251,10 @@ class _NotesFilterState extends State<_NotesFilter> {
                           style: style,
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      SizedBox(width: bar ? 4 : 6),
                       KapyIcon(
                         KapyIcons.chevronDownRounded,
-                        size: 13,
+                        size: bar ? 12 : 13,
                         strokeWidth: 2,
                         color: narrowed
                             ? palette.tonalKeyText
@@ -1772,25 +2281,23 @@ class _NotesFilterState extends State<_NotesFilter> {
         link: _link,
         child: OverlayPortal(
           controller: _menu,
-          overlayChildBuilder: (context) => Align(
-            alignment: Alignment.topLeft,
-            child: CompositedTransformFollower(
-              link: _link,
-              targetAnchor: Alignment.bottomLeft,
-              offset: const Offset(0, 8),
-              child: TapRegion(
-                groupId: _menu,
-                child: CallbackShortcuts(
-                  bindings: {
-                    const SingleActivator(LogicalKeyboardKey.escape): _close,
-                  },
-                  child: Focus(
-                    autofocus: true,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _FilterMenu(
+          overlayChildBuilder: (context) => CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): _close,
+            },
+            child: Focus(
+              autofocus: true,
+              child: Stack(
+                children: [
+                  Align(
+                    alignment: Alignment.topLeft,
+                    child: CompositedTransformFollower(
+                      link: _link,
+                      targetAnchor: Alignment.bottomLeft,
+                      offset: const Offset(0, 8),
+                      child: TapRegion(
+                        groupId: _menu,
+                        child: _FilterMenu(
                           key: _menuKey,
                           show: widget.show,
                           offersShow: widget.offersShow,
@@ -1801,24 +2308,30 @@ class _NotesFilterState extends State<_NotesFilter> {
                           everything: widget.everything,
                           media: widget.media,
                           onTick: _tick,
-                          onTags: widget.tags == null ? null : _toggleTags,
+                          when: widget.onWhenChanged == null
+                              ? null
+                              : widget.when,
+                          onWhen: () =>
+                              _toggleSubmenu(_FilterSubmenu.when, _whenRow),
+                          whenRow: _whenRow,
+                          onTags: widget.tags == null
+                              ? null
+                              : () => _toggleSubmenu(
+                                  _FilterSubmenu.tags,
+                                  _tagsRow,
+                                ),
                           tagsRow: _tagsRow,
-                          tagsTicked: widget.tags?.ticked ?? 0,
+                          tags: widget.tags ?? const TagFilter(),
                         ),
-                        if (_tagsOpen && widget.tags != null) ...[
-                          const SizedBox(width: 4),
-                          Padding(
-                            padding: EdgeInsets.only(top: _tagsTop),
-                            child: _TagsMenu(
-                              filter: widget.tags!,
-                              onChanged: widget.onTagsChanged!,
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                  if (_openSubmenu case final submenu?)
+                    CustomSingleChildLayout(
+                      delegate: PopoverAtPoint(_submenuAt),
+                      child: TapRegion(groupId: _menu, child: submenu),
+                    ),
+                ],
               ),
             ),
           ),
@@ -1905,10 +2418,13 @@ class _FilterMenu extends StatelessWidget {
     required this.everything,
     required this.media,
     required this.onTick,
+    required this.when,
+    required this.onWhen,
+    required this.whenRow,
     super.key,
     required this.onTags,
     required this.tagsRow,
-    required this.tagsTicked,
+    required this.tags,
   });
 
   final NotesShow show;
@@ -1923,12 +2439,19 @@ class _FilterMenu extends StatelessWidget {
   /// Null for All media.
   final ValueChanged<NoteMedia?> onTick;
 
+  /// What When narrows the list to; null leaves When out.
+  final WhenFilter? when;
+
+  /// Opens or closes the When submenu.
+  final VoidCallback onWhen;
+  final Key whenRow;
+
   /// Opens or closes the Tags submenu; null leaves Tags out.
   final VoidCallback? onTags;
   final Key tagsRow;
 
-  /// How many of the submenu's rows are ticked, shown before its chevron.
-  final int tagsTicked;
+  /// What the Tags submenu has ticked, named before its chevron.
+  final TagFilter tags;
 
   @override
   Widget build(BuildContext context) {
@@ -1945,28 +2468,58 @@ class _FilterMenu extends StatelessWidget {
           onTap: () => onShow(choice),
         );
 
+    final when = this.when;
+    Widget rule() => Container(
+      height: 1,
+      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      color: palette.separator,
+    );
+    Widget heading(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      child: Semantics(
+        header: true,
+        child: Text(
+          label,
+          style: _figtree(
+            AppTypeScale.small,
+            16,
+            FontWeight.w500,
+            palette.textTertiary,
+          ),
+        ),
+      ),
+    );
+    final quiet = _figtree(
+      AppTypeScale.small,
+      16,
+      FontWeight.w400,
+      palette.textTertiary,
+    );
+    // A row's value, then the chevron of the submenu it opens.
+    Widget opens(Widget? value) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (value != null) ...[value, const SizedBox(width: 6)],
+        KapyIcon(
+          KapyIcons.chevronRightRounded,
+          size: 13,
+          strokeWidth: 2,
+          color: palette.textTertiary,
+        ),
+      ],
+    );
+
     return Container(
       key: const ValueKey('notes-filter-menu'),
       width: 232,
       padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        boxShadow: [
-          BoxShadow(
-            color: palette.shadowAt(0x80),
-            offset: Offset(0, 12),
-            blurRadius: 28,
-            spreadRadius: -14,
-          ),
-        ],
-      ),
+      decoration: _menuSurface(palette),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (offersShow) ...[
+            heading('Show'),
             choice(
               NotesShow.all,
               media == null ? KapyIcons.penRounded : KapyIcons.noteOutlined,
@@ -2005,13 +2558,23 @@ class _FilterMenu extends StatelessWidget {
               ),
             ),
           ],
-          if (media != null) ...[
-            if (offersShow)
-              Container(
-                height: 1,
-                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                color: palette.separator,
+          if (when != null) ...[
+            if (offersShow) rule(),
+            KeyedSubtree(
+              key: whenRow,
+              child: _ShowMenuRow(
+                key: const ValueKey('notes-filter-when'),
+                label: 'When',
+                icon: KapyIcons.calendarOutlined,
+                chosen: false,
+                trailing: opens(Text(when.label, style: quiet)),
+                onTap: onWhen,
               ),
+            ),
+          ],
+          if (media != null) ...[
+            if (offersShow || when != null) rule(),
+            heading('Media'),
             _MediaMenuRow(
               key: const ValueKey('media-filter-all'),
               label: 'All media',
@@ -2030,12 +2593,7 @@ class _FilterMenu extends StatelessWidget {
             ],
           ],
           if (onTags case final onTags?) ...[
-            if (offersShow || media != null)
-              Container(
-                height: 1,
-                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                color: palette.separator,
-              ),
+            if (offersShow || when != null || media != null) rule(),
             KeyedSubtree(
               key: tagsRow,
               child: _ShowMenuRow(
@@ -2043,29 +2601,14 @@ class _FilterMenu extends StatelessWidget {
                 label: 'Tags',
                 icon: KapyIcons.tagRounded,
                 chosen: false,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (tagsTicked > 0) ...[
-                      Text(
-                        '$tagsTicked',
-                        key: const ValueKey('notes-filter-tags-ticked'),
-                        style: _figtree(
-                          AppTypeScale.small,
-                          16,
-                          FontWeight.w400,
-                          palette.textTertiary,
+                trailing: opens(
+                  tags.ticked == 0
+                      ? null
+                      : _TickedTags(
+                          key: const ValueKey('notes-filter-tags-ticked'),
+                          tags: tags,
+                          style: quiet,
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    KapyIcon(
-                      KapyIcons.chevronRightRounded,
-                      size: 13,
-                      strokeWidth: 2,
-                      color: palette.textTertiary,
-                    ),
-                  ],
                 ),
                 onTap: onTags,
               ),
@@ -2077,20 +2620,61 @@ class _FilterMenu extends StatelessWidget {
   }
 }
 
+/// The Tags row's value: one ticked tag by its dot and name, as the filter
+/// names it, or how many are ticked.
+class _TickedTags extends StatelessWidget {
+  const _TickedTags({super.key, required this.tags, required this.style});
+
+  final TagFilter tags;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final one = tags.ticked == 1;
+    final tag = one
+        ? [
+            for (final entry
+                in TagShelf.maybeOf(context)?.listed() ?? <TagEntry>[])
+              if (tags.ids.contains(entry.tag.id)) entry.tag,
+          ].firstOrNull
+        : null;
+    final name = tag?.name.v ?? (one && tags.none ? 'No tag' : null);
+    if (name == null) return Text('${tags.ticked}', style: style);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (tag != null) ...[
+          TagDot(tagColourOf(tag.colour.v), size: 7),
+          const SizedBox(width: 5),
+        ],
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 96),
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// One of the menu's single choice of which notes: the chosen one lit, with
 /// a tick where the others show their shortcut or count.
 class _ShowMenuRow extends StatefulWidget {
   const _ShowMenuRow({
     super.key,
     required this.label,
-    required this.icon,
+    this.icon,
     required this.chosen,
     required this.onTap,
     this.trailing,
   });
 
   final String label;
-  final KapyIconData icon;
+  final KapyIconData? icon;
   final bool chosen;
   final VoidCallback onTap;
   final Widget? trailing;
@@ -2140,13 +2724,15 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
             ),
             child: Row(
               children: [
-                KapyIcon(
-                  widget.icon,
-                  size: 15,
-                  strokeWidth: 1.8,
-                  color: chosen ? palette.textPrimary : palette.textSecondary,
-                ),
-                const SizedBox(width: 9),
+                if (widget.icon case final icon?) ...[
+                  KapyIcon(
+                    icon,
+                    size: 15,
+                    strokeWidth: 1.8,
+                    color: chosen ? palette.textPrimary : palette.textSecondary,
+                  ),
+                  const SizedBox(width: 9),
+                ],
                 Expanded(
                   child: Text(
                     widget.label,
@@ -2239,6 +2825,86 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The filter's When submenu, beside the When row: each span with the days
+/// it covers, and a tick on the one the list reaches back over. While the
+/// page shows the week, a footnote points there for a single day.
+class _WhenMenu extends StatelessWidget {
+  const _WhenMenu({
+    required this.when,
+    required this.today,
+    required this.footnote,
+    required this.onChanged,
+  });
+
+  final WhenFilter when;
+  final DateTime today;
+  final bool footnote;
+  final ValueChanged<NotesWhen> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final weekStart = firstWeekday(context);
+    Widget row(NotesWhen span) {
+      final detail = span.detail(today: today, firstWeekday: weekStart);
+      return _ShowMenuRow(
+        key: ValueKey('notes-filter-when-${span.name}'),
+        label: span.label,
+        chosen: span == when,
+        trailing: detail == null
+            ? null
+            : Text(
+                detail,
+                style: _figtree(
+                  AppTypeScale.small,
+                  16,
+                  FontWeight.w400,
+                  palette.textTertiary,
+                ),
+              ),
+        onTap: () => onChanged(span),
+      );
+    }
+
+    return Container(
+      key: const ValueKey('notes-when-menu'),
+      width: 220,
+      padding: const EdgeInsets.all(6),
+      decoration: _menuSurface(palette),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (index, span) in NotesWhen.values.indexed) ...[
+            if (index > 0) const SizedBox(height: 1),
+            row(span),
+          ],
+          if (footnote) ...[
+            Container(
+              height: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              color: palette.separator,
+            ),
+            Padding(
+              key: const ValueKey('notes-when-footnote'),
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+              child: Text(
+                'For one day, click it in the week at the top of the page',
+                style: _figtree(
+                  AppTypeScale.small,
+                  16,
+                  FontWeight.w400,
+                  palette.textTertiary,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
