@@ -403,6 +403,7 @@ class _BlockButton extends StatelessWidget {
                     color: palette.textPrimary,
                     fontSize: AppTypeScale.small,
                     fontWeight: FontWeight.w500,
+                    fontVariations: AppWeight.variations(AppWeight.rowTitle),
                   ),
                 ),
                 KapyIcon(
@@ -558,6 +559,7 @@ class _LinkField extends StatelessWidget {
                         color: palette.tonalForeground,
                         fontSize: AppTypeScale.caption,
                         fontWeight: FontWeight.w500,
+                        fontVariations: AppWeight.variations(AppWeight.rowTitle),
                       ),
                     ),
                     const Keycap('↵'),
@@ -618,6 +620,7 @@ class _BlockMenu extends StatelessWidget {
                     color: palette.textTertiary,
                     fontSize: AppTypeScale.badge,
                     fontWeight: FontWeight.w500,
+                    fontVariations: AppWeight.variations(AppWeight.rowTitle),
                     letterSpacing: 0.44,
                   ),
                 ),

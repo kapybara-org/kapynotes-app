@@ -319,7 +319,7 @@ class TasksScreenState extends State<TasksScreen> {
                   children: [
                     Text(
                       'The list',
-                      style: handStyle(
+                      style: uiStyle(
                         15,
                         22,
                         FontWeight.w600,
@@ -329,11 +329,11 @@ class TasksScreenState extends State<TasksScreen> {
                     const SizedBox(width: 8),
                     Text(
                       '${open.length}',
-                      style: uiStyle(
+                      style: metaStyle(
                         12,
                         16,
-                        FontWeight.w600,
                         palette.textTertiary,
+                        tabular: true,
                       ),
                     ),
                   ],
@@ -458,16 +458,17 @@ class TasksScreenState extends State<TasksScreen> {
                       40,
                       FontWeight.w700,
                       palette.textPrimary,
+                      axis: AppWeight.page,
                     ),
                   ),
                   const SizedBox(width: 10),
                   Text(
                     '${board.done.length} completed',
-                    style: uiStyle(
+                    style: metaStyle(
                       13,
                       16,
-                      FontWeight.w600,
                       palette.textTertiary,
+                      tabular: true,
                     ),
                   ),
                 ],
@@ -489,7 +490,7 @@ class TasksScreenState extends State<TasksScreen> {
                 Flexible(
                   child: Text(
                     SidebarTimestamp.doneDay(day, now: now),
-                    style: handStyle(
+                    style: uiStyle(
                       15,
                       22,
                       FontWeight.w600,
@@ -500,7 +501,12 @@ class TasksScreenState extends State<TasksScreen> {
                 const SizedBox(width: 8),
                 Text(
                   '${items.length}',
-                  style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+                  style: metaStyle(
+                    12,
+                    16,
+                    palette.textTertiary,
+                    tabular: true,
+                  ),
                 ),
               ],
             ),
@@ -534,8 +540,9 @@ class _TodayTitle extends StatelessWidget {
           style: handStyle(
             EditorMetrics.titleFontSize,
             EditorMetrics.titleRow,
-            EditorMetrics.titleWeight,
+            FontWeight.w600,
             context.palette.textPrimary,
+            axis: AppWeight.page,
           ),
         ),
         Positioned.fill(
@@ -696,7 +703,7 @@ class _NotePicker extends StatelessWidget {
                   style: uiStyle(
                     12.5,
                     16,
-                    FontWeight.w600,
+                    FontWeight.w500,
                     palette.textSecondary,
                   ),
                 ),
@@ -799,9 +806,9 @@ class _DoNowCard extends StatelessWidget {
                     style: uiStyle(
                       11,
                       14,
-                      FontWeight.w700,
+                      FontWeight.w600,
                       palette.accentText,
-                    ).copyWith(letterSpacing: 0.66),
+                    ).copyWith(letterSpacing: 0.3),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -809,7 +816,7 @@ class _DoNowCard extends StatelessWidget {
                     style: uiStyle(
                       20,
                       28,
-                      FontWeight.w600,
+                      FontWeight.w400,
                       palette.textPrimary,
                     ),
                   ),
@@ -845,7 +852,7 @@ class _DoNowCard extends StatelessWidget {
                             textStyle: uiStyle(
                               13,
                               16,
-                              FontWeight.w600,
+                              FontWeight.w500,
                               palette.textSecondary,
                             ),
                           ),
@@ -993,7 +1000,7 @@ class _ReadyCard extends StatelessWidget {
       children: [
         Text(
           'First on the list',
-          style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+          style: metaStyle(12, 16, palette.textTertiary),
         ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1008,7 +1015,7 @@ class _ReadyCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   item.words,
-                  style: uiStyle(15, 22, FontWeight.w600, palette.textPrimary),
+                  style: uiStyle(15, 22, FontWeight.w400, palette.textPrimary),
                 ),
               ),
               if (label != null) ...[
@@ -1020,7 +1027,7 @@ class _ReadyCard extends StatelessWidget {
         ),
         Text(
           'Ready to do this now?',
-          style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
+          style: handStyle(18, 25, FontWeight.w500, palette.textPrimary),
         ),
         Row(
           children: [
@@ -1095,7 +1102,7 @@ class _MoreThanCard extends StatelessWidget {
               const TextSpan(text: '?'),
             ],
           ),
-          style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
+          style: handStyle(18, 25, FontWeight.w500, palette.textPrimary),
         ),
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1384,7 +1391,7 @@ class _TaskRowState extends State<_TaskRow> {
         !item.doNow &&
         widget.now.millisecondsSinceEpoch - item.lastTouched >=
             TaskBoard.staleAfter.inMilliseconds;
-    final quiet = uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary);
+    final quiet = metaStyle(12.5, 16, palette.textTertiary);
     final touch = !AppPlatform.hasPointer;
     final (Widget mark, String tip, String action) = item.doNow
         ? (const _Ring(), 'Do now · click to clear', 'Clear pick')
@@ -1440,7 +1447,7 @@ class _TaskRowState extends State<_TaskRow> {
                 style: uiStyle(
                   16,
                   28,
-                  FontWeight.w500,
+                  FontWeight.w400,
                   stale ? palette.textSecondary : palette.textPrimary,
                 ),
               ),
@@ -1545,7 +1552,7 @@ class _RowButton extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.compact),
         ),
-        textStyle: uiStyle(12, 16, FontWeight.w600, ink),
+        textStyle: uiStyle(12, 16, FontWeight.w500, ink),
       ),
       child: Text(label),
     );
@@ -1591,7 +1598,7 @@ class _DoneRow extends StatelessWidget {
                       style: uiStyle(
                         16,
                         28,
-                        FontWeight.w500,
+                        FontWeight.w400,
                         palette.textMuted,
                       ),
                     ),
@@ -1612,7 +1619,7 @@ class _DoneRow extends StatelessWidget {
               child: Text(
                 SidebarTimestamp.clock(item.doneAt!),
                 textAlign: TextAlign.right,
-                style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
+                style: metaStyle(12.5, 16, palette.textTertiary, tabular: true),
               ),
             ),
           ],

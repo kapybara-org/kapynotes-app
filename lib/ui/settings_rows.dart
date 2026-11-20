@@ -43,7 +43,8 @@ class SettingsMetrics {
   static double get noteSize =>
       AppPlatform.isWindows ? AppTypeScale.caption : 11;
   static double get buttonLabelSize => _touch ? 12 : 13;
-  static FontWeight get titleWeight => FontWeight.w500;
+  static FontWeight get titleWeight =>
+      AppWeight.named(AppWeight.rowTitle);
   static double get chevronSize => _touch ? 21 : 13;
 
   /// The height of a control at the end of a row: a button, a menu, a well.
@@ -90,11 +91,10 @@ class SettingsLabel extends StatelessWidget {
                 text,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'Shantell Sans',
-                  fontSize: SettingsMetrics.sectionLabelSize,
-                  fontWeight: FontWeight.w500,
-                  height: 18 / 14,
+                style: chromeStyle(
+                  size: SettingsMetrics.sectionLabelSize,
+                  line: 18,
+                  weight: AppWeight.section,
                   color: palette.textSubheading,
                 ),
               ),
@@ -298,10 +298,10 @@ class SettingsRowCopy extends StatelessWidget {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: SettingsMetrics.titleSize,
-                  fontWeight: SettingsMetrics.titleWeight,
-                  height: pointer ? 18 / SettingsMetrics.titleSize : null,
+                style: chromeStyle(
+                  size: SettingsMetrics.titleSize,
+                  line: pointer ? 18 : SettingsMetrics.titleSize * 1.35,
+                  weight: AppWeight.rowTitle,
                   color: titleColor ?? palette.textPrimary,
                 ),
               ),

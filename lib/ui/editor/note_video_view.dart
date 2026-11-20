@@ -250,6 +250,7 @@ class _VideoUploadCover extends StatelessWidget {
                   color: Colors.white,
                   fontSize: AppTypeScale.control,
                   fontWeight: FontWeight.w500,
+                  fontVariations: AppWeight.variations(AppWeight.rowTitle),
                 ),
               ),
       ),

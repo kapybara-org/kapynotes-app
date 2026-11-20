@@ -1871,21 +1871,22 @@ class SidebarWindowBar extends StatelessWidget {
     const handwritten = WritingFont.handwritten;
     final newNoteShortcut = this.newNoteShortcut;
     final hideShortcut = this.hideShortcut;
-    final titleStyle = TextStyle(
-      fontFamily: handwritten.fontFamily,
-      fontFamilyFallback: handwritten.fontFamilyFallback,
-      fontVariations: handwritten.fontVariations,
-      fontSize: AppTypeScale.spaceTitle,
-      height: 1.3,
-      fontWeight: FontWeight.w500,
+    final titleStyle = chromeStyle(
+      size: AppTypeScale.spaceTitle,
+      line: AppTypeScale.spaceTitle * 1.3,
+      weight: AppWeight.page,
       color: palette.textPrimary,
+      family: handwritten.fontFamily,
+      fallback: handwritten.fontFamilyFallback,
+      extra: handwritten.faceVariations,
     );
     final countText = [count, ?countLabel].join(' ');
-    final countStyle = TextStyle(
-      fontSize: AppTypeScale.small,
-      fontWeight: FontWeight.w400,
+    final countStyle = chromeStyle(
+      size: AppTypeScale.small,
+      line: 16,
+      weight: AppWeight.body,
       color: palette.textTertiary,
-      fontFeatures: const [FontFeature.tabularFigures()],
+      tabular: true,
     );
     double widthOf(String text, TextStyle style) {
       final painter = TextPainter(

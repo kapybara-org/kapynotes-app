@@ -50,6 +50,7 @@ class JoinLabel extends StatelessWidget {
       style: TextStyle(
         fontSize: AppTypeScale.caption,
         fontWeight: FontWeight.w600,
+        fontVariations: AppWeight.variations(AppWeight.section),
         letterSpacing: 0.2,
         color: context.palette.textSecondary,
       ),

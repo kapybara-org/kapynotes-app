@@ -729,6 +729,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   fontSize: 12,
                   height: 16 / 12,
                   fontWeight: FontWeight.w500,
+                  fontVariations: AppWeight.variations(AppWeight.rowTitle),
                   color: palette.textPrimary,
                 ),
               ),
@@ -779,6 +780,7 @@ class _CommandMenuState extends State<CommandMenu> {
             fontSize: 12,
             height: 16 / 12,
             fontWeight: FontWeight.w500,
+            fontVariations: AppWeight.variations(AppWeight.rowTitle),
             color: palette.textTertiary,
           ),
         ),
@@ -844,6 +846,9 @@ class _CommandMenuState extends State<CommandMenu> {
                                 fontWeight: lit
                                     ? FontWeight.w500
                                     : FontWeight.w400,
+                                fontVariations: AppWeight.variations(
+                                  lit ? AppWeight.selected : AppWeight.body,
+                                ),
                                 color: line.muted
                                     ? palette.textSecondary
                                     : palette.textPrimary,
@@ -863,10 +868,9 @@ class _CommandMenuState extends State<CommandMenu> {
                               widget.taskLabel(task),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: handStyle(
+                              style: metaStyle(
                                 12,
                                 16,
-                                FontWeight.w400,
                                 palette.textSecondary,
                               ),
                             ),
@@ -935,6 +939,7 @@ class _CommandMenuState extends State<CommandMenu> {
     final mark = TextStyle(
       color: palette.accentText,
       fontWeight: FontWeight.w600,
+      fontVariations: AppWeight.variations(AppWeight.section),
     );
     final spans = <TextSpan>[];
     var start = 0;

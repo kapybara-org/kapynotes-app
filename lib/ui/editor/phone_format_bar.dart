@@ -188,6 +188,7 @@ class _BarButton extends StatelessWidget {
                         color: color,
                         fontSize: 21,
                         fontWeight: FontWeight.w500,
+                        fontVariations: AppWeight.variations(AppWeight.rowTitle),
                         height: 1,
                       ),
                     )

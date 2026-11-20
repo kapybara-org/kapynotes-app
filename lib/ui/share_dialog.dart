@@ -784,6 +784,7 @@ class _ShareHeader extends StatelessWidget {
                     style: TextStyle(
                       fontSize: AppTypeScale.heading,
                       fontWeight: FontWeight.w600,
+                      fontVariations: AppWeight.variations(AppWeight.section),
                       color: palette.textPrimary,
                     ),
                   ),
@@ -1038,6 +1039,7 @@ class _Members extends StatelessWidget {
                     textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
                       fontSize: AppTypeScale.caption,
                       fontWeight: FontWeight.w500,
+                      fontVariations: AppWeight.variations(AppWeight.rowTitle),
                     ),
                   ),
                   icon: KapyIcon(
@@ -1110,6 +1112,7 @@ class _MemberRow extends StatelessWidget {
       style: TextStyle(
         fontSize: AppTypeScale.control,
         fontWeight: FontWeight.w500,
+        fontVariations: AppWeight.variations(AppWeight.rowTitle),
         color: palette.textPrimary,
       ),
     );
@@ -1213,6 +1216,7 @@ class _InviteeRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
                     fontWeight: FontWeight.w500,
+                    fontVariations: AppWeight.variations(AppWeight.rowTitle),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -1342,6 +1346,7 @@ class _SpaceRow extends StatelessWidget {
                     style: TextStyle(
                       fontSize: AppTypeScale.control,
                       fontWeight: FontWeight.w500,
+                      fontVariations: AppWeight.variations(AppWeight.rowTitle),
                       color: palette.textPrimary,
                     ),
                   ),
@@ -1639,6 +1644,7 @@ class _Label extends StatelessWidget {
             style: TextStyle(
               fontSize: AppTypeScale.caption,
               fontWeight: FontWeight.w600,
+              fontVariations: AppWeight.variations(AppWeight.section),
               letterSpacing: 0.2,
               color: context.palette.textSecondary,
             ),
