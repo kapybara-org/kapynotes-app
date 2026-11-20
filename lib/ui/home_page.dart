@@ -3623,6 +3623,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           label: pinned ? 'Unpin note' : 'Pin note',
           icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
+      if (phone &&
+          note != null &&
+          !_specialMode &&
+          widget.account != null &&
+          (note.isShared || mayEdit))
+        KapyMenuAction(
+          value: 'share',
+          label: note.isShared ? 'Sharing' : 'Share note',
+          icon: KapyIcons.personAddRounded,
+        ),
       if (mayEdit && !_specialMode && !note.isShared)
         const KapyMenuAction(
           value: 'hide',
@@ -3672,6 +3682,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     switch (action) {
       case 'pin':
         _togglePinnedNote(note.id);
+      case 'share':
+        _shareNote(note.id);
       case 'hide':
         unawaited(_hideNote(note.id));
       case 'restore':

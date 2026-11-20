@@ -2407,7 +2407,11 @@ class _NoteRowState extends State<NoteRow> {
       if (widget.onShare != null)
         KapyMenuAction(
           value: 'share',
-          label: widget.shared ? 'Manage sharing' : 'Share note',
+          label: widget.shared
+              ? AppPlatform.isMobile
+                    ? 'Sharing'
+                    : 'Manage sharing'
+              : 'Share note',
           icon: KapyIcons.peopleOutlined,
         ),
       if (widget.onHide != null)
