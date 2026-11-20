@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../ai/kapy_chat_book.dart';
 import '../ai/kapy_chat_records.dart';
 import '../data/folders.dart';
+import '../data/note_days.dart';
 import '../data/tags.dart';
 import '../data/task_index.dart';
 import 'doc_store.dart';
@@ -37,6 +38,7 @@ class TaskSync {
     required TaskIndex index,
     required TagStore tags,
     FolderStore? folders,
+    NoteDayStore? days,
     required DocStore docs,
     required bool Function(String noteId) noteIsLive,
     required Iterable<String> Function() deletedNotes,
@@ -48,6 +50,7 @@ class TaskSync {
        _index = index,
        _tags = tags,
        _folders = folders,
+       _days = days,
        _docs = docs,
        _noteIsLive = noteIsLive,
        _deletedNotes = deletedNotes,
@@ -55,6 +58,7 @@ class TaskSync {
        _chatsOn = chatsOn ?? (() => true) {
     _tags.addListener(_onTags);
     _folders?.addListener(_onFolders);
+    _days?.addListener(_onDays);
     _chats
       ?..attach(() => !_disposed && _chatsOn(), run, _chatRecordId)
       ..addListener(_onChats);
@@ -65,6 +69,7 @@ class TaskSync {
   final TaskIndex _index;
   final TagStore _tags;
   final FolderStore? _folders;
+  final NoteDayStore? _days;
   final DocStore _docs;
   final bool Function(String noteId) _noteIsLive;
   final KapyChatBook? _chats;
@@ -82,6 +87,12 @@ class TaskSync {
   final Map<String, String> _placementIds = {};
   final Map<String, String> _noteOfPlacement = {};
   bool _placementsNamed = false;
+
+  /// Each dated note's day record id under this account's key, both ways, and
+  /// whether every note the days hold has one yet this pass.
+  final Map<String, String> _dayIds = {};
+  final Map<String, String> _noteOfDay = {};
+  bool _daysNamed = false;
 
   /// The server's clock as of the last push it answered, which a clock that
   /// runs ahead here can't move on (see `FolderStore.prune`).
@@ -103,6 +114,10 @@ class TaskSync {
 
   void _onFolders() {
     if (_folders?.owes ?? false) schedule();
+  }
+
+  void _onDays() {
+    if (_days?.owes ?? false) schedule();
   }
 
   void _onChats() {
@@ -199,6 +214,7 @@ class TaskSync {
   Future<void> _pass() async {
     _rekey();
     _placementsNamed = false;
+    _daysNamed = false;
     final rewind = (_chats?.skipped ?? false) && _chatsSync;
     if (rewind && _index.cursor > 0) {
       _index.recordCursor(0);
@@ -214,6 +230,7 @@ class TaskSync {
     for (final noteId in _deletedNotes()) {
       _tags.forgetNote(noteId);
       _folders?.forgetNote(noteId);
+      _days?.forgetNote(noteId);
     }
     await _push();
   }
@@ -272,6 +289,17 @@ class TaskSync {
               acknowledge: () => folders.acknowledge(item),
             ),
       ];
+      final days = _days;
+      final owedDays = [
+        if (days != null)
+          for (final item in days.owed)
+            (
+              id: _dayId(item.key),
+              updatedAt: item.updatedAt,
+              payload: item.payload,
+              acknowledge: () => days.acknowledge(item),
+            ),
+      ];
       final owedChats = [
         if (_chatsSync)
           for (final item in _chats!.owed())
@@ -282,9 +310,14 @@ class TaskSync {
               acknowledge: () => _chats.acknowledge(item),
             ),
       ];
-      if (owed.isEmpty && owedFolders.isEmpty && owedChats.isEmpty) return;
+      if (owed.isEmpty &&
+          owedFolders.isEmpty &&
+          owedDays.isEmpty &&
+          owedChats.isEmpty) {
+        return;
+      }
       final chunks = [
-        for (final list in [owed, owedFolders, owedChats])
+        for (final list in [owed, owedFolders, owedDays, owedChats])
           for (var i = 0; i < list.length; i += tasksPushMax)
             list.sublist(
               i,
@@ -318,6 +351,7 @@ class TaskSync {
         _index.hold();
         _tags.hold();
         _folders?.hold();
+        _days?.hold();
         _chats?.hold();
         try {
           for (final item in chunk) {
@@ -327,6 +361,7 @@ class TaskSync {
           _index.release();
           _tags.release();
           _folders?.release();
+          _days?.release();
           _chats?.release();
         }
         for (final conflict in result.conflicts) {
@@ -344,6 +379,7 @@ class TaskSync {
       _index.hold();
       _tags.hold();
       _folders?.hold();
+      _days?.hold();
       _chats?.hold();
       try {
         for (final record in page.records) {
@@ -354,6 +390,7 @@ class TaskSync {
         _index.release();
         _tags.release();
         _folders?.release();
+        _days?.release();
         _chats?.release();
       }
       if (!page.hasMore) break;
@@ -384,6 +421,8 @@ class TaskSync {
         updatedAt,
         noteId: _placementNote(record.id),
       );
+      final dayNote = _dayNote(record.id);
+      if (dayNote != null) _days?.applyRemoteDelete(dayNote, updatedAt);
       if (_chatsSync) {
         final key = _chats!.keyOfRecord(record.id);
         if (key != null) _chats.applyRemoteDelete(key, updatedAt);
@@ -467,6 +506,14 @@ class TaskSync {
           return;
         }
         folders.applyRemoteNote(note, updatedAt);
+      case NoteDay.kind when _days != null:
+        _tags.dropUnknown(record.id);
+        final day = NoteDay.fromPayload(decoded);
+        if (day == null || _dayId(day.noteId) != record.id) {
+          debugPrint('KapyNotes: day record ${record.id} is not one of ours');
+          return;
+        }
+        _days.applyRemote(day, updatedAt);
       default:
         _tags.keepUnknown(record.id, updatedAt);
     }
@@ -491,6 +538,23 @@ class TaskSync {
     _noteOfPlacement[id] = noteId;
     return id;
   }();
+
+  String _dayId(String noteId) => _dayIds[noteId] ??= () {
+    final id = _vault.noteDayRecordId(noteId);
+    _noteOfDay[id] = noteId;
+    return id;
+  }();
+
+  /// The note a deleted record gave a day to, if this device holds its day.
+  String? _dayNote(String recordId) {
+    final days = _days;
+    if (days == null) return null;
+    if (!_daysNamed) {
+      days.noteIds.forEach(_dayId);
+      _daysNamed = true;
+    }
+    return _noteOfDay[recordId];
+  }
 
   /// The note a deleted record placed in a folder, if this device holds its
   /// placement. Every placement is named once a pass, so a pull full of
@@ -517,6 +581,7 @@ class TaskSync {
   void dispose() {
     _tags.removeListener(_onTags);
     _folders?.removeListener(_onFolders);
+    _days?.removeListener(_onDays);
     _chats
       ?..removeListener(_onChats)
       ..detach();

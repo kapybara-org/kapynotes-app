@@ -20,6 +20,7 @@ import 'core/platform.dart';
 import 'core/quick_capture.dart';
 import 'core/window_placement.dart';
 import 'data/folders.dart';
+import 'data/note_days.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
 import 'data/notes_store.dart';
@@ -79,6 +80,7 @@ Future<void> main([List<String> args = const []]) async {
   // Kept on this device the same way, and synced while signed in.
   final tags = TagStore(store);
   final folders = FolderStore(store);
+  final days = NoteDayStore(store);
   // Kapy AI's chats: on this device, and synced while signed in with Pro.
   final chats = KapyChatBook(store, ready: () => notes.isLoaded);
   if (AppPlatform.isIOS) {
@@ -105,6 +107,7 @@ Future<void> main([List<String> args = const []]) async {
           tasks: tasks,
           tags: tags,
           folders: folders,
+          days: days,
           chats: chats,
         )
       : null;
