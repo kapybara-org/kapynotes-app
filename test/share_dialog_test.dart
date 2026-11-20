@@ -28,6 +28,7 @@ import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/notes_list.dart' show NotesListHeading;
@@ -1611,8 +1612,9 @@ void main() {
     expect(bob.notes.byId(shared.id), isNotNull);
     expect(await deleteLabel(shared), 'Remove note…');
     expect(await deleteLabel(own), 'Delete note…');
-    // A viewer can't take it out of their notes, as before.
-    expect(await deleteLabel(viewed), isNull);
+    // A viewer takes it out of their own notes the same way. Before, Leave
+    // was their only way out, and it left the whole space.
+    expect(await deleteLabel(viewed), 'Remove note…');
 
     await pumpBob(asks: false);
     expect(await deleteLabel(shared), 'Remove note');
@@ -1701,16 +1703,17 @@ void main() {
     expect(await label('pin'), 'Pin 3 notes');
     // Hidden Notes are only ever the reader's own notes.
     expect(await label('hide'), 'Move to Hidden Notes');
-    // A viewer changes nothing: the note they may only read is left out.
+    // A viewer changes nothing, so the note they may only read is left out of
+    // Archive; but it leaves their notes with the rest, as its row's does.
     expect(await label('archive'), 'Archive 2 notes');
-    expect(await label('delete'), 'Delete 2 notes…');
+    expect(await label('delete'), 'Delete 3 notes…');
 
     await tester.tap(find.byKey(const ValueKey('picked-delete')));
     await tester.pumpAndSettle();
     expect(done.single.$1, PickedAction.delete);
-    expect(done.single.$2, unorderedEquals([shared.id, own.id]));
+    expect(done.single.$2, unorderedEquals([shared.id, viewed.id, own.id]));
 
-    // Of these two only the editor's leaves Bob's notes, as its row says.
+    // Both of these only leave Bob's notes, whatever he may do in them.
     picks
       ..clear()
       ..toggle(shared.id)
@@ -1729,8 +1732,154 @@ void main() {
           )
           .action
           .label,
-      'Remove note…',
+      'Remove 2 notes…',
     );
+  });
+
+  test('the toast after a mixed delete says which notes are gone for good', () {
+    expect(forgottenMessage(deleted: 1, removed: 0), 'Note deleted');
+    expect(forgottenMessage(deleted: 3, removed: 0), '3 notes deleted');
+    expect(forgottenMessage(deleted: 0, removed: 2), 'Removed from your notes');
+    expect(
+      forgottenMessage(deleted: 1, removed: 2),
+      'Note deleted, and 2 removed from your notes',
+    );
+    expect(
+      forgottenMessage(deleted: 2, removed: 1),
+      '2 notes deleted, and 1 removed from your notes',
+    );
+  });
+
+  group('a viewer removes a note from their own notes', () {
+    late Note viewed;
+
+    /// Alice shares a note with Bob, who may only read it, and with Carol,
+    /// who may edit it.
+    Future<void> sharedToRead(WidgetTester tester) => tester.runAsync(() async {
+      for (final device in [alice, bob, carol]) {
+        await device.boot();
+      }
+      viewed = alice.notes.create(body: 'Read only\nfor Bob');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(
+        viewed.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.addPerson(viewed.id, carol.email);
+      await carol.sharing.acceptInvite(server.outbox.last.token);
+      for (final device in [alice, bob, carol]) {
+        await device.sync.syncNow();
+      }
+    });
+
+    /// Takes [ids] out of Bob's notes as the app does once he confirms, then
+    /// lets everyone sync.
+    Future<void> removeForBob(WidgetTester tester, List<String> ids) =>
+        tester.runAsync(() async {
+          bob.notes.deleteAll(ids);
+          for (final device in [bob, alice, carol, bob]) {
+            await device.sync.syncNow();
+          }
+        });
+
+    Widget bobsList({
+      required ValueChanged<String> onDelete,
+      NotePicks? picks,
+      void Function(PickedAction, List<String>)? onPicked,
+    }) => harness(
+      SizedBox(
+        width: 280,
+        child: Sidebar(
+          windowBar: const SizedBox(),
+          notes: bob.notes.notes,
+          selectedId: null,
+          query: '',
+          displayTime: (t) => t,
+          onSearch: () {},
+          onSelect: (_) {},
+          onArchive: (_) {},
+          onDelete: onDelete,
+          sharing: bob.sharing,
+          picks: picks,
+          onPicked: onPicked,
+        ),
+      ),
+    );
+
+    testWidgets('from its row, and the others keep it', (tester) async {
+      await sharedToRead(tester);
+      expect(bob.sharing.canEdit(bob.notes.byId(viewed.id)!), isFalse);
+      String? removed;
+      await tester.pumpWidget(bobsList(onDelete: (id) => removed = id));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(viewed.title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('archive-note-${viewed.id}')), findsNothing);
+      await tester.tap(find.byKey(ValueKey('delete-note-${viewed.id}')));
+      await tester.pumpAndSettle();
+      expect(removed, viewed.id);
+
+      await removeForBob(tester, [viewed.id]);
+      expect(bob.notes.byId(viewed.id), isNull);
+      expect(alice.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(carol.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(server.rows[viewed.id]!.isTombstone, isFalse);
+      expect(bob.notes.dirtyTombstones, isEmpty);
+    });
+
+    testWidgets('picked with an edited note and his own, and only his own is '
+        'gone for everyone', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await sharedToRead(tester);
+      late Note edited;
+      late Note own;
+      await tester.runAsync(() async {
+        edited = alice.notes.create(body: 'Edited together');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(edited.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.last.token);
+        own = bob.notes.create(body: 'Bob alone');
+        for (final device in [alice, bob]) {
+          await device.sync.syncNow();
+        }
+      });
+
+      final picks = NotePicks();
+      addTearDown(picks.dispose);
+      final done = <(PickedAction, List<String>)>[];
+      await tester.pumpWidget(
+        ListenableBuilder(
+          listenable: picks,
+          builder: (context, _) => bobsList(
+            onDelete: (_) {},
+            picks: picks,
+            onPicked: (action, ids) => done.add((action, ids)),
+          ),
+        ),
+      );
+      picks.all([viewed.id, edited.id, own.id]);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('picked-delete')));
+      await tester.pumpAndSettle();
+      expect(done.single.$1, PickedAction.delete);
+      expect(done.single.$2, unorderedEquals([viewed.id, edited.id, own.id]));
+
+      await removeForBob(tester, done.single.$2);
+      for (final id in [viewed.id, edited.id, own.id]) {
+        expect(bob.notes.byId(id), isNull);
+      }
+      expect(alice.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(carol.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(alice.notes.byId(edited.id)?.body, 'Edited together');
+      expect(server.rows[own.id]!.isTombstone, isTrue);
+      expect(server.rows[viewed.id]!.isTombstone, isFalse);
+      expect(server.rows[edited.id]!.isTombstone, isFalse);
+      expect(bob.notes.dirtyTombstones, isEmpty);
+    });
   });
 
   group('sidebar tabs', () {
