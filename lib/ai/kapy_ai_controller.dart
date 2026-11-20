@@ -209,6 +209,13 @@ class KapyAiController extends KapyAi {
   KapyModel get defaultModel {
     final stored = _store.defaultModel;
     if (stored != null && _usable(stored)) return stored;
+    // Someone who picked the device picked it for what it does not send, so a
+    // device model that can run still answers for them even on Pro. Only when
+    // no device model can run does this fall through to the cloud.
+    if (stored?.kind == KapyModelKind.device) {
+      final device = _deviceModel;
+      if (device != null) return device;
+    }
     return isPro ? KapyModel.cloud : _fallback;
   }
 
@@ -688,6 +695,10 @@ class KapyAiController extends KapyAi {
   /// What has to happen before [model] may answer, or null when nothing.
   KapyPending? _holdFor(KapyModel model) {
     final blocked = _device.state.note;
+    // Free, signed out and nothing on this device can answer: say what would
+    // work rather than sending the question to a cloud nobody asked for. Pro
+    // is let through here and gets the cloud answer; an account the person
+    // set up themselves is theirs to use.
     if (blocked != null &&
         !isPro &&
         model.kind != KapyModelKind.codex &&

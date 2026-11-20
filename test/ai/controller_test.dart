@@ -146,7 +146,24 @@ void main() {
     test('a stored default that is no longer pickable falls back', () async {
       final ai = await build(billing: await billingOn(pro: true));
       ai.defaultModel = FakeDeviceModel.gemma;
-      expect(ai.defaultModel, KapyModel.cloud);
+      // Gemma is gone but this device can still answer, and it was a device
+      // model that was picked: the cloud is not what that person chose.
+      expect(ai.defaultModel, FakeDeviceModel.apple);
+    });
+
+    test('Pro that picked the device still answers on it', () async {
+      final ai = await build(billing: await billingOn(pro: true));
+      ai.defaultModel = FakeDeviceModel.apple;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.ready,
+          model: FakeDeviceModel.gemma,
+        ),
+      );
+      expect(ai.defaultModel, FakeDeviceModel.gemma);
+      await ai.ask('Lisbon?');
+      expect(sent, isEmpty);
+      expect(ai.current!.messages.last.text, 'device answer');
     });
   });
 

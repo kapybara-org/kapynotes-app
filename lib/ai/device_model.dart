@@ -70,16 +70,17 @@ class PlatformDeviceModel extends DeviceModel {
     label: 'On this device',
   );
 
-  /// The built-in answers are installed but off, and the downloadable model
-  /// cannot run here. No model name: the Settings switch is the way to it.
+  /// Apple Intelligence is installed but off, and the downloadable model
+  /// cannot run here. Names the switch, because that is what the person has
+  /// to find in System Settings.
   static const String appleOffNoRoom =
-      'Turn on built-in answers in System Settings, or use Kapy AI Cloud '
+      'Turn on Apple Intelligence in System Settings, or use Kapy AI Cloud '
       'with Pro.';
 
-  /// The built-in answers are still downloading, and the downloadable model
+  /// Apple Intelligence is still downloading, and the downloadable model
   /// cannot run here.
   static const String applePreparingNoRoom =
-      'Built-in answers are still downloading. Until then, Kapy AI Cloud '
+      'Apple Intelligence is still downloading. Until then, Kapy AI Cloud '
       'with Pro can answer.';
 
   /// Unknown until [refresh] has asked: both answers are a channel call or
