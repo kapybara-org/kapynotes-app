@@ -25,18 +25,21 @@ void main() {
   });
 
   group('the downloaded recogniser', () {
-    test('nothing downloaded asks for the download, and does not fetch', () async {
-      final models = LocalModelStore(
-        catalogue: const [parakeetTdt06bV3Int8],
-        directory: temp,
-      );
-      addTearDown(models.dispose);
+    test(
+      'nothing downloaded asks for the download, and does not fetch',
+      () async {
+        final models = LocalModelStore(
+          catalogue: const [parakeetTdt06bV3Int8],
+          directory: temp,
+        );
+        addTearDown(models.dispose);
 
-      expect(
-        await SherpaTranscriber(models: models).readiness(),
-        TranscriberReadiness.needsDownload,
-      );
-    });
+        expect(
+          await SherpaTranscriber(models: models).readiness(),
+          TranscriberReadiness.needsDownload,
+        );
+      },
+    );
 
     test('a language the model never learned is not a download away', () async {
       final models = LocalModelStore(
@@ -61,32 +64,34 @@ void main() {
       );
     });
 
-    test('being asked to work without the model says what would fix it', () async {
-      final models = LocalModelStore(
-        catalogue: const [parakeetTdt06bV3Int8],
-        directory: temp,
-      );
-      addTearDown(models.dispose);
+    test(
+      'being asked to work without the model says what would fix it',
+      () async {
+        final models = LocalModelStore(
+          catalogue: const [parakeetTdt06bV3Int8],
+          directory: temp,
+        );
+        addTearDown(models.dispose);
 
-      await expectLater(
-        SherpaTranscriber(
-          models: models,
-        ).transcribe(audio: File('/tmp/note.m4a'), requestId: 'r1'),
-        throwsA(
-          isA<TranscriberUnavailable>()
-              .having(
-                (error) => error.readiness,
-                'readiness',
-                TranscriberReadiness.needsDownload,
-              )
-              .having(
-                (error) => error.message,
-                'message',
-                contains('Parakeet TDT 0.6B v3'),
-              ),
-        ),
-      );
-    });
+        await expectLater(
+          SherpaTranscriber(models: models)
+              .transcribe(audio: File('/tmp/note.m4a'), requestId: 'r1'),
+          throwsA(
+            isA<TranscriberUnavailable>()
+                .having(
+                  (error) => error.readiness,
+                  'readiness',
+                  TranscriberReadiness.needsDownload,
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('Download the speech model'),
+                ),
+          ),
+        );
+      },
+    );
 
     test('the engine is named with its exact export', () {
       final models = LocalModelStore(catalogue: const [], directory: temp);
@@ -164,23 +169,29 @@ void main() {
       await decoded.dispose();
     });
 
-    test('a build with no decoder says so rather than throwing plugin noise', () async {
-      // No mock handler at all, which is what a platform with no such channel
-      // looks like.
-      await expectLater(
-        const AudioDecoder().decode(File('/tmp/note.m4a')),
-        throwsA(isA<AudioDecodeException>()),
-      );
-    });
+    test(
+      'a build with no decoder says so rather than throwing plugin noise',
+      () async {
+        // No mock handler at all, which is what a platform with no such channel
+        // looks like.
+        await expectLater(
+          const AudioDecoder().decode(File('/tmp/note.m4a')),
+          throwsA(isA<AudioDecodeException>()),
+        );
+      },
+    );
 
-    test('a runner that answers with nothing is a recording that cannot be read', () async {
-      answerWith((_) => {'path': '', 'frames': 0});
+    test(
+      'a runner that answers with nothing is a recording that cannot be read',
+      () async {
+        answerWith((_) => {'path': '', 'frames': 0});
 
-      await expectLater(
-        const AudioDecoder().decode(File('/tmp/note.m4a')),
-        throwsA(isA<AudioDecodeException>()),
-      );
-    });
+        await expectLater(
+          const AudioDecoder().decode(File('/tmp/note.m4a')),
+          throwsA(isA<AudioDecodeException>()),
+        );
+      },
+    );
 
     test('a decode failure keeps the reason the runner gave', () async {
       answerWith((_) {

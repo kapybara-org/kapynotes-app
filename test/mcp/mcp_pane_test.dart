@@ -81,7 +81,7 @@ void main() {
 
     await tester.runAsync(() => service.setEnabled(true));
     await tester.pump();
-    expect(find.text('On this Mac only · ${service.address}'), findsOneWidget);
+    expect(find.text('On this Mac only'), findsOneWidget);
     await tester.runAsync(() => service.setEnabled(false));
   });
 
@@ -155,7 +155,7 @@ void main() {
     await tester.runAsync(() => service.setEnabled(true));
     await tester.runAsync(() => service.connect(McpClientKind.cursor));
     await pumpPane(tester);
-    expect(find.text('Waiting for its first request'), findsOneWidget);
+    expect(find.text('Waiting for the app to connect'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('mcp-revoke-cursor')));
     await tester.pumpAndSettle();
     expect(service.connections, isEmpty);

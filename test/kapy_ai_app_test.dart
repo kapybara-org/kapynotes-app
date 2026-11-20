@@ -571,14 +571,11 @@ void main() {
       );
       expect(find.byKey(const ValueKey('kapy-device-remove')), findsOneWidget);
       expect(
-        find.text('Found on this Mac · GPT-5.5, GPT-5.4 mini'),
+        find.text('Found on this Mac · Codex · 1, Codex · 2'),
         findsOneWidget,
       );
-      expect(find.text('Found on this Mac · Sonnet 5.5'), findsOneWidget);
-      expect(
-        find.text('Key ending 4f2a, kept in your Keychain'),
-        findsOneWidget,
-      );
+      expect(find.text('Found on this Mac · Claude Code'), findsOneWidget);
+      expect(find.text('Key ending 4f2a, kept on this Mac'), findsOneWidget);
       expect(find.textContaining('ChatGPT sign'), findsNothing);
     });
 
@@ -626,7 +623,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('Your own key, for any model on OpenRouter'),
+        find.text('Your own key, for answers you already pay for'),
         findsOneWidget,
       );
       final codex = tester.getTopLeft(
@@ -742,7 +739,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(ai.lastKey, 'sk-or-v1-secret-1234');
-      expect(find.text('OpenRouter rejected this key'), findsOneWidget);
+      expect(find.text('This key was rejected'), findsOneWidget);
       expect(find.text('Replace key'), findsOneWidget);
       expect(find.textContaining('secret'), findsNothing);
       expect(find.textContaining('sk-or'), findsNothing);

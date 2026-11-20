@@ -83,7 +83,7 @@ class SherpaTranscriber implements Transcriber {
       throw TranscriberUnavailable(
         state,
         state == TranscriberReadiness.needsDownload
-            ? 'Download ${_model.name} to transcribe on this device.'
+            ? 'Download the speech model to transcribe on this device.'
             : 'This device cannot transcribe on its own.',
       );
     }
@@ -215,10 +215,7 @@ List<TimedWord> _recognise(_RecogniseRequest request) {
 
       final stream = recognizer.createStream();
       try {
-        stream.acceptWaveform(
-          samples: samples,
-          sampleRate: request.sampleRate,
-        );
+        stream.acceptWaveform(samples: samples, sampleRate: request.sampleRate);
         recognizer.decode(stream);
         final result = recognizer.getResult(stream);
         final offsetMs = (start * 1000) ~/ request.sampleRate;
@@ -298,7 +295,10 @@ Float32List _readWindow(RandomAccessFile file, int start, int count) {
 ///
 /// Falls back to the plain text when the tokens or their timings are missing,
 /// because a transcript with no times is worth far more than no transcript.
-List<TimedWord> _wordsFrom(sherpa.OfflineRecognizerResult result, int offsetMs) {
+List<TimedWord> _wordsFrom(
+  sherpa.OfflineRecognizerResult result,
+  int offsetMs,
+) {
   final tokens = result.tokens;
   final timestamps = result.timestamps;
   if (tokens.isEmpty || timestamps.length != tokens.length) {

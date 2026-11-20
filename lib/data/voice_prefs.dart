@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import '../speech/speech_api.dart';
 import '../speech/summarizer.dart';
 import '../speech/transcriber.dart';
 import '../speech/summary_instructions.dart';
@@ -39,7 +38,6 @@ class VoicePrefs extends ChangeNotifier {
   static const String _transcriptEngineKey = 'voice.transcriptEngine.v1';
   static const String _summaryInstructionKey = 'voice.summaryInstruction.v1';
   static const String _modelTermsKey = 'voice.modelTerms.v1';
-  static const String _providerNoticeKey = 'voice.providerNotice.v1';
 
   String? _language;
   bool _summarize = true;
@@ -48,7 +46,6 @@ class VoicePrefs extends ChangeNotifier {
   TranscriptEngine _transcriptEngine = TranscriptEngine.cloud;
   String? _summaryInstruction;
   Map<String, int> _modelTerms = const {};
-  int _providerNotice = 0;
 
   /// ISO-639-1, or null for "let the provider work it out".
   ///
@@ -97,11 +94,6 @@ class VoicePrefs extends ChangeNotifier {
   /// the wording changed, so the old refusal was to a different question.
   int? get transcriptionDeclinedVersion => _declinedVersion;
 
-  /// Whether this device has yet to show the notice naming today's
-  /// providers. Device-local on purpose: it is about what this install has
-  /// shown, not about what the account agreed to.
-  bool get owesProviderNotice => _providerNotice < speechProviderNoticeVersion;
-
   void load() {
     final language = _store.data[_languageKey];
     _language = language is String && language.isNotEmpty ? language : null;
@@ -126,9 +118,6 @@ class VoicePrefs extends ChangeNotifier {
     _summaryInstruction = instruction is String && instruction.trim().isNotEmpty
         ? instruction
         : null;
-
-    final notice = _store.data[_providerNoticeKey];
-    _providerNotice = notice is int ? notice : 0;
 
     final terms = _store.data[_modelTermsKey];
     _modelTerms = terms is Map
@@ -207,18 +196,9 @@ class VoicePrefs extends ChangeNotifier {
     notifyListeners();
   }
 
-  void providerNoticeSeen() {
-    if (!owesProviderNotice) return;
-    _providerNotice = speechProviderNoticeVersion;
-    _store.putNow(_providerNoticeKey, _providerNotice);
-    notifyListeners();
-  }
-
-  /// Consent given on this build: an earlier refusal no longer stands, and
-  /// the sheet just agreed to already named today's providers.
+  /// Consent given on this build: an earlier refusal no longer stands.
   void consentGiven() {
     transcriptionDeclinedVersion = null;
-    providerNoticeSeen();
   }
 
   /// Whether the consent sheet should be offered for [version].

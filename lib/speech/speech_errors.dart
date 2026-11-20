@@ -18,7 +18,7 @@ String describeSpeechError(Object error) => switch (error) {
     SpeechCodes.busy => 'Another recording is processing. This one is next.',
     SpeechCodes.tooLarge => 'This recording exceeds the size limit.',
     SpeechCodes.tooLong => 'This recording is longer than 30 minutes.',
-    SpeechCodes.unreadable => 'The server could not read this recording.',
+    SpeechCodes.unreadable => 'Kapy couldn’t read this recording.',
     SpeechCodes.unavailable =>
       'Transcription is temporarily unavailable. Retrying soon.',
     SpeechCodes.jobUnknown => 'Transcribe this recording again first.',
@@ -30,7 +30,7 @@ String describeSpeechError(Object error) => switch (error) {
     SpeechCodes.retryLimit => 'Retry limit reached. Transcribe again.',
     SpeechCodes.sessionRejected => 'Sign in again to transcribe voice notes.',
     SpeechCodes.offline =>
-      'Could not reach the server. This will finish when you are back online.',
+      'Couldn’t reach Kapy cloud. This will finish when you’re back online.',
     SpeechCodes.summaryNeedsCloud =>
       '${_languageSummaries(body)} on ${_device()} use the cloud. Choose '
           'Cloud for summaries in Settings › Voice & AI.',
@@ -43,7 +43,7 @@ String describeSpeechError(Object error) => switch (error) {
     _ => 'That action is not available.',
   },
   SyncTransientException() =>
-    'Could not reach the server. This will finish when you are back online.',
+    'Couldn’t reach Kapy cloud. This will finish when you’re back online.',
   SyncProtocolException(:final message) => message,
   _ => 'That did not work.',
 };
