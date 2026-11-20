@@ -251,8 +251,10 @@ class ForgivingSecureStore implements SecureStore {
 
   final SecureStore _inner;
 
-  /// When set, a failure is remembered and later calls skip the keystore, so
-  /// a missing keyring logs once instead of once per entry.
+  /// When set, a failure is remembered and later reads and writes skip the
+  /// keystore, so a missing keyring logs once instead of once per entry.
+  /// Deletes always try: a sign-out that skipped them would leave the session
+  /// for the next launch to find.
   final KeyringStatus? status;
 
   bool get _skip => status != null && !status!.available;
@@ -282,7 +284,6 @@ class ForgivingSecureStore implements SecureStore {
 
   @override
   Future<void> delete(String key) async {
-    if (_skip) return;
     try {
       await _inner.delete(key);
     } catch (error) {
