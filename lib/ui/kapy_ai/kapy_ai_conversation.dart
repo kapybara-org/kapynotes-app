@@ -495,10 +495,19 @@ class KapyAiNotice extends StatelessWidget {
       _ => device,
     };
     KapyAiButton use(KapyModel model) => KapyAiButton(
-      'Use ${model.plainLabel}',
+      // "On this device" is a label, not a name, so it cannot follow "Use".
+      model.kind == KapyModelKind.device
+          ? 'Use this device'
+          : 'Use ${model.plainLabel}',
       onPressed: () => unawaited(ai.answerWith(model)),
     );
     final pickAnother = KapyAiButton('Pick another', onPressed: onPickAnother);
+    // The first two are the likeliest to work; the rest stay reachable through
+    // the picker rather than crowding the card.
+    List<KapyAiButton> offersIn(List<KapyModel> fallbacks) => [
+      for (final other in fallbacks.take(2)) use(other),
+      if (fallbacks.length > 2) pickAnother,
+    ];
     final goAhead = KapyAiButton(
       'Go ahead',
       filled: true,
@@ -641,7 +650,7 @@ class KapyAiNotice extends StatelessWidget {
               onPressed: () => unawaited(_checkThenAnswer(ai.checkClaudeCode)),
             ),
           },
-          for (final other in fallbacks) use(other),
+          ...offersIn(fallbacks),
           pickAnother,
         ],
       ),
@@ -649,7 +658,7 @@ class KapyAiNotice extends StatelessWidget {
         KapyIcons.warningRounded,
         'Couldn’t answer',
         [message],
-        [for (final other in fallbacks) use(other), tryAgain],
+        [...offersIn(fallbacks), tryAgain],
       ),
     };
     return DecoratedBox(
