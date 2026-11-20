@@ -1,3 +1,4 @@
+import '../core/platform.dart';
 import '../data/time_zones.dart';
 import 'notation.dart';
 import 'value.dart';
@@ -170,7 +171,11 @@ class ResultFormatter {
     );
     final scaled = _scaledValue(raw, grouping, suffix);
 
-    return [spoken, ?scaled, 'Click to copy'].join('\n');
+    return [
+      spoken,
+      ?scaled,
+      AppPlatform.hasPointer ? 'Click to copy' : 'Tap to copy',
+    ].join('\n');
   }
 
   static String _number(

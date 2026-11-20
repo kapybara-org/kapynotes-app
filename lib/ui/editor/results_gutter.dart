@@ -67,8 +67,13 @@ class ResultChip extends StatefulWidget {
   final ResultChipLook look;
 
   /// How wide a [ResultChipLook.rail] chip shows [result] whole in
-  /// [context], for a line to keep that much room for it.
+  /// [context], for a line to keep that much room for it. Measured once per
+  /// result text and text size: every layout asks again for each line in
+  /// view, and a result rarely changes as the writing around it does.
   static double widthOf(BuildContext context, LineResult result) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final key = (result.text, scaler.scale(AppTypeScale.result));
+    if (_railWidths[key] case final width?) return width;
     final painter = TextPainter(
       text: TextSpan(
         text: result.text,
@@ -77,16 +82,19 @@ class ResultChip extends StatefulWidget {
         ).style.merge(_textStyle(pill: false)),
       ),
       textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
+      textScaler: scaler,
       maxLines: 1,
     )..layout();
     final width = painter.width;
     painter.dispose();
-    return math.max(
+    if (_railWidths.length >= 512) _railWidths.clear();
+    return _railWidths[key] = math.max(
       _railTarget,
       width.ceilToDouble() + _railPadding.horizontal,
     );
   }
+
+  static final _railWidths = <(String, double), double>{};
 
   static const _railPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 3);
 

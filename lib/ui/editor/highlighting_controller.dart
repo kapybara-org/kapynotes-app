@@ -396,7 +396,6 @@ class HighlightingController extends TextEditingController {
     final concealment = markdownConcealment();
     final scaler =
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
-    final page = EditorMetrics.page;
     final colors = Theme.of(context).colorScheme;
     final key = (
       source,
@@ -405,7 +404,6 @@ class HighlightingController extends TextEditingController {
       base,
       composing,
       scaler,
-      page,
       _palette,
       _writingFont,
       _imageSpans,
@@ -415,30 +413,23 @@ class HighlightingController extends TextEditingController {
     final styled = _styled;
     if (styled != null && key == _styledFor) return styled;
     _styledFor = key;
-    final boxes = page ? plainCheckboxes(source) : const <MarkdownOrnament>[];
-    final stretches = page
-        ? [
-            ..._listStretches(analysis, base, scaler),
-            ..._pageStretches(source, boxes, links, base, scaler),
-          ]
-        : _listStretches(analysis, base, scaler);
-    if (page) {
-      stretches
-        ..addAll(_codeChipStretches(source, analysis, scaler))
-        ..sort((a, b) => a.start.compareTo(b.start));
-      // A pill straight after a list's number reaches into room it has.
-      for (var i = stretches.length - 1; i > 0; i--) {
-        if (stretches[i].start < stretches[i - 1].end) stretches.removeAt(i);
-      }
+    final boxes = plainCheckboxes(source);
+    final stretches = [
+      ..._listStretches(analysis, base, scaler),
+      ..._pageStretches(source, boxes, links, base, scaler),
+      ..._codeChipStretches(source, analysis, scaler),
+    ]..sort((a, b) => a.start.compareTo(b.start));
+    // A pill straight after a list's number reaches into room it has.
+    for (var i = stretches.length - 1; i > 0; i--) {
+      if (stretches[i].start < stretches[i - 1].end) stretches.removeAt(i);
     }
     final copies = <String, int>{};
     return _styled = (
       base: base,
       scaler: scaler,
-      page: page,
       titleEnd: _lineEndAt(source, 0),
       // Paper's sage on the page, a step lighter than the accent in the dark.
-      linkColor: page ? _palette.accentText : colors.primary,
+      linkColor: _palette.accentText,
       errorColor: colors.error,
       composing: composing,
       checked: _checkedTextRanges(source),
@@ -447,10 +438,8 @@ class HighlightingController extends TextEditingController {
       links: _Sorted(links, (link) => (link.start, link.end)),
       markdown: _Sorted(analysis.spans, (span) => (span.start, span.end)),
       hidden: _Sorted(
-        page
-            ? ([...concealment.hidden, ..._chipSchemes(source)]
-                ..sort((a, b) => a.start.compareTo(b.start)))
-            : concealment.hidden,
+        [...concealment.hidden, ..._chipSchemes(source)]
+          ..sort((a, b) => a.start.compareTo(b.start)),
         (range) => (range.start, range.end),
       ),
       transparent: _Sorted(
@@ -464,7 +453,7 @@ class HighlightingController extends TextEditingController {
       ),
       code: _Sorted(_codeTokens(analysis), (token) => (token.start, token.end)),
       rows: _Sorted(
-        page ? _forcedRows(analysis, concealment) : const [],
+        _forcedRows(analysis, concealment),
         (rows) => (rows.start, rows.end),
       ),
       copies: {
@@ -550,7 +539,6 @@ class HighlightingController extends TextEditingController {
     final source = text;
     final base = styling.base;
     final scaler = styling.scaler;
-    final page = styling.page;
     final titleEnd = styling.titleEnd;
     final linkColor = styling.linkColor;
     final composing = styling.composing;
@@ -870,13 +858,11 @@ class HighlightingController extends TextEditingController {
         );
       }
       if (activeLink != null) {
-        segmentStyle = page && _chipLink(activeLink) && start >= titleEnd
+        segmentStyle = _chipLink(activeLink) && start >= titleEnd
             ? _linkChipStyle(segmentStyle)
             : segmentStyle.copyWith(
                 color: segmentLinkColor,
-                decoration: page
-                    ? TextDecoration.underline
-                    : TextDecoration.none,
+                decoration: TextDecoration.underline,
                 decorationColor: segmentLinkColor,
               );
       }
@@ -1242,9 +1228,7 @@ class HighlightingController extends TextEditingController {
   /// Enough for a task's box and a gap, and for a one-digit number, its dot
   /// and a space, in the note's own face: a monospace one needs more.
   double markdownMarkerRoom(TextStyle base, TextScaler scaler) => math.max(
-    scaler.scale(
-      EditorMetrics.page ? markdownMarkerPageRoom : markdownMarkerMinRoom,
-    ),
+    scaler.scale(markdownMarkerPageRoom),
     _advance('8. ', base, scaler),
   );
 
@@ -1309,7 +1293,7 @@ class HighlightingController extends TextEditingController {
 
     // On the page a quote's words start where Paper's do, past its bar: the
     // hidden `>` of each line takes that room.
-    if (EditorMetrics.page) {
+    {
       var barredLine = -1;
       for (final marker in analysis.containerMarkers) {
         if (text[marker.start] != '>') continue;
@@ -1615,7 +1599,6 @@ typedef _Stretch = ({int start, int end, double spacing});
 typedef _Styling = ({
   TextStyle base,
   TextScaler scaler,
-  bool page,
   int titleEnd,
   Color linkColor,
   Color errorColor,

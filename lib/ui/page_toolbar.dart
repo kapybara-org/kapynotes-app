@@ -107,6 +107,7 @@ class PageToolbar extends StatelessWidget {
     this.onMore,
     this.updates,
     this.actions,
+    this.back,
   });
 
   final PagePath path;
@@ -163,11 +164,20 @@ class PageToolbar extends StatelessWidget {
   /// and Share go.
   final List<Widget>? actions;
 
+  /// A phone's way back to the list the page was pushed over, named for that
+  /// list, in place of the path and the list's controls.
+  final ({String to, VoidCallback onPressed})? back;
+
   static const double height = 72;
 
   /// Narrower than this, the path keeps its icon, a fold and its last level,
   /// and the week gives way to one button for the day.
   static const double _fullWidth = 720;
+
+  /// A phone's page bar: the back button and the note's actions, each 44.
+  static const double phoneHeight = 44;
+
+  static const _phonePadding = EdgeInsets.only(left: 4, right: 6);
 
   /// Narrower than this, Saved moves to the note's date line and the path
   /// keeps only its last level.
@@ -194,9 +204,13 @@ class PageToolbar extends StatelessWidget {
         : AppControlMetrics.iconButtonExtent;
     final showListShortcut = this.showListShortcut;
     final days = this.days;
+    final back = this.back;
     return Container(
       key: const ValueKey('page-toolbar'),
-      height: AppControlMetrics.scaleBar(context, height),
+      height: AppControlMetrics.scaleBar(
+        context,
+        back == null ? height : phoneHeight,
+      ),
       color: palette.isGlass ? palette.paperColor : null,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -209,10 +223,12 @@ class PageToolbar extends StatelessWidget {
                 child: WindowDragArea(child: SizedBox.expand()),
               ),
               Padding(
-                padding: EdgeInsets.fromLTRB(listVisible ? 16 : 8, 8, 16, 0),
+                padding: back == null
+                    ? EdgeInsets.fromLTRB(listVisible ? 16 : 8, 8, 16, 0)
+                    : _phonePadding,
                 child: Row(
                   children: [
-                    if (!listVisible) ...[
+                    if (back == null && !listVisible) ...[
                       CompactIconButton(
                         key: const ValueKey('page-show-list'),
                         tooltip: ['Show notes', ?showListShortcut].join('  '),
@@ -238,15 +254,20 @@ class PageToolbar extends StatelessWidget {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Flexible(
-                                      child: _Path(
-                                        path: path,
-                                        form: width >= _fullWidth
-                                            ? _PathForm.full
-                                            : width >= _savedWidth
-                                            ? _PathForm.short
-                                            : _PathForm.last,
-                                        onOpenFolder: onOpenFolder,
-                                      ),
+                                      child: back == null
+                                          ? _Path(
+                                              path: path,
+                                              form: width >= _fullWidth
+                                                  ? _PathForm.full
+                                                  : width >= _savedWidth
+                                                  ? _PathForm.short
+                                                  : _PathForm.last,
+                                              onOpenFolder: onOpenFolder,
+                                            )
+                                          : _BackButton(
+                                              to: back.to,
+                                              onPressed: back.onPressed,
+                                            ),
                                     ),
                                     if (days != null) ...[
                                       ConstrainedBox(
@@ -297,11 +318,43 @@ class PageToolbar extends StatelessWidget {
     );
   }
 
-  /// Saved, Share and More, 8 apart, then Kapy AI.
+  /// Saved, Share and More, 8 apart, then Kapy AI. A phone's bar keeps
+  /// Phone v2's: Share's icon, then Kapy AI and More.
   List<Widget> _actions(double width, double extent) {
     final updates = this.updates;
     final actions = this.actions;
     final onMore = this.onMore;
+    Widget more(
+      void Function(String value, Offset at) onMore, {
+      required double radius,
+      required double size,
+    }) => Builder(
+      builder: (buttonContext) => CompactIconButton(
+        key: const ValueKey('page-more'),
+        tooltip: 'More',
+        extent: extent,
+        radius: radius,
+        onPressed: moreActions.isEmpty
+            ? null
+            : () => _showMore(buttonContext, onMore),
+        icon: KapyIcon(KapyIcons.moreRounded, size: size, strokeWidth: 2.2),
+      ),
+    );
+    if (back != null) {
+      return [
+        TonalButton(
+          key: const ValueKey('page-share'),
+          tall: true,
+          icon: KapyIcons.personAddRounded,
+          tooltip: noteShared ? 'Manage sharing' : 'Share',
+          onPressed: onShare,
+        ),
+        const SizedBox(width: 6),
+        ?assistant,
+        if (onMore != null)
+          more(onMore, radius: 10, size: AppControlMetrics.iconAction),
+      ];
+    }
     return [
       if (updates != null)
         UpdateRestartButton(
@@ -333,22 +386,7 @@ class PageToolbar extends StatelessWidget {
       ],
       if (onMore != null) ...[
         if (actions == null || actions.isNotEmpty) const SizedBox(width: 8),
-        Builder(
-          builder: (buttonContext) => CompactIconButton(
-            key: const ValueKey('page-more'),
-            tooltip: 'More',
-            extent: extent,
-            radius: 8,
-            onPressed: moreActions.isEmpty
-                ? null
-                : () => _showMore(buttonContext, onMore),
-            icon: const KapyIcon(
-              KapyIcons.moreRounded,
-              size: 16,
-              strokeWidth: 2.2,
-            ),
-          ),
-        ),
+        more(onMore, radius: 8, size: 16),
       ],
       ?assistant,
     ];
@@ -373,7 +411,8 @@ class PageToolbar extends StatelessWidget {
               key: ValueKey('page-more-${action.value}'),
               value: action.value,
               enabled: action.enabled,
-              height: 36,
+              // A phone's sheet gives each action a 44 pt target.
+              height: AppPlatform.hasPointer ? 36 : 44,
               child: KapyMenuActionRow(action, touch: false),
             ),
         ],
@@ -695,5 +734,65 @@ class _Saved extends StatelessWidget {
       final tooltip? => Tooltip(message: tooltip, child: row),
       null => row,
     };
+  }
+}
+
+/// Back to the list: "‹ Notes" on iOS, and on Android Material's arrow
+/// alone, as the system back gesture names nothing either.
+class _BackButton extends StatelessWidget {
+  const _BackButton({required this.to, required this.onPressed});
+
+  final String to;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    if (AppPlatform.isAndroid) {
+      return IconButton(
+        key: const ValueKey('page-back'),
+        tooltip: 'Back',
+        onPressed: onPressed,
+        color: palette.textPrimary,
+        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22, strokeWidth: 1.9),
+      );
+    }
+    return Semantics(
+      button: true,
+      label: 'Back to $to',
+      excludeSemantics: true,
+      child: TextButton(
+        key: const ValueKey('page-back'),
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.only(right: 8),
+          foregroundColor: palette.accentText,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: Colors.transparent,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            KapyIcon(
+              KapyIcons.chevronLeftRounded,
+              size: 24,
+              strokeWidth: 2,
+              color: palette.accentText,
+            ),
+            Text(
+              to,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppTypeScale.body,
+                fontWeight: FontWeight.w500,
+                color: palette.accentText,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
