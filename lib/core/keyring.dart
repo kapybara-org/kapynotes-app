@@ -75,5 +75,5 @@ abstract final class KeyringNotice {
   /// neither set up nor opened. Said here rather than in the gate so it reads
   /// in the voice of the other notices.
   static const String hiddenNotes =
-      "$_absent, so Hidden Notes can't be opened or set up on this computer.";
+      "$_absent, so Hidden Notes can't be set up or opened on this computer.";
 }
