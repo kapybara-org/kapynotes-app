@@ -3067,12 +3067,12 @@ class _NoteRowState extends State<NoteRow> {
         ],
       );
     }
-    await _choose(choice);
+    await _choose(choice, at: position);
   }
 
-  /// Does what a choice from the menu names, whether it came from the menu or
-  /// from VoiceOver.
-  Future<void> _choose(String? choice) async {
+  /// Does what a choice from the menu names, whether it came from the menu, at
+  /// [at], or from VoiceOver, which has no pointer and gets the row's corner.
+  Future<void> _choose(String? choice, {Offset? at}) async {
     if (!mounted) return;
     if (widget.selecting) {
       if (choice != null) widget.onPickedAction?.call(choice);
@@ -3089,10 +3089,14 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'open-side') widget.onOpenToSide?.call();
     if (choice == 'tags' && context.mounted) {
       final box = context.findRenderObject() as RenderBox?;
-      final position = box == null
-          ? Offset.zero
-          : box.localToGlobal(box.size.bottomRight(Offset.zero));
-      await showTagPickerAt(context, position, widget.note.id);
+      await showTagPickerAt(
+        context,
+        at ??
+            (box == null
+                ? Offset.zero
+                : box.localToGlobal(box.size.bottomRight(Offset.zero))),
+        widget.note.id,
+      );
     }
   }
 
