@@ -180,6 +180,7 @@ void main() {
         ),
       );
       expect(field.readOnly, isTrue);
+      expect(field.decoration?.hintText, isNull);
       expect(sheetDetails(tester), 'It shrinks to a pill.');
       expect(
         find.text('You can view this note, not change it.'),

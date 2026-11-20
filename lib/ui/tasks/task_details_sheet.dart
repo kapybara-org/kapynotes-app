@@ -136,10 +136,10 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                 minLines: 3,
                 maxLines: 8,
                 style: uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   border: InputBorder.none,
                   isCollapsed: true,
-                  hintText: 'Add details',
+                  hintText: editable ? 'Add details' : null,
                 ),
                 onChanged: (value) =>
                     widget.tasks.setDetails(widget.item, value),
