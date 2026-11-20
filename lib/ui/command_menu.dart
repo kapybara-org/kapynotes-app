@@ -1111,7 +1111,7 @@ class _CommandMenuState extends State<CommandMenu> {
                     leading: TagDot(tagColourOf(entry.tag.colour.v)),
                     label: entry.tag.name.v,
                     count: '${entry.count}',
-                    ticked: picker.isOn(entry.tag.id),
+                    ticked: picker.isOn(entry.tag.id) == true,
                     onTap: () => picker.toggle(entry.tag.id),
                   ),
                 if (matches.isEmpty && name.isNotEmpty)
