@@ -33,6 +33,7 @@ import '../data/attachment_limits.dart';
 import '../data/auto_titles.dart';
 import '../data/daily_separator.dart';
 import '../data/editor_workspace.dart';
+import '../data/folders.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/tags.dart';
@@ -119,6 +120,7 @@ class HomePage extends StatefulWidget {
     this.account,
     this.tasks,
     this.tags,
+    this.folders,
     required this.store,
     this.welcomeNoteId,
     this.launchIntent = LaunchIntent.open,
@@ -156,6 +158,9 @@ class HomePage extends StatefulWidget {
 
   /// The person's tags and which notes carry them.
   final TagStore? tags;
+
+  /// The person's folders and the notes filed in them.
+  final FolderStore? folders;
   final LocalStore store;
 
   /// The welcome note seeded by this launch, if this launch seeded one.
@@ -3335,6 +3340,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _setShow(show);
   }
 
+  /// Whether the list beside the rail offers the Notes | Folders switch:
+  /// in My notes' ordinary list, so not in Drawings, Shared, Archive or
+  /// Hidden Notes.
+  bool get _offersFolders =>
+      widget.folders != null && _space == LibrarySpace.notes && !_specialMode;
+
+  /// Whether the list beside the rail shows the folder tree.
+  bool get _foldersShown => _offersFolders && widget.prefs.foldersShown;
+
+  /// The notes the folder tree files: the person's own, unfiltered. A
+  /// drawing, an archived or Hidden note and a note shared with them never
+  /// shows in a folder, so no count gives one away.
+  List<Note> get _folderNotes {
+    final sharing = widget.account?.sharing;
+    return [
+      for (final note in widget.notes.notes)
+        if (!note.isDrawing &&
+            (sharing == null || sidebarTabOf(note, sharing) == SidebarTab.mine))
+          note,
+    ];
+  }
+
   List<Note> get _visibleNotes {
     final notes = _filtered(
       _archiveMode
@@ -3530,7 +3557,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             ),
                           )
                         : Sidebar(
-                            notes: _visibleNotes,
+                            notes: _foldersShown ? _folderNotes : _visibleNotes,
                             pinnedNoteIds: widget.notes.pinnedNoteIds,
                             lockedNoteIds: _noteLimit?.lockedIds ?? const {},
                             selectedId: _selectedId,
@@ -3608,6 +3635,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 widget.prefs.notesGrouping = grouping,
                             when: _when,
                             onWhenChanged: _setWhen,
+                            folders: switch (widget.folders) {
+                              final store? => (
+                                store: store,
+                                shown: _foldersShown,
+                                onShown: _offersFolders
+                                    ? (shown) =>
+                                          widget.prefs.foldersShown = shown
+                                    : null,
+                                open: widget.prefs.openFolders,
+                                onOpen: widget.prefs.setFolderOpen,
+                              ),
+                              null => null,
+                            },
                             pinnedOnly: _showingPinnedOnly,
                             onPinnedOnlyChanged: (value) =>
                                 setState(() => _pinnedOnly = value),

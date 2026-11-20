@@ -10,6 +10,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../calc/engine.dart';
+import '../data/folders.dart';
 import '../data/layout_prefs.dart' show NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
@@ -27,6 +28,7 @@ import 'control_surface.dart';
 import 'context_menu.dart';
 import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
+import 'folders_ui.dart';
 import 'installed_version.dart';
 import 'keycap.dart';
 import 'member_avatars.dart';
@@ -88,6 +90,19 @@ SidebarTab sidebarTabOf(Note note, Sharing sharing) {
       ? SidebarTab.mine
       : SidebarTab.shared;
 }
+
+/// The person's folders as the list beside the rail shows them: [shown]
+/// puts the folder tree in place of the notes, [onShown] is the Notes |
+/// Folders switch, left out where the list holds no folders (Drawings,
+/// Shared, Archive and Hidden Notes), and [open] and [onOpen] are the
+/// folders open in the tree.
+typedef SidebarFolders = ({
+  FolderStore store,
+  bool shown,
+  ValueChanged<bool>? onShown,
+  Set<String> open,
+  void Function(String folderId, bool open) onOpen,
+});
 
 /// The note list, under the field that opens search.
 class Sidebar extends StatelessWidget {
@@ -153,6 +168,7 @@ class Sidebar extends StatelessWidget {
     this.onGroupingChanged,
     this.when = NotesWhen.anyTime,
     this.onWhenChanged,
+    this.folders,
   });
 
   /// The notes to list, already narrowed to [tab] while the tabs are shown.
@@ -326,6 +342,11 @@ class Sidebar extends StatelessWidget {
   final NotesWhen when;
   final ValueChanged<NotesWhen>? onWhenChanged;
 
+  /// The person's folders: the Folders tab, and Move to folder… on their own
+  /// notes. Null leaves folders out. While the tree shows, [notes] are the
+  /// notes it files.
+  final SidebarFolders? folders;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -360,7 +381,7 @@ class Sidebar extends StatelessWidget {
               belowTabs: _showsTabs,
               besideRail: _besideRail,
             ),
-            if (controls != null)
+            if (controls != null && !_foldersTab)
               Padding(
                 padding: _besideRail
                     ? const EdgeInsets.fromLTRB(16, 0, 16, 12)
@@ -400,7 +421,9 @@ class Sidebar extends StatelessWidget {
                   onArchiveSelected: _archiveSelected,
                   onDeleteSelected: _deleteSelected,
                   archiveShortcut: archiveShortcut,
-                  child: notes.isEmpty
+                  child: _foldersTab
+                      ? _buildFolders(context)
+                      : notes.isEmpty
                       ? _buildEmpty(context)
                       : _besideRail
                       ? _buildBesideRail(context)
@@ -410,6 +433,8 @@ class Sidebar extends StatelessWidget {
                 ),
               ),
             ),
+            if (folders?.onShown case final onShown?)
+              NotesFoldersSwitch(folders: _foldersTab, onChanged: onShown),
             if (onSettingsPressed != null)
               _SidebarFooter(
                 onSettingsPressed: onSettingsPressed!,
@@ -437,6 +462,17 @@ extension on Sidebar {
   bool get _showsTabs => _tabbed && !_besideRail;
 
   bool get _onSharedTab => _tabbed && tab == SidebarTab.shared;
+
+  bool get _foldersTab => folders?.shown ?? false;
+
+  /// Whether Move to folder… files [note]: one of the person's own notes,
+  /// which the Folders tab lists. Folders hold notes only, and an archived
+  /// or Hidden note never shows in one.
+  bool _files(Note note) =>
+      folders != null &&
+      !_specialMode &&
+      !note.isDrawing &&
+      (sharing == null || sidebarTabOf(note, sharing!) == SidebarTab.mine);
 
   bool get _hasPinned =>
       !_specialMode && notes.any((note) => pinnedNoteIds.contains(note.id));
@@ -588,10 +624,13 @@ extension on Sidebar {
     required bool shared,
     bool pinned = false,
     NoteRowStyle style = NoteRowStyle.compact,
+    int depth = 0,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
     style: style,
+    depth: depth,
+    folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
     query: query,
@@ -662,6 +701,18 @@ extension on Sidebar {
   static const _pinnedPreview = 4;
 
   List<Note> get _railOrder {
+    if (folders case final folders? when folders.shown) {
+      final (:tree, :loose) = folderLines(
+        folders.store.tree,
+        notes,
+        folders.open,
+      );
+      return [
+        for (final line in tree)
+          if (line case NoteLine(:final note)) note,
+        ...loose,
+      ];
+    }
     final groups = _noteGroups;
     if (pinnedOnly) return groups.pinned;
     return [
@@ -885,13 +936,42 @@ extension on Sidebar {
       }
     }
 
+    return _fading(
+      context,
+      ListView.builder(
+        padding: const EdgeInsets.only(top: 4, bottom: 40),
+        itemCount: rows.length,
+        itemBuilder: (context, index) => rows[index](context),
+      ),
+    );
+  }
+
+  /// The Folders tab: the folder tree, then the notes in no folder.
+  Widget _buildFolders(BuildContext context) {
+    final folders = this.folders!;
+    return _fading(
+      context,
+      FoldersTab(
+        store: folders.store,
+        notes: notes,
+        open: folders.open,
+        onOpen: folders.onOpen,
+        noteRow: (note, depth) => _row(
+          note,
+          shared: sharing != null && note.isShared,
+          style: depth == null ? NoteRowStyle.loose : NoteRowStyle.filed,
+          depth: depth ?? 0,
+        ),
+      ),
+    );
+  }
+
+  /// [list] fading out at the foot of the list beside the rail.
+  Widget _fading(BuildContext context, Widget list) {
+    final palette = context.palette;
     return Stack(
       children: [
-        ListView.builder(
-          padding: const EdgeInsets.only(top: 4, bottom: 40),
-          itemCount: rows.length,
-          itemBuilder: (context, index) => rows[index](context),
-        ),
+        list,
         Positioned(
           left: 0,
           right: 0,
@@ -2545,9 +2625,10 @@ class SidebarSearchField extends StatelessWidget {
   }
 }
 
-/// How a [NoteRow] draws its note: the compact list's row, or the desktop
-/// list's row or sticky card beside the spaces rail.
-enum NoteRowStyle { compact, row, card, drawingRow, drawingCard }
+/// How a [NoteRow] draws its note: the compact list's row, the desktop
+/// list's row or sticky card beside the spaces rail, or the Folders tab's
+/// note in an open folder ([filed]) or in none ([loose]).
+enum NoteRowStyle { compact, row, card, drawingRow, drawingCard, filed, loose }
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -2580,12 +2661,17 @@ class NoteRow extends StatefulWidget {
     this.checked = false,
     this.onToggleChecked,
     this.style = NoteRowStyle.compact,
+    this.depth = 0,
     this.engine,
     this.now = DateTime.now,
+    this.folders,
   });
 
   final Note note;
   final NoteRowStyle style;
+
+  /// How deep a [NoteRowStyle.filed] note sits in the folder tree.
+  final int depth;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -2653,6 +2739,9 @@ class NoteRow extends StatefulWidget {
 
   /// Whether the note limit holds the note read-only.
   final bool locked;
+
+  /// Where Move to folder… files the note. Null leaves it out of the menu.
+  final FolderStore? folders;
 
   @override
   State<NoteRow> createState() => _NoteRowState();
@@ -2728,6 +2817,12 @@ class _NoteRowState extends State<NoteRow> {
           label: 'Tags',
           icon: KapyIcons.tagRounded,
           hint: '›',
+        ),
+      if (widget.folders != null)
+        const KapyMenuAction(
+          value: 'folder',
+          label: 'Move to folder…',
+          icon: KapyIcons.folderMoveOutlined,
         ),
       if (widget.onShare != null)
         KapyMenuAction(
@@ -2902,6 +2997,10 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'tags' && context.mounted) {
       await showTagPickerAt(context, position, widget.note.id);
     }
+    if (widget.folders case final folders?
+        when choice == 'folder' && context.mounted) {
+      await moveNoteToFolder(context, position, folders, widget.note.id);
+    }
   }
 
   /// The desktop list's row or card, with its actions button while the
@@ -2964,6 +3063,20 @@ class _NoteRowState extends State<NoteRow> {
         locked: widget.locked,
         shared: widget.shared,
         picking: picking,
+      ),
+      NoteRowStyle.filed => TreeNoteFace(
+        note: note,
+        depth: widget.depth,
+        selected: widget.selected,
+        hovering: _hovering,
+        ringed: ringed,
+      ),
+      NoteRowStyle.loose => LooseNoteFace(
+        note: note,
+        date: date,
+        selected: widget.selected,
+        hovering: _hovering,
+        ringed: ringed,
       ),
       NoteRowStyle.row || NoteRowStyle.compact => NoteListRowFace(
         note: note,

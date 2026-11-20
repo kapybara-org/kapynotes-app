@@ -12,6 +12,7 @@ import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -68,6 +69,7 @@ late LayoutPrefs goldenPrefs;
 /// the list after it is on screen.
 late NotesStore goldenNotes;
 late TagStore goldenTags;
+late FolderStore goldenFolders;
 
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
@@ -220,6 +222,8 @@ Future<void> pumpForGolden(
   goldenNotes = notes;
   goldenTags = TagStore(store);
   await goldenTags.load();
+  goldenFolders = FolderStore(store);
+  await goldenFolders.load();
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
   final tasks = withTasks
@@ -264,6 +268,7 @@ Future<void> pumpForGolden(
       shortcuts: shortcuts,
       updates: updates,
       tags: goldenTags,
+      folders: goldenFolders,
       tasks: tasks,
       titleModel: _GoldenTitles(),
     ),
@@ -880,6 +885,54 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_drawings_empty.png'),
+    );
+  });
+
+  // The Folders tab as r3's corrected 2GX5-0 draws it: a folder open two
+  // levels down with the open note inside, closed folders with their
+  // counts, New folder, then the notes in no folder.
+  testWidgets('desktop dark folders', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1100, 720),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final folders = goldenFolders;
+    final work = folders.create('Work')!;
+    final clients = folders.create('Clients', parentId: work.id)!;
+    final placed = {
+      'Acme kickoff\nAgenda for Monday': folders.create(
+        'Acme',
+        parentId: clients.id,
+      ),
+      'Roadmap\nQ1 themes': folders.create('Product', parentId: work.id),
+      'Gym plan\nVoice note': folders.create('Personal'),
+      'Reading list\nThe Overstory, Piranesi': folders.create('Reading'),
+      'Pricing ideas\n1,799 INR': clients,
+      'Call with Arjun\nPricing page by Friday': clients,
+      'Dentist\nThursday 4pm': null,
+      'Morning pages\nSlept badly, but the walk helped': null,
+    };
+    for (final MapEntry(key: body, value: folder) in placed.entries) {
+      final note = goldenNotes.create(body: body);
+      if (folder != null) folders.file([note.id], folder.id);
+    }
+    goldenPrefs
+      ..setFolderOpen(work.id, true)
+      ..setFolderOpen(clients.id, true)
+      ..foldersShown = true;
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('folders-tab')),
+        matching: find.text('Call with Arjun'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_folders.png'),
     );
   });
 

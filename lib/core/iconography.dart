@@ -237,6 +237,18 @@ class KapyIcons {
     0xE025,
     HugeIcons.strokeRoundedFlag02,
   );
+  static const folderOutlined = KapyIconData(
+    0xE0E7,
+    HugeIcons.strokeRoundedFolder01,
+  );
+  static const folderAddOutlined = KapyIconData(
+    0xE0E8,
+    HugeIcons.strokeRoundedFolderAdd,
+  );
+  static const folderMoveOutlined = KapyIconData(
+    0xE0E9,
+    HugeIcons.strokeRoundedFolderMoveTo,
+  );
   static const flashAutoRounded = KapyIconData(
     0xE026,
     HugeIcons.strokeRoundedFlash,

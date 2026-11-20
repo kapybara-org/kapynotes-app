@@ -34,6 +34,7 @@ import 'core/theme.dart';
 import 'core/window_material.dart';
 import 'data/auto_titles.dart';
 import 'data/engine_provider.dart';
+import 'data/folders.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
 import 'data/tags.dart';
@@ -74,6 +75,7 @@ class KapyNotesApp extends StatefulWidget {
     this.account,
     this.tasks,
     this.tags,
+    this.folders,
     this.chats,
     this.recording,
     this.kapyAi,
@@ -102,6 +104,9 @@ class KapyNotesApp extends StatefulWidget {
 
   /// The person's tags and which notes carry them.
   final TagStore? tags;
+
+  /// The person's folders and the notes filed in them.
+  final FolderStore? folders;
 
   /// Kapy AI's chats, which the account syncs; Kapy AI keeps its own where
   /// this is left out.
@@ -707,6 +712,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
               account: widget.account,
               tasks: widget.tasks,
               tags: widget.tags,
+              folders: widget.folders,
               store: widget.store,
               welcomeNoteId: _welcomeNoteId,
               launchIntent: _launchIntent,

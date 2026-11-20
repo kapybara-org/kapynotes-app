@@ -78,6 +78,7 @@ Future<void> main([List<String> args = const []]) async {
   );
   // Kept on this device the same way, and synced while signed in.
   final tags = TagStore(store);
+  final folders = FolderStore(store);
   // Kapy AI's chats: on this device, and synced while signed in with Pro.
   final chats = KapyChatBook(store, ready: () => notes.isLoaded);
   if (AppPlatform.isIOS) {
@@ -103,7 +104,7 @@ Future<void> main([List<String> args = const []]) async {
           store: store,
           tasks: tasks,
           tags: tags,
-          folders: FolderStore(store),
+          folders: folders,
           chats: chats,
         )
       : null;
@@ -173,6 +174,7 @@ Future<void> main([List<String> args = const []]) async {
       account: account,
       tasks: tasks,
       tags: tags,
+      folders: folders,
       chats: chats,
       // Here, where no test runs: see KapyNotesApp.deepLinks.
       deepLinks: DeepLinks.platform(),
@@ -188,6 +190,7 @@ Future<void> main([List<String> args = const []]) async {
     unawaited(desktopIntegration.initialize(shortcuts));
   }
   unawaited(tags.load());
+  unawaited(folders.load());
 }
 
 Future<void> _configureWindow(LayoutPrefs prefs) async {

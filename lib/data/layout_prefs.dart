@@ -110,6 +110,8 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _hiddenFolderVisibleKey = 'hiddenFolderVisible.v1';
   static const String _noteCardsKey = 'noteCards.v1';
   static const String _notesGroupingKey = 'notesGrouping.v1';
+  static const String _foldersShownKey = 'foldersShown.v1';
+  static const String _openFoldersKey = 'openFolders.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
   static const String _windowXKey = 'windowX.v1';
@@ -163,6 +165,8 @@ class LayoutPrefs extends ChangeNotifier {
   bool _hiddenFolderVisible = true;
   bool _noteCards = true;
   NotesGrouping _notesGrouping = NotesGrouping.byDate;
+  bool _foldersShown = false;
+  Set<String> _openFolders = const {};
   Size _windowSize = defaultWindowSize;
   Offset? _windowPosition;
   bool _readyToTypeOnOpen = true;
@@ -215,6 +219,13 @@ class LayoutPrefs extends ChangeNotifier {
   /// How the notes list groups its notes: by date until another way is
   /// picked.
   NotesGrouping get notesGrouping => _notesGrouping;
+
+  /// Whether the Notes list beside the rail shows the folder tree rather
+  /// than the notes by date: the Notes | Folders switch at its foot.
+  bool get foldersShown => _foldersShown;
+
+  /// The folders open in that tree, so it opens the way it was left.
+  Set<String> get openFolders => _openFolders;
   Size get windowSize => _windowSize;
   Offset? get windowPosition => _windowPosition;
 
@@ -390,6 +401,13 @@ class LayoutPrefs extends ChangeNotifier {
       (each) => each.name == grouping,
       orElse: () => NotesGrouping.byDate,
     );
+    _foldersShown = _store.read<bool>(_foldersShownKey) ?? false;
+    final open = _store.data[_openFoldersKey];
+    _openFolders = Set.unmodifiable({
+      if (open is List)
+        for (final id in open)
+          if (id is String) id,
+    });
     _windowSize = _clampWindowSize(
       Size(
         _readDouble(_windowWidthKey) ?? defaultWindowSize.width,
@@ -851,6 +869,22 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _notesGrouping) return;
     _notesGrouping = value;
     _store.putNow(_notesGroupingKey, value.name);
+    notifyListeners();
+  }
+
+  set foldersShown(bool value) {
+    if (value == _foldersShown) return;
+    _foldersShown = value;
+    _store.putNow(_foldersShownKey, value);
+    notifyListeners();
+  }
+
+  void setFolderOpen(String folderId, bool open) {
+    if (_openFolders.contains(folderId) == open) return;
+    _openFolders = Set.unmodifiable(
+      open ? {..._openFolders, folderId} : _openFolders.difference({folderId}),
+    );
+    _store.putNow(_openFoldersKey, _openFolders.toList());
     notifyListeners();
   }
 
