@@ -8,7 +8,6 @@
 // replaces when a dictation tool writes AXSelectedText or AXValue.
 import 'dart:math' as math;
 
-import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -94,18 +93,6 @@ class FakeMacTextInput {
   void _updateTextAndSelection() {
     viewText = text;
     viewSelection = TextRange(start: selectionStart, end: selectionEnd);
-  }
-
-  /// FlutterTextField.startEditing, run when the accessibility bridge sees the
-  /// field focused while the plugin is not yet its field editor: the text view
-  /// takes the semantics node's value and selection.
-  void startEditing(SemanticsNode node) {
-    sync();
-    viewText = node.value;
-    final selection = node.textSelection;
-    viewSelection = selection != null && selection.isValid
-        ? TextRange(start: selection.start, end: selection.end)
-        : TextRange.collapsed(node.value.length);
   }
 
   bool _setSelection(int base, int extent) {
@@ -237,30 +224,6 @@ class FakeMacTextInput {
       replaced = replacement ?? oldSelection;
     }
     await _send(before, string, replaced.start, replaced.end);
-  }
-
-  /// unmarkText: commits whatever is marked, as it stands.
-  Future<void> unmarkText() async {
-    sync();
-    _commitComposing();
-    _endComposing();
-    await _send(text, '', -1, -1);
-  }
-
-  /// An AXSelectedText write as AccessibilityText.swift makes it:
-  /// insertText(text, replacementRange: view.selectedRange()).
-  Future<void> axSetSelectedText(String words) {
-    sync();
-    return insertText(words, replacement: viewSelection);
-  }
-
-  /// An AXValue write: insertText(text, replacementRange: the whole string).
-  Future<void> axSetValue(String value) {
-    sync();
-    return insertText(
-      value,
-      replacement: TextRange(start: 0, end: viewText.length),
-    );
   }
 
   Future<void> _send(

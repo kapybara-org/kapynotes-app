@@ -50,10 +50,6 @@ class Dimension {
   Dimension pow(int n) =>
       Dimension._(List<int>.generate(slots, (i) => exponents[i] * n));
 
-  /// True when this dimension involves money, which changes how results are
-  /// formatted (always two decimals) and coloured.
-  bool get isMonetary => exponents[currency] != 0;
-
   @override
   bool operator ==(Object other) {
     if (other is! Dimension) return false;

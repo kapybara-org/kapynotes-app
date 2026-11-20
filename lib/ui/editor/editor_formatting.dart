@@ -17,8 +17,6 @@ import '../../data/note_format.dart';
 /// a bullet, and [plainTextFrom] writes every bullet back out as `- ` for
 /// pasting elsewhere. A marker that is also the shorthand for itself makes
 /// both of those ambiguous.
-const bulletGlyphs = ['•', '◦', '▪'];
-
 const bulletPrefixes = ['• ', '◦ ', '▪ '];
 
 /// The level-one bullet, which is what most of the app means by "a bullet".

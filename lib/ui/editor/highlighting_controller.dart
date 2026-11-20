@@ -232,8 +232,6 @@ class HighlightingController extends TextEditingController {
   /// [MarkdownAnalysis.calculatorText].
   String calculatorTextFor(String source) => markdownFor(source).calculatorText;
 
-  Map<int, NoteImageSpan> get imageSpans => _imageSpans;
-
   /// Deliberately silent.
   ///
   /// This is set from inside the editor's build, once the layout width is

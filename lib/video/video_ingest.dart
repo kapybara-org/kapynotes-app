@@ -22,12 +22,6 @@ int maxVideoSourceBytesFor(int attachmentMaxBytes) =>
 
 const Set<String> supportedVideoExtensions = {'mp4', 'm4v', 'mov'};
 
-const Set<String> supportedVideoMimes = {
-  'video/mp4',
-  'video/x-m4v',
-  'video/quicktime',
-};
-
 enum VideoRejection { tooLarge, tooMany, unsupported, unreadable, empty }
 
 class VideoMetadata {
