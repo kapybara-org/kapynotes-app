@@ -598,43 +598,14 @@ void main() {
 
   // ---------------------------------------------------------------------------
   group('the share sheet, with several addresses', () {
-    /// What the real server does with a batch: an invitation written for
-    /// every address, on the server. Answering without writing them would
-    /// leave the fake server a space with nobody else in it, which the
-    /// owner's device then ends — not what happens in production.
-    Map<String, Object?> allInvited(
-      String path,
-      Map<String, Object?>? payload,
-    ) {
-      final spaceId = path.split('/')[1];
-      return {
-        'results': [
-          for (final e
-              in (payload?['emails'] as List? ?? const []).cast<String>())
-            () {
-              final invite = server.invite('user-1', spaceId, e);
-              return {
-                'email': e,
-                'outcome': 'invited',
-                'invite': {'token': invite.token, 'emailed': true},
-              };
-            }(),
-        ],
-      };
-    }
-
-    testWidgets('to a space already shared, they go in one batch', (
-      tester,
-    ) async {
+    testWidgets('to a space already shared, each address is invited on its '
+        'own', (tester) async {
       late Space space;
       await tester.runAsync(() async {
         await alice.boot();
         space = await alice.sharing.createSpace('Family');
       });
-      final send = FakeSend()
-        ..fallback = (method, path, payload) =>
-            path.endsWith('/invites/batch') ? allInvited(path, payload) : null;
-      final joining = joiningOver(send);
+      final joining = joiningOver(FakeSend());
 
       await tester.pumpWidget(
         app(
@@ -652,30 +623,29 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const ValueKey('share-email')),
-        'a@example.com, b@example.com',
-      );
-      await tester.runAsync(() async {
-        await tester.tap(find.byKey(const ValueKey('share-submit-Invite')));
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-      });
-      await tester.pumpAndSettle();
+      for (final address in ['a@example.com', 'b@example.com']) {
+        await tester.enterText(
+          find.byKey(const ValueKey('share-email')),
+          address,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const ValueKey('share-submit-Invite')));
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pumpAndSettle();
+      }
 
-      final batch = send.calls
-          .where((c) => c.$2 == 'spaces/${space.id}/invites/batch')
-          .single;
-      expect(batch.$3, {
-        'emails': ['a@example.com', 'b@example.com'],
-        'role': 'member',
-      });
-      expect(find.text('Invited 2 people.'), findsOneWidget);
+      expect(
+        server.spaces[space.id]!.invites.values.map((i) => i.email),
+        containsAll(['a@example.com', 'b@example.com']),
+      );
+      expect(find.text('Invitation sent to b@example.com'), findsOneWidget);
       // The link and the waiting list sit under the field for the owner.
       expect(find.byKey(const ValueKey('space-link-panel')), findsOneWidget);
     });
 
     testWidgets(
-      'for a note not yet shared, they get a new space: never the one already shared with one of them',
+      'for a note not yet shared, they get a space of their own: never the one already shared with one of them',
       (tester) async {
         final bob = Device(server, userId: 'user-2', device: 'b');
         addTearDown(bob.dispose);
@@ -689,11 +659,6 @@ void main() {
           pair = await alice.sharing.shareNoteWith(first.id, email: bob.email);
           second = alice.notes.create(body: 'For a group');
         });
-        final send = FakeSend()
-          ..fallback = (method, path, payload) =>
-              path.endsWith('/invites/batch')
-              ? allInvited(path, payload)
-              : null;
 
         await tester.pumpWidget(
           app(
@@ -705,7 +670,7 @@ void main() {
                 sharing: alice.sharing,
               ),
             ),
-            joining: joiningOver(send),
+            joining: joiningOver(FakeSend()),
           ),
         );
         await tester.tap(find.text('open'));
@@ -717,26 +682,26 @@ void main() {
         );
         await tester.runAsync(() async {
           await tester.tap(find.byKey(const ValueKey('share-submit-Share')));
-          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await Future<void>.delayed(const Duration(milliseconds: 300));
         });
         await tester.pumpAndSettle();
 
-        final batch = send.calls
-            .where((c) => c.$2.endsWith('/invites/batch'))
-            .single;
-        final used = batch.$2.split('/')[1];
+        final used = alice.notes.byId(second.id)!.spaceId;
         // Adding Carol to the space shared with Bob would show her every note
-        // shared with Bob before. The batch has to go somewhere new.
+        // shared with Bob before. The two of them have to get a space of their
+        // own, and Bob's other note stays where it was.
+        expect(used, isNotNull);
         expect(used, isNot(pair.id));
-        final moved = alice.notes.byId(second.id)!;
-        expect(moved.spaceId, used);
         expect(alice.notes.byId(first.id)!.spaceId, pair.id);
+        expect(
+          server.spaces[used]!.invites.values.map((i) => i.email),
+          containsAll([bob.email, 'carol@example.com']),
+        );
         expect(alice.sharing.spaceById(used)?.name, startsWith('With '));
       },
     );
   });
 
-  // ---------------------------------------------------------------------------
   group('the share sheet, by link', () {
     /// What the real server does when a link is made: the space has one, and
     /// its listing says so. That is what keeps the owner's own device from
@@ -746,7 +711,8 @@ void main() {
       String path,
       Map<String, Object?>? payload,
     ) {
-      if (method != 'PUT' || !path.endsWith('/link')) return null;
+      if (!path.endsWith('/link')) return null;
+      if (method != 'PUT') return {'link': null};
       server.spaces[path.split('/')[1]]!.hasLink = true;
       return {
         'token': token,
@@ -772,17 +738,10 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    /// Opens the menu on the real clock, not the test's fake one: the menu
-    /// hands its answer back in the zone that opened it, and the sharing that
-    /// answer starts needs real time to get anywhere.
-    Future<void> choose(WidgetTester tester, LinkAccess access) async {
-      await tester.runAsync(
-        () => tester.tap(find.byKey(const ValueKey('link-access'))),
-      );
-      await tester.pumpAndSettle();
+    Future<void> turnOn(WidgetTester tester) async {
       await tester.runAsync(() async {
-        await tester.tap(find.byKey(ValueKey('link-access-${access.name}')));
-        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await tester.tap(find.byKey(const ValueKey('share-link-switch')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
       });
       await tester.pumpAndSettle();
     }
@@ -800,16 +759,19 @@ void main() {
         final send = FakeSend()..fallback = linkMade;
         await openFor(tester, note, send);
 
-        await choose(tester, LinkAccess.anyoneCanEdit);
+        await turnOn(tester);
 
-        final made = send.calls.singleWhere((c) => c.$1 == 'PUT');
-        expect(made.$3, {'role': 'member', 'approval': false});
+        final made = send.calls.singleWhere(
+          (c) => c.$1 == 'PUT' && c.$2.endsWith('/link'),
+        );
+        expect(made.$3, {'role': 'viewer', 'approval': false});
         final spaceId = made.$2.split('/')[1];
         expect(alice.sharing.spaceById(spaceId)?.name, kLinkSpaceName);
         expect(alice.notes.byId(note.id)!.spaceId, spaceId);
         expect(copied, ['https://kapynotes.com/space/$token']);
+        expect(find.textContaining('Link copied'), findsOneWidget);
         expect(
-          find.text('Shared with anyone who has the link'),
+          find.textContaining('Anyone with the link can view'),
           findsOneWidget,
         );
 
@@ -819,7 +781,6 @@ void main() {
         await tester.pumpAndSettle();
         expect(alice.notes.byId(note.id)!.spaceId, spaceId);
         expect(server.calls, isNot(contains('stop')));
-        expect(find.text('Anyone with the link can edit'), findsOneWidget);
       },
     );
 
@@ -839,12 +800,13 @@ void main() {
               : null;
         await openFor(tester, note, send);
 
-        await choose(tester, LinkAccess.anyoneCanView);
+        await turnOn(tester);
 
         expect(send.calls.where((c) => c.$1 == 'PUT'), hasLength(1));
         expect(alice.notes.byId(note.id)!.spaceId, isNull);
         expect(server.calls, contains('stop'));
         expect(alice.sharing.teams, isEmpty);
+        expect(find.byKey(const ValueKey('share-error')), findsOneWidget);
       },
     );
 
@@ -877,20 +839,18 @@ void main() {
         });
         expect(alice.sharing.spaceById(pair)!.liveNotes, 2);
 
-        final send = FakeSend()
-          ..fallback = (method, path, payload) =>
-              path.endsWith('/link') ? {'link': null} : null;
+        final send = FakeSend()..fallback = linkMade;
         await openFor(tester, first, send);
+        await turnOn(tester);
 
         expect(
-          find.textContaining('It opens all 2 notes shared'),
+          find.textContaining('The link opens all 2 notes here'),
           findsOneWidget,
         );
       },
     );
   });
 
-  // ---------------------------------------------------------------------------
   group('the share sheet never makes a space for nobody', () {
     Future<Note> openFor(WidgetTester tester, FakeSend send) async {
       late Note note;
@@ -929,45 +889,11 @@ void main() {
       final note = await openFor(tester, send);
       final before = server.calls.where((c) => c == 'createSpace').length;
       await submit(tester, 'arun, not-an-address');
-      expect(
-        find.text('None of those look like email addresses.'),
-        findsOneWidget,
-      );
+      expect(find.text('“arun” isn’t an email address.'), findsOneWidget);
       expect(server.calls.where((c) => c == 'createSpace').length, before);
       expect(send.calls, isEmpty);
       expect(alice.notes.byId(note.id)!.spaceId, isNull);
     });
-
-    testWidgets(
-      'a batch the server turns entirely away leaves the note where it was, and the space ended',
-      (tester) async {
-        final send = FakeSend()
-          ..fallback = (method, path, payload) =>
-              path.endsWith('/invites/batch')
-              ? {
-                  'results': [
-                    for (final e in (payload?['emails'] as List).cast<String>())
-                      {'email': e, 'outcome': 'already-member'},
-                  ],
-                }
-              : null;
-        final note = await openFor(tester, send);
-        await submit(
-          tester,
-          '${alice.email} ${alice.email.toUpperCase()}x@example.com',
-        );
-
-        expect(
-          send.calls.where((c) => c.$2.endsWith('/invites/batch')),
-          hasLength(1),
-        );
-        // The note never went in, so nothing could be brought home or lost.
-        expect(alice.notes.byId(note.id)!.spaceId, isNull);
-        // And the space made for them is gone, not left for the trip home.
-        expect(server.calls, contains('stop'));
-        expect(alice.sharing.teams, isEmpty);
-      },
-    );
   });
 
   // ---------------------------------------------------------------------------

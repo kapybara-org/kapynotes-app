@@ -81,9 +81,9 @@ jobs:
       - run: flutter test test/core/device_memory_windows_test.dart
 
       # The same flags release.sh passes on every other platform: an
-      # obfuscated snapshot with its symbols split out is about a sixth
-      # smaller. See the header of packaging/release.sh.
-      - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols/windows
+      # obfuscated snapshot with its symbols split out, and Kapy AI on.
+      # See dart_size_flags in packaging/release.sh.
+      - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols/windows --dart-define=KAPYNOTES_KAPY_AI=true
 
       # Flutter's native host uses the Visual C++ runtime. Put the matching
       # app-local DLLs beside it so the installer also works on a clean PC,

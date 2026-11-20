@@ -35,7 +35,7 @@ abstract class DeviceModel extends ChangeNotifier implements AnswerEngine {
   void downloadOnWifi();
 }
 
-/// Apple Intelligence where the platform has it, and Gemma everywhere else.
+/// Apple Intelligence where it is ready, and Gemma everywhere else.
 ///
 /// The same two the voice summaries use, and the same objects: one
 /// [GemmaSummarizer] means one copy of the weights in memory whichever
@@ -70,6 +70,18 @@ class PlatformDeviceModel extends DeviceModel {
     label: 'On this device',
   );
 
+  /// Apple Intelligence is installed but off, and the downloadable model
+  /// cannot run here. Just the reason and where to fix it: the notice carries
+  /// the alternatives as buttons, so naming them here would repeat the button
+  /// and, on Free, tell someone to use a plan the notice offers no way into.
+  static const String appleOffNoRoom =
+      'Turn on Apple Intelligence in System Settings.';
+
+  /// Apple Intelligence is still downloading, and the downloadable model
+  /// cannot run here. No instruction: it finishes on its own.
+  static const String applePreparingNoRoom =
+      'Apple Intelligence is still downloading.';
+
   /// Unknown until [refresh] has asked: both answers are a channel call or
   /// a disk scan, and neither belongs in a constructor.
   SummarizerReadiness? _appleReadiness;
@@ -78,39 +90,44 @@ class PlatformDeviceModel extends DeviceModel {
   @override
   DeviceModelState get state {
     final apple = _appleReadiness;
+    // Ready is the only state in which Apple Intelligence answers. Off, or
+    // still downloading, falls through to Gemma rather than blocking it.
     if (apple == SummarizerReadiness.ready) {
       return const DeviceModelState(
         status: DeviceModelStatus.builtIn,
         model: appleIntelligence,
       );
     }
-    if (apple == SummarizerReadiness.needsSystemFeature ||
-        apple == SummarizerReadiness.preparing) {
-      return const DeviceModelState(
-        status: DeviceModelStatus.needsSystemFeature,
-        model: appleIntelligence,
+    if (_gemmaFits) {
+      final local = _models.stateOf(_model);
+      return DeviceModelState(
+        status: switch (local.status) {
+          LocalModelStatus.ready => DeviceModelStatus.ready,
+          LocalModelStatus.fetchingRuntime ||
+          LocalModelStatus.downloading ||
+          LocalModelStatus.verifying => DeviceModelStatus.downloading,
+          // Waiting for Wi-Fi is still not here: asking again offers the
+          // download again, now or later.
+          LocalModelStatus.absent ||
+          LocalModelStatus.failed ||
+          LocalModelStatus.waitingForWifi => DeviceModelStatus.notDownloaded,
+        },
+        model: gemma,
+        receivedBytes: local.receivedBytes,
+        totalBytes: local.totalBytes > 0 ? local.totalBytes : _model.bytes,
       );
     }
-    if (!_gemmaFits) {
-      return const DeviceModelState(status: DeviceModelStatus.unavailable);
-    }
-    final local = _models.stateOf(_model);
-    return DeviceModelState(
-      status: switch (local.status) {
-        LocalModelStatus.ready => DeviceModelStatus.ready,
-        LocalModelStatus.fetchingRuntime ||
-        LocalModelStatus.downloading ||
-        LocalModelStatus.verifying => DeviceModelStatus.downloading,
-        // Waiting for Wi-Fi is still not here: asking again offers the
-        // download again, now or later.
-        LocalModelStatus.absent ||
-        LocalModelStatus.failed ||
-        LocalModelStatus.waitingForWifi => DeviceModelStatus.notDownloaded,
-      },
-      model: gemma,
-      receivedBytes: local.receivedBytes,
-      totalBytes: local.totalBytes > 0 ? local.totalBytes : _model.bytes,
-    );
+    return switch (apple) {
+      SummarizerReadiness.needsSystemFeature => const DeviceModelState(
+        status: DeviceModelStatus.needsSystemFeature,
+        note: appleOffNoRoom,
+      ),
+      SummarizerReadiness.preparing => const DeviceModelState(
+        status: DeviceModelStatus.needsSystemFeature,
+        note: applePreparingNoRoom,
+      ),
+      _ => const DeviceModelState(status: DeviceModelStatus.unavailable),
+    };
   }
 
   /// Apple's model has a 4,096-token context like Gemma's, so it gets the

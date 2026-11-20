@@ -4,10 +4,11 @@ import 'package:flutter/foundation.dart';
 /// (lib/ui/kapy_ai/). The engine implements [KapyAi]; the UI only reads
 /// these types and calls these members.
 
-/// The whole of Kapy AI, off until every part is done and verified, the
-/// deployed Cloud endpoint included, so a release before then shows none of
-/// it: no toolbar button, no ⌘J, no Settings group, no ⌘K row. A build turns
-/// it on with `--dart-define=KAPYNOTES_KAPY_AI=true`; tests set it directly.
+/// The whole of Kapy AI. On in every build packaging/release.sh and the
+/// Windows CI and release jobs make, from 1.35.0, via KAPYNOTES_KAPY_AI.
+/// Off in a local debug build and in tests unless they set it, so the suite
+/// can still cover a build that does not ship it. When it is off there is
+/// no toolbar button, no Cmd-J, no Settings group and no Cmd-K row.
 bool kapyAiAvailable = const bool.fromEnvironment('KAPYNOTES_KAPY_AI');
 
 /// One switch per local tool, so either can be turned off in one line if its
@@ -118,7 +119,8 @@ enum DeviceModelStatus {
   downloading,
   ready,
 
-  /// Apple Intelligence is off in System Settings, or still arriving.
+  /// Apple Intelligence is on this platform but not ready, and Gemma cannot
+  /// run here either. [DeviceModelState.note] says what would work.
   needsSystemFeature,
 
   /// This device can't run one ("This phone can't run one").
@@ -132,12 +134,18 @@ class DeviceModelState {
     this.model,
     this.receivedBytes = 0,
     this.totalBytes = 0,
+    this.note,
   });
 
   final DeviceModelStatus status;
 
-  /// Apple Intelligence or Gemma; null when [status] is unavailable.
+  /// Apple Intelligence or Gemma; null when nothing here can answer.
   final KapyModel? model;
+
+  /// Why nothing on this device can answer, when Apple Intelligence is on
+  /// the platform but not ready and Gemma cannot run. Shown instead of a
+  /// device row.
+  final String? note;
   final int receivedBytes;
   final int totalBytes;
 }
@@ -302,15 +310,22 @@ class KapyOffline extends KapyPending {
 
 /// A signed-out Codex or Claude Code, or a rejected OpenRouter key.
 class KapyAccountError extends KapyPending {
-  const KapyAccountError({required this.account, required this.model});
+  const KapyAccountError({
+    required this.account,
+    required this.model,
+    this.fallbacks = const [],
+  });
   final KapyAccountKind account;
   final KapyModel model;
+  final List<KapyModel> fallbacks;
 }
 
-/// Anything else that stopped an answer. Try again.
+/// Anything else that stopped an answer, with the models that could answer
+/// instead for the person to choose from.
 class KapyFailed extends KapyPending {
-  const KapyFailed(this.message);
+  const KapyFailed(this.message, {this.fallbacks = const []});
   final String message;
+  final List<KapyModel> fallbacks;
 }
 
 /// Kapy AI: chats, models, accounts and answers.

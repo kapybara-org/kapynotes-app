@@ -2660,7 +2660,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
       return;
     }
-    unawaited(showShareDialog(context, note: note, sharing: sharing));
+    unawaited(
+      showShareDialog(
+        context,
+        note: note,
+        sharing: sharing,
+        billing: account.billing,
+      ),
+    );
   }
 
   /// What stands between this account and sharing, as the step Account & sync
@@ -3703,6 +3710,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           addFocus: _taskAddFocus,
           labelOf: _taskNoteLabel,
           onOpenNote: _openTaskNote,
+          images: widget.notes.blobs,
           newTaskShortcut: widget.shortcuts
               .hintFor(ShortcutAction.newNote)
               ?.keycapLabel,
