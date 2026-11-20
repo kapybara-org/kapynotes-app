@@ -204,28 +204,31 @@ void main() {
     expect(content.indexOf('</history>'), lessThan(content.indexOf('<notes>')));
   });
 
-  test('401 on an answer is an account error; 402, 429 and 500 fail with a sentence', () async {
-    final openRouter = account();
-    await openRouter.save(_key);
-    server = (_) => http.Response('{}', 401);
-    await expectLater(
-      openRouter.answer(gemini, request),
-      throwsA(isA<AnswerAccountRejected>()),
-    );
-    expect(openRouter.state.status, KapyAccountStatus.error);
-    for (final status in [402, 429, 500]) {
-      server = (_) => http.Response('{}', status);
+  test(
+    '401 on an answer is an account error; 402, 429 and 500 fail with a sentence',
+    () async {
+      final openRouter = account();
+      await openRouter.save(_key);
+      server = (_) => http.Response('{}', 401);
       await expectLater(
         openRouter.answer(gemini, request),
-        throwsA(isA<AnswerFailed>()),
+        throwsA(isA<AnswerAccountRejected>()),
       );
-    }
-    server = (_) => throw http.ClientException('down');
-    await expectLater(
-      openRouter.answer(gemini, request),
-      throwsA(isA<AnswerOffline>()),
-    );
-  });
+      expect(openRouter.state.status, KapyAccountStatus.error);
+      for (final status in [402, 429, 500]) {
+        server = (_) => http.Response('{}', status);
+        await expectLater(
+          openRouter.answer(gemini, request),
+          throwsA(isA<AnswerFailed>()),
+        );
+      }
+      server = (_) => throw http.ClientException('down');
+      await expectLater(
+        openRouter.answer(gemini, request),
+        throwsA(isA<AnswerOffline>()),
+      );
+    },
+  );
 
   test('the key is in no error message, no state and no JSON store', () async {
     final openRouter = account();

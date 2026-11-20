@@ -615,7 +615,7 @@ class KapyAiNotice extends StatelessWidget {
         ],
         [?(fallback == null ? null : use(fallback)), tryAgain],
       ),
-      KapyAccountError(:final account) => (
+      KapyAccountError(:final account, :final fallbacks) => (
         KapyIcons.warningRounded,
         account == KapyAccountKind.openRouter
             ? 'This key was rejected'
@@ -641,14 +641,15 @@ class KapyAiNotice extends StatelessWidget {
               onPressed: () => unawaited(_checkThenAnswer(ai.checkClaudeCode)),
             ),
           },
+          for (final other in fallbacks) use(other),
           pickAnother,
         ],
       ),
-      KapyFailed(:final message) => (
+      KapyFailed(:final message, :final fallbacks) => (
         KapyIcons.warningRounded,
         'Couldn’t answer',
         [message],
-        [tryAgain],
+        [for (final other in fallbacks) use(other), tryAgain],
       ),
     };
     return DecoratedBox(

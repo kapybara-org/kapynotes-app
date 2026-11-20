@@ -310,15 +310,22 @@ class KapyOffline extends KapyPending {
 
 /// A signed-out Codex or Claude Code, or a rejected OpenRouter key.
 class KapyAccountError extends KapyPending {
-  const KapyAccountError({required this.account, required this.model});
+  const KapyAccountError({
+    required this.account,
+    required this.model,
+    this.fallbacks = const [],
+  });
   final KapyAccountKind account;
   final KapyModel model;
+  final List<KapyModel> fallbacks;
 }
 
-/// Anything else that stopped an answer. Try again.
+/// Anything else that stopped an answer, with the models that could answer
+/// instead for the person to choose from.
 class KapyFailed extends KapyPending {
-  const KapyFailed(this.message);
+  const KapyFailed(this.message, {this.fallbacks = const []});
   final String message;
+  final List<KapyModel> fallbacks;
 }
 
 /// Kapy AI: chats, models, accounts and answers.

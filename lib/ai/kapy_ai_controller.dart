@@ -209,12 +209,14 @@ class KapyAiController extends KapyAi {
   KapyModel get defaultModel {
     final stored = _store.defaultModel;
     if (stored != null && _usable(stored)) return stored;
-    // Someone who picked the device picked it for what it does not send, so a
-    // device model that can answer still answers for them even on Pro. Only
-    // when no device model can run does this fall through to the cloud.
+    // Someone who picked the device picked it for what it does not send. A
+    // device model that can answer still answers for them, even on Pro. When
+    // none can, their choice stays theirs: the pending state says why and
+    // offers what else could answer, so nothing moves on their behalf.
     if (stored?.kind == KapyModelKind.device) {
       final device = _deviceModel;
       if (device != null && _usable(device)) return device;
+      return stored!;
     }
     return isPro ? KapyModel.cloud : _fallback;
   }
@@ -682,9 +684,13 @@ class KapyAiController extends KapyAi {
           models: const <KapyModel>[],
         );
       }
-      failed = KapyAccountError(account: rejected.account, model: using);
+      failed = KapyAccountError(
+        account: rejected.account,
+        model: using,
+        fallbacks: _alternativesTo(using),
+      );
     } on AnswerFailed catch (failure) {
-      failed = KapyFailed(failure.message);
+      failed = KapyFailed(failure.message, fallbacks: _alternativesTo(using));
     } catch (error) {
       debugPrint('KapyNotes: Kapy AI could not answer: ${error.runtimeType}');
       failed = const KapyFailed('Something went wrong. Try again.');
@@ -699,15 +705,13 @@ class KapyAiController extends KapyAi {
   KapyPending? _holdFor(KapyModel model) {
     final blocked = _device.state.note;
     // Free, signed out and nothing on this device can answer: say what would
-    // work rather than sending the question to a cloud nobody asked for. Pro
-    // is let through here and gets the cloud answer; an account the person
-    // set up themselves is theirs to use.
+    // work rather than sending the question to a cloud nobody asked for.
     if (blocked != null &&
         !isPro &&
         model.kind != KapyModelKind.codex &&
         model.kind != KapyModelKind.claudeCode &&
         model.kind != KapyModelKind.openRouter) {
-      return KapyFailed(blocked);
+      return KapyFailed(blocked, fallbacks: _alternativesTo(model));
     }
     final account = _accountOf(model.kind);
     if (account != null) {
@@ -728,11 +732,29 @@ class KapyAiController extends KapyAi {
       ),
       DeviceModelStatus.needsSystemFeature => KapyFailed(
         state.note ?? PlatformDeviceModel.appleOffNoRoom,
+        fallbacks: _alternativesTo(model),
       ),
-      DeviceModelStatus.unavailable => const KapyFailed(
+      DeviceModelStatus.unavailable => KapyFailed(
         "This device can't run an on-device model.",
+        fallbacks: _alternativesTo(model),
       ),
     };
+  }
+
+  /// What could answer instead of [using], as choices for the person to make.
+  /// Never applied on their behalf: each still asks for its own consent.
+  List<KapyModel> _alternativesTo(KapyModel using) {
+    final out = <KapyModel>[];
+    final device = _deviceModel;
+    if (device != null && device != using && _usable(device)) out.add(device);
+    if (isPro && using.kind != KapyModelKind.cloud) out.add(KapyModel.cloud);
+    for (final account in accounts) {
+      if (!account.enabled) continue;
+      for (final model in account.models) {
+        if (model != using && _usable(model)) out.add(model);
+      }
+    }
+    return out;
   }
 
   static KapyAccountKind? _accountOf(KapyModelKind kind) => switch (kind) {

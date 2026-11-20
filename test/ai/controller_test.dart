@@ -166,24 +166,75 @@ void main() {
       expect(ai.current!.messages.last.text, 'device answer');
     });
 
-    test(
-      'a device that cannot answer does not take Pro off the cloud',
-      () async {
-        final ai = await build(billing: await billingOn(pro: true));
-        ai.defaultModel = FakeDeviceModel.gemma;
-        device.set(
-          const DeviceModelState(
-            status: DeviceModelStatus.needsSystemFeature,
-            note: PlatformDeviceModel.appleOffNoRoom,
-          ),
-        );
-        expect(ai.defaultModel, KapyModel.cloud);
-        await ai.ask('Lisbon?');
-        expect(ai.pending, isA<KapyCloudConsent>());
-        await ai.proceed();
-        expect(ai.current!.messages.last.text, 'cloud answer');
-      },
-    );
+    test('a device that cannot answer is offered, never switched to', () async {
+      final ai = await build(billing: await billingOn(pro: true));
+      ai.defaultModel = FakeDeviceModel.gemma;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      // Their choice stands: nothing leaves the device until they tap.
+      expect(ai.defaultModel, FakeDeviceModel.gemma);
+      await ai.ask('Lisbon?');
+      final failed = ai.pending! as KapyFailed;
+      expect(failed.message, PlatformDeviceModel.appleOffNoRoom);
+      expect(failed.fallbacks, [KapyModel.cloud]);
+      expect(sent, isEmpty);
+      // Tapping the cloud asks its consent, and only then sends.
+      await ai.answerWith(KapyModel.cloud);
+      expect(ai.pending, isA<KapyCloudConsent>());
+      expect(sent, isEmpty);
+      await ai.proceed();
+      expect(ai.current!.messages.last.text, 'cloud answer');
+    });
+
+    test('Free is offered no cloud on a device that cannot answer', () async {
+      final ai = await build(billing: await billingOn(pro: false));
+      ai.defaultModel = FakeDeviceModel.gemma;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      await ai.ask('Lisbon?');
+      final failed = ai.pending! as KapyFailed;
+      expect(failed.fallbacks, isEmpty);
+      expect(sent, isEmpty);
+    });
+
+    test('a device that cannot answer offers the accounts too', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final ai = await build(
+        billing: await billingOn(pro: true),
+        environment: const {
+          'APP_SANDBOX_CONTAINER_ID': 'com.kapybara.kapynotes',
+        },
+        toolHelper: FakeToolHelper(),
+        realTools: true,
+      );
+      ai.accounts;
+      await settle();
+      final codex = ai.accounts.firstWhere(
+        (a) => a.kind == KapyAccountKind.codex,
+      );
+      ai.defaultModel = FakeDeviceModel.gemma;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      await ai.ask('Lisbon?');
+      final failed = ai.pending! as KapyFailed;
+      // The cloud and the account are both offered, and neither has been used.
+      expect(failed.fallbacks, contains(KapyModel.cloud));
+      expect(failed.fallbacks, contains(codex.models.first));
+      expect(sent.where((r) => r.method == 'POST'), isEmpty);
+    });
   });
 
   group('pending states', () {
