@@ -90,6 +90,10 @@ class Sharing extends ChangeNotifier {
   /// note shared, access changed, access ended.
   Stream<SharingNotice> get notices => _notices.stream;
 
+  /// Whether the server cannot be reached right now. Every action here asks
+  /// it first, so they wait until it can.
+  bool get isOffline => _sync.status == SyncStatus.offline;
+
   /// Whether sync is holding [spaceId] back until somebody in it has Pro.
   bool needsPro(String spaceId) => _sync.spacesNeedingPro.contains(spaceId);
 
