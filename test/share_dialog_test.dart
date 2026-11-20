@@ -31,7 +31,6 @@ import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
-import 'package:kapy_notes/ui/notes_list.dart' show NotesListHeading;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -1381,34 +1380,29 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('My notes'), findsOneWidget);
+    final today = find.byKey(const ValueKey('sidebar-group-Today'));
+    expect(today, findsOneWidget);
     // Bob has not joined yet.
     expect(find.text('Waiting for user-2'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Shared'), findsOneWidget);
 
-    // Pinned, then the shared groups, then your own. Shared notes lead the two
-    // ordinary sections because they are the ones that change while you are
-    // not looking; your own are where you left them.
+    // Pinned, then the shared groups, then your own under their days. Shared
+    // notes lead because they are the ones that change while you are not
+    // looking; your own are where you left them.
     double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    final ownDay = tester.getTopLeft(today).dy;
     expect(top('Pinned'), lessThan(top('Waiting for user-2')));
-    expect(top('Waiting for user-2'), lessThan(top('My notes')));
+    expect(top('Waiting for user-2'), lessThan(ownDay));
 
     // And a pinned note is lifted out of the section it came from rather
     // than repeated in it.
     expect(find.text('Kept at hand'), findsOneWidget);
     expect(top('Kept at hand'), lessThan(top('Waiting for user-2')));
 
-    // The own-notes heading counts the rows under it, so the pinned one it
-    // has lifted out is not in this number, and no shared note ever is.
-    expect(
-      tester
-          .widget<NotesListHeading>(
-            find.byKey(const ValueKey('sidebar-notes-heading')),
-          )
-          .count,
-      1,
-    );
+    // Your own day holds your own note, and the shared one stays in its group.
+    expect(top('Shared'), lessThan(ownDay));
+    expect(top('Private'), greaterThan(ownDay));
   });
 
   testWidgets('a shared group is headed by its people and their faces, says '
@@ -1736,9 +1730,9 @@ void main() {
     }
 
     // Pins are the reader's own, so every note takes one.
-    expect(await label('pin'), 'Pin 3 notes');
+    expect(await label('pin'), 'Pin');
     // Hidden Notes are only ever the reader's own notes.
-    expect(await label('hide'), 'Move to Hidden Notes');
+    expect(await label('hide'), 'Move 1 note to Hidden Notes');
     // A viewer changes nothing, so the note they may only read is left out of
     // Archive; but it leaves their notes with the rest, as its row's does.
     expect(await label('archive'), 'Archive 2 notes');

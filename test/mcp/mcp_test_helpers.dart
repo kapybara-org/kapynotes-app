@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/mcp/mcp_library.dart';
@@ -38,6 +39,7 @@ class McpFixture {
       notes: notes,
       engine: () => engine,
       tags: tags,
+      folders: folders,
       canCreate: () => canCreate,
       isLocked: (note) => locked.contains(note.id),
     );
@@ -73,6 +75,7 @@ class McpFixture {
   final store = McpTestStore();
   late final NotesStore notes = NotesStore(store);
   late final TagStore tags = TagStore(store);
+  late final FolderStore folders = FolderStore(store);
   final engine = CalcEngine();
 
   /// Notes Free holds read-only, past the note limit.

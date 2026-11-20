@@ -72,7 +72,7 @@ void main() {
     });
   }
 
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(WidgetTester tester, {String? noteId}) async {
     await tester.binding.setSurfaceSize(const Size(1200, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -81,7 +81,9 @@ void main() {
         home: Scaffold(
           body: TasksScreen(
             controller: tasks,
-            filter: const TaskFilter.all(),
+            filter: noteId == null
+                ? const TaskFilter.all()
+                : TaskFilter.note(noteId),
             addFocus: addFocus,
             labelOf: (note) => note.title,
             onOpenNote: (_) {},
@@ -333,4 +335,159 @@ void main() {
     expect(pack.groupTotal, 3);
     await settle(tester);
   });
+
+  testWidgets(
+    'on a note shared to view only, a row\'s box is faint and takes no tap',
+    (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu', editable: false);
+      await pumpScreen(tester);
+      final faint = find.descendant(
+        of: rowOf(tasks.read().open.first.id),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+        ),
+      );
+      expect(faint, findsOneWidget);
+      expect(
+        tester
+            .widget<InkResponse>(
+              find
+                  .ancestor(of: faint, matching: find.byType(InkResponse))
+                  .first,
+            )
+            .onTap,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<Semantics>(
+              find.ancestor(
+                of: faint,
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Semantics && widget.properties.checked != null,
+                ),
+              ),
+            )
+            .properties
+            .enabled,
+        isFalse,
+      );
+      await settle(tester);
+    },
+  );
+
+  testWidgets('a row\'s box on a note you can change is drawn in full', (
+    tester,
+  ) async {
+    await setUpTasks(tester, 'Errands\n☐ Hide the menu');
+    await pumpScreen(tester);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+      ),
+      findsNothing,
+    );
+    await settle(tester);
+  });
+
+  testWidgets('a Do now task in a note shared to view only has no Done', (
+    tester,
+  ) async {
+    await setUpTasks(tester, 'Errands\n☐ Hide the menu', editable: false);
+    tasks.doNow(tasks.read().open.first);
+    await pumpScreen(tester);
+    expect(tasks.read().open.first.doNow, isTrue);
+    expect(find.text('Not finished'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tasks-done')), findsNothing);
+    await settle(tester);
+  });
+
+  testWidgets('adding a task refuses a note shared to view only', (
+    tester,
+  ) async {
+    await setUpTasks(tester, 'Errands\n☐ Hide the menu', editable: false);
+    final note = notes.allNotes.first;
+    expect(await tasks.add('Book flights', noteId: note.id), isNull);
+    expect(notes.allNotes.first.body, 'Errands\n☐ Hide the menu');
+    await settle(tester);
+  });
+
+  for (final editable in [true, false]) {
+    testWidgets(
+      'the Add into list ${editable ? 'offers a note you can change' : 'leaves out a note shared to view only'}',
+      (tester) async {
+        await setUpTasks(
+          tester,
+          'Errands\n☐ Hide the menu',
+          editable: editable,
+        );
+        await pumpScreen(tester);
+        await tester.tap(find.byKey(const ValueKey('tasks-note-picker')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byType(PopupMenuItem<String>),
+          findsNWidgets(editable ? 2 : 1),
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await settle(tester);
+      },
+    );
+
+    testWidgets(
+      'Tasks narrowed to ${editable ? 'a note you can change has' : 'a note shared to view only has no'} add row',
+      (tester) async {
+        await setUpTasks(
+          tester,
+          'Errands\n☐ Hide the menu',
+          editable: editable,
+        );
+        await pumpScreen(tester, noteId: notes.allNotes.first.id);
+        expect(
+          find.byKey(const ValueKey('tasks-add-row')),
+          editable ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.text('You can view this note, not change it.'),
+          editable ? findsNothing : findsOneWidget,
+        );
+        await settle(tester);
+      },
+    );
+  }
+
+  testWidgets(
+    'removing a task from a note shared to view only says it only leaves '
+    'your list',
+    (tester) async {
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Hide the menu\n☐ Book flights',
+        editable: false,
+      );
+      clock = clock.add(const Duration(days: 365));
+      await pumpScreen(tester);
+      await tester.tap(find.text('Remove').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Remove this task from your list?'), findsOneWidget);
+      expect(
+        find.text(
+          'It stays in “Errands” for you and everyone it’s shared with. '
+          'You can undo this.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Remove'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Removed from your list'), findsOneWidget);
+      expect(notes.allNotes.first.body, 'Errands\n☐ Hide the menu\n☐ Book flights');
+      await tester.pump(const Duration(seconds: 5));
+      await settle(tester);
+    },
+  );
 }

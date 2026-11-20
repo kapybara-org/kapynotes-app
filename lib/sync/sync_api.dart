@@ -493,14 +493,22 @@ class WireTaskRecord {
 /// `POST /tasks`'s answer: what was taken, and the stored copy of each
 /// record that lost, to merge and send again.
 class TasksPushResult {
-  const TasksPushResult({required this.applied, required this.conflicts});
+  const TasksPushResult({
+    required this.applied,
+    required this.conflicts,
+    this.serverTime,
+  });
 
   final List<String> applied;
   final List<WireTaskRecord> conflicts;
 
+  /// The server's clock as it answered, when it said.
+  final DateTime? serverTime;
+
   static TasksPushResult fromJson(Map<String, Object?> raw) {
     final applied = raw['applied'];
     final conflicts = raw['conflicts'];
+    final serverTime = raw['serverTime'];
     return TasksPushResult(
       applied: applied is List
           ? applied.whereType<String>().toList()
@@ -511,6 +519,7 @@ class TasksPushResult {
                 .whereType<WireTaskRecord>()
                 .toList()
           : const [],
+      serverTime: serverTime is String ? DateTime.tryParse(serverTime) : null,
     );
   }
 }

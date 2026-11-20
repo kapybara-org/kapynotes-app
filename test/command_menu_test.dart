@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
@@ -102,6 +103,7 @@ void main() {
     bool askKapyAi = false,
     TagShelf? tags,
     Note? tagNote,
+    FolderTree? folders,
     bool phone = false,
     Future<void> Function(TaskItem item, {required bool done})? onSetTaskDone,
   }) async {
@@ -127,6 +129,7 @@ void main() {
             displayTime: (instant) => instant,
             taskLabel: (note) => note.title,
             tasks: board,
+            folders: folders,
             hiddenUnlocked: hiddenUnlocked,
             askKapyAi: askKapyAi,
             tags: tags,
@@ -228,6 +231,38 @@ void main() {
     await tester.tap(row('1 more in Archive'));
     expect(chosen, isA<SearchArchiveChoice>());
     expect((chosen! as SearchArchiveChoice).query, 'sintra');
+  });
+
+  testWidgets('folders are found by name after the notes, each with where '
+      'it sits, and only where a folder can open', (tester) async {
+    await setUpNotes(tester);
+    final folders = FolderStore(memory);
+    final work = folders.create('Work')!;
+    final clients = folders.create('Sintra clients', parentId: work.id)!;
+    folders.create('Sintra');
+    folders.create('Lisbon');
+    await pumpMenu(tester, folders: folders.tree);
+    await type(tester, 'sintra');
+
+    expect(row('Sintra'), findsOneWidget);
+    expect(row('Lisbon'), findsNothing);
+    expect(
+      find.descendant(of: row('Sintra clients'), matching: find.text('Work')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(find.text('Folders')).dy,
+      greaterThan(tester.getTopLeft(find.text('Notes')).dy),
+    );
+
+    await tester.tap(row('Sintra clients'));
+    expect(chosen, isA<OpenFolderChoice>());
+    expect((chosen! as OpenFolderChoice).folderId, clients.id);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpMenu(tester);
+    await type(tester, 'sintra');
+    expect(find.text('Folders'), findsNothing);
   });
 
   testWidgets('every word in any order, as the list always matched', (

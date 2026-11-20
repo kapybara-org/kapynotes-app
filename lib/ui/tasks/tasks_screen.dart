@@ -14,6 +14,8 @@ import '../../data/task_details.dart';
 import '../context_menu.dart';
 import '../editor/note_header.dart';
 import '../keycap.dart';
+import '../note_day_scope.dart';
+import '../notes_grouping.dart' show dayShown;
 import '../sidebar_timestamp.dart';
 import '../tonal_button.dart';
 import 'task_marks.dart';
@@ -43,6 +45,7 @@ class TasksScreen extends StatefulWidget {
     required this.labelOf,
     required this.onOpenNote,
     this.images,
+    this.displayTime,
     this.newTaskShortcut,
     this.phone = false,
   });
@@ -62,6 +65,10 @@ class TasksScreen extends StatefulWidget {
   /// Where a task's picture is stored, so Do now and the sheet can show it.
   /// Null in a test that does not draw pictures.
   final BlobStore? images;
+
+  /// The clock the app shows times by, so a note's day comes when the list
+  /// says it does; the device's own when left out.
+  final DateTime Function(DateTime)? displayTime;
 
   /// Printed on the add row's keycap at rest.
   final String? newTaskShortcut;
@@ -142,7 +149,28 @@ class TasksScreenState extends State<TasksScreen> {
 
   TasksController get _tasks => widget.controller;
 
-  List<TaskItem> _open(TaskBoard board) => board.openIn(widget.filter.noteId);
+  static DateTime _deviceTime(DateTime time) => time.toLocal();
+
+  List<TaskItem> _open(TaskBoard board) {
+    final days = NoteDayScope.maybeOf(context);
+    final today = dayShown(_tasks.now(), widget.displayTime ?? _deviceTime);
+    return [
+      for (final item in board.openIn(widget.filter.noteId))
+        if (days == null || !days.taskWaits(item.note.id, today)) item,
+    ];
+  }
+
+  /// The tasks whose note waits for a later day: not on today's list, and
+  /// counted in one quiet line.
+  int _waiting(TaskBoard board) {
+    final days = NoteDayScope.maybeOf(context);
+    if (days == null) return 0;
+    final today = dayShown(_tasks.now(), widget.displayTime ?? _deviceTime);
+    return [
+      for (final item in board.openIn(widget.filter.noteId))
+        if (days.taskWaits(item.note.id, today)) item,
+    ].length;
+  }
 
   /// Pick again: every dot cleared, and the questions start over from the
   /// first task.
@@ -157,7 +185,7 @@ class TasksScreenState extends State<TasksScreen> {
   /// Done on Do now, from its button or the keyboard.
   void completeDoNow() {
     final item = _doNow(_open(_tasks.read()));
-    if (item == null) return;
+    if (item == null || !_tasks.canEdit(item.note)) return;
     _resumeAfter = item.entry.position;
     unawaited(_tasks.setDone(item, done: true));
   }
@@ -191,6 +219,11 @@ class TasksScreenState extends State<TasksScreen> {
 
   String? get _addInto => _targetChosen ? _target : widget.filter.noteId;
 
+  Note? get _addTarget {
+    final id = _addInto;
+    return id == null ? null : _tasks.notes.byId(id);
+  }
+
   Future<void> _add() async {
     final words = _words.text;
     if (words.trim().isEmpty) return;
@@ -209,11 +242,21 @@ class TasksScreenState extends State<TasksScreen> {
 
   Future<void> _remove(TaskItem item) async {
     final label = widget.labelOf(item.note);
+    // A note shared to view only keeps the line: the task only leaves this
+    // person's list.
+    final mine = _tasks.canEdit(item.note);
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove this task?'),
-        content: Text('Its line comes out of “$label”. You can undo this.'),
+        title: Text(
+          mine ? 'Remove this task?' : 'Remove this task from your list?',
+        ),
+        content: Text(
+          mine
+              ? 'Its line comes out of “$label”. You can undo this.'
+              : 'It stays in “$label” for you and everyone it’s shared with. '
+                    'You can undo this.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -232,7 +275,7 @@ class TasksScreenState extends State<TasksScreen> {
     if (undo == null) return;
     messenger?.showSnackBar(
       SnackBar(
-        content: const Text('Task removed'),
+        content: Text(mine ? 'Task removed' : 'Removed from your list'),
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => unawaited(undo()),
@@ -358,6 +401,7 @@ class TasksScreenState extends State<TasksScreen> {
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.space) {
+      if (!_tasks.canEdit(open[index].note)) return KeyEventResult.handled;
       unawaited(_tasks.setDone(open[index], done: !open[index].line.done));
       return KeyEventResult.handled;
     }
@@ -439,20 +483,35 @@ class TasksScreenState extends State<TasksScreen> {
                     ],
                   ),
                 ),
-              _AddRow(
-                phone: widget.phone,
-                controller: _words,
-                focus: widget.addFocus,
-                shortcut: widget.newTaskShortcut,
-                target: _addInto == null ? null : _tasks.notes.byId(_addInto),
-                labelOf: widget.labelOf,
-                choices: _pickerNotes(board),
-                onChoose: (noteId) => setState(() {
-                  _target = noteId;
-                  _targetChosen = true;
-                }),
-                onSubmit: () => unawaited(_add()),
-              ),
+              if (_addTarget case final target? when !_tasks.canEdit(target))
+                Padding(
+                  key: const ValueKey('tasks-add-view-only'),
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                  child: Text(
+                    'You can view this note, not change it.',
+                    style: uiStyle(
+                      13,
+                      18,
+                      FontWeight.w400,
+                      palette.textTertiary,
+                    ),
+                  ),
+                )
+              else
+                _AddRow(
+                  phone: widget.phone,
+                  controller: _words,
+                  focus: widget.addFocus,
+                  shortcut: widget.newTaskShortcut,
+                  target: _addTarget,
+                  labelOf: widget.labelOf,
+                  choices: _pickerNotes(board),
+                  onChoose: (noteId) => setState(() {
+                    _target = noteId;
+                    _targetChosen = true;
+                  }),
+                  onSubmit: () => unawaited(_add()),
+                ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 160),
                 child: _notice
@@ -483,7 +542,7 @@ class TasksScreenState extends State<TasksScreen> {
                   onOpen: () => _openSheet(doNow),
                   images: widget.images,
                   onNotFinished: () => _notFinished(doNow),
-                  onDone: completeDoNow,
+                  onDone: _tasks.canEdit(doNow.note) ? completeDoNow : null,
                 )
               else if (open.isNotEmpty)
                 _picker(board, open),
@@ -545,6 +604,22 @@ class TasksScreenState extends State<TasksScreen> {
                     ),
                   ),
                 ),
+              if (_waiting(board) case final waiting when waiting > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                  child: Text(
+                    waiting == 1
+                        ? '1 task waits for its day'
+                        : '$waiting tasks wait for their day',
+                    key: const ValueKey('tasks-waiting-line'),
+                    style: uiStyle(
+                      13,
+                      18,
+                      FontWeight.w400,
+                      palette.textTertiary,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -555,7 +630,9 @@ class TasksScreenState extends State<TasksScreen> {
               item: item,
               done: done,
               label: board.isHome(item) ? null : widget.labelOf(item.note),
-              onTick: () => _tick(item, open.indexOf(item), done: !done),
+              onTick: _tasks.canEdit(item.note)
+                  ? () => _tick(item, open.indexOf(item), done: !done)
+                  : null,
               onOpen: () => _openSheet(item),
               onMark: () => _cycleMark(item),
             )
@@ -568,7 +645,9 @@ class TasksScreenState extends State<TasksScreen> {
               label: board.isHome(item) ? null : widget.labelOf(item.note),
               wash: item.id == _washId,
               onMark: () => _cycleMark(item),
-              onTick: () => unawaited(_tasks.setDone(item, done: true)),
+              onTick: _tasks.canEdit(item.note)
+                  ? () => unawaited(_tasks.setDone(item, done: true))
+                  : null,
               onOpenNote: () => widget.onOpenNote(item.note.id),
               onOpen: () => _openSheet(item),
               onKeep: () => _tasks.keep(item),
@@ -602,13 +681,14 @@ class TasksScreenState extends State<TasksScreen> {
     unawaited(_tasks.setDone(item, done: done));
   }
 
-  /// The notes the add row can write into: the ones with tasks, then the
-  /// note for tasks with no note leads as "No note".
+  /// The notes the add row can write into: the ones with tasks that this
+  /// person can change, then the note for tasks with no note leads as
+  /// "No note".
   List<Note> _pickerNotes(TaskBoard board) {
     final seen = <String>{?board.home?.id};
     return [
       for (final item in [...board.open, ...board.done])
-        if (seen.add(item.note.id)) item.note,
+        if (_tasks.canEdit(item.note) && seen.add(item.note.id)) item.note,
     ];
   }
 
@@ -741,7 +821,9 @@ class TasksScreenState extends State<TasksScreen> {
               key: ValueKey(item.id),
               item: item,
               label: board.isHome(item) ? null : widget.labelOf(item.note),
-              onUntick: () => unawaited(_tasks.setDone(item, done: false)),
+              onUntick: _tasks.canEdit(item.note)
+                  ? () => unawaited(_tasks.setDone(item, done: false))
+                  : null,
               onOpenNote: () => widget.onOpenNote(item.note.id),
             ),
         ],
@@ -1027,7 +1109,9 @@ class _DoNowCard extends StatelessWidget {
   final VoidCallback onOpen;
   final BlobStore? images;
   final VoidCallback onNotFinished;
-  final VoidCallback onDone;
+
+  /// Null on a note shared to view only, where Done is not shown.
+  final VoidCallback? onDone;
 
   /// A phone's card: the task under DO NOW, its note, then Done and Not
   /// finished as two pills beneath.
@@ -1157,15 +1241,17 @@ class _DoNowCard extends StatelessWidget {
                           label: const Text('Not finished'),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      TonalButton(
-                        key: const ValueKey('tasks-done'),
-                        tall: true,
-                        icon: KapyIcons.checkRounded,
-                        label: 'Done',
-                        shortcut: doneShortcutLabel,
-                        onPressed: onDone,
-                      ),
+                      if (onDone != null) ...[
+                        const SizedBox(width: 6),
+                        TonalButton(
+                          key: const ValueKey('tasks-done'),
+                          tall: true,
+                          icon: KapyIcons.checkRounded,
+                          label: 'Done',
+                          shortcut: doneShortcutLabel,
+                          onPressed: onDone,
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -1279,12 +1365,13 @@ class _DoNowCard extends StatelessWidget {
                   Row(
                     spacing: 8,
                     children: [
-                      pill(
-                        key: const ValueKey('tasks-done'),
-                        text: 'Done',
-                        onPressed: onDone,
-                        tonal: true,
-                      ),
+                      if (onDone case final done?)
+                        pill(
+                          key: const ValueKey('tasks-done'),
+                          text: 'Done',
+                          onPressed: done,
+                          tonal: true,
+                        ),
                       pill(
                         key: const ValueKey('tasks-not-finished'),
                         text: 'Not finished',
@@ -1722,7 +1809,10 @@ class _Box extends StatelessWidget {
   });
 
   final bool done;
-  final VoidCallback onPressed;
+
+  /// Null on a note shared to view only: the box is drawn faint and takes no
+  /// tap.
+  final VoidCallback? onPressed;
   final String label;
 
   @override
@@ -1733,27 +1823,31 @@ class _Box extends StatelessWidget {
       checked: done,
       label: label,
       button: true,
+      enabled: onPressed != null,
       child: InkResponse(
         onTap: onPressed,
         radius: 16,
-        child: Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: done ? accent : palette.editorBackground,
-            border: done
-                ? null
-                : Border.all(color: palette.checkboxBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+        child: Opacity(
+          opacity: onPressed == null ? lockedBoxOpacity : 1,
+          child: Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: done ? accent : palette.editorBackground,
+              border: done
+                  ? null
+                  : Border.all(color: palette.checkboxBorder, width: 1.5),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
+            ),
+            child: done
+                ? KapyIcon(
+                    KapyIcons.checkRounded,
+                    size: 14,
+                    strokeWidth: 2.2,
+                    color: palette.paperColor,
+                  )
+                : null,
           ),
-          child: done
-              ? KapyIcon(
-                  KapyIcons.checkRounded,
-                  size: 14,
-                  strokeWidth: 2.2,
-                  color: palette.paperColor,
-                )
-              : null,
         ),
       ),
     );
@@ -1792,7 +1886,7 @@ class _TaskRow extends StatefulWidget {
 
   /// A click on the mark: picks the task, makes it Do now, or clears it.
   final VoidCallback onMark;
-  final VoidCallback onTick;
+  final VoidCallback? onTick;
   final VoidCallback onOpenNote;
   final VoidCallback onOpen;
   final VoidCallback onKeep;
@@ -2002,7 +2096,7 @@ class _DoneRow extends StatelessWidget {
 
   final TaskItem item;
   final String? label;
-  final VoidCallback onUntick;
+  final VoidCallback? onUntick;
   final VoidCallback onOpenNote;
 
   @override
@@ -2126,7 +2220,9 @@ class _PhoneTaskRow extends StatelessWidget {
   final TaskItem item;
   final bool done;
   final String? label;
-  final VoidCallback onTick;
+
+  /// Null on a note shared to view only.
+  final VoidCallback? onTick;
   final VoidCallback onOpen;
   final VoidCallback onMark;
 
@@ -2195,25 +2291,28 @@ class _PhoneTaskRow extends StatelessWidget {
                       dimension: 44,
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: done ? sage : null,
-                            border: Border.all(
-                              color: done ? sage : palette.checkboxBorder,
-                              width: 1.5,
+                        child: Opacity(
+                          opacity: onTick == null ? lockedBoxOpacity : 1,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: done ? sage : null,
+                              border: Border.all(
+                                color: done ? sage : palette.checkboxBorder,
+                                width: 1.5,
+                              ),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            borderRadius: BorderRadius.circular(6),
+                            child: done
+                                ? KapyIcon(
+                                    KapyIcons.checkRounded,
+                                    size: 15,
+                                    strokeWidth: 2.2,
+                                    color: palette.paperColor,
+                                  )
+                                : null,
                           ),
-                          child: done
-                              ? KapyIcon(
-                                  KapyIcons.checkRounded,
-                                  size: 15,
-                                  strokeWidth: 2.2,
-                                  color: palette.paperColor,
-                                )
-                              : null,
                         ),
                       ),
                     ),
