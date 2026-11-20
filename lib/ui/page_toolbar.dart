@@ -108,7 +108,9 @@ class PageToolbar extends StatelessWidget {
   /// the breadcrumb and the list's controls.
   final VoidCallback? onBack;
 
-  static const double height = 56;
+  /// The crisp header band: every desktop pane's top row is this tall, so
+  /// the list's header and the note's share one line.
+  static const double height = 52;
 
   /// A phone's page bar: the back button and the note's actions, each 44.
   static const double phoneHeight = 44;
@@ -148,6 +150,16 @@ class PageToolbar extends StatelessWidget {
         onBack == null ? height : phoneHeight,
       ),
       color: palette.isGlass ? palette.paperColor : null,
+      foregroundDecoration: onBack == null
+          ? BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: palette.hairline,
+                  width: AppHairline.of(context),
+                ),
+              ),
+            )
+          : null,
       child: Stack(
         children: [
           const Positioned.fill(

@@ -1859,7 +1859,7 @@ void main() {
       tester.getSize(pageButton('page-more', IconButton)),
       const Size.square(32),
     );
-    expect(tester.getSize(pageButton('page-share', FilledButton)).height, 32);
+    expect(tester.getSize(pageButton('page-share', TextButton)).height, 32);
     expect(
       tester.getSize(find.byType(NoteRow).first).height,
       NoteCardFace.height,
@@ -2010,7 +2010,7 @@ void main() {
     );
   });
 
-  testWidgets('settings heads its groups in Shantell and its rows in Figtree', (
+  testWidgets('settings heads its groups in Figtree at the section weight', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -2026,7 +2026,11 @@ void main() {
       ).style.merge(tester.widget<Text>(finder.first).style);
     }
 
-    expect(styleOf('Opening').fontFamily, 'Shantell Sans');
+    expect(styleOf('Opening').fontFamily, isNot('Shantell Sans'));
+    expect(
+      styleOf('Opening').fontVariations,
+      AppWeight.variations(AppWeight.section),
+    );
     expect(styleOf('Daily separators').fontFamily, isNot('Shantell Sans'));
     expect(
       styleOf('Add a dated line when a new day begins').fontWeight ??
@@ -4799,7 +4803,7 @@ void main() {
     expect(notes.isPinned(note.id), isTrue);
   });
 
-  testWidgets('puts hiding above a red Archive note at the bottom', (
+  testWidgets('puts hiding above a quiet Archive note at the bottom', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -4819,9 +4823,10 @@ void main() {
       matching: find.text('Archive note'),
     );
     final archiveText = tester.widget<Text>(archiveLabel);
+    // Only Delete takes the warning colour; archiving can be undone.
     expect(
       archiveText.style?.color,
-      Theme.of(tester.element(archiveLabel)).colorScheme.error,
+      tester.element(archiveLabel).palette.textPrimary,
     );
   });
 
