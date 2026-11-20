@@ -103,7 +103,9 @@ bool taskIsNested(String text, TaskLine task) {
 /// [plain] must carry the details' picture placeholders as they are: whoever
 /// edits the words keeps the pictures in place (see [taskDetailsWords]), and
 /// the note's attachment records follow the placeholders when the note is
-/// written. The task's own line is never rewritten, and neither is anything
+/// written. A placeholder left out of [plain] takes its picture with it, so
+/// a caller that shows the words rather than the pictures reads them with
+/// [taskDetailsWords]. The task's own line is never rewritten, and neither is anything
 /// after the details. An empty [plain] with nothing under the task leaves the
 /// note unchanged when there was nothing there, and takes an empty block away
 /// when there was one, so a note with no indented details that is given

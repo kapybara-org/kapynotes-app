@@ -49,53 +49,56 @@ TextEditingValue backspace(String marked) {
 }
 
 void main() {
-  test('Enter at the end of a task is left to the note, which starts the next task', () {
-    final before = at('☐ Send the weekly report|');
-    final caret = before.selection.extentOffset;
-    final typed = TextEditingValue(
-      text: before.text.replaceRange(caret, caret, '\n'),
-      selection: TextSelection.collapsed(offset: caret + 1),
-    );
-    expect(editTaskDetailsEnter(before, typed), isNull);
-  });
+  test(
+    'Enter at the end of a task is left to the note, which starts the next task',
+    () {
+      final before = at('☐ Send the weekly report|');
+      final caret = before.selection.extentOffset;
+      final typed = TextEditingValue(
+        text: before.text.replaceRange(caret, caret, '\n'),
+        selection: TextSelection.collapsed(offset: caret + 1),
+      );
+      expect(editTaskDetailsEnter(before, typed), isNull);
+    },
+  );
 
-  test('Enter at the end of a task with details starts the next task after them', () {
-    expect(
-      shown(enter('☐ Hide it|\n  The menu stays up.')),
-      '☐ Hide it\n  The menu stays up.\n☐ |',
-    );
-  });
+  test(
+    'Enter at the end of a task with details starts the next task after them',
+    () {
+      expect(
+        shown(enter('☐ Hide it|\n  The menu stays up.')),
+        '☐ Hide it\n  The menu stays up.\n☐ |',
+      );
+    },
+  );
 
   test('Shift+Enter drops into the details and does not split the name', () {
-    expect(
-      shown(shiftEnterDetails(at('☐ Hide| it'))!),
-      '☐ Hide it\n  |',
-    );
+    expect(shown(shiftEnterDetails(at('☐ Hide| it'))!), '☐ Hide it\n  |');
     expect(
       shown(shiftEnterDetails(at('☐ Hide it|\n  Already there.'))!),
       '☐ Hide it\n  Already there.\n  |',
     );
   });
 
-  test('Tab attaches the plain line directly under a task, and Shift+Tab lets it go', () {
-    final attached = tabTaskDetails(
-      at('☐ Hide it\n|A plain line.'),
-      detach: false,
-    );
-    expect(shown(attached!), '☐ Hide it\n  |A plain line.');
+  test(
+    'Tab attaches the plain line directly under a task, and Shift+Tab lets it go',
+    () {
+      final attached = tabTaskDetails(
+        at('☐ Hide it\n|A plain line.'),
+        detach: false,
+      );
+      expect(shown(attached!), '☐ Hide it\n  |A plain line.');
 
-    final detached = tabTaskDetails(
-      at('☐ Hide it\n  A plain line.|'),
-      detach: true,
-    );
-    expect(shown(detached!), '☐ Hide it\nA plain line.|');
-  });
+      final detached = tabTaskDetails(
+        at('☐ Hide it\n  A plain line.|'),
+        detach: true,
+      );
+      expect(shown(detached!), '☐ Hide it\nA plain line.|');
+    },
+  );
 
   test('Tab does not attach a line that is not directly under the task', () {
-    expect(
-      tabTaskDetails(at('☐ Hide it\n\n|Later'), detach: false),
-      isNull,
-    );
+    expect(tabTaskDetails(at('☐ Hide it\n\n|Later'), detach: false), isNull);
   });
 
   test('Backspace on a new empty task makes it details of the task above', () {
@@ -105,7 +108,17 @@ void main() {
     );
   });
 
-  test('Backspace on an empty task with no task above is left alone', () {
+  test(
+    'Backspace on an empty task at the start of the note does not throw',
+    () {
+      // A note whose first line is blank, which is common: the task's line
+      // starts at offset 1.
+      expect(shown(backspace('\n☐ |')), '\n☐|');
+      expect(backspace('\n☐ |').text, '\n☐');
+    },
+  );
+
+  test('Backspace on an empty task under a task still attaches', () {
     final before = at('☐ |');
     final caret = before.selection.extentOffset;
     final typed = TextEditingValue(
@@ -133,10 +146,13 @@ void main() {
     );
   });
 
-  test('a blank line between indented paragraphs still belongs after Enter', () {
-    const note = '☐ Hide it\n  First.\n\n  Second.|';
-    expect(shown(enter(note)), '☐ Hide it\n  First.\n\n  Second.\n  |');
-  });
+  test(
+    'a blank line between indented paragraphs still belongs after Enter',
+    () {
+      const note = '☐ Hide it\n  First.\n\n  Second.|';
+      expect(shown(enter(note)), '☐ Hide it\n  First.\n\n  Second.\n  |');
+    },
+  );
 
   test('Enter on an empty task under a task still leaves the list', () {
     final before = at('☐ Task\n☐ |');

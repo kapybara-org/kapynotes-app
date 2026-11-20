@@ -57,7 +57,8 @@ bool _insertedNewline(TextEditingValue oldValue, TextEditingValue newValue) {
 /// Whether [caret] is in a task's details, including the empty line just
 /// opened under it. The sage rule uses this.
 bool caretInTaskDetails(String text, int caret) {
-  if (text.isEmpty || caret < 0 || caret > text.length) return false;  final line = markdownLinePrefix(text, caret.clamp(0, text.length));
+  if (text.isEmpty || caret < 0 || caret > text.length) return false;
+  final line = markdownLinePrefix(text, caret.clamp(0, text.length));
   return _detailsOwner(text, line) != null;
 }
 
@@ -117,7 +118,12 @@ TextEditingValue? shiftEnterDetails(TextEditingValue value) {
     final details = task == null ? null : taskBlockOf(text, task)?.details;
     final indent = ' ' * _contentColumn(line);
     if (details == null) {
-      return _insertLineAfter(text, line.lineEnd, indent, caretInLine: indent.length);
+      return _insertLineAfter(
+        text,
+        line.lineEnd,
+        indent,
+        caretInLine: indent.length,
+      );
     }
     final last = markdownLinePrefix(
       text,
@@ -139,7 +145,12 @@ TextEditingValue? shiftEnterDetails(TextEditingValue value) {
   final owner = _detailsOwner(text, line);
   if (owner == null) return null;
   final indent = ' ' * _contentColumn(owner);
-  return _insertLineAfter(text, line.lineEnd, indent, caretInLine: indent.length);
+  return _insertLineAfter(
+    text,
+    line.lineEnd,
+    indent,
+    caretInLine: indent.length,
+  );
 }
 
 /// Tab on a plain line directly under a task indents it so it belongs. Shift+Tab
@@ -247,7 +258,9 @@ ImageInsertion attachMediaUnderTask({
     body: body,
     attachments: [
       for (final ref in inserted.attachments)
-        ref.offset >= shiftAt ? ref.copyWith(offset: ref.offset + pad.length) : ref,
+        ref.offset >= shiftAt
+            ? ref.copyWith(offset: ref.offset + pad.length)
+            : ref,
     ],
     selection: inserted.selection + pad.length,
   );
@@ -265,7 +278,8 @@ TaskLine? _indexedTask(String text, MarkdownLinePrefix line) {
   return null;
 }
 
-int _contentColumn(MarkdownLinePrefix line) => line.contentStart - line.lineStart;
+int _contentColumn(MarkdownLinePrefix line) =>
+    line.contentStart - line.lineStart;
 
 int _indentWidth(String text, MarkdownLinePrefix line) {
   var i = line.lineStart;
@@ -302,10 +316,16 @@ MarkdownLinePrefix? _detailsOwner(String text, MarkdownLinePrefix line) {
 
 MarkdownLinePrefix? _taskAbove(String text, MarkdownLinePrefix line) {
   var start = line.lineStart;
-  while (start > 0) {
+  // A line that starts at 1 sits under one that starts at 0; looking back
+  // from before that would be looking back past the start of the note.
+  while (start > 1) {
     start = text.lastIndexOf('\n', start - 2) + 1;
     final above = markdownLinePrefix(text, start);
     if (above.isTask && !_lineIsEmpty(text, above)) return above;
+  }
+  if (start == 1) {
+    final first = markdownLinePrefix(text, 0);
+    if (first.isTask && !_lineIsEmpty(text, first)) return first;
   }
   return null;
 }

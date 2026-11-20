@@ -57,16 +57,19 @@ void main() {
     expect(taskIsNested(note, blocks.last.task), isFalse);
   });
 
-  test('an indented blank line under a task is details, a margin blank is not', () {
-    const opened = '☐ Buy milk\n  \n☐ Next\n';
-    final details = taskBlocks(opened).first.details;
-    expect(details, isNotNull);
-    expect(taskBlocks(opened).last.details, isNull);
+  test(
+    'an indented blank line under a task is details, a margin blank is not',
+    () {
+      const opened = '☐ Buy milk\n  \n☐ Next\n';
+      final details = taskBlocks(opened).first.details;
+      expect(details, isNotNull);
+      expect(taskBlocks(opened).last.details, isNull);
 
-    const note = '☐ Buy milk\nThe shop closes at 8\n';
-    expect(taskBlocks(note).single.details, isNull);
-    expect(replaceTaskDetails(note, taskLines(note).single, ''), note);
-  });
+      const note = '☐ Buy milk\nThe shop closes at 8\n';
+      expect(taskBlocks(note).single.details, isNull);
+      expect(replaceTaskDetails(note, taskLines(note).single, ''), note);
+    },
+  );
 
   test('a line that is not indented is not details', () {
     const note = '☐ Buy milk\nThe shop closes at 8\n';
@@ -124,22 +127,25 @@ void main() {
     const note = '☐ Parent\n  The menu stays up.\n  ￼\n  ￼\n';
     final picture = _image(note.indexOf('￼'));
     final video = _video(note.lastIndexOf('￼'));
-    final details = taskBlocks(note, attachments: [picture, video]).single.details!;
+    final details = taskBlocks(
+      note,
+      attachments: [picture, video],
+    ).single.details!;
     expect(details.hasPicture, isTrue);
     expect(details.hasVideo, isTrue);
     expect(details.preview, 'The menu stays up.');
     expect(foldedPreview(details.preview, limit: 8), 'The…');
-    expect(foldedPreview(details.preview).length, lessThan(details.preview.length + 2));
+    expect(
+      foldedPreview(details.preview).length,
+      lessThan(details.preview.length + 2),
+    );
   });
 
   test('writing details does not touch the task line or what follows', () {
     const note = '☐ Buy milk\n☐ Call the garage\n';
     final task = taskLines(note).first;
     final written = replaceTaskDetails(note, task, 'Oat, if they have it.');
-    expect(
-      written,
-      '☐ Buy milk\n  Oat, if they have it.\n☐ Call the garage\n',
-    );
+    expect(written, '☐ Buy milk\n  Oat, if they have it.\n☐ Call the garage\n');
     expect(written.substring(0, task.end), note.substring(0, task.end));
   });
 
@@ -150,27 +156,37 @@ void main() {
     expect(replaceTaskDetails(note, task, '   \n'), note);
   });
 
-  test('a blank line inside survives a rewrite, and saving words keeps the pictures', () {
-    const note = '☐ Parent\n  First\n  ￼\n  Second\n☐ Next\n';
-    final task = taskLines(note).first;
-    // What the sheet seeds its editor with: the placeholders stay.
-    final seeded = taskDetailsWords(note, task);
-    expect(seeded, 'First\n￼\nSecond');
-    final written = replaceTaskDetails(note, task, seeded);
-    expect(written, note);
+  test(
+    'a blank line inside survives a rewrite, and saving words keeps the pictures',
+    () {
+      const note = '☐ Parent\n  First\n  ￼\n  Second\n☐ Next\n';
+      final task = taskLines(note).first;
+      // What the sheet seeds its editor with: the placeholders stay.
+      final seeded = taskDetailsWords(note, task);
+      expect(seeded, 'First\n￼\nSecond');
+      final written = replaceTaskDetails(note, task, seeded);
+      expect(written, note);
 
-    final edited = replaceTaskDetails(note, task, seeded.replaceAll('Second', 'Second, longer'));
-    expect(edited, '☐ Parent\n  First\n  ￼\n  Second, longer\n☐ Next\n');
-    expect(taskBlocks(edited).first.details!.preview, 'First');
-    expect(taskBlocks(edited).last.details, isNull);
-  });
+      final edited = replaceTaskDetails(
+        note,
+        task,
+        seeded.replaceAll('Second', 'Second, longer'),
+      );
+      expect(edited, '☐ Parent\n  First\n  ￼\n  Second, longer\n☐ Next\n');
+      expect(taskBlocks(edited).first.details!.preview, 'First');
+      expect(taskBlocks(edited).last.details, isNull);
+    },
+  );
 
-  test('what the assistant reads names a picture rather than a placeholder', () {
-    const note = '☐ Parent\n  The menu stays up.\n  ￼\n';
-    final task = taskLines(note).single;
-    expect(taskDetailsText(note, task), 'The menu stays up.\npicture');
-    expect(taskDetailsWords(note, task).contains('picture'), isFalse);
-  });
+  test(
+    'what the assistant reads names a picture rather than a placeholder',
+    () {
+      const note = '☐ Parent\n  The menu stays up.\n  ￼\n';
+      final task = taskLines(note).single;
+      expect(taskDetailsText(note, task), 'The menu stays up.\npicture');
+      expect(taskDetailsWords(note, task).contains('picture'), isFalse);
+    },
+  );
 
   test('a folded block keeps one preview row and hides the rest', () {
     const note = '☐ Parent\n  First\n\n  Second\n  ☐ Child\n☐ Next\n';

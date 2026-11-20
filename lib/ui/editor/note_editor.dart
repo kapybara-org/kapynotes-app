@@ -3899,7 +3899,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final line = markdownLinePrefix(_controller.text, selection.extentOffset);
     return line.isTask &&
         selection.extentOffset >= line.contentStart &&
-        _controller.text.substring(line.contentStart, line.lineEnd).trim().isNotEmpty;
+        _controller.text
+            .substring(line.contentStart, line.lineEnd)
+            .trim()
+            .isNotEmpty;
   }
 
   void _dropIntoDetails() {
@@ -3932,11 +3935,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final folds = _folds;
     if (folds == null) return;
     final words = _controller.text.substring(task.textStart, task.end).trim();
-    folds.setFolded(
-      widget.noteId,
-      _foldKey(words),
-      folded: !_taskFolded(task),
-    );
+    folds.setFolded(widget.noteId, _foldKey(words), folded: !_taskFolded(task));
     _foldedBlocks = null;
     setState(() {});
   }
@@ -8434,22 +8433,24 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       clipBehavior: Clip.none,
       children: [
         Padding(
-      padding: EdgeInsets.only(
-        left: padding.left,
-        top: padding.top,
-        bottom: padding.bottom,
-      ),
-      child: Focus(
-        // Not a focus stop of its own; it only watches the field below for Tab
-        // before the app's traversal shortcuts can claim it.
-        canRequestFocus: false,
-        skipTraversal: true,
-        onKeyEvent: _handleEditorKey,
-        child: Actions(
-          actions: {UndoTextIntent: _ShortcutUndoAction(_undoMarkdownShortcut)},
-          child: _textField(textStyle, strut, columnWidth, trailingOf),
-        ),
-      ),
+          padding: EdgeInsets.only(
+            left: padding.left,
+            top: padding.top,
+            bottom: padding.bottom,
+          ),
+          child: Focus(
+            // Not a focus stop of its own; it only watches the field below for Tab
+            // before the app's traversal shortcuts can claim it.
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: _handleEditorKey,
+            child: Actions(
+              actions: {
+                UndoTextIntent: _ShortcutUndoAction(_undoMarkdownShortcut),
+              },
+              child: _textField(textStyle, strut, columnWidth, trailingOf),
+            ),
+          ),
         ),
         Positioned.fill(
           child: TaskDetailsChrome(

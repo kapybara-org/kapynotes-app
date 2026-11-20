@@ -89,11 +89,12 @@ class TaskDetailsChrome extends StatelessWidget {
       } else if (inDetails &&
           caretLine != null &&
           caretLine.lineStart > block.task.end &&
-          (caretLine.lineStart <= details.end ||
-              _inside(details, caretLine))) {
+          (caretLine.lineStart <= details.end || _inside(details, caretLine))) {
         final top = laid.caretRectAt(TextPosition(offset: details.start));
         final bottom = laid.caretRectAt(
-          TextPosition(offset: (details.end - 1).clamp(details.start, text.length)),
+          TextPosition(
+            offset: (details.end - 1).clamp(details.start, text.length),
+          ),
         );
         if (top != null && bottom != null) {
           children.add(
@@ -115,7 +116,10 @@ class TaskDetailsChrome extends StatelessWidget {
         }
       }
     }
-    if (showHint && caretLine != null && caretLine.isTask && _lineEmpty(text, caretLine)) {
+    if (showHint &&
+        caretLine != null &&
+        caretLine.isTask &&
+        _lineEmpty(text, caretLine)) {
       final hint = laid.caretRectAt(TextPosition(offset: caretLine.lineStart));
       if (hint != null) {
         children.add(
@@ -206,7 +210,9 @@ class _PreviewLine extends StatelessWidget {
         ],
       ],
     );
-    if (onTap == null) return Align(alignment: Alignment.centerLeft, child: line);
+    if (onTap == null) {
+      return Align(alignment: Alignment.centerLeft, child: line);
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
