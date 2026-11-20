@@ -224,42 +224,92 @@ void main() {
     );
   });
 
-  testWidgets('sharing sits inside Account & sync rather than beside it', (
+  testWidgets('sharing is its own category, after Account & sync', (
     tester,
   ) async {
     await pumpSettings(
       tester,
-      size: const Size(880, 640),
+      size: const Size(1000, 800),
       asSheet: false,
       section: SettingsSection.account,
     );
 
-    // One account, one category. Sharing stopped being a rail entry of its
-    // own: an account is what both halves need, and the pane that asks for
-    // one is where the rest of it belongs.
+    final account = find.byKey(const ValueKey('settings-section-account'));
+    final sharing = find.byKey(const ValueKey('settings-section-sharing'));
+    final about = find.byKey(const ValueKey('settings-section-about'));
+    expect(account, findsOneWidget);
+    expect(sharing, findsOneWidget);
     expect(
-      find.byKey(const ValueKey('settings-section-account')),
+      tester.getTopLeft(sharing).dy,
+      greaterThan(tester.getTopLeft(account).dy),
+    );
+    if (about.evaluate().isNotEmpty) {
+      expect(
+        tester.getTopLeft(about).dy,
+        greaterThan(tester.getTopLeft(sharing).dy),
+      );
+    }
+
+    // Account & sync keeps the account, and nothing of sharing.
+    expect(find.text('Sync now'), findsOneWidget);
+    expect(find.byKey(const ValueKey('join-row')), findsNothing);
+    expect(find.byKey(const ValueKey('sharing-people')), findsNothing);
+
+    await tester.tap(sharing);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'The people you share notes with, and what each of them can see',
+      ),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('settings-section-sharing')),
-      findsNothing,
+    expect(find.byKey(const ValueKey('sharing-people')), findsOneWidget);
+    expect(find.byKey(const ValueKey('join-row')), findsOneWidget);
+    expect(find.byKey(const ValueKey('blocked-people')), findsOneWidget);
+  });
+
+  testWidgets('a search for a sharing row lands in Sharing', (tester) async {
+    await pumpSettings(
+      tester,
+      size: const Size(1000, 800),
+      asSheet: false,
+      section: SettingsSection.account,
     );
 
-    // Both panes are in there, controls and all — not just the heading.
-    expect(find.text('Sharing'), findsOneWidget);
-    expect(find.byKey(const ValueKey('join-code')), findsOneWidget);
-    expect(find.text('Sync now'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('settings-search')),
+      'unblock',
+    );
+    await tester.pumpAndSettle();
+    final result = find.byKey(
+      const ValueKey('settings-search-result-blocked-people'),
+    );
+    expect(result, findsOneWidget);
+    await tester.tap(result);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('blocked-people')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sharing-people')), findsOneWidget);
+  });
 
-    final delete = find.byKey(const ValueKey('delete-account'));
-    expect(delete, findsOneWidget);
-    expect(
-      tester.getTopLeft(delete).dy,
-      greaterThan(
-        tester.getTopLeft(find.byKey(const ValueKey('join-code'))).dy,
+  testWidgets('Free is told sharing needs Pro before typing anything', (
+    tester,
+  ) async {
+    await pumpSettings(
+      tester,
+      size: const Size(1000, 800),
+      asSheet: false,
+      section: SettingsSection.sharing,
+      entitlements: _freePlan,
+    );
+
+    expect(find.text('Sharing is part of Pro'), findsOneWidget);
+    final share = tester.widget<TextButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('share-with-someone')),
+        matching: find.byType(TextButton),
       ),
-      reason: 'account deletion belongs at the very bottom of the category',
     );
+    expect(share.onPressed, isNull);
   });
 
   testWidgets('searching for a password lands on its row', (tester) async {
@@ -314,24 +364,30 @@ void main() {
     expect(find.text('0.3 / 1 GB'), findsOneWidget);
   });
 
-  testWidgets('the phone list opens sharing through Account & sync', (
-    tester,
-  ) async {
+  testWidgets('the phone list opens Sharing on its own', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
     await pumpSettings(tester, size: const Size(390, 844), asSheet: true);
 
+    final sharing = find.byKey(const ValueKey('settings-section-sharing'));
+    expect(sharing, findsOneWidget);
     expect(
-      find.byKey(const ValueKey('settings-section-sharing')),
-      findsNothing,
+      tester.getTopLeft(sharing).dy,
+      greaterThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('settings-section-account')))
+            .dy,
+      ),
     );
-    expect(find.text('SHARING'), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('settings-section-account')));
+    await tester.tap(sharing);
     await tester.pumpAndSettle();
 
-    expect(find.text('SHARING'), findsOneWidget);
+    expect(find.text('PEOPLE'), findsOneWidget);
+    expect(find.byKey(const ValueKey('share-with-someone')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('join-row')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('join-code')), findsOneWidget);
   });
 }
