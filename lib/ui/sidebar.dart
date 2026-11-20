@@ -1196,9 +1196,8 @@ extension on Sidebar {
       if (phone && pinned && !drawings) {
         rows.add(
           (context) => SizedBox(
-            height: AppControlMetrics.scaleBar(
-              context,
-              NoteCardFace.squareHeight,
+            height: NoteCardFace.squareHeightFor(
+              MediaQuery.textScalerOf(context),
             ),
             child: LayoutBuilder(
               builder: (context, constraints) => ListView.separated(
