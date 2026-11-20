@@ -67,6 +67,9 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
     final item = widget.item;
     final details = taskBlockOf(item.note.body, item.line)?.details;
     final empty = !_adding && _words.text.trim().isEmpty && details == null;
+    // A note shared to view only: its details are shown, never taken, since
+    // the controller would drop every write without a word.
+    final editable = widget.tasks.canEdit(item.note);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.controlBackground,
@@ -110,7 +113,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                 details: details,
                 images: widget.images,
               ),
-            if (empty)
+            if (empty && editable)
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton(
@@ -125,10 +128,11 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                   ),
                 ),
               )
-            else
+            else if (!empty)
               TextField(
                 controller: _words,
                 focusNode: _focus,
+                readOnly: !editable,
                 minLines: 3,
                 maxLines: 8,
                 style: uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
@@ -140,11 +144,13 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                 onChanged: (value) =>
                     widget.tasks.setDetails(widget.item, value),
               ),
-            if (empty)
+            if (empty || !editable)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  'Writes under the task, in its note.',
+                  editable
+                      ? 'Writes under the task, in its note.'
+                      : 'You can view this note, not change it.',
                   style: uiStyle(13, 18, FontWeight.w400, palette.textTertiary),
                 ),
               ),
