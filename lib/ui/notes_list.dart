@@ -1173,6 +1173,7 @@ class NotesGroupHeading extends StatelessWidget {
             child: Semantics(
               header: true,
               button: folded != null,
+              expanded: folded == null ? null : !folded!,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

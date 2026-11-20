@@ -8286,6 +8286,22 @@ void main() {
   group('a day of its own', () {
     Finder chip(DateTime day) =>
         find.byKey(ValueKey('day-strip-${day.year}-${day.month}-${day.day}'));
+    int dotsOn(DateTime day) => find
+        .descendant(
+          of: chip(day),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Container &&
+                widget.decoration is BoxDecoration &&
+                (widget.decoration! as BoxDecoration).shape == BoxShape.circle,
+          ),
+        )
+        .evaluate()
+        .length;
+    final blankRow = find.descendant(
+      of: find.byType(Sidebar),
+      matching: find.text(Note.untitled),
+    );
 
     Future<(NoteDayStore, DateTime, Set<String>)> open(
       WidgetTester tester,
@@ -8308,10 +8324,14 @@ void main() {
       final (days, later, before) = await open(tester);
       expect(days.noteIds, isEmpty, reason: 'nothing typed, so no day yet');
       expect(days.owed, isEmpty);
+      final today = DateTime(later.year, later.month, later.day - 2);
+      final todayDots = dotsOn(today);
 
-      // Let the day go, and open another note.
+      // Let the day go: the page is still no note, in the list or the week.
       await tester.tap(chip(later));
       await tester.pumpAndSettle();
+      expect(blankRow, findsNothing);
+      expect(dotsOn(today), todayDots);
       await tester.tap(
         find.descendant(of: find.byType(Sidebar), matching: find.text('Plan')),
       );
@@ -8320,6 +8340,7 @@ void main() {
       expect({for (final note in notes.allNotes) note.id}, before);
       expect(days.noteIds, isEmpty);
       expect(days.owed, isEmpty);
+      expect(dotsOn(today), todayDots, reason: 'the page never had a dot');
     });
 
     testWidgets('the first words make the note, on the day tapped', (
@@ -8347,6 +8368,62 @@ void main() {
         'v': dayKey(later),
         'at': isA<int>(),
       });
+    });
+
+    testWidgets('a day tapped while recording leaves the recorded note alone', (
+      tester,
+    ) async {
+      final temp = Directory.systemTemp.createTempSync('kapy-days-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      notes = NotesStore(store, blobs: BlobStore(directory: temp));
+      final first = notes.create(body: 'First note');
+      final recorder = FakeVoiceRecorder(writesFile: false);
+      final recording = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+      );
+      addTearDown(recording.dispose);
+      final days = NoteDayStore(store);
+      await days.load();
+      await pumpApp(
+        tester,
+        size: const Size(1600, 900),
+        recording: recording,
+        days: days,
+      );
+      expect(await recording.start(noteId: first.id), isTrue);
+      final tone = File('test/fixtures/tone_5s.m4a').readAsBytesSync();
+      File(recorder.startedAt!).writeAsBytesSync(tone);
+      await tester.pump();
+
+      final now = notes.now();
+      final later = DateTime(now.year, now.month, now.day + 2);
+      // The recording lands in its note first, on the real clock, and only
+      // then does the new page open.
+      await tester.runAsync(() async {
+        await tester.tap(chip(later));
+        for (var wait = 0; wait < 100 && notes.notes.length == 1; wait++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pumpAndSettle();
+
+      expect(days.dayOf(first.id), isNull, reason: 'the recorded note');
+      expect(days.noteIds, isEmpty, reason: 'nothing typed on the new page');
+      final made = notes.notes.singleWhere((note) => note.isEmpty);
+
+      final field = tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+      field.value = const TextEditingValue(
+        text: 'Renewal notes\n',
+        selection: TextSelection.collapsed(offset: 13),
+      );
+      await tester.pumpAndSettle();
+      expect(days.dayOf(made.id), later);
+      expect(days.dayOf(first.id), isNull);
     });
 
     testWidgets('a note for a later day waits, folded, under Upcoming', (

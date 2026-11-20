@@ -7,6 +7,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
@@ -49,8 +50,12 @@ void main() {
 
   /// A signed-out device whose own fourteen days ran out a week ago, with
   /// seven notes: the two oldest are past the limit.
-  Future<void> pumpOverTheLimit(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1100, 760);
+  Future<void> pumpOverTheLimit(
+    WidgetTester tester, {
+    Size size = const Size(1100, 760),
+    NoteDayStore? days,
+  }) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
@@ -106,6 +111,7 @@ void main() {
         prefs: prefs,
         shortcuts: ShortcutPrefs(store)..load(),
         account: account,
+        days: days,
       ),
     );
     await tester.pumpAndSettle();
@@ -172,6 +178,29 @@ void main() {
       find.textContaining('delete a note you no longer need'),
       findsOneWidget,
     );
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a day tapped over the limit gives the open note no day', (
+    tester,
+  ) async {
+    final days = NoteDayStore(_MemoryStore());
+    await pumpOverTheLimit(tester, size: const Size(1600, 900), days: days);
+    final before = notes.allNotes.length;
+    final now = DateTime.now();
+    final later = DateTime(now.year, now.month, now.day + 2);
+
+    await tester.tap(
+      find.byKey(
+        ValueKey('day-strip-${later.year}-${later.month}-${later.day}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(notes.allNotes, hasLength(before));
+    expect(days.noteIds, isEmpty, reason: 'no note was made to give it to');
+    expect(find.text('Free keeps up to five notes'), findsOneWidget);
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
   });

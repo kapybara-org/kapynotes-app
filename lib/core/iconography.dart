@@ -87,6 +87,10 @@ class KapyIcons {
     0xE00C,
     HugeIcons.strokeRoundedCalendar03,
   );
+  static const calendarRemoveOutlined = KapyIconData(
+    0xE0EA,
+    HugeIcons.strokeRoundedCalendarMinus02,
+  );
   static const cameraOutlined = KapyIconData(
     0xE00D,
     HugeIcons.strokeRoundedCamera01,

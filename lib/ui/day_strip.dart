@@ -152,11 +152,14 @@ class _DayStripState extends State<DayStrip> {
 
   /// The days on show, oldest first, with today in the middle and the whole
   /// window moved [_shift] days.
-  List<DateTime> get _shown {
+  List<DateTime> get _shown => _week(days);
+
+  /// The [count] days in view, today in the middle until paged away.
+  List<DateTime> _week(int count) {
     final today = widget.today;
-    final centre = (days - 1) ~/ 2;
+    final centre = (count - 1) ~/ 2;
     return [
-      for (var index = 0; index < days; index++)
+      for (var index = 0; index < count; index++)
         DateTime(today.year, today.month, today.day - centre + _shift + index),
     ];
   }
@@ -199,9 +202,9 @@ class _DayStripState extends State<DayStrip> {
   /// A click on [day] in the week or the calendar: lists its notes where
   /// there is no list to narrow, narrows the list to it, or opens a page to
   /// write it when it holds none.
-  void _choose(DateTime day, {int notes = 0}) {
+  void _choose(DateTime day, {int notes = 0, BuildContext? at}) {
     if (widget.onOpenNote != null) {
-      unawaited(_list(day));
+      unawaited(_list(day, at: at));
       return;
     }
     final today = widget.today;
@@ -214,10 +217,11 @@ class _DayStripState extends State<DayStrip> {
     if (notes == 0) widget.onWriteOn?.call(day);
   }
 
-  /// Lists [day]'s notes 4 under the days' dots, or under the one button,
-  /// and opens the one picked.
-  Future<void> _list(DateTime day) async {
+  /// Lists [day]'s notes 4 under the days' dots, from the left of the day
+  /// tapped [at], or under the one button, and opens the one picked.
+  Future<void> _list(DateTime day, {BuildContext? at}) async {
     final box = context.findRenderObject() as RenderBox?;
+    final tapped = at?.findRenderObject() as RenderBox?;
     final onOpen = widget.onOpenNote;
     if (box == null || onOpen == null) return;
     final palette = context.palette;
@@ -238,7 +242,12 @@ class _DayStripState extends State<DayStrip> {
     final noteId = await showKapyContextMenu<String>(
       context: context,
       globalPosition: box.localToGlobal(
-        Offset(0, days > 0 ? 48 : box.size.height + 4),
+        Offset(
+          tapped == null
+              ? 0
+              : box.globalToLocal(tapped.localToGlobal(Offset.zero)).dx,
+          days > 0 ? 48 : box.size.height + 4,
+        ),
       ),
       items: [
         PopupMenuItem(
@@ -342,8 +351,7 @@ class _DayStripState extends State<DayStrip> {
 
   /// The month over the week, or the two its days span: "November",
   /// "November–December". Spelled out in full (Sanjay, 20 Nov).
-  String get _month {
-    final shown = _shown;
+  String _monthOver(List<DateTime> shown) {
     if (shown.isEmpty) return SidebarTimestamp.monthName(widget.today);
     final first = shown.first;
     final last = shown.last;
@@ -379,17 +387,24 @@ class _DayStripState extends State<DayStrip> {
     builder: (context, constraints) {
       final palette = context.palette;
       // The month sits at the strip's own left, so the week has what it
-      // leaves: 8, the label, 4, a 12 chevron and 8, then 2 clear.
-      final room =
-          constraints.maxWidth -
-          (_labelWidth(context, _month) + 32 + DayStrip._arrowGap);
-      days = widget.compact
-          ? 0
-          : DayStrip.daysIn(room, arrow: DayStrip._arrowWidth);
+      // leaves: 8, the label, 4, a 12 chevron and 8, then 2 clear. The
+      // month is the one over the days that would show, which fewer days
+      // can shorten.
+      days = 0;
+      if (!widget.compact) {
+        for (final count in const [7, 5, 3, 1]) {
+          final label = _labelWidth(context, _monthOver(_week(count)));
+          final room = constraints.maxWidth - (label + 32 + DayStrip._arrowGap);
+          if (DayStrip.daysIn(room, arrow: DayStrip._arrowWidth) >= count) {
+            days = count;
+            break;
+          }
+        }
+      }
       if (days == 0) {
         final when = widget.when;
         final label = when is WhenDay ? when.label : 'Today';
-        return _buttonWidth(context, label) <= room
+        return _buttonWidth(context, label) <= constraints.maxWidth
             ? _calendarButton(label, palette, compact: true)
             : const SizedBox.shrink();
       }
@@ -401,7 +416,7 @@ class _DayStripState extends State<DayStrip> {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _calendarButton(_month, palette, compact: false),
+          _calendarButton(_monthOver(shown), palette, compact: false),
           const SizedBox(width: DayStrip._arrowGap),
           CompactIconButton(
             key: const ValueKey('day-strip-back'),
@@ -418,14 +433,16 @@ class _DayStripState extends State<DayStrip> {
           ),
           for (final day in shown) ...[
             const SizedBox(width: DayStrip._dayGap),
-            _Day(
-              key: ValueKey('day-strip-${_date(day)}'),
-              day: day,
-              today: day == today,
-              picked: day == picked,
-              filled: day == filled,
-              count: counts[day]!,
-              onTap: () => _choose(day, notes: counts[day]!),
+            Builder(
+              builder: (tapped) => _Day(
+                key: ValueKey('day-strip-${_date(day)}'),
+                day: day,
+                today: day == today,
+                picked: day == picked,
+                filled: day == filled,
+                count: counts[day]!,
+                onTap: () => _choose(day, notes: counts[day]!, at: tapped),
+              ),
             ),
           ],
           const SizedBox(width: DayStrip._arrowGap),

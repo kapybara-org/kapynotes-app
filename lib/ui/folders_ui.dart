@@ -270,42 +270,46 @@ class _UpcomingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        height: 36,
-        child: Row(
-          children: [
-            KapyIcon(
-              open
-                  ? KapyIcons.chevronDownRounded
-                  : KapyIcons.chevronRightRounded,
-              size: 12,
-              strokeWidth: 1.8,
-              color: palette.textTertiary,
-            ),
-            const SizedBox(width: 6),
-            KapyIcon(
-              KapyIcons.calendarOutlined,
-              size: 16,
-              strokeWidth: 1.8,
-              color: palette.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Upcoming',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _figtree(14, 18, FontWeight.w500, palette.textPrimary),
+    return Semantics(
+      button: true,
+      expanded: open,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          height: 44,
+          child: Row(
+            children: [
+              KapyIcon(
+                open
+                    ? KapyIcons.chevronDownRounded
+                    : KapyIcons.chevronRightRounded,
+                size: 12,
+                strokeWidth: 1.8,
+                color: palette.textTertiary,
               ),
-            ),
-            Text(
-              '$count',
-              style: _figtree(12, 16, FontWeight.w600, palette.textTertiary),
-            ),
-          ],
+              const SizedBox(width: 6),
+              KapyIcon(
+                KapyIcons.calendarOutlined,
+                size: 16,
+                strokeWidth: 1.8,
+                color: palette.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Upcoming',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _figtree(14, 18, FontWeight.w500, palette.textPrimary),
+                ),
+              ),
+              Text(
+                '$count',
+                style: _figtree(12, 16, FontWeight.w600, palette.textTertiary),
+              ),
+            ],
+          ),
         ),
       ),
     );

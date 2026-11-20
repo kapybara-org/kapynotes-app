@@ -40,6 +40,7 @@ class TasksScreen extends StatefulWidget {
     required this.labelOf,
     required this.onOpenNote,
     this.images,
+    this.displayTime,
     this.newTaskShortcut,
   });
 
@@ -54,6 +55,10 @@ class TasksScreen extends StatefulWidget {
   /// Where a task's picture is stored, so Do now and the sheet can show it.
   /// Null in a test that does not draw pictures.
   final BlobStore? images;
+
+  /// The clock the app shows times by, so a note's day comes when the list
+  /// says it does; the device's own when left out.
+  final DateTime Function(DateTime)? displayTime;
 
   /// Printed on the add row's keycap at rest.
   final String? newTaskShortcut;
@@ -130,9 +135,11 @@ class TasksScreenState extends State<TasksScreen> {
 
   TasksController get _tasks => widget.controller;
 
+  static DateTime _deviceTime(DateTime time) => time.toLocal();
+
   List<TaskItem> _open(TaskBoard board) {
     final days = NoteDayScope.maybeOf(context);
-    final today = dayShown(_tasks.now(), (time) => time.toLocal());
+    final today = dayShown(_tasks.now(), widget.displayTime ?? _deviceTime);
     return [
       for (final item in board.openIn(widget.filter.noteId))
         if (days == null || !days.taskWaits(item.note.id, today)) item,
@@ -144,7 +151,7 @@ class TasksScreenState extends State<TasksScreen> {
   int _waiting(TaskBoard board) {
     final days = NoteDayScope.maybeOf(context);
     if (days == null) return 0;
-    final today = dayShown(_tasks.now(), (time) => time.toLocal());
+    final today = dayShown(_tasks.now(), widget.displayTime ?? _deviceTime);
     return [
       for (final item in board.openIn(widget.filter.noteId))
         if (days.taskWaits(item.note.id, today)) item,

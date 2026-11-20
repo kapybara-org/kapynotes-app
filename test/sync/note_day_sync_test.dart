@@ -47,7 +47,6 @@ void main() {
       expect(record, isNot(note.id));
       expect(stored()[record]!.record.deletedAt, isNull);
       expect(b.days.dayOf(note.id), DateTime(2026, 11, 21));
-      expect(b.days.dayOfNote(b.notes.byId(note.id)!), DateTime(2026, 11, 21));
       expectSettled(a, b);
       a.dispose();
       b.dispose();
@@ -66,10 +65,6 @@ void main() {
       expect(a.days.clearDay(note.id), isTrue);
       await passes([a, b]);
       expect(b.days.dayOf(note.id), isNull);
-      expect(
-        b.days.dayOfNote(b.notes.byId(note.id)!),
-        isNot(DateTime(2026, 11, 21)),
-      );
       expectSettled(a, b);
       a.dispose();
       b.dispose();

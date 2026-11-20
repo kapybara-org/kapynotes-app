@@ -352,4 +352,42 @@ void main() {
     expect(month, findsNothing);
     expect(date, findsOneWidget, reason: 'one button for the day instead');
   });
+
+  testWidgets('at every width it fits, with › or the button for the day', (
+    tester,
+  ) async {
+    final forward = find.byKey(const ValueKey('day-strip-forward'));
+    final date = find.byKey(const ValueKey('day-strip-date'));
+    // Seven days from Sun 29 November say "November–December", and fewer
+    // around Wed 2 December only "December".
+    for (var room = 140.0; room <= 760; room += 12) {
+      for (final compact in [false, true]) {
+        await pumpStrip(
+          tester,
+          today: DateTime(2026, 12, 2),
+          room: room,
+          compact: compact,
+        );
+        expect(tester.takeException(), isNull, reason: 'at $room');
+        expect(
+          forward.evaluate().length + date.evaluate().length,
+          1,
+          reason: 'the next week or the day can be reached at $room',
+        );
+      }
+    }
+  });
+
+  testWidgets('a day lists its notes from under that day', (tester) async {
+    await pumpStrip(
+      tester,
+      notes: [note('ideas', 'Book ideas', DateTime(2026, 11, 22, 9))],
+      onOpenNote: (_, {required behind}) {},
+    );
+    await tap(tester, day(22));
+    expect(
+      tester.getTopLeft(find.text('Book ideas')).dx,
+      greaterThan(tester.getTopLeft(day(22)).dx),
+    );
+  });
 }

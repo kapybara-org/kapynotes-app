@@ -1226,7 +1226,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           continue;
         }
         if (note.isEmpty && note.attachments.isEmpty) continue;
-        days.setDay(id, _dayOfFreshNote.remove(id)!);
+        if (days.setDay(id, _dayOfFreshNote.remove(id)!) == false && mounted) {
+          Toast.show(
+            context,
+            'This note stays on today. $_dayCap',
+            isError: true,
+          );
+        }
       }
     }
     final collectionIds =
@@ -1968,19 +1974,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// first words: a page left untouched writes neither the note nor a day.
   final Map<String, DateTime> _dayOfFreshNote = {};
 
+  /// Why a note can't be given a day, once 20,000 notes have one.
+  static const _dayCap =
+      '20,000 notes already have a day, the most Kapy Notes keeps.';
+
   /// Writes on [day]: a page with no note behind it until the first words, so
   /// leaving it untouched leaves nothing.
   void _writeOnDay(DateTime day) {
     final days = widget.days;
     if (days == null) return;
-    _createNote();
-    final note = widget.notes.byId(_selectedId);
-    if (note == null) return;
-    if (note.isEmpty && note.attachments.isEmpty) {
-      _dayOfFreshNote[note.id] = day;
-    } else {
-      days.setDay(note.id, day);
-    }
+    _createNote(onMade: (id) => _dayOfFreshNote[id] = day);
   }
 
   /// Gives the note whose page is open another day, or none at all.
@@ -1997,7 +2000,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (picked == null || !mounted) return;
     if (days.setDay(note.id, picked) == false) {
-      Toast.show(context, 'Every note already has a day', isError: true);
+      Toast.show(context, "Couldn't move this note. $_dayCap", isError: true);
     }
   }
 
@@ -2005,19 +2008,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   ///
   /// Returns whether anything was actually created, which is what the swipe
   /// cue needs in order not to announce a note that does not exist.
-  bool _createNote({bool drawing = false, String body = ''}) {
+  /// [onMade] is told the note the page opens on, made or reused, and never
+  /// called when none is, as at the note limit.
+  bool _createNote({
+    bool drawing = false,
+    String body = '',
+    ValueChanged<String>? onMade,
+  }) {
     final recording = widget.recording;
     if (recording != null && recording.isRecording) {
       unawaited(
         recording.finishRecordingAndFlush().then((_) {
-          if (mounted) _createNoteNow(drawing: drawing, body: body);
+          if (mounted) {
+            _createNoteNow(drawing: drawing, body: body, onMade: onMade);
+          }
         }),
       );
       // The recording is about to land in the note that is open, so that note
       // will not be blank by the time this runs and a new one will follow.
       return true;
     }
-    return _createNoteNow(drawing: drawing, body: body);
+    return _createNoteNow(drawing: drawing, body: body, onMade: onMade);
   }
 
   /// What New makes in the space on screen: a drawing in Drawings, a note
@@ -2048,7 +2059,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// [body] is the note's first words, from the ⌘K menu's field. A note made
   /// while a folder's tab is in front goes into that folder.
-  bool _createNoteNow({bool drawing = false, String body = ''}) {
+  bool _createNoteNow({
+    bool drawing = false,
+    String body = '',
+    ValueChanged<String>? onMade,
+  }) {
     _recordKapyActivity();
     final creatingHidden = _hiddenMode;
     final folderId = drawing ? null : _folderInFront;
@@ -2070,6 +2085,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else {
       widget.notes.startAsNew(blank.id);
     }
+    onMade?.call(note.id);
     if (folderId != null) {
       if (widget.folders?.file([note.id], folderId) case final refusal?) {
         Toast.show(context, folderRefusalText(refusal), isError: true);
@@ -3414,31 +3430,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// The page's days, in My notes and on a folder in front, counting and
   /// narrowing what the list shows or what the folder holds. With the list
-  /// hidden and no folder in front, a day lists its notes instead.
+  /// hidden and no folder in front, a day lists its notes instead. Kapy AI
+  /// open over the page's right edge leaves them the one button for the day.
   Widget Function(bool compact)? _pageDays({required bool listVisible}) {
     final folderId = _folderInFront;
     if (folderId == null && (_space != LibrarySpace.notes || _specialMode)) {
       return null;
     }
     final displayTime = widget.prefs.displayTime;
-    return (compact) => DayStrip(
-      key: _dayStrip,
-      compact: compact,
-      today: dayShown(widget.notes.now(), displayTime),
-      when: _when,
-      onWhenChanged: _setWhen,
-      notes: folderId == null
-          ? _filtered(widget.notes.search(''), anyTime: true)
-          : widget.folders!.tree.notesIn(
-              _filtered(_folderNotes, anyTime: true),
-              folderId,
-              deep: true,
-            ),
-      displayTime: displayTime,
-      firstWeekday: firstWeekday(context),
-      ownDay: widget.days == null ? null : _ownDayOf,
-      onWriteOn: widget.days == null || !listVisible ? null : _writeOnDay,
-      onOpenNote: listVisible || folderId != null ? null : _openFromDay,
+    return (compact) => ListenableBuilder(
+      listenable: _kapyPanel,
+      builder: (context, _) => DayStrip(
+        key: _dayStrip,
+        compact:
+            compact ||
+            (_kapyPanel.isOpen &&
+                (_kapyAi?.enabled ?? false) &&
+                MediaQuery.sizeOf(context).width < kapyAiOverlayBelow),
+        today: dayShown(widget.notes.now(), displayTime),
+        when: _when,
+        onWhenChanged: _setWhen,
+        notes: folderId == null
+            ? _filtered(widget.notes.search(''), anyTime: true)
+            : widget.folders!.tree.notesIn(
+                _filtered(_folderNotes, anyTime: true),
+                folderId,
+                deep: true,
+              ),
+        displayTime: displayTime,
+        firstWeekday: firstWeekday(context),
+        ownDay: widget.days == null ? null : _ownDayOf,
+        onWriteOn: widget.days == null || !listVisible ? null : _writeOnDay,
+        onOpenNote: listVisible || folderId != null ? null : _openFromDay,
+      ),
     );
   }
 
@@ -3627,7 +3651,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           );
     return [
       for (final note in _narrowed(notes))
-        if ((span == null || span.covers(noteDay(note, displayTime))) &&
+        if (!_dayOfFreshNote.containsKey(note.id) &&
+            (span == null || span.covers(noteDay(note, displayTime))) &&
             (!byMedia || NoteMedia.shows(note, _mediaFilter)) &&
             (!byTag.narrowed ||
                 byTag.matches([
@@ -4249,7 +4274,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           const KapyMenuAction(
             value: 'undate',
             label: 'Remove day',
-            icon: KapyIcons.calendarOutlined,
+            icon: KapyIcons.calendarRemoveOutlined,
           ),
       ],
       if (mayEdit && !_specialMode && !note.isShared)
@@ -4383,6 +4408,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           labelOf: _taskNoteLabel,
           onOpenNote: _openTaskNote,
           images: widget.notes.blobs,
+          displayTime: widget.prefs.displayTime,
           newTaskShortcut: widget.shortcuts
               .bindingFor(ShortcutAction.newNote)
               ?.keycapLabel,
