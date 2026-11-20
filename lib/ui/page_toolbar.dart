@@ -226,6 +226,11 @@ class PageToolbar extends StatelessWidget {
         back == null ? height : phoneHeight,
       ),
       color: palette.isGlass ? palette.paperColor : null,
+      foregroundDecoration: back == null
+          ? BoxDecoration(
+              border: Border(bottom: BorderSide(color: palette.railBorder)),
+            )
+          : null,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;

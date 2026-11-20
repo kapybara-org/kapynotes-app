@@ -66,9 +66,11 @@ void main() {
     Widget? assistant,
     List<Widget>? actions,
     Widget Function(bool compact, PlaceDays place)? days,
+    ({String to, VoidCallback onPressed})? back,
   }) => PageToolbar(
     path: path,
     days: days,
+    back: back,
     actions: actions,
     listVisible: listVisible,
     onShowList: onShowList ?? () {},
@@ -95,6 +97,24 @@ void main() {
   const ai = ValueKey('ai');
   Finder onPath(String text) =>
       find.descendant(of: path, matching: find.text(text));
+
+  testWidgets('the band has a hairline along its bottom, a phone\'s bar none', (
+    tester,
+  ) async {
+    BoxDecoration? hairline() =>
+        tester.widget<Container>(bar).foregroundDecoration as BoxDecoration?;
+
+    await tester.pumpWidget(harness(toolbar()));
+    expect(
+      hairline()?.border,
+      Border(bottom: BorderSide(color: KapyTheme.darkPalette.railBorder)),
+    );
+
+    await tester.pumpWidget(
+      harness(toolbar(back: (to: 'Notes', onPressed: () {}))),
+    );
+    expect(hairline(), isNull);
+  });
 
   testWidgets(
     'is a 52 band from the page\'s top, with the path 18 in, every '
