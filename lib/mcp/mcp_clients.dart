@@ -47,7 +47,10 @@ class McpClientSetup {
   Uri get cursor => Uri.parse(
     'cursor://anysphere.cursor-deeplink/mcp/install'
     '?name=$serverName'
-    '&config=${Uri.encodeQueryComponent(base64.encode(utf8.encode(jsonEncode({'url': url, 'headers': {'Authorization': _bearer}}))))}',
+    '&config=${Uri.encodeQueryComponent(base64.encode(utf8.encode(jsonEncode({
+      'url': url,
+      'headers': {'Authorization': _bearer},
+    }))))}',
   );
 
   /// VS Code's install link: the server's entry, URL-encoded JSON.
@@ -153,9 +156,9 @@ async function forward(line) {
   const text = (await response.text()).trim();
   if (text) return process.stdout.write(text + '\n');
   if (response.status === 401) {
-    return fail(id, 'Kapy Notes no longer knows this connection. Add it to Claude again from Kapy Notes, Settings, MCP.');
+    return fail(id, 'Kapy Notes no longer knows this connection. Add it to Claude again from Kapy Notes, Settings, AI apps.');
   }
-  if (!response.ok) fail(id, 'Kapy Notes answered ' + response.status + '.');
+  if (!response.ok) fail(id, 'Kapy Notes couldn’t do that. Try again.');
 }
 
 function fail(id, message) {
