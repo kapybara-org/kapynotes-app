@@ -2010,7 +2010,7 @@ void main() {
     );
   });
 
-  testWidgets('settings heads its groups in Shantell and its rows in Figtree', (
+  testWidgets('settings heads its groups in Figtree at the section weight', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -2026,7 +2026,11 @@ void main() {
       ).style.merge(tester.widget<Text>(finder.first).style);
     }
 
-    expect(styleOf('Opening').fontFamily, 'Shantell Sans');
+    expect(styleOf('Opening').fontFamily, isNot('Shantell Sans'));
+    expect(
+      styleOf('Opening').fontVariations,
+      AppWeight.variations(AppWeight.section),
+    );
     expect(styleOf('Daily separators').fontFamily, isNot('Shantell Sans'));
     expect(
       styleOf('Add a dated line when a new day begins').fontWeight ??
