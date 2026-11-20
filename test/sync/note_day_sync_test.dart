@@ -59,16 +59,16 @@ void main() {
     () async {
       final (a, b) = await pair();
       final note = a.notes.create(body: 'Plan Friday');
-      a.days.setDay(note.id, DateTime(2026, 11, 21));
+      a.days.setDay(note.id, DateTime(2026, 11, 13));
       await passes([a, b]);
-      expect(b.days.dayOf(note.id), DateTime(2026, 11, 21));
+      expect(b.days.dayOf(note.id), DateTime(2026, 11, 13));
 
       expect(a.days.clearDay(note.id), isTrue);
       await passes([a, b]);
       expect(b.days.dayOf(note.id), isNull);
       expect(
         b.days.dayOfNote(b.notes.byId(note.id)!),
-        isNot(DateTime(2026, 11, 21)),
+        isNot(DateTime(2026, 11, 13)),
       );
       expectSettled(a, b);
       a.dispose();

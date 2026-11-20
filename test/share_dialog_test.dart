@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
@@ -28,6 +28,7 @@ import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
@@ -1217,6 +1218,14 @@ void main() {
     expect(ours.body, 'Trip budget');
   });
 
+  /// Any sharing heading: one per person or space the shared notes are open
+  /// to.
+  final sharedHeading = find.byWidgetPredicate(
+    (widget) =>
+        widget.key is ValueKey<String> &&
+        (widget.key! as ValueKey<String>).value.startsWith('share-group-'),
+  );
+
   testWidgets('the sidebar groups shared notes under who they are for', (
     tester,
   ) async {
@@ -1243,7 +1252,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
           ),
@@ -1252,33 +1261,29 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('My notes'), findsOneWidget);
+    final today = find.byKey(const ValueKey('sidebar-group-Today'));
+    expect(today, findsOneWidget);
     // Bob has not joined yet.
     expect(find.text('Waiting for user-2'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Shared'), findsOneWidget);
 
-    // Pinned, then the shared groups, then your own. Shared notes lead the two
-    // ordinary sections because they are the ones that change while you are
-    // not looking; your own are where you left them.
+    // Pinned, then the shared groups, then your own under their days. Shared
+    // notes lead because they are the ones that change while you are not
+    // looking; your own are where you left them.
     double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    final ownDay = tester.getTopLeft(today).dy;
     expect(top('Pinned'), lessThan(top('Waiting for user-2')));
-    expect(top('Waiting for user-2'), lessThan(top('My notes')));
+    expect(top('Waiting for user-2'), lessThan(ownDay));
 
     // And a pinned note is lifted out of the section it came from rather
     // than repeated in it.
     expect(find.text('Kept at hand'), findsOneWidget);
     expect(top('Kept at hand'), lessThan(top('Waiting for user-2')));
 
-    // "My notes" counts every note of their own, the pinned one included,
-    // and none of the shared ones.
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('sidebar-note-count')),
-        matching: find.text('2'),
-      ),
-      findsOneWidget,
-    );
+    // Your own day holds your own note, and the shared one stays in its group.
+    expect(top('Shared'), lessThan(ownDay));
+    expect(top('Private'), greaterThan(ownDay));
   });
 
   testWidgets('a shared group is headed by its people and their faces, says '
@@ -1309,7 +1314,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
             collaborators: {
@@ -1373,7 +1378,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: bob.sharing,
           ),
@@ -1409,7 +1414,7 @@ void main() {
               displayTime: (t) => t,
               onSearch: () {},
               onSelect: (_) {},
-              onCreate: () {},
+              windowBar: const SizedBox(),
               onShare: (_) {},
               onArchive: (_) {},
               sharing: alice.sharing,
@@ -1423,6 +1428,10 @@ void main() {
       // title bar, where it acts on the note that is open rather than whichever
       // row happens to be under the pointer.
       expect(find.byKey(ValueKey('share-note-${shared.id}')), findsNothing);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: tester.getCenter(find.text('Shared')));
+      await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('note-actions-${shared.id}')), findsOneWidget);
 
       // Right-click still reaches it without opening the note first.
@@ -1474,6 +1483,7 @@ void main() {
               onDelete: (_) {},
               asksBeforeDeleting: asks,
               sharing: bob.sharing,
+              windowBar: const SizedBox(),
             ),
           ),
         ),
@@ -1513,8 +1523,9 @@ void main() {
     expect(bob.notes.byId(shared.id), isNotNull);
     expect(await deleteLabel(shared), 'Remove note…');
     expect(await deleteLabel(own), 'Delete note…');
-    // A viewer can't take it out of their notes, as before.
-    expect(await deleteLabel(viewed), isNull);
+    // A viewer takes it out of their own notes the same way. Before, Leave
+    // was their only way out, and it left the whole space.
+    expect(await deleteLabel(viewed), 'Remove note…');
 
     await pumpBob(asks: false);
     expect(await deleteLabel(shared), 'Remove note');
@@ -1569,6 +1580,7 @@ void main() {
               sharing: bob.sharing,
               picks: picks,
               onPicked: (action, ids) => done.add((action, ids)),
+              windowBar: const SizedBox(),
             ),
           ),
         ),
@@ -1602,16 +1614,17 @@ void main() {
     expect(await label('pin'), 'Pin');
     // Hidden Notes are only ever the reader's own notes.
     expect(await label('hide'), 'Move 1 note to Hidden Notes');
-    // A viewer changes nothing: the note they may only read is left out.
+    // A viewer changes nothing, so the note they may only read is left out of
+    // Archive; but it leaves their notes with the rest, as its row's does.
     expect(await label('archive'), 'Archive 2 notes');
-    expect(await label('delete'), 'Delete 2 notes…');
+    expect(await label('delete'), 'Delete 3 notes…');
 
     await tester.tap(find.byKey(const ValueKey('picked-delete')));
     await tester.pumpAndSettle();
     expect(done.single.$1, PickedAction.delete);
-    expect(done.single.$2, unorderedEquals([shared.id, own.id]));
+    expect(done.single.$2, unorderedEquals([shared.id, viewed.id, own.id]));
 
-    // Of these two only the editor's leaves Bob's notes, as its row says.
+    // Both of these only leave Bob's notes, whatever he may do in them.
     picks
       ..clear()
       ..toggle(shared.id)
@@ -1630,8 +1643,154 @@ void main() {
           )
           .action
           .label,
-      'Remove note…',
+      'Remove 2 notes…',
     );
+  });
+
+  test('the toast after a mixed delete says which notes are gone for good', () {
+    expect(forgottenMessage(deleted: 1, removed: 0), 'Note deleted');
+    expect(forgottenMessage(deleted: 3, removed: 0), '3 notes deleted');
+    expect(forgottenMessage(deleted: 0, removed: 2), 'Removed from your notes');
+    expect(
+      forgottenMessage(deleted: 1, removed: 2),
+      'Note deleted, and 2 removed from your notes',
+    );
+    expect(
+      forgottenMessage(deleted: 2, removed: 1),
+      '2 notes deleted, and 1 removed from your notes',
+    );
+  });
+
+  group('a viewer removes a note from their own notes', () {
+    late Note viewed;
+
+    /// Alice shares a note with Bob, who may only read it, and with Carol,
+    /// who may edit it.
+    Future<void> sharedToRead(WidgetTester tester) => tester.runAsync(() async {
+      for (final device in [alice, bob, carol]) {
+        await device.boot();
+      }
+      viewed = alice.notes.create(body: 'Read only\nfor Bob');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(
+        viewed.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.addPerson(viewed.id, carol.email);
+      await carol.sharing.acceptInvite(server.outbox.last.token);
+      for (final device in [alice, bob, carol]) {
+        await device.sync.syncNow();
+      }
+    });
+
+    /// Takes [ids] out of Bob's notes as the app does once he confirms, then
+    /// lets everyone sync.
+    Future<void> removeForBob(WidgetTester tester, List<String> ids) =>
+        tester.runAsync(() async {
+          bob.notes.deleteAll(ids);
+          for (final device in [bob, alice, carol, bob]) {
+            await device.sync.syncNow();
+          }
+        });
+
+    Widget bobsList({
+      required ValueChanged<String> onDelete,
+      NotePicks? picks,
+      void Function(PickedAction, List<String>)? onPicked,
+    }) => harness(
+      SizedBox(
+        width: 280,
+        child: Sidebar(
+          windowBar: const SizedBox(),
+          notes: bob.notes.notes,
+          selectedId: null,
+          query: '',
+          displayTime: (t) => t,
+          onSearch: () {},
+          onSelect: (_) {},
+          onArchive: (_) {},
+          onDelete: onDelete,
+          sharing: bob.sharing,
+          picks: picks,
+          onPicked: onPicked,
+        ),
+      ),
+    );
+
+    testWidgets('from its row, and the others keep it', (tester) async {
+      await sharedToRead(tester);
+      expect(bob.sharing.canEdit(bob.notes.byId(viewed.id)!), isFalse);
+      String? removed;
+      await tester.pumpWidget(bobsList(onDelete: (id) => removed = id));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(viewed.title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('archive-note-${viewed.id}')), findsNothing);
+      await tester.tap(find.byKey(ValueKey('delete-note-${viewed.id}')));
+      await tester.pumpAndSettle();
+      expect(removed, viewed.id);
+
+      await removeForBob(tester, [viewed.id]);
+      expect(bob.notes.byId(viewed.id), isNull);
+      expect(alice.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(carol.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(server.rows[viewed.id]!.isTombstone, isFalse);
+      expect(bob.notes.dirtyTombstones, isEmpty);
+    });
+
+    testWidgets('picked with an edited note and his own, and only his own is '
+        'gone for everyone', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await sharedToRead(tester);
+      late Note edited;
+      late Note own;
+      await tester.runAsync(() async {
+        edited = alice.notes.create(body: 'Edited together');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(edited.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.last.token);
+        own = bob.notes.create(body: 'Bob alone');
+        for (final device in [alice, bob]) {
+          await device.sync.syncNow();
+        }
+      });
+
+      final picks = NotePicks();
+      addTearDown(picks.dispose);
+      final done = <(PickedAction, List<String>)>[];
+      await tester.pumpWidget(
+        ListenableBuilder(
+          listenable: picks,
+          builder: (context, _) => bobsList(
+            onDelete: (_) {},
+            picks: picks,
+            onPicked: (action, ids) => done.add((action, ids)),
+          ),
+        ),
+      );
+      picks.all([viewed.id, edited.id, own.id]);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('picked-delete')));
+      await tester.pumpAndSettle();
+      expect(done.single.$1, PickedAction.delete);
+      expect(done.single.$2, unorderedEquals([viewed.id, edited.id, own.id]));
+
+      await removeForBob(tester, done.single.$2);
+      for (final id in [viewed.id, edited.id, own.id]) {
+        expect(bob.notes.byId(id), isNull);
+      }
+      expect(alice.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(carol.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(alice.notes.byId(edited.id)?.body, 'Edited together');
+      expect(server.rows[own.id]!.isTombstone, isTrue);
+      expect(server.rows[viewed.id]!.isTombstone, isFalse);
+      expect(server.rows[edited.id]!.isTombstone, isFalse);
+      expect(bob.notes.dirtyTombstones, isEmpty);
+    });
   });
 
   group('sidebar tabs', () {
@@ -1656,7 +1815,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: device.sharing,
             tab: tab,
@@ -1666,17 +1825,16 @@ void main() {
       ),
     );
 
-    testWidgets('your own shared note stays in My Notes, with faces, and '
-        'is in Shared too', (tester) async {
+    testWidgets('your own shared note stays in the notes list, and is in '
+        'Shared under the person it is open to', (tester) async {
       late Note shared;
-      late Space space;
       await tester.runAsync(() async {
         await alice.boot();
         await bob.boot();
         alice.notes.create(body: 'Private');
         shared = alice.notes.create(body: 'Ours');
         await alice.sync.syncNow();
-        space = await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+        await alice.sharing.shareNoteWith(shared.id, email: bob.email);
         await bob.sharing.acceptInvite(server.outbox.single.token);
         await alice.sync.syncNow();
         await bob.sync.syncNow();
@@ -1686,28 +1844,19 @@ void main() {
       await tester.pumpWidget(tabbed(alice, tab: SidebarTab.mine));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('sidebar-tabs')), findsOneWidget);
-      expect(find.text('My Notes'), findsOneWidget);
-      expect(find.text('Shared'), findsOneWidget);
+      // An ordinary row, not a section of its own: her own list has no
+      // sharing heading over it.
       expect(find.text('Private'), findsOneWidget);
       expect(find.text('Ours'), findsOneWidget);
-      // An ordinary row, not a section of its own: no heading, and the
-      // people it is open to drawn after its timestamp instead.
-      expect(find.text('With User'), findsNothing);
-      expect(find.byKey(const ValueKey('note-row-people')), findsOneWidget);
-      expect(
-        find.byKey(ValueKey('space-avatar-${space.id}-${bob.userId}')),
-        findsOneWidget,
-      );
+      expect(sharedHeading, findsNothing);
 
-      // Shared lists it under Bob, whose faces the heading shows, so the row
-      // does not repeat them, and leaves her private note out.
+      // Shared lists it under Bob, whose faces the heading shows, and leaves
+      // her private note out.
       await tester.pumpWidget(tabbed(alice, tab: SidebarTab.shared));
       await tester.pumpAndSettle();
-      expect(find.text('With User'), findsOneWidget);
+      expect(sharedHeading, findsWidgets);
       expect(find.text('Ours'), findsOneWidget);
       expect(find.text('Private'), findsNothing);
-      expect(find.byKey(const ValueKey('note-row-people')), findsNothing);
     });
 
     testWidgets('an empty Shared says how to share, and starts from Settings', (
@@ -1733,6 +1882,12 @@ void main() {
               tab: SidebarTab.shared,
               onTabChanged: (_) {},
               onStartSharing: () => started++,
+              windowBar: SidebarWindowBar(
+                title: 'Notes',
+                count: 0,
+                onCreate: () {},
+                onHide: () {},
+              ),
             ),
           ),
         ),
@@ -1793,16 +1948,16 @@ void main() {
       SidebarTab? switchedTo;
 
       await tester.pumpWidget(
-        tabbed(bob, tab: SidebarTab.mine, onTabChanged: (t) => switchedTo = t),
+        tabbed(
+          bob,
+          tab: SidebarTab.shared,
+          onTabChanged: (t) => switchedTo = t,
+        ),
       );
       await tester.pumpAndSettle();
 
       final card = find.byKey(ValueKey('sidebar-invite-$token'));
       expect(card, findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
-        findsOneWidget,
-      );
       double top(Finder finder) => tester.getTopLeft(finder).dy;
       expect(
         top(card),
@@ -1819,10 +1974,6 @@ void main() {
       expect(bob.sharing.teams, hasLength(1));
       expect(switchedTo, SidebarTab.shared);
       expect(card, findsNothing);
-      expect(
-        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
-        findsNothing,
-      );
       // Joining asks for a sync soon; the timer must not outlive the test.
       bob.dispose();
       await tester.pump(const Duration(seconds: 3));
@@ -1847,7 +1998,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
           ),

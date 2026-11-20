@@ -660,8 +660,8 @@ class EditorMetrics {
   /// 14px after it.
   static const double quoteIndent = 17;
 
-  /// One row of writing: Paper's 28px line on the page, 29 on a phone.
-  static double get lineHeight => page ? 28 : 29;
+  /// One row of writing: Paper's 28px line, and 27pt on a phone.
+  static double get lineHeight => AppPlatform.isMobile ? 27 : 28;
 
   /// The writing column on the page. A window narrower than this plus
   /// [padding] gives the column what it has.
@@ -669,13 +669,13 @@ class EditorMetrics {
 
   /// The note's first line, its title: under twice the writing's size and a
   /// step lighter than a heading's weight, so it names the note without
-  /// shouting over it. On the page the meta row sits under it, 10 below the
-  /// title and 24 above the body.
-  static double get titleFontSize => page ? 30 : 28;
-  static double get titleRow => page ? 38 : 36;
+  /// shouting over it. The meta row sits under it, 10 below the title and 24
+  /// above the body; on a phone the tags take a line of their own.
+  static double get titleFontSize => AppPlatform.isMobile ? 28 : 30;
+  static double get titleRow => AppPlatform.isMobile ? 36 : 38;
   static const FontWeight titleWeight = FontWeight.w500;
   static const double metaGap = 10;
-  static const double metaRow = 16;
+  static double get metaRow => AppPlatform.isMobile ? 16 + 8 + 22 : 16;
   static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
@@ -690,8 +690,8 @@ class EditorMetrics {
   /// all of what the row adds goes above the words. Deeper levels are the
   /// writing's own size. Every level stays well under the title.
   static double headingFontSize(int level) => switch (level) {
-    <= 1 => page ? 22 : 20,
-    2 => page ? 19 : 18,
+    <= 1 => AppPlatform.isMobile ? 20 : 22,
+    2 => AppPlatform.isMobile ? 18 : 19,
     3 => 17,
     _ => 16,
   };
@@ -731,8 +731,8 @@ class EditorMetrics {
     horizontal: 28,
     vertical: 20,
   );
-  static const EdgeInsets mobilePadding = EdgeInsets.symmetric(
-    horizontal: 18,
+  static const EdgeInsets phonePadding = EdgeInsets.symmetric(
+    horizontal: 20,
     vertical: 14,
   );
 
@@ -802,21 +802,10 @@ class EditorMetrics {
 
   /// The row geometry of a note.
   ///
-  /// On a phone, forcing the strut pins every row to exactly [lineHeight]
-  /// whatever it contains, which is what its results column was built
-  /// against. [allowTallRows] lifts that ceiling for what cannot live under
-  /// it: an image is a `WidgetSpan`, and a forced strut clamps a
-  /// placeholder's line box to the height of the text, so a 400px picture
-  /// would paint straight through the writing beneath it.
-  ///
-  /// The [page] never forces it: its title, headings and pictures are taller
-  /// than a row by design, and [lineHeight] is only the floor. Results there
-  /// sit on each line's own last row, measured, so nothing needs rows even.
-  static StrutStyle strut(
-    WritingFont font, {
-    bool allowTallRows = false,
-    double editorScale = 1,
-  }) {
+  /// Never forced: the title, headings and pictures are taller than a row by
+  /// design, and [lineHeight] is only the floor. Results sit on each line's
+  /// own last row, measured, so nothing needs rows even.
+  static StrutStyle strut(WritingFont font, {double editorScale = 1}) {
     final fontSize = font.editorSize * editorScale;
     final rowHeight = lineHeight * editorScale;
     return StrutStyle(
@@ -824,7 +813,7 @@ class EditorMetrics {
       fontFamilyFallback: font.fontFamilyFallback,
       fontSize: fontSize,
       height: rowHeight / fontSize,
-      forceStrutHeight: !page && !allowTallRows,
+      forceStrutHeight: false,
       leading: 0,
     );
   }

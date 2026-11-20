@@ -7,6 +7,7 @@ import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart' show noteTagsMax;
 import 'package:kapy_notes/ui/context_menu.dart' show KapyMenuActionRow;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/folders_ui.dart';
@@ -772,8 +773,16 @@ void main() {
       final row = find.byKey(ValueKey('tag-row-${money.id}'));
       expect(
         find.descendant(of: row, matching: find.byType(KapyIcon)),
-        findsNothing,
-        reason: 'only one of the two carries it, so it is not ticked',
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<KapyIcon>(
+              find.descendant(of: row, matching: find.byType(KapyIcon)),
+            )
+            .icon,
+        KapyIcons.removeRounded,
+        reason: 'only one of the two carries it, so it is dashed',
       );
       await tester.tap(row);
       await tester.pumpAndSettle();
@@ -797,6 +806,73 @@ void main() {
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
       expect(goldenFolders.tree.folderOf(filed.id), work.id);
+      expect(goldenFolders.tree.folderOf(loose.id), isNull);
+    });
+
+    testWidgets('a tag that a full note has no room for still comes off the '
+        'other picked notes, and putting it back says how far it went', (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      goldenPrefs.sidebarWidth = LayoutPrefs.maxSidebarWidth;
+      final money = goldenTags.create('Money')!;
+      final tagged = goldenNotes.create(body: 'Pricing ideas');
+      final full = goldenNotes.create(body: 'Dentist');
+      goldenTags.addTag(tagged.id, money.id);
+      goldenTags.setTags(full.id, [
+        for (var i = 1; i <= noteTagsMax; i++) goldenTags.create('Tag $i')!.id,
+      ]);
+      await tester.pumpAndSettle();
+      await tester.tap(rowOf(tagged.id));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.tap(rowOf(full.id));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+
+      await rightClick(tester, rowOf(full.id));
+      await tapKey(tester, 'picked-tags-note-${full.id}');
+      final row = find.byKey(ValueKey('tag-row-${money.id}'));
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(goldenTags.tagsOf(tagged.id), isEmpty);
+      expect(goldenTags.tagsOf(full.id), hasLength(noteTagsMax));
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(goldenTags.tagsOf(tagged.id).map((tag) => tag.id), [money.id]);
+      expect(goldenTags.tagsOf(full.id), hasLength(noteTagsMax));
+      expect(
+        find.text('Added to 1 of 2 notes. One already has $noteTagsMax tags.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("Undo after a move says so when a note's folder has been "
+        'deleted since, and still puts back the rest', (tester) async {
+      await pumpWindow(tester);
+      goldenPrefs.sidebarWidth = LayoutPrefs.maxSidebarWidth;
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final filed = goldenNotes.create(body: 'Pricing ideas');
+      final loose = goldenNotes.create(body: 'Dentist');
+      goldenFolders.file([filed.id], work.id);
+      await tester.pumpAndSettle();
+      await tester.tap(rowOf(filed.id));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.tap(rowOf(loose.id));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'picked-folder');
+      await tapKey(tester, 'folder-pick-${personal.id}');
+
+      goldenFolders.delete(work.id);
+      await tester.pump();
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(find.text('That folder was deleted'), findsOneWidget);
+      expect(goldenFolders.tree.folderOf(filed.id), personal.id);
       expect(goldenFolders.tree.folderOf(loose.id), isNull);
     });
 

@@ -924,11 +924,15 @@ Future<void> moveNotesToFolder(
         : 'Moved ${moving.length} notes to $place',
     action: 'Undo',
     onAction: () {
-      for (final folderId in {for (final id in moving) from[id]}) {
-        store.file([
-          for (final id in moving)
-            if (from[id] == folderId) id,
-        ], folderId);
+      final refusals = [
+        for (final folderId in {for (final id in moving) from[id]})
+          ?store.file([
+            for (final id in moving)
+              if (from[id] == folderId) id,
+          ], folderId),
+      ];
+      if (refusals.isNotEmpty && context.mounted) {
+        Toast.show(context, folderRefusalText(refusals.first), isError: true);
       }
     },
   );

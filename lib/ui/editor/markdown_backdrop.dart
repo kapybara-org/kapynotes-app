@@ -274,9 +274,7 @@ class RenderMarkdownBackdrop extends RenderBox {
         origin.dx +
         (width == null
             ? box.size.width
-            : EditorMetrics.page
-            ? math.min(width, EditorMetrics.columnWidth)
-            : width + field.layout.caretRoom);
+            : math.min(width, EditorMetrics.columnWidth));
     for (final block in _analysis.blocks) {
       if (!onScreen(block.start, block.end)) continue;
       if (block.kind == MarkdownBlockKind.quote && block.depth > 1) continue;
@@ -288,13 +286,10 @@ class RenderMarkdownBackdrop extends RenderBox {
         case MarkdownBlockKind.code:
           _paintCode(canvas, field, block, left, right, top, bottom, rowY);
         case MarkdownBlockKind.quote:
-          // The page's bar is Paper's: in the column, with the words past
-          // it and 2px of room above and below. A phone's is out in the
-          // margin, so the words line up with the rest.
-          final x = EditorMetrics.page
-              ? left
-              : left - EditorMetrics.quoteIndent;
-          final room = EditorMetrics.page ? 2.0 : 0.0;
+          // Paper's bar: in the column, with the words past it and 2px of
+          // room above and below.
+          final x = left;
+          const room = 2.0;
           canvas.drawRRect(
             RRect.fromLTRBR(
               x,
@@ -388,8 +383,7 @@ class RenderMarkdownBackdrop extends RenderBox {
         case MarkdownOrnamentKind.codeSpan:
           // On the page the field already spaced the last character out by
           // the pill's reach; see `HighlightingController`.
-          final page = EditorMetrics.page;
-          final reach = page ? EditorMetrics.codeChipReach : 3.0;
+          const reach = EditorMetrics.codeChipReach;
           for (final box in boxes) {
             final rect = box.toRect().shift(origin);
             if (rect.width <= 0) continue;
@@ -398,7 +392,7 @@ class RenderMarkdownBackdrop extends RenderBox {
               RRect.fromLTRBR(
                 rect.left - reach,
                 rect.center.dy - height / 2,
-                rect.right + (page ? 0 : reach),
+                rect.right,
                 rect.center.dy + height / 2,
                 const Radius.circular(6),
               ),
@@ -416,11 +410,7 @@ class RenderMarkdownBackdrop extends RenderBox {
     canvas.restore();
   }
 
-  /// How far a phone's code block panel reaches out from the writing: the
-  /// 14px Paper's panel has around its code.
-  static const double _codeInset = 14;
-
-  /// Paper's code block: a panel a step below the page reaching [_codeInset]
+  /// Paper's code block: a panel a step below the page reaching the column's
   /// past the code, and over a fenced block whose fence is hidden, the row
   /// that fence keeps ruled off as a header, where the editor puts the
   /// language and Copy. Closed and hidden, the closing fence's row gives the
@@ -454,15 +444,13 @@ class RenderMarkdownBackdrop extends RenderBox {
     final closeScale = closeRows == null
         ? 1.0
         : (closeRows.$2 - closeRows.$1) / EditorMetrics.codeCloseRow;
-    // The page's panel is the column wide, with the code inset in it; a
-    // phone's reaches out into the margin, with the code on the column.
-    final reach = EditorMetrics.page ? 0.0 : _codeInset;
+    // The panel is the column wide, with the code inset in it.
     final panel = RRect.fromLTRBR(
-      left - reach,
+      left,
       openRows == null
           ? top
           : rowY(openRows.$1) + EditorMetrics.codeGapBefore * openScale,
-      right + reach,
+      right,
       closeRows == null
           ? bottom
           : rowY(closeRows.$1) + EditorMetrics.codePanelBottom * closeScale,
@@ -491,9 +479,9 @@ class RenderMarkdownBackdrop extends RenderBox {
 
   /// A task's box: how far in from where its item starts, and how big.
   /// The page's is Paper's 20px box with a 6px corner.
-  static double get _boxInset => EditorMetrics.page ? 0 : 1;
-  static double get _boxSide => EditorMetrics.page ? 20 : 15;
-  static double get _boxRadius => EditorMetrics.page ? 6 : 3.5;
+  static const double _boxInset = 0;
+  static const double _boxSide = 20;
+  static const double _boxRadius = 6;
 
   /// Paper's link chip is 28 tall.
   static const double _chipHeight = 28;
@@ -583,13 +571,12 @@ class RenderMarkdownBackdrop extends RenderBox {
       Radius.circular(_boxRadius),
     );
     if (!checkbox.checked) {
-      final page = EditorMetrics.page;
       canvas.drawRRect(
-        rounded.deflate(page ? 0.75 : 0.7),
+        rounded.deflate(0.75),
         Paint()
-          ..color = page ? colors.box : colors.quiet
+          ..color = colors.box
           ..style = PaintingStyle.stroke
-          ..strokeWidth = page ? 1.5 : 1.4,
+          ..strokeWidth = 1.5,
       );
       return;
     }
