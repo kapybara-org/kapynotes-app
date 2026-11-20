@@ -115,6 +115,15 @@ const double kCrampedPageHeight = 240;
 bool isCrampedPage(Size size, double keyboardInset) =>
     keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
 
+/// What the toast says once notes are gone: [deleted] of the reader's own,
+/// gone for good, and [removed] that somebody else shares, which only left
+/// the reader's notes.
+String forgottenMessage({required int deleted, required int removed}) {
+  if (deleted == 0) return 'Removed from your notes';
+  final gone = deleted == 1 ? 'Note deleted' : '$deleted notes deleted';
+  return removed == 0 ? gone : '$gone, and $removed removed from your notes';
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -1981,7 +1990,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The question offers not to be asked again, and Settings asks it again.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
-    if (note == null || !_canEditNote(note)) return;
+    if (note == null || !_canRemoveNote(note)) return;
     final owner = _sharedBy(note);
     if (widget.prefs.askBeforeDeleting) {
       final title = note.title.trim();
@@ -2038,15 +2047,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .map((note) => note.id)
         .toList();
     if (ids.isEmpty) return;
-    final theirs = _allSharedByOthers(ids);
+    final removed = _sharedByOthers(ids);
     final confirmed = await _confirmDelete(
       title: 'Empty Archived Notes?',
       body: _deleteBody(ids),
-      action: theirs ? 'Remove all' : 'Delete all',
+      action: removed == ids.length ? 'Remove all' : 'Delete all',
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceForgotten(ids, theirs);
+    _announceForgotten(ids.length, removed);
   }
 
   /// Throws picked notes away. One goes as its row's Delete does, asking
@@ -2055,10 +2064,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _deletePicked(List<String> picked) async {
     if (picked.length == 1) return _deleteNote(picked.single);
     final ids = picked
-        .where((id) => _canEditNote(widget.notes.byId(id)))
+        .where((id) => _canRemoveNote(widget.notes.byId(id)))
         .toList();
     if (ids.isEmpty) return;
-    final theirs = _allSharedByOthers(ids);
+    final removed = _sharedByOthers(ids);
+    final theirs = removed == ids.length;
     final confirmed = await _confirmDelete(
       title: theirs
           ? 'Remove from your notes?'
@@ -2071,16 +2081,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!confirmed || !mounted) return;
     _forget(ids);
     _picks.clear();
-    _announceForgotten(ids, theirs);
+    _announceForgotten(ids.length, removed);
   }
 
-  bool _allSharedByOthers(List<String> ids) =>
-      ids.every((id) => _sharedBy(widget.notes.byId(id)) != null);
+  /// How many of [ids] somebody else shares with this account. Counted
+  /// before they go: once forgotten, a note is no longer here to ask.
+  int _sharedByOthers(List<String> ids) =>
+      ids.where((id) => _sharedBy(widget.notes.byId(id)) != null).length;
 
-  void _announceForgotten(List<String> ids, bool theirs) {
-    if (!theirs) return _announceDeleted(ids.length);
-    Toast.show(context, 'Removed from your notes', icon: deleteIcon);
-  }
+  void _announceForgotten(int total, int removed) => Toast.show(
+    context,
+    forgottenMessage(deleted: total - removed, removed: removed),
+    icon: deleteIcon,
+  );
 
   /// The part every delete shares: take the notes out, drop whatever the
   /// selection and the editor were holding onto, and reclaim the pictures and
@@ -2426,6 +2439,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (note == null) return false;
     if (!note.isShared) return true;
     return widget.account?.sharing?.canEdit(note) ?? false;
+  }
+
+  /// Whether [note] may leave this account's notes: what it may change, and
+  /// a note somebody else shares with it, view-only too.
+  bool _canRemoveNote(Note? note) {
+    if (note == null) return false;
+    if (!note.isShared) return true;
+    return widget.account?.sharing?.mayRemove(note) ?? false;
   }
 
   int _videoAttachmentMaxBytes(Note note) {
@@ -3646,6 +3667,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           label: 'Move to Notes',
           icon: unhideIcon,
         ),
+      if (!mayEdit && note != null && _sharedBy(note) != null)
+        KapyMenuAction(
+          value: 'delete',
+          label: widget.prefs.askBeforeDeleting
+              ? 'Remove note…'
+              : 'Remove note',
+          icon: deleteIcon,
+          destructive: true,
+        ),
       if (mayEdit)
         KapyMenuAction(
           value: _specialMode ? 'delete' : 'archive',
@@ -4022,6 +4052,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onPicked: _actOnPicked,
     onShare: widget.account == null ? null : _shareNote,
     sharing: widget.account?.sharing,
+    onOpenPerson: widget.account?.sharing == null ? null : _openPerson,
+    onStartSharing: widget.account?.sharing == null ? null : _startSharing,
     collaborators: widget.account?.sync?.collaboratorsByNote ?? const {},
     tab: _sidebarTab,
     onTabChanged: _setSidebarTab,
