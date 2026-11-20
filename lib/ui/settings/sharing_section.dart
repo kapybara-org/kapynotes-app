@@ -20,6 +20,7 @@ import '../join/joining_ui.dart';
 import '../profile_avatar.dart';
 import '../safety_dialogs.dart';
 import '../settings_rows.dart';
+import '../sharing_sheet.dart';
 import '../sidebar_timestamp.dart';
 
 /// Settings → Sharing: the people this account shares notes with, and what
@@ -326,19 +327,6 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   // ---------------------------------------------------------------------------
   // Asking first
 
-  /// A confirmation. With [option], a box ticked by default whose answer is
-  /// returned; null means the person said no.
-  Future<bool?> _confirm({
-    required String title,
-    required String body,
-    required String action,
-    String? option,
-  }) => showDialog<bool>(
-    context: context,
-    builder: (context) =>
-        _Confirm(title: title, body: body, action: action, option: option),
-  );
-
   Future<T?> _menu<T>(
     BuildContext button,
     List<({T value, String label, bool danger})> items,
@@ -385,7 +373,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         ),
       );
     } else if (choice == 'block') {
-      final ok = await _confirm(
+      final ok = await askFirst(
+        context,
         title: 'Block $name?',
         body:
             "They can't invite you again, and this invitation goes away. "
@@ -436,7 +425,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         ),
       );
     } else if (choice == 'block') {
-      final ok = await _confirm(
+      final ok = await askFirst(
+        context,
         title: 'Block ${person.name}?',
         body:
             '$first loses access to everything you share, you leave what '
@@ -475,7 +465,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     final first = _first(person.name);
     final title = _titleOf(note);
     if (choice == SpaceRole.owner) {
-      final ok = await _confirm(
+      final ok = await askFirst(
+        context,
         title: 'Stop sharing “$title” with $first?',
         body:
             '$first stops seeing this note. It stays in your notes, with '
@@ -495,7 +486,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     if (choice.canEdit == access.role.canEdit) return;
     final together = _visible(_sharing.notesIn(note.spaceId!)).length;
     if (together > 1) {
-      final ok = await _confirm(
+      final ok = await askFirst(
+        context,
         title: choice.canEdit ? 'Let $first edit?' : 'Let $first only view?',
         body:
             '$first sees $together notes you share together, and the change '
@@ -537,7 +529,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
       case 'leave':
         final spaceId = note.spaceId!;
         final together = _visible(_sharing.notesIn(spaceId)).length;
-        final keep = await _confirm(
+        final keep = await askFirst(
+          context,
           title: together > 1
               ? 'Leave $together notes from $first?'
               : 'Leave “$title”?',
@@ -561,7 +554,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   Future<void> _stopSharingWith(SharePerson person) async {
     final first = _first(person.name);
     final mine = _visible(_sharing.notesSharedWith(person.email));
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Stop sharing with $first?',
       body:
           '$first loses access to the ${_count(mine.length)} you share. They '
@@ -598,7 +592,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   }
 
   Future<void> _cancel(Space space, SpaceInvite invite) async {
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Cancel the invitation to ${invite.email}?',
       body:
           'The invitation and its link stop working. The notes stay as '
@@ -1229,9 +1224,8 @@ class _SharePickerState extends State<SharePicker> {
       }
       if (!mounted) return;
       final who = person == null ? email : person.name.trim().split(' ').first;
-      Navigator.of(
-        context,
-      ).pop('Shared ${done == 1 ? '1 note' : '$done notes'} with $who');
+      Navigator.of(context)
+          .pop('Shared ${done == 1 ? '1 note' : '$done notes'} with $who');
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -1928,81 +1922,3 @@ class _PickRow extends StatelessWidget {
 
 /// A question before something that changes who sees what. With [option],
 /// a box, ticked to begin with, whose answer comes back; null is no.
-class _Confirm extends StatefulWidget {
-  const _Confirm({
-    required this.title,
-    required this.body,
-    required this.action,
-    this.option,
-  });
-
-  final String title;
-  final String body;
-  final String action;
-  final String? option;
-
-  @override
-  State<_Confirm> createState() => _ConfirmState();
-}
-
-class _ConfirmState extends State<_Confirm> {
-  bool _option = true;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final option = widget.option;
-    final style = TextStyle(
-      fontSize: AppTypeScale.control,
-      height: 1.4,
-      color: palette.textPrimary,
-    );
-    return AlertDialog(
-      key: const ValueKey('sharing-confirm'),
-      title: Text(widget.title),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.body, style: style),
-            if (option != null) ...[
-              const SizedBox(height: 10),
-              InkWell(
-                key: const ValueKey('sharing-confirm-option'),
-                onTap: () => setState(() => _option = !_option),
-                child: Row(
-                  children: [
-                    Checkbox(
-                      value: _option,
-                      onChanged: (value) =>
-                          setState(() => _option = value ?? false),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(child: Text(option, style: style)),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          key: const ValueKey('sharing-confirm-ok'),
-          onPressed: () => Navigator.of(context).pop(_option),
-          style: TextButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
-          ),
-          child: Text(widget.action),
-        ),
-      ],
-    );
-  }
-}

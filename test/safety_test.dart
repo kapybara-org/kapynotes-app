@@ -232,7 +232,7 @@ void main() {
       expect(find.textContaining("can't invite you again"), findsOneWidget);
 
       await tester.runAsync(() async {
-        await tester.tap(find.byKey(const ValueKey('sharing-confirm-ok')));
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });
       await tester.pumpAndSettle();

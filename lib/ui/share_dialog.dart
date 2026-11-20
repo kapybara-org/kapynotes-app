@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../billing/billing.dart';
-import '../core/platform.dart';
 import '../core/popup_keyboard.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -25,6 +24,7 @@ import 'join/space_link_panel.dart';
 import 'profile_avatar.dart';
 import 'safety_dialogs.dart';
 import 'settings_rows.dart' show SettingsSwitch;
+import 'sharing_sheet.dart';
 
 /// The share sheet for one note: who can see it, and what each of them may do.
 ///
@@ -43,7 +43,7 @@ Future<void> showShareDialog(
   Billing? billing,
 }) {
   keepMobilePopupKeyboardClosed();
-  return _showSheet(
+  return showSharingSheet(
     context,
     (asSheet) => _NoteShareSheet(
       note: note,
@@ -62,28 +62,10 @@ Future<void> showSpaceDialog(
   required Sharing sharing,
 }) {
   keepMobilePopupKeyboardClosed();
-  return _showSheet(
+  return showSharingSheet(
     context,
     (asSheet) =>
         _SpaceShareSheet(spaceId: spaceId, sharing: sharing, asSheet: asSheet),
-  );
-}
-
-/// A dialog on a Mac or a PC, a bottom sheet on a phone.
-Future<T?> _showSheet<T>(
-  BuildContext context,
-  Widget Function(bool asSheet) build,
-) {
-  if (!AppPlatform.isMobile) {
-    return showDialog<T>(context: context, builder: (context) => build(false));
-  }
-  return showModalBottomSheet<T>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    barrierColor: Theme.of(context).drawerTheme.scrimColor,
-    builder: (context) => build(true),
   );
 }
 
@@ -355,13 +337,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _removePerson(SpaceMember member) async {
     final name = member.firstName;
     final role = member.role;
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Remove $name from this note?',
       body:
           '$name stops seeing this note, and it leaves their devices. It '
           'stays in your notes, with everything $name wrote.',
       action: 'Remove',
-      destructive: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
@@ -387,13 +369,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     final audience = _sharing.audienceOf(space);
     final people = space.othersThan(_sharing.userId).length;
     final who = _peoplePhrase(space);
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Stop sharing “${_note.title}”?',
       body:
           '$who ${people > 1 ? 'lose' : 'loses'} access. The note '
           'stays in your notes, with every change.',
       action: 'Stop sharing',
-      destructive: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
@@ -417,51 +399,24 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     final space = _space;
     if (space == null) return;
     final owner = space.shortNameOf(space.ownerId);
-    var keep = true;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          key: const ValueKey('leave-confirm'),
-          title: Text('Leave “${_note.title}”?'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'You stop seeing $owner’s changes. $owner keeps the note.',
-                  style: _bodyStyle(context),
-                ),
-                const SizedBox(height: 10),
-                _CheckRow(
-                  key: const ValueKey('leave-keep-copy'),
-                  value: keep,
-                  label: 'Keep a private copy in my notes',
-                  onChanged: (value) => setLocal(() => keep = value),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              key: const ValueKey('leave-confirm-action'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-              ),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Leave'),
-            ),
-          ],
-        ),
-      ),
+    final together = [
+      for (final note in _sharing.notesIn(space.id))
+        if (!note.isHidden) note,
+    ].length;
+    final keep = await askFirst(
+      context,
+      title: together > 1
+          ? 'Leave $together notes from $owner?'
+          : 'Leave “${_note.title}”?',
+      body: together > 1
+          ? '$owner shares “${_note.title}” together with ${together - 1} '
+                'more, so you leave all of them. You stop seeing $owner’s '
+                'changes, and $owner keeps the notes.'
+          : 'You stop seeing $owner’s changes. $owner keeps the note.',
+      action: 'Leave',
+      option: together > 1 ? 'Keep private copies' : 'Keep a private copy',
     );
-    if (ok != true || !mounted) return;
+    if (keep == null || !mounted) return;
     final leave = Navigator.of(context);
     await _run(() async {
       await _sharing.leave(space.id, keepCopies: keep);
@@ -489,14 +444,14 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
 
   Future<void> _block(Space space, SpaceMember member) async {
     final name = member.firstName;
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Block $name?',
       body:
           '$name loses access to everything you share, you leave what $name '
           'shares with you (keeping copies), and $name can’t invite you '
           'again.',
       action: 'Block',
-      destructive: true,
     );
     if (ok != true || !mounted) return;
     final done = Navigator.of(context);
@@ -523,12 +478,12 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   }
 
   Future<void> _cancelInvite(Space space, SpaceInvite invite) async {
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Cancel the invitation to ${invite.email}?',
       body:
           'The invitation and its link stop working. The note stays as it is.',
       action: 'Cancel invitation',
-      destructive: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
@@ -537,38 +492,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       setState(() => _notice = 'Invitation to ${invite.email} cancelled');
     });
   }
-
-  Future<bool?> _confirm({
-    required String title,
-    required String body,
-    required String action,
-    bool destructive = false,
-  }) => showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      key: ValueKey('share-confirm-${action.toLowerCase()}'),
-      title: Text(title),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
-        child: Text(body, style: _bodyStyle(context)),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: destructive
-              ? FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                )
-              : null,
-          child: Text(action),
-        ),
-      ],
-    ),
-  );
 
   // -------------------------------------------------------------------------
   // The link
@@ -2240,52 +2163,6 @@ class _ChoiceRow extends StatelessWidget {
   }
 }
 
-class _CheckRow extends StatelessWidget {
-  const _CheckRow({
-    super.key,
-    required this.value,
-    required this.label,
-    required this.onChanged,
-  });
-
-  final bool value;
-  final String label;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return InkWell(
-      onTap: () => onChanged(!value),
-      borderRadius: BorderRadius.circular(AppRadii.control),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            KapyIcon(
-              value ? KapyIcons.checkCircleRounded : KapyIcons.circleOutlined,
-              size: AppControlMetrics.iconControl,
-              color: value
-                  ? Theme.of(context).colorScheme.primary
-                  : palette.textTertiary,
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: AppTypeScale.control,
-                  color: palette.textPrimary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Can edit or can view, and the one button that sends it.
 class _AccessAndShare extends StatelessWidget {
   const _AccessAndShare({
@@ -2318,9 +2195,8 @@ class _AccessAndShare extends StatelessWidget {
             style: ButtonStyle(
               visualDensity: VisualDensity.compact,
               textStyle: WidgetStatePropertyAll(
-                Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontSize: AppTypeScale.caption,
-                ),
+                Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(fontSize: AppTypeScale.caption),
               ),
             ),
             segments: const [

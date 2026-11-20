@@ -583,7 +583,7 @@ void main() {
       );
 
       await tester.runAsync(() async {
-        await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });
       await tester.pumpAndSettle();
@@ -650,9 +650,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.textContaining('stop working'), findsOneWidget);
         await tester.runAsync(() async {
-          await tester.tap(
-            find.widgetWithText(FilledButton, 'Cancel invitation'),
-          );
+          await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
           await Future<void>.delayed(const Duration(milliseconds: 300));
         });
         await tester.pumpAndSettle();
@@ -697,9 +695,9 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('leave-space')));
     await tester.pumpAndSettle();
-    expect(find.text('Keep a private copy in my notes'), findsOneWidget);
+    expect(find.text('Keep a private copy'), findsOneWidget);
     await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('leave-confirm-action')));
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
       await Future<void>.delayed(const Duration(milliseconds: 400));
     });
     await tester.pumpAndSettle();
@@ -849,7 +847,7 @@ void main() {
     );
 
     await tester.runAsync(() async {
-      await tester.tap(find.widgetWithText(FilledButton, 'Stop sharing'));
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
       await Future<void>.delayed(const Duration(milliseconds: 500));
     });
     await tester.pumpAndSettle();
@@ -923,7 +921,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('stop-sharing')));
     await tester.pumpAndSettle();
     await tester.runAsync(() async {
-      await tester.tap(find.widgetWithText(FilledButton, 'Stop sharing'));
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
       await Future<void>.delayed(const Duration(milliseconds: 500));
     });
     await tester.pumpAndSettle();
