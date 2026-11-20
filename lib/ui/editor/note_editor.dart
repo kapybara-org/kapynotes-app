@@ -6149,6 +6149,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // its list markers made bullets; see MarkdownAnalysis.calculatorText.
     final evaluation = widget.engine.evaluateDocumentWithSummary(
       _controller.calculatorTextFor(_controller.text),
+      titled: true,
     );
     _results = evaluation.results;
     _totalText = evaluation.totalText;
@@ -7401,9 +7402,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       TextBaseline.alphabetic,
     );
     measure.dispose();
+    // The field scales a placeholder's widget by the text scale at the size
+    // of the note's own words, the span it sits in, so the letter is drawn
+    // unscaled at the size that comes out right once that scale is applied:
+    // the size the rest of the title is drawn at.
+    final rootSize = full.style?.fontSize ?? kDefaultFontSize;
+    final letterSize = drawn.style?.fontSize ?? rootSize;
+    final inline = scaler.scale(rootSize) / rootSize;
     return _title = (
       letter: letter,
-      drawn: drawn,
+      drawn: TextSpan(
+        text: drawn.text,
+        style: drawn.style?.copyWith(
+          fontSize: scaler.scale(letterSize) / inline,
+        ),
+      ),
+      inline: inline,
       width: glyph.right - glyph.left,
       top: last.baseline - spacerTop - baseline,
       row: row,
@@ -7444,6 +7458,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 ),
               Positioned(
                 left: padding.left,
+                right: AppPlatform.isMobile ? padding.right : null,
                 top: y + title.row.bottom + EditorMetrics.metaGap * scale,
                 child: meta!,
               ),
@@ -8028,21 +8043,24 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       textScaler.scale(
                         EditorMetrics.titleReserve * widget.editorTextScale,
                       );
+                  // The field scales the placeholder's widget once more, so
+                  // its lengths go in unscaled.
+                  final inline = title.inline;
                   spacers[title.letter] = (
                     width: title.width,
                     height: height,
                     child: SizedBox(
-                      width: title.width,
-                      height: height,
+                      width: title.width / inline,
+                      height: height / inline,
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
                           Positioned(
                             left: 0,
-                            top: title.top,
+                            top: title.top / inline,
                             child: RichText(
                               text: title.drawn,
-                              textScaler: textScaler,
+                              textScaler: TextScaler.noScaling,
                               maxLines: 1,
                               softWrap: false,
                             ),
@@ -9277,7 +9295,14 @@ class _UnknownChip extends StatelessWidget {
 /// [spacerTop] is how far below the row's top a placeholder in it starts.
 typedef _TitleLayout = ({
   int letter,
+
+  /// The letter as the placeholder draws it: unscaled, at the size that
+  /// [inline] brings to the title's.
   TextSpan drawn,
+
+  /// The scale the field gives the placeholder's widget. Every length the
+  /// placeholder is given is divided by it.
+  double inline,
   double width,
   double top,
   Rect row,
