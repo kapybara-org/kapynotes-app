@@ -628,7 +628,9 @@ class TaskDoNowCard extends StatelessWidget {
   final String? label;
   final VoidCallback onOpen;
   final VoidCallback onNotFinished;
-  final VoidCallback onDone;
+
+  /// Null on a note shared to view only, where Done is not shown.
+  final VoidCallback? onDone;
   final BlobStore? images;
   final String? doneShortcut;
   final bool phone;
@@ -662,34 +664,39 @@ class TaskDoNowCard extends StatelessWidget {
         ),
       ],
     );
-    final done = TaskButton(
-      key: const ValueKey('tasks-done'),
-      semantics: 'Done',
-      onPressed: onDone,
-      fill: phone ? ink.doneFill : ink.button,
-      height: phone ? 44 : 32,
-      innerHeight: phone ? 36 : 32,
-      radius: phone ? 8 : 6,
-      padding: phone ? 14 : 10,
-      children: [
-        KapyIcon(
-          KapyIcons.checkRounded,
-          size: phone ? 16 : 14,
-          color: phone ? ink.sage : ink.text,
-        ),
-        const SizedBox(width: 6),
-        Text(
-          'Done',
-          style: phone
-              ? taskText(15, 20, ink.sage, 500)
-              : taskText(13, 18, ink.text, 500),
-        ),
-        if (!phone && doneShortcut != null) ...[
-          const SizedBox(width: 6),
-          ExcludeSemantics(child: Text(doneShortcut!, style: _mono(ink.quiet))),
-        ],
-      ],
-    );
+    final onDone = this.onDone;
+    final done = onDone == null
+        ? null
+        : TaskButton(
+            key: const ValueKey('tasks-done'),
+            semantics: 'Done',
+            onPressed: onDone,
+            fill: phone ? ink.doneFill : ink.button,
+            height: phone ? 44 : 32,
+            innerHeight: phone ? 36 : 32,
+            radius: phone ? 8 : 6,
+            padding: phone ? 14 : 10,
+            children: [
+              KapyIcon(
+                KapyIcons.checkRounded,
+                size: phone ? 16 : 14,
+                color: phone ? ink.sage : ink.text,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Done',
+                style: phone
+                    ? taskText(15, 20, ink.sage, 500)
+                    : taskText(13, 18, ink.text, 500),
+              ),
+              if (!phone && doneShortcut != null) ...[
+                const SizedBox(width: 6),
+                ExcludeSemantics(
+                  child: Text(doneShortcut!, style: _mono(ink.quiet)),
+                ),
+              ],
+            ],
+          );
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -781,7 +788,7 @@ class TaskDoNowCard extends StatelessWidget {
               children: [
                 body,
                 const SizedBox(height: 6),
-                Wrap(spacing: 8, children: [done, notFinished]),
+                Wrap(spacing: 8, children: [?done, notFinished]),
               ],
             )
           : Row(
@@ -790,8 +797,7 @@ class TaskDoNowCard extends StatelessWidget {
                 Expanded(child: body),
                 const SizedBox(width: 16),
                 notFinished,
-                const SizedBox(width: 6),
-                done,
+                if (done != null) ...[const SizedBox(width: 6), done],
               ],
             ),
     );

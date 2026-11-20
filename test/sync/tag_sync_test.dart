@@ -188,7 +188,7 @@ void main() {
             id: id,
             updatedAt: DateTime.utc(2026, 11, 17, 9),
             payload: await sharedVault().sealRaw(
-              utf8.encode(jsonEncode({'kind': 'folder', 'name': 'Later'})),
+              utf8.encode(jsonEncode({'kind': 'board', 'name': 'Later'})),
               null,
             ),
           ),

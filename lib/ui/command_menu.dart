@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../data/folders.dart' show Folder, FolderTree;
 import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
@@ -34,6 +35,22 @@ class OpenNoteChoice extends CommandChoice {
   const OpenNoteChoice(this.note);
   final Note note;
 }
+
+/// Show a folder in the tab in front.
+class OpenFolderChoice extends CommandChoice {
+  const OpenFolderChoice(this.folderId);
+  final String folderId;
+}
+
+/// File [note] where the folder list, opened in the menu's place, picks.
+class MoveToFolderChoice extends CommandChoice {
+  const MoveToFolderChoice(this.note);
+  final Note note;
+}
+
+/// How far down the window the ⌘K menu sits, and a list that follows it,
+/// such as Move to folder…'s.
+double commandMenuTop(Size window) => (window.height * 0.1).clamp(16.0, 88.0);
 
 /// Show a task in Tasks, among its note's.
 class OpenTaskChoice extends CommandChoice {
@@ -110,7 +127,8 @@ class AskKapyAiChoice extends CommandChoice {
 /// [destinations] are the sections Go to lists, in order, before Hidden,
 /// listed only with [showHidden], and Archive. Hidden notes are searched
 /// only while [hiddenUnlocked], and [tasks] is null where there is no task
-/// list to search or add to. With [tags], # lists the tags to filter by, and
+/// list to search or add to. [folders] are found by name where a folder can
+/// open, and are null elsewhere. With [tags], # lists the tags to filter by, and
 /// [tagNote], the open note, can be tagged from the menu. A result shows the
 /// dot of the first of [marksOf]'s tags for its note: the dialog is a route
 /// of its own, so the page's own marks don't reach it. [askKapyAi] is whether
@@ -126,12 +144,14 @@ Future<CommandChoice?> showCommandMenu(
   required DateTime Function(DateTime) displayTime,
   required String Function(Note) taskLabel,
   TaskBoard? tasks,
+  FolderTree? folders,
   bool showHidden = false,
   bool hiddenUnlocked = false,
   bool askKapyAi = false,
   SettingsHost? settingsIndex,
   TagShelf? tags,
   Note? tagNote,
+  Note? fileNote,
   List<TagMark> Function(String noteId)? marksOf,
   bool phone = false,
   Future<void> Function(TaskItem item, {required bool done})? onSetTaskDone,
@@ -148,12 +168,14 @@ Future<CommandChoice?> showCommandMenu(
       displayTime: displayTime,
       taskLabel: taskLabel,
       tasks: tasks,
+      folders: folders,
       showHidden: showHidden,
       hiddenUnlocked: hiddenUnlocked,
       askKapyAi: askKapyAi,
       settingsIndex: settingsIndex,
       tags: tags,
       tagNote: tagNote,
+      fileNote: fileNote,
       phone: phone,
       onSetTaskDone: onSetTaskDone,
       onChosen: (choice) => Navigator.of(context).pop(choice),
@@ -205,12 +227,14 @@ class CommandMenu extends StatefulWidget {
     required this.taskLabel,
     required this.onChosen,
     this.tasks,
+    this.folders,
     this.showHidden = false,
     this.hiddenUnlocked = false,
     this.askKapyAi = false,
     this.settingsIndex,
     this.tags,
     this.tagNote,
+    this.fileNote,
     this.phone = false,
     this.onSetTaskDone,
   });
@@ -232,6 +256,10 @@ class CommandMenu extends StatefulWidget {
   final String Function(Note) taskLabel;
   final ValueChanged<CommandChoice> onChosen;
   final TaskBoard? tasks;
+
+  /// The person's folders, which typing finds by name. Null where a folder
+  /// can't open.
+  final FolderTree? folders;
   final bool showHidden;
   final bool hiddenUnlocked;
   final bool askKapyAi;
@@ -246,6 +274,10 @@ class CommandMenu extends StatefulWidget {
 
   /// The note Tag note... tags: the one open, or null for none.
   final Note? tagNote;
+
+  /// The note Move to folder… files: the one open, where folders can hold
+  /// it, or null.
+  final Note? fileNote;
 
   /// How many of each kind the menu shows.
   static const int perKind = 3;
@@ -530,6 +562,11 @@ class _CommandMenuState extends State<CommandMenu> {
       for (final task in widget.tasks?.open ?? const <TaskItem>[])
         if (terms.every(task.words.toLowerCase().contains)) task,
     ].take(CommandMenu.perKind);
+    final tree = widget.folders;
+    final folders = [
+      for (final folder in tree?.folders ?? const <Folder>[])
+        if (terms.every(folder.name.toLowerCase().contains)) folder,
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     final archived = notes.searchArchived(text).length;
     final settings = [
       for (final entry in searchSettings<SettingsSection>(
@@ -540,22 +577,31 @@ class _CommandMenuState extends State<CommandMenu> {
     ].take(CommandMenu.perKind);
     final lowered = text.toLowerCase();
     final tagNote = widget.tagNote;
+    final fileNote = widget.fileNote;
+    final named = lowered.length >= 2;
     final actions = [
       if (tags != null &&
           tagNote != null &&
-          lowered.length >= 2 &&
-          'tag note'.startsWith(lowered)) ...[
-        const _Line.heading('Actions'),
+          named &&
+          'tag note'.startsWith(lowered))
         _Line.row(
           icon: KapyIcons.tagRounded,
           title: 'Tag note…',
           trailing: tagNote.title,
           action: () => setState(
-            () =>
-                _picker = TagPickerController(shelf: tags, noteId: tagNote.id),
+            () => _picker = TagPickerController(
+              shelf: tags,
+              noteIds: [tagNote.id],
+            ),
           ),
         ),
-      ],
+      if (fileNote != null && named && 'move to folder'.startsWith(lowered))
+        _Line.row(
+          icon: KapyIcons.folderMoveOutlined,
+          title: 'Move to folder…',
+          trailing: fileNote.title,
+          choice: MoveToFolderChoice(fileNote),
+        ),
     ];
     final settingsFirst =
         settings.isNotEmpty &&
@@ -569,12 +615,30 @@ class _CommandMenuState extends State<CommandMenu> {
     final all = _scope == _Scope.all;
     final make = widget.phone;
     return [
-      if (all) ...actions,
+      if (all && actions.isNotEmpty) ...[
+        const _Line.heading('Actions'),
+        ...actions,
+      ],
       if (all && settingsFirst) ...settingsLines,
       if (_shows(_Scope.notes) && written.isNotEmpty) ...[
         const _Line.heading('Notes'),
         for (final note in written.take(CommandMenu.perKind))
           _noteRow(note, detail: note.matchSnippet(text)),
+      ],
+      if (all && tree != null && folders.isNotEmpty) ...[
+        const _Line.heading('Folders'),
+        for (final folder in folders.take(CommandMenu.perKind))
+          _Line.row(
+            icon: KapyIcons.folderOutlined,
+            title: folder.name,
+            trailing: switch (tree.pathOf(folder.id)) {
+              [...final above, _] when above.isNotEmpty => [
+                for (final place in above) place.name,
+              ].join(' › '),
+              _ => null,
+            },
+            choice: OpenFolderChoice(folder.id),
+          ),
       ],
       if (_shows(_Scope.tasks) && tasks.isNotEmpty) ...[
         const _Line.heading('Tasks'),
@@ -712,7 +776,7 @@ class _CommandMenuState extends State<CommandMenu> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final dark = palette.brightness == Brightness.dark;
-    final top = (MediaQuery.sizeOf(context).height * 0.1).clamp(16.0, 88.0);
+    final top = commandMenuTop(MediaQuery.sizeOf(context));
     final terms = noteSearchTerms(_field.text);
     if (widget.phone) {
       final picker = _picker;
@@ -1377,7 +1441,7 @@ class _CommandMenuState extends State<CommandMenu> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (picker.shelf.isShared(picker.noteId))
+                if (picker.noteIds.any(picker.shelf.isShared))
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                     child: Text(
@@ -1396,7 +1460,7 @@ class _CommandMenuState extends State<CommandMenu> {
                     leading: TagDot(tagColourOf(entry.tag.colour.v)),
                     label: entry.tag.name.v,
                     count: '${entry.count}',
-                    ticked: picker.isOn(entry.tag.id),
+                    ticked: picker.isOn(entry.tag.id) == true,
                     onTap: () => picker.toggle(entry.tag.id),
                   ),
                 if (matches.isEmpty && name.isNotEmpty)

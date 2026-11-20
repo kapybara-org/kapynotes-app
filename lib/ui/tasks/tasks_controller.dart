@@ -196,12 +196,13 @@ class TasksController extends ChangeNotifier {
 
   /// Adds a task at the end of [noteId]'s text, or of the note for tasks
   /// with no note, made on first use. Returns the new task's id once the
-  /// index holds it.
+  /// index holds it, and adds nothing to a note this person cannot change.
   Future<String?> add(String words, {String? noteId}) async {
     final text = words.trim();
     if (text.isEmpty) return null;
     final from = _stamp();
     final target = noteId == null ? read().home : notes.byId(noteId);
+    if (target != null && !canEdit(target)) return null;
     final String id;
     if (target == null) {
       id = notes
@@ -351,12 +352,22 @@ class TasksController extends ChangeNotifier {
       _since == null || _justDone == null ? null : read().byId(_justDone!);
 
   /// Today under [noteId] as Tasks shows it.
+  /// Whether a task's note waits for a later day: such a task is off
+  /// today's list, the pair and Up next. Set by the page from its days.
+  bool Function(TaskItem item)? waits;
+
+  /// Today's open tasks, in list order, without those that wait for a day.
+  List<TaskItem> openIn(String? noteId) => [
+    for (final item in read().openIn(noteId))
+      if (!(waits?.call(item) ?? false)) item,
+  ];
+
   TaskChoice choiceIn(String? noteId) {
     final board = read();
     final at = now();
     final today = DateTime(at.year, at.month, at.day);
     return TaskChoice.read(
-      board.openIn(noteId),
+      openIn(noteId),
       seenUpTo: _seenUpTo,
       since: _since,
       evening:
@@ -421,7 +432,7 @@ class TasksController extends ChangeNotifier {
   /// Choose again: every choice cleared, from the first pair.
   void chooseAgain({String? noteId}) {
     forgetPair();
-    clearPicks(read().openIn(noteId));
+    clearPicks(openIn(noteId));
     notifyListeners();
   }
 
@@ -442,7 +453,7 @@ class TasksController extends ChangeNotifier {
   /// With nothing chosen any more, a new round starts at the first pair;
   /// with only your last pick left to do, it is Do now.
   void _settle(String? noteId) {
-    final open = read().openIn(noteId);
+    final open = openIn(noteId);
     if (!open.any((item) => item.dotted || item.doNow)) {
       forgetPair();
       notifyListeners();

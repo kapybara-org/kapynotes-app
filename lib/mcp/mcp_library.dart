@@ -1,5 +1,6 @@
 import '../calc/engine.dart';
 import '../crdt/text_diff.dart';
+import '../data/folders.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
@@ -82,19 +83,27 @@ class McpLibrary {
     required this.notes,
     required CalcEngine Function() engine,
     this.tags,
+    this.folders,
     bool Function()? canCreate,
     bool Function(Note note)? isLocked,
+    bool Function(Note note)? sharedWithMe,
   }) : _engine = engine,
        _canCreate = canCreate ?? (() => true),
-       _isLocked = isLocked ?? ((_) => false);
+       _isLocked = isLocked ?? ((_) => false),
+       _sharedWithMe = sharedWithMe ?? ((note) => note.isShared);
 
   final NotesStore notes;
 
   /// The person's tags, or null in a build without them.
   final TagStore? tags;
+
+  /// The person's folders, or null in a build without them. They stay on the
+  /// account and never enter a shared space.
+  final FolderStore? folders;
   final CalcEngine Function() _engine;
   final bool Function() _canCreate;
   final bool Function(Note note) _isLocked;
+  final bool Function(Note note) _sharedWithMe;
 
   static const String notFound = 'No note with that id.';
   static final RegExp _glyphBox = RegExp(r'^[ \t]*[☐☑]');
@@ -120,16 +129,17 @@ class McpLibrary {
   }) {
     final trimmed = query.trim();
     final tagged = tag == null ? null : _tag(tag).id;
-    final pool = [
-      if (!archivedOnly) ...notes.notes,
-      if (includeArchived || archivedOnly) ...notes.archivedNotes,
-    ].where(
-      (note) =>
-          !note.isHidden &&
-          (pinned == null || notes.isPinned(note.id) == pinned) &&
-          (tagged == null ||
-              tags!.tagsOf(note.id).any((each) => each.id == tagged)),
-    );
+    final pool =
+        [
+          if (!archivedOnly) ...notes.notes,
+          if (includeArchived || archivedOnly) ...notes.archivedNotes,
+        ].where(
+          (note) =>
+              !note.isHidden &&
+              (pinned == null || notes.isPinned(note.id) == pinned) &&
+              (tagged == null ||
+                  tags!.tagsOf(note.id).any((each) => each.id == tagged)),
+        );
     final matches = trimmed.isEmpty
         ? pool.toList()
         : pool.where((note) => note.matches(trimmed)).toList();
@@ -458,7 +468,9 @@ class McpLibrary {
       ];
       attachments = [
         for (final ref in attachments)
-          ref.offset >= region.end ? ref.copyWith(offset: ref.offset + delta) : ref,
+          ref.offset >= region.end
+              ? ref.copyWith(offset: ref.offset + delta)
+              : ref,
       ];
     }
     return _write(
@@ -572,7 +584,9 @@ class McpLibrary {
           'There’s no tag called “${name.trim()}”. Set create_missing to '
           'make it.',
         );
-      } else if (!missing.any((m) => m.toLowerCase() == name.trim().toLowerCase())) {
+      } else if (!missing.any(
+        (m) => m.toLowerCase() == name.trim().toLowerCase(),
+      )) {
         _clean(name, tagNameMax * 2, 'tag name');
         if (name.trim().isEmpty || name.trim().runes.length > tagNameMax) {
           throw const McpRefusal(
@@ -582,7 +596,10 @@ class McpLibrary {
         missing.add(name.trim());
       }
     }
-    final keep = [for (final tagId in current) if (!off.contains(tagId)) tagId];
+    final keep = [
+      for (final tagId in current)
+        if (!off.contains(tagId)) tagId,
+    ];
     final adding = {
       for (final tag in existing)
         if (!keep.contains(tag.id)) tag.id,
@@ -593,10 +610,7 @@ class McpLibrary {
     final created = [for (final name in missing) store.create(name)!];
     store.setTags(id, [...keep, ...adding, for (final tag in created) tag.id]);
     return (
-      added: [
-        ...existing.where((tag) => adding.contains(tag.id)),
-        ...created,
-      ],
+      added: [...existing.where((tag) => adding.contains(tag.id)), ...created],
       removed: [
         for (final tagId in current)
           if (off.contains(tagId)) store.byId(tagId)!,
@@ -618,7 +632,8 @@ class McpLibrary {
       );
     }
     if (colour != null) _colour(colour);
-    final tag = store.create(name) ??
+    final tag =
+        store.create(name) ??
         (throw const McpRefusal(
           'A tag’s name is 1 to $tagNameMax characters.',
         ));
@@ -682,9 +697,9 @@ class McpLibrary {
     final note = _splice(task.note, [
       (start: task.line.textStart, end: task.line.end, text: words),
     ]);
-    return tasksIn(note).firstWhere(
-      (each) => each.line.start == task.line.start,
-    );
+    return tasksIn(
+      note,
+    ).firstWhere((each) => each.line.start == task.line.start);
   }
 
   /// Takes a task's line out of its note. The note stays.
@@ -695,7 +710,11 @@ class McpLibrary {
 
   /// Moves a task to the end of [noteId], or before [beforeTaskId] there,
   /// ticked or not as it was, and in the style that note's tasks use.
-  McpTask moveTask(String taskId, {required String noteId, String? beforeTaskId}) {
+  McpTask moveTask(
+    String taskId, {
+    required String noteId,
+    String? beforeTaskId,
+  }) {
     final task = _taskAt(taskId);
     final target = _writable(noteId);
     if (beforeTaskId == taskId) return task;
@@ -759,7 +778,8 @@ class McpLibrary {
   /// A task box in the style [note]'s tasks already use.
   String _box(Note note, {bool done = false}) {
     final existing = taskLines(note.body);
-    final markdown = existing.isNotEmpty &&
+    final markdown =
+        existing.isNotEmpty &&
         !_glyphBox.hasMatch(
           note.body.substring(existing.first.start, existing.first.textStart),
         );
@@ -861,6 +881,114 @@ class McpLibrary {
       attachments: attachments,
     );
     return notes.byId(note.id)!;
+  }
+
+  FolderStore _folderStore() {
+    final store = folders;
+    if (store == null) throw const McpRefusal('Folders aren’t available.');
+    return store;
+  }
+
+  static String folderRefusal(FolderRefusal refusal) => switch (refusal) {
+    FolderRefusal.emptyName => 'Give the folder a name.',
+    FolderRefusal.longName => 'Use up to $folderNameMax characters.',
+    FolderRefusal.nameTaken => 'A folder here already has that name.',
+    FolderRefusal.tooDeep => 'Folders go at most $folderDepthMax levels deep.',
+    FolderRefusal.intoItself => 'A folder can’t go inside itself.',
+    FolderRefusal.gone => 'That folder was deleted.',
+    FolderRefusal.full =>
+      'Folders are full. Take some notes out of folders to file more.',
+  };
+
+  /// Whether a note may sit in a folder: the person's own, not a drawing,
+  /// not archived, and not one shared with them.
+  bool showsInFolder(Note note) =>
+      !note.isDrawing &&
+      !note.isHidden &&
+      !note.isArchived &&
+      !_sharedWithMe(note);
+
+  /// The live folders, each under its parent, with the notes filed in it.
+  List<Map<String, Object?>> listFolders() {
+    final store = _folderStore();
+    final tree = store.tree;
+    final visible = notes.notes.where(showsInFolder).toList();
+    final out = <Folder>[];
+    void walk(String? parent) {
+      for (final folder in tree.childrenOf(parent)) {
+        out.add(folder);
+        walk(folder.id);
+      }
+    }
+
+    walk(null);
+    return [
+      for (final folder in out)
+        {
+          'id': folder.id,
+          'name': folder.name,
+          'parent_id': folder.parentId,
+          'notes': [
+            for (final note in tree.notesIn(visible, folder.id)) note.id,
+          ],
+        },
+    ];
+  }
+
+  Folder createFolder(String name, {String? parentId}) {
+    final store = _folderStore();
+    final refusal = store.checkCreate(name, parentId: parentId);
+    if (refusal != null) throw McpRefusal(folderRefusal(refusal));
+    return store.create(name, parentId: parentId)!;
+  }
+
+  Folder renameFolder(String id, String name) {
+    final store = _folderStore();
+    final refusal = store.rename(id, name);
+    if (refusal != null) throw McpRefusal(folderRefusal(refusal));
+    return store.tree.byId(id)!;
+  }
+
+  Folder moveFolder(String id, {String? parentId}) {
+    final store = _folderStore();
+    final refusal = store.move(id, parentId: parentId);
+    if (refusal != null) throw McpRefusal(folderRefusal(refusal));
+    return store.tree.byId(id)!;
+  }
+
+  Folder deleteFolder(String id) {
+    final store = _folderStore();
+    final folder = store.tree.byId(id);
+    if (folder == null) throw McpRefusal(folderRefusal(FolderRefusal.gone));
+    store.delete(id);
+    return folder;
+  }
+
+  Folder restoreFolder(String id) {
+    final store = _folderStore();
+    store.restore(id);
+    final folder = store.tree.byId(id);
+    if (folder == null) throw McpRefusal(folderRefusal(FolderRefusal.gone));
+    return folder;
+  }
+
+  /// Files [id] in [folderId], or takes it out of every folder when that is
+  /// null. A drawing, a Hidden note, an archived note and a note shared with
+  /// the person are refused. Hidden reads as missing.
+  String? fileNote(String id, String? folderId) {
+    final store = _folderStore();
+    final note = read(id);
+    if (note.isDrawing) throw const McpRefusal('Folders hold notes only.');
+    if (note.isArchived) {
+      throw const McpRefusal('Archived notes can’t be filed.');
+    }
+    if (_sharedWithMe(note)) {
+      throw const McpRefusal('Notes shared with you can’t be filed.');
+    }
+    final from = store.tree.folderOf(id);
+    final refusal = store.file([id], folderId);
+    if (refusal != null) throw McpRefusal(folderRefusal(refusal));
+    return from;
   }
 
   /// Refuses [text] that has characters a note can't hold.

@@ -329,9 +329,10 @@ void main() {
         'read_voice_note',
         'list_tasks',
         'list_tags',
+        'list_folders',
       ]);
       service.setAllowWrites(true);
-      expect(names(await rpc('tools/list')), hasLength(15));
+      expect(names(await rpc('tools/list')), hasLength(18));
     });
 
     test('an unknown method is a JSON-RPC error', () async {

@@ -8,6 +8,10 @@ import '../../data/task_details.dart';
 import '../../sync/spaces.dart';
 import '../tag_colours.dart';
 
+/// How faint a task's box is drawn on a note shared to view only, where it
+/// takes no tap.
+const double lockedBoxOpacity = 0.4;
+
 /// What the Tasks sidebar narrows the page to: every open task, the Done
 /// view, or one note's tasks.
 @immutable

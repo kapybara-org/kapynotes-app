@@ -41,7 +41,11 @@ void main() {
 
   DateTime tick() => clock = clock.add(const Duration(milliseconds: 1));
 
-  Future<void> pumpPhone(WidgetTester tester, {bool editable = true}) async {
+  Future<void> pumpPhone(
+    WidgetTester tester, {
+    bool editable = true,
+    bool narrowed = false,
+  }) async {
     clock = DateTime(2026, 11, 20, 9);
     final store = _MemoryStore();
     notes = NotesStore(store);
@@ -53,7 +57,7 @@ void main() {
     );
     await notes.load();
     await library.load();
-    notes.create(
+    final note = notes.create(
       body:
           'Errands\n☐ Pay the rent\n☐ Call the bank\n☐ Hide the menu\n'
           '  It shrinks to a pill.\n☐ Book flights',
@@ -80,7 +84,9 @@ void main() {
         home: Scaffold(
           body: TasksScreen(
             controller: tasks,
-            filter: const TaskFilter.all(),
+            filter: narrowed
+                ? TaskFilter.note(note.id)
+                : const TaskFilter.all(),
             addFocus: addFocus,
             labelOf: (note) => note.title,
             onOpenNote: opened.add,
@@ -296,6 +302,15 @@ void main() {
       final box = find.byKey(const ValueKey('phone-details-box'));
       expect(tester.widget<GestureDetector>(box).onTap, isNull);
       expect(
+        find.descendant(
+          of: box,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
         tester
             .widget<Semantics>(
               find.ancestor(of: box, matching: find.byType(Semantics)).first,
@@ -312,6 +327,65 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
     },
   );
+
+  testWidgets(
+    'on a note shared to view only, a phone row\'s box is faint and takes no tap',
+    (tester) async {
+      await pumpPhone(tester, editable: false);
+      final box = find.byKey(ValueKey('phone-task-box-${listed().id}'));
+      expect(tester.widget<GestureDetector>(box).onTap, isNull);
+      expect(
+        tester
+            .widget<Semantics>(
+              find.ancestor(of: box, matching: find.byType(Semantics)).first,
+            )
+            .properties
+            .onTap,
+        isNull,
+      );
+      expect(
+        find.descendant(
+          of: box,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Opacity && widget.opacity == lockedBoxOpacity,
+          ),
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 3));
+    },
+  );
+
+  testWidgets(
+    'a Do now task in a note shared to view only has no Done on a phone',
+    (tester) async {
+      await pumpPhone(tester, editable: false);
+      tasks.doNow(tasks.read().open.first);
+      await tester.pumpAndSettle();
+      expect(tasks.read().open.first.doNow, isTrue);
+      expect(find.byKey(const ValueKey('tasks-not-finished')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-done')), findsNothing);
+      await tester.pump(const Duration(seconds: 3));
+    },
+  );
+
+  for (final editable in [true, false]) {
+    testWidgets(
+      'on a phone, Tasks narrowed to ${editable ? 'a note you can change has' : 'a note shared to view only has no'} add row',
+      (tester) async {
+        await pumpPhone(tester, editable: editable, narrowed: true);
+        expect(
+          find.byKey(const ValueKey('tasks-add-row')),
+          editable ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('tasks-add-view-only')),
+          editable ? findsNothing : findsOneWidget,
+        );
+        await tester.pump(const Duration(seconds: 3));
+      },
+    );
+  }
 
   testWidgets('a phone row shows the lines mark, as the window does', (
     tester,
