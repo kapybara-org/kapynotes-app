@@ -102,8 +102,12 @@ void main() {
     bool askKapyAi = false,
     TagShelf? tags,
     Note? tagNote,
+    bool phone = false,
+    Future<void> Function(TaskItem item, {required bool done})? onSetTaskDone,
   }) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 900));
+    await tester.binding.setSurfaceSize(
+      phone ? const Size(393, 852) : const Size(1000, 900),
+    );
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
@@ -127,6 +131,8 @@ void main() {
             askKapyAi: askKapyAi,
             tags: tags,
             tagNote: tagNote,
+            phone: phone,
+            onSetTaskDone: onSetTaskDone,
             settingsIndex: withSettings
                 ? (lend) => SettingsDialog(
                     onIndex: lend,
@@ -701,6 +707,99 @@ void main() {
       expect(find.text('Ask Kapy AI'), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       expect(chosen, isNull);
+    });
+  });
+
+  group('on a phone', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
+
+    testWidgets('fills the screen with Cancel and the scope pills', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, phone: true);
+
+      expect(
+        tester.getSize(find.byKey(const ValueKey('command-menu'))),
+        const Size(393, 852),
+      );
+      expect(find.byKey(const ValueKey('command-menu-cancel')), findsOneWidget);
+      expect(find.byKey(const ValueKey('command-menu-back')), findsNothing);
+      for (final scope in ['all', 'notes', 'tasks', 'drawings']) {
+        final pill = find.byKey(ValueKey('command-scope-$scope'));
+        expect(tester.getSize(pill).height, greaterThanOrEqualTo(44));
+      }
+      expect(find.byType(Keycap), findsNothing);
+    });
+
+    testWidgets('a scope narrows the results and what Make offers', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, phone: true);
+      await type(tester, 'sintra');
+
+      expect(find.text('Make'), findsOneWidget);
+      expect(row('New note “sintra”'), findsOneWidget);
+      expect(row('New task “sintra”'), findsNothing);
+      expect(row('Trip budget'), findsOneWidget);
+      expect(row('Sintra day route'), findsOneWidget);
+      expect(row('Secret Sintra gift'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('command-scope-tasks')));
+      await tester.pumpAndSettle();
+      expect(row('Book the Sintra train tickets'), findsOneWidget);
+      expect(row('Trip budget'), findsNothing);
+      expect(row('Sintra day route'), findsNothing);
+      expect(row('New task “sintra”'), findsOneWidget);
+      expect(row('New note “sintra”'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('command-scope-drawings')));
+      await tester.pumpAndSettle();
+      expect(row('Sintra day route'), findsOneWidget);
+      expect(row('Trip budget'), findsNothing);
+    });
+
+    testWidgets('Return opens the first result', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, phone: true);
+      await type(tester, 'goals');
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await tester.pump();
+      expect(chosen, isA<OpenNoteChoice>());
+      expect((chosen! as OpenNoteChoice).note.title, 'Goals - Oct 2026');
+    });
+
+    testWidgets('a task checks off in place and keeps its row', (tester) async {
+      await setUpNotes(tester);
+      final calls = <bool>[];
+      await pumpMenu(
+        tester,
+        phone: true,
+        onSetTaskDone: (item, {required done}) async => calls.add(done),
+      );
+      await type(tester, 'train');
+      final task = board.open.single;
+      final check = find.byKey(ValueKey('command-task-check-${task.id}'));
+      expect(tester.getSize(check), const Size(44, 44));
+
+      await tester.tap(check);
+      await tester.pumpAndSettle();
+      expect(calls, [true]);
+      expect(chosen, isNull);
+      expect(row('Book the Sintra train tickets'), findsOneWidget);
+
+      await tester.tap(check);
+      await tester.pumpAndSettle();
+      expect(calls, [true, false]);
+    });
+
+    testWidgets('Android has a back arrow in place of Cancel', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      await setUpNotes(tester);
+      await pumpMenu(tester, phone: true);
+      expect(find.byKey(const ValueKey('command-menu-back')), findsOneWidget);
+      expect(find.byKey(const ValueKey('command-menu-cancel')), findsNothing);
     });
   });
 }

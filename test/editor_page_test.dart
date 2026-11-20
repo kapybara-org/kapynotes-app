@@ -435,7 +435,9 @@ void main() {
     },
   );
 
-  testWidgets('a phone has no footer under its own rows', (tester) async {
+  testWidgets('a phone has the page with its meta row and no footer', (
+    tester,
+  ) async {
     window(tester);
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -443,12 +445,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NoteFooter), findsNothing);
-    expect(find.byType(NoteMetaRow), findsNothing);
-    final field = _editable(tester);
+    // Taller than a window's row: the tags under the facts are 44 pt
+    // targets on a phone, so the row grows with them (KAP-115).
     expect(
-      field.caretRect(TextPosition(offset: _body.indexOf('☐'))).top -
-          field.caretRect(const TextPosition(offset: 1)).top,
-      closeTo(29, 0.5),
+      tester.getSize(find.byType(NoteMetaRow)).height,
+      greaterThanOrEqualTo(EditorMetrics.metaRow),
     );
+    // The facts and the tags on their two lines sit between the title and
+    // the writing, over neither.
+    final field = _editable(tester);
+    final meta = tester.getRect(find.byType(NoteMetaRow));
+    final title = field.caretRect(const TextPosition(offset: 1));
+    final first = field.caretRect(TextPosition(offset: _body.indexOf('☐')));
+    expect(meta.top, greaterThanOrEqualTo(field.toGlobal(title.bottomLeft).dy));
+    expect(meta.bottom, lessThanOrEqualTo(field.toGlobal(first.topLeft).dy));
   });
 }

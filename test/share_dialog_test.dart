@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +31,7 @@ import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
+import 'package:kapy_notes/ui/notes_list.dart' show NotesListHeading;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -1218,6 +1219,14 @@ void main() {
     expect(ours.body, 'Trip budget');
   });
 
+  /// Any sharing heading: one per person or space the shared notes are open
+  /// to.
+  final sharedHeading = find.byWidgetPredicate(
+    (widget) =>
+        widget.key is ValueKey<String> &&
+        (widget.key! as ValueKey<String>).value.startsWith('share-group-'),
+  );
+
   testWidgets('the sidebar groups shared notes under who they are for', (
     tester,
   ) async {
@@ -1244,7 +1253,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
           ),
@@ -1271,14 +1280,15 @@ void main() {
     expect(find.text('Kept at hand'), findsOneWidget);
     expect(top('Kept at hand'), lessThan(top('Waiting for user-2')));
 
-    // "My notes" counts every note of their own, the pinned one included,
-    // and none of the shared ones.
+    // The own-notes heading counts the rows under it, so the pinned one it
+    // has lifted out is not in this number, and no shared note ever is.
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('sidebar-note-count')),
-        matching: find.text('2'),
-      ),
-      findsOneWidget,
+      tester
+          .widget<NotesListHeading>(
+            find.byKey(const ValueKey('sidebar-notes-heading')),
+          )
+          .count,
+      1,
     );
   });
 
@@ -1310,7 +1320,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
             collaborators: {
@@ -1374,7 +1384,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: bob.sharing,
           ),
@@ -1410,7 +1420,7 @@ void main() {
               displayTime: (t) => t,
               onSearch: () {},
               onSelect: (_) {},
-              onCreate: () {},
+              windowBar: const SizedBox(),
               onShare: (_) {},
               onArchive: (_) {},
               sharing: alice.sharing,
@@ -1424,6 +1434,10 @@ void main() {
       // title bar, where it acts on the note that is open rather than whichever
       // row happens to be under the pointer.
       expect(find.byKey(ValueKey('share-note-${shared.id}')), findsNothing);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: tester.getCenter(find.text('Shared')));
+      await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('note-actions-${shared.id}')), findsOneWidget);
 
       // Right-click still reaches it without opening the note first.
@@ -1475,6 +1489,7 @@ void main() {
               onDelete: (_) {},
               asksBeforeDeleting: asks,
               sharing: bob.sharing,
+              windowBar: const SizedBox(),
             ),
           ),
         ),
@@ -1571,6 +1586,7 @@ void main() {
               sharing: bob.sharing,
               picks: picks,
               onPicked: (action, ids) => done.add((action, ids)),
+              windowBar: const SizedBox(),
             ),
           ),
         ),
@@ -1804,7 +1820,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: device.sharing,
             tab: tab,
@@ -1814,17 +1830,16 @@ void main() {
       ),
     );
 
-    testWidgets('your own shared note stays in My Notes, with faces, and '
-        'is in Shared too', (tester) async {
+    testWidgets('your own shared note stays in the notes list, and is in '
+        'Shared under the person it is open to', (tester) async {
       late Note shared;
-      late Space space;
       await tester.runAsync(() async {
         await alice.boot();
         await bob.boot();
         alice.notes.create(body: 'Private');
         shared = alice.notes.create(body: 'Ours');
         await alice.sync.syncNow();
-        space = await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+        await alice.sharing.shareNoteWith(shared.id, email: bob.email);
         await bob.sharing.acceptInvite(server.outbox.single.token);
         await alice.sync.syncNow();
         await bob.sync.syncNow();
@@ -1834,28 +1849,19 @@ void main() {
       await tester.pumpWidget(tabbed(alice, tab: SidebarTab.mine));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('sidebar-tabs')), findsOneWidget);
-      expect(find.text('My Notes'), findsOneWidget);
-      expect(find.text('Shared'), findsOneWidget);
+      // An ordinary row, not a section of its own: her own list has no
+      // sharing heading over it.
       expect(find.text('Private'), findsOneWidget);
       expect(find.text('Ours'), findsOneWidget);
-      // An ordinary row, not a section of its own: no heading, and the
-      // people it is open to drawn after its timestamp instead.
-      expect(find.text('With User'), findsNothing);
-      expect(find.byKey(const ValueKey('note-row-people')), findsOneWidget);
-      expect(
-        find.byKey(ValueKey('space-avatar-${space.id}-${bob.userId}')),
-        findsOneWidget,
-      );
+      expect(sharedHeading, findsNothing);
 
-      // Shared lists it under Bob, whose faces the heading shows, so the row
-      // does not repeat them, and leaves her private note out.
+      // Shared lists it under Bob, whose faces the heading shows, and leaves
+      // her private note out.
       await tester.pumpWidget(tabbed(alice, tab: SidebarTab.shared));
       await tester.pumpAndSettle();
-      expect(find.text('With User'), findsOneWidget);
+      expect(sharedHeading, findsWidgets);
       expect(find.text('Ours'), findsOneWidget);
       expect(find.text('Private'), findsNothing);
-      expect(find.byKey(const ValueKey('note-row-people')), findsNothing);
     });
 
     testWidgets('an empty Shared says how to share, and starts from Settings', (
@@ -1881,6 +1887,12 @@ void main() {
               tab: SidebarTab.shared,
               onTabChanged: (_) {},
               onStartSharing: () => started++,
+              windowBar: SidebarWindowBar(
+                title: 'Notes',
+                count: 0,
+                onCreate: () {},
+                onHide: () {},
+              ),
             ),
           ),
         ),
@@ -1941,16 +1953,16 @@ void main() {
       SidebarTab? switchedTo;
 
       await tester.pumpWidget(
-        tabbed(bob, tab: SidebarTab.mine, onTabChanged: (t) => switchedTo = t),
+        tabbed(
+          bob,
+          tab: SidebarTab.shared,
+          onTabChanged: (t) => switchedTo = t,
+        ),
       );
       await tester.pumpAndSettle();
 
       final card = find.byKey(ValueKey('sidebar-invite-$token'));
       expect(card, findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
-        findsOneWidget,
-      );
       double top(Finder finder) => tester.getTopLeft(finder).dy;
       expect(
         top(card),
@@ -1967,10 +1979,6 @@ void main() {
       expect(bob.sharing.teams, hasLength(1));
       expect(switchedTo, SidebarTab.shared);
       expect(card, findsNothing);
-      expect(
-        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
-        findsNothing,
-      );
       // Joining asks for a sync soon; the timer must not outlive the test.
       bob.dispose();
       await tester.pump(const Duration(seconds: 3));
@@ -1995,7 +2003,7 @@ void main() {
             displayTime: (t) => t,
             onSearch: () {},
             onSelect: (_) {},
-            onCreate: () {},
+            windowBar: const SizedBox(),
             onShare: (_) {},
             sharing: alice.sharing,
           ),

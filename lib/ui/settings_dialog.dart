@@ -1355,10 +1355,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   }
 
   String _keys(ShortcutAction action) =>
-      widget.shortcuts.bindingFor(action)?.displayLabel ?? '';
+      widget.shortcuts.hintFor(action)?.displayLabel ?? '';
 
   String _keycaps(ShortcutAction action) =>
-      widget.shortcuts.bindingFor(action)?.keycapLabel ?? '';
+      widget.shortcuts.hintFor(action)?.keycapLabel ?? '';
 
   // ---------------------------------------------------------------------------
   // The settings themselves

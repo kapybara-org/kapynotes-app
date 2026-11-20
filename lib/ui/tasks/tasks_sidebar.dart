@@ -75,7 +75,6 @@ class TasksSidebar extends StatelessWidget {
               onSearch: onSearch,
               shortcut: searchShortcut,
               placeholder: searchPlaceholder,
-              besideRail: true,
             ),
             Expanded(
               child: ListView(
