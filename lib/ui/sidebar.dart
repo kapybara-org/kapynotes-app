@@ -922,7 +922,9 @@ extension on Sidebar {
     selecting: _picking,
     checked: picks?.contains(note.id) ?? false,
     onToggleChecked: picks == null ? null : () => picks!.toggle(note.id),
-    onCommandClick: picks == null ? null : () => _commandClick(note),
+    onCommandClick: picks == null && onOpenInNewTab == null
+        ? null
+        : () => _commandClick(note),
     onPickTo: picks == null || !AppPlatform.hasPointer
         ? null
         : () => picks!.extendTo(_order, note.id, open: _highlighted?.id),
@@ -2976,8 +2978,9 @@ class NoteRow extends StatefulWidget {
   /// Whether the note is already open in a pane other than the focused one.
   final bool openElsewhere;
 
-  /// Opens the note in a tab of its own behind the one in front: ⌘-click or
-  /// Ctrl-click, a middle click, and the menu. Null where there are no tabs.
+  /// Opens the note in a tab of its own behind the one in front: a middle
+  /// click and the menu. A ⌘-click asks [onCommandClick]. Null where there
+  /// are no tabs.
   final VoidCallback? onOpenInNewTab;
 
   /// Whether the note is open in a tab already, in front or behind.
@@ -3070,9 +3073,7 @@ class _NoteRowState extends State<NoteRow> {
   /// beside that instead, the way a code editor's file list does. Shift picks
   /// the range from the open note, as a file list does, and while notes are
   /// picked any other click picks too. A click with ⌘ or Ctrl while nothing
-  /// is picked goes to [NoteRow.onCommandClick]; without one, it opens the
-  /// note in a tab behind, the way a browser does. A note with a tab already
-  /// stays where it is: the click asked for nothing to change on screen.
+  /// is picked goes to [NoteRow.onCommandClick].
   void _open() {
     final keyboard = HardwareKeyboard.instance;
     final pickTo = widget.onPickTo;
@@ -3087,14 +3088,6 @@ class _NoteRowState extends State<NoteRow> {
     }
     if (_canOpenToSide && keyboard.isAltPressed) {
       widget.onOpenToSide!();
-      return;
-    }
-    if (widget.onOpenInNewTab != null &&
-        !widget.selecting &&
-        (AppPlatform.isMacOS
-            ? keyboard.isMetaPressed
-            : keyboard.isControlPressed)) {
-      if (_canOpenInNewTab) widget.onOpenInNewTab!();
       return;
     }
     widget.onTap();
