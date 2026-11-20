@@ -1035,6 +1035,67 @@ class AppFonts {
   static const List<String> monoFallback = AppPlatform.monoFontFallback;
 }
 
+/// The weight ladder for interface text. Same steps as main: rows 400,
+/// a selected row 460, a button or chip 500, a section label 520, a page
+/// title or a key number 600.
+class AppWeight {
+  const AppWeight._();
+
+  static const double body = 400;
+  static const double selected = 460;
+  static const double button = 500;
+  static const double section = 520;
+  static const double page = 600;
+
+  static double axisOf(FontWeight weight) {
+    final value = weight.value;
+    if (value < 400) return value.toDouble();
+    if (value <= 400) return body;
+    if (value <= 500) return button;
+    if (value <= 600) return section;
+    return page;
+  }
+
+  static FontWeight named(double axis) {
+    if (axis < 350) return FontWeight.w300;
+    if (axis < 450) return FontWeight.w400;
+    if (axis < 510) return FontWeight.w500;
+    if (axis < 560) return FontWeight.w600;
+    return FontWeight.w700;
+  }
+
+  static List<FontVariation> variations(
+    double axis, {
+    List<FontVariation> extra = const [],
+  }) => [
+    for (final variation in extra)
+      if (variation.axis != 'wght') variation,
+    FontVariation('wght', axis),
+  ];
+}
+
+TextStyle chromeStyle({
+  required double size,
+  required double line,
+  required double weight,
+  required Color color,
+  String? family,
+  List<String>? fallback,
+  List<FontVariation> extra = const [],
+  bool tabular = false,
+}) => TextStyle(
+  fontFamily: family ?? AppFonts.ui,
+  fontFamilyFallback: fallback ?? AppFonts.uiFallback,
+  fontSize: size,
+  height: line / size,
+  leadingDistribution: TextLeadingDistribution.even,
+  fontWeight: AppWeight.named(weight),
+  fontVariations: AppWeight.variations(weight, extra: extra),
+  color: color,
+  letterSpacing: 0,
+  fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
+);
+
 class KapyTheme {
   const KapyTheme._();
 
