@@ -8603,6 +8603,52 @@ void main() {
       expect(days.dayOf(first.id), isNull);
     });
 
+    testWidgets('a phone lists a note for a later day only on its day, and '
+        'keeps it under Upcoming in Folders until then', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      var clock = DateTime(2026, 11, 19, 12);
+      notes = NotesStore(store, now: () => clock);
+      final days = NoteDayStore(store);
+      await days.load();
+      final folders = FolderStore(store);
+      await folders.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      notes.create(body: 'Standup\nShip it');
+      days.setDay(renewal.id, DateTime(2026, 11, 21));
+      await pumpApp(
+        tester,
+        size: const Size(390, 844),
+        days: days,
+        folders: folders,
+      );
+      await showNotesList(tester);
+      final list = find.byType(Sidebar);
+      Finder listed(String title) =>
+          find.descendant(of: list, matching: find.text(title));
+      expect(listed('Standup'), findsOneWidget);
+      expect(listed('Renewal notes'), findsNothing);
+
+      prefs.foldersShown = true;
+      await tester.pumpAndSettle();
+      final upcoming = find.byKey(const ValueKey('folders-upcoming'));
+      expect(upcoming, findsOneWidget);
+      expect(
+        find.descendant(of: upcoming, matching: find.text('1')),
+        findsOneWidget,
+      );
+      await tester.tap(upcoming);
+      await tester.pumpAndSettle();
+      expect(listed('Renewal notes'), findsOneWidget);
+
+      prefs.foldersShown = false;
+      clock = DateTime(2026, 11, 21, 9);
+      notes.create(body: 'Groceries');
+      await tester.pumpAndSettle();
+      expect(listed('Renewal notes'), findsOneWidget, reason: 'its day came');
+      expect(upcoming, findsNothing);
+    });
+
     testWidgets('a note for a later day waits, folded, under Upcoming', (
       tester,
     ) async {
