@@ -567,6 +567,10 @@ extension on Sidebar {
   /// only where the space says so. The row's rule, and the keyboard's.
   bool _mayEdit(Note note) => sharing?.canEdit(note) ?? !note.isShared;
 
+  /// Whether the reader may take [note] out of their notes: what they may
+  /// change, and anything somebody else shares with them, view-only too.
+  bool _mayRemove(Note note) => sharing?.mayRemove(note) ?? !note.isShared;
+
   /// What a row's delete says it does. A note somebody else owns only leaves
   /// the reader's notes, as the question that follows says; their own goes
   /// for good, which the archive spells out beside Restore. The ellipsis is
@@ -625,7 +629,7 @@ extension on Sidebar {
         (PickedAction.unhide, those(_mayEdit)),
       if (!_specialMode && onArchive != null)
         (PickedAction.archive, those(_mayEdit)),
-      if (onDelete != null) (PickedAction.delete, those(_mayEdit)),
+      if (onDelete != null) (PickedAction.delete, those(_mayRemove)),
     ];
   }
 
@@ -962,7 +966,7 @@ extension on Sidebar {
     if (_picking) return _pickedAction(PickedAction.delete);
     if (onDelete == null) return null;
     final note = _highlighted;
-    if (note == null || !_mayEdit(note)) return null;
+    if (note == null || !_mayRemove(note)) return null;
     return () => onDelete!(note.id);
   }
 
@@ -1043,7 +1047,7 @@ extension on Sidebar {
     onUnhide: !hiddenMode || onUnhide == null || !_mayEdit(note)
         ? null
         : () => onUnhide!(note.id),
-    onDelete: onDelete == null || !_mayEdit(note)
+    onDelete: onDelete == null || !_mayRemove(note)
         ? null
         : () => onDelete!(note.id),
     deleteLabel: _deleteLabel(note),
