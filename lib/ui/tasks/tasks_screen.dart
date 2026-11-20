@@ -6,14 +6,17 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../../data/blob_store.dart';
 import '../../data/note.dart';
 import '../../data/task_board.dart';
+import '../../data/task_details.dart';
 import '../context_menu.dart';
 import '../editor/note_header.dart';
 import '../keycap.dart';
 import '../sidebar_timestamp.dart';
 import '../tonal_button.dart';
 import 'task_marks.dart';
+import 'task_details_sheet.dart';
 import 'tasks_controller.dart';
 
 /// The chord that finishes Do now, as its button prints it.
@@ -34,6 +37,7 @@ class TasksScreen extends StatefulWidget {
     required this.addFocus,
     required this.labelOf,
     required this.onOpenNote,
+    this.images,
     this.newTaskShortcut,
   });
 
@@ -44,6 +48,10 @@ class TasksScreen extends StatefulWidget {
   /// A note's name as a task's mark shows it.
   final String Function(Note note) labelOf;
   final ValueChanged<String> onOpenNote;
+
+  /// Where a task's picture is stored, so Do now and the sheet can show it.
+  /// Null in a test that does not draw pictures.
+  final BlobStore? images;
 
   /// Printed on the add row's keycap at rest.
   final String? newTaskShortcut;
@@ -65,6 +73,9 @@ class TasksScreenState extends State<TasksScreen> {
   bool _targetChosen = false;
 
   String? _washId;
+  String? _sheetId;
+  int _sheetIndex = 0;
+  final _listFocus = FocusNode(debugLabel: 'tasks-list');
   bool _notice = false;
   Timer? _noticeTimer;
   bool _allCandidates = false;
@@ -74,6 +85,14 @@ class TasksScreenState extends State<TasksScreen> {
   void initState() {
     super.initState();
     widget.addFocus.addListener(_focusChanged);
+    widget.controller.sheetRequest.addListener(_takeSheetRequest);
+  }
+
+  void _takeSheetRequest() {
+    final id = widget.controller.sheetRequest.value;
+    if (id == null || !mounted) return;
+    widget.controller.sheetRequest.value = null;
+    setState(() => _sheetId = id);
   }
 
   @override
@@ -92,6 +111,8 @@ class TasksScreenState extends State<TasksScreen> {
 
   @override
   void dispose() {
+    widget.controller.sheetRequest.removeListener(_takeSheetRequest);
+    _listFocus.dispose();
     widget.addFocus.removeListener(_focusChanged);
     _noticeTimer?.cancel();
     _words.dispose();
@@ -224,7 +245,7 @@ class TasksScreenState extends State<TasksScreen> {
                   width: width + reach,
                   child: widget.filter.done
                       ? _done(board)
-                      : _today(board, reach),
+                      : _withSheet(board, _today(board, reach)),
                 ),
               ),
             ),
@@ -233,6 +254,78 @@ class TasksScreenState extends State<TasksScreen> {
       );
     },
   );
+
+  void _openSheet(TaskItem item) {
+    setState(() {
+      _sheetId = item.id;
+      _sheetIndex = _open(_tasks.read()).indexWhere((row) => row.id == item.id);
+    });
+    _listFocus.requestFocus();
+  }
+
+  KeyEventResult _listKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent || _sheetId == null) return KeyEventResult.ignored;
+    if (!_listFocus.hasFocus) return KeyEventResult.ignored;
+    final open = _open(_tasks.read());
+    if (open.isEmpty) return KeyEventResult.ignored;
+    final index = _sheetIndex.clamp(0, open.length - 1);
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() => _sheetId = null);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      final next = event.logicalKey == LogicalKeyboardKey.arrowDown
+          ? (index + 1).clamp(0, open.length - 1)
+          : (index - 1).clamp(0, open.length - 1);
+      setState(() {
+        _sheetIndex = next;
+        _sheetId = open[next].id;
+      });
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.space) {
+      unawaited(_tasks.setDone(open[index], done: !open[index].line.done));
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _withSheet(TaskBoard board, Widget list) {
+    final id = _sheetId;
+    TaskItem? item;
+    if (id != null) {
+      for (final candidate in [...board.open, ...board.done]) {
+        if (candidate.id == id) item = candidate;
+      }
+    }
+    final shown = Focus(
+      focusNode: _listFocus,
+      onKeyEvent: _listKey,
+      child: list,
+    );
+    if (item == null || !EditorMetrics.page) return shown;
+    final openItem = item;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 3, child: shown),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 300,
+          height: 440,
+          child: TaskDetailsSheet(
+            key: ValueKey(openItem.id),
+            item: openItem,
+            tasks: _tasks,
+            onClose: () => setState(() => _sheetId = null),
+            onOpenNote: () => widget.onOpenNote(openItem.note.id),
+            images: widget.images,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _today(TaskBoard board, double reach) {
     final palette = context.palette;
@@ -306,6 +399,8 @@ class TasksScreenState extends State<TasksScreen> {
                       ? null
                       : widget.labelOf(doNow.note),
                   onOpenNote: () => widget.onOpenNote(doNow.note.id),
+                  onOpen: () => _openSheet(doNow),
+                  images: widget.images,
                   onNotFinished: () => _notFinished(doNow),
                   onDone: completeDoNow,
                 )
@@ -365,6 +460,7 @@ class TasksScreenState extends State<TasksScreen> {
             onMark: () => _cycleMark(item),
             onTick: () => unawaited(_tasks.setDone(item, done: true)),
             onOpenNote: () => widget.onOpenNote(item.note.id),
+            onOpen: () => _openSheet(item),
             onKeep: () => _tasks.keep(item),
             onRemove: () => unawaited(_remove(item)),
           ),
@@ -756,6 +852,8 @@ class _DoNowCard extends StatelessWidget {
     required this.item,
     required this.label,
     required this.onOpenNote,
+    required this.onOpen,
+    this.images,
     required this.onNotFinished,
     required this.onDone,
   });
@@ -763,6 +861,8 @@ class _DoNowCard extends StatelessWidget {
   final TaskItem item;
   final String? label;
   final VoidCallback onOpenNote;
+  final VoidCallback onOpen;
+  final BlobStore? images;
   final VoidCallback onNotFinished;
   final VoidCallback onDone;
 
@@ -804,15 +904,46 @@ class _DoNowCard extends StatelessWidget {
                     ).copyWith(letterSpacing: 0.66),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    item.words,
-                    style: uiStyle(
-                      20,
-                      28,
-                      FontWeight.w600,
-                      palette.textPrimary,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onOpen,
+                    child: Text(
+                      item.words,
+                      style: uiStyle(
+                        20,
+                        28,
+                        FontWeight.w600,
+                        palette.textPrimary,
+                      ),
                     ),
                   ),
+                  if (taskBlockOf(item.note.body, item.line)?.details
+                      case final details?) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            foldedPreview(details.preview),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: uiStyle(
+                              13,
+                              20,
+                              FontWeight.w400,
+                              palette.textTertiary,
+                            ),
+                          ),
+                        ),
+                        TaskDetailPicture(
+                          item: item,
+                          details: details,
+                          images: images,
+                          size: 36,
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -1348,6 +1479,7 @@ class _TaskRow extends StatefulWidget {
     required this.onMark,
     required this.onTick,
     required this.onOpenNote,
+    required this.onOpen,
     required this.onKeep,
     required this.onRemove,
   });
@@ -1365,6 +1497,7 @@ class _TaskRow extends StatefulWidget {
   final VoidCallback onMark;
   final VoidCallback onTick;
   final VoidCallback onOpenNote;
+  final VoidCallback onOpen;
   final VoidCallback onKeep;
   final VoidCallback onRemove;
 
@@ -1433,18 +1566,25 @@ class _TaskRowState extends State<_TaskRow> {
             _Box(done: false, onPressed: widget.onTick, label: item.words),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                item.words,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: uiStyle(
-                  16,
-                  28,
-                  FontWeight.w500,
-                  stale ? palette.textSecondary : palette.textPrimary,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onOpen,
+                child: Text(
+                  item.hasGroup
+                      ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
+                      : item.words,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: uiStyle(
+                    16,
+                    28,
+                    FontWeight.w500,
+                    stale ? palette.textSecondary : palette.textPrimary,
+                  ),
                 ),
               ),
             ),
+            TaskDetailsIcon(item: item),
             if (stale) ...[
               const SizedBox(width: 10),
               Padding(

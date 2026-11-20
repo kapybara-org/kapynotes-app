@@ -6,6 +6,7 @@ import '../../data/notes_store.dart';
 import '../../data/stamped.dart';
 import '../../crdt/note_doc.dart';
 import '../../data/task_board.dart';
+import '../../data/task_details.dart';
 import '../../data/task_index.dart';
 import '../../data/task_library.dart';
 import '../../data/task_lines.dart';
@@ -19,6 +20,11 @@ import '../editor/editor_formatting.dart';
 /// Notifies when the notes or the index change, and reads the board once
 /// per change for everything that shows it.
 class TasksController extends ChangeNotifier {
+  /// The task the menu bar asked the Tasks screen to open a sheet for.
+  /// Cleared once the screen has taken it. Not a change to any note.
+  final ValueNotifier<String?> sheetRequest = ValueNotifier(null);
+
+  void requestSheet(String taskId) => sheetRequest.value = taskId;
   TasksController({
     required this.notes,
     required this.library,
@@ -50,6 +56,7 @@ class TasksController extends ChangeNotifier {
 
   @override
   void dispose() {
+    sheetRequest.dispose();
     _sources.removeListener(_changed);
     super.dispose();
   }
@@ -129,6 +136,52 @@ class TasksController extends ChangeNotifier {
         touchedAt: at,
       ),
     );
+    await reconcileNow();
+  }
+
+  /// Opens an empty details line under [item], so Add details has somewhere
+  /// to write. A task that already has details is left as it is.
+  Future<void> openDetails(TaskItem item) async {
+    final current = await _current(item);
+    if (current == null) return;
+    final (note, line) = current;
+    if (taskBlockOf(note.body, line)?.details != null) return;
+    final indent = ' ' * (line.textStart - line.start);
+    if (line.end >= note.body.length) {
+      _rewrite(note, line.end, line.end, '\n$indent');
+    } else if (note.body[line.end] == '\n') {
+      _rewrite(note, line.end + 1, line.end + 1, '$indent\n');
+    } else {
+      _rewrite(note, line.end, line.end, '\n$indent');
+    }
+    await reconcileNow();
+  }
+
+  /// Writes [plain] as the words under [item], in its note. Pictures already
+  /// there stay. An empty [plain] takes an empty block away and leaves a note
+  /// that had no details exactly as it was.
+  Future<void> setDetails(TaskItem item, String plain) async {
+    final current = await _current(item);
+    if (current == null) return;
+    final (note, line) = current;
+    final body = replaceTaskDetails(note.body, line, plain);
+    if (body == note.body) return;
+    var start = 0;
+    final oldLen = note.body.length;
+    final newLen = body.length;
+    while (start < oldLen &&
+        start < newLen &&
+        note.body.codeUnitAt(start) == body.codeUnitAt(start)) {
+      start++;
+    }
+    var tail = 0;
+    while (tail < oldLen - start &&
+        tail < newLen - start &&
+        note.body.codeUnitAt(oldLen - 1 - tail) ==
+            body.codeUnitAt(newLen - 1 - tail)) {
+      tail++;
+    }
+    _rewrite(note, start, oldLen - tail, body.substring(start, newLen - tail));
     await reconcileNow();
   }
 
