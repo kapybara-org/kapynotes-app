@@ -47,7 +47,11 @@ void main() {
         if (tap && !data.flagsCollection.isTextField) {
           // A hairline border inside a 44 pt target can leave 43 to
           // measure, as the formatting bar's does.
-          if (size.width < 43 || size.height < 43) {
+          // A node the formatting bar's scroll has cut to a hairline is
+          // not a target anyone can reach, and it comes back whole when the
+          // bar is scrolled to it.
+          final cut = size.width < 2 || size.height < 2;
+          if (!cut && (size.width < 43 || size.height < 43)) {
             misses.add(
               '$screen: ${data.label} is ${size.width.toStringAsFixed(1)} × '
               '${size.height.toStringAsFixed(1)}',
