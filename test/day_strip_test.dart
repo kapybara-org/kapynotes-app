@@ -24,8 +24,9 @@ void main() {
     updatedAt: edited,
   );
 
-  /// Pumps the strip in [room] at most, keeping When as the strip sets it,
-  /// and hands back every When it set and every day asked for a page.
+  /// Pumps the strip in [room] at most, with its month over its week, keeping
+  /// When as the strip sets it, and hands back every When it set and every
+  /// day asked for a page.
   Future<(List<WhenFilter>, List<DateTime>)> pumpStrip(
     WidgetTester tester, {
     DateTime? today,
@@ -49,6 +50,11 @@ void main() {
               constraints: BoxConstraints(maxWidth: room),
               child: StatefulBuilder(
                 builder: (context, setState) => DayStrip(
+                  place: (month, week) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [month, ?week],
+                  ),
                   today: today ?? thursday,
                   when: current,
                   onWhenChanged: (when) => setState(() {
@@ -69,6 +75,8 @@ void main() {
         ),
       ),
     );
+    // The month names the days that fit, a frame after they are laid out.
+    await tester.pump();
     return (set, asked);
   }
 
@@ -319,9 +327,8 @@ void main() {
     expect(find.text('November 2026'), findsOneWidget);
   });
 
-  testWidgets('a narrow page shows fewer days, always around today', (
-    tester,
-  ) async {
+  testWidgets('a narrow page shows fewer days, always around today, and the '
+      'month stays when the week gives way', (tester) async {
     final month = find.byKey(const ValueKey('day-strip-month'));
     final date = find.byKey(const ValueKey('day-strip-date'));
     int chips() => tester
@@ -338,29 +345,33 @@ void main() {
     await pumpStrip(tester);
     expect(chips(), 7);
 
-    await pumpStrip(tester, room: 560);
+    await pumpStrip(tester, room: 500);
     expect(day(19), findsOneWidget, reason: 'today never leaves the middle');
-    expect(chips(), lessThan(7));
+    expect(chips(), 5);
 
-    await pumpStrip(tester, room: 460);
+    await pumpStrip(tester, room: 300);
     expect(day(19), findsOneWidget);
-    expect(chips(), lessThan(7));
+    expect(chips(), 3);
 
-    await pumpStrip(tester, room: 200);
+    await pumpStrip(tester, room: 110);
     expect(tester.takeException(), isNull);
     expect(chips(), 0, reason: 'no room for a week');
+    expect(month, findsOneWidget, reason: 'the month still picks a day');
+
+    await pumpStrip(tester, room: 110, compact: true);
     expect(month, findsNothing);
     expect(date, findsOneWidget, reason: 'one button for the day instead');
   });
 
-  testWidgets('at every width it fits, with › or the button for the day', (
+  testWidgets('at every width it fits, with › or a button that picks a day', (
     tester,
   ) async {
     final forward = find.byKey(const ValueKey('day-strip-forward'));
+    final month = find.byKey(const ValueKey('day-strip-month'));
     final date = find.byKey(const ValueKey('day-strip-date'));
     // Seven days from Sun 29 November say "November–December", and fewer
     // around Wed 2 December only "December".
-    for (var room = 140.0; room <= 760; room += 12) {
+    for (var room = 200.0; room <= 760; room += 12) {
       for (final compact in [false, true]) {
         await pumpStrip(
           tester,
@@ -370,10 +381,13 @@ void main() {
         );
         expect(tester.takeException(), isNull, reason: 'at $room');
         expect(
-          forward.evaluate().length + date.evaluate().length,
-          1,
-          reason: 'the next week or the day can be reached at $room',
+          (compact ? date : month),
+          findsOneWidget,
+          reason: 'a day can be picked at $room',
         );
+        if (!compact && room >= 120) {
+          expect(forward, findsOneWidget, reason: 'the next week at $room');
+        }
       }
     }
   });

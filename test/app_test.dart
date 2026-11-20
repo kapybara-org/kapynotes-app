@@ -3879,6 +3879,37 @@ void main() {
       expect(onPage('Standup notes'), findsNothing);
     });
 
+    testWidgets("the page's 52 band lines up with the list's bar, with the "
+        'month in full at its top left and the week centred on the page', (
+      tester,
+    ) async {
+      await library(tester);
+      final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
+      final list = tester.getRect(find.byType(SidebarWindowBar));
+      expect(tester.getRect(find.byType(PageCard)).top, list.top);
+      expect(bar.bottom, list.bottom);
+      expect(list.height, 52);
+      final month = find.byKey(const ValueKey('day-strip-month'));
+      expect(
+        find.descendant(of: month, matching: find.text('November')),
+        findsOneWidget,
+      );
+      expect(tester.getTopLeft(month).dx, bar.left + 10);
+      expect(tester.getCenter(month).dy, bar.center.dy);
+      expect(find.byKey(const ValueKey('page-path')), findsNothing);
+      final week = tester.getRect(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('day-strip-back')),
+              matching: find.byType(Row),
+            )
+            .first,
+      );
+      expect(week.center.dx, closeTo(bar.center.dx, 0.01));
+      final more = tester.getRect(find.byKey(const ValueKey('page-more')));
+      expect(more.right, bar.right - 12);
+    });
+
     testWidgets('on a narrow page the week is one button, and When no longer '
         'points to it', (tester) async {
       await library(tester);
@@ -7956,9 +7987,14 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('sidebar-search-field'))).top,
         greaterThanOrEqualTo(bar.bottom),
       );
-      // The page stands on the canvas, a margin in from the window's edges.
+      // The page stands on the canvas, a margin in from the window's right,
+      // and its band lines up with the list's bar.
       final page = tester.getRect(find.byType(PageCard));
-      expect(page.top, 12);
+      expect(page.top, bar.top);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('page-toolbar'))).bottom,
+        bar.bottom,
+      );
       expect(page.right, 1100 - 12);
     }, skip: !WindowChrome.overlaysContent);
 
@@ -7989,7 +8025,12 @@ void main() {
         tester.getRect(find.byType(SidebarWindowBar)).top,
         greaterThanOrEqualTo(safeTop),
       );
-      expect(tester.getTopLeft(find.byType(PageCard)).dy, safeTop + 12);
+      // The page is level with the bar over the list, so its band lines up
+      // with that bar.
+      expect(
+        tester.getTopLeft(find.byType(PageCard)).dy,
+        tester.getRect(find.byType(SidebarWindowBar)).top,
+      );
       expect(
         tester.getTopLeft(findKapyIcon(KapyIcons.addRounded).last).dy,
         greaterThanOrEqualTo(safeTop),
@@ -8603,50 +8644,28 @@ void main() {
       expect(days.dayOf(first.id), isNull);
     });
 
-    testWidgets('a phone lists a note for a later day only on its day, and '
-        'keeps it under Upcoming in Folders until then', (tester) async {
+    testWidgets('a phone still lists a note for a later day, until its '
+        'Folders tab has Upcoming (KAP-157)', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      var clock = DateTime(2026, 11, 19, 12);
-      notes = NotesStore(store, now: () => clock);
       final days = NoteDayStore(store);
       await days.load();
-      final folders = FolderStore(store);
-      await folders.load();
       final renewal = notes.create(body: 'Renewal notes\nRead the contract');
       notes.create(body: 'Standup\nShip it');
-      days.setDay(renewal.id, DateTime(2026, 11, 21));
-      await pumpApp(
-        tester,
-        size: const Size(390, 844),
-        days: days,
-        folders: folders,
-      );
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(tester, size: const Size(390, 844), days: days);
       await showNotesList(tester);
-      final list = find.byType(Sidebar);
-      Finder listed(String title) =>
-          find.descendant(of: list, matching: find.text(title));
-      expect(listed('Standup'), findsOneWidget);
-      expect(listed('Renewal notes'), findsNothing);
 
-      prefs.foldersShown = true;
-      await tester.pumpAndSettle();
-      final upcoming = find.byKey(const ValueKey('folders-upcoming'));
-      expect(upcoming, findsOneWidget);
+      final list = find.byType(Sidebar);
       expect(
-        find.descendant(of: upcoming, matching: find.text('1')),
+        find.descendant(of: list, matching: find.text('Renewal notes')),
         findsOneWidget,
       );
-      await tester.tap(upcoming);
-      await tester.pumpAndSettle();
-      expect(listed('Renewal notes'), findsOneWidget);
-
-      prefs.foldersShown = false;
-      clock = DateTime(2026, 11, 21, 9);
-      notes.create(body: 'Groceries');
-      await tester.pumpAndSettle();
-      expect(listed('Renewal notes'), findsOneWidget, reason: 'its day came');
-      expect(upcoming, findsNothing);
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a note for a later day waits, folded, under Upcoming', (

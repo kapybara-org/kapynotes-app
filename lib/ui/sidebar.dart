@@ -1182,13 +1182,7 @@ extension on Sidebar {
           child: heading,
         ),
       );
-      gap(
-        phone
-            ? 12
-            : cards
-            ? 8
-            : 4,
-      );
+      gap(phone ? 12 : cards ? 8 : 4);
     }
 
     void section(Iterable<Note> notes, {bool pinned = false}) {
@@ -1362,20 +1356,13 @@ extension on Sidebar {
         heading(_groupHeading(groups, key));
         section(groups.byGroup[key]!);
       }
-      // A phone's list never shows a note waiting for a later day: those wait
-      // under Upcoming in Folders, and join the list on their day.
-      final today = dayShown(now(), displayTime);
-      final mine = [
-        for (final note in groups.mine)
-          if (!(ownDay?.call(note)?.isAfter(today) ?? false)) note,
-      ];
-      if (mine.isNotEmpty) {
+      if (groups.mine.isNotEmpty) {
         if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
           heading(const _PhoneHeading('Recent'));
         } else {
           gap(8);
         }
-        section(mine);
+        section(groups.mine);
       }
     } else {
       if (pinned.isNotEmpty) {
@@ -2667,16 +2654,7 @@ class _FiltersButton extends StatelessWidget {
 /// How a [NoteRow] draws its note: the desktop list's row or sticky card
 /// beside the spaces rail, a phone's row and pinned card, or the Folders
 /// tab's note in an open folder ([filed]) or in none ([loose]).
-enum NoteRowStyle {
-  row,
-  card,
-  drawingRow,
-  drawingCard,
-  touch,
-  square,
-  filed,
-  loose,
-}
+enum NoteRowStyle { row, card, drawingRow, drawingCard, touch, square, filed, loose }
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {

@@ -64,10 +64,12 @@ void main() {
     VoidCallback? onShowList,
     void Function(String folderId, {required bool behind})? onOpenFolder,
     Widget? assistant,
-    Widget Function(bool compact)? days,
+    List<Widget>? actions,
+    Widget Function(bool compact, PlaceDays place)? days,
   }) => PageToolbar(
     path: path,
     days: days,
+    actions: actions,
     listVisible: listVisible,
     onShowList: onShowList ?? () {},
     showListShortcut: 'Cmd + \\',
@@ -94,61 +96,137 @@ void main() {
   Finder onPath(String text) =>
       find.descendant(of: path, matching: find.text(text));
 
-  testWidgets('is 72 tall, with the path 16 in and every control centred 40 '
-      'down', (tester) async {
-    await tester.pumpWidget(
-      harness(
-        toolbar(assistant: const SizedBox(key: ai, width: 49, height: 32)),
-      ),
-    );
+  testWidgets(
+    'is a 52 band from the page\'s top, with the path 18 in, every '
+    'control centred down it, and More last, after Kapy AI, 12 from the end',
+    (tester) async {
+      await tester.pumpWidget(
+        harness(
+          toolbar(assistant: const SizedBox(key: ai, width: 49, height: 32)),
+        ),
+      );
 
-    final rect = tester.getRect(bar);
-    expect(rect.height, 72);
-    expect(showList, findsNothing);
-    expect(find.byKey(const ValueKey('page-new-note')), findsNothing);
-    expect(tester.getTopLeft(path).dx, rect.left + 16);
-    for (final control in [path, saved, share, more, find.byKey(ai)]) {
-      expect(tester.getCenter(control).dy, rect.top + 40);
-    }
-    expect(tester.getSize(share).height, 32);
-    expect(tester.getSize(more), const Size.square(32));
-    // Saved, Share and More 8 apart, and Kapy AI last at the bar's end.
-    expect(tester.getTopLeft(share).dx - tester.getTopRight(saved).dx, 8);
-    expect(tester.getTopLeft(more).dx - tester.getTopRight(share).dx, 8);
-    expect(tester.getTopRight(find.byKey(ai)).dx, rect.right - 16);
-  });
+      final rect = tester.getRect(bar);
+      final card = tester.getRect(find.byType(PageCard));
+      expect(rect.top, card.top + border);
+      expect(rect.bottom, card.top + 52);
+      expect(showList, findsNothing);
+      expect(find.byKey(const ValueKey('page-new-note')), findsNothing);
+      expect(tester.getTopLeft(path).dx, rect.left + 18);
+      for (final control in [path, saved, share, more, find.byKey(ai)]) {
+        expect(tester.getCenter(control).dy, rect.center.dy);
+      }
+      expect(tester.getSize(share).height, 32);
+      expect(tester.getSize(more), const Size.square(32));
+      // Saved and Share 8 apart, Kapy AI straight after Share behind its own
+      // hairline, and More 4 after it at the bar's end.
+      expect(tester.getTopLeft(share).dx - tester.getTopRight(saved).dx, 8);
+      expect(
+        tester.getTopLeft(find.byKey(ai)).dx,
+        tester.getTopRight(share).dx,
+      );
+      expect(
+        tester.getTopLeft(more).dx - tester.getTopRight(find.byKey(ai)).dx,
+        4,
+      );
+      expect(tester.getTopRight(more).dx, rect.right - 12);
+      expect(
+        find.descendant(
+          of: more,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is KapyIcon &&
+                widget.icon == KapyIcons.moreVerticalRounded,
+          ),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('the days sit between the path and the actions with as much '
-      'room on either side, and give way to one button below 720', (
-    tester,
-  ) async {
+  testWidgets('the days put their month at the top left in place of the '
+      'path, and the week centred on the page between two 208 slots, 12 '
+      'clear of each; below 720 one button stands in for both', (tester) async {
     final compact = <bool>[];
-    Widget days(bool narrow) {
+    const month = ValueKey('month');
+    const week = ValueKey('week');
+    Widget days(bool narrow, PlaceDays place) {
       compact.add(narrow);
-      return SizedBox(
-        key: const ValueKey('days'),
-        width: narrow ? 96 : 316,
-        height: 64,
+      return place(
+        SizedBox(key: month, width: narrow ? 96 : 90, height: 32),
+        narrow
+            ? null
+            : const SizedBox(key: week, width: double.infinity, height: 44),
       );
     }
 
     await tester.pumpWidget(harness(toolbar(days: days)));
-    final strip = find.byKey(const ValueKey('days'));
-    final before = tester.getTopLeft(strip).dx - tester.getTopRight(path).dx;
-    expect(before, greaterThan(16));
-    expect(tester.getTopLeft(saved).dx - tester.getTopRight(strip).dx, before);
-    // The days' column starts 8 down, as every control's centre is 40 down.
-    expect(tester.getTopLeft(strip).dy, tester.getTopLeft(bar).dy + 8);
+    final rect = tester.getRect(bar);
+    expect(path, findsNothing);
+    // The month's button starts 8 before its words, which start 18 in.
+    expect(tester.getTopLeft(find.byKey(month)).dx, rect.left + 10);
+    final middle = tester.getRect(find.byKey(week));
+    expect(middle.width, rect.width - 2 * (PageToolbar.slot + 12));
+    expect(middle.center.dx, rect.center.dx);
+    for (final part in [month, week]) {
+      expect(tester.getCenter(find.byKey(part)).dy, rect.center.dy);
+    }
     expect(compact.last, isFalse);
 
     await tester.pumpWidget(
       harness(toolbar(days: days), width: 719 + 2 * border),
     );
     expect(compact.last, isTrue);
+    expect(find.byKey(week), findsNothing);
+    expect(tester.getTopLeft(find.byKey(month)).dx, rect.left + 10);
     await tester.pumpWidget(
       harness(toolbar(days: days), width: 720 + 2 * border),
     );
     expect(compact.last, isFalse);
+  });
+
+  testWidgets('actions wider than their slot widen both slots, so the week '
+      'stays centred', (tester) async {
+    const week = ValueKey('week');
+    await tester.pumpWidget(
+      harness(
+        toolbar(
+          assistant: const SizedBox(key: ai, width: 120, height: 32),
+          days: (_, place) => place(
+            const SizedBox(width: 90, height: 32),
+            const SizedBox(key: week, width: double.infinity, height: 44),
+          ),
+        ),
+      ),
+    );
+
+    final rect = tester.getRect(bar);
+    final middle = tester.getRect(find.byKey(week));
+    final actions = rect.right - tester.getTopLeft(saved).dx;
+    expect(actions, greaterThan(PageToolbar.slot));
+    expect(middle.width, rect.width - 2 * (actions + 12));
+    expect(middle.center.dx, rect.center.dx);
+  });
+
+  testWidgets('a folder page has only Kapy AI and More on its right', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(
+        toolbar(
+          actions: const [],
+          assistant: const SizedBox(key: ai, width: 49, height: 32),
+        ),
+      ),
+    );
+
+    expect(saved, findsNothing);
+    expect(share, findsNothing);
+    expect(
+      tester.getTopLeft(more).dx - tester.getTopRight(find.byKey(ai)).dx,
+      4,
+    );
+    expect(tester.getTopRight(more).dx, tester.getRect(bar).right - 12);
   });
 
   testWidgets('with the list hidden it leads with the way back to it', (
@@ -307,6 +385,79 @@ void main() {
     expect(find.byTooltip('My notes › $long'), findsOneWidget);
   });
 
+  group('the line above a note\'s title', () {
+    final line = find.byKey(const ValueKey('note-path'));
+    Finder onLine(String text) =>
+        find.descendant(of: line, matching: find.text(text));
+    Widget pathLine(
+      List<PagePlace> folders, {
+      void Function(String folderId, {required bool behind})? onOpenFolder,
+    }) => MaterialApp(
+      theme: KapyTheme.dark(),
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 680,
+            child: NotePathLine(
+              folders: folders,
+              onOpenFolder: onOpenFolder ?? (_, {required behind}) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('names the folders alone, and opens one in this tab on a '
+        'click, behind it on ⌘-click or a middle click', (tester) async {
+      final opened = <(String, bool)>[];
+      await tester.pumpWidget(
+        pathLine(
+          [
+            (name: 'Work', folderId: 'work'),
+            (name: 'Clients', folderId: 'clients'),
+            (name: 'Acme', folderId: 'acme'),
+          ],
+          onOpenFolder: (folderId, {required behind}) {
+            opened.add((folderId, behind));
+          },
+        ),
+      );
+
+      expect(tester.getSize(line).height, 16);
+      for (final name in ['Work', 'Clients', 'Acme']) {
+        expect(onLine(name), findsOneWidget, reason: name);
+      }
+      expect(find.byKey(const ValueKey('note-path-fold')), findsNothing);
+      expect(find.byTooltip('Work › Clients › Acme'), findsNothing);
+
+      await tester.tap(onLine('Acme'));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(onLine('Clients'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(
+        onLine('Work'),
+        buttons: kMiddleMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      expect(opened, [('acme', false), ('clients', true), ('work', true)]);
+    });
+
+    testWidgets('a name too long is cut at 200, and hovering shows the whole '
+        'line', (tester) async {
+      const long = 'Quarterly planning for the regional offices and partners';
+      await tester.pumpWidget(
+        pathLine([
+          (name: 'Work', folderId: 'work'),
+          (name: long, folderId: 'plans'),
+        ]),
+      );
+
+      expect(tester.getSize(onLine(long)).width, lessThanOrEqualTo(200));
+      expect(find.byTooltip('Work › $long'), findsOneWidget);
+    });
+  });
+
   testWidgets('Saved speaks for the open note, and for sync', (tester) async {
     await tester.pumpWidget(harness(toolbar()));
     expect(
@@ -443,7 +594,8 @@ void main() {
     ];
 
     // The days as My notes shows them, with notes on three of them.
-    Widget week(bool compact) => DayStrip(
+    Widget week(bool compact, PlaceDays place) => DayStrip(
+      place: place,
       compact: compact,
       today: DateTime(2026, 11, 19),
       when: NotesWhen.anyTime,
@@ -491,7 +643,7 @@ void main() {
         );
         expect(
           tester.getTopRight(find.byKey(const ValueKey('page-more'))).dx,
-          closeTo(width - 1.5 - 16, 0.01),
+          closeTo(width - 1.5 - 12, 0.01),
         );
         expect(tester.takeException(), isNull);
       }

@@ -2,10 +2,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
-import '../sidebar_timestamp.dart';
+import '../../data/folders.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
 import '../collaborator_colors.dart';
+import '../sidebar_timestamp.dart';
 import 'note_footer.dart' show typingStatusText;
 
 /// The note title's hand-drawn underline, under its last word: Paper's clay
@@ -68,6 +69,30 @@ class DateLineSaved extends InheritedWidget {
 
   @override
   bool updateShouldNotify(DateLineSaved oldWidget) => saved != oldWidget.saved;
+}
+
+/// The folders the notes on the page are filed in, for the line above each
+/// note's title while the page's days have the bar's top left.
+class NoteFolders extends InheritedWidget {
+  const NoteFolders({
+    super.key,
+    required this.tree,
+    required this.onOpenFolder,
+    required super.child,
+  });
+
+  final FolderTree tree;
+
+  /// Shows a folder from the line in this tab, or with behind in a new tab
+  /// behind it.
+  final void Function(String folderId, {required bool behind}) onOpenFolder;
+
+  static NoteFolders? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<NoteFolders>();
+
+  @override
+  bool updateShouldNotify(NoteFolders oldWidget) =>
+      tree != oldWidget.tree || onOpenFolder != oldWidget.onOpenFolder;
 }
 
 /// The row under a note's title: when it was edited, how far its checklist

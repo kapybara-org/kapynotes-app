@@ -40,17 +40,23 @@ String _spoken(DateTime day, {required bool today, required int notes}) => [
   _noteCount(notes),
 ].join(', ');
 
-/// The page's days, between its month and its actions, on one line: ‹, the
-/// week, ›. Seven days with today in the middle (Sun 16 to Sat 22 when today
+/// Where the page's bar puts the days: [month] at its top left, and [week],
+/// when there is one, centred on the page.
+typedef PlaceDays = Widget Function(Widget month, Widget? week);
+
+/// The page's days: the month in full at the bar's top left, and in the
+/// middle, on one line, ‹, the week, ›. Seven days with today in the middle (Sun 16 to Sat 22 when today
 /// is Wed 19), and five, three, or today alone on a narrower page. ‹ and ›
 /// move a week at a time. A day has a dot for each of its notes, up to three.
 ///
 /// A click on a day with notes narrows the list to it, and a click on a day
 /// with none opens a page to write on that day. The month opens a calendar
-/// that picks a day the same way.
+/// that picks a day the same way. On a narrow page one button for the day
+/// stands in the month's place with no week.
 class DayStrip extends StatefulWidget {
   const DayStrip({
     super.key,
+    required this.place,
     required this.today,
     required this.when,
     required this.onWhenChanged,
@@ -92,7 +98,10 @@ class DayStrip extends StatefulWidget {
   /// write that day, and no note exists until the first letter.
   final ValueChanged<DateTime>? onWriteOn;
 
-  /// One button for the picked day in place of the week.
+  /// Puts the month and the week where the bar has them.
+  final PlaceDays place;
+
+  /// One button for the picked day in place of the month, and no week.
   final bool compact;
 
   /// The chip a day sits in, and the room the whole week needs at [days] of
@@ -142,6 +151,11 @@ class _DayStripState extends State<DayStrip> {
 
   /// Whether the calendar is open, which turns its button tonal.
   bool _choosing = false;
+
+  /// The week, or with none the month's button, which a day's list opens
+  /// under.
+  final _weekRow = GlobalKey();
+  final _monthButton = GlobalKey();
 
   /// The day When narrows the list to, if it is one day.
   DateTime? get _picked => switch (widget.when) {
@@ -217,10 +231,13 @@ class _DayStripState extends State<DayStrip> {
     if (notes == 0) widget.onWriteOn?.call(day);
   }
 
-  /// Lists [day]'s notes 4 under the days' dots, from the left of the day
-  /// tapped [at], or under the one button, and opens the one picked.
+  /// Lists [day]'s notes 4 under the week, from the left of the day tapped
+  /// [at], or under the button that stands in for it, and opens the one
+  /// picked.
   Future<void> _list(DateTime day, {BuildContext? at}) async {
-    final box = context.findRenderObject() as RenderBox?;
+    final box =
+        (days > 0 ? _weekRow : _monthButton).currentContext?.findRenderObject()
+            as RenderBox?;
     final tapped = at?.findRenderObject() as RenderBox?;
     final onOpen = widget.onOpenNote;
     if (box == null || onOpen == null) return;
@@ -246,7 +263,7 @@ class _DayStripState extends State<DayStrip> {
           tapped == null
               ? 0
               : box.globalToLocal(tapped.localToGlobal(Offset.zero)).dx,
-          days > 0 ? 48 : box.size.height + 4,
+          box.size.height + 4,
         ),
       ),
       items: [
@@ -377,92 +394,111 @@ class _DayStripState extends State<DayStrip> {
     return width;
   }
 
-  /// The room the one button needs: 12, the calendar 16, 4, [label], 4, a 12
-  /// chevron and 12.
-  static double _buttonWidth(BuildContext context, String label) =>
-      60 + _labelWidth(context, label);
+  /// The room the month's button needs (8, the month, 4, a 12 chevron and
+  /// 8), or with compact the one button's: 12, the calendar 16, 4, [label],
+  /// 4, a 12 chevron and 12.
+  static double _buttonWidth(
+    BuildContext context,
+    String label, {
+    required bool compact,
+  }) => (compact ? 60 : 32) + _labelWidth(context, label);
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final palette = context.palette;
-      // The month sits at the strip's own left, so the week has what it
-      // leaves: 8, the label, 4, a 12 chevron and 8, then 2 clear. The
-      // month is the one over the days that would show, which fewer days
-      // can shorten.
-      days = 0;
-      if (!widget.compact) {
-        for (final count in const [7, 5, 3, 1]) {
-          final label = _labelWidth(context, _monthOver(_week(count)));
-          final room = constraints.maxWidth - (label + 32 + DayStrip._arrowGap);
-          if (DayStrip.daysIn(room, arrow: DayStrip._arrowWidth) >= count) {
-            days = count;
-            break;
-          }
-        }
-      }
-      if (days == 0) {
-        final when = widget.when;
-        final label = when is WhenDay ? when.label : 'Today';
-        return _buttonWidth(context, label) <= constraints.maxWidth
-            ? _calendarButton(label, palette, compact: true)
-            : const SizedBox.shrink();
-      }
-      final today = widget.today;
-      final shown = _shown;
-      final counts = _counts(shown);
-      final picked = _picked;
-      final filled = _listing ?? picked ?? today;
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _calendarButton(_monthOver(shown), palette, compact: false),
-          const SizedBox(width: DayStrip._arrowGap),
-          CompactIconButton(
-            key: const ValueKey('day-strip-back'),
-            tooltip: 'The week before',
-            extent: 32,
-            width: DayStrip._arrowWidth,
-            radius: 8,
-            onPressed: () => setState(() => _shift -= 7),
-            icon: const KapyIcon(
-              KapyIcons.chevronLeftRounded,
-              size: 16,
-              strokeWidth: 1.8,
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final compact = widget.compact;
+    final when = widget.when;
+    if (compact) days = 0;
+    final label = !compact
+        ? _monthOver(_shown)
+        : when is WhenDay
+        ? when.label
+        : 'Today';
+    return widget.place(
+      LayoutBuilder(
+        builder: (context, constraints) =>
+            _buttonWidth(context, label, compact: compact) <=
+                constraints.maxWidth
+            ? KeyedSubtree(
+                key: _monthButton,
+                child: _calendarButton(label, palette, compact: compact),
+              )
+            : const SizedBox.shrink(),
+      ),
+      compact
+          ? null
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final fits = DayStrip.daysIn(
+                  constraints.maxWidth,
+                  arrow: DayStrip._arrowWidth,
+                );
+                if (fits != days) {
+                  days = fits;
+                  // The month over the week names the days that fit.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() {});
+                  });
+                }
+                if (days == 0) return const SizedBox.shrink();
+                final today = widget.today;
+                final shown = _shown;
+                final counts = _counts(shown);
+                final picked = _picked;
+                final filled = _listing ?? picked ?? today;
+                return Row(
+                  key: _weekRow,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CompactIconButton(
+                      key: const ValueKey('day-strip-back'),
+                      tooltip: 'The week before',
+                      extent: 32,
+                      width: DayStrip._arrowWidth,
+                      radius: 8,
+                      onPressed: () => setState(() => _shift -= 7),
+                      icon: const KapyIcon(
+                        KapyIcons.chevronLeftRounded,
+                        size: 16,
+                        strokeWidth: 1.8,
+                      ),
+                    ),
+                    const SizedBox(width: DayStrip._arrowGap),
+                    for (final (index, day) in shown.indexed) ...[
+                      if (index > 0) const SizedBox(width: DayStrip._dayGap),
+                      Builder(
+                        builder: (tapped) => _Day(
+                          key: ValueKey('day-strip-${_date(day)}'),
+                          day: day,
+                          today: day == today,
+                          picked: day == picked,
+                          filled: day == filled,
+                          count: counts[day]!,
+                          onTap: () =>
+                              _choose(day, notes: counts[day]!, at: tapped),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: DayStrip._arrowGap),
+                    CompactIconButton(
+                      key: const ValueKey('day-strip-forward'),
+                      tooltip: 'The week after',
+                      extent: 32,
+                      width: DayStrip._arrowWidth,
+                      radius: 8,
+                      onPressed: () => setState(() => _shift += 7),
+                      icon: const KapyIcon(
+                        KapyIcons.chevronRightRounded,
+                        size: 16,
+                        strokeWidth: 1.8,
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
-          ),
-          for (final day in shown) ...[
-            const SizedBox(width: DayStrip._dayGap),
-            Builder(
-              builder: (tapped) => _Day(
-                key: ValueKey('day-strip-${_date(day)}'),
-                day: day,
-                today: day == today,
-                picked: day == picked,
-                filled: day == filled,
-                count: counts[day]!,
-                onTap: () => _choose(day, notes: counts[day]!, at: tapped),
-              ),
-            ),
-          ],
-          const SizedBox(width: DayStrip._arrowGap),
-          CompactIconButton(
-            key: const ValueKey('day-strip-forward'),
-            tooltip: 'The week after',
-            extent: 32,
-            width: DayStrip._arrowWidth,
-            radius: 8,
-            onPressed: () => setState(() => _shift += 7),
-            icon: const KapyIcon(
-              KapyIcons.chevronRightRounded,
-              size: 16,
-              strokeWidth: 1.8,
-            ),
-          ),
-        ],
-      );
-    },
-  );
+    );
+  }
 
   /// What opens the calendar, tonal while it is open: the month over the
   /// week, or the one button for the day in its place, raised and led by a
@@ -499,7 +535,7 @@ class _DayStripState extends State<DayStrip> {
                   ? BorderSide(color: palette.controlBorder)
                   : BorderSide.none,
             ),
-            textStyle: _figtree(13, 16, FontWeight.w500, palette.textPrimary),
+            textStyle: _figtree(13, 18, FontWeight.w500, palette.textPrimary),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

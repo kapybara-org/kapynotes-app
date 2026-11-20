@@ -9,6 +9,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart' show noteTagsMax;
 import 'package:kapy_notes/ui/context_menu.dart' show KapyMenuActionRow;
+import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/folders_ui.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/notes_list.dart'
@@ -327,6 +328,152 @@ void main() {
       await tester.pumpAndSettle();
       expect(pageTitle(tester), 'Office');
       expect(onPage(find.text('No notes, in My notes')), findsOneWidget);
+    });
+
+    testWidgets('a filed note has its folders in a light line 8 above its '
+        'title, which open in this tab or behind; an unfiled note has none', (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final call = goldenNotes.create(body: 'Call with Arjun\nAgenda');
+      goldenNotes.create(body: 'Dentist');
+      goldenFolders.file([call.id], clients.id);
+      await tester.pumpAndSettle();
+      final line = find.byKey(const ValueKey('note-path'));
+      Finder onLine(String text) =>
+          find.descendant(of: line, matching: find.text(text));
+
+      await tester.tap(find.text('Dentist').first);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Dentist');
+      expect(line, findsNothing);
+      expect(find.byKey(const ValueKey('page-path')), findsNothing);
+
+      await tester.tap(find.text('Call with Arjun').first);
+      await tester.pumpAndSettle();
+      expect(onLine('Work'), findsOneWidget);
+      expect(onLine('Clients'), findsOneWidget);
+      expect(onLine('My notes'), findsNothing);
+      expect(onLine('Call with Arjun'), findsNothing);
+      expect(find.byKey(const ValueKey('page-path')), findsNothing);
+      for (final name in ['Work', 'Clients']) {
+        final style = tester.widget<Text>(onLine(name)).style!;
+        expect(style.fontSize, 12, reason: name);
+        expect(style.height, 16 / 12, reason: name);
+        expect(style.fontWeight, FontWeight.w400, reason: name);
+        expect(style.color, KapyTheme.darkPalette.textTertiary, reason: name);
+      }
+      // Path 16, 8, the title's 38, 10, then the meta row, all in one
+      // column.
+      final path = tester.getRect(line);
+      final meta = tester.getRect(find.byType(NoteMetaRow));
+      expect(path.height, EditorMetrics.pathRow);
+      expect(path.left, meta.left);
+      expect(
+        meta.top - path.bottom,
+        EditorMetrics.pathGap + EditorMetrics.titleRow + EditorMetrics.metaGap,
+      );
+
+      await tester.tap(onLine('Work'));
+      await tester.pumpAndSettle();
+      expect(pageTitle(tester), 'Work');
+      await press(tester, ShortcutAction.goBack);
+      expect(openNoteBody(tester), 'Call with Arjun\nAgenda');
+
+      await commandClick(tester, onLine('Clients'));
+      expect(tabTitles(tester), ['Call with Arjun', 'Clients']);
+      expect(page(), findsNothing);
+      expect(openNoteBody(tester), 'Call with Arjun\nAgenda');
+
+      await tester.tapAt(
+        tester.getCenter(onLine('Work')),
+        buttons: kMiddleMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['Call with Arjun', 'Clients', 'Work']);
+      expect(openNoteBody(tester), 'Call with Arjun\nAgenda');
+    });
+
+    testWidgets('a deep path folds its middle into "…", whose menu opens the '
+        'folder picked, and hovering shows it whole', (tester) async {
+      await pumpWindow(tester);
+      String? parent;
+      final ids = <String, String>{};
+      for (final name in ['Work', 'Clients', 'Acme', '2026']) {
+        final folder = goldenFolders.create(name, parentId: parent)!;
+        ids[name] = parent = folder.id;
+      }
+      final kickoff = goldenNotes.create(body: 'Acme kickoff');
+      goldenFolders.file([kickoff.id], parent);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Acme kickoff').first);
+      await tester.pumpAndSettle();
+      final line = find.byKey(const ValueKey('note-path'));
+      Finder onLine(String text) =>
+          find.descendant(of: line, matching: find.text(text));
+
+      for (final name in ['Work', 'Acme', '2026']) {
+        expect(onLine(name), findsOneWidget, reason: name);
+      }
+      expect(onLine('Clients'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byTooltip('Work › Clients › Acme › 2026'),
+          matching: line,
+        ),
+        findsOneWidget,
+      );
+
+      await tapKey(tester, 'note-path-fold');
+      await tapKey(tester, 'note-path-${ids['Clients']}');
+      expect(pageTitle(tester), 'Clients');
+    });
+
+    testWidgets("a drawing's page has no days, so its path stays at the bar's "
+        'top left', (tester) async {
+      await pumpWindow(tester, drawings: true);
+      await tapKey(tester, 'rail-drawings');
+      await tester.tap(find.text('Garden plan').first);
+      await tester.pumpAndSettle();
+      final bar = find.byKey(const ValueKey('page-toolbar'));
+      final path = find.byKey(const ValueKey('page-path'));
+      for (final name in ['Drawings', 'Garden plan']) {
+        expect(
+          find.descendant(of: path, matching: find.text(name)),
+          findsOneWidget,
+          reason: name,
+        );
+      }
+      expect(tester.getTopLeft(path).dx, tester.getRect(bar).left + 18);
+      expect(find.byKey(const ValueKey('day-strip-month')), findsNothing);
+      expect(find.byKey(const ValueKey('note-path')), findsNothing);
+    });
+
+    testWidgets("a folder in front has its month at the bar's top left and "
+        'only More on its right, at the far end', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${work.id}');
+      expect(page(), findsOneWidget);
+      final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
+      final month = find.byKey(const ValueKey('day-strip-month'));
+      expect(tester.getTopLeft(month).dx, bar.left + 10);
+      expect(
+        find.descendant(of: month, matching: find.text('August–September')),
+        findsOneWidget,
+      );
+      for (final key in ['page-path', 'page-saved', 'page-share']) {
+        expect(find.byKey(ValueKey(key)), findsNothing, reason: key);
+      }
+      final more = tester.getRect(find.byKey(const ValueKey('page-more')));
+      expect(more.right, bar.right - 12);
+      expect(more.center.dy, bar.center.dy);
+      expect(tester.getCenter(month).dy, bar.center.dy);
     });
 
     testWidgets('in the list view a filed note says where it is ahead of its '
