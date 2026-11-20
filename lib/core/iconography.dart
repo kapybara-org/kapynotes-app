@@ -83,6 +83,10 @@ class KapyIcons {
     0xE00B,
     HugeIcons.strokeRoundedImageNotFound01,
   );
+  static const calendarOutlined = KapyIconData(
+    0xE00C,
+    HugeIcons.strokeRoundedCalendar03,
+  );
   static const cameraOutlined = KapyIconData(
     0xE00D,
     HugeIcons.strokeRoundedCamera01,
@@ -518,10 +522,6 @@ class KapyIcons {
   );
 
   // The drawing canvas.
-  static const drawModeRounded = KapyIconData(
-    0xE07C,
-    HugeIcons.strokeRoundedDrawingMode,
-  );
   static const selectRounded = KapyIconData(
     0xE07D,
     HugeIcons.strokeRoundedCursor02,
