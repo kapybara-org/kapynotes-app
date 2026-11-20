@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
-import 'package:flutter/semantics.dart' show SemanticsNode;
+import 'package:flutter/semantics.dart'
+    show CustomSemanticsAction, SemanticsAction, SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -244,6 +245,60 @@ void main() {
     await click(selecting: true, holding: LogicalKeyboardKey.shiftLeft);
     await click(selecting: true);
     expect(calls, ['command', 'range', 'open', 'pick', 'range', 'pick']);
+  });
+
+  testWidgets('a row offers its menu choices as accessibility actions, so '
+      'VoiceOver can delete a note without the ⋯ button', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await notes.load();
+    final note = notes.create(body: 'Row');
+    final calls = <String>[];
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Material(
+          child: NoteRow(
+            note: note,
+            query: '',
+            displayTime: (time) => time,
+            selected: false,
+            selecting: false,
+            onTap: () => calls.add('open'),
+            onDelete: () => calls.add('delete'),
+            onTogglePin: () => calls.add('pin'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = tester.semantics.find(find.text('Row'));
+    final actions = <String, int>{};
+    for (final id
+        in row.getSemanticsData().customSemanticsActionIds ?? const <int>[]) {
+      final action = CustomSemanticsAction.getAction(id);
+      if (action?.label != null) actions[action!.label!] = id;
+    }
+    expect(actions.keys, containsAll(['Pin note', 'Delete note…']));
+    expect(
+      row.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
+      reason: 'the row still opens on a press',
+    );
+
+    // The bindings moved the pipeline owner in 3.10; a widget test still has
+    // the one.
+    // ignore: deprecated_member_use
+    tester.binding.pipelineOwner.semanticsOwner!.performAction(
+      row.id,
+      SemanticsAction.customAction,
+      actions['Delete note…'],
+    );
+    await tester.pumpAndSettle();
+    expect(calls, ['delete']);
+    semantics.dispose();
   });
 
   testWidgets('a click with Shift picks from the open note, and the next one '
