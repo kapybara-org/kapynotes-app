@@ -279,6 +279,19 @@ class NoteCardFace extends StatelessWidget {
   /// A phone's pinned card: taller, with the pin over a two-line snippet.
   static const double squareHeight = 142;
 
+  /// [squareHeight] at [scaler]'s text size: the card's padding, pin and
+  /// gaps stay put while its title, two lines and meta row grow, so a large
+  /// text size never cuts the second line in half.
+  static double squareHeightFor(TextScaler scaler) {
+    double line(double size, double height) =>
+        scaler.scale(size) * height / size;
+    return squareHeight -
+        (24 + 2 * 18 + 16) +
+        line(19, 24) +
+        2 * line(13.5, 18) +
+        line(12, 16);
+  }
+
   final Note note;
   final NoteGlance glance;
 
