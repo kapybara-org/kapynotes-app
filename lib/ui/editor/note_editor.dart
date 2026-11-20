@@ -5971,7 +5971,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         action(
           'format-details',
           'Details',
-          KapyIcons.textFieldsRounded,
+          KapyIcons.alignLeft,
           _dropIntoDetails,
           active: _folds?.hintSeen == false,
         ),
@@ -8429,6 +8429,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     required double columnWidth,
     required LineTrailing? Function(int line)? trailingOf,
   }) {
+    // The field places its lines as it lays them out, after this is built, so
+    // the details marks read those places on the frame after.
+    if (_blocks().any((block) => block.details != null)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fieldLaidOut.value++;
+      });
+    }
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -8453,16 +8460,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           ),
         ),
         Positioned.fill(
-          child: TaskDetailsChrome(
-            field: _field,
-            text: _controller.text,
-            caret: _controller.selection.isValid
-                ? _controller.selection.extentOffset
-                : -1,
-            folded: _taskFolded,
-            onToggle: _toggleFold,
-            showHint: _folds != null && !_folds!.hintSeen,
-            origin: Offset(padding.left, padding.top),
+          child: ListenableBuilder(
+            listenable: _fieldLaidOut,
+            builder: (context, _) => TaskDetailsChrome(
+              field: _field,
+              text: _controller.text,
+              caret: _controller.selection.isValid
+                  ? _controller.selection.extentOffset
+                  : -1,
+              folded: _taskFolded,
+              onToggle: _toggleFold,
+              showHint: _folds != null && !_folds!.hintSeen,
+              origin: Offset(padding.left, padding.top),
+            ),
           ),
         ),
       ],
