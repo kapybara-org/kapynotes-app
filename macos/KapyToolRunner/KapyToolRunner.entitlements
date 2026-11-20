@@ -7,7 +7,7 @@
 	     sign in with (lib/ai/local_tools.dart). It takes requests only from
 	     the app it is embedded in, signed by our team (Listener.swift), runs
 	     only the exact commands in ToolRunner.swift, and is built with the
-	     hardened runtime. The Mac App Store build never embeds it
-	     (KAPY_TOOL_RUNNER in packaging/release.sh). -->
+	     hardened runtime. A build with KAPY_TOOL_RUNNER = NO never embeds it
+	     (macos/Runner/Configs/AppInfo.xcconfig). -->
 </dict>
 </plist>

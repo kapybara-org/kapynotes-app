@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/file_export.dart';
+import 'package:kapy_notes/core/keyring.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/text_file_export.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -9,10 +10,12 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/auth_api.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/account/password_row.dart';
 import 'package:kapy_notes/ui/account/recovery_key_dialog.dart';
 import 'package:kapy_notes/ui/account/sync_pane.dart';
 import 'package:material_ui/material_ui.dart';
@@ -67,8 +70,73 @@ Widget harness(Account account, {TextFileSaver? saveTextFile}) => MaterialApp(
   ),
 );
 
+/// Signed in and unlocked as someone@example.com, the pane not yet shown.
+Future<Account> signedIn(WidgetTester tester, FakeAuth auth) async {
+  final app = build(auth: auth);
+  await tester.runAsync(() async {
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'someone@example.com', password: 'x');
+    await app.account.createPassphrase('a good passphrase');
+  });
+  return app.account;
+}
+
+/// A server that answers every reset the same way.
+class _Answering extends FakeAuth {
+  _Answering(this.answer);
+  final AuthResult answer;
+
+  @override
+  Future<AuthResult> requestPasswordReset(String email) async => answer;
+
+  @override
+  Future<AuthResult> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+    String? token,
+  }) async => answer;
+}
+
+/// The account's password row, opened at its dialog's code step.
+Future<void> openPasswordCodeStep(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const ValueKey('password')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('password')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(FilledButton, 'Send code'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUpAll(loadTestFonts);
+
+  testWidgets('a missing keyring is named before sign-in and before sync', (
+    tester,
+  ) async {
+    KeyringStatus.debugReset(available: false);
+    addTearDown(KeyringStatus.debugReset);
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    expect(find.text(KeyringNotice.signIn), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'someone@example.com');
+    await tester.tap(find.text('Email me a code'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save your passphrase'), findsOneWidget);
+    expect(find.text(KeyringNotice.passphrase), findsOneWidget);
+    expect(find.text(KeyringNotice.signIn), findsNothing);
+    app.account.dispose();
+  });
 
   testWidgets('a signed-out account is offered a way in', (tester) async {
     final app = build();
@@ -599,4 +667,253 @@ void main() {
     expect(find.text('Email me a code'), findsOneWidget);
     app.account.dispose();
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  group('password', () {
+    Finder inRow(String text) => find.descendant(
+      of: find.byKey(const ValueKey('password-row')),
+      matching: find.text(text),
+    );
+
+    test("each refusal reads in the app's own words", () async {
+      for (final (answer, sentence) in [
+        (
+          const AuthRejected('Invalid OTP', status: 400, code: 'INVALID_OTP'),
+          "That code doesn't match. Check the latest email from Kapy Notes.",
+        ),
+        (
+          const AuthRejected('OTP expired', status: 400, code: 'OTP_EXPIRED'),
+          'That code has expired. Send another to try again.',
+        ),
+        // A 403, which the sign-in screen reads as an unconfirmed address.
+        (
+          const AuthRejected(
+            'Confirm your email address first. Check your inbox.',
+            status: 403,
+            code: 'TOO_MANY_ATTEMPTS',
+          ),
+          'Too many tries. Send another code.',
+        ),
+        (
+          const AuthRejected(
+            'Password too short',
+            status: 400,
+            code: 'PASSWORD_TOO_SHORT',
+          ),
+          'Use at least 8 characters.',
+        ),
+        (
+          const AuthRejected('Too many requests.', status: 429),
+          'Wait a moment before asking for another code.',
+        ),
+        (
+          const AuthUnreachable('That took too long.'),
+          "Couldn't reach Kapy Notes. Nothing has changed yet. Try again when "
+              "you're online.",
+        ),
+        (
+          const AuthRejected('Something else', status: 400),
+          "Kapy Notes couldn't make that change. Try again.",
+        ),
+      ]) {
+        final app = build(auth: _Answering(answer));
+        await app.notes.load();
+        await app.account.restore();
+        await app.account.signIn(email: 'someone@example.com', password: 'x');
+        for (final problem in [
+          await app.account.sendPasswordCode(),
+          await app.account.setPassword(code: '123456', password: 'pw'),
+        ]) {
+          expect(passwordProblemText(problem!), sentence, reason: '$answer');
+        }
+        expect(app.account.hasPassword, isNot(isTrue));
+        app.account.dispose();
+      }
+    });
+
+    testWidgets("a row that can't check says so, and checks again", (
+      tester,
+    ) async {
+      final auth = FakeAuth();
+      final account = await signedIn(tester, auth);
+      auth.reachable = false;
+      await tester.pumpWidget(harness(account));
+      expect(inRow('Checking…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('password')), findsNothing);
+      await tester.pumpAndSettle();
+
+      expect(inRow("Couldn't check right now"), findsOneWidget);
+      expect(inRow('Signs you in without an emailed code'), findsNothing);
+      expect(find.byKey(const ValueKey('password')), findsNothing);
+
+      auth.reachable = true;
+      await tester.tap(find.byKey(const ValueKey('password-retry')));
+      await tester.pumpAndSettle();
+      expect(
+        inRow('Not set. You sign in with an emailed code'),
+        findsOneWidget,
+      );
+      expect(inRow('Create…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('password-retry')), findsNothing);
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    testWidgets('an account without one is offered a password', (tester) async {
+      final account = await signedIn(tester, FakeAuth());
+      await tester.pumpWidget(harness(account));
+      await tester.pumpAndSettle();
+
+      expect(
+        inRow('Not set. You sign in with an emailed code'),
+        findsOneWidget,
+      );
+      expect(inRow('Create…'), findsOneWidget);
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    testWidgets('an account with one can change it', (tester) async {
+      final account = await signedIn(tester, FakeAuth()..passwordSet = true);
+      await tester.pumpWidget(harness(account));
+      await tester.pumpAndSettle();
+
+      expect(inRow('Signs you in without an emailed code'), findsOneWidget);
+      expect(inRow('Change…'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('password')));
+      await tester.pumpAndSettle();
+      expect(find.text('Change your password'), findsOneWidget);
+      expect(find.textContaining('old password stops working'), findsOneWidget);
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    testWidgets("a code goes to the account's own address", (tester) async {
+      final auth = FakeAuth();
+      final account = await signedIn(tester, auth);
+      await tester.pumpWidget(harness(account));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('password')));
+      await tester.pumpAndSettle();
+      expect(find.text('Create a password'), findsOneWidget);
+      expect(find.textContaining('s•••@example.com'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Your other devices will be signed out and will need your passphrase',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Send code'));
+      await tester.pumpAndSettle();
+      expect(auth.sentCodeTo, 'someone@example.com');
+      expect(find.text('Enter the code'), findsOneWidget);
+      expect(
+        find.textContaining('We sent a 6-digit code to s•••@example.com'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('password-code')), findsOneWidget);
+      expect(find.byKey(const ValueKey('new-password')), findsOneWidget);
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    testWidgets('a wrong code says so and changes nothing', (tester) async {
+      final auth = FakeAuth();
+      final account = await signedIn(tester, auth);
+      await tester.pumpWidget(harness(account));
+      await tester.pumpAndSettle();
+      await openPasswordCodeStep(tester);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('password-code')),
+        '000000',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('new-password')),
+        'a new password',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create password'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          "That code doesn't match. Check the latest email from Kapy Notes.",
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Enter the code'), findsOneWidget);
+      expect(auth.passwordSet, isFalse);
+      expect(auth.password, 'original');
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    testWidgets('the right code sets it and this device stays signed in', (
+      tester,
+    ) async {
+      final auth = FakeAuth();
+      final account = await signedIn(tester, auth);
+      final token = account.token;
+      await tester.pumpWidget(harness(account));
+      await tester.pumpAndSettle();
+      await openPasswordCodeStep(tester);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('password-code')),
+        '123 456',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('new-password')),
+        'a new password',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create password'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Password created'), findsOneWidget);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enter the code'), findsNothing);
+      expect(auth.password, 'a new password');
+      expect(auth.resetToken, token);
+      expect(auth.sessionValid, isTrue);
+      expect(account.state, AccountState.ready);
+      expect(account.token, token);
+      expect(inRow('Change…'), findsOneWidget);
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    testWidgets('the code step fits a small phone with the keyboard up', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final account = await signedIn(tester, FakeAuth());
+      await tester.pumpWidget(harness(account));
+      await tester.pumpAndSettle();
+      await openPasswordCodeStep(tester);
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 253);
+      await tester.enterText(
+        find.byKey(const ValueKey('password-code')),
+        '000000',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('new-password')),
+        'a new password',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('password-continue')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('password-problem')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('password-continue')).hitTestable(),
+        findsOneWidget,
+      );
+      account.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+  });
 }

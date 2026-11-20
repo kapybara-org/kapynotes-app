@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/editor_font.dart';
 import '../../core/theme.dart';
 import '../../data/note.dart';
+import '../../sync/spaces.dart';
 import '../tag_colours.dart';
 
 /// What the Tasks sidebar narrows the page to: every open task, the Done
@@ -22,6 +23,18 @@ class TaskFilter {
 
   @override
   int get hashCode => Object.hash(noteId, done);
+}
+
+/// A note's name on a task's mark, with its space's name after it when that
+/// name exists.
+///
+/// A personal space has no name of its own, and a team space can arrive
+/// without one. [Space.name] is null in both cases. Printing it anyway shows
+/// "Title · null" beside the task, on the Tasks list, on phones, and in ⌘K.
+String taskNoteLabel(Note note, Space? space) {
+  final name = space?.name?.trim();
+  if (name == null || name.isEmpty) return note.title;
+  return '${note.title} · $name';
 }
 
 /// Shantell Sans, the hand the app titles things in.

@@ -262,6 +262,28 @@ void main() {
     );
   });
 
+  testWidgets('searching for a password lands on its row', (tester) async {
+    await pumpSettings(
+      tester,
+      size: const Size(1000, 800),
+      asSheet: false,
+      section: SettingsSection.account,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('settings-search')),
+      'password',
+    );
+    await tester.pumpAndSettle();
+    final result = find.byKey(
+      const ValueKey('settings-search-result-password-row'),
+    );
+    expect(result, findsOneWidget);
+    await tester.tap(result);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('password-row')), findsOneWidget);
+  });
+
   testWidgets('shows the current Pro plan and server usage totals', (
     tester,
   ) async {

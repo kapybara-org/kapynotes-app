@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../data/folders.dart';
 import '../data/note.dart';
+import '../data/task_details.dart';
 import '../data/note_attachment.dart';
 import '../data/tags.dart';
 import 'mcp_drawing.dart';
@@ -91,6 +92,11 @@ class McpTools {
       'note_title': {'type': 'string'},
       'text': {'type': 'string'},
       'done': {'type': 'boolean'},
+      'details': {
+        'type': 'string',
+        'description':
+            'The words indented under the task, if it has any. Read only.',
+      },
     },
     'required': ['id', 'note_id', 'note_title', 'text', 'done'],
   };
@@ -1538,6 +1544,7 @@ class McpTools {
     'note_title': task.note.title,
     'text': task.text,
     'done': task.done,
+    'details': taskDetailsText(task.note.body, task.line),
   };
 
   String _snippet(Note note, String query) {

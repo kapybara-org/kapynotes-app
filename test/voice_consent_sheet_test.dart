@@ -32,8 +32,7 @@ void main() {
     await open(tester);
     expect(
       find.textContaining(
-        'sends the audio to Kapy cloud, where an AI service turns it into '
-        'text. The audio is not kept, and it is never used to train AI.',
+        'sends the audio to Kapy cloud, where an AI service turns it into text.',
       ),
       findsOneWidget,
     );

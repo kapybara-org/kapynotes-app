@@ -180,18 +180,6 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openMenuBarPanel => true,
     _ => false,
   };
-
-  bool get isFormatting => switch (this) {
-    ShortcutAction.cycleTextStyle ||
-    ShortcutAction.formatBold ||
-    ShortcutAction.formatItalic ||
-    ShortcutAction.formatStrikethrough ||
-    ShortcutAction.formatCode ||
-    ShortcutAction.formatLink ||
-    ShortcutAction.formatBullets ||
-    ShortcutAction.formatChecklist => true,
-    _ => false,
-  };
 }
 
 @immutable

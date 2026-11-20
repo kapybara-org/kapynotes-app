@@ -420,50 +420,54 @@ class _ResultRow extends StatelessWidget {
     final row = Container(
       constraints: BoxConstraints(minHeight: SettingsMetrics.minRowHeight),
       padding: SettingsMetrics.padding,
-      child: Row(
-        children: [
-          KapyIcon(entry.icon, size: 16, color: palette.textTertiary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SettingsRowCopy(
-              title: entry.title,
-              subtitle: entry.place,
-              changed: entry.changed,
-            ),
-          ),
-          if (value != null && value.isNotEmpty) ...[
+      child: LayoutBuilder(
+        builder: (context, box) => Row(
+          children: [
+            KapyIcon(entry.icon, size: 16, color: palette.textTertiary),
             const SizedBox(width: 12),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 180),
-              child: Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: SettingsMetrics.buttonLabelSize,
-                  color: palette.textDescription,
+            Expanded(
+              child: SettingsRowCopy(
+                title: entry.title,
+                subtitle: entry.place,
+                changed: entry.changed,
+              ),
+            ),
+            if (value != null && value.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: (box.maxWidth * 0.4).clamp(0, 180).toDouble(),
+                ),
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: SettingsMetrics.buttonLabelSize,
+                    color: palette.textDescription,
+                  ),
                 ),
               ),
-            ),
-          ],
-          if (marked) ...[
-            const SizedBox(width: 10),
-            Container(
-              height: 20,
-              padding: const EdgeInsets.symmetric(horizontal: 5),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: palette.controlBackground,
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(color: palette.controlBorder),
+            ],
+            if (marked) ...[
+              const SizedBox(width: 10),
+              Container(
+                height: 20,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: palette.controlBackground,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: palette.controlBorder),
+                ),
+                child: Text(
+                  '↵',
+                  style: TextStyle(fontSize: 11, color: palette.textSecondary),
+                ),
               ),
-              child: Text(
-                '↵',
-                style: TextStyle(fontSize: 11, color: palette.textSecondary),
-              ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
     final lit = marked ? ColoredBox(color: palette.hover, child: row) : row;

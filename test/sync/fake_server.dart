@@ -140,6 +140,9 @@ class FakeServer {
   /// and not applied, as `applyOps` answers them.
   int guestDeletes = 0;
 
+  /// Times a space's note keys were asked for.
+  int noteKeyFetches = 0;
+
   /// A server from before hidden notes: no list in the spaces it serves, and
   /// hiding a note is a 404.
   bool beforeHiddenNotes = false;
@@ -1262,6 +1265,7 @@ class FakeServer {
   }
 
   List<WireNoteKey> noteKeys(String userId, String spaceId) {
+    noteKeyFetches++;
     final space = _member(userId, spaceId);
     return [
       for (final note in _liveNotes(spaceId))
@@ -2882,16 +2886,39 @@ class FakeAuth implements AuthApi {
     return nextResult ?? AuthCodeSent(email);
   }
 
+  /// Whether the account has a password, as the server would list it.
+  bool passwordSet = false;
+
+  /// The session the last reset came with: Settings sends this device's,
+  /// the sign-in screen none.
+  String? resetToken;
+
   @override
   Future<AuthResult> resetPassword({
     required String email,
     required String code,
     required String password,
+    String? token,
   }) async {
-    if (code != this.code) return const AuthRejected('That code is not right.');
+    if (code != this.code) {
+      return const AuthRejected(
+        'Invalid OTP',
+        status: 400,
+        code: 'INVALID_OTP',
+      );
+    }
     this.password = password;
+    passwordSet = true;
+    resetToken = token;
+    // What the server does: a reset that doesn't come with one of the
+    // account's own sessions ends them all.
+    if (token != 'token-$id') sessionValid = false;
     return const AuthPasswordChanged();
   }
+
+  @override
+  Future<bool?> hasPassword(String token) async =>
+      reachable ? passwordSet : null;
 
   @override
   Future<void> signOut(String token) async => signOutCalls++;

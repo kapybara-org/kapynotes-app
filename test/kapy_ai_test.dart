@@ -588,9 +588,7 @@ void main() {
 
       expect(find.text('Before the first answer'), findsOneWidget);
       expect(
-        find.textContaining(
-          'where an AI service answers it',
-        ),
+        find.textContaining('where an AI service answers it'),
         findsOneWidget,
       );
       expect(

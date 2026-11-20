@@ -113,15 +113,21 @@ void main() {
       findsOneWidget,
     );
 
-    // Shortcuts and the window belong to a desktop, and phones are updated
-    // by their store.
-    for (final section in ['shortcuts', 'window', 'about']) {
+    // Shortcuts and the window belong to a desktop. About does not: phones
+    // update through their store, but the release notes still live there, so
+    // closing the notice at the top of the list is never the last way in.
+    for (final section in ['shortcuts', 'window']) {
       expect(
         find.byKey(ValueKey('settings-section-$section')),
         findsNothing,
         reason: '$section is not a phone category',
       );
     }
+    expect(
+      find.byKey(const ValueKey('settings-section-about')),
+      findsOneWidget,
+      reason: 'About keeps the release notes reachable on a phone',
+    );
 
     // The whole point of the list: none of the panes are on this screen.
     expect(find.text('Daily separators'), findsNothing);

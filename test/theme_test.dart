@@ -130,7 +130,7 @@ void main() {
     expect(palette.sidebarColor.a, 1);
     expect(KapyTheme.darkPalette.sidebarColor.a, 1);
     expect(
-      KapyTheme.glassPalette(Brightness.dark, 1).sidebarColor,
+      KapyTheme.glassPalette(KapyTheme.darkPalette, 1).sidebarColor,
       palette.sidebarColor,
       reason: 'and the slider does not reach it at either end',
     );
@@ -157,9 +157,9 @@ void main() {
     expect(KapyTheme.darkPalette.opaque, same(KapyTheme.darkPalette));
 
     // The slider: more amount, thinner paint, never none.
-    final subtle = KapyTheme.glassPalette(Brightness.dark, 0);
-    final middle = KapyTheme.glassPalette(Brightness.dark, 0.5);
-    final clear = KapyTheme.glassPalette(Brightness.dark, 1);
+    final subtle = KapyTheme.glassPalette(KapyTheme.darkPalette, 0);
+    final middle = KapyTheme.glassPalette(KapyTheme.darkPalette, 0.5);
+    final clear = KapyTheme.glassPalette(KapyTheme.darkPalette, 1);
     expect(subtle.isGlass, isTrue);
     expect(subtle.paperTranslucency, greaterThan(middle.paperTranslucency));
     expect(clear.paperTranslucency, lessThan(middle.paperTranslucency));
@@ -176,7 +176,7 @@ void main() {
     // The subtle end is where the old scale ended: properly see-through.
     expect(subtle.paperTranslucency, lessThan(0.5));
     expect(
-      KapyTheme.glassPalette(Brightness.dark, 5).paperTranslucency,
+      KapyTheme.glassPalette(KapyTheme.darkPalette, 5).paperTranslucency,
       clear.paperTranslucency,
       reason: 'out-of-range amounts clamp',
     );

@@ -382,7 +382,8 @@ class Parser {
         _advance();
         final unit =
             _parseUnitSpec(expectedDimension: _nodeDimension(node)) ??
-            _parseUnitSpec();
+            _parseUnitSpec() ??
+            _unratedTotalCurrency(node);
         if (unit == null) throw const CalcError('expected a unit after "to"');
         node = ConvertNode(node, unit);
         continue;
@@ -390,6 +391,49 @@ class Parser {
       break;
     }
     return node;
+  }
+
+  /// The currency a total is asked for in when no rate for it is known, as
+  /// 'total in eur' is with no rates at all. A note of plain numbers needs no
+  /// rate to be shown in a currency; the evaluator refuses the unit for
+  /// anything that would have to be converted.
+  Unit? _unratedTotalCurrency(Node node) {
+    final word = _unratedTotalCode(node, 0);
+    if (word == null) return null;
+    _advance();
+    return Unit.single(
+      UnitDef(
+        symbol: word.text.toUpperCase(),
+        dimension: Dimension.base(Dimension.currency),
+        factor: 1,
+        rated: false,
+        aliases: const [],
+        category: 'currency',
+      ),
+    );
+  }
+
+  static bool _isCurrencyCode(String word) {
+    final code = word.toUpperCase();
+    if (!isoCurrencyCodes.contains(code)) return false;
+    return !wordLikeCurrencyCodes.contains(code) || word == code;
+  }
+
+  /// The word at [offset] when it can name an unrated currency for [node]: a
+  /// readout of the note's total, and an ISO currency code, in capitals if
+  /// it is also a word, that is not a name the note defined.
+  Token? _unratedTotalCode(Node node, int offset) {
+    final word = _peek(offset);
+    final readout =
+        node is IdentifierNode &&
+        aggregateNames.contains(node.name.toLowerCase());
+    if (!readout ||
+        word.type != TokenType.identifier ||
+        !_isCurrencyCode(word.text) ||
+        _isBound(word.text)) {
+      return null;
+    }
+    return word;
   }
 
   NumericNotation? _conversionNotation() {
@@ -435,6 +479,18 @@ class Parser {
 
   /// `to` and `->` always convert. `in` and `as` only convert when a unit
   /// actually follows, so `10 in` stays ten inches.
+  /// Whether the tokens at [offset] convert the value before them, as `in nm`
+  /// and `to m` do.
+  bool _convertsAfter(int offset) {
+    final lead = _peek(offset);
+    if (lead.type == TokenType.operator && lead.text == '->') return true;
+    if (lead.type != TokenType.identifier || _isBound(lead.text)) return false;
+    final word = lead.text.toLowerCase();
+    if (word == 'to' || word == 'into') return true;
+    if (word != 'in' && word != 'as') return false;
+    return _startsUnitSpec(offset + 1);
+  }
+
   bool _isConversionKeyword(Node value) {
     if (_current.type == TokenType.operator && _current.text == '->') {
       return true;
@@ -445,7 +501,8 @@ class Parser {
     if (word == 'in' || word == 'as') {
       final dimension = _nodeDimension(value);
       return _startsUnitSpec(1, expectedDimension: dimension) ||
-          _isCompoundUnit(dimension);
+          _isCompoundUnit(dimension) ||
+          _unratedTotalCode(value, 1) != null;
     }
     return false;
   }
@@ -842,11 +899,19 @@ class Parser {
       // `10 in cm` converts; `10 in` and `10 in + 2 in` are inches.
       final next = _peek();
       if (_startsUnitSpec(1, expectedDimension: _nodeDimension(value)) ||
+          _unratedTotalCode(value, 1) != null ||
           (next.type == TokenType.identifier &&
               numericNotationNames.containsKey(next.text.toLowerCase()))) {
         return null;
       }
     } else if (calcKeywords.contains(word)) {
+      return null;
+    }
+    // `pm` and `am` are picometres and attometres, and also clock words.
+    // A minuted time cannot sit inside an expression (`4:30 pm - 3:00 pm`
+    // is nothing), so a whole hour cannot either, except where the line
+    // converts the length (`4 pm in nm`).
+    if ((word == 'am' || word == 'pm') && !_convertsAfter(1)) {
       return null;
     }
     // An identifier immediately followed by "(" is a call, never a unit.
