@@ -48,6 +48,7 @@ class NoteField extends StatefulWidget {
     this.columnWidth,
     this.trailingOf,
     this.selectionOf,
+    this.adjustSpan,
   });
 
   final HighlightingController controller;
@@ -98,6 +99,10 @@ class NoteField extends StatefulWidget {
   /// What a line shows past its writing, such as a calculation's result,
   /// built while the line is in view.
   final LineTrailing? Function(int line)? trailingOf;
+
+  /// Rewrites a line's span after the note's own styling. Used to hide a
+  /// task's details when they are folded, without changing the note.
+  final LineSpan Function(int start, int end, LineSpan span)? adjustSpan;
 
   /// Where the selection shows on a line its writing doesn't draw: see
   /// [NoteLayout.selectionOf].
@@ -2088,11 +2093,15 @@ class NoteFieldState extends State<NoteField>
 
   @override
   Widget build(BuildContext context) {
-    _spansIn = _controller.spansIn(
+    final spans = _controller.spansIn(
       context,
       widget.style,
       composing: _composing ? _value.composing : null,
     );
+    final adjust = widget.adjustSpan;
+    _spansIn = adjust == null
+        ? spans
+        : (start, end) => adjust(start, end, spans(start, end));
     layout
       ..columnWidth = widget.columnWidth
       ..trailingOf = widget.trailingOf
