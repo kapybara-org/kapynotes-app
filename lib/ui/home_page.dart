@@ -89,6 +89,7 @@ import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
+import 'settings/sharing_section.dart' show SharingStart;
 import 'tag_colours.dart';
 import 'tag_ui.dart';
 import 'sidebar_swipe.dart';
@@ -1315,8 +1316,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Lists the tab [id] is in, when a note is opened from somewhere other
   /// than the list: a link, a pane, the note put back after the archive. A
-  /// row the reader clicked is in the tab on screen already, and the reader
-  /// switching tabs moves no selection, so neither is overruled. For the
+  /// row the reader clicked is in the tab on screen already, a note of their
+  /// own they share is in both, and the reader switching tabs moves no
+  /// selection, so none of these is overruled. For the
   /// same reason a note takes the list out of Drawings, and a drawing takes it
   /// into Drawings.
   void _showTabOf(String? id) {
@@ -1328,7 +1330,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (_specialMode || _drawingsOnly) return;
     final sharing = widget.account?.sharing;
-    if (sharing != null) _sidebarTab = sidebarTabOf(note, sharing);
+    if (sharing != null && !sidebarTabLists(_sidebarTab, note, sharing)) {
+      _sidebarTab = sidebarTabOf(note, sharing);
+    }
   }
 
   /// Abandons a held-key preview before another interaction takes ownership.
@@ -2733,13 +2737,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() => _sidebarTab = tab);
   }
 
-  /// Opens a shared space's people from its heading in the notes list.
-  void _openSpace(String spaceId) {
-    final sharing = widget.account?.sharing;
-    if (sharing == null) return;
-    _recordKapyActivity();
-    unawaited(showSpaceDialog(context, spaceId: spaceId, sharing: sharing));
-  }
+  /// Opens a person's page in Settings → Sharing from a heading in Shared.
+  void _openPerson(String email) => _showSettings(
+    section: SettingsSection.sharing,
+    sharing: SharingStart.person(email),
+  );
+
+  /// Opens Settings → Sharing on Share with someone, from the empty Shared
+  /// list.
+  void _startSharing() => _showSettings(
+    section: SettingsSection.sharing,
+    sharing: const SharingStart.picking(),
+  );
 
   /// Whoever else has the open note up right now.
   List<Collaborator> get _selectedPresence {
@@ -2916,24 +2925,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// [notice] is said as a toast once settings is on screen, for whatever
   /// sent the person there rather than their own tap on the gear. [reveal]
-  /// is the row it opens scrolled to.
+  /// is the row it opens scrolled to, and [sharing] where Sharing opens.
   void _showSettings({
     SettingsSection? section,
     String? notice,
     String? reveal,
+    SharingStart? sharing,
   }) {
     if (_settingsOpen) return;
     if (AppPlatform.isMobile) {
       FocusManager.instance.primaryFocus?.unfocus();
       setState(() => _settingsOpen = true);
     }
-    unawaited(_openSettings(section, notice, reveal));
+    unawaited(_openSettings(section, notice, reveal, sharing));
   }
 
   Future<void> _openSettings(
     SettingsSection? section,
     String? notice,
     String? reveal,
+    SharingStart? sharing,
   ) async {
     try {
       await showSettings(
@@ -2941,6 +2952,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         section: section,
         notice: notice,
         reveal: reveal,
+        sharingStart: sharing,
         kapyAi: _kapyAi,
         namer: _namer,
         account: widget.account,
@@ -2959,6 +2971,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         hiddenNotes: widget.hiddenNotesGate,
         tags: widget.tags,
         listedTags: _listedTags,
+        onOpenNote: _select,
       );
     } finally {
       if (mounted && _settingsOpen) setState(() => _settingsOpen = false);
@@ -3167,7 +3180,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return [
       for (final note in notes)
         if (_listedInNotes(note) &&
-            (sharing == null || sidebarTabOf(note, sharing) == _sidebarTab))
+            (sharing == null || sidebarTabLists(_sidebarTab, note, sharing)))
           note,
     ];
   }
@@ -3517,9 +3530,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             collaborators:
                                 widget.account?.sync?.collaboratorsByNote ??
                                 const {},
-                            onOpenSpace: widget.account?.sharing == null
+                            onOpenPerson: widget.account?.sharing == null
                                 ? null
-                                : _openSpace,
+                                : _openPerson,
+                            onStartSharing: widget.account?.sharing == null
+                                ? null
+                                : _startSharing,
                             tab: _sidebarTab,
                             onTabChanged: _setSidebarTab,
                             searchShortcut: widget.shortcuts.bindingFor(
@@ -3980,9 +3996,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       sharing: widget.account?.sharing,
                       collaborators:
                           widget.account?.sync?.collaboratorsByNote ?? const {},
-                      onOpenSpace: widget.account?.sharing == null
+                      onOpenPerson: widget.account?.sharing == null
                           ? null
-                          : _openSpace,
+                          : _openPerson,
+                      onStartSharing: widget.account?.sharing == null
+                          ? null
+                          : _startSharing,
                       tab: _sidebarTab,
                       onTabChanged: _setSidebarTab,
                       onSettingsPressed: _showSettings,

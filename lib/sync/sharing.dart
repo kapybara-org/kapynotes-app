@@ -90,6 +90,10 @@ class Sharing extends ChangeNotifier {
   /// note shared, access changed, access ended.
   Stream<SharingNotice> get notices => _notices.stream;
 
+  /// Whether the server cannot be reached right now. Every action here asks
+  /// it first, so they wait until it can.
+  bool get isOffline => _sync.status == SyncStatus.offline;
+
   /// Whether sync is holding [spaceId] back until somebody in it has Pro.
   bool needsPro(String spaceId) => _sync.spacesNeedingPro.contains(spaceId);
 
@@ -475,33 +479,62 @@ class Sharing extends ChangeNotifier {
   /// owned by a third person is neither, and is not listed.
   List<SharePerson> get people {
     final found = <String, SharePerson>{};
-    void add(SpaceMember member) {
-      final email = member.email.toLowerCase();
-      found[email] = SharePerson(
-        email: email,
-        name: member.displayName,
-        userId: member.userId,
-        image: member.image,
-      );
-    }
-
     for (final space in teams) {
       if (!space.isOwner) {
-        if (space.member(space.ownerId) case final owner?) add(owner);
+        if (space.member(space.ownerId) case final owner?) {
+          found[owner.email.toLowerCase()] = _personOf(owner);
+        }
         continue;
       }
-      space.othersThan(userId).forEach(add);
+      for (final member in space.othersThan(userId)) {
+        found[member.email.toLowerCase()] = _personOf(member);
+      }
       for (final invite in space.invites) {
-        final email = invite.email.toLowerCase();
-        found.putIfAbsent(
-          email,
-          () => SharePerson(email: email, name: invite.displayName),
-        );
+        found.putIfAbsent(invite.email.toLowerCase(), () => _invited(invite));
       }
     }
-    return found.values.toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return _byName(found.values);
   }
+
+  /// Who the Shared list files [note] under: the owner of a note somebody
+  /// shares with this account, or everyone this account shares its own note
+  /// with. Access is set aside, so one person's notes stay together whatever
+  /// each of them lets that person do. Null for a note in no shared space
+  /// this device knows, or in one of its own that nobody else is in.
+  ShareGroup? groupOf(Note note) {
+    final space = spaceOf(note);
+    if (space == null || !space.isTeam) return null;
+    if (!space.isOwner) {
+      final owner = space.member(space.ownerId);
+      return owner == null
+          ? null
+          : ShareGroup(ShareGroupKind.from, [_personOf(owner)]);
+    }
+    final joined = space.othersThan(userId);
+    final people = _byName([
+      ...joined.map(_personOf),
+      ...space.invites.map(_invited),
+    ]);
+    if (people.isEmpty) return null;
+    return ShareGroup(
+      joined.isEmpty ? ShareGroupKind.waiting : ShareGroupKind.sharedWith,
+      people,
+    );
+  }
+
+  static SharePerson _personOf(SpaceMember member) => SharePerson(
+    email: member.email.toLowerCase(),
+    name: member.displayName,
+    userId: member.userId,
+    image: member.image,
+  );
+
+  static SharePerson _invited(SpaceInvite invite) =>
+      SharePerson(email: invite.email.toLowerCase(), name: invite.displayName);
+
+  static List<SharePerson> _byName(Iterable<SharePerson> people) =>
+      people.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
   /// The notes this account shares with [email], in the spaces it owns,
   /// whether or not they have accepted yet.
@@ -948,4 +981,56 @@ class SharePerson {
   final String? image;
 
   bool get isInvited => userId == null;
+
+  /// What to call them in a heading, where a full name would crowd it.
+  String get firstName => name.trim().split(RegExp(r'\s')).first;
+}
+
+/// How a group in the Shared list stands to this account.
+enum ShareGroupKind {
+  /// Its own notes, open to people of whom at least one has joined.
+  sharedWith,
+
+  /// Its own notes, open only to people who have not joined yet.
+  waiting,
+
+  /// Notes somebody else owns and shares with this account.
+  from,
+}
+
+/// A heading in the Shared list: whose notes are under it. Two notes are in
+/// the same group exactly when their groups have the same [key].
+class ShareGroup {
+  const ShareGroup(this.kind, this.people);
+
+  final ShareGroupKind kind;
+
+  /// The owner alone for [ShareGroupKind.from]; otherwise everyone the notes
+  /// are open to, by name.
+  final List<SharePerson> people;
+
+  String get key =>
+      '${kind.name}:${[for (final person in people) person.email].join('+')}';
+
+  /// "With Priya", "With Aoife and Kwame", "From Wen", "Waiting for tomas".
+  String get title {
+    final firsts = [for (final person in people) person.firstName];
+    final names = [
+      for (final (index, person) in people.indexed)
+        firsts.where((first) => first == firsts[index]).length > 1
+            ? person.name
+            : firsts[index],
+    ];
+    final who = switch (names.length) {
+      1 => names[0],
+      2 => '${names[0]} and ${names[1]}',
+      3 => '${names[0]}, ${names[1]} and ${names[2]}',
+      _ => '${names[0]}, ${names[1]} and ${names.length - 2} others',
+    };
+    return switch (kind) {
+      ShareGroupKind.sharedWith => 'With $who',
+      ShareGroupKind.waiting => 'Waiting for $who',
+      ShareGroupKind.from => 'From $who',
+    };
+  }
 }
