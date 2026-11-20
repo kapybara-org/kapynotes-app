@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
-import '../core/appearance.dart';
 import '../core/app_tray.dart';
 import '../core/menu_bar_panel.dart';
 import '../core/platform.dart';
@@ -41,29 +40,36 @@ class MenuBarPanelView extends StatelessWidget {
   const MenuBarPanelView({
     super.key,
     required this.controller,
-    required this.prefs,
+    required this.look,
+    required this.lookChanges,
     required this.panel,
   });
 
   final MenuBarPanelController controller;
-  final LayoutPrefs prefs;
+
+  /// The themes the panel wears now: the window's, without transparency.
+  final WindowLook Function() look;
+
+  /// Whatever changes [look].
+  final Listenable lookChanges;
 
   /// The panel itself, built only while it is open.
   final WidgetBuilder panel;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([controller, prefs.appearanceListenable]),
+    listenable: Listenable.merge([controller, lookChanges]),
     builder: (context, _) {
       final view = controller.view;
       if (view == null) return const ViewCollection(views: []);
+      final look = this.look();
       return View(
         view: view,
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: KapyTheme.light(),
-          darkTheme: KapyTheme.dark(),
-          themeMode: prefs.appearance.themeMode,
+          theme: look.light,
+          darkTheme: look.dark,
+          themeMode: look.mode,
           home: controller.isOpen
               ? KeyedSubtree(
                   key: ValueKey(controller.openings),
