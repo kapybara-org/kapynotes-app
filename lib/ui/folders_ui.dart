@@ -284,42 +284,7 @@ class _FoldersTabState extends State<FoldersTab> {
   }
 
   Future<void> _showMenu(Offset position, Folder folder) async {
-    const actions = [
-      KapyMenuAction(
-        value: 'rename',
-        label: 'Rename',
-        icon: KapyIcons.editOutlined,
-      ),
-      KapyMenuAction(
-        value: 'new',
-        label: 'New folder inside',
-        icon: KapyIcons.folderAddOutlined,
-      ),
-      KapyMenuAction(
-        value: 'move',
-        label: 'Move to…',
-        icon: KapyIcons.folderMoveOutlined,
-      ),
-      KapyMenuAction(
-        value: 'delete',
-        label: 'Delete folder…',
-        icon: KapyIcons.deleteOutlined,
-        destructive: true,
-      ),
-    ];
-    final choice = await showKapyContextMenu<String>(
-      context: context,
-      globalPosition: position,
-      items: [
-        for (final action in actions)
-          PopupMenuItem(
-            key: ValueKey('${action.value}-folder-${folder.id}'),
-            value: action.value,
-            height: 36,
-            child: KapyMenuActionRow(action, touch: false),
-          ),
-      ],
-    );
+    final choice = await showFolderMenu(context, position, folder);
     if (!mounted) return;
     switch (choice) {
       case 'rename':
@@ -329,54 +294,16 @@ class _FoldersTabState extends State<FoldersTab> {
         });
       case 'new':
         _newFolder(folder.id);
-      case 'move':
-        await _moveFolder(context, position, _store, folder);
-      case 'delete':
-        await _delete(folder);
+      case final action?:
+        await runFolderAction(
+          context,
+          action,
+          position,
+          store: _store,
+          notes: widget.notes,
+          folder: folder,
+        );
     }
-  }
-
-  /// Asks once, deletes, and offers Undo, which puts the folder back with
-  /// whatever is still in it. Nothing in it is deleted: it moves up a level.
-  Future<void> _delete(Folder folder) {
-    final tree = _store.tree;
-    final notes = tree.notesIn(widget.notes, folder.id).length;
-    final folders = tree.childrenOf(folder.id).length;
-    final into = _placeName(tree, folder.parentId);
-    final what = _contents(notes, folders);
-    final content = switch ((notes, folders)) {
-      (0, 0) => 'It’s empty.',
-      (1, 0) => 'Its note moves to $into.',
-      (0, 1) => 'Its folder moves to $into.',
-      _ => 'Its ${what.join(' and ')} move to $into.',
-    };
-    return showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete “${folder.name}”?'),
-        content: Text(content),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            key: const ValueKey('folder-delete-confirm'),
-            onPressed: () {
-              _store.delete(folder.id);
-              Toast.show(
-                context,
-                'Deleted “${folder.name}”',
-                action: 'Undo',
-                onAction: () => _store.restore(folder.id),
-              );
-              Navigator.of(context).pop();
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -397,7 +324,7 @@ class _FoldersTabState extends State<FoldersTab> {
     }
 
     Widget field(int depth, [String initial = '']) => _FolderNameField(
-      depth: depth,
+      inset: _indent(depth) + 12 + 8,
       initial: initial,
       onSubmit: _submit,
       onCancel: _stopNaming,
@@ -708,13 +635,15 @@ class _NewFolderRowState extends State<_NewFolderRow> {
 /// under it.
 class _FolderNameField extends StatefulWidget {
   const _FolderNameField({
-    required this.depth,
+    required this.inset,
     this.initial = '',
     required this.onSubmit,
     required this.onCancel,
   });
 
-  final int depth;
+  /// How far in its folder icon sits: at the tree's indent for its depth
+  /// there, or near the edge where it floats.
+  final double inset;
   final String initial;
   final FolderRefusal? Function(String name) onSubmit;
   final VoidCallback onCancel;
@@ -742,7 +671,7 @@ class _FolderNameFieldState extends State<_FolderNameField> {
     final palette = context.palette;
     final error = Theme.of(context).colorScheme.error;
     final refusal = _refusal;
-    final start = _indent(widget.depth) + 12 + 8;
+    final start = widget.inset;
     return TapRegion(
       onTapOutside: (_) => widget.onCancel(),
       child: CallbackShortcuts(
@@ -958,34 +887,216 @@ class LooseNoteFace extends StatelessWidget {
   }
 }
 
-/// Move to folder… on a note's menu: files the note where the list picks,
-/// and says where, with an Undo that puts it back.
-Future<void> moveNoteToFolder(
+/// Move to folder… on a note's menu, or on the picked notes': files them
+/// where the list picks, and says where, with an Undo that puts each back
+/// where it was.
+Future<void> moveNotesToFolder(
   BuildContext context,
   Offset position,
   FolderStore store,
-  String noteId,
+  List<String> noteIds,
 ) async {
-  final from = store.tree.folderOf(noteId);
+  final from = {for (final id in noteIds) id: store.tree.folderOf(id)};
   final picked = await _pickFolderAt(
     context,
     position,
     store: store,
-    current: from,
-    check: (folderId) => store.checkFile([noteId], folderId),
+    current: from.values.toSet(),
+    check: (folderId) => store.checkFile(noteIds, folderId),
   );
-  if (picked == null || picked.folderId == from) return;
-  final refusal = store.file([noteId], picked.folderId);
+  if (picked == null) return;
+  final moving = [
+    for (final id in noteIds)
+      if (from[id] != picked.folderId) id,
+  ];
+  if (moving.isEmpty) return;
+  final refusal = store.file(moving, picked.folderId);
   if (!context.mounted) return;
   if (refusal != null) {
     Toast.show(context, folderRefusalText(refusal), isError: true);
     return;
   }
+  final place = _placeName(store.tree, picked.folderId);
   Toast.show(
     context,
-    'Moved to ${_placeName(store.tree, picked.folderId)}',
+    moving.length == 1
+        ? 'Moved to $place'
+        : 'Moved ${moving.length} notes to $place',
     action: 'Undo',
-    onAction: () => store.file([noteId], from),
+    onAction: () {
+      final refusals = [
+        for (final folderId in {for (final id in moving) from[id]})
+          ?store.file([
+            for (final id in moving)
+              if (from[id] == folderId) id,
+          ], folderId),
+      ];
+      if (refusals.isNotEmpty && context.mounted) {
+        Toast.show(context, folderRefusalText(refusals.first), isError: true);
+      }
+    },
+  );
+}
+
+/// A folder's actions, Delete apart from the rest: on its row in the tree
+/// and on the page's More while it is in front. Its card on a folder's page
+/// leaves out New folder inside, as a folder made there wouldn't show.
+List<List<KapyMenuAction>> folderActions({bool newInside = true}) => [
+  [
+    const KapyMenuAction(
+      value: 'rename',
+      label: 'Rename',
+      icon: KapyIcons.editOutlined,
+    ),
+    if (newInside)
+      const KapyMenuAction(
+        value: 'new',
+        label: 'New folder inside',
+        icon: KapyIcons.folderAddOutlined,
+      ),
+    const KapyMenuAction(
+      value: 'move',
+      label: 'Move to…',
+      icon: KapyIcons.folderMoveOutlined,
+    ),
+  ],
+  [
+    const KapyMenuAction(
+      value: 'delete',
+      label: 'Delete folder…',
+      icon: KapyIcons.deleteOutlined,
+      destructive: true,
+    ),
+  ],
+];
+
+/// [folder]'s menu at [position], and the action picked from it.
+Future<String?> showFolderMenu(
+  BuildContext context,
+  Offset position,
+  Folder folder, {
+  bool newInside = true,
+}) => showKapyContextMenu<String>(
+  context: context,
+  globalPosition: position,
+  items: kapyMenuItems((
+    heading: null,
+    groups: folderActions(newInside: newInside),
+  ), key: (value) => '$value-folder-${folder.id}'),
+);
+
+/// Does [action], one of [folderActions], to [folder] from a menu at
+/// [position]. Rename and New folder inside take the name in a field there.
+/// [notes] are the ones folders hold, which Delete counts.
+Future<void> runFolderAction(
+  BuildContext context,
+  String action,
+  Offset position, {
+  required FolderStore store,
+  required List<Note> notes,
+  required Folder folder,
+}) async {
+  switch (action) {
+    case 'rename':
+      await _nameFolderAt(
+        context,
+        position,
+        initial: folder.name,
+        submit: (name) => store.rename(folder.id, name),
+      );
+    case 'new':
+      await _nameFolderAt(
+        context,
+        position,
+        submit: (name) {
+          final refusal = store.checkCreate(name, parentId: folder.id);
+          if (refusal == null) store.create(name, parentId: folder.id);
+          return refusal;
+        },
+      );
+    case 'move':
+      await _moveFolder(context, position, store, folder);
+    case 'delete':
+      await _deleteFolder(context, store, notes, folder);
+  }
+}
+
+/// A field at [position] that names a folder, starting from [initial]. ↵
+/// hands the name to [submit] and closes, unless [submit] says why not; esc
+/// or a click outside closes it.
+Future<void> _nameFolderAt(
+  BuildContext context,
+  Offset position, {
+  String initial = '',
+  required FolderRefusal? Function(String name) submit,
+}) => showGeneralDialog<void>(
+  context: context,
+  barrierLabel: 'Close',
+  barrierColor: Colors.transparent,
+  transitionDuration: Duration.zero,
+  pageBuilder: (context, _, _) => CustomSingleChildLayout(
+    delegate: PopoverAtPoint(position),
+    child: TagPopover(
+      key: const ValueKey('folder-name-popover'),
+      child: _FolderNameField(
+        inset: 9,
+        initial: initial,
+        onSubmit: (name) {
+          final refusal = submit(name);
+          if (refusal == null) Navigator.of(context).pop();
+          return refusal;
+        },
+        onCancel: () => Navigator.of(context).pop(),
+      ),
+    ),
+  ),
+);
+
+/// Asks once, deletes, and offers Undo, which puts the folder back with
+/// whatever is still in it. Nothing in it is deleted: it moves up a level.
+Future<void> _deleteFolder(
+  BuildContext context,
+  FolderStore store,
+  List<Note> notes,
+  Folder folder,
+) {
+  final tree = store.tree;
+  final held = tree.notesIn(notes, folder.id).length;
+  final folders = tree.childrenOf(folder.id).length;
+  final into = _placeName(tree, folder.parentId);
+  final what = _contents(held, folders);
+  final content = switch ((held, folders)) {
+    (0, 0) => 'It’s empty.',
+    (1, 0) => 'Its note moves to $into.',
+    (0, 1) => 'Its folder moves to $into.',
+    _ => 'Its ${what.join(' and ')} move to $into.',
+  };
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Delete “${folder.name}”?'),
+      content: Text(content),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          key: const ValueKey('folder-delete-confirm'),
+          onPressed: () {
+            store.delete(folder.id);
+            Toast.show(
+              context,
+              'Deleted “${folder.name}”',
+              action: 'Undo',
+              onAction: () => store.restore(folder.id),
+            );
+            Navigator.of(context).pop();
+          },
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
   );
 }
 
@@ -1002,7 +1113,7 @@ Future<void> _moveFolder(
     context,
     position,
     store: store,
-    current: from,
+    current: {from},
     moving: folder.id,
     check: (parentId) => store.checkMove(folder.id, parentId: parentId),
   );
@@ -1035,7 +1146,7 @@ Future<({String? folderId})?> _pickFolderAt(
   BuildContext context,
   Offset position, {
   required FolderStore store,
-  required String? current,
+  required Set<String?> current,
   String? moving,
   required FolderRefusal? Function(String? folderId) check,
 }) => showGeneralDialog<({String? folderId})>(
@@ -1081,8 +1192,9 @@ class _FolderPicker extends StatefulWidget {
 
   final FolderStore store;
 
-  /// Where the note or folder is now, null being My notes.
-  final String? current;
+  /// Where the notes or the folder are now, null being My notes. Each is
+  /// ticked, and picking the one place they all are closes the list.
+  final Set<String?> current;
 
   /// The folder being moved, or null when a note is being filed.
   final String? moving;
@@ -1143,7 +1255,9 @@ class _FolderPickerState extends State<_FolderPicker> {
   }
 
   void _pick(String? folderId) {
-    final refusal = folderId == widget.current ? null : widget.check(folderId);
+    final here =
+        widget.current.length == 1 && widget.current.contains(folderId);
+    final refusal = here ? null : widget.check(folderId);
     if (refusal != null) {
       setState(() => _refusal = refusal);
       return;
@@ -1268,7 +1382,7 @@ class _FolderPickerState extends State<_FolderPicker> {
               key: const ValueKey('folder-pick-top'),
               icon: KapyIcons.noteOutlined,
               label: 'My notes',
-              ticked: widget.current == null,
+              ticked: widget.current.contains(null),
             ),
             final folder => row(
               index,
@@ -1282,7 +1396,7 @@ class _FolderPickerState extends State<_FolderPicker> {
                 ].join(' › '),
                 _ => null,
               },
-              ticked: widget.current == folder.id,
+              ticked: widget.current.contains(folder.id),
             ),
           },
         if (created != null)
@@ -1420,9 +1534,9 @@ class FolderPage extends StatelessWidget {
     required this.controls,
     required this.cards,
     required this.group,
-    this.groupingMenu,
     required this.noteTile,
     required this.onTab,
+    required this.onMenu,
   });
 
   final FolderTree tree;
@@ -1438,14 +1552,14 @@ class FolderPage extends StatelessWidget {
   /// [notes] in the notes list's groups: by day, unless it is set otherwise.
   final List<NoteGroup> Function(List<Note> notes) group;
 
-  /// How the groups are made, at the end of the first one's heading.
-  final Widget? groupingMenu;
-
   /// A note's card, or its row in the list view.
   final Widget Function(Note note) noteTile;
 
   /// Shows a folder in this tab, or with [behind] in a new tab behind it.
   final void Function(String folderId, {required bool behind}) onTab;
+
+  /// A folder card's menu, asked for at [position].
+  final void Function(Folder folder, Offset position) onMenu;
 
   static const double _cardWidth = 224;
   static const double _gap = 12;
@@ -1559,17 +1673,17 @@ class FolderPage extends StatelessWidget {
               folder: inner,
               count: inside[inner.id] ?? 0,
               onTab: ({required behind}) => onTab(inner.id, behind: behind),
+              onMenu: (position) => onMenu(inner, position),
             );
           });
         }
-        for (final (index, each) in group(held).indexed) {
+        for (final each in group(held)) {
           gap(24);
           rows.add(
             (_) => NotesGroupHeading(
               key: ValueKey('folder-group-${each.label}'),
               label: each.label,
               detail: each.detail,
-              trailing: index == 0 ? groupingMenu : null,
             ),
           );
           gap(8);
@@ -1608,19 +1722,22 @@ class FolderPage extends StatelessWidget {
 }
 
 /// A folder inside the one on the page: its icon, its name and how many
-/// notes are inside it at any depth. A click shows it in this tab, and
-/// ⌘-click (Ctrl-click off a Mac) or a middle click in a tab behind.
+/// notes are inside it at any depth. A click shows it in this tab, ⌘-click
+/// (Ctrl-click off a Mac) or a middle click in a tab behind, and a right
+/// click opens its menu.
 class _FolderCard extends StatefulWidget {
   const _FolderCard({
     super.key,
     required this.folder,
     required this.count,
     required this.onTab,
+    required this.onMenu,
   });
 
   final Folder folder;
   final int count;
   final void Function({required bool behind}) onTab;
+  final ValueChanged<Offset> onMenu;
 
   @override
   State<_FolderCard> createState() => _FolderCardState();
@@ -1643,6 +1760,7 @@ class _FolderCardState extends State<_FolderCard> {
           behavior: HitTestBehavior.opaque,
           onTap: () => widget.onTab(behind: clickOpensTabBehind()),
           onTertiaryTapUp: (_) => widget.onTab(behind: true),
+          onSecondaryTapUp: (details) => widget.onMenu(details.globalPosition),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(

@@ -7,14 +7,18 @@ import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart' show noteTagsMax;
+import 'package:kapy_notes/ui/context_menu.dart' show KapyMenuActionRow;
 import 'package:kapy_notes/ui/folders_ui.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
+import 'package:kapy_notes/ui/notes_list.dart'
+    show NotesGroupHeading, NotesListControls;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore, openNoteBody, pressShortcut;
 import 'golden_test.dart'
-    show goldenFolders, goldenNotes, goldenPrefs, pumpForGolden;
+    show goldenFolders, goldenNotes, goldenPrefs, goldenTags, pumpForGolden;
 import 'test_fonts.dart';
 
 void main() {
@@ -546,6 +550,303 @@ void main() {
       await rightClick(tester, rowOf(drawing.id));
       expect(find.byKey(ValueKey('pin-note-${drawing.id}')), findsOneWidget);
       expect(find.byKey(ValueKey('folder-note-${drawing.id}')), findsNothing);
+    });
+
+    /// The hint beside the menu line under [item].
+    String? hintOf(WidgetTester tester, Finder item) => tester
+        .widget<KapyMenuActionRow>(
+          find.descendant(of: item, matching: find.byType(KapyMenuActionRow)),
+        )
+        .action
+        .hint;
+
+    testWidgets('Move to folder… files the open note from ⌘K and from the '
+        "page's More too, with no shortcut beside it", (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final note = goldenNotes.create(body: 'Pricing ideas');
+      await tester.pumpAndSettle();
+      await tester.tap(rowOf(note.id));
+      await tester.pumpAndSettle();
+
+      await press(tester, ShortcutAction.findNotes);
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'move',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Actions'), findsOneWidget);
+      await tapKey(tester, 'command-menu-row-Move to folder…');
+      await tapKey(tester, 'folder-pick-${work.id}');
+      expect(goldenFolders.tree.folderOf(note.id), work.id);
+
+      await tapKey(tester, 'page-more');
+      final more = find.byKey(const ValueKey('page-more-folder'));
+      expect(hintOf(tester, more), isNull);
+      await tester.tap(more);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'folder-pick-${personal.id}');
+      expect(goldenFolders.tree.folderOf(note.id), personal.id);
+
+      await rightClick(tester, rowOf(note.id));
+      expect(
+        hintOf(tester, find.byKey(ValueKey('folder-note-${note.id}'))),
+        isNull,
+      );
+    });
+
+    testWidgets('picked notes take a tag together from their menu and move '
+        'together from their bar, and Undo puts each back in its own folder', (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      goldenPrefs.sidebarWidth = LayoutPrefs.maxSidebarWidth;
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final filed = goldenNotes.create(body: 'Pricing ideas');
+      final loose = goldenNotes.create(body: 'Dentist');
+      goldenFolders.file([filed.id], work.id);
+      final money = goldenTags.create('Money')!;
+      goldenTags.addTag(filed.id, money.id);
+      await tester.pumpAndSettle();
+      await tester.tap(rowOf(filed.id));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.tap(rowOf(loose.id));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(find.text('2 selected'), findsOneWidget);
+
+      await rightClick(tester, rowOf(loose.id));
+      expect(find.text('2 notes'), findsOneWidget);
+      final folderItem = find.byKey(ValueKey('picked-folder-note-${loose.id}'));
+      expect(hintOf(tester, folderItem), isNull);
+      await tapKey(tester, 'picked-tags-note-${loose.id}');
+      final row = find.byKey(ValueKey('tag-row-${money.id}'));
+      expect(
+        find.descendant(of: row, matching: find.byType(KapyIcon)),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<KapyIcon>(
+              find.descendant(of: row, matching: find.byType(KapyIcon)),
+            )
+            .icon,
+        KapyIcons.removeRounded,
+        reason: 'only one of the two carries it, so it is dashed',
+      );
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      for (final note in [filed, loose]) {
+        expect(goldenTags.tagsOf(note.id).map((tag) => tag.id), [money.id]);
+      }
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      for (final note in [filed, loose]) {
+        expect(goldenTags.tagsOf(note.id), isEmpty);
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tapKey(tester, 'picked-folder');
+      await tapKey(tester, 'folder-pick-${personal.id}');
+      for (final note in [filed, loose]) {
+        expect(goldenFolders.tree.folderOf(note.id), personal.id);
+      }
+      expect(find.text('Moved 2 notes to “Personal”'), findsOneWidget);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(filed.id), work.id);
+      expect(goldenFolders.tree.folderOf(loose.id), isNull);
+    });
+
+    testWidgets('a tag that a full note has no room for still comes off the '
+        'other picked notes, and putting it back says how far it went', (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      goldenPrefs.sidebarWidth = LayoutPrefs.maxSidebarWidth;
+      final money = goldenTags.create('Money')!;
+      final tagged = goldenNotes.create(body: 'Pricing ideas');
+      final full = goldenNotes.create(body: 'Dentist');
+      goldenTags.addTag(tagged.id, money.id);
+      goldenTags.setTags(full.id, [
+        for (var i = 1; i <= noteTagsMax; i++) goldenTags.create('Tag $i')!.id,
+      ]);
+      await tester.pumpAndSettle();
+      await tester.tap(rowOf(tagged.id));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.tap(rowOf(full.id));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+
+      await rightClick(tester, rowOf(full.id));
+      await tapKey(tester, 'picked-tags-note-${full.id}');
+      final row = find.byKey(ValueKey('tag-row-${money.id}'));
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(goldenTags.tagsOf(tagged.id), isEmpty);
+      expect(goldenTags.tagsOf(full.id), hasLength(noteTagsMax));
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(goldenTags.tagsOf(tagged.id).map((tag) => tag.id), [money.id]);
+      expect(goldenTags.tagsOf(full.id), hasLength(noteTagsMax));
+      expect(
+        find.text('Added to 1 of 2 notes. One already has $noteTagsMax tags.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("Undo after a move says so when a note's folder has been "
+        'deleted since, and still puts back the rest', (tester) async {
+      await pumpWindow(tester);
+      goldenPrefs.sidebarWidth = LayoutPrefs.maxSidebarWidth;
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final filed = goldenNotes.create(body: 'Pricing ideas');
+      final loose = goldenNotes.create(body: 'Dentist');
+      goldenFolders.file([filed.id], work.id);
+      await tester.pumpAndSettle();
+      await tester.tap(rowOf(filed.id));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.tap(rowOf(loose.id));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'picked-folder');
+      await tapKey(tester, 'folder-pick-${personal.id}');
+
+      goldenFolders.delete(work.id);
+      await tester.pump();
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(find.text('That folder was deleted'), findsOneWidget);
+      expect(goldenFolders.tree.folderOf(filed.id), personal.id);
+      expect(goldenFolders.tree.folderOf(loose.id), isNull);
+    });
+
+    testWidgets("a folder card's menu and the page's More act on that folder, "
+        'naming it in a field where the menu was', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      goldenFolders.create('Suppliers', parentId: work.id);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${work.id}');
+
+      await rightClick(
+        tester,
+        find.byKey(ValueKey('folder-card-${clients.id}')),
+      );
+      expect(find.byKey(ValueKey('new-folder-${clients.id}')), findsNothing);
+      await tapKey(tester, 'rename-folder-${clients.id}');
+      expect(find.byKey(const ValueKey('folder-name-popover')), findsOneWidget);
+      await submit(tester, 'suppliers');
+      expect(find.text('A folder here already has that name'), findsOneWidget);
+      await submit(tester, 'Customers');
+      expect(find.byKey(const ValueKey('folder-name-popover')), findsNothing);
+      expect(names(work.id), ['Customers', 'Suppliers']);
+      expect(onPage(find.text('Customers')), findsOneWidget);
+
+      await tapKey(tester, 'page-more');
+      await tapKey(tester, 'page-more-new');
+      await submit(tester, 'Contracts');
+      expect(names(work.id), ['Contracts', 'Customers', 'Suppliers']);
+      expect(onPage(find.text('Contracts')), findsOneWidget);
+
+      await tapKey(tester, 'page-more');
+      await tapKey(tester, 'page-more-rename');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('folder-name-popover')), findsNothing);
+      expect(pageTitle(tester), 'Work');
+
+      await tapKey(tester, 'page-more');
+      await tapKey(tester, 'page-more-delete');
+      await tapKey(tester, 'folder-delete-confirm');
+      expect(goldenFolders.tree.byId(work.id), isNull);
+      expect(page(), findsNothing, reason: "the deleted folder's tab closed");
+    });
+
+    testWidgets("the sort sits in the controls row before the switch, in the "
+        "list and on a folder's page, and on no day's heading", (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      goldenFolders.file([goldenNotes.create(body: 'Roadmap').id], work.id);
+      await tester.pumpAndSettle();
+      final sort = find.byKey(const ValueKey('notes-grouping'));
+      void besideTheSwitch() {
+        expect(
+          find.descendant(of: find.byType(NotesListControls), matching: sort),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: find.byType(NotesGroupHeading), matching: sort),
+          findsNothing,
+        );
+        expect(
+          tester.getRect(sort).left,
+          greaterThan(
+            tester
+                .getRect(find.byKey(const ValueKey('sidebar-notes-filter')))
+                .right,
+          ),
+        );
+        expect(
+          tester.getRect(sort).right,
+          lessThan(
+            tester
+                .getRect(find.byKey(const ValueKey('sidebar-view-list')))
+                .left,
+          ),
+        );
+      }
+
+      besideTheSwitch();
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${work.id}');
+      expect(onPage(sort), findsOneWidget);
+      besideTheSwitch();
+    });
+
+    testWidgets("the sort and the switch keep to the filter's line when a "
+        "span's chip drops under it, and the archive has no sort", (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      goldenNotes.archive(goldenNotes.create(body: 'Old receipts').id);
+      goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+      for (final key in [
+        'sidebar-notes-filter',
+        'notes-filter-when',
+        'notes-filter-when-thisMonth',
+      ]) {
+        await tapKey(tester, key);
+      }
+      final filter = tester.getRect(
+        find.byKey(const ValueKey('sidebar-notes-filter')),
+      );
+      expect(
+        tester.getRect(find.byKey(const ValueKey('notes-when-chip'))).top,
+        greaterThanOrEqualTo(filter.bottom),
+        reason: 'at the default width the chip takes a line of its own',
+      );
+      for (final key in ['notes-grouping', 'sidebar-view-list']) {
+        expect(
+          tester.getCenter(find.byKey(ValueKey(key))).dy,
+          filter.center.dy,
+        );
+      }
+
+      await tapKey(tester, 'sidebar-notes-filter');
+      await tapKey(tester, 'notes-filter-archive');
+      expect(find.byKey(const ValueKey('notes-grouping')), findsNothing);
     });
 
     testWidgets("the tree and the switch keep r3's measures", (tester) async {
