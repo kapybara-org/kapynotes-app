@@ -56,7 +56,6 @@ import 'ui/hidden_notes_gate.dart';
 import 'ui/join/join_link_listener.dart';
 import 'ui/join/joining_ui.dart';
 import 'ui/sharing_notice_listener.dart';
-import 'ui/speech_provider_notice.dart';
 import 'ui/instant_capture.dart';
 import 'ui/mcp_pane.dart';
 import 'ui/menu_bar_panel.dart';
@@ -165,16 +164,18 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
   /// The menu bar panel's Tasks, over the same library the Tasks page reads.
   /// Only where there is a panel: macOS, with the desktop integration.
-  late final TasksController? _panelTasks =
-      switch ((widget.desktopIntegration, widget.tasks)) {
-        (_?, final tasks?) when AppPlatform.isMacOS => TasksController(
-          notes: widget.notes,
-          library: tasks,
-          canEdit: _panelCanEdit,
-          now: widget.notes.now,
-        ),
-        _ => null,
-      };
+  late final TasksController? _panelTasks = switch ((
+    widget.desktopIntegration,
+    widget.tasks,
+  )) {
+    (_?, final tasks?) when AppPlatform.isMacOS => TasksController(
+      notes: widget.notes,
+      library: tasks,
+      canEdit: _panelCanEdit,
+      now: widget.notes.now,
+    ),
+    _ => null,
+  };
 
   bool _panelCanEdit(Note note) => panelCanEdit(
     note,
@@ -769,42 +770,37 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           home: JoinLinkListener(
             links: widget.deepLinks,
             account: widget.account,
-            child: SpeechProviderNoticeListener(
+            child: SharingNoticeListener(
               account: widget.account,
-              prefs: _voicePrefs,
-              notes: widget.notes,
-              child: SharingNoticeListener(
+              child: HomePage(
+                notes: widget.notes,
+                engines: _engines!,
+                rates: widget.rates,
+                prefs: widget.prefs,
+                shortcuts: widget.shortcuts,
+                updates: widget.updates,
+                desktopIntegration: widget.desktopIntegration,
                 account: widget.account,
-                child: HomePage(
-                  notes: widget.notes,
-                  engines: _engines!,
-                  rates: widget.rates,
-                  prefs: widget.prefs,
-                  shortcuts: widget.shortcuts,
-                  updates: widget.updates,
-                  desktopIntegration: widget.desktopIntegration,
-                  account: widget.account,
-                  tasks: widget.tasks,
-                  tags: widget.tags,
-                  store: widget.store,
-                  welcomeNoteId: _welcomeNoteId,
-                  launchIntent: _launchIntent,
-                  recording: _recording,
-                  player: _player,
-                  transcriptions: _transcriptions,
-                  voicePrefs: _voicePrefs,
-                  cloudAccess: _cloudAccess,
-                  localModels: _localModels,
-                  deviceSummarizer: _deviceSummarizer,
-                  deviceTranscriber: _deviceTranscriber,
-                  summarizer: _summarizer,
-                  transcriber: _transcriber,
-                  imageAcquirer: widget.imageAcquirer,
-                  lostImageRetriever: widget.lostImageRetriever,
-                  hiddenNotesGate: _hiddenNotesGate,
-                  kapyAi: _kapyAi,
-                  titleModel: _titleModel,
-                ),
+                tasks: widget.tasks,
+                tags: widget.tags,
+                store: widget.store,
+                welcomeNoteId: _welcomeNoteId,
+                launchIntent: _launchIntent,
+                recording: _recording,
+                player: _player,
+                transcriptions: _transcriptions,
+                voicePrefs: _voicePrefs,
+                cloudAccess: _cloudAccess,
+                localModels: _localModels,
+                deviceSummarizer: _deviceSummarizer,
+                deviceTranscriber: _deviceTranscriber,
+                summarizer: _summarizer,
+                transcriber: _transcriber,
+                imageAcquirer: widget.imageAcquirer,
+                lostImageRetriever: widget.lostImageRetriever,
+                hiddenNotesGate: _hiddenNotesGate,
+                kapyAi: _kapyAi,
+                titleModel: _titleModel,
               ),
             ),
           ),

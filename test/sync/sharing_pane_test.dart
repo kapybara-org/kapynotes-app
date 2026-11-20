@@ -116,7 +116,7 @@ void main() {
 
       // The honest sentence about what encrypted means here, and the invite.
       expect(
-        find.textContaining('only looks, not one that lies'),
+        find.textContaining('only looks, not someone who pretends'),
         findsOneWidget,
       );
       // Who it is from, by name, with the address that was verified beside

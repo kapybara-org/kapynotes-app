@@ -607,7 +607,7 @@ class SyncRefusedException extends SyncProtocolException {
 /// rather than retrying, and says so.
 class SyncOutdatedException extends SyncException {
   const SyncOutdatedException(this.minimum)
-    : super('update to keep syncing (needs protocol $minimum)');
+    : super('Please update Kapy Notes to keep your notes in sync.');
 
   final int minimum;
 }

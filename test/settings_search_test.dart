@@ -451,6 +451,21 @@ void main() {
       expect(_result('spell-check-toggle'), findsOneWidget);
     });
 
+    testWidgets('finds the release notes, which stay after the notice is '
+        'closed', (tester) async {
+      await _open(
+        tester,
+        platform: TargetPlatform.iOS,
+        size: const Size(390, 844),
+      );
+      await _type(tester, "what's new");
+      await tester.tap(_result('changelog'));
+      await tester.pumpAndSettle();
+
+      expect(find.text("What's new"), findsOneWidget);
+      expect(find.text('See what changed'), findsOneWidget);
+    });
+
     testWidgets('offers nothing a phone does not have', (tester) async {
       await _open(
         tester,

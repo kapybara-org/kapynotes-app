@@ -3,7 +3,11 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/voice_consent_sheet.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'test_fonts.dart';
+
 void main() {
+  setUpAll(loadTestFonts);
+
   Future<Future<bool>> open(WidgetTester tester) async {
     late Future<bool> result;
     await tester.pumpWidget(
@@ -22,26 +26,22 @@ void main() {
     return result;
   }
 
-  testWidgets('names the model cloud summaries are sent to', (tester) async {
+  testWidgets('says what leaves the device, without naming a provider', (
+    tester,
+  ) async {
     await open(tester);
     expect(
-      find.text(
-        'Cloud summaries send the transcript text to MiniMax M3.1 Flash '
-        'through OpenRouter.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.textContaining('DeepSeek'), findsNothing);
-    expect(find.textContaining('Soniox'), findsNothing);
-    expect(
       find.textContaining(
-        "through our server and OpenRouter to Microsoft's MAI-Transcribe 2, "
-        "or, when that model is busy or unavailable, to NVIDIA's Nemotron 3.5 "
-        'Transcribe.',
+        'sends the audio to Kapy cloud, where an AI service turns it into text.',
       ),
       findsOneWidget,
     );
+    expect(find.textContaining('never used to train AI.'), findsNWidgets(2));
+    expect(find.textContaining('OpenRouter'), findsNothing);
+    expect(find.textContaining('MiniMax'), findsNothing);
+    expect(find.textContaining('NVIDIA'), findsNothing);
     expect(find.textContaining('Settings › Voice & AI'), findsOneWidget);
+    expect(find.textContaining('Version'), findsNothing);
   });
 
   for (final (name, size) in [
@@ -74,5 +74,16 @@ void main() {
     await tester.tap(find.text('Not now'));
     await tester.pumpAndSettle();
     expect(await result, isFalse);
+  });
+
+  testWidgets('the sheet, light', (tester) async {
+    tester.view.physicalSize = const Size(640, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await open(tester);
+    await expectLater(
+      find.byType(AlertDialog),
+      matchesGoldenFile('goldens/speech_consent_light.png'),
+    );
   });
 }
