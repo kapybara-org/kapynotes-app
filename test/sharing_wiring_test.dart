@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
-import 'package:kapy_notes/core/iconography.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -17,10 +16,8 @@ import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
-import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'kapy_icon_finder.dart';
 import 'share_dialog_test.dart' show Device;
 import 'sync/fake_server.dart';
 import 'sync/sharing_section_test.dart' show namePeople;
@@ -136,30 +133,26 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// On a phone the notes list sits behind the toolbar's menu; beside a
-  /// window it is already there.
+  /// A phone opens on a note's page, with the list under it; beside a
+  /// window the list is already there.
   Future<void> showList(WidgetTester tester, {required bool phone}) async {
-    if (phone) {
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NoteToolbar),
-          matching: findKapyIcon(KapyIcons.menuRounded),
-        ),
-      );
+    final back = find.byKey(const ValueKey('page-back'));
+    if (phone && back.evaluate().isNotEmpty) {
+      await tester.tap(back);
       await tester.pumpAndSettle();
     }
     expect(find.byType(Sidebar), findsOneWidget);
   }
 
   /// Beside a window the rail switches between My notes and Shared; on a
-  /// phone the list's own two segments do.
+  /// phone the bar along the bottom does.
   Future<void> openTab(
     WidgetTester tester,
     SidebarTab tab, {
     required bool phone,
   }) async {
     final key = phone
-        ? 'sidebar-tab-${tab.name}'
+        ? 'bar-${tab == SidebarTab.mine ? 'notes' : 'shared'}'
         : tab == SidebarTab.mine
         ? 'rail-notes'
         : 'rail-shared';
@@ -236,7 +229,7 @@ void main() {
       await pumpApp(tester, phone: phone);
       await showList(tester, phone: phone);
       await tester.tap(
-        find.byKey(ValueKey(phone ? 'sidebar-settings' : 'rail-settings')),
+        find.byKey(ValueKey(phone ? 'bar-settings' : 'rail-settings')),
       );
       await tester.pumpAndSettle();
       expect(find.byType(SettingsDialog), findsOneWidget);
