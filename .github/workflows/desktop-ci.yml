@@ -114,8 +114,12 @@ jobs:
           path: build/release/KapyNotes-${{ steps.version.outputs.version }}-setup.exe
           if-no-files-found: error
 
+  # Intel, because GitHub's arm64 macOS runners were short on capacity and queued
+  # jobs were cancelled as "not acquired by Runner". Both are standard runners,
+  # free for public repositories. The check validates that the app builds and
+  # packages; the release job in desktop-release.yml stays on its own runner.
   macos:
-    runs-on: macos-latest
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v4
 
