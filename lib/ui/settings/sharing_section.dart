@@ -293,7 +293,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
           .warningsFor(space.id)
           .any((warning) => warning.userId == person.userId),
     )) {
-      return "$first's key changed. Check it before you share more";
+      return "$first's safety code changed. Check it's really them before "
+          'you share more';
     }
     for (final space in spaces) {
       if (_sharing.needsPro(space.id)) {
@@ -902,14 +903,14 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
       _errorAt('more'),
       const SizedBox(height: 14),
       const SettingsNote(
-        "Shared notes are end-to-end encrypted: Kapy can't read them. Hidden "
-        'notes are never shared.',
+        'Only the people you share a note with can read it. Not even Kapy '
+        'can. Hidden notes are never shared.',
         icon: KapyIcons.lockRounded,
       ),
       const SettingsNote(
-        "Until you've compared someone's key fingerprint with them in person, "
-        'this guards against a server that only looks, not one that lies '
-        'about whose key is whose. The app warns if a key changes.',
+        'To be sure a note reaches the right person, compare safety codes '
+        "with them in person once. You'll be told if their code ever "
+        'changes.',
       ),
       const SettingsNote(
         "Something wrong? Block and report from the person's menu. One person "

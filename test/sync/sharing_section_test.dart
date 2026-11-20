@@ -207,11 +207,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The honest sentence about what encrypted means here, and the
-      // invitation: who it is from by name, with the address that was
-      // verified, and never the space's placeholder, which names Sam.
+      // The honest sentence about what private means here, in plain words,
+      // and the invitation: who it is from by name, with the address that
+      // was verified, and never the space's placeholder, which names Sam.
       expect(
-        find.textContaining('only looks, not one that lies'),
+        find.textContaining('compare safety codes with them in person'),
         findsOneWidget,
       );
       expect(find.text('Waiting for you'), findsOneWidget);
