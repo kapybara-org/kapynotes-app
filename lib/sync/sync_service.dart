@@ -1140,6 +1140,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     if (personal == null) return;
 
     for (final note in _notes.dirtyNotes) {
+      if (_holdsBack(note)) continue;
       final spaceId = note.spaceId ?? personal.id;
       // Left dirty, not diffed: the diff is taken once, when it can go.
       if (_needsPro.contains(spaceId)) continue;
@@ -1219,7 +1220,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         continue;
       }
       if (!space.canEdit) continue;
-      if (record == null) {
+      if (record == null || record.isLocal) {
         // Deleted before it was ever seeded: the server never had it.
         _notes.markSynced(tombstones: [stone]);
         continue;
@@ -1232,6 +1233,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _tasks?.schedule();
     }
   }
+
+  /// A blank new note the server has never had waits on this device, left
+  /// dirty, until something is written in it: one opened and left sends
+  /// nothing, and its first letter sends it whole, with whatever it was
+  /// filed under meanwhile. A note the server has, emptied, still goes.
+  bool _holdsBack(Note note) => note.isBlank && _docs.neverSent(note.id);
 
   Future<void> _uploadThenReconcile(Note note) async {
     final images = _images;
@@ -2649,14 +2656,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     await _docs.load();
     _reconcileDirty();
     final mine = _notes.notesIn(spaceId);
-    if (mine.any((note) => note.isDirty)) return false;
-    for (final note in mine) {
+    final going = mine.where((note) => !_holdsBack(note)).toList();
+    if (going.any((note) => note.isDirty)) return false;
+    for (final note in going) {
       final record = _docs.get(note.id);
       if (record == null || record.hasPending) return false;
     }
 
     final at = _now();
-    for (final note in mine) {
+    for (final note in going) {
       final record = _docs.get(note.id)!;
       final snapshot = WireSnapshot(
         covers: _state.cursorFor(personal.id),
