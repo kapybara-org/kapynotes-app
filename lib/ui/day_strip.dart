@@ -12,16 +12,11 @@ import 'notes_grouping.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart' show PopoverAtPoint;
 
-/// The strip's text in the app's face, named here because a button's text
-/// style replaces the one its label would otherwise take it from.
 TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
-    TextStyle(
-      fontFamily: AppFonts.ui,
-      fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: size,
-      height: line / size,
-      leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: weight,
+    chromeStyle(
+      size: size,
+      line: line,
+      weight: AppWeight.axisOf(weight),
       color: color,
     );
 
