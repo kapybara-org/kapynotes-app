@@ -793,6 +793,42 @@ void main() {
         expect(bob.bodyOf(note.id), 'Round trip, said Bob');
       });
 
+      test('the copy a member sends up under the new key leaves what it could '
+          'not open for everyone else', () async {
+        note = await shareWithBob('Round trip');
+        spaceId = alice.notes.byId(note.id)!.spaceId!;
+        alice.tick();
+        await alice.sharing.unshareNote(note.id);
+        alice.tick();
+        await alice.sharing.shareNote(note.id, spaceId: spaceId);
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Round trip, one');
+        await alice.sync.syncNow();
+
+        bob.api.failNoteKeys = const SyncTransientException('offline');
+        bob.tick(2);
+        await bob.sync.syncNow();
+        expect(bob.bodyOf(note.id), 'Round trip');
+        bob.api.failNoteKeys = null;
+
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Round trip, one, two');
+        await alice.sync.syncNow();
+        bob.tick(2);
+        await bob.sync.syncNow();
+        bob.tick();
+        await bob.sync.syncNow();
+
+        final laptop = Person(
+          server,
+          userId: alice.userId,
+          device: 'alice-laptop',
+        );
+        await laptop.boot();
+        expect(laptop.bodyOf(note.id), 'Round trip, one, two');
+        laptop.dispose();
+      });
+
       test('a member who held the note before reads what is written once it '
           'is back', () async {
         note = await shareWithBob('Round trip');

@@ -2186,6 +2186,10 @@ class FakeApi implements SyncApi {
   /// Set to fail this device's pushes, and nothing else, until it is cleared.
   SyncException? failPushes;
 
+  /// Set to fail this device's note-key fetches, and nothing else, until it
+  /// is cleared.
+  SyncException? failNoteKeys;
+
   /// Set to fail every one of this device's HTTP calls until it is cleared:
   /// a network that is down, rather than one request that was lost.
   SyncException? failAll;
@@ -2601,6 +2605,8 @@ class FakeApi implements SyncApi {
   @override
   Future<List<WireNoteKey>> fetchNoteKeys(String spaceId) async {
     _gate();
+    final failing = failNoteKeys;
+    if (failing != null) throw failing;
     return server.noteKeys(userId, spaceId);
   }
 

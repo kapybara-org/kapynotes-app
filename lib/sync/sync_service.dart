@@ -2307,7 +2307,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         local.contentKeyEpoch == epoch) {
       // The copy here still holds the key from before, and would seal its
       // next edit under it where nobody else can read it. Whatever it already
-      // sealed under the old one goes up again whole, under the new one.
+      // sealed under the old one goes up again whole, under the new one. It
+      // covers nothing: ops this device could not open are not in it, and
+      // the server would drop them for every other reader.
       _notes.adoptKey(
         noteId,
         contentKey: fetched,
@@ -2319,7 +2321,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           id: _nextRequestId(),
           spaceId: space.id,
           snapshot: record.doc.toSnapshot(),
-          covers: _state.cursorFor(space.id),
+          covers: 0,
         ),
       );
       record.opsSinceSnapshot = 0;
