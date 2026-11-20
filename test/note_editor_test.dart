@@ -1639,7 +1639,7 @@ void main() {
     ) async {
       // The passthrough claims vertical drags, not taps: children hit-test
       // first, so a chip is still a chip.
-      await tester.pumpWidget(harness('rev = 4 * 3'));
+      await tester.pumpWidget(harness('Revenue\nrev = 4 * 3'));
       await tester.pumpAndSettle();
 
       final copied = <String>[];
@@ -2800,7 +2800,7 @@ void main() {
   testWidgets('fills in the pill of the line that reads the total', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('a = 12\nb = 30\ntotal'));
+    await tester.pumpWidget(harness('Totals\na = 12\nb = 30\ntotal'));
     await tester.pumpAndSettle();
 
     Color fillOf(String text) =>
@@ -2910,7 +2910,7 @@ void main() {
       await tester.pump();
     }
 
-    const body = 'rent = 1200 usd\nrent * 12\n';
+    const body = 'Rent\nrent = 1200 usd\nrent * 12\n';
     String? latest;
     await tester.pumpWidget(
       harness(body, autofocus: true, onBodyChanged: (value) => latest = value),
@@ -2945,10 +2945,10 @@ void main() {
     // An edit at the end of a calculating line goes into the line, its pill
     // follows it live, and undo takes it back out.
     await tester.pump(const Duration(milliseconds: 600));
-    await tester.enterNote('rent = 1300 usd\nrent * 12');
+    await tester.enterNote('Rent\nrent = 1300 usd\nrent * 12');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
-    expect(controller.text, 'rent = 1300 usd\nrent * 12');
+    expect(controller.text, 'Rent\nrent = 1300 usd\nrent * 12');
     expect(chipWithText('1,300.00 USD'), findsOneWidget);
     expect(chipWithText('15,600.00 USD'), findsOneWidget);
 
@@ -2971,7 +2971,7 @@ void main() {
     addTearDown(
       () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
     );
-    await tester.pumpWidget(harness('rev = 4 * 3'));
+    await tester.pumpWidget(harness('Revenue\nrev = 4 * 3'));
     await tester.pumpAndSettle();
 
     await tester.tap(chipWithText('12'));
@@ -3077,9 +3077,11 @@ void main() {
     );
   });
 
-  for (final scale in [1.3, 2.0, 3.1]) {
-    testWidgets('a phone title at $scale× text keeps its last letter the size '
-        'of the rest, and its meta row clear of it', (tester) async {
+  for (final scale in [1.0, 1.3, 2.0, 3.1]) {
+    testWidgets('a phone title at $scale× text gets no answer, keeps its last '
+        'letter the size of the rest, and its meta row clear of it', (
+      tester,
+    ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       tester.view.physicalSize = const Size(393, 852);
@@ -3087,7 +3089,7 @@ void main() {
       addTearDown(tester.view.reset);
       tester.platformDispatcher.textScaleFactorTestValue = scale;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      const body = 'Today\nFollow up on the launch checklist';
+      const body = 'Today\nFollow up on the launch checklist\n2 + 2';
       await tester.pumpWidget(harness(body));
       await tester.pumpAndSettle();
 
@@ -3103,6 +3105,14 @@ void main() {
       final aTop = editable.toGlobal(Offset(a.left, a.top)).dy;
       final aBottom = editable.toGlobal(Offset(a.left, a.bottom)).dy;
       final aHeight = aBottom - aTop;
+      final t = editable
+          .boxesFor(const TextSelection(baseOffset: 0, extentOffset: 1))
+          .single;
+      // "Today" names the note: it is not worked out into a date, so no
+      // answer takes room from the title and it stays on one line.
+      expect(find.byType(ResultChip), findsOneWidget);
+      expect(chipWithText('4'), findsOneWidget);
+      expect(editable.toGlobal(Offset(t.left, t.top)).dy, closeTo(aTop, 1));
       // Scaled once, as the title's row is, rather than twice.
       expect(letter.height, closeTo(EditorMetrics.titleRow * scale, 1));
       expect(letter.center.dy, closeTo((aTop + aBottom) / 2, aHeight * 0.3));
@@ -3305,7 +3315,7 @@ total to usd''';
   });
 
   testWidgets('recalculates as the user types', (tester) async {
-    await tester.pumpWidget(harness('2 + 2'));
+    await tester.pumpWidget(harness('Sums\n2 + 2'));
     await tester.pumpAndSettle();
     expect(chipWithText('4'), findsOneWidget);
     expect(
@@ -3316,7 +3326,7 @@ total to usd''';
       'Total: 4',
     );
 
-    await tester.enterNote('2 + 2\n40 + 2');
+    await tester.enterNote('Sums\n2 + 2\n40 + 2');
     await tester.pumpAndSettle();
 
     expect(chipWithText('4'), findsOneWidget);
@@ -3333,7 +3343,7 @@ total to usd''';
   testWidgets('writes the total hover only once the total is hovered', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('rent = 1200\nfood = 300'));
+    await tester.pumpWidget(harness('Budget\nrent = 1200\nfood = 300'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsNothing);
 
@@ -3352,7 +3362,7 @@ total to usd''';
   testWidgets('keeps the total hover current while the note is typed in', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('rent = 1200\nfood = 300'));
+    await tester.pumpWidget(harness('Budget\nrent = 1200\nfood = 300'));
     await tester.pumpAndSettle();
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
@@ -3363,7 +3373,7 @@ total to usd''';
     await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(find.byTooltip('2 amounts\nrent 1,200, food 300'), findsOneWidget);
 
-    await tester.enterNote('rent = 1200\nfood = 300\nfun = 50');
+    await tester.enterNote('Budget\nrent = 1200\nfood = 300\nfun = 50');
     await tester.pumpAndSettle(const Duration(seconds: 2));
 
     expect(find.byTooltip('Total'), findsNothing);
@@ -3379,7 +3389,10 @@ total to usd''';
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final body = [for (var i = 1; i <= 25; i++) 'a$i = $i'].join('\n');
+    final body = [
+      'Budget',
+      for (var i = 1; i <= 25; i++) 'a$i = $i',
+    ].join('\n');
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
     final total = find.byKey(const ValueKey('note-total'));
@@ -3418,7 +3431,7 @@ total to usd''';
   });
 
   testWidgets('carries a variable down to later lines', (tester) async {
-    await tester.pumpWidget(harness('subtotal = 42\nsubtotal * 3'));
+    await tester.pumpWidget(harness('Order\nsubtotal = 42\nsubtotal * 3'));
     await tester.pumpAndSettle();
 
     expect(chipWithText('42'), findsOneWidget);
@@ -3448,7 +3461,7 @@ total to usd''';
     expect(subtitle.style!.fontStyle, FontStyle.italic);
     expect(find.byKey(const ValueKey('note-total')), findsNothing);
 
-    await tester.enterNote('1');
+    await tester.enterNote('Sums\n1');
     await tester.pumpAndSettle();
     expect(find.textContaining('Start typing'), findsNothing);
     expect(
@@ -3822,7 +3835,7 @@ total to usd''';
       },
     );
 
-    await tester.pumpWidget(harness('2 / 3'));
+    await tester.pumpWidget(harness('Thirds\n2 / 3'));
     await tester.pumpAndSettle();
 
     // The chip is truncated for display but must copy the full value.
@@ -3839,7 +3852,7 @@ total to usd''';
   testWidgets('shows a result in words when its chip is hovered', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('12345678'));
+    await tester.pumpWidget(harness('Big\n12345678'));
     await tester.pumpAndSettle();
 
     final chip = chipWithText('12,345,678');

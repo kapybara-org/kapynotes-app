@@ -181,6 +181,15 @@ class CalcEngine {
   }) : registry = UnitRegistry(ratesPerUsd: ratesPerUsd),
        _now = now ?? DateTime.now;
 
+  /// [body] as the calculator reads a note. Its first line is the note's
+  /// title, which names the note and is never worked out: a daily note
+  /// titled "Today" stays a word rather than becoming a date. The line is
+  /// blanked rather than dropped, so results keep their line numbers.
+  static String withoutTitle(String body) {
+    final newline = body.indexOf('\n');
+    return newline < 0 ? '' : body.substring(newline);
+  }
+
   /// Evaluates every line of [body], returning results keyed by line index.
   /// Lines that are prose, blank, or unparseable are simply absent.
   Map<int, LineResult> evaluateDocument(String body) =>

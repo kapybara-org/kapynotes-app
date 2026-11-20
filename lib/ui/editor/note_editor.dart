@@ -6146,7 +6146,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // In markdown, the calculator reads the note with its code blanked and
     // its list markers made bullets; see MarkdownAnalysis.calculatorText.
     final evaluation = widget.engine.evaluateDocumentWithSummary(
-      _controller.calculatorTextFor(_controller.text),
+      CalcEngine.withoutTitle(_controller.calculatorTextFor(_controller.text)),
     );
     _results = evaluation.results;
     _totalText = evaluation.totalText;

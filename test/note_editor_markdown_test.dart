@@ -1077,7 +1077,7 @@ void main() {
         ('3 * 4 * 5', '60'),
         ('price = 4\nprice * 3', '12'),
       ]) {
-        await tester.pumpWidget(harness(body));
+        await tester.pumpWidget(harness('Sums\n$body'));
         await tester.pumpAndSettle();
         expect(chipWithText(result), findsOneWidget, reason: body);
       }
@@ -1121,11 +1121,11 @@ void main() {
     });
 
     testWidgets('reads as it always did with markdown off', (tester) async {
-      await tester.pumpWidget(harness('- 5 + 3', markdown: false));
+      await tester.pumpWidget(harness('Sums\n- 5 + 3', markdown: false));
       await tester.pumpAndSettle();
       expect(chipWithText('-2'), findsOneWidget);
 
-      await tester.pumpWidget(harness('- 5 + 3'));
+      await tester.pumpWidget(harness('Sums\n- 5 + 3'));
       await tester.pumpAndSettle();
       expect(chipWithText('-2'), findsNothing);
     });

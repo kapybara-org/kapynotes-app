@@ -113,6 +113,11 @@ void main() {
     expect(f.library.resultsOf(note), containsPair(2, '420'));
   });
 
+  test('gives a note\'s title no answer, as the editor does', () {
+    final note = f.library.create(title: 'Today', body: '2 + 2');
+    expect(f.library.resultsOf(note), {2: '4'});
+  });
+
   test('creates a note without counting it as the person’s writing', () {
     final note = f.library.create(title: 'Groceries', body: '☐ Milk');
     expect(note.body, 'Groceries\n☐ Milk');

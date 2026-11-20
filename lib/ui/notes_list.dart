@@ -117,7 +117,11 @@ class NoteGlance {
                 .replaceFirst(_marks, ''),
       result: at == null || engine == null
           ? null
-          : engine.evaluateDocument(lines.take(at + 1).join('\n'))[at]?.text,
+          : engine
+                .evaluateDocument(
+                  CalcEngine.withoutTitle(lines.take(at + 1).join('\n')),
+                )[at]
+                ?.text,
       done: done,
       boxes: boxes,
       media: NoteMedia.inNote(note),
