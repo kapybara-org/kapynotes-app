@@ -8,6 +8,7 @@ import '../../data/note.dart';
 import '../../data/shortcut_prefs.dart';
 import '../../data/task_board.dart';
 import '../sidebar.dart';
+import 'task_choice_cards.dart';
 import 'task_marks.dart';
 
 /// Forster's own instructions for Final Version Perfected.
@@ -30,6 +31,7 @@ class TasksSidebar extends StatelessWidget {
     required this.onSearch,
     this.searchShortcut,
     this.searchPlaceholder = 'Search',
+    this.onGotIt,
   });
 
   final TaskBoard board;
@@ -42,6 +44,10 @@ class TasksSidebar extends StatelessWidget {
   final VoidCallback onSearch;
   final ShortcutBinding? searchShortcut;
   final String searchPlaceholder;
+
+  /// While set, "How Tasks works" sits at the foot until Got it, which
+  /// calls this.
+  final VoidCallback? onGotIt;
 
   @override
   Widget build(BuildContext context) {
@@ -144,6 +150,11 @@ class TasksSidebar extends StatelessWidget {
                 ],
               ),
             ),
+            if (onGotIt case final onGotIt?)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                child: HowTasksWorksCard(onGotIt: onGotIt),
+              ),
             const _MethodLine(),
           ],
         ),
@@ -230,9 +241,8 @@ class _FilterRow extends StatelessWidget {
   }
 }
 
-/// "Based on FVP by Mark Forster": hovering or focusing it opens three lines
-/// on the method and the way to Forster's instructions, so there is no
-/// first-run card to dismiss.
+/// "Based on FVP by Mark Forster": hovering or focusing it opens "How Tasks
+/// works", so the steps stay in reach once its first card is put away.
 class _MethodLine extends StatefulWidget {
   const _MethodLine();
 
@@ -291,7 +301,7 @@ class _MethodLineState extends State<_MethodLine> {
               _overCard = false;
               _update();
             },
-            child: const _MethodCard(),
+            child: const HowTasksWorksCard(floating: true),
           ),
         ),
       ),
@@ -345,122 +355,121 @@ class _MethodLineState extends State<_MethodLine> {
   }
 }
 
-class _MethodCard extends StatelessWidget {
-  const _MethodCard();
+/// "How Tasks works": the method in four plain lines and the way to
+/// Forster's own steps. On a first visit it sits at the sidebar's foot with
+/// Got it; afterwards it opens from the credit.
+class HowTasksWorksCard extends StatelessWidget {
+  const HowTasksWorksCard({super.key, this.onGotIt, this.floating = false});
+
+  final VoidCallback? onGotIt;
+
+  /// Opened from the credit, over the sidebar, with a shadow.
+  final bool floating;
 
   static const _lines = [
-    'One list, always today. New tasks go to the end.',
-    'To pick, ask “What do I want to do more than this?” Dots mark the '
-        'tasks you picked; the last one is Do now.',
-    "Or click a task's dot yourself: once picks it, again makes it Do now.",
-    "Anything you don't finish goes back to the end.",
+    'Today has one list. New tasks join the end.',
+    'To choose, Tasks shows two at a time. Pick one with ← or →, and the '
+        'next pair follows.',
+    'Your last pick becomes Do now, and earlier picks wait in Up next. Not '
+        'finished sends a task to the end of the list.',
+    'A task left alone for two weeks asks if you still want it.',
   ];
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
+    final ink = TaskInk.of(context);
+    final onGotIt = this.onGotIt;
     return Material(
       type: MaterialType.transparency,
       child: Container(
-        key: const ValueKey('tasks-method-card'),
-        width: 328,
+        key: ValueKey(floating ? 'tasks-method-card' : 'tasks-how-it-works'),
+        width: floating ? 316 : null,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: palette.controlBackground,
-          border: Border.all(color: palette.separator),
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-          boxShadow: [
-            BoxShadow(
-              color: palette.shadow.withAlpha(0x80),
-              offset: const Offset(0, 12),
-              blurRadius: 28,
-              spreadRadius: -14,
-            ),
-          ],
+          color: ink.raised,
+          border: Border.all(color: ink.edge),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: floating
+              ? [
+                  BoxShadow(
+                    color: context.palette.shadow.withAlpha(0x80),
+                    offset: const Offset(0, 12),
+                    blurRadius: 28,
+                    spreadRadius: -14,
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 6,
           children: [
-            Text(
-              'Final Version Perfected',
-              style: handStyle(14, 20, FontWeight.w600, palette.textPrimary),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Semantics(
+                header: true,
+                child: Text(
+                  'How Tasks works',
+                  style: taskText(13, 18, ink.text, 500),
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
-            for (final (index, line) in _lines.indexed) ...[
-              if (index > 0) const SizedBox(height: 6),
+            for (final line in _lines)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     width: 4,
                     height: 4,
-                    margin: const EdgeInsets.only(top: 8),
+                    margin: const EdgeInsets.only(top: 7),
                     decoration: BoxDecoration(
-                      color: accent,
+                      color: ink.sage,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      line,
-                      style: uiStyle(
-                        12.5,
-                        19,
-                        FontWeight.w500,
-                        palette.textSubheading,
-                      ),
-                    ),
+                    child: Text(line, style: taskText(12, 18, ink.secondary)),
                   ),
                 ],
               ),
-            ],
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                InkWell(
-                  key: const ValueKey('tasks-read-fvp'),
-                  onTap: () => unawaited(
-                    launchUrl(
-                      fvpInstructions,
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Read about FVP',
-                        style: uiStyle(
-                          12.5,
-                          16,
-                          FontWeight.w600,
-                          palette.accentText,
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: InkWell(
+                        key: const ValueKey('tasks-read-fvp'),
+                        onTap: () => unawaited(
+                          launchUrl(
+                            fvpInstructions,
+                            mode: LaunchMode.externalApplication,
+                          ),
+                        ),
+                        child: Text(
+                          'Read Mark Forster’s own steps',
+                          style: taskText(12, 16, ink.sage, 500),
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      KapyIcon(
-                        KapyIcons.openExternalRounded,
-                        size: 13,
-                        strokeWidth: 1.9,
-                        color: palette.accentText,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  'The successor to Autofocus',
-                  style: uiStyle(
-                    11.5,
-                    16,
-                    FontWeight.w500,
-                    palette.textTertiary,
-                  ),
-                ),
-              ],
+                  if (onGotIt != null)
+                    TaskButton(
+                      key: const ValueKey('tasks-got-it'),
+                      semantics: 'Got it',
+                      onPressed: onGotIt,
+                      fill: ink.chip,
+                      height: 24,
+                      radius: 5,
+                      children: [
+                        Text('Got it', style: taskText(12, 16, ink.text, 460)),
+                      ],
+                    ),
+                ],
+              ),
             ),
           ],
         ),
