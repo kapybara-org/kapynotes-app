@@ -17,8 +17,7 @@ String kapyAccountRowId(KapyAccountKind kind) => 'kapy-account-${kind.name}';
 
 /// What the default model is called in Settings: the on-device one is "On
 /// this device", whichever model that is here.
-String kapyDefaultModelLabel(KapyModel model) =>
-    model.kind == KapyModelKind.device ? 'On this device' : model.label;
+String kapyDefaultModelLabel(KapyModel model) => model.plainLabel;
 
 /// What a new chat can start with: this device's model, Kapy AI Cloud on
 /// Pro, and every model of a connected account Kapy may use.
@@ -42,17 +41,15 @@ String? kapyDeviceModelLine(DeviceModelState device) {
   final word = kapyDeviceWord;
   final size = kapyGigabytes(device.totalBytes);
   return switch (device.status) {
-    DeviceModelStatus.builtIn => '${model.label} · built in',
+    DeviceModelStatus.builtIn => '${model.plainLabel} · built in',
     DeviceModelStatus.ready =>
-      '${model.label} · $size GB on this $word. Answers here when you pick '
-          'On this device',
+      '$size GB on this $word. Answers stay on this $word',
     DeviceModelStatus.notDownloaded =>
-      '${model.label} · a one-time $size GB download. Answers stay on this '
-          '$word',
+      'A one-time $size GB download. Answers stay on this $word',
     DeviceModelStatus.downloading =>
-      '${model.label} · ${kapyGigabytes(device.receivedBytes)} of $size GB',
+      '${kapyGigabytes(device.receivedBytes)} of $size GB',
     DeviceModelStatus.needsSystemFeature =>
-      '${model.label} · turn it on in System Settings',
+      '${model.plainLabel} · turn it on in System Settings',
     DeviceModelStatus.unavailable => null,
   };
 }
@@ -122,7 +119,7 @@ class KapyDefaultModelButton extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    kapyDefaultModelLabel(model),
+                    kapyChoiceLabel(model, options),
                     style: kapyText(13, 16, palette.textPrimary),
                   ),
                 ),
@@ -155,16 +152,16 @@ class KapyDefaultModelButton extends StatelessWidget {
 String kapyAccountLine(KapyAccountState account) {
   final word = kapyDeviceWord;
   final name = kapyAccountName(account.kind);
-  final models = account.models
-      .map((model) => model.label.replaceFirst('Claude ', ''))
-      .join(', ');
+  final models = [
+    for (final model in account.models) kapyChoiceLabel(model, account.models),
+  ].join(', ');
   return switch ((account.kind, account.status)) {
     (KapyAccountKind.openRouter, KapyAccountStatus.connected) =>
-      'Key ending ${_lastFour(account.detail)}, kept in your Keychain',
+      'Key ending ${_lastFour(account.detail)}, kept on this $word',
     (KapyAccountKind.openRouter, KapyAccountStatus.error) =>
-      'OpenRouter rejected this key',
+      'This key was rejected',
     (KapyAccountKind.openRouter, _) =>
-      'Your own key, for any model on OpenRouter',
+      'Your own key, for answers you already pay for',
     (_, KapyAccountStatus.connected) => [
       'Found on this $word',
       if (models.isNotEmpty) models,
@@ -244,9 +241,7 @@ class _KapyAccountRowState extends State<KapyAccountRow> {
     final name = kapyAccountName(kind);
     if (_editing) return _keyField();
     final error = account.status == KapyAccountStatus.error || _rejected;
-    final line = _rejected
-        ? 'OpenRouter rejected this key'
-        : kapyAccountLine(account);
+    final line = _rejected ? 'This key was rejected' : kapyAccountLine(account);
 
     if (kind != KapyAccountKind.openRouter &&
         account.status == KapyAccountStatus.connected) {

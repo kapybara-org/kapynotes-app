@@ -1227,6 +1227,10 @@ class AppWeight {
   /// its own bold step, or the whole interface would ignore the setting.
   /// It rebuilds with the rest of the app on
   /// `didChangeAccessibilityFeatures`.
+  ///
+  /// A consequence, taken deliberately: with Bold Text on, every step from
+  /// 500 up reaches 700, so a section label and a page title read alike.
+  /// Weight stops carrying their difference there; size and colour still do.
   static double bold(double axis) {
     final features = WidgetsBinding.instance.platformDispatcher
         .accessibilityFeatures;
@@ -1254,7 +1258,9 @@ class AppWeight {
 /// don't shuffle as they change.
 TextStyle chromeStyle({
   required double size,
-  required double line,
+
+  /// The line box, or null to take the face's own.
+  required double? line,
   required double weight,
   required Color color,
   String? family,
@@ -1269,7 +1275,7 @@ TextStyle chromeStyle({
     fontFamily: family ?? AppFonts.ui,
     fontFamilyFallback: fallback ?? AppFonts.uiFallback,
     fontSize: size,
-    height: line / size,
+    height: line == null ? null : line / size,
     leadingDistribution: TextLeadingDistribution.even,
     fontWeight: AppWeight.named(axis),
     fontVariations: AppWeight.variations(axis, extra: extra),

@@ -22,7 +22,7 @@ class McpScope extends InheritedNotifier<McpService> {
       context.dependOnInheritedWidgetOfExactType<McpScope>()?.notifier;
 }
 
-const String mcpSectionLabel = 'MCP';
+const String mcpSectionLabel = 'AI apps';
 const KapyIconData mcpSectionIcon = KapyIcons.mcpServer;
 
 /// The line under MCP in Settings. A phone has no server of its own, so it
@@ -175,8 +175,7 @@ class _McpPaneState extends State<McpPane> {
           ],
         ),
         const SettingsNote(
-          'ChatGPT’s desktop app reaches MCP servers from OpenAI’s cloud, so it '
-          'can’t use one on this computer.',
+          'ChatGPT’s desktop app can’t connect to notes on this computer.',
         ),
         if (activity.isNotEmpty) ...[
           const SizedBox(height: SettingsMetrics.groupGap),
@@ -216,12 +215,10 @@ class _McpPaneState extends State<McpPane> {
   String _status(McpService service) {
     if (!service.enabled) return 'Off. No assistant can reach your notes';
     if (service.problem case final problem?) return problem;
-    final address = service.address!;
     if (service.moved) {
-      return 'Moved to $address because the old port was taken. Connect '
-          'your apps again';
+      return 'Moved, because the old spot was taken. Connect your apps again';
     }
-    return 'On $_computer only · $address';
+    return 'On $_computer only';
   }
 
   Widget _clientRow(McpService service, McpClientKind kind) {
@@ -234,7 +231,7 @@ class _McpPaneState extends State<McpPane> {
         : used != null
         ? 'Connected · used ${_ago(used)}'
         : connection != null
-        ? 'Waiting for its first request'
+        ? 'Waiting for the app to connect'
         : _idle(kind);
     final Widget trailing;
     if (open && snippet != null) {
@@ -273,9 +270,9 @@ class _McpPaneState extends State<McpPane> {
     McpClientKind.claudeCode => 'Paste one command in Terminal',
     McpClientKind.cursor => 'Opens Cursor to confirm',
     McpClientKind.claudeDesktop => 'Installs as a Claude extension',
-    McpClientKind.codex => 'For ~/.codex/config.toml',
+    McpClientKind.codex => 'Paste into Codex’s config file',
     McpClientKind.vsCode => 'Opens VS Code to confirm',
-    McpClientKind.other => 'Any app that connects to MCP over HTTP',
+    McpClientKind.other => 'Any other app that can connect on this computer',
   };
 
   static String _action(McpClientKind kind) => switch (kind) {
@@ -303,10 +300,10 @@ class _McpPaneState extends State<McpPane> {
               'Copied. Paste it in Terminal, then ask Claude about your notes';
         case McpClientKind.codex:
           snippet = setup.codex;
-          hint = 'Copied. Add it to ~/.codex/config.toml, then start Codex';
+          hint = 'Copied. Add it to Codex’s config file, then start Codex';
         case McpClientKind.other:
           snippet = setup.json;
-          hint = 'Copied. Add it where the app keeps its MCP servers';
+          hint = 'Copied. Add it where that app connects to other apps';
         case McpClientKind.cursor || McpClientKind.vsCode:
           final link = kind == McpClientKind.cursor
               ? setup.cursor

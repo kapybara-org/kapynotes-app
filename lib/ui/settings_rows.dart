@@ -300,7 +300,7 @@ class SettingsRowCopy extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: chromeStyle(
                   size: SettingsMetrics.titleSize,
-                  line: pointer ? 18 : SettingsMetrics.titleSize * 1.35,
+                  line: pointer ? 18 : null,
                   weight: AppWeight.rowTitle,
                   color: titleColor ?? palette.textPrimary,
                 ),

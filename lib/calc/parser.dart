@@ -479,6 +479,18 @@ class Parser {
 
   /// `to` and `->` always convert. `in` and `as` only convert when a unit
   /// actually follows, so `10 in` stays ten inches.
+  /// Whether the tokens at [offset] convert the value before them, as `in nm`
+  /// and `to m` do.
+  bool _convertsAfter(int offset) {
+    final lead = _peek(offset);
+    if (lead.type == TokenType.operator && lead.text == '->') return true;
+    if (lead.type != TokenType.identifier || _isBound(lead.text)) return false;
+    final word = lead.text.toLowerCase();
+    if (word == 'to' || word == 'into') return true;
+    if (word != 'in' && word != 'as') return false;
+    return _startsUnitSpec(offset + 1);
+  }
+
   bool _isConversionKeyword(Node value) {
     if (_current.type == TokenType.operator && _current.text == '->') {
       return true;
@@ -893,6 +905,13 @@ class Parser {
         return null;
       }
     } else if (calcKeywords.contains(word)) {
+      return null;
+    }
+    // `pm` and `am` are picometres and attometres, and also clock words.
+    // A minuted time cannot sit inside an expression (`4:30 pm - 3:00 pm`
+    // is nothing), so a whole hour cannot either, except where the line
+    // converts the length (`4 pm in nm`).
+    if ((word == 'am' || word == 'pm') && !_convertsAfter(1)) {
       return null;
     }
     // An identifier immediately followed by "(" is a call, never a unit.
