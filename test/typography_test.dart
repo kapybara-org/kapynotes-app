@@ -134,7 +134,6 @@ void main() {
     for (final size in [
       AppTypeScale.micro,
       AppTypeScale.keycap,
-      AppTypeScale.railLabel,
       AppTypeScale.badge,
       AppTypeScale.caption,
       AppTypeScale.small,

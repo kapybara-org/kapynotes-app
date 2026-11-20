@@ -1023,7 +1023,7 @@ class NotesListHeading extends StatelessWidget {
         children: [
           if (leading case final leading?) ...[
             leading,
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
           ],
           Expanded(
             child: Row(
@@ -1035,16 +1035,16 @@ class NotesListHeading extends StatelessWidget {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _handwritten(
-                        14,
-                        20,
-                        FontWeight.w500,
-                        palette.textSubheading,
+                      style: _figtree(
+                        AppTypeScale.body,
+                        16,
+                        FontWeight.w600,
+                        palette.textPrimary,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 7),
+                const SizedBox(width: 8),
                 Tooltip(
                   message: count == 1 ? '1 $noun' : '$count ${noun}s',
                   child: Text(
@@ -1394,23 +1394,23 @@ class _WhenChip extends StatelessWidget {
             onTap: onClear,
             behavior: HitTestBehavior.opaque,
             child: Container(
-              height: 28,
-              padding: const EdgeInsets.only(left: 8, right: 6),
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
                 color: palette.tonalBackground,
                 border: Border.all(color: palette.tonalKeyBackground),
-                borderRadius: BorderRadius.circular(AppRadii.control),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   KapyIcon(
                     KapyIcons.calendarOutlined,
-                    size: 14,
+                    size: 16,
                     strokeWidth: 1.8,
                     color: palette.tonalForeground,
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 4),
                   Flexible(
                     child: Text(
                       when.label,
@@ -1542,8 +1542,8 @@ class NotesListControls extends StatelessWidget {
               ),
               onTap: on ? null : () => onCardsChanged(forCards),
               child: Container(
-                width: 26,
-                height: 24,
+                width: 28,
+                height: 28,
                 decoration: on
                     ? BoxDecoration(
                         color: palette.selectedBackground,
@@ -1562,7 +1562,7 @@ class NotesListControls extends StatelessWidget {
                   forCards
                       ? KapyIcons.gridViewRounded
                       : KapyIcons.listViewRounded,
-                  size: 14,
+                  size: 16,
                   strokeWidth: 1.8,
                   color: on ? palette.textPrimary : palette.textTertiary,
                 ),
@@ -1631,15 +1631,15 @@ class NotesListControls extends StatelessWidget {
         const SizedBox(width: 4),
         if (onCardsChanged != null)
           Container(
-            padding: const EdgeInsets.all(2),
+            padding: const EdgeInsets.all(1),
             decoration: BoxDecoration(
               color: palette.cardBackground,
-              borderRadius: BorderRadius.circular(AppRadii.control),
+              border: Border.all(color: palette.controlBorder),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
                 segment(false, onCardsChanged),
-                const SizedBox(width: 2),
                 segment(true, onCardsChanged),
               ],
             ),
@@ -1867,8 +1867,11 @@ class _NotesFilterState extends State<_NotesFilter> {
       builder: (context, constraints) {
         if (constraints.maxWidth < 28) return const SizedBox.shrink();
         final roomy = constraints.maxWidth >= 72;
+        final bar = AppPlatform.hasPointer;
         // The padding, border, filter icon and chevron around the label.
-        const chrome = 9 + 8 + 2 + 14 + 6 + 6 + 13;
+        final chrome = bar
+            ? 8 + 8 + 2 + 16 + 4 + 4 + 12
+            : 9 + 8 + 2 + 14 + 6 + 6 + 13;
         final (:text, :dot) = roomy
             ? _label(style, constraints.maxWidth - chrome)
             : (text: widget.everything, dot: null);
@@ -1885,12 +1888,10 @@ class _NotesFilterState extends State<_NotesFilter> {
               onTap: _toggle,
               behavior: HitTestBehavior.opaque,
               child: Container(
-                height: 28,
-                margin: AppPlatform.hasPointer
-                    ? null
-                    : const EdgeInsets.symmetric(vertical: 8),
+                height: bar ? 32 : 28,
+                margin: bar ? null : const EdgeInsets.symmetric(vertical: 8),
                 padding: roomy
-                    ? const EdgeInsets.only(left: 9, right: 8)
+                    ? EdgeInsets.only(left: bar ? 8 : 9, right: 8)
                     : const EdgeInsets.symmetric(horizontal: 6),
                 decoration: BoxDecoration(
                   color: narrowed
@@ -1903,19 +1904,21 @@ class _NotesFilterState extends State<_NotesFilter> {
                         ? palette.tonalKeyBackground
                         : palette.controlBorder,
                   ),
-                  borderRadius: BorderRadius.circular(AppRadii.control),
+                  borderRadius: BorderRadius.circular(
+                    bar ? 8 : AppRadii.control,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     KapyIcon(
                       KapyIcons.filterRounded,
-                      size: 14,
+                      size: bar ? 16 : 14,
                       strokeWidth: 1.8,
                       color: narrowed ? style.color : palette.textSecondary,
                     ),
                     if (roomy) ...[
-                      const SizedBox(width: 6),
+                      SizedBox(width: bar ? 4 : 6),
                       if (dot != null) ...[
                         TagDot(tagColourOf(dot.colour.v), size: 7),
                         const SizedBox(width: 5),
@@ -1928,10 +1931,10 @@ class _NotesFilterState extends State<_NotesFilter> {
                           style: style,
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      SizedBox(width: bar ? 4 : 6),
                       KapyIcon(
                         KapyIcons.chevronDownRounded,
-                        size: 13,
+                        size: bar ? 12 : 13,
                         strokeWidth: 2,
                         color: narrowed
                             ? palette.tonalKeyText
@@ -2000,7 +2003,7 @@ class _NotesFilterState extends State<_NotesFilter> {
                                   _tagsRow,
                                 ),
                           tagsRow: _tagsRow,
-                          tagsTicked: widget.tags?.ticked ?? 0,
+                          tags: widget.tags ?? const TagFilter(),
                         ),
                         if (_openSubmenu case final submenu?) ...[
                           const SizedBox(width: 4),
@@ -2040,7 +2043,7 @@ class _FilterMenu extends StatelessWidget {
     super.key,
     required this.onTags,
     required this.tagsRow,
-    required this.tagsTicked,
+    required this.tags,
   });
 
   final NotesShow show;
@@ -2066,8 +2069,8 @@ class _FilterMenu extends StatelessWidget {
   final VoidCallback? onTags;
   final Key tagsRow;
 
-  /// How many of the submenu's rows are ticked, shown before its chevron.
-  final int tagsTicked;
+  /// What the Tags submenu has ticked, named before its chevron.
+  final TagFilter tags;
 
   @override
   Widget build(BuildContext context) {
@@ -2089,6 +2092,21 @@ class _FilterMenu extends StatelessWidget {
       height: 1,
       margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       color: palette.separator,
+    );
+    Widget heading(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      child: Semantics(
+        header: true,
+        child: Text(
+          label,
+          style: _figtree(
+            AppTypeScale.small,
+            16,
+            FontWeight.w500,
+            palette.textTertiary,
+          ),
+        ),
+      ),
     );
     final quiet = _figtree(
       AppTypeScale.small,
@@ -2120,6 +2138,7 @@ class _FilterMenu extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (offersShow) ...[
+            heading('Show'),
             choice(
               NotesShow.all,
               media == null ? KapyIcons.penRounded : KapyIcons.noteOutlined,
@@ -2174,6 +2193,7 @@ class _FilterMenu extends StatelessWidget {
           ],
           if (media != null) ...[
             if (offersShow || when != null) rule(),
+            heading('Media'),
             _MediaMenuRow(
               key: const ValueKey('media-filter-all'),
               label: 'All media',
@@ -2201,13 +2221,13 @@ class _FilterMenu extends StatelessWidget {
                 icon: KapyIcons.tagRounded,
                 chosen: false,
                 trailing: opens(
-                  tagsTicked > 0
-                      ? Text(
-                          '$tagsTicked',
+                  tags.ticked == 0
+                      ? null
+                      : _TickedTags(
                           key: const ValueKey('notes-filter-tags-ticked'),
+                          tags: tags,
                           style: quiet,
-                        )
-                      : null,
+                        ),
                 ),
                 onTap: onTags,
               ),
@@ -2215,6 +2235,47 @@ class _FilterMenu extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// The Tags row's value: one ticked tag by its dot and name, as the filter
+/// names it, or how many are ticked.
+class _TickedTags extends StatelessWidget {
+  const _TickedTags({super.key, required this.tags, required this.style});
+
+  final TagFilter tags;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final one = tags.ticked == 1;
+    final tag = one
+        ? [
+            for (final entry
+                in TagShelf.maybeOf(context)?.listed() ?? <TagEntry>[])
+              if (tags.ids.contains(entry.tag.id)) entry.tag,
+          ].firstOrNull
+        : null;
+    final name = tag?.name.v ?? (one && tags.none ? 'No tag' : null);
+    if (name == null) return Text('${tags.ticked}', style: style);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (tag != null) ...[
+          TagDot(tagColourOf(tag.colour.v), size: 7),
+          const SizedBox(width: 5),
+        ],
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 96),
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ],
     );
   }
 }

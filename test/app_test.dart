@@ -989,21 +989,32 @@ void main() {
         ),
         findsOneWidget,
       );
+      final ticked = find.byKey(const ValueKey('notes-filter-tags-ticked'));
+      await tester.tap(find.byKey(const ValueKey('tag-filter-none')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('1'));
+      expect(
+        find.descendant(of: ticked, matching: find.text('No tag')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('tag-filter-none')));
+      await tester.pumpAndSettle();
+      expect(ticked, findsNothing);
       await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
       await tester.pumpAndSettle();
       expect(count(), contains('2'));
       expect(find.byKey(const ValueKey('tag-filter-any')), findsNothing);
+      expect(
+        find.descendant(of: ticked, matching: find.text('Work')),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(ValueKey('tag-filter-${home.id}')));
       await tester.pumpAndSettle();
       expect(count(), contains('2'));
       expect(find.byKey(const ValueKey('tag-filter-any')), findsOneWidget);
       expect(
-        tester
-            .widget<Text>(
-              find.byKey(const ValueKey('notes-filter-tags-ticked')),
-            )
-            .data,
-        '2',
+        find.descendant(of: ticked, matching: find.text('2')),
+        findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('tag-filter-all')));
       await tester.pumpAndSettle();
@@ -6514,16 +6525,14 @@ void main() {
         ),
         findsOneWidget,
       );
-      // Drawn the way the design draws it: 30pt square, at the control radius.
-      expect(tester.getSize(hide), const Size.square(30));
+      // Drawn the way r3 draws it: 32pt square, at radius 8.
+      expect(tester.getSize(hide), const Size.square(32));
       final button = tester.widget<IconButton>(
         find.descendant(of: hide, matching: find.byType(IconButton)),
       );
       expect(
         button.style!.shape!.resolve({}),
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.control),
-        ),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       );
 
       await tester.tap(hide);

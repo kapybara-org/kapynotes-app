@@ -362,7 +362,9 @@ class Sidebar extends StatelessWidget {
             ),
             if (controls != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                padding: _besideRail
+                    ? const EdgeInsets.fromLTRB(16, 0, 16, 12)
+                    : const EdgeInsets.fromLTRB(18, 0, 18, 12),
                 child: controls,
               ),
             if (archiveMode && (notes.isNotEmpty || selecting))
@@ -688,14 +690,14 @@ extension on Sidebar {
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
     void heading(Widget heading) {
-      if (rows.isNotEmpty) gap(18);
+      if (rows.isNotEmpty) gap(24);
       rows.add(
         (_) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: heading,
         ),
       );
-      gap(cards ? 12 : 4);
+      gap(cards ? 8 : 4);
     }
 
     void section(Iterable<Note> notes, {bool pinned = false}) {
@@ -723,7 +725,7 @@ extension on Sidebar {
         final pair = list.skip(index).take(2).toList();
         rows.add(
           (context) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
               height: AppControlMetrics.scaleBar(
                 context,
@@ -747,7 +749,7 @@ extension on Sidebar {
 
     final pin = KapyIcon(
       KapyIcons.pinOutlined,
-      size: 15,
+      size: 16,
       strokeWidth: 1.9,
       color: palette.clay,
     );
@@ -822,7 +824,7 @@ extension on Sidebar {
             label: 'Pinned',
             count: groups.pinned.length,
             noun: noun,
-            height: 22,
+            height: 16,
             leading: pin,
             trailing:
                 pinned.length < groups.pinned.length &&
@@ -1710,14 +1712,15 @@ class SidebarWindowBar extends StatelessWidget {
       fontFamilyFallback: handwritten.fontFamilyFallback,
       fontVariations: handwritten.fontVariations,
       fontSize: AppTypeScale.spaceTitle,
-      height: 1.3,
+      height: 24 / 20,
       fontWeight: FontWeight.w500,
       color: palette.textPrimary,
     );
     final countText = [count, ?countLabel].join(' ');
     final countStyle = TextStyle(
       fontSize: AppTypeScale.small,
-      fontWeight: FontWeight.w400,
+      height: 16 / 12,
+      fontWeight: FontWeight.w500,
       color: palette.textTertiary,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
@@ -1745,7 +1748,7 @@ class SidebarWindowBar extends StatelessWidget {
           ),
           Positioned.fill(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   // New note gives up its keycap and then its word and the
@@ -1757,14 +1760,15 @@ class SidebarWindowBar extends StatelessWidget {
                       widthOf(title, titleStyle) -
                       8 -
                       8 -
-                      AppControlMetrics.tonalButtonHeight;
+                      32;
                   final chord = newNoteShortcut?.keycapLabel;
                   bool fits({String? shortcut}) =>
-                      room - 7 - widthOf(countText, countStyle) >=
+                      room - 8 - widthOf(countText, countStyle) >=
                       TonalButton.widthOf(
                         context,
                         'New $noun',
                         shortcut: shortcut,
+                        tall: true,
                       );
                   final keycap = chord != null && fits(shortcut: chord);
                   final label = fits();
@@ -1791,7 +1795,7 @@ class SidebarWindowBar extends StatelessWidget {
                                 ),
                               ),
                               if (label) ...[
-                                const SizedBox(width: 7),
+                                const SizedBox(width: 8),
                                 // The tooltip is what a screen reader hears:
                                 // "3 notes", where the bare figure would be
                                 // read as just a number.
@@ -1815,6 +1819,7 @@ class SidebarWindowBar extends StatelessWidget {
                       const SizedBox(width: 8),
                       TonalButton(
                         key: const ValueKey('sidebar-new-note'),
+                        tall: true,
                         icon: KapyIcons.addRounded,
                         label: label ? 'New $noun' : null,
                         shortcut: keycap ? newNoteShortcut?.keycapLabel : null,
@@ -1834,8 +1839,8 @@ class SidebarWindowBar extends StatelessWidget {
                         tooltip: hideShortcut == null
                             ? 'Hide notes'
                             : 'Hide notes  ${hideShortcut.displayLabel}',
-                        extent: AppControlMetrics.tonalButtonHeight,
-                        radius: AppRadii.control,
+                        extent: 32,
+                        radius: 8,
                         onPressed: onHide,
                         icon: KapyIcon(
                           KapyIcons.menuOpenRounded,
@@ -2399,7 +2404,7 @@ class SidebarSearchField extends StatelessWidget {
     if (besideRail) {
       final end = _end(palette, 20);
       return Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Semantics(
           button: true,
           label: searching ? 'Search, $query' : placeholder,
@@ -2412,10 +2417,10 @@ class SidebarSearchField extends StatelessWidget {
               child: Container(
                 key: const ValueKey('sidebar-search-box'),
                 height: 40,
-                padding: const EdgeInsets.only(left: 14, right: 10),
+                padding: const EdgeInsets.only(left: 12, right: 8),
                 decoration: BoxDecoration(
                   color: palette.surfaceBackground,
-                  border: Border.all(color: palette.controlBorder, width: 1.5),
+                  border: Border.all(color: palette.controlBorder),
                   borderRadius: BorderRadius.circular(AppRadii.surface),
                   boxShadow: [
                     BoxShadow(
@@ -2433,14 +2438,15 @@ class SidebarSearchField extends StatelessWidget {
                       strokeWidth: 1.8,
                       color: palette.textSecondary,
                     ),
-                    const SizedBox(width: 9),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         searching ? query : placeholder,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
+                          height: 16 / 13,
                           color: searching
                               ? palette.textPrimary
                               : palette.textTertiary,
