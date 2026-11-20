@@ -2326,6 +2326,28 @@ void main() {
     expect(field.controller.text, '${bulletPrefix}Task');
   });
 
+  testWidgets('the format bar offers Details on a task, drawn as lines', (
+    tester,
+  ) async {
+    _onPhone();
+    await tester.pumpWidget(harness('☐ Task'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 4);
+    await tester.pump();
+    await revealFormatting(tester);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('format-details')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is KapyIcon && widget.icon == KapyIcons.alignLeft,
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('creates, completes, and removes a checklist item', (
     tester,
   ) async {

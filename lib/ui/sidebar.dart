@@ -17,6 +17,7 @@ import '../sync/safety.dart';
 import '../sync/sharing.dart';
 import '../sync/spaces.dart';
 import '../sync/sync_api.dart' show SyncRefusedException;
+import 'collaborator_colors.dart';
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
 import 'editor/note_footer.dart' show typingStatusText;
@@ -64,10 +65,20 @@ const KapyIconData unhideIcon = KapyIcons.unlockRounded;
 /// A note belongs to whoever owns the space it is in. The person's own notes,
 /// shared or not, are one list: sharing a note does not make it any less
 /// theirs, so it stays where they left it and only gains the faces of the
-/// people it is open to. Notes other people own are the other list.
+/// people it is open to. The other list is everything shared, theirs and
+/// other people's, grouped by who it is shared with.
 enum SidebarTab { mine, shared }
 
-/// Which tab [note] is listed under.
+/// Whether [tab] lists [note]. A note of the person's own that they share is
+/// in both.
+bool sidebarTabLists(SidebarTab tab, Note note, Sharing sharing) =>
+    switch (tab) {
+      SidebarTab.mine => sidebarTabOf(note, sharing) == SidebarTab.mine,
+      SidebarTab.shared => note.isShared,
+    };
+
+/// The tab [note] belongs to, and is shown on when it is opened from
+/// somewhere other than the list.
 ///
 /// A shared note in a space this device has not heard the details of yet is
 /// counted as somebody else's: the owner's own spaces are always known here,
@@ -128,7 +139,8 @@ class Sidebar extends StatelessWidget {
     this.picks,
     this.onPicked,
     this.collaborators = const {},
-    this.onOpenSpace,
+    this.onOpenPerson,
+    this.onStartSharing,
     this.tab = SidebarTab.mine,
     this.onTabChanged,
     required this.windowBar,
@@ -236,9 +248,13 @@ class Sidebar extends StatelessWidget {
   /// somebody in it says so where its timestamp would be.
   final Map<String, List<Collaborator>> collaborators;
 
-  /// Opens a shared space's people from its heading. Null leaves the heading
-  /// a label.
-  final ValueChanged<String>? onOpenSpace;
+  /// Opens a person's page in Settings → Sharing, by address, from a heading
+  /// in the Shared list. Null leaves the heading a label.
+  final ValueChanged<String>? onOpenPerson;
+
+  /// Opens Settings → Sharing on Share with someone, from the empty Shared
+  /// list. Null leaves the button out.
+  final VoidCallback? onStartSharing;
 
   /// Whose notes the list is showing. Only read while the tabs are shown:
   /// with an account unlocked, outside the archive and Hidden Notes.
@@ -412,6 +428,8 @@ extension on Sidebar {
     if (drawings && query.trim().isEmpty) {
       return _DrawingsEmpty(onNewDrawing: onNewDrawing);
     }
+    final nothingShared = query.trim().isEmpty && _onSharedTab;
+    final onStartSharing = this.onStartSharing;
     return _SidebarEmpty(
       message: query.trim().isEmpty
           ? archiveMode
@@ -419,13 +437,22 @@ extension on Sidebar {
                 : hiddenMode
                 ? 'Hidden Notes is empty'
                 : _onSharedTab
-                ? 'Nothing shared with you yet'
+                ? 'Nothing shared yet'
                 : 'No notes yet'
           : drawings
           ? 'No matching drawings'
           : 'No matching notes',
-      detail: query.trim().isEmpty && _onSharedTab
-          ? 'Notes other people share with you appear here'
+      detail: nothingShared
+          ? 'Open a note and press Share. Only the people you choose can '
+                'see it.'
+          : null,
+      action: nothingShared && onStartSharing != null
+          ? TonalButton(
+              key: const ValueKey('sidebar-empty-share'),
+              icon: KapyIcons.personAddRounded,
+              label: 'Share with someone',
+              onPressed: onStartSharing,
+            )
           : null,
     );
   }
@@ -777,9 +804,38 @@ extension on Sidebar {
     if (pinnedOnly) return groups.pinned;
     return [
       ..._shownPinned(groups),
-      for (final id in groups.spaceOrder) ...groups.bySpace[id]!,
+      for (final key in groups.groupOrder) ...groups.byGroup[key]!,
       ...groups.mine,
     ];
+  }
+
+  /// The heading over one group of the Shared list. A tap opens the page of
+  /// the first person it names: the owner of a From group, and the first by
+  /// name of a group of several, whose page lists the notes they share with
+  /// the others too.
+  Widget _groupHeading(SidebarNoteGroups groups, String key) {
+    final notes = groups.byGroup[key]!;
+    final group = groups.shareGroups[key];
+    final onOpenPerson = this.onOpenPerson;
+    return _ShareGroupHeader(
+      key: ValueKey('share-group-$key'),
+      group: group,
+      title:
+          group?.title ??
+          sharing?.spaceOf(notes.first)?.titleFor(sharing!.userId) ??
+          'Shared',
+      present: {
+        for (final note in notes)
+          for (final person in collaborators[note.id] ?? const [])
+            person.userId,
+      },
+      attention: {
+        for (final note in notes) ?note.spaceId,
+      }.any((id) => sharing?.trust.warningsFor(id).isNotEmpty ?? false),
+      onTap: group == null || onOpenPerson == null
+          ? null
+          : () => onOpenPerson(group.people.first.email),
+    );
   }
 
   /// The list beside the spaces rail: Pinned, then each shared space, then
@@ -981,29 +1037,12 @@ extension on Sidebar {
         heading(const _PhoneHeading('Pinned'));
         section(groups.pinned, pinned: true);
       }
-      for (final id in groups.spaceOrder) {
-        heading(
-          _SpaceHeader(
-            key: ValueKey('space-header-$id'),
-            space: sharing?.spaceById(id),
-            currentUserId: sharing?.userId ?? '',
-            present: {
-              for (final note in groups.bySpace[id]!)
-                for (final person in collaborators[note.id] ?? const [])
-                  person.userId,
-            },
-            attention:
-                id != null &&
-                (sharing?.trust.warningsFor(id).isNotEmpty ?? false),
-            onTap: id == null || onOpenSpace == null
-                ? null
-                : () => onOpenSpace!(id),
-          ),
-        );
-        section(groups.bySpace[id]!);
+      for (final key in groups.groupOrder) {
+        heading(_groupHeading(groups, key));
+        section(groups.byGroup[key]!);
       }
       if (groups.mine.isNotEmpty) {
-        if (groups.pinned.isNotEmpty || groups.spaceOrder.isNotEmpty) {
+        if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
           heading(const _PhoneHeading('Recent'));
         } else {
           gap(8);
@@ -1032,28 +1071,12 @@ extension on Sidebar {
         );
         section(pinned, pinned: true);
       }
-      for (final id in groups.spaceOrder) {
-        heading(
-          _SpaceHeader(
-            key: ValueKey('space-header-$id'),
-            space: sharing?.spaceById(id),
-            currentUserId: sharing?.userId ?? '',
-            present: {
-              for (final note in groups.bySpace[id]!)
-                for (final person in collaborators[note.id] ?? const [])
-                  person.userId,
-            },
-            attention:
-                id != null &&
-                (sharing?.trust.warningsFor(id).isNotEmpty ?? false),
-            onTap: id == null || onOpenSpace == null
-                ? null
-                : () => onOpenSpace!(id),
-          ),
-        );
-        section(groups.bySpace[id]!);
+      for (final key in groups.groupOrder) {
+        heading(_groupHeading(groups, key));
+        section(groups.byGroup[key]!);
       }
-      if (groups.mine.isNotEmpty || groups.pinned.isEmpty) {
+      if (groups.mine.isNotEmpty ||
+          (groups.pinned.isEmpty && groups.byGroup.isEmpty)) {
         heading(
           NotesListHeading(
             key: const ValueKey('sidebar-notes-heading'),
@@ -1361,8 +1384,8 @@ class SidebarNoteGroups {
   }) : pinned = specialMode
            ? const []
            : notes.where((note) => pinnedNoteIds.contains(note.id)).toList(),
-       // Behind the tabs the person's own shared notes sit among the rest,
-       // and only other people's are gathered under their spaces.
+       // Behind the tabs the person's own shared notes sit among the rest
+       // of theirs, and are gathered under their people only in Shared.
        hasSharedSections = switch (tab) {
          SidebarTab.mine => false,
          SidebarTab.shared => sharing != null && notes.isNotEmpty,
@@ -1376,32 +1399,36 @@ class SidebarNoteGroups {
         ? remaining.where((note) => !note.isShared).toList()
         : remaining;
     if (hasSharedSections) {
+      // In the order the notes come, so the group with the latest change
+      // leads. A note whose people this device cannot name yet keeps to its
+      // own space.
       for (final note in remaining) {
-        if (note.isShared) {
-          bySpace.putIfAbsent(note.spaceId, () => []).add(note);
-        }
+        if (!note.isShared) continue;
+        final group = sharing?.groupOf(note);
+        final key = group?.key ?? 'space:${note.spaceId}';
+        shareGroups.putIfAbsent(key, () => group);
+        byGroup.putIfAbsent(key, () => []).add(note);
       }
     }
-    spaceOrder = <String?>[
-      if (sharing != null)
-        for (final space in sharing.teams)
-          if (bySpace.containsKey(space.id)) space.id,
-      for (final id in bySpace.keys)
-        if (sharing == null || !sharing.teams.any((space) => space.id == id))
-          id,
-    ];
   }
 
   final List<Note> pinned;
   late final List<Note> mine;
-  final Map<String?, List<Note>> bySpace = {};
-  late final List<String?> spaceOrder;
+
+  /// The shared notes under each heading, by [ShareGroup.key], in the order
+  /// the headings come.
+  final Map<String, List<Note>> byGroup = {};
+
+  /// What each heading names; null for a note in a space nobody else is in
+  /// yet, or one this device has not heard about.
+  final Map<String, ShareGroup?> shareGroups = {};
   final bool hasSharedSections;
 
-  /// Every note in the order the list paints them.
+  Iterable<String> get groupOrder => byGroup.keys;
+
   List<Note> get displayOrder => [
     ...pinned,
-    for (final id in spaceOrder) ...bySpace[id]!,
+    for (final key in groupOrder) ...byGroup[key]!,
     ...mine,
   ];
 }
@@ -1650,7 +1677,7 @@ class SidebarWindowBar extends StatelessWidget {
 ///
 /// Where they are seen: an invitation used to wait in Settings › Sharing,
 /// which nobody opens to find out whether somebody has shared something with
-/// them. Accepting from here opens Shared with Me, where the notes arrive.
+/// them. Accepting from here opens Shared, where the notes arrive.
 ///
 /// Report and Block stay one tap away behind the card's menu, as they are in
 /// Settings: an invitation is somebody else's words arriving unasked, and the
@@ -1816,7 +1843,9 @@ class _InvitationCard extends StatelessWidget {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       minimumSize: Size(0, touch ? 34 : 26),
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      textStyle: TextStyle(fontSize: AppTypeScale.small),
+      textStyle: Theme.of(
+        context,
+      ).textTheme.labelLarge?.copyWith(fontSize: AppTypeScale.small),
     );
     return Padding(
       padding: touch
@@ -1923,7 +1952,9 @@ class _InvitationCard extends StatelessWidget {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     minimumSize: Size(0, touch ? 34 : 26),
                     padding: const EdgeInsets.symmetric(horizontal: 14),
-                    textStyle: TextStyle(fontSize: AppTypeScale.small),
+                    textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontSize: AppTypeScale.small,
+                    ),
                   ),
                   onPressed: busy ? null : onAccept,
                   child: const Text('Accept'),
@@ -2783,92 +2814,41 @@ String? presenceStatusText(List<String> names) => switch (names.length) {
   _ => '${names[0]} and ${names.length - 1} others are here',
 };
 
-List<SpaceMember> _spaceMembersForAccessList(Space space) {
-  final members = space.members.toList()
-    ..sort((a, b) {
-      if (a.isOwner != b.isOwner) return a.isOwner ? -1 : 1;
-      return a.joinedAt.compareTo(b.joinedAt);
-    });
-  return members;
-}
-
-List<SpaceInvite> _spaceInvitesForAccessList(Space space) {
-  final invites = space.invites.toList()
-    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-  return invites;
-}
-
-String _spaceMemberAccessLine(SpaceMember member, String currentUserId) =>
-    '${member.displayName}'
-    '${member.userId == currentUserId ? ' (you)' : ''}'
-    ' · ${member.role.accessLabel}';
-
-String _spaceAccessTooltip(Space space, String currentUserId) {
-  final members = _spaceMembersForAccessList(space);
-  final invites = _spaceInvitesForAccessList(space);
-  return [
-    'People with access',
-    for (final member in members) _spaceMemberAccessLine(member, currentUserId),
-    if (invites.isNotEmpty) ...[
-      '',
-      invites.length == 1
-          ? 'Invited, not joined yet'
-          : 'Invited, not joined yet (${invites.length})',
-      for (final invite in invites)
-        '${invite.email} · ${invite.role.accessLabel}',
-    ],
-  ].join('\n');
-}
-
-String _spaceAccessSemantics(Space space, String currentUserId) => [
-  'People with access',
-  for (final member in _spaceMembersForAccessList(space))
-    _spaceMemberAccessLine(member, currentUserId),
-  for (final invite in _spaceInvitesForAccessList(space))
-    '${invite.email}, invited but not joined, ${invite.role.accessLabel}',
-].join('. ');
-
-/// The heading over a shared space's notes: who it is shared with, and their
-/// faces at the far end.
-///
-/// An owner sees "Shared with Priya and 4 others" while a recipient sees
-/// "Shared by Priya", unless somebody gave the space a name of its own. The
-/// heading opens the space, which is where its people are managed.
-class _SpaceHeader extends StatelessWidget {
-  const _SpaceHeader({
+/// The heading over a group of the Shared list: whose notes they are, and
+/// their faces at the far end, ringed while they are in one of the notes.
+/// The heading opens the page of the person it names in Settings → Sharing,
+/// which is where what they can see is changed.
+class _ShareGroupHeader extends StatelessWidget {
+  const _ShareGroupHeader({
     super.key,
-    required this.space,
-    required this.currentUserId,
+    required this.group,
+    required this.title,
     this.present = const {},
     this.attention = false,
     this.onTap,
   });
 
-  /// Null for a space this device has not heard the details of yet.
-  final Space? space;
-  final String currentUserId;
+  /// Null for notes whose people this device cannot name yet.
+  final ShareGroup? group;
+  final String title;
 
   /// Everyone in one of its notes right now, by account.
   final Set<String> present;
 
-  /// A member's key changed and nobody has looked yet.
+  /// A member's safety code changed and nobody has looked yet.
   final bool attention;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final space = this.space;
-    final title = space?.titleFor(currentUserId) ?? 'Shared';
-    final people = space?.peopleExcept(currentUserId) ?? const <SpacePerson>[];
-    final accessTooltip = space == null
-        ? null
-        : _spaceAccessTooltip(space, currentUserId);
+    final brightness = palette.brightness;
+    final people = group?.people ?? const <SharePerson>[];
     final heading = Row(
       children: [
         if (attention) ...[
           Tooltip(
-            message: "A member's key changed",
+            message: "A member's safety code changed",
             child: KapyIcon(
               KapyIcons.warningRounded,
               size: AppControlMetrics.iconInline,
@@ -2885,45 +2865,47 @@ class _SpaceHeader extends StatelessWidget {
           const SizedBox(width: 5),
         ],
         Expanded(
-          child: accessTooltip == null
-              ? Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.caption,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 0.3,
-                    color: palette.textTertiary,
-                  ),
-                )
-              : Tooltip(
-                  key: ValueKey('space-access-tooltip-${space!.id}'),
-                  message: accessTooltip,
-                  textAlign: TextAlign.left,
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.caption,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 0.3,
-                      color: palette.textTertiary,
-                    ),
-                  ),
-                ),
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.3,
+              color: palette.textTertiary,
+            ),
+          ),
         ),
-        if (space != null && people.isNotEmpty) ...[
+        if (people.isNotEmpty) ...[
           const SizedBox(width: 8),
-          SpacePeopleAvatars(
-            space: space,
-            currentUserId: currentUserId,
-            present: present,
+          AvatarStack(
+            keyPrefix: 'share-group-avatar-${group!.key}',
+            extent: SpacePeopleAvatars.headingExtent,
+            avatars: [
+              for (final person in people)
+                StackedAvatar(
+                  id: person.userId ?? person.email,
+                  seed: person.userId ?? person.email,
+                  name: person.name,
+                  image: person.image,
+                  pending: person.isInvited,
+                  highlight: present.contains(person.userId)
+                      ? collaboratorColor(person.userId!, on: brightness)
+                      : null,
+                  tooltip: person.isInvited
+                      ? '${person.name}\nInvited'
+                      : '${person.name}\n${person.email}',
+                ),
+            ],
           ),
         ],
       ],
     );
+    final here = [
+      for (final person in people)
+        if (present.contains(person.userId)) person.firstName,
+    ];
 
     return Padding(
       // As much room under it as a section heading has, outside the part a
@@ -2933,9 +2915,11 @@ class _SpaceHeader extends StatelessWidget {
         header: true,
         button: onTap != null,
         onTap: onTap,
-        label: space == null
-            ? title
-            : '$title. ${_spaceAccessSemantics(space, currentUserId)}',
+        label: [
+          title,
+          ?presenceStatusText(here),
+          if (attention) "A member's safety code changed",
+        ].join('. '),
         child: ExcludeSemantics(
           child: InkWell(
             onTap: onTap,
@@ -3031,12 +3015,15 @@ class _DrawingsEmpty extends StatelessWidget {
 }
 
 class _SidebarEmpty extends StatelessWidget {
-  const _SidebarEmpty({required this.message, this.detail});
+  const _SidebarEmpty({required this.message, this.detail, this.action});
 
   final String message;
 
   /// A quieter line under [message], saying what will fill the space.
   final String? detail;
+
+  /// The one way to start filling it.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -3063,6 +3050,10 @@ class _SidebarEmpty extends StatelessWidget {
                 color: context.palette.textTertiary,
               ),
             ),
+          ],
+          if (action case final action?) ...[
+            const SizedBox(height: 16),
+            action,
           ],
         ],
       ),
