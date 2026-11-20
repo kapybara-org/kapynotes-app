@@ -957,7 +957,10 @@ void main() {
     testWidgets('a Free account is told sharing is part of Pro, before it '
         'types', (tester) async {
       final session = FakeSession()..signIn(alice.userId);
-      final billing = billingFor(session, FakeBillingApi());
+      final billing = billingFor(
+        session,
+        FakeBillingApi()..answer = () => entitlementsFor(sync: false),
+      );
       addTearDown(billing.dispose);
       late Note note;
       await tester.runAsync(() async {
@@ -973,6 +976,27 @@ void main() {
       expect(find.textContaining('don’t need Pro'), findsOneWidget);
       expect(find.byKey(const ValueKey('share-email')), findsNothing);
       expect(find.text('See Pro'), findsOneWidget);
+    });
+
+    testWidgets('a Free account the server lets share is not stopped', (
+      tester,
+    ) async {
+      final session = FakeSession()..signIn(alice.userId);
+      final billing = billingFor(session, FakeBillingApi());
+      addTearDown(billing.dispose);
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+        await billing.refresh();
+      });
+      expect(billing.hasPro, isFalse);
+      expect(billing.entitlements!.sharing, isTrue);
+
+      await openSheet(tester, note, alice, billing: billing);
+      expect(find.byKey(const ValueKey('share-free')), findsNothing);
+      expect(find.byKey(const ValueKey('share-email')), findsOneWidget);
     });
 
     testWidgets('offline disables the actions and says the note is safe', (

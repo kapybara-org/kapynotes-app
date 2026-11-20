@@ -724,14 +724,11 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     );
   }
 
-  /// Known-Pro only: an account whose plan has not been answered yet is not
-  /// told sharing is closed to it.
-  bool get _outOfPro {
-    final billing = widget.billing;
-    if (_space != null || billing == null) return false;
-    if (billing.entitlements == null) return false;
-    return !billing.hasPro;
-  }
+  /// Only when the server says this account can't share: an account whose
+  /// plan has not been answered yet, or that the server lets share without
+  /// Pro, is not told sharing is closed to it.
+  bool get _outOfPro =>
+      _space == null && widget.billing?.entitlements?.sharing == false;
 
   List<Widget> _ownerBody(
     BuildContext context,
