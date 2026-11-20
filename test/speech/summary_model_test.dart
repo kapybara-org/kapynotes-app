@@ -112,10 +112,13 @@ void main() {
         prefs: VoicePrefs(store)..load(),
       );
 
-      expect(find.text('Gemma 4 E2B · 2.6 GB download'), findsOneWidget);
+      expect(find.text('Summary model · 2.6 GB download'), findsOneWidget);
       // The licence has to be named and reachable, not merely implied.
       expect(find.text('Apache-2.0'), findsOneWidget);
-      expect(find.textContaining('2B effective parameters'), findsOneWidget);
+      expect(
+        find.textContaining('Writes summaries on this device'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a recogniser-less build still offers transcription', (
@@ -269,7 +272,7 @@ void main() {
         models.stateOf(gemma4E2bIt).status,
         LocalModelStatus.waitingForWifi,
       );
-      expect(find.text('Gemma 4 E2B · waiting for Wi-Fi'), findsOneWidget);
+      expect(find.text('Summary model · waiting for Wi-Fi'), findsOneWidget);
     });
 
     testWidgets('dismissing the question downloads nothing', (tester) async {

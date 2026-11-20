@@ -36,29 +36,53 @@ class KapyModel {
   /// model id ('gpt-5.5', 'sonnet', 'google/gemini-3.8-flash').
   final String id;
 
-  /// What the picker shows: 'Apple Intelligence', 'Gemma', 'Kapy AI Cloud',
-  /// 'GPT-5.5', 'Claude Sonnet 5.5', 'Gemini 3.8 Flash'.
+  /// Stored with the chat. The picker shows [plainLabel], never this, so a
+  /// name saved by an older build does not reach the screen.
   final String label;
 
-  /// The quiet line under an answer: 'On this device', 'Kapy AI Cloud',
-  /// 'GPT-5.5 · Codex on this Mac', 'Sonnet 5.5 · Claude Code on this Mac',
-  /// 'Gemini 3.8 Flash · your OpenRouter key'. [device] is the platform's
-  /// word for the computer ('Mac', 'PC').
+  /// What a person sees: the feature, not the model behind it.
+  String get plainLabel => switch (kind) {
+    KapyModelKind.device =>
+      id == 'apple' ? 'Apple Intelligence' : 'On this device',
+    KapyModelKind.cloud => 'Kapy AI Cloud',
+    KapyModelKind.codex => 'Codex',
+    KapyModelKind.claudeCode => switch (id) {
+      'opus' => 'Claude Code, deeper',
+      _ => 'Claude Code',
+    },
+    KapyModelKind.openRouter => switch (id) {
+      'google/gemini-3.8-flash' => 'Fast',
+      'openai/gpt-5.5' => 'Strong',
+      'anthropic/claude-sonnet-5.5' => 'Careful',
+      _ => 'Your key',
+    },
+  };
+
+  /// The quiet line under an answer. [device] is the platform's word for the
+  /// computer ('Mac', 'PC').
   String sourceLine(String device) => switch (kind) {
     KapyModelKind.device => 'On this device',
     KapyModelKind.cloud => 'Kapy AI Cloud',
-    KapyModelKind.codex => '$label · ${whereItRuns(device)}',
-    KapyModelKind.claudeCode =>
-      '${label.replaceFirst('Claude ', '')} · ${whereItRuns(device)}',
-    KapyModelKind.openRouter => '$label · your OpenRouter key',
+    KapyModelKind.codex => 'Codex on this $device',
+    KapyModelKind.claudeCode => 'Claude Code on this $device',
+    KapyModelKind.openRouter => 'Through your key',
   };
 
-  /// The picker's subline for an account model: 'Codex on this Mac',
-  /// 'Claude Code on this Mac', 'Your OpenRouter key'.
+  /// The picker's subline for the models a key offers. A name alone does not
+  /// say which one to pick, so each says what it is good for. Null when the
+  /// model is not one of these.
+  String? get goodFor => switch (id) {
+    'google/gemini-3.8-flash' => 'Quick answers and short notes',
+    'openai/gpt-5.5' => 'Harder questions and planning',
+    'anthropic/claude-sonnet-5.5' => 'Long writing and summaries',
+    _ => null,
+  };
+
+  /// The picker's subline for an account model.
   String whereItRuns(String device) => switch (kind) {
     KapyModelKind.codex => 'Codex on this $device',
     KapyModelKind.claudeCode => 'Claude Code on this $device',
-    KapyModelKind.openRouter => 'Your OpenRouter key',
+    KapyModelKind.openRouter => 'Through your key',
     KapyModelKind.device => 'Answers stay on this $device',
     KapyModelKind.cloud => 'Kapy AI Cloud',
   };

@@ -20,7 +20,6 @@ import 'package:kapy_notes/speech/local_models.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
-
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'local-engine-row-test.json');
   @override
@@ -176,7 +175,7 @@ void main() {
     expect(find.byKey(const ValueKey('local-transcription-line')), findsOne);
     expect(find.byKey(const ValueKey('local-summary-line')), findsOne);
     expect(find.text('Not available on this device'), findsNWidgets(2));
-    expect(find.text('Parakeet TDT 0.6B v3'), findsNothing);
+    expect(find.text('Speech model'), findsNothing);
     expect(find.text('Download'), findsNothing);
   });
 
@@ -194,9 +193,12 @@ void main() {
 
     // The name and the size, which are the two anybody weighs, and the
     // attribution the licence asks for.
-    expect(find.text('Parakeet TDT 0.6B v3 · 670 MB download'), findsOneWidget);
+    expect(find.text('Speech model · 670 MB download'), findsOneWidget);
     expect(find.text('CC-BY-4.0'), findsOneWidget);
-    expect(find.textContaining('600M parameters'), findsOneWidget);
+    expect(
+      find.textContaining('Turns speech into text on this device'),
+      findsOneWidget,
+    );
 
     // Nothing downloaded yet, so this device cannot be chosen and the one
     // available action is to download its engine.
@@ -296,7 +298,10 @@ void main() {
 SemanticsProperties _segment(WidgetTester tester, String key) => tester
     .widget<Semantics>(
       find
-          .ancestor(of: find.byKey(ValueKey(key)), matching: find.byType(Semantics))
+          .ancestor(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(Semantics),
+          )
           .first,
     )
     .properties;
