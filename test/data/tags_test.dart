@@ -210,6 +210,41 @@ void main() {
     });
   });
 
+  group('a slow clock', () {
+    test('a rename and a recolour outrank the value they replace', () {
+      final ahead = clock.millisecondsSinceEpoch + 3600 * 1000;
+      final id = '0195f0d0-aaaa-4bbb-8ccc-00000000000a';
+      tags.applyRemoteTag(remoteTag(id, 'Work', at: ahead), ahead);
+      expect(tags.rename(id, 'Office'), isTrue);
+      tags.recolour(id, 'rose');
+      final payload = owedPayload(id)!;
+      expect((payload['name'] as Map)['at'], ahead + 1);
+      expect((payload['colour'] as Map)['at'], ahead + 1);
+      expect((payload['name'] as Map)['v'], 'Office');
+    });
+
+    test(
+      'a note whose tags record was deleted ahead of this clock is tagged past that delete',
+      () {
+        final ahead = clock.millisecondsSinceEpoch + 3600 * 1000;
+        final work = tags.create('Work')!;
+        tags.setTags(noteId, [work.id]);
+        acknowledgeAll();
+        tags.applyRemoteDelete('record', ahead, noteId: noteId);
+        expect(tags.tagsOf(noteId), isEmpty);
+        expect(tags.noteIds, [noteId], reason: 'the delete is still ahead');
+
+        expect(tags.setTags(noteId, [work.id]), isTrue);
+        final owed = tags.owed.single;
+        expect(owed.updatedAt, ahead + 1);
+        expect((owed.payload!['tags'] as Map)[work.id], {
+          'v': true,
+          'at': ahead + 1,
+        });
+      },
+    );
+  });
+
   group('delete and undo', () {
     test(
       'a deleted tag stays on its notes, read past; undo puts it back in place',

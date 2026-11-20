@@ -15,8 +15,11 @@ class TemporalExpressions {
     r'^(.+?)\s+(time|now)$',
     caseSensitive: false,
   );
+
+  /// Minutes are optional only with am or pm, so `4pm` is a time and not
+  /// 4 picometres. A bare hour stays a number.
   static final RegExp _clockPattern = RegExp(
-    r'^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?(?:\s+(.+))?$',
+    r'^(\d{1,2})(?::(\d{2})(?::(\d{2}))?)?\s*(am|pm)?(?:\s+(.+))?$',
     caseSensitive: false,
   );
   static final RegExp _targetZonePattern = RegExp(
@@ -123,9 +126,12 @@ class TemporalExpressions {
     if (match == null) return null;
 
     var hour = int.parse(match.group(1)!);
-    final minute = int.parse(match.group(2)!);
-    final second = int.tryParse(match.group(3) ?? '') ?? 0;
+    final minuteRaw = match.group(2);
     final meridiem = match.group(4)?.toLowerCase();
+    // `4` on its own is a number. `4pm` is four o'clock.
+    if (minuteRaw == null && meridiem == null) return null;
+    final minute = minuteRaw == null ? 0 : int.parse(minuteRaw);
+    final second = int.tryParse(match.group(3) ?? '') ?? 0;
     if (minute > 59 || second > 59) return null;
     if (meridiem != null) {
       if (hour < 1 || hour > 12) return null;

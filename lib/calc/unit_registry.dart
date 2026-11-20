@@ -8,7 +8,6 @@ import 'unit.dart';
 class UnitRegistry {
   final Map<String, List<UnitDef>> _byAlias = {};
   final Map<String, List<UnitDef>> _byExactAlias = {};
-  final Set<String> _currencyCodes = {};
 
   UnitRegistry({Map<String, double> ratesPerUsd = const {}}) {
     for (final def in _standardUnits) {
@@ -16,10 +15,6 @@ class UnitRegistry {
     }
     _registerCurrencies(ratesPerUsd);
   }
-
-  Set<String> get currencyCodes => _currencyCodes;
-
-  bool get hasCurrencies => _currencyCodes.isNotEmpty;
 
   /// Resolves a written unit name, tolerating case and simple plurals.
   UnitDef? lookup(String raw, {Dimension? dimension}) {
@@ -124,7 +119,6 @@ class UnitRegistry {
       category: 'currency',
     );
     _add(usd);
-    _currencyCodes.add('USD');
 
     ratesPerUsd.forEach((code, rate) {
       final upper = code.toUpperCase();
@@ -142,7 +136,6 @@ class UnitRegistry {
       );
       _add(def);
       if (wordLike) (_byExactAlias[upper] ??= []).add(def);
-      _currencyCodes.add(upper);
     });
   }
 

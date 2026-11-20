@@ -153,11 +153,6 @@ class FugueText {
 
   FugueNode? node(NodeId id) => _byId[id.key];
 
-  FugueNode? nodeAtVisible(int offset) {
-    final nodes = visible;
-    return offset >= 0 && offset < nodes.length ? nodes[offset] : null;
-  }
-
   /// Position in document order; -1 for the root.
   int indexOf(FugueNode node) {
     if (node.isRoot) return -1;

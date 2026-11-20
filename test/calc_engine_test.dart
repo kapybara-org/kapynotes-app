@@ -988,6 +988,46 @@ void main() {
       expect(line('Meeting at 12:30'), isNull);
     });
 
+    test('reads a whole hour as a clock time, not a length', () {
+      engine = clockEngine();
+      expect(line('4pm'), '4:00 PM IST');
+      expect(line('4 pm'), '4:00 PM IST');
+      expect(line('7am'), '7:00 AM IST');
+      expect(line('12am'), '12:00 AM IST');
+      expect(line('11 PM'), '11:00 PM IST');
+      expect(line('4 pm in New York'), '4:00 PM EDT');
+      expect(line('Thursday 4pm'), isNull);
+      expect(line('Meeting at 4 pm'), isNull);
+    });
+
+    test(
+      'still converts lengths written out, and a compact pm used as one',
+      () {
+        expect(line('4 picometres in m'), '4e-12 m');
+        expect(line('4 picometers in meters'), '4e-12 m');
+        expect(line('1 picometer in meters'), '1e-12 m');
+        // A real zone wins (`4 pm in New York` above). `nm` is not a zone,
+        // so the compact unit still converts.
+        expect(line('4 pm in nm'), '0.004 nm');
+        expect(line('4pm in nm'), '0.004 nm');
+      },
+    );
+
+    test('a whole-hour time in an expression matches a minuted one', () {
+      engine = clockEngine();
+      expect(line('4:00 pm - 3:00 pm'), isNull);
+      expect(line('4:30 pm * 2'), isNull);
+      expect(line('4 pm - 3 pm'), isNull);
+      expect(line('4pm - 3pm'), isNull);
+      expect(line('4pm*2'), isNull);
+      expect(line('4 pm * 2'), isNull);
+      expect(line('4 pm to 6 pm'), '2 h');
+      expect(line('4 pm in nm'), '0.004 nm');
+      expect(line('4 pm to m'), '4e-12 m');
+      expect(line('4 picometres in m'), '4e-12 m');
+      expect(line('4 picometers in meters'), '4e-12 m');
+    });
+
     test('converts current and stated times between named zones', () {
       engine = clockEngine();
       expect(line('PST time'), '5:00 AM PDT');

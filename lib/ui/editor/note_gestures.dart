@@ -18,7 +18,6 @@ class NoteGestures {
 
   /// Whether the gesture under way began with a finger or a stylus, which
   /// the toolbar shows for and a mouse doesn't.
-  bool get showsToolbar => _showsToolbar;
   bool _showsToolbar = true;
 
   /// The same for the selection handles, which a secondary tap shows the

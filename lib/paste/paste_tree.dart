@@ -171,24 +171,6 @@ class PasteImage {
   }
 
   static const double referenceColumnWidth = 720;
-
-  Map<String, Object?> toMessage() => {
-    'src': src,
-    'bytes': bytes,
-    'mime': mime,
-    'alt': alt,
-    'width': width,
-    'height': height,
-  };
-
-  static PasteImage fromMessage(Map<Object?, Object?> raw) => PasteImage(
-    src: raw['src'] as String?,
-    bytes: raw['bytes'] as Uint8List?,
-    mime: raw['mime'] as String?,
-    alt: raw['alt'] as String? ?? '',
-    width: (raw['width'] as num?)?.toDouble(),
-    height: (raw['height'] as num?)?.toDouble(),
-  );
 }
 
 /// What a paste puts into a note: its text, the styles a note without
