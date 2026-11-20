@@ -154,6 +154,15 @@ class Sharing extends ChangeNotifier {
     return spaceOf(note)?.canEdit ?? false;
   }
 
+  /// Whether this account may take [note] out of its own notes: any note it
+  /// may change, and any note somebody else shares with it, view-only too,
+  /// since that only takes it out of this account's notes.
+  bool mayRemove(Note note) {
+    final space = spaceOf(note);
+    if (space != null && space.isTeam && !space.isOwner) return true;
+    return canEdit(note);
+  }
+
   /// Where an invitation link lands. The token is useless to anyone who
   /// cannot sign in as the invited address.
   Uri inviteLink(String token) =>
