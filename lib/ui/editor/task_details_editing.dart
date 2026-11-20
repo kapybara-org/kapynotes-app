@@ -57,8 +57,7 @@ bool _insertedNewline(TextEditingValue oldValue, TextEditingValue newValue) {
 /// Whether [caret] is in a task's details, including the empty line just
 /// opened under it. The sage rule uses this.
 bool caretInTaskDetails(String text, int caret) {
-  if (text.isEmpty || caret < 0 || caret > text.length) return false;
-  final line = markdownLinePrefix(text, caret.clamp(0, text.length));
+  if (text.isEmpty || caret < 0 || caret > text.length) return false;  final line = markdownLinePrefix(text, caret.clamp(0, text.length));
   return _detailsOwner(text, line) != null;
 }
 
@@ -283,35 +282,22 @@ bool _lineIsEmpty(String text, MarkdownLinePrefix line) {
   return text.substring(from, line.lineEnd).trim().isEmpty;
 }
 
-/// The task whose details [line] is in, or whose details [line] is the empty
-/// line at the end of. Null when the line is ordinary writing.
+/// The task whose details [line] is in. Null when the line is ordinary
+/// writing, or a task line of its own.
+///
+/// The details are read from the note's own blocks, so a blank line at the
+/// margin between two indented paragraphs belongs and a blank line under a
+/// task does not, and an empty task at the margin is a task rather than a
+/// details line.
 MarkdownLinePrefix? _detailsOwner(String text, MarkdownLinePrefix line) {
-  if (line.isTask && !_lineIsEmpty(text, line)) return null;
-  var start = line.lineStart;
-  while (start > 0) {
-    start = text.lastIndexOf('\n', start - 2) + 1;
-    final above = markdownLinePrefix(text, start);
-    if (!_lineIsEmpty(text, above) && above.isTask) {
-      return _underTask(text, above, line) ? above : null;
+  for (final block in taskBlocks(text)) {
+    final details = block.details;
+    if (details == null) continue;
+    if (line.lineStart >= details.start && line.lineEnd <= details.end + 1) {
+      return markdownLinePrefix(text, block.task.start);
     }
-    if (above.isTask) continue;
   }
   return null;
-}
-
-bool _underTask(String text, MarkdownLinePrefix task, MarkdownLinePrefix line) {
-  final column = _contentColumn(task);
-  var start = task.lineEnd < text.length ? task.lineEnd + 1 : text.length;
-  if (start > line.lineStart) return false;
-  while (start < line.lineStart && start < text.length) {
-    final between = markdownLinePrefix(text, start);
-    if (!_lineIsEmpty(text, between) && _indentWidth(text, between) < column) {
-      return false;
-    }
-    if (between.lineEnd + 1 <= start) break;
-    start = between.lineEnd + 1;
-  }
-  return _lineIsEmpty(text, line) || _indentWidth(text, line) >= column;
 }
 
 MarkdownLinePrefix? _taskAbove(String text, MarkdownLinePrefix line) {

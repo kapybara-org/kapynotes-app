@@ -138,6 +138,22 @@ void main() {
     expect(shown(enter(note)), '☐ Hide it\n  First.\n\n  Second.\n  |');
   });
 
+  test('Enter on an empty task under a task still leaves the list', () {
+    final before = at('☐ Task\n☐ |');
+    final caret = before.selection.extentOffset;
+    final typed = TextEditingValue(
+      text: before.text.replaceRange(caret, caret, '\n'),
+      selection: TextSelection.collapsed(offset: caret + 1),
+    );
+    expect(editTaskDetailsEnter(before, typed), isNull);
+  });
+
+  test('an empty note and a caret at nothing are safe', () {
+    expect(caretInTaskDetails('', 0), isFalse);
+    expect(caretInTaskDetails('☐ A', -1), isFalse);
+    expect(shiftEnterDetails(at('|')), isNull);
+  });
+
   test('a picture pasted under a task is indented so it belongs', () {
     const before = '☐ Hide it\n';
     final raw = insertImagesIntoBody(
