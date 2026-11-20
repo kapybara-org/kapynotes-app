@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/data/editor_workspace.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/sync/aead.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
@@ -1413,5 +1416,197 @@ void main() {
       expect(device.isConnected, isTrue);
       device.dispose();
     });
+  });
+  group('a blank new note', () {
+    Note blank(Device device) =>
+        device.notes.create(body: Note.blankBody, authored: false);
+
+    Iterable<WireStoredOp> opsOf(Device device, String noteId) =>
+        server.opsIn(device.personalId).where((op) => op.noteId == noteId);
+
+    test('opened and left sends nothing: no note and no tombstone', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      await device.goLive();
+
+      final note = blank(device);
+      await device.sync.syncNow();
+      await settle(server);
+      expect(server.rows, isEmpty);
+
+      // What the page does with a new note left without a word in it.
+      device.notes.deleteAll([note.id]);
+      await device.sync.syncNow();
+      await settle(server);
+
+      expect(server.rows, isEmpty);
+      expect(server.opsIn(device.personalId), isEmpty);
+      expect(device.notes.dirtyTombstones, isEmpty);
+      expect(device.docs.get(note.id), isNull);
+      expect(device.sync.pendingCount, 0);
+      device.dispose();
+    });
+
+    test('its first letter sends it, once', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+
+      final note = blank(one);
+      await settle(server);
+      expect(server.rows, isEmpty);
+
+      one.notes.updateBody(note.id, '${Note.blankBody}M');
+      await until(() => two.bodyOf(note.id) == '${Note.blankBody}M');
+
+      // One seed holding the letter, not an empty one with an edit after it.
+      expect(server.rows.keys, [note.id]);
+      expect(server.snapshotsIn(one.personalId).keys, [note.id]);
+      expect(opsOf(one, note.id), isEmpty);
+      expect(one.notes.byId(note.id)!.isDirty, isFalse);
+      one.dispose();
+      two.dispose();
+    });
+
+    test(
+      'a synced note emptied still sends the clear, and its delete',
+      () async {
+        final one = Device(server, name: 'one');
+        final two = Device(server, name: 'two');
+        await one.boot();
+        await two.boot();
+        await one.goLive();
+        await two.goLive();
+
+        final note = one.notes.create(body: 'Groceries');
+        await until(() => two.bodyOf(note.id) == 'Groceries');
+
+        one.notes.updateBody(note.id, Note.blankBody);
+        await until(
+          () => two.bodyOf(note.id) == Note.blankBody,
+          reason: 'the clear never reached two',
+        );
+        expect(one.notes.byId(note.id)!.isDirty, isFalse);
+
+        one.notes.delete(note.id);
+        await until(
+          () => two.notes.byId(note.id) == null,
+          reason: 'the delete never reached two',
+        );
+        expect(server.rows[note.id]!.isTombstone, isTrue);
+        one.dispose();
+        two.dispose();
+      },
+    );
+
+    test('one with a picture, or a drawing, is sent', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      await device.goLive();
+
+      final picture = blank(device);
+      device.notes.updateDocument(
+        picture.id,
+        '${Note.blankBody}${NoteAttachmentRef.placeholder}',
+        const [],
+        [
+          NoteImageRef(
+            offset: Note.blankBody.length,
+            hash: 'a' * 64,
+            key: randomKey(),
+            mime: 'image/png',
+            width: 64,
+            height: 64,
+            bytes: 100,
+          ),
+        ],
+      );
+      final drawing = device.notes.create(drawing: true, authored: false);
+      await device.sync.syncNow();
+      await settle(server);
+
+      expect(server.rows.keys.toSet(), {picture.id, drawing.id});
+      expect(device.notes.dirtyNotes, isEmpty);
+      device.dispose();
+    });
+
+    test(
+      'one a quit left behind is gone after relaunch, and never sent',
+      () async {
+        final device = Device(server, name: 'a');
+        await device.boot();
+        await device.goLive();
+
+        final left = blank(device);
+        final emptied = device.notes.create(body: 'Groceries');
+        await device.sync.syncNow();
+        await settle(server);
+        device.notes.updateBody(emptied.id, Note.blankBody);
+        await device.sync.syncNow();
+        await settle(server);
+
+        // Killed: nothing ran that deletes a blank on the way out.
+        await device.relaunch(notesFromDisk: true);
+
+        expect(device.notes.byId(left.id), isNull);
+        expect(device.notes.byId(emptied.id)!.body, Note.blankBody);
+
+        await device.goLive();
+        await device.sync.syncNow();
+        await settle(server);
+
+        expect(server.rows.keys, [emptied.id]);
+        expect(server.rows[emptied.id]!.isTombstone, isFalse);
+        expect(opsOf(device, left.id), isEmpty);
+        expect(device.notes.dirtyTombstones, isEmpty);
+        device.dispose();
+      },
+    );
+
+    test(
+      'one killed while open is gone after relaunch, the page opens another, '
+      'and nothing is sent',
+      () async {
+        final device = Device(server, name: 'a');
+        await device.boot();
+        await device.goLive();
+
+        final written = device.notes.create(body: 'Kept');
+        final draft = blank(device);
+        device.store.data[EditorWorkspace.storeKey] = {
+          'panes': [draft.id],
+          'weights': [1.0],
+          'active': draft.id,
+        };
+        await device.sync.syncNow();
+        await settle(server);
+
+        await device.relaunch(notesFromDisk: true);
+
+        expect(device.notes.byId(draft.id), isNull);
+        expect(device.notes.notes.map((note) => note.id), [written.id]);
+        // What the page restores on launch, with the draft gone from the list.
+        final workspace = EditorWorkspace(device.store)
+          ..load(
+            availableNoteIds: device.notes.notes.map((note) => note.id),
+            openingNoteId: device.notes.lastEditedNote?.id,
+          );
+        expect(workspace.openNoteIds, {written.id});
+        expect(workspace.selectedNoteId, written.id);
+
+        await device.goLive();
+        await device.sync.syncNow();
+        await settle(server);
+
+        expect(server.rows.keys, [written.id]);
+        expect(server.snapshotsIn(device.personalId).keys, [written.id]);
+        expect(opsOf(device, draft.id), isEmpty);
+        expect(device.notes.dirtyTombstones, isEmpty);
+        device.dispose();
+      },
+    );
   });
 }
