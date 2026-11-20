@@ -1184,6 +1184,19 @@ enum NotesShow {
 
 /// The notes filter and the list/cards switch, on one row under the search,
 /// with the ✕ that clears the filter while anything is narrowed.
+/// Whether the list is narrowed beyond everything its space holds: another
+/// Show, some of the kinds, or a tag. What the filter row says it is doing,
+/// and what a phone's filter button carries a dot for while the row is put
+/// away.
+bool filtersNarrowed({
+  required NotesShow show,
+  required Set<NoteMedia>? media,
+  required TagFilter? tags,
+}) =>
+    show != NotesShow.all ||
+    (media != null && media.length < NoteMedia.values.length) ||
+    (tags?.narrowed ?? false);
+
 class NotesListControls extends StatelessWidget {
   const NotesListControls({
     super.key,
@@ -1295,10 +1308,7 @@ class NotesListControls extends StatelessWidget {
 
     final media = this.media;
     final everything = media == null ? 'All drawings' : NotesShow.all.label;
-    final narrowed =
-        show != NotesShow.all ||
-        (media != null && media.length < NoteMedia.values.length) ||
-        (tags?.narrowed ?? false);
+    final narrowed = filtersNarrowed(show: show, media: media, tags: tags);
     final filter = _NotesFilter(
       show: show,
       offersShow: offersShow,

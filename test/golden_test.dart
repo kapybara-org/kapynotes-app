@@ -1279,6 +1279,7 @@ void main() {
           ]);
         }
         await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'phone-filters');
         await tapAndSettle(tester, 'sidebar-notes-filter');
         await matches('notes_filter');
       });

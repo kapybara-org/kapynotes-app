@@ -71,6 +71,9 @@ void main() {
     await check('first launch page');
     await tap(tester, 'page-back');
     await check('notes home');
+    await tap(tester, 'phone-filters');
+    await check('notes home, filters open');
+    await tap(tester, 'phone-filters');
     await tap(tester, 'sidebar-search-field');
     await check('quick find');
     final cancel = find.byKey(const ValueKey('command-menu-cancel'));
@@ -111,6 +114,7 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 1));
     for (final key in [
       'page-back',
+      'phone-filters',
       'bar-tasks',
       'bar-drawings',
       'bar-notes',

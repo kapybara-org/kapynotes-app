@@ -268,6 +268,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
 
+  /// Whether a phone's filter row is showing. It starts put away, so the list
+  /// keeps the room, and the button beside the search brings it back.
+  bool _phoneFiltersOpen = false;
+
   bool get _showingPinnedOnly =>
       _pinnedOnly && !_specialMode && widget.notes.pinnedNoteIds.isNotEmpty;
 
@@ -3995,6 +3999,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     engine: widget.engines.engine,
     now: widget.notes.now,
     controls: _notesControls(_space, phone: true),
+    filtersOpen: _phoneFiltersOpen,
+    filtersActive: filtersNarrowed(
+      show: _show,
+      media: _space == LibrarySpace.drawings ? null : _mediaFilter,
+      tags: _tagFilter,
+    ),
+    onFiltersToggled: () =>
+        setState(() => _phoneFiltersOpen = !_phoneFiltersOpen),
   );
 
   /// A note's page on a phone: back, then the note's own actions, over the

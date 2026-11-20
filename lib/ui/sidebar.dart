@@ -138,6 +138,9 @@ class Sidebar extends StatelessWidget {
     this.now = DateTime.now,
     this.cards = false,
     this.phone = false,
+    this.filtersOpen = true,
+    this.filtersActive = false,
+    this.onFiltersToggled,
     this.controls,
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
@@ -280,6 +283,19 @@ class Sidebar extends StatelessWidget {
   /// does.
   final Widget? controls;
 
+  /// Whether a phone's filter row is showing. The row is put away by default
+  /// so the list keeps the room, and the button beside the search brings it
+  /// back. Wide layouts always draw it.
+  final bool filtersOpen;
+
+  /// Whether a filter narrows the list while the row is put away, so the
+  /// button can say so rather than leave a hidden filter a surprise.
+  final bool filtersActive;
+
+  /// Puts a phone's filter row away and brings it back. Null on a wide
+  /// layout, where the row is always there and there is no button.
+  final VoidCallback? onFiltersToggled;
+
   /// Whether the list is showing every pinned note, after See all, rather
   /// than the four most recent over the rest.
   final bool pinnedOnly;
@@ -310,14 +326,36 @@ class Sidebar extends StatelessWidget {
               shortcut: searchShortcut,
               placeholder: searchPlaceholder,
               phone: phone,
+              trailing: phone && controls != null && onFiltersToggled != null
+                  ? _FiltersButton(
+                      active: filtersActive,
+                      onPressed: onFiltersToggled!,
+                    )
+                  : null,
             ),
             if (controls != null)
-              Padding(
-                padding: phone
-                    ? const EdgeInsets.only(bottom: 2)
-                    : const EdgeInsets.fromLTRB(18, 0, 18, 12),
-                child: controls,
-              ),
+              if (phone && onFiltersToggled != null)
+                // A phone keeps the filter row out of the way until the
+                // button asks for it, and the list slides up to take its
+                // room while it is put away.
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: filtersOpen
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: controls,
+                        )
+                      : const SizedBox(width: double.infinity),
+                )
+              else
+                Padding(
+                  padding: phone
+                      ? const EdgeInsets.only(bottom: 2)
+                      : const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                  child: controls,
+                ),
             if (_picking || (archiveMode && notes.isNotEmpty)) _pickBar(),
             Expanded(
               child: _BelowInvitations(
@@ -1944,10 +1982,15 @@ class SidebarSearchField extends StatelessWidget {
     this.shortcut,
     this.placeholder = 'Search',
     this.phone = false,
+    this.trailing,
   });
 
   /// A phone's field: a quiet well, the entry to Quick find.
   final bool phone;
+
+  /// A phone's filter button, beside the well. It stands outside the well's
+  /// own tap area, so pressing it never starts a search.
+  final Widget? trailing;
 
   final VoidCallback onSearch;
   final String query;
@@ -1987,72 +2030,135 @@ class SidebarSearchField extends StatelessWidget {
     final palette = context.palette;
     final searching = query.isNotEmpty;
     final end = _end(palette, 20);
+    final trailing = this.trailing;
     return Padding(
       padding: phone
-          ? const EdgeInsets.fromLTRB(20, 4, 20, 6)
+          ? EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6)
           : const EdgeInsets.fromLTRB(18, 0, 18, 12),
-      child: Semantics(
-        button: true,
-        label: searching ? 'Search, $query' : placeholder,
-        child: GestureDetector(
-          key: const ValueKey('sidebar-search-field'),
-          behavior: HitTestBehavior.opaque,
-          onTap: onSearch,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.text,
-            child: Container(
-              key: const ValueKey('sidebar-search-box'),
-              // A phone's well is a 44 pt target, as every touch target is.
-              height: phone ? 44 : 40,
-              padding: const EdgeInsets.only(left: 14, right: 10),
-              decoration: phone
-                  ? BoxDecoration(
-                      color: palette.wellBackground,
-                      borderRadius: BorderRadius.circular(12),
-                    )
-                  : BoxDecoration(
-                      color: palette.surfaceBackground,
-                      border: Border.all(
-                        color: palette.controlBorder,
-                        width: 1.5,
-                      ),
-                      borderRadius: BorderRadius.circular(AppRadii.surface),
-                      boxShadow: [
-                        BoxShadow(
-                          color: palette.shadowAt(0x4D),
-                          offset: Offset(0, 1),
-                          blurRadius: 2,
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              button: true,
+              label: searching ? 'Search, $query' : placeholder,
+              child: GestureDetector(
+                key: const ValueKey('sidebar-search-field'),
+                behavior: HitTestBehavior.opaque,
+                onTap: onSearch,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.text,
+                  child: Container(
+                    key: const ValueKey('sidebar-search-box'),
+                    // A phone's well is a 44 pt target, as every touch target is.
+                    height: phone ? 44 : 40,
+                    padding: const EdgeInsets.only(left: 14, right: 10),
+                    decoration: phone
+                        ? BoxDecoration(
+                            color: palette.wellBackground,
+                            borderRadius: BorderRadius.circular(12),
+                          )
+                        : BoxDecoration(
+                            color: palette.surfaceBackground,
+                            border: Border.all(
+                              color: palette.controlBorder,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.surface,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: palette.shadowAt(0x4D),
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                    child: Row(
+                      children: [
+                        KapyIcon(
+                          KapyIcons.searchRounded,
+                          size: 16,
+                          strokeWidth: 1.8,
+                          color: palette.textSecondary,
                         ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            searching ? query : placeholder,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: phone ? 16 : 14,
+                              color: searching
+                                  ? palette.textPrimary
+                                  : palette.textTertiary,
+                            ),
+                          ),
+                        ),
+                        ?end,
                       ],
                     ),
-              child: Row(
-                children: [
-                  KapyIcon(
-                    KapyIcons.searchRounded,
-                    size: 16,
-                    strokeWidth: 1.8,
-                    color: palette.textSecondary,
                   ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      searching ? query : placeholder,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: phone ? 16 : 14,
-                        color: searching
-                            ? palette.textPrimary
-                            : palette.textTertiary,
-                      ),
-                    ),
-                  ),
-                  ?end,
-                ],
+                ),
               ),
             ),
           ),
-        ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing],
+        ],
+      ),
+    );
+  }
+}
+
+/// The button beside a phone's search well. The filter row shows while it is
+/// open, and it carries a dot while a filter it holds out of sight narrows
+/// the list.
+class _FiltersButton extends StatelessWidget {
+  const _FiltersButton({required this.active, required this.onPressed});
+
+  final bool active;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Semantics(
+            selected: active,
+            child: CompactIconButton(
+              key: const ValueKey('phone-filters'),
+              tooltip: 'Filters',
+              extent: 44,
+              onPressed: onPressed,
+              icon: KapyIcon(
+                KapyIcons.filterRounded,
+                size: 20,
+                strokeWidth: active ? 2 : 1.8,
+                color: active ? palette.textPrimary : palette.textSecondary,
+              ),
+            ),
+          ),
+          if (active)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                key: const ValueKey('phone-filters-dot'),
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: palette.accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -2408,6 +2514,12 @@ class _NoteRowState extends State<NoteRow> {
         ],
       );
     }
+    await _choose(choice, at: position);
+  }
+
+  /// Runs one of the row's menu choices. The menu offers them, and so does the
+  /// row itself as accessibility actions, so both go through here.
+  Future<void> _choose(String? choice, {Offset? at}) async {
     if (!mounted) return;
     if (widget.selecting) {
       if (choice != null) widget.onPickedAction?.call(choice);
@@ -2423,7 +2535,15 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'pin') widget.onTogglePin?.call();
     if (choice == 'open-side') widget.onOpenToSide?.call();
     if (choice == 'tags' && context.mounted) {
-      await showTagPickerAt(context, position, widget.note.id);
+      final box = context.findRenderObject() as RenderBox?;
+      await showTagPickerAt(
+        context,
+        at ??
+            (box == null
+                ? Offset.zero
+                : box.localToGlobal(box.size.bottomRight(Offset.zero))),
+        widget.note.id,
+      );
     }
   }
 
@@ -2571,6 +2691,14 @@ class _NoteRowState extends State<NoteRow> {
         container: true,
         button: true,
         selected: widget.selecting ? widget.checked : widget.selected,
+        // Neither VoiceOver nor TalkBack can right-click or long-press a row
+        // to reach its menu, so the menu's choices are actions on the row
+        // itself. Same list, so the two can never drift.
+        customSemanticsActions: {
+          for (final action in _availableActions())
+            CustomSemanticsAction(label: action.label): () =>
+                unawaited(_choose(action.value)),
+        },
         child: GestureDetector(
           onTap: _open,
           onSecondaryTapDown: !hasMenu
@@ -3156,82 +3284,76 @@ class _SwipeActionsState extends State<_SwipeActions>
     if (widget.actions.isEmpty) return widget.child;
     final palette = context.palette;
     final foreground = palette.paperColor;
-    return Semantics(
-      customSemanticsActions: {
-        for (final action in widget.actions)
-          CustomSemanticsAction(label: action.label): action.onPressed,
-      },
-      child: GestureDetector(
-        onHorizontalDragUpdate: (details) =>
-            _open.value -= details.primaryDelta! / _extent,
-        onHorizontalDragEnd: (details) => _settle(details.primaryVelocity ?? 0),
-        child: ClipRect(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    for (final action in widget.actions)
-                      SizedBox(
-                        width: _SwipeActions.actionWidth,
-                        child: Material(
-                          color: action.background,
-                          child: InkWell(
-                            key: ValueKey('swipe-${action.key}-${widget.id}'),
-                            onTap: () => _run(action),
-                            child: ExcludeSemantics(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                spacing: 4,
-                                children: [
-                                  KapyIcon(
-                                    action.icon,
-                                    size: 20,
-                                    strokeWidth: 1.8,
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) =>
+          _open.value -= details.primaryDelta! / _extent,
+      onHorizontalDragEnd: (details) => _settle(details.primaryVelocity ?? 0),
+      child: ClipRect(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (final action in widget.actions)
+                    SizedBox(
+                      width: _SwipeActions.actionWidth,
+                      child: Material(
+                        color: action.background,
+                        child: InkWell(
+                          key: ValueKey('swipe-${action.key}-${widget.id}'),
+                          onTap: () => _run(action),
+                          child: ExcludeSemantics(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              spacing: 4,
+                              children: [
+                                KapyIcon(
+                                  action.icon,
+                                  size: 20,
+                                  strokeWidth: 1.8,
+                                  color: foreground,
+                                ),
+                                Text(
+                                  action.label,
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.ui,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w500,
                                     color: foreground,
                                   ),
-                                  Text(
-                                    action.label,
-                                    style: TextStyle(
-                                      fontFamily: AppFonts.ui,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w500,
-                                      color: foreground,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ),
-                  ],
+                    ),
+                ],
+              ),
+            ),
+            AnimatedBuilder(
+              animation: _open,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(-_open.value * _extent, 0),
+                child: child,
+              ),
+              child: ListenableBuilder(
+                listenable: _open,
+                builder: (context, child) => _open.value == 0
+                    ? child!
+                    : GestureDetector(
+                        onTap: () => _settle(1000),
+                        behavior: HitTestBehavior.opaque,
+                        child: AbsorbPointer(child: child),
+                      ),
+                child: ColoredBox(
+                  color: palette.paperColor,
+                  child: widget.child,
                 ),
               ),
-              AnimatedBuilder(
-                animation: _open,
-                builder: (context, child) => Transform.translate(
-                  offset: Offset(-_open.value * _extent, 0),
-                  child: child,
-                ),
-                child: ListenableBuilder(
-                  listenable: _open,
-                  builder: (context, child) => _open.value == 0
-                      ? child!
-                      : GestureDetector(
-                          onTap: () => _settle(1000),
-                          behavior: HitTestBehavior.opaque,
-                          child: AbsorbPointer(child: child),
-                        ),
-                  child: ColoredBox(
-                    color: palette.paperColor,
-                    child: widget.child,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

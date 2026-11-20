@@ -308,8 +308,21 @@ Future<void> pickPageAction(WidgetTester tester, String value) async {
   await tester.pumpAndSettle();
 }
 
+/// Opens a phone's filter row, which starts put away behind its button. A
+/// wide layout has no button: its row is always there.
+Future<void> openPhoneFilters(WidgetTester tester) async {
+  final button = find.byKey(const ValueKey('phone-filters'));
+  if (button.evaluate().isEmpty) return;
+  if (find.byKey(const ValueKey('phone-filter-row')).evaluate().isNotEmpty) {
+    return;
+  }
+  await tester.tap(button);
+  await tester.pumpAndSettle();
+}
+
 /// Chooses [show] in the notes filter over the list.
 Future<void> showInFilter(WidgetTester tester, NotesShow show) async {
+  await openPhoneFilters(tester);
   await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(ValueKey('notes-filter-${show.name}')));
@@ -1093,6 +1106,7 @@ void main() {
       tags.addTag(hidden.id, secret.id);
       await pumpApp(tester, size: const Size(390, 760), tags: tags);
       await showNotesList(tester);
+      await openPhoneFilters(tester);
 
       await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
       await tester.pumpAndSettle();
@@ -4837,6 +4851,7 @@ void main() {
     final gate = _HiddenGate();
     await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
     await showNotesList(tester);
+    await openPhoneFilters(tester);
 
     expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
     expect(find.byKey(const ValueKey('sidebar-archive')), findsNothing);
@@ -4849,6 +4864,76 @@ void main() {
 
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
+  });
+
+  testWidgets('a phone keeps its filter row out of the way until its button '
+      'asks for it, and the list takes the room', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await notes.load();
+    notes.create(body: 'A quiet list');
+    await pumpApp(tester, size: const Size(390, 844));
+    await showNotesList(tester);
+
+    final row = find.byKey(const ValueKey('phone-filter-row'));
+    expect(row, findsNothing);
+
+    final button = find.byKey(const ValueKey('phone-filters'));
+    expect(tester.getSize(button), const Size(44, 44));
+    final listTop = tester
+        .getRect(find.widgetWithText(NoteRow, 'A quiet list'))
+        .top;
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(row, findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-notes-filter')), findsOneWidget);
+    expect(
+      tester.getRect(find.widgetWithText(NoteRow, 'A quiet list')).top,
+      greaterThan(listTop),
+      reason: 'the row moved the list down',
+    );
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(row, findsNothing);
+  });
+
+  testWidgets('a phone keeps its filter row open while a filter narrows the '
+      'list, and its button says so whether the row is open or shut', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final tags = TagStore(store);
+    final trip = notes.create(body: 'Trip to Kochi');
+    notes.create(body: 'Groceries');
+    final travel = tags.create('Trip')!;
+    tags.addTag(trip.id, travel.id);
+    await pumpApp(tester, size: const Size(393, 852), tags: tags);
+    await showNotesList(tester);
+    await openPhoneFilters(tester);
+
+    final button = find.byKey(const ValueKey('phone-filters'));
+    final dot = find.byKey(const ValueKey('phone-filters-dot'));
+    expect(dot, findsNothing);
+
+    await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+    await tester.pumpAndSettle();
+    expect(dot, findsOneWidget, reason: 'a filter is on, shown or not');
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('phone-filter-row')), findsNothing);
+    expect(dot, findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('phone-filter-row')), findsOneWidget);
+    expect(dot, findsNothing);
   });
 
   testWidgets('a phone says where to find a note after hiding it', (
@@ -4876,6 +4961,7 @@ void main() {
     );
     expect(find.textContaining('Pull down'), findsNothing);
 
+    await openPhoneFilters(tester);
     await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('notes-filter-hidden')));
@@ -5628,6 +5714,7 @@ void main() {
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester, size: const Size(390, 844));
       await showNotesList(tester);
+      await openPhoneFilters(tester);
 
       final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
       expect(filter, findsOneWidget);
@@ -6003,6 +6090,7 @@ void main() {
           await tester.pumpAndSettle();
         }
 
+        await openPhoneFilters(tester);
         await choose('archive');
         expect(find.widgetWithText(NoteRow, 'Archived note'), findsOneWidget);
         expect(find.byType(NoteEditor), findsNothing);
@@ -6446,6 +6534,7 @@ void main() {
       tags.addTag(trip.id, travel.id);
       await pumpApp(tester, size: const Size(393, 852), tags: tags);
       await showNotesList(tester);
+      await openPhoneFilters(tester);
 
       final pill = find.byKey(ValueKey('phone-tag-${travel.id}'));
       expect(tester.getSize(pill).height, greaterThanOrEqualTo(44));
