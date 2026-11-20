@@ -155,11 +155,6 @@ double _pageScale(TextStyle base) =>
 /// A heading's size against 16px writing.
 double _headingScale(int level) => EditorMetrics.headingFontSize(level) / 16;
 
-/// The least room a markdown list marker takes, before scaling: a task's
-/// box, and a gap between it and the words. See
-/// `HighlightingController.markdownMarkerRoom`.
-const double markdownMarkerMinRoom = 23;
-
 /// The same on the page: Paper's 20px box and the 12 between it and the
 /// words.
 const double markdownMarkerPageRoom = 32;
@@ -190,8 +185,7 @@ TextStyle markdownHeadingStyle(
 /// A heading at [scale] of [base], bold, in the handwritten face when the
 /// writing font is mixed.
 ///
-/// On a phone it keeps the row its line sits in. On the page it stands in
-/// [level]'s row, [EditorMetrics.headingRow], and proportional leading puts
+/// It stands in [level]'s row, [EditorMetrics.headingRow], and proportional leading puts
 /// nearly all of what that adds above the words: Paper's room over a heading.
 TextStyle _headingStyle(
   TextStyle base,
@@ -205,18 +199,14 @@ TextStyle _headingStyle(
   final size = base.fontSize == null ? null : base.fontSize! * scale;
   final row = base.fontSize == null || base.height == null
       ? null
-      : EditorMetrics.page
-      ? _pageScale(base) * EditorMetrics.headingRow(level)
-      : base.fontSize! * base.height!;
+      : _pageScale(base) * EditorMetrics.headingRow(level);
   return base.copyWith(
     fontFamily: face?.fontFamily,
     fontFamilyFallback: face?.fontFamilyFallback,
     fontVariations: (face ?? writingFont)?.faceVariations ?? const [],
     fontSize: size,
     height: row == null || size == null ? null : row / size,
-    leadingDistribution: EditorMetrics.page
-        ? TextLeadingDistribution.proportional
-        : null,
+    leadingDistribution: TextLeadingDistribution.proportional,
     fontWeight: FontWeight.w600,
     fontStyle: FontStyle.normal,
   );
