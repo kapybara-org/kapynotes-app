@@ -150,17 +150,26 @@ void main() {
     expect(replaceTaskDetails(note, task, '   \n'), note);
   });
 
-  test('a blank line inside survives a rewrite, and media is not dropped', () {
+  test('a blank line inside survives a rewrite, and saving words keeps the pictures', () {
     const note = '☐ Parent\n  First\n  ￼\n  Second\n☐ Next\n';
     final task = taskLines(note).first;
-    final written = replaceTaskDetails(note, task, 'First\n\nSecond, longer');
-    expect(written.contains('￼'), isTrue);
-    expect(written, contains('☐ Next'));
-    expect(written, isNot(contains('☐ Parent\n☐ Next')));
-    final again = taskBlocks(written).first.details!;
-    expect(again.preview, 'First');
-    expect(written.substring(again.start, again.end), contains('￼'));
-    expect(taskBlocks(written).last.details, isNull);
+    // What the sheet seeds its editor with: the placeholders stay.
+    final seeded = taskDetailsWords(note, task);
+    expect(seeded, 'First\n￼\nSecond');
+    final written = replaceTaskDetails(note, task, seeded);
+    expect(written, note);
+
+    final edited = replaceTaskDetails(note, task, seeded.replaceAll('Second', 'Second, longer'));
+    expect(edited, '☐ Parent\n  First\n  ￼\n  Second, longer\n☐ Next\n');
+    expect(taskBlocks(edited).first.details!.preview, 'First');
+    expect(taskBlocks(edited).last.details, isNull);
+  });
+
+  test('what the assistant reads names a picture rather than a placeholder', () {
+    const note = '☐ Parent\n  The menu stays up.\n  ￼\n';
+    final task = taskLines(note).single;
+    expect(taskDetailsText(note, task), 'The menu stays up.\npicture');
+    expect(taskDetailsWords(note, task).contains('picture'), isFalse);
   });
 
   test('a folded block keeps one preview row and hides the rest', () {

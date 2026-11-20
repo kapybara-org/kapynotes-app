@@ -100,23 +100,21 @@ bool taskIsNested(String text, TaskLine task) {
 /// Writes [plain] as the words under [task], indented to where the task's own
 /// words start, and returns the note.
 ///
-/// The task's own line is never rewritten, and neither is anything after the
-/// details. A picture or a video that was already under the task stays, on
-/// its own line, in the same place among the paragraphs. An empty [plain]
-/// with nothing else under the task leaves the note unchanged when there was
-/// nothing there, and takes an empty block away when there was one. A note
-/// with no indented details, given an empty [plain], comes back identical.
+/// [plain] must carry the details' picture placeholders as they are: whoever
+/// edits the words keeps the pictures in place (see [taskDetailsWords]), and
+/// the note's attachment records follow the placeholders when the note is
+/// written. The task's own line is never rewritten, and neither is anything
+/// after the details. An empty [plain] with nothing under the task leaves the
+/// note unchanged when there was nothing there, and takes an empty block away
+/// when there was one, so a note with no indented details that is given
+/// nothing comes back identical.
 String replaceTaskDetails(String text, TaskLine task, String plain) {
   final column = task.textStart - task.start;
   final indent = ' ' * column;
   final block = taskBlockOf(text, task);
   final details = block?.details;
-  final existing = details == null
-      ? ''
-      : text.substring(details.start, details.end);
-  final media = _mediaLines(existing);
   final words = _indentedWords(plain, indent);
-  final rebuilt = _interleave(words, media);
+  final rebuilt = words.join('\n');
   if (details == null) {
     if (rebuilt.isEmpty) return text;
     if (task.end >= text.length) return '$text\n$rebuilt';
@@ -136,6 +134,22 @@ String replaceTaskDetails(String text, TaskLine task, String plain) {
     return text.replaceRange(from, to, '');
   }
   return text.replaceRange(details.start, details.end, rebuilt);
+}
+
+/// The details under [task] with the indent taken off, for an editor that
+/// draws the pictures itself.
+///
+/// A picture or video stays a placeholder, so writing these words back with
+/// [replaceTaskDetails] after an edit keeps the note's pictures exactly where
+/// they were.
+String taskDetailsWords(String text, TaskLine task) {
+  final details = taskBlockOf(text, task)?.details;
+  if (details == null) return '';
+  return text
+      .substring(details.start, details.end)
+      .split('\n')
+      .map((line) => line.trimLeft())
+      .join('\n');
 }
 
 /// What a line of a folded task's details draws.
@@ -341,22 +355,6 @@ String _preview(String body) {
   return '';
 }
 
-/// Media lines of a details block, and how many text lines stood before each.
-List<({int after, String text})> _mediaLines(String block) {
-  if (block.isEmpty) return const [];
-  final lines = block.split('\n');
-  final media = <({int after, String text})>[];
-  var textLines = 0;
-  for (final line in lines) {
-    if (_isMediaLine(line)) {
-      media.add((after: textLines, text: line));
-    } else {
-      textLines++;
-    }
-  }
-  return media;
-}
-
 bool _isMediaLine(String line) {
   final trimmed = line.trim();
   if (trimmed.isEmpty) return false;
@@ -373,26 +371,4 @@ List<String> _indentedWords(String plain, String indent) {
     for (final line in normalized.split('\n'))
       line.trim().isEmpty ? '' : '$indent${line.trimLeft()}',
   ];
-}
-
-String _interleave(List<String> words, List<({int after, String text})> media) {
-  if (words.isEmpty && media.isEmpty) return '';
-  final out = <String>[];
-  var word = 0;
-  var mark = 0;
-  while (word < words.length || mark < media.length) {
-    if (mark < media.length && media[mark].after == word) {
-      out.add(media[mark].text);
-      mark++;
-      continue;
-    }
-    if (word < words.length) {
-      out.add(words[word]);
-      word++;
-      continue;
-    }
-    out.add(media[mark].text);
-    mark++;
-  }
-  return out.join('\n');
 }
