@@ -1041,15 +1041,28 @@ extension on Sidebar {
         heading(_groupHeading(groups, key));
         section(groups.byGroup[key]!);
       }
-      // A day at a time, newest first, under the day a person would name it
-      // by: the day the note was last edited.
-      for (final day in _phoneDays(
-        groups.mine,
-        now: now(),
-        displayTime: displayTime,
-      )) {
-        heading(_PhoneDayHeading(day.label));
-        section(day.notes);
+      if (drawings) {
+        // Drawings stay one grid of thumbnails, two to a row, which a day
+        // heading would break into short rows.
+        if (groups.mine.isNotEmpty) {
+          if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
+            heading(const _PhoneHeading('Recent'));
+          } else {
+            gap(8);
+          }
+          section(groups.mine);
+        }
+      } else {
+        // A day at a time, newest first, under the day the note was last
+        // edited.
+        for (final day in _phoneDays(
+          groups.mine,
+          now: now(),
+          displayTime: displayTime,
+        )) {
+          heading(_PhoneDayHeading(lead: day.lead, date: day.date));
+          section(day.notes);
+        }
       }
     } else {
       if (pinned.isNotEmpty) {
@@ -3093,8 +3106,9 @@ class _IconButton extends StatelessWidget {
 
 /// A heading over a phone's list: Pinned, Recent.
 /// A day's notes on a phone's list, named the way a person names the day:
-/// "Today Wed 19", "Yesterday Tue 18", then "Wed 18 Nov".
-List<({String label, List<Note> notes})> _phoneDays(
+/// "Today" with "Wed 19" after it, "Yesterday" with "Tue 18", then just
+/// "Mon 17 Nov".
+List<({String? lead, String date, List<Note> notes})> _phoneDays(
   List<Note> notes, {
   required DateTime now,
   required DateTime Function(DateTime) displayTime,
@@ -3108,7 +3122,15 @@ List<({String label, List<Note> notes})> _phoneDays(
   final start = DateTime(today.year, today.month, today.day);
   return [
     for (final day in days.entries)
-      (label: _phoneDayName(day.key, start), notes: day.value),
+      (
+        lead: switch (start.difference(day.key).inDays) {
+          0 => 'Today',
+          1 => 'Yesterday',
+          _ => null,
+        },
+        date: _phoneDayDate(day.key, start),
+        notes: day.value,
+      ),
   ];
 }
 
@@ -3128,35 +3150,51 @@ const _phoneMonths = [
   'Dec',
 ];
 
-String _phoneDayName(DateTime day, DateTime today) {
-  final weekday = _phoneWeekdays[day.weekday - 1];
-  final since = today.difference(day).inDays;
-  if (since == 0) return 'Today $weekday ${day.day}';
-  if (since == 1) return 'Yesterday $weekday ${day.day}';
-  return '$weekday ${day.day} ${_phoneMonths[day.month - 1]}';
+/// The weekday and the day of the month, and the month too once the day is
+/// more than a day ago, where "Wed 12" alone could be any month's.
+String _phoneDayDate(DateTime day, DateTime today) {
+  final date = '${_phoneWeekdays[day.weekday - 1]} ${day.day}';
+  return today.difference(day).inDays <= 1
+      ? date
+      : '$date ${_phoneMonths[day.month - 1]}';
 }
 
-/// A day's heading on a phone's list: quiet, and in the note title's own
-/// face, as Home and Tasks both draw it.
+/// A day's heading on a phone's list, in the note title's face at 19/24, as
+/// Home and Tasks both draw it: "Today" with the date after it, muted.
 class _PhoneDayHeading extends StatelessWidget {
-  const _PhoneDayHeading(this.label);
+  const _PhoneDayHeading({required this.lead, required this.date});
 
-  final String label;
+  final String? lead;
+  final String date;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    header: true,
-    child: Text(
-      label,
-      style: TextStyle(
-        fontFamily: AppFonts.title,
-        fontFamilyFallback: AppFonts.uiFallback,
-        fontSize: 19,
-        height: 24 / 19,
-        color: context.palette.textSecondary,
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final lead = this.lead;
+    final style = TextStyle(
+      fontFamily: AppFonts.title,
+      fontFamilyFallback: AppFonts.uiFallback,
+      fontSize: 19,
+      height: 24 / 19,
+      color: palette.textPrimary,
+    );
+    final muted = style.copyWith(color: palette.textTertiary);
+    return Semantics(
+      header: true,
+      label: lead == null ? date : '$lead, $date',
+      excludeSemantics: true,
+      child: Text.rich(
+        key: const ValueKey('phone-day-heading'),
+        lead == null
+            ? TextSpan(text: date, style: muted)
+            : TextSpan(
+                text: lead,
+                style: style,
+                children: [TextSpan(text: ' $date', style: muted)],
+              ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _PhoneHeading extends StatelessWidget {

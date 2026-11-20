@@ -53,6 +53,7 @@ import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_card.dart';
@@ -6413,7 +6414,7 @@ void main() {
 
       expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
       expect(find.text('Pinned'), findsOneWidget);
-      expect(find.text('Recent'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Today, ')), findsOneWidget);
       final cards = find.descendant(
         of: find.byKey(const ValueKey('phone-pinned')),
         matching: find.byType(NoteCardFace),
@@ -6423,6 +6424,81 @@ void main() {
       final row = find.widgetWithText(NoteListRowFace, 'Groceries');
       expect(row, findsOneWidget);
       expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+    });
+
+    testWidgets('the rows come a day at a time, newest first, each in the '
+        'handwriting face with its tag dots after the time', (tester) async {
+      final now = DateTime.now();
+      int at(int daysAgo) => DateTime(
+        now.year,
+        now.month,
+        now.day - daysAgo,
+        9,
+      ).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        for (final (id, body, daysAgo) in [
+          ('today', 'Call with Arjun', 0),
+          ('yesterday', 'Quote for the deck', 1),
+          ('older', 'Renewal notes', 4),
+        ])
+          {
+            'id': id,
+            'body': body,
+            'createdAt': at(daysAgo),
+            'updatedAt': at(daysAgo),
+          },
+      ];
+      final tags = TagStore(store);
+      await notes.load();
+      final trip = tags.create('Trip')!;
+      final money = tags.create('Money')!;
+      tags.addTag('today', trip.id);
+      tags.addTag('today', money.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+
+      final headings = find.byKey(const ValueKey('phone-day-heading'));
+      expect(headings, findsNWidgets(3));
+      double top(Finder finder) => tester.getTopLeft(finder).dy;
+      final today = find.bySemanticsLabel(RegExp(r'^Today, \w{3} \d+$'));
+      final yesterday = find.bySemanticsLabel(
+        RegExp(r'^Yesterday, \w{3} \d+$'),
+      );
+      final older = find.bySemanticsLabel(RegExp(r'^\w{3} \d+ \w{3}$'));
+      expect(today, findsOneWidget);
+      expect(yesterday, findsOneWidget);
+      expect(older, findsOneWidget);
+      Finder row(String title) => find.widgetWithText(NoteRow, title);
+      expect(top(today), lessThan(top(row('Call with Arjun'))));
+      expect(top(row('Call with Arjun')), lessThan(top(yesterday)));
+      expect(top(yesterday), lessThan(top(row('Quote for the deck'))));
+      expect(top(row('Quote for the deck')), lessThan(top(older)));
+      expect(top(older), lessThan(top(row('Renewal notes'))));
+
+      final title = tester.widget<Text>(find.text('Call with Arjun'));
+      expect(title.style?.fontFamily, WritingFont.handwritten.fontFamily);
+      final dots = find.descendant(
+        of: row('Call with Arjun'),
+        matching: find.byType(TagDots),
+      );
+      expect(dots, findsOneWidget);
+      expect(tester.widget<TagDots>(dots).tags, hasLength(2));
+      final time = find.descendant(
+        of: row('Call with Arjun'),
+        matching: find.text('09:00'),
+      );
+      expect(
+        tester.getTopLeft(dots).dx,
+        greaterThan(tester.getTopRight(time).dx),
+        reason: 'the dots come after the time',
+      );
+      expect(
+        find.descendant(
+          of: row('Quote for the deck'),
+          matching: find.byType(TagDots),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('a row swipes left to Pin and Archive', (tester) async {
