@@ -4735,6 +4735,39 @@ void main() {
       expect(find.byType(DrawingCanvas), findsOneWidget);
     });
 
+    testWidgets('a drawing that a sync race left words beside counts under '
+        'its tag in Notes, which lists it', (tester) async {
+      final tags = TagStore(store);
+      await tags.load();
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(id: 'plain', body: 'Seeds\nbasil', createdAt: at, updatedAt: at),
+        Note(
+          id: 'both',
+          body: 'Garden\nTomatoes by the shed',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+      ]);
+      final garden = tags.create('Garden')!;
+      tags.addTag('both', garden.id);
+      await pumpApp(tester, tags: tags);
+      expect(spaceTitle(tester), 'My notes');
+      expect(titles(tester), unorderedEquals(['Seeds', 'Garden']));
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+      await tester.pumpAndSettle();
+      final count = find.descendant(
+        of: find.byKey(ValueKey('tag-filter-${garden.id}')),
+        matching: find.byType(Text),
+      );
+      expect(tester.widget<Text>(count.last).data, '1');
+    });
+
     testWidgets('a stroke across a drawing on a phone stays a stroke', (
       tester,
     ) async {

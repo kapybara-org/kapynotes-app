@@ -1430,9 +1430,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (id == null) return;
     final note = widget.notes.byId(id);
     if (note == null) return;
-    if (_drawingsOnly ? !note.isDrawing : !_listedInNotes(note)) {
-      _drawingsOnly = !_drawingsOnly;
-    }
+    if (!_listsKind(note)) _drawingsOnly = !_drawingsOnly;
     if (_specialMode || _drawingsOnly) return;
     final sharing = widget.account?.sharing;
     if (sharing != null) _sidebarTab = sidebarTabOf(note, sharing);
@@ -3484,43 +3482,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// Whether the list lists [note]'s kind: drawings in Drawings, with its
-  /// archive and Hidden Notes, and notes in Notes. A phone has no Drawings
-  /// to list them in, so its one list keeps both.
-  bool _listsKind(Note note) =>
-      note.isDrawing == _drawingsOnly || (!_drawingsOnly && _usesCompactLayout);
-
-  /// Narrows [notes] to the space the list is showing, and everything that
-  /// walks the list (the arrow keys, the note after an archived one) walks
-  /// what is on screen. Drawings live in Drawings and every other space lists
-  /// notes, in the archive and Hidden Notes too. The ordinary list is also
-  /// split by whose the notes are once there is an account to have shared
-  /// anything with.
-  List<Note> _narrowed(List<Note> notes) {
-    if (_drawingsOnly) {
-      return [
-        for (final note in notes)
-          if (note.isDrawing) note,
-      ];
-    }
-    final sharing = _specialMode ? null : widget.account?.sharing;
-    return [
-      for (final note in notes)
-        if (_listedInNotes(note) &&
-            (sharing == null || sidebarTabOf(note, sharing) == _sidebarTab))
-          note,
-    ];
-  }
-
-  /// Whether a list other than Drawings holds [note]: a note does, and so
-  /// does a drawing that a sync race left words beside, for those words.
-  bool _listedInNotes(Note note) =>
-      _phoneListsDrawings || !note.isDrawing || note.hasTextBesideDrawing;
+  /// Whether the list holds [note]: Drawings holds the drawings, with its
+  /// archive and Hidden Notes, and every other list holds the notes, and a
+  /// drawing that a sync race left words beside, for those words.
+  bool _listsKind(Note note) => _drawingsOnly
+      ? note.isDrawing
+      : _phoneListsDrawings || !note.isDrawing || note.hasTextBesideDrawing;
 
   /// Phone-only and temporary: a phone has no Drawings to go to until Phone
   /// v2's tab bar brings one, so until then its Notes list keeps the drawings
   /// too. Phone v2 deletes this and its one use above.
   bool get _phoneListsDrawings => _usesCompactLayout;
+
+  /// Narrows [notes] to the space the list is showing, and everything that
+  /// walks the list (the arrow keys, the note after an archived one) walks
+  /// what is on screen. The ordinary list is also split by whose the notes
+  /// are once there is an account to have shared anything with.
+  List<Note> _narrowed(List<Note> notes) {
+    final sharing = _drawingsOnly || _specialMode
+        ? null
+        : widget.account?.sharing;
+    return [
+      for (final note in notes)
+        if (_listsKind(note) &&
+            (sharing == null || sidebarTabOf(note, sharing) == _sidebarTab))
+          note,
+    ];
+  }
 
   /// The space the rail shows as open.
   LibrarySpace get _space => _tasksMode
