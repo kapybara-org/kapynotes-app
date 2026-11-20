@@ -167,7 +167,9 @@ class MigratingSecureStore implements SecureStore {
         try {
           await _legacy.delete(key);
         } catch (error) {
-          debugPrint('KapyNotes: old keystore entry not cleared ($key): $error');
+          debugPrint(
+            'KapyNotes: old keystore entry not cleared ($key): $error',
+          );
         }
       }
       return current;
@@ -251,8 +253,10 @@ class ForgivingSecureStore implements SecureStore {
 
   final SecureStore _inner;
 
-  /// When set, a failure is remembered and later calls skip the keystore, so
-  /// a missing keyring logs once instead of once per entry.
+  /// When set, a failure is remembered and later reads and writes skip the
+  /// keystore, so a missing keyring logs once instead of once per entry.
+  /// Deletes always try: a sign-out that skipped them would leave the session
+  /// for the next launch to find.
   final KeyringStatus? status;
 
   bool get _skip => status != null && !status!.available;
@@ -282,7 +286,6 @@ class ForgivingSecureStore implements SecureStore {
 
   @override
   Future<void> delete(String key) async {
-    if (_skip) return;
     try {
       await _inner.delete(key);
     } catch (error) {
@@ -383,7 +386,11 @@ class KeyStore {
   static const String _pendingKeyEntry = 'kapynotes.pendingMasterKey';
 
   /// Every entry this store keeps.
-  static const List<String> entries = [_masterKeyEntry, _tokenEntry, _userEntry];
+  static const List<String> entries = [
+    _masterKeyEntry,
+    _tokenEntry,
+    _userEntry,
+  ];
 
   Uint8List? _masterKey;
   String? _token;
