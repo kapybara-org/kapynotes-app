@@ -252,9 +252,11 @@ class TagStore extends ChangeNotifier {
     decode: Tag.fromPayload,
   );
 
-  /// Keyed by note id.
+  /// Keyed by note id. A note whose tags record was deleted keeps it,
+  /// deleted, while that delete is ahead of this device's clock, so tagging
+  /// it again is stamped past it (see [_letGo]).
   final _notes = _Book<NoteTags>(
-    keepDeleted: false,
+    keepDeleted: true,
     merge: (mine, theirs) => mine.merge(theirs),
     encode: (note) => note.toPayload(),
     decode: (noteId, raw) {
@@ -269,6 +271,11 @@ class TagStore extends ChangeNotifier {
   final Map<String, int> _unknown = {};
 
   int _stamp() => _now().millisecondsSinceEpoch;
+
+  /// [v] stamped [now], or just after [replaced] when this device's clock is
+  /// behind it, so a change made over a value outranks it.
+  Stamped<T> _over<T>(Stamped<T> replaced, T v, int now) =>
+      Stamped(v, now > replaced.at ? now : replaced.at + 1);
 
   Future<bool>? _loading;
 
@@ -386,7 +393,9 @@ class TagStore extends ChangeNotifier {
     if (tag == null || trimmed == null) return false;
     if (named(trimmed)?.id case final other? when other != id) return false;
     if (tag.name.v != trimmed) {
-      _update(tag.copyWith(name: Stamped(trimmed, _stamp())));
+      final now = _stamp();
+      _tags.write(id, tag.copyWith(name: _over(tag.name, trimmed, now)), now);
+      _save();
     }
     return true;
   }
@@ -396,7 +405,9 @@ class TagStore extends ChangeNotifier {
     final tag = _tags.live(id);
     if (tag == null || tag.colour.v == colour) return;
     if (colour != noTagColour && !tagColours.contains(colour)) return;
-    _update(tag.copyWith(colour: Stamped(colour, _stamp())));
+    final now = _stamp();
+    _tags.write(id, tag.copyWith(colour: _over(tag.colour, colour, now)), now);
+    _save();
   }
 
   /// Puts every live tag in the order of [ids].
@@ -405,7 +416,7 @@ class TagStore extends ChangeNotifier {
     for (var i = 0; i < ids.length; i++) {
       final tag = _tags.live(ids[i]);
       if (tag == null || tag.order.v == i) continue;
-      _tags.write(tag.id, tag.copyWith(order: Stamped(i, now)), now);
+      _tags.write(tag.id, tag.copyWith(order: _over(tag.order, i, now)), now);
     }
     _save();
   }
@@ -425,11 +436,6 @@ class TagStore extends ChangeNotifier {
     if (slot == null || !slot.deleted) return;
     _tags.write(id, slot.value, _stamp());
     _merge();
-    _save();
-  }
-
-  void _update(Tag tag) {
-    _tags.write(tag.id, tag, _stamp());
     _save();
   }
 
@@ -476,17 +482,29 @@ class TagStore extends ChangeNotifier {
         tagIds.any((id) => _tags.live(id) == null)) {
       return false;
     }
-    final current = _notes.live(noteId) ?? NoteTags(noteId: noteId);
+    final slot = _notes.slots[noteId];
+    final deleted = slot?.deleted ?? false;
+    final current = slot?.value ?? NoteTags(noteId: noteId);
     final now = _stamp();
+    final floor = slot?.updatedAt ?? 0;
+    int atFor(Stamped<Object?>? replaced) {
+      final held = replaced == null || floor > replaced.at
+          ? floor
+          : replaced.at;
+      return now > held ? now : held + 1;
+    }
+
     final wanted = tagIds.toSet();
     final stamps = {...current.tags};
     for (final id in tagIds) {
-      if (stamps[id]?.v != true) stamps[id] = Stamped(true, now);
+      if (deleted || stamps[id]?.v != true) {
+        stamps[id] = Stamped(true, atFor(stamps[id]));
+      }
     }
     final onIds = current.onIds;
     for (final id in onIds) {
       if (!wanted.contains(id) && _tags.live(id) != null) {
-        stamps[id] = Stamped(false, now);
+        stamps[id] = Stamped(false, atFor(stamps[id]));
       }
     }
     // A deleted tag keeps its place among the live ones, for Undo.
@@ -505,10 +523,11 @@ class TagStore extends ChangeNotifier {
       tags: stamps,
       order: listEquals(order, current.order.v)
           ? current.order
-          : Stamped(List.unmodifiable(order), now),
+          : Stamped(List.unmodifiable(order), atFor(current.order)),
       extra: current.extra,
     );
-    if (jsonEncode(note.toPayload()) == jsonEncode(current.toPayload())) {
+    if (!deleted &&
+        jsonEncode(note.toPayload()) == jsonEncode(current.toPayload())) {
       return true;
     }
     _putNote(note, now);
@@ -529,9 +548,28 @@ class TagStore extends ChangeNotifier {
 
   /// A note deleted for good takes its tags record with it.
   void forgetNote(String noteId) {
-    if (_notes.live(noteId) == null) return;
-    _notes.delete(noteId, _stamp());
-    _save();
+    final slot = _notes.slots[noteId];
+    if (slot == null || (slot.deleted && slot.dirty)) return;
+    if (slot.deleted) {
+      _notes.slots.remove(noteId);
+      _save();
+    } else {
+      _notes.delete(noteId, _stamp());
+      _save();
+    }
+  }
+
+  /// Lets go of [noteId]'s tags record once it is a delete the server has and
+  /// this device's clock has passed: a tag put on from then on outranks it
+  /// by its own time.
+  void _letGo(String noteId) {
+    final slot = _notes.slots[noteId];
+    if (slot != null &&
+        slot.deleted &&
+        !slot.dirty &&
+        slot.updatedAt < _stamp()) {
+      _notes.slots.remove(noteId);
+    }
   }
 
   /// Writes a note's tags, first dropping its entries for tags deleted more
@@ -650,10 +688,12 @@ class TagStore extends ChangeNotifier {
 
   /// The server took the record as sent. Anything changed since stays owed.
   void acknowledge(OwedTagRecord record) {
-    (record.kind == Tag.kind ? _tags : _notes).acknowledge(
-      record.key,
-      record.updatedAt,
-    );
+    if (record.kind == Tag.kind) {
+      _tags.acknowledge(record.key, record.updatedAt);
+    } else {
+      _notes.acknowledge(record.key, record.updatedAt);
+      _letGo(record.key);
+    }
     _save();
   }
 
@@ -686,11 +726,14 @@ class TagStore extends ChangeNotifier {
   /// by [noteId] where the record id is known to be that note's. A newer
   /// local change survives it and goes up again.
   void applyRemoteDelete(String id, int updatedAt, {String? noteId}) {
-    final changed =
-        _tags.applyRemoteDelete(id, updatedAt) ||
-        (noteId != null && _notes.applyRemoteDelete(noteId, updatedAt)) ||
-        _unknown.remove(id) != null;
-    if (changed) _save();
+    if (_tags.applyRemoteDelete(id, updatedAt)) {
+      _save();
+    } else if (noteId != null && _notes.applyRemoteDelete(noteId, updatedAt)) {
+      _letGo(noteId);
+      _save();
+    } else if (_unknown.remove(id) != null) {
+      _save();
+    }
   }
 
   /// Signing out: the tags stay, and everything live is owed to the next
@@ -698,6 +741,7 @@ class TagStore extends ChangeNotifier {
   /// the account's, and go.
   void forgetAccount() {
     _tags.forgetAccount();
+    _notes.slots.removeWhere((_, slot) => slot.deleted);
     _notes.forgetAccount();
     _unknown.clear();
     _save();
