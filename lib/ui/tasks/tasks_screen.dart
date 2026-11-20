@@ -86,13 +86,18 @@ class TasksScreenState extends State<TasksScreen> {
     super.initState();
     widget.addFocus.addListener(_focusChanged);
     widget.controller.sheetRequest.addListener(_takeSheetRequest);
+    // An ask made before this screen existed — a menu bar click while the app
+    // was showing Notes — is waiting for its first listener.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _takeSheetRequest();
+    });
   }
 
   void _takeSheetRequest() {
-    final id = widget.controller.sheetRequest.value;
-    if (id == null || !mounted) return;
+    final request = widget.controller.sheetRequest.value;
+    if (request == null || !mounted) return;
     widget.controller.sheetRequest.value = null;
-    setState(() => _sheetId = id);
+    setState(() => _sheetId = request.id);
   }
 
   @override

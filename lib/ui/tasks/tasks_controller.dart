@@ -22,9 +22,15 @@ import '../editor/editor_formatting.dart';
 class TasksController extends ChangeNotifier {
   /// The task the menu bar asked the Tasks screen to open a sheet for.
   /// Cleared once the screen has taken it. Not a change to any note.
-  final ValueNotifier<String?> sheetRequest = ValueNotifier(null);
+  ///
+  /// Each request carries a number, so asking for the task that is already
+  /// asked for still notifies, and a screen that opens after the ask finds it
+  /// waiting. See [TasksScreenState._takeSheetRequest].
+  final ValueNotifier<({String id, int seq})?> sheetRequest = ValueNotifier(null);
+  int _sheetSeq = 0;
 
-  void requestSheet(String taskId) => sheetRequest.value = taskId;
+  void requestSheet(String taskId) =>
+      sheetRequest.value = (id: taskId, seq: ++_sheetSeq);
   TasksController({
     required this.notes,
     required this.library,
