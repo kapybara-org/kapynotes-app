@@ -2001,6 +2001,18 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
             !local!.isDirty) {
           record.spaceId = there;
         }
+        if (item.deleted &&
+            record.outbox.any(
+              (entry) =>
+                  entry.spaceId == batch.spaceId &&
+                  entry.from != null &&
+                  entry.from != batch.spaceId,
+            )) {
+          // The note left this space and is already on its way back into
+          // it, as after Undo on Stop sharing: the marker is older than its
+          // return, so it does not take the note away.
+          touch.deleted = false;
+        }
         _docs.markDirty(noteId);
         continue;
       }

@@ -871,6 +871,89 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
+  testWidgets('Undo after Stop sharing puts a note back with exactly its '
+      'people, and nobody gets notes meant for someone else', (tester) async {
+    const dana = 'dana@example.com';
+    Future<void> accept(Device device, String token) async {
+      try {
+        await device.sharing.acceptInvite(token);
+      } on SyncRefusedException {
+        return;
+      }
+    }
+
+    late Note forBob;
+    late Note forCarol;
+    late Note ours;
+    await tester.runAsync(() async {
+      for (final device in [alice, bob, carol]) {
+        await device.boot();
+      }
+      forBob = alice.notes.create(body: 'Only for Bob');
+      forCarol = alice.notes.create(body: 'Only for Carol');
+      ours = alice.notes.create(body: 'For all of us');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(forBob.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWith(forCarol.id, email: carol.email);
+      await carol.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWithPeople(ours.id, {
+        bob.email: SpaceRole.member,
+        carol.email: SpaceRole.viewer,
+        dana: SpaceRole.member,
+      });
+      for (final invite in [...server.outbox]) {
+        if (invite.to == bob.email) await accept(bob, invite.token);
+        if (invite.to == carol.email) await accept(carol, invite.token);
+      }
+      for (final device in [alice, bob, carol, alice]) {
+        await device.sharing.refresh();
+        await device.sync.syncNow();
+      }
+    });
+    final home = alice.notes.byId(ours.id)!.spaceId!;
+    final people = alice.sharing.audienceOf(alice.sharing.spaceById(home)!);
+    expect(people, {
+      bob.email: SpaceRole.member,
+      carol.email: SpaceRole.viewer,
+      dana: SpaceRole.member,
+    });
+
+    await openSheet(tester, alice.notes.byId(ours.id)!, alice);
+    await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.widgetWithText(FilledButton, 'Stop sharing'));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(alice.notes.byId(ours.id)!.isShared, isFalse);
+
+    await tester.tap(find.text('Undo'));
+    final again = find.textContaining('Shared again with');
+    await until(tester, () => again.evaluate().isNotEmpty);
+    expect(again, findsOneWidget);
+    await tester.runAsync(() async {
+      for (final invite in [...server.outbox]) {
+        if (invite.to == bob.email) await accept(bob, invite.token);
+        if (invite.to == carol.email) await accept(carol, invite.token);
+      }
+      for (final device in [bob, carol, bob, carol]) {
+        await device.sharing.refresh();
+        await device.sync.syncNow();
+      }
+    });
+
+    expect(alice.notes.byId(ours.id)!.spaceId, home);
+    expect(alice.sharing.audienceOf(alice.sharing.spaceById(home)!), people);
+    expect(bob.notes.byId(ours.id)?.body, 'For all of us');
+    expect(carol.notes.byId(ours.id)?.body, 'For all of us');
+    expect(bob.notes.byId(forCarol.id), isNull);
+    expect(carol.notes.byId(forBob.id), isNull);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   group('the invite link', () {
     late Note note;
     late String spaceId;

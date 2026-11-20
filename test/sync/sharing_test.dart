@@ -623,6 +623,126 @@ void main() {
       },
     );
 
+    group('going back into a space it just left', () {
+      late Note note;
+      late String spaceId;
+
+      /// Alice takes the note out of the space while her device reads nothing
+      /// new there, so the marker it left in the space is still unread.
+      Future<void> takeBackUnread() async {
+        note = await shareWithBob('Round trip');
+        spaceId = alice.notes.byId(note.id)!.spaceId!;
+        alice.api.heldPulls.addAll([spaceId, alice.keyring.personal!.id]);
+        alice.tick();
+        await alice.sharing.unshareNote(note.id);
+        expect(alice.notes.byId(note.id)!.isShared, isFalse);
+      }
+
+      /// The note moves into [to] here, and nothing has gone up yet.
+      void moveLocally(String to) {
+        alice.tick();
+        alice.notes.moveToSpace(
+          note.id,
+          spaceId: to,
+          contentKey: randomKey(),
+          keyGeneration: alice.keyring.byId(to)!.keyGeneration,
+        );
+      }
+
+      test('its own marker is passed over while the move back waits to go up, '
+          'and the note survives the pull and the push', () async {
+        await takeBackUnread();
+        alice.api.failPushes = const SyncTransientException('offline');
+        alice.tick();
+        await alice.sharing.shareNote(note.id, spaceId: spaceId);
+        alice.api.heldPulls.clear();
+        alice.tick();
+        await alice.sync.syncNow();
+        expect(alice.notes.byId(note.id)?.spaceId, spaceId);
+        expect(alice.bodyOf(note.id), 'Round trip');
+
+        alice.api.failPushes = null;
+        alice.tick();
+        await alice.sync.syncNow();
+
+        expect(alice.notes.byId(note.id)?.spaceId, spaceId);
+        expect(alice.bodyOf(note.id), 'Round trip');
+        expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+        bob.tick(2);
+        await bob.sync.syncNow();
+        expect(bob.bodyOf(note.id), 'Round trip');
+      });
+
+      test(
+        'with nothing waiting, the marker still takes the note out',
+        () async {
+          await takeBackUnread();
+          alice.api.heldPulls.clear();
+          alice.tick();
+          await alice.sync.syncNow();
+          expect(alice.notes.byId(note.id)!.isShared, isFalse);
+          expect(alice.bodyOf(note.id), 'Round trip');
+
+          bob.tick(2);
+          await bob.sync.syncNow();
+          expect(bob.notes.byId(note.id), isNull);
+        },
+      );
+
+      test(
+        'with only an edit waiting, the marker still takes the note out',
+        () async {
+          note = await shareWithBob('Round trip');
+          spaceId = bob.notes.byId(note.id)!.spaceId!;
+          bob.tick();
+          bob.notes.updateBody(note.id, 'Bob was here');
+          alice.tick(2);
+          await alice.sharing.unshareNote(note.id);
+
+          bob.tick(2);
+          await bob.sync.syncNow();
+          expect(bob.notes.byId(note.id), isNull);
+          expect(alice.bodyOf(note.id), 'Round trip');
+        },
+      );
+
+      test('with a move into another space waiting, the marker leaves that '
+          'move alone and still takes the note out of this one', () async {
+        await takeBackUnread();
+        final other = await alice.sharing.createSpace('Other');
+        moveLocally(other.id);
+        alice.api.heldPulls.clear();
+        await alice.sync.syncNow();
+        alice.tick();
+        await alice.sync.syncNow();
+
+        expect(alice.bodyOf(note.id), 'Round trip');
+        expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isTrue);
+        bob.tick(2);
+        await bob.sync.syncNow();
+        expect(bob.notes.byId(note.id), isNull);
+      });
+
+      test(
+        'once the move back has gone up, a page with the old marker and then '
+        'the move keeps the note and its text',
+        () async {
+          await takeBackUnread();
+          alice.tick();
+          await alice.sharing.shareNote(note.id, spaceId: spaceId);
+          alice.api.heldPulls.clear();
+          alice.tick();
+          await alice.sync.syncNow();
+
+          expect(alice.notes.byId(note.id)?.spaceId, spaceId);
+          expect(alice.bodyOf(note.id), 'Round trip');
+          bob.tick(2);
+          await bob.sync.syncNow();
+          expect(bob.bodyOf(note.id), 'Round trip');
+        },
+      );
+    });
+
     test('only the owner can take a note out of the space', () async {
       final note = await shareWithBob('Ours');
       final spaceId = bob.notes.byId(note.id)!.spaceId;
