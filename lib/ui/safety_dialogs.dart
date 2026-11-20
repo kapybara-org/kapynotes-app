@@ -391,7 +391,7 @@ String describeSharingError(Object error) => switch (error) {
     _ => 'That action is not available.',
   },
   SyncTransientException() =>
-    'Could not reach the server. Try again in a moment.',
+    'Couldn’t reach Kapy cloud. Try again in a moment.',
   SyncProtocolException(:final message) => message,
   _ => 'That did not work.',
 };

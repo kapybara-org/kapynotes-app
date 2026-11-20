@@ -484,7 +484,7 @@ future_feature under development false
       final check = await codexCli(executable: cli.path).check();
       expect(check.status, KapyAccountStatus.connected);
       expect(check.models.map((m) => (m.id, m.label, m.kind)), [
-        ('a', 'GPT-A', KapyModelKind.codex),
+        ('a', 'Codex', KapyModelKind.codex),
       ]);
       expect(
         cli.runs().map((r) => r.argv.join(' ')),

@@ -54,7 +54,7 @@ class PlanGroup extends StatelessWidget {
         'Lifetime. Voice notes and summaries can run in the cloud',
       ),
       (final Entitlements value, _) => ('Free plan', _freeLine(value)),
-      _ when failed => ('Plan unavailable', 'Could not reach the server'),
+      _ when failed => ('Plan unavailable', 'Couldn’t reach Kapy cloud'),
       _ => ('Checking your plan', 'Loading plan and usage'),
     };
     final buysPro =
