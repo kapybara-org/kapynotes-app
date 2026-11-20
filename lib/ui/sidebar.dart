@@ -2002,7 +2002,8 @@ class SidebarSearchField extends StatelessWidget {
             cursor: SystemMouseCursors.text,
             child: Container(
               key: const ValueKey('sidebar-search-box'),
-              height: 40,
+              // A phone's well is a 44 pt target, as every touch target is.
+              height: phone ? 44 : 40,
               padding: const EdgeInsets.only(left: 14, right: 10),
               decoration: phone
                   ? BoxDecoration(

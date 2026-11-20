@@ -4131,4 +4131,31 @@ total to usd''';
       ]);
     });
   });
+
+  testWidgets('on its side with the keyboard up, a phone keeps the row it is '
+      'typing in sight (KAP-174)', (tester) async {
+    tester.view.physicalSize = const Size(852, 393);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+    addTearDown(tester.view.reset);
+    const body =
+        'Trip\nFlights = 2 * 1147.50 eur\nHotels = 4 * 210\nDinners = 3 * 48';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    // The note stops above the keyboard, so the lines have room at all.
+    final field = tester.getRect(noteField);
+    expect(field.bottom, lessThanOrEqualTo(393 - 260 + 0.5));
+    expect(tester.takeException(), isNull);
+
+    // A tap at the foot of the note leaves that row on screen.
+    await tester.tapAt(Offset(field.center.dx, field.bottom - 6));
+    await tester.pumpAndSettle();
+    final driver = NoteDriver(tester);
+    final caret = driver
+        .caretRect(driver.value.selection.extent)
+        .shift(driver.toGlobal(Offset.zero));
+    expect(caret.bottom, lessThanOrEqualTo(field.bottom + 0.5));
+    expect(caret.top, greaterThanOrEqualTo(field.top - 0.5));
+  });
 }

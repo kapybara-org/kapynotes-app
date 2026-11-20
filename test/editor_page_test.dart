@@ -445,9 +445,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NoteFooter), findsNothing);
+    // Taller than a window's row: the tags under the facts are 44 pt
+    // targets on a phone, so the row grows with them (KAP-115).
     expect(
       tester.getSize(find.byType(NoteMetaRow)).height,
-      EditorMetrics.metaRow,
+      greaterThanOrEqualTo(EditorMetrics.metaRow),
     );
     // The facts and the tags on their two lines sit between the title and
     // the writing, over neither.

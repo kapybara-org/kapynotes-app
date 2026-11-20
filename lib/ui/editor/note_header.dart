@@ -200,14 +200,18 @@ class NoteMetaRow extends StatelessWidget {
       ],
     ];
     if (AppPlatform.isMobile) {
-      return SizedBox(
-        height: EditorMetrics.metaRow,
+      // Grows with the text size and the tags' 44 pt targets rather than
+      // clipping them to a fixed row.
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: EditorMetrics.metaRow),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(height: 16, child: Row(children: facts)),
             const SizedBox(height: 8),
-            SizedBox(height: 22, child: tags),
+            // The tags' own targets are 44 pt tall on a phone, so the row
+            // gives them the room rather than clipping them to the pill.
+            SizedBox(height: AppPlatform.hasPointer ? 22 : 44, child: tags),
           ],
         ),
       );

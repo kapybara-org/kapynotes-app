@@ -1034,14 +1034,33 @@ class _CommandMenuState extends State<CommandMenu> {
                 textInputAction: TextInputAction.go,
                 style: style,
                 cursorHeight: 20,
-                decoration: InputDecoration.collapsed(
-                  hintText: picker != null
-                      ? ''
-                      : widget.askKapyAi
-                      ? 'Search or Ask Kapy AI…'
-                      : 'Search…',
-                  hintStyle: style.copyWith(color: palette.textTertiary),
-                ),
+                decoration: AppPlatform.hasPointer
+                    ? InputDecoration.collapsed(
+                        hintText: picker != null
+                            ? ''
+                            : widget.askKapyAi
+                            ? 'Search or Ask Kapy AI…'
+                            : 'Search…',
+                        hintStyle: style.copyWith(
+                          color: palette.textTertiary,
+                        ),
+                      )
+                    : InputDecoration(
+                        border: InputBorder.none,
+                        hintText: picker != null
+                            ? ''
+                            : widget.askKapyAi
+                            ? 'Search or Ask Kapy AI…'
+                            : 'Search…',
+                        hintStyle: style.copyWith(
+                          color: palette.textTertiary,
+                        ),
+                        // A phone's target is the whole 44 pt row: the field
+                        // carries the room rather than a box around it.
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                        ),
+                      ),
               ),
             ),
           ),

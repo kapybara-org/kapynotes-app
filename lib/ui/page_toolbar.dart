@@ -310,7 +310,8 @@ class PageToolbar extends StatelessWidget {
               key: ValueKey('page-more-${action.value}'),
               value: action.value,
               enabled: action.enabled,
-              height: 36,
+              // A phone's sheet gives each action a 44 pt target.
+              height: AppPlatform.hasPointer ? 36 : 44,
               child: KapyMenuActionRow(action, touch: false),
             ),
         ],

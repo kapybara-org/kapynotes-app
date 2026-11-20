@@ -704,15 +704,28 @@ class _AddRow extends StatelessWidget {
                 textInputAction: TextInputAction.done,
                 cursorColor: palette.accentText,
                 style: uiStyle(16, 28, FontWeight.w500, palette.textPrimary),
-                decoration: InputDecoration.collapsed(
-                  hintText: phone ? 'Add a task' : 'Add a task…',
-                  hintStyle: uiStyle(
-                    16,
-                    28,
-                    FontWeight.w500,
-                    palette.textTertiary,
-                  ),
-                ),
+                decoration: phone
+                    ? InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Add a task',
+                        hintStyle: uiStyle(
+                          16,
+                          28,
+                          FontWeight.w500,
+                          palette.textTertiary,
+                        ),
+                        // A phone's field is the whole 44 pt row.
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      )
+                    : InputDecoration.collapsed(
+                        hintText: 'Add a task…',
+                        hintStyle: uiStyle(
+                          16,
+                          28,
+                          FontWeight.w500,
+                          palette.textTertiary,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -723,6 +736,7 @@ class _AddRow extends StatelessWidget {
             choices: choices,
             onChoose: onChoose,
             chevron: !focused,
+            phone: phone,
           ),
           if (!phone) ...[
             const SizedBox(width: 10),
@@ -746,6 +760,7 @@ class _NotePicker extends StatelessWidget {
     required this.choices,
     required this.onChoose,
     required this.chevron,
+    required this.phone,
   });
 
   final Note? target;
@@ -753,6 +768,9 @@ class _NotePicker extends StatelessWidget {
   final List<Note> choices;
   final ValueChanged<String?> onChoose;
   final bool chevron;
+
+  /// Whether this sits in a phone's row, where a target is 44 pt tall.
+  final bool phone;
 
   @override
   Widget build(BuildContext context) {
@@ -766,7 +784,8 @@ class _NotePicker extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.control),
         onTap: () => _open(context),
         child: Container(
-          height: 28,
+          // A phone's target is 44 pt tall; a window's chip stays small.
+          height: phone ? 44 : 28,
           constraints: const BoxConstraints(maxWidth: 200),
           padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
