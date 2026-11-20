@@ -14,8 +14,10 @@ import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/identity.dart';
 import 'package:kapy_notes/sync/image_sync.dart';
 import 'package:kapy_notes/sync/joining.dart';
+import 'package:kapy_notes/sync/key_bundle.dart';
 import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
@@ -491,6 +493,41 @@ void main() {
           await alice.sync.syncNow();
           await bob.sync.syncNow();
         });
+
+    testWidgets('a changed safety code is said in plain words, and trusted '
+        'from the banner', (tester) async {
+      await sharedWithBob(tester);
+      await tester.runAsync(() async {
+        final replaced = await IdentityKeys.generate();
+        final bundle = server.user(bob.userId).bundle!;
+        server.user(bob.userId).bundle = KeyBundle(
+          wrappedMasterKey: bundle.wrappedMasterKey,
+          kdf: bundle.kdf,
+          identity: await replaced.wrapUnder(
+            vaultFor(bob.userId).masterKeyForKeystore,
+          ),
+        );
+        await alice.sharing.refresh();
+      });
+      expect(alice.sharing.trust.hasWarnings, isTrue);
+
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      expect(
+        find.textContaining(
+          'safety code changed. If they set up a new account, compare this '
+          'safety code with them',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('fingerprint'), findsNothing);
+      expect(find.textContaining('key changed'), findsNothing);
+
+      await tester.ensureVisible(find.text('Trust this safety code'));
+      await tester.tap(find.text('Trust this safety code'));
+      await tester.pumpAndSettle();
+      expect(alice.sharing.trust.hasWarnings, isFalse);
+      expect(find.text('Trust this safety code'), findsNothing);
+    });
 
     testWidgets('changing access changes what they may do', (tester) async {
       await sharedWithBob(tester);

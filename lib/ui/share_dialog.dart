@@ -1566,13 +1566,14 @@ class _PeopleWithAccess extends StatelessWidget {
                     'changed. Shared notes aren’t affected. Compare safety '
                     'codes before trusting it: ${warning.current}',
               final member =>
-                '${member?.displayName ?? warning.email}’s key changed. If '
-                    'they set up a new account, compare this fingerprint with '
-                    'them before trusting it: ${warning.current}',
+                '${member?.displayName ?? warning.email}’s safety code '
+                    'changed. If they set up a new account, compare this '
+                    'safety code with them before trusting it: '
+                    '${warning.current}',
             },
             action: TextButton(
               onPressed: () => sharing.trustNewKey(warning),
-              child: const Text('Trust the new key'),
+              child: const Text('Trust this safety code'),
             ),
           ),
         const _Label('People with access'),
