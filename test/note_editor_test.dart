@@ -3125,6 +3125,18 @@ void main() {
       expect(editedRect.height, greaterThan(16 * scale * 0.9));
       final facts = tester.getRect(find.byKey(const ValueKey('note-facts')));
       expect(facts.bottom, greaterThanOrEqualTo(editedRect.bottom));
+      // The facts wrap within the screen rather than running off it, and
+      // stay above the note's first line.
+      final total = tester.getRect(find.byKey(const ValueKey('note-total')));
+      final follow = editable
+          .boxesFor(const TextSelection(baseOffset: 6, extentOffset: 7))
+          .single;
+      final followTop = editable.toGlobal(Offset(follow.left, follow.top)).dy;
+      expect(total.right, lessThanOrEqualTo(393));
+      expect(facts.bottom, lessThanOrEqualTo(followTop));
+      // A wrapped fact takes its separator with it, so no line holds a dot
+      // alone.
+      expect(facts.height, lessThanOrEqualTo(editedRect.height * 2 + 1));
       expect(tester.takeException(), isNull);
     });
   }

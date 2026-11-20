@@ -7456,6 +7456,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 ),
               Positioned(
                 left: padding.left,
+                right: AppPlatform.isMobile ? padding.right : null,
                 top: y + title.row.bottom + EditorMetrics.metaGap * scale,
                 child: meta!,
               ),
