@@ -10,7 +10,7 @@ import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
-import 'package:kapy_notes/ui/account/sharing_pane.dart';
+import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -217,16 +217,22 @@ void main() {
 
       await tester.pumpWidget(
         harness(
-          SingleChildScrollView(child: SharingPaneBody(sharing: bob.sharing)),
+          SingleChildScrollView(
+            child: SharingSectionBody(sharing: bob.sharing, notes: bob.notes),
+          ),
         ),
       );
       await tester.pumpAndSettle();
 
       final token = server.outbox.single.token;
-      expect(find.byKey(ValueKey('block-$token')), findsOneWidget);
+      await tester.tap(find.byKey(ValueKey('invite-menu-$token')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Block Someone…'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("can't invite you again"), findsOneWidget);
 
       await tester.runAsync(() async {
-        await tester.tap(find.byKey(ValueKey('block-$token')));
+        await tester.tap(find.byKey(const ValueKey('sharing-confirm-ok')));
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });
       await tester.pumpAndSettle();
@@ -234,6 +240,9 @@ void main() {
       // Gone from the list, recorded as blocked, and offered back.
       expect(bob.sharing.hasBlocked(alice.email), isTrue);
       expect(bob.sharing.invites, isEmpty);
+      expect(find.text("1 person can't invite you"), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('blocked-people')));
+      await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('unblock-${alice.email}')), findsOneWidget);
 
       // And a second invitation never arrives.
@@ -247,6 +256,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(server.outbox, isEmpty, reason: 'nothing was delivered');
       expect(bob.sharing.invites, isEmpty);
+      await tester.pump(const Duration(seconds: 6));
+      bob.dispose();
     });
 
     testWidgets('unblocking lets them through again', (tester) async {
@@ -258,9 +269,13 @@ void main() {
 
       await tester.pumpWidget(
         harness(
-          SingleChildScrollView(child: SharingPaneBody(sharing: bob.sharing)),
+          SingleChildScrollView(
+            child: SharingSectionBody(sharing: bob.sharing, notes: bob.notes),
+          ),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('blocked-people')));
       await tester.pumpAndSettle();
 
       await tester.runAsync(() async {
@@ -286,14 +301,18 @@ void main() {
 
       await tester.pumpWidget(
         harness(
-          SingleChildScrollView(child: SharingPaneBody(sharing: bob.sharing)),
+          SingleChildScrollView(
+            child: SharingSectionBody(sharing: bob.sharing, notes: bob.notes),
+          ),
         ),
       );
       await tester.pumpAndSettle();
 
       await tester.tap(
-        find.byKey(ValueKey('report-${server.outbox.single.token}')),
+        find.byKey(ValueKey('invite-menu-${server.outbox.single.token}')),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Report…'));
       await tester.pumpAndSettle();
 
       expect(find.text('Report this invitation'), findsOneWidget);
@@ -343,6 +362,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const ValueKey('share-more')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('report-note')));
       await tester.pumpAndSettle();
 
@@ -386,6 +407,8 @@ void main() {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('share-more')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('report-note')));
       await tester.pumpAndSettle();

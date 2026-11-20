@@ -75,7 +75,7 @@ class TaskDetailsIcon extends StatelessWidget {
         child: KapyIcon(
           details.hasMedia
               ? KapyIcons.imageOutlined
-              : KapyIcons.textFieldsRounded,
+              : KapyIcons.alignLeft,
           size: 14,
           color: context.palette.textTertiary,
         ),

@@ -607,8 +607,8 @@ class _Header extends StatelessWidget {
                 shape: const CircleBorder(),
               ),
               onPressed: onClose,
-              icon: Icon(
-                Icons.close_rounded,
+              icon: KapyIcon(
+                KapyIcons.closeRounded,
                 size: AppPlatform.hasPointer ? 16 : 19,
                 color: palette.textSecondary,
               ),
@@ -634,14 +634,15 @@ class _Hero extends StatelessWidget {
         Container(
           width: 52,
           height: 52,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: accent.withValues(alpha: 0.08),
             border: Border.all(color: accent.withValues(alpha: 0.18)),
             shape: BoxShape.circle,
           ),
-          child: Icon(
-            isPro ? Icons.check_rounded : Icons.all_inclusive_rounded,
-            size: 25,
+          child: KapyIcon(
+            isPro ? KapyIcons.checkRounded : KapyIcons.infiniteRounded,
+            size: 22,
             color: accent,
           ),
         ),
@@ -707,7 +708,7 @@ class _Owned extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline_rounded, size: 22, color: accent),
+          KapyIcon(KapyIcons.checkCircleRounded, size: 22, color: accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -782,7 +783,7 @@ class _Trying extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.hourglass_bottom_rounded, size: 22, color: accent),
+          KapyIcon(KapyIcons.hourglassRounded, size: 22, color: accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -837,7 +838,7 @@ class _OwnedHere extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline_rounded, size: 22, color: accent),
+          KapyIcon(KapyIcons.checkCircleRounded, size: 22, color: accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -898,7 +899,7 @@ class _Benefits extends StatelessWidget {
       child: Column(
         children: [
           _BenefitRow(
-            icon: Icons.note_alt_outlined,
+            icon: KapyIcons.noteOutlined,
             title: 'Unlimited notes, sync and sharing',
             detail: detail,
           ),
@@ -946,7 +947,7 @@ class _BenefitRow extends StatelessWidget {
     required this.detail,
   });
 
-  final IconData icon;
+  final KapyIconData icon;
   final String title;
   final String detail;
 
@@ -962,11 +963,12 @@ class _BenefitRow extends StatelessWidget {
           Container(
             width: 36,
             height: 36,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.08),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 18, color: accent),
+            child: KapyIcon(icon, size: 18, color: accent),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1062,8 +1064,8 @@ class _GrowthNote extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 1),
-            child: Icon(
-              Icons.add_circle_outline_rounded,
+            child: KapyIcon(
+              KapyIcons.addRounded,
               size: 17,
               color: palette.textTertiary,
             ),
