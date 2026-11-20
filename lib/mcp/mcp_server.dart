@@ -60,9 +60,10 @@ class McpServer {
 
   static const String _instructions =
       'Kapy Notes is the person’s notes app. list_notes and read_note find '
-      'what they wrote; list_tasks reads their checklists. Hidden notes are '
-      'never available. The write tools appear only while the person allows '
-      'changes, and nothing can be deleted.';
+      'what they wrote; list_tasks reads their checklists; list_folders reads '
+      'their folders. Hidden notes are never available. The write tools appear '
+      'only while the person allows changes. Folders are theirs alone and '
+      'never enter a shared space, and nothing of a note can be deleted.';
 
   HttpServer? _http;
   int? _port;
@@ -179,7 +180,11 @@ class McpServer {
     try {
       message = jsonDecode(utf8.decode(bytes.takeBytes()));
     } on FormatException {
-      return _json(response, _error(null, -32700, 'That isn’t JSON.'), status: 400);
+      return _json(
+        response,
+        _error(null, -32700, 'That isn’t JSON.'),
+        status: 400,
+      );
     }
     if (message is! Map<String, Object?> || message['jsonrpc'] != '2.0') {
       return _json(
@@ -206,20 +211,23 @@ class McpServer {
       case 'initialize':
         final asked = params['protocolVersion'];
         onCall(client);
-        return _json(response, _result(id, {
-          'protocolVersion': protocolVersions.contains(asked)
-              ? asked
-              : protocolVersions.first,
-          'capabilities': {
-            'tools': {'listChanged': false},
-          },
-          'serverInfo': {
-            'name': 'kapy-notes',
-            'title': 'Kapy Notes',
-            'version': version,
-          },
-          'instructions': _instructions,
-        }));
+        return _json(
+          response,
+          _result(id, {
+            'protocolVersion': protocolVersions.contains(asked)
+                ? asked
+                : protocolVersions.first,
+            'capabilities': {
+              'tools': {'listChanged': false},
+            },
+            'serverInfo': {
+              'name': 'kapy-notes',
+              'title': 'Kapy Notes',
+              'version': version,
+            },
+            'instructions': _instructions,
+          }),
+        );
       case 'ping':
         return _json(response, _result(id, const <String, Object?>{}));
       case 'tools/list':
@@ -234,7 +242,11 @@ class McpServer {
         if (name is! String || args is! Map<String, Object?>) {
           return _json(
             response,
-            _error(id, -32602, 'tools/call needs a name and an arguments object.'),
+            _error(
+              id,
+              -32602,
+              'tools/call needs a name and an arguments object.',
+            ),
           );
         }
         if (McpTools.writeTools.contains(name) &&
@@ -269,7 +281,10 @@ class McpServer {
           ),
         );
       default:
-        return _json(response, _error(id, -32601, 'Kapy Notes has no $method.'));
+        return _json(
+          response,
+          _error(id, -32601, 'Kapy Notes has no $method.'),
+        );
     }
   }
 
