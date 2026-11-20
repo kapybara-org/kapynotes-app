@@ -91,7 +91,7 @@ class NoteMetaRow extends StatelessWidget {
 
   /// Set only when the note cannot be changed: what that is called here.
   final String? readOnlyLabel;
-  final IconData? readOnlyIcon;
+  final KapyIconData? readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
 
   /// The note's tag chips and + Tag, at the end of the line.
@@ -221,7 +221,7 @@ class _ReadOnly extends StatelessWidget {
   });
 
   final String label;
-  final IconData? icon;
+  final KapyIconData? icon;
   final TextStyle style;
   final VoidCallback? onPressed;
 
@@ -231,7 +231,7 @@ class _ReadOnly extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (icon case final icon?) ...[
-          Icon(icon, size: 13, color: style.color),
+          KapyIcon(icon, size: 13, color: style.color),
           const SizedBox(width: 4),
         ],
         Text(label, key: const ValueKey('view-only-status'), style: style),

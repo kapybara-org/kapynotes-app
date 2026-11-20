@@ -183,7 +183,7 @@ class NoteEditor extends StatefulWidget {
     this.onFocus,
     this.readOnly = false,
     this.readOnlyLabel = 'View only',
-    this.readOnlyIcon = Icons.visibility_outlined,
+    this.readOnlyIcon = KapyIcons.visibilityOutlined,
     this.onReadOnlyPressed,
     this.idlePeekHeld,
     required this.engine,
@@ -334,7 +334,7 @@ class NoteEditor extends StatefulWidget {
   /// What the footer calls [readOnly]: View only for the sharing role, or the
   /// note limit's own words, which [onReadOnlyPressed] then explains.
   final String readOnlyLabel;
-  final IconData readOnlyIcon;
+  final KapyIconData readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
 
   /// Whether something besides input, such as Kapy AI answering, should keep
