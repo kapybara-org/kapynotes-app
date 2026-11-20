@@ -26,7 +26,9 @@ class TasksController extends ChangeNotifier {
   /// Each request carries a number, so asking for the task that is already
   /// asked for still notifies, and a screen that opens after the ask finds it
   /// waiting. See [TasksScreenState._takeSheetRequest].
-  final ValueNotifier<({String id, int seq})?> sheetRequest = ValueNotifier(null);
+  final ValueNotifier<({String id, int seq})?> sheetRequest = ValueNotifier(
+    null,
+  );
   int _sheetSeq = 0;
 
   void requestSheet(String taskId) =>

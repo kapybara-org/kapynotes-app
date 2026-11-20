@@ -156,15 +156,17 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pumpAndSettle();
     expect(noteBody(), contains('☑ Two'));
-    expect(
-      [for (final item in tasks.read().open) item.words],
-      isNot(contains('Two')),
-    );
+    expect([
+      for (final item in tasks.read().open) item.words,
+    ], isNot(contains('Two')));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(sheetOpen(), isFalse);
-    expect(noteBody(), 'Errands\n☐ One\n  First detail\n☑ Two\n  Second detail');
+    expect(
+      noteBody(),
+      'Errands\n☐ One\n  First detail\n☑ Two\n  Second detail',
+    );
     await settle(tester);
   });
 
@@ -248,14 +250,17 @@ void main() {
   testWidgets('a smaller task inside the details counts on its parent', (
     tester,
   ) async {
-    await setUpTasks(
-      tester,
-      'Errands\n☐ Pack\n  ☐ Socks\n  ☑ Charger',
-    );
+    await setUpTasks(tester, 'Errands\n☐ Pack\n  ☐ Socks\n  ☑ Charger');
     await pumpScreen(tester);
     final pack = tasks.read().open.single;
 
-    expect(find.descendant(of: rowOf(pack.id), matching: find.textContaining('1 of 3')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: rowOf(pack.id),
+        matching: find.textContaining('1 of 3'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Socks'), findsNothing);
     expect(pack.groupTotal, 3);
     await settle(tester);

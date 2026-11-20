@@ -89,7 +89,12 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                   onPressed: widget.onClose,
                   child: Text(
                     'Close',
-                    style: uiStyle(13, 16, FontWeight.w500, palette.textSecondary),
+                    style: uiStyle(
+                      13,
+                      16,
+                      FontWeight.w500,
+                      palette.textSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -225,5 +230,3 @@ class TaskDetailPicture extends StatelessWidget {
     ),
   );
 }
-
-

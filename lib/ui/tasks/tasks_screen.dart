@@ -269,16 +269,16 @@ class TasksScreenState extends State<TasksScreen> {
   }
 
   KeyEventResult _listKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent || _sheetId == null) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent || _sheetId == null) {
+      return KeyEventResult.ignored;
+    }
     if (!_listFocus.hasFocus) return KeyEventResult.ignored;
     final open = _open(_tasks.read());
     if (open.isEmpty) return KeyEventResult.ignored;
     // Where the sheet's task sits now: after Space marks it done it leaves the
     // open list, and the arrows go on from where it was.
     final shown = open.indexWhere((row) => row.id == _sheetId);
-    final index = shown >= 0
-        ? shown
-        : _sheetIndex.clamp(0, open.length - 1);
+    final index = shown >= 0 ? shown : _sheetIndex.clamp(0, open.length - 1);
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       setState(() => _sheetId = null);
       return KeyEventResult.handled;
