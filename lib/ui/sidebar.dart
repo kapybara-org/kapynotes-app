@@ -122,6 +122,9 @@ KapyIconData _pickedIcon(PickedAction action) => switch (action) {
   PickedAction.delete => deleteIcon,
 };
 
+/// The heading the notes waiting for a later day fold under.
+const String _upcoming = 'Upcoming';
+
 /// The note list, under the field that opens search.
 class Sidebar extends StatelessWidget {
   const Sidebar({
@@ -179,6 +182,9 @@ class Sidebar extends StatelessWidget {
     this.onPinnedOnlyChanged,
     this.grouping = NotesGrouping.byDate,
     this.onGroupingChanged,
+    this.ownDay,
+    this.upcomingOpen = false,
+    this.onUpcomingToggled,
     this.when = NotesWhen.anyTime,
     this.onWhenChanged,
     this.folders,
@@ -352,6 +358,14 @@ class Sidebar extends StatelessWidget {
   /// on its first heading that changes it; without one there is no menu.
   final NotesGrouping grouping;
   final ValueChanged<NotesGrouping>? onGroupingChanged;
+
+  /// The day a note was given, where it has one: those waiting for a later
+  /// day fold into Upcoming above the day they were last edited.
+  final DateTime? Function(Note note)? ownDay;
+
+  /// Whether the Upcoming fold is open, and what opens it: closed until then.
+  final bool upcomingOpen;
+  final VoidCallback? onUpcomingToggled;
 
   /// How far back the filter reaches, for an empty list to say so and to
   /// offer any time again.
@@ -1175,14 +1189,21 @@ extension on Sidebar {
         today: dayShown(now(), displayTime),
         displayTime: displayTime,
         firstTag: (note) => TagMarks.of(context, note.id).firstOrNull?.name,
+        ownDay: ownDay,
       );
+      // The menu goes on the first heading that is not the fold, so it stays
+      // where it always was.
+      final menuAt = grouped.indexWhere((group) => group.label != _upcoming);
       for (final (index, group) in grouped.indexed) {
+        final fold = group.label == _upcoming;
         heading(
           NotesGroupHeading(
             key: ValueKey('sidebar-group-${group.label}'),
             label: group.label,
             detail: group.detail,
-            trailing: index == 0 && onGroupingChanged != null
+            folded: fold ? !upcomingOpen : null,
+            onTap: fold ? onUpcomingToggled : null,
+            trailing: index == menuAt && onGroupingChanged != null
                 ? NotesGroupingMenu(
                     grouping: grouping,
                     onChanged: onGroupingChanged,
@@ -1190,7 +1211,7 @@ extension on Sidebar {
                 : null,
           ),
         );
-        section(group.notes);
+        if (!fold || upcomingOpen) section(group.notes);
       }
     }
 
@@ -1207,6 +1228,11 @@ extension on Sidebar {
   /// The Folders tab: the folder tree, then the notes in no folder.
   Widget _buildFolders(BuildContext context) {
     final folders = this.folders!;
+    final today = dayShown(now(), displayTime);
+    final upcoming = [
+      for (final note in notes)
+        if (ownDay?.call(note) case final day? when day.isAfter(today)) note,
+    ];
     return _fading(
       context,
       FoldersTab(
@@ -1216,6 +1242,7 @@ extension on Sidebar {
         onOpen: folders.onOpen,
         inFront: folders.inFront,
         onTab: folders.onTab,
+        upcoming: upcoming,
         noteRow: (note, depth) => _row(
           note,
           shared: sharing != null && note.isShared,

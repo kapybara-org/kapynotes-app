@@ -25,17 +25,19 @@ void main() {
   );
 
   /// Pumps the strip in [room] at most, keeping When as the strip sets it,
-  /// and hands back every When it set.
-  Future<List<WhenFilter>> pumpStrip(
+  /// and hands back every When it set and every day asked for a page.
+  Future<(List<WhenFilter>, List<DateTime>)> pumpStrip(
     WidgetTester tester, {
     DateTime? today,
     List<Note> notes = const [],
     WhenFilter when = NotesWhen.anyTime,
     bool compact = false,
-    double room = double.infinity,
+    double room = 1200,
+    DateTime? Function(Note note)? ownDay,
     void Function(String noteId, {required bool behind})? onOpenNote,
   }) async {
     final set = <WhenFilter>[];
+    final asked = <DateTime>[];
     var current = when;
     await tester.pumpWidget(
       MaterialApp(
@@ -56,7 +58,9 @@ void main() {
                   notes: notes,
                   displayTime: (at) => at,
                   firstWeekday: DateTime.monday,
+                  ownDay: ownDay,
                   onOpenNote: onOpenNote,
+                  onWriteOn: asked.add,
                   compact: compact,
                 ),
               ),
@@ -65,7 +69,7 @@ void main() {
         ),
       ),
     );
-    return set;
+    return (set, asked);
   }
 
   Finder day(int date, {int month = 11}) =>
@@ -81,21 +85,24 @@ void main() {
           (widget.decoration! as BoxDecoration).shape == BoxShape.circle,
     ),
   );
-  VoidCallback? onPressed(WidgetTester tester, String key) => tester
-      .widget<IconButton>(
-        find.descendant(
-          of: find.byKey(ValueKey(key)),
-          matching: find.byType(IconButton),
-        ),
-      )
-      .onPressed;
   Future<void> tap(WidgetTester tester, Finder target) async {
     await tester.tap(target);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows three days before today, today and tomorrow, with a dot '
-      'for each note up to three', (tester) async {
+  test('the week steps down from seven days to five, three and today', () {
+    expect(DayStrip.daysIn(540), 7);
+    expect(DayStrip.daysIn(539), 5);
+    expect(DayStrip.daysIn(400), 5);
+    expect(DayStrip.daysIn(399), 3);
+    expect(DayStrip.daysIn(260), 3);
+    expect(DayStrip.daysIn(259), 1);
+    expect(DayStrip.daysIn(120), 1);
+    expect(DayStrip.daysIn(119), 0);
+  });
+
+  testWidgets('seven days with today in the middle, a dot for each note up to '
+      'three', (tester) async {
     final semantics = tester.ensureSemantics();
     await pumpStrip(
       tester,
@@ -107,14 +114,13 @@ void main() {
       ],
     );
 
-    for (final date in [16, 17, 18, 19, 20]) {
+    for (final date in [16, 17, 18, 19, 20, 21, 22]) {
       expect(day(date), findsOneWidget, reason: '$date November');
     }
     expect(day(15), findsNothing);
-    expect(find.text('Nov'), findsOneWidget);
-    // Today goes by its weekday, never "Today".
-    expect(find.text('Thu'), findsOneWidget);
-    expect(find.text('Today'), findsNothing);
+    expect(day(23), findsNothing);
+    expect(find.text('November'), findsOneWidget);
+    expect(find.text('Thu 19'), findsOneWidget);
     expect(dotsOf(day(16)), findsNothing);
     expect(dotsOf(day(17)), findsOneWidget);
     expect(dotsOf(day(18)), findsNWidgets(3));
@@ -130,20 +136,31 @@ void main() {
       tester.getSemantics(day(19)),
       isSemantics(label: 'Today, Thursday, 19 November, No notes'),
     );
-    // Tomorrow is greyed out, with nothing to press.
+    // A day still to come is as writable as any other.
     expect(
-      find.descendant(of: day(20), matching: find.byType(TextButton)),
-      findsNothing,
+      find.descendant(of: day(21), matching: find.byType(TextButton)),
+      findsOneWidget,
     );
-    expect(onPressed(tester, 'day-strip-forward'), isNull);
     semantics.dispose();
+  });
+
+  testWidgets('a note waiting for a later day has its dot there, and none on '
+      'the day it was last edited', (tester) async {
+    final edited = DateTime(2026, 11, 16, 10);
+    await pumpStrip(
+      tester,
+      notes: [note('renewal', 'Renewal notes', edited)],
+      ownDay: (note) => note.id == 'renewal' ? DateTime(2026, 11, 21) : null,
+    );
+    expect(dotsOf(day(21)), findsOneWidget);
+    expect(dotsOf(day(16)), findsNothing);
   });
 
   testWidgets('a click narrows to the day, and a second lets it go', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    final set = await pumpStrip(tester);
+    final (set, asked) = await pumpStrip(tester);
 
     await tap(tester, day(17));
     expect(set.single, WhenDay(DateTime(2026, 11, 17), today: thursday));
@@ -159,58 +176,77 @@ void main() {
     expect(set.last, NotesWhen.today);
     await tap(tester, day(19));
     expect(set.last, NotesWhen.anyTime);
-
-    await tester.tap(day(20), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    expect(set, hasLength(4));
+    // None of these days holds a note, so each also asks for a page.
+    expect(asked, hasLength(4));
     semantics.dispose();
   });
 
-  testWidgets('‹ pages back five days, and Today pages back to them', (
-    tester,
-  ) async {
+  testWidgets('a day with no notes opens a page to write it', (tester) async {
+    final (set, asked) = await pumpStrip(
+      tester,
+      notes: [note('standup', 'Standup', DateTime(2026, 11, 17, 10))],
+    );
+    await tap(tester, day(21));
+    expect(asked.single, DateTime(2026, 11, 21));
+    expect(set.single, WhenDay(DateTime(2026, 11, 21), today: thursday));
+
+    // A day with notes only narrows.
+    await tap(tester, day(17));
+    expect(asked, hasLength(1));
+    expect(set.last, WhenDay(DateTime(2026, 11, 17), today: thursday));
+  });
+
+  testWidgets('‹ and › move a week at a time', (tester) async {
     await pumpStrip(tester);
-    final today = find.byKey(const ValueKey('day-strip-today'));
-    expect(today, findsNothing);
 
     await tap(tester, find.byKey(const ValueKey('day-strip-back')));
-    for (final date in [11, 12, 13, 14, 15]) {
+    for (final date in [9, 10, 11, 12, 13, 14, 15]) {
       expect(day(date), findsOneWidget, reason: '$date November');
     }
     expect(day(16), findsNothing);
-    expect(onPressed(tester, 'day-strip-forward'), isNotNull);
-    expect(today, findsOneWidget);
 
     await tap(tester, find.byKey(const ValueKey('day-strip-back')));
     await tap(tester, find.byKey(const ValueKey('day-strip-forward')));
-    expect(day(11), findsOneWidget);
+    expect(day(9), findsOneWidget);
 
-    await tap(tester, today);
-    expect(day(19), findsOneWidget);
-    expect(today, findsNothing);
+    await tap(tester, find.byKey(const ValueKey('day-strip-forward')));
+    await tap(tester, find.byKey(const ValueKey('day-strip-forward')));
+    for (final date in [23, 24, 25, 26, 27, 28, 29]) {
+      expect(day(date), findsOneWidget, reason: '$date November');
+    }
+    expect(day(22), findsNothing);
   });
 
-  testWidgets('five days across two months name both', (tester) async {
+  testWidgets('a week across two months names both, in full', (tester) async {
     await pumpStrip(tester, today: DateTime(2026, 12, 2));
-    expect(find.text('Nov–Dec'), findsOneWidget);
+    expect(find.text('November–December'), findsOneWidget);
     expect(day(29), findsOneWidget);
     expect(day(3, month: 12), findsOneWidget);
   });
 
   testWidgets('the month picks a day as a click would, and brings it into '
       'view', (tester) async {
-    final set = await pumpStrip(
+    final (set, asked) = await pumpStrip(
       tester,
       notes: [note('kickoff', 'Kickoff', DateTime(2026, 11, 2, 10))],
     );
 
     await tap(tester, find.byKey(const ValueKey('day-strip-month')));
     expect(find.text('November 2026'), findsOneWidget);
-    // Days still to come take no click, and no later month opens.
+    // A day still to come can be picked, and so can a later month.
     expect(inMonth(19), findsOneWidget);
-    expect(inMonth(20), findsNothing);
-    expect(find.text('20'), findsNWidgets(2));
-    expect(onPressed(tester, 'day-month-forward'), isNull);
+    expect(inMonth(28), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.descendant(
+              of: find.byKey(const ValueKey('day-month-forward')),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
+      isNotNull,
+    );
 
     await tap(tester, find.byKey(const ValueKey('day-month-back')));
     expect(find.text('October 2026'), findsOneWidget);
@@ -218,11 +254,10 @@ void main() {
     await tap(tester, find.byKey(const ValueKey('day-month-forward')));
 
     await tap(tester, inMonth(2));
-    expect(find.byKey(const ValueKey('day-month')), findsNothing);
     expect(set.single, WhenDay(DateTime(2026, 11, 2), today: thursday));
     expect(day(2), findsOneWidget);
     expect(day(19), findsNothing);
-    expect(find.byKey(const ValueKey('day-strip-today')), findsOneWidget);
+    expect(asked, isEmpty);
 
     // Picked again, it lets the list go, as a second click does.
     await tap(tester, find.byKey(const ValueKey('day-strip-month')));
@@ -233,7 +268,7 @@ void main() {
   testWidgets('with no list to narrow, a day lists its notes, and the one '
       'picked opens, behind on ⌘-click', (tester) async {
     final opened = <(String, bool)>[];
-    final set = await pumpStrip(
+    final (set, _) = await pumpStrip(
       tester,
       notes: [
         note('standup', 'Standup notes', DateTime(2026, 11, 18, 10, 5)),
@@ -281,33 +316,37 @@ void main() {
     expect(find.text('November 2026'), findsOneWidget);
   });
 
-  testWidgets('short of room for the week it is one button, and short of room '
-      'for that it gives way', (tester) async {
+  testWidgets('a narrow page shows fewer days, always around today', (
+    tester,
+  ) async {
     final month = find.byKey(const ValueKey('day-strip-month'));
     final date = find.byKey(const ValueKey('day-strip-date'));
-    // A page back, with its Today button, the week is as wide as it gets.
-    await pumpStrip(tester);
-    await tap(tester, find.byKey(const ValueKey('day-strip-back')));
-    final week = tester.getSize(find.byType(DayStrip)).width;
-    await pumpStrip(tester, compact: true);
-    final button = tester.getSize(find.byType(DayStrip)).width;
+    int chips() => tester
+        .widgetList<Widget>(find.byWidgetPredicate((widget) => true))
+        .where(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'day-strip-2026-',
+              ),
+        )
+        .length;
 
-    for (final (room, shown) in [
-      (week + 0.5, month),
-      (week - 0.5, date),
-      (button + 0.5, date),
-      (button - 0.5, null),
-    ]) {
-      await pumpStrip(tester, room: room);
-      expect(tester.takeException(), isNull, reason: 'in $room');
-      for (final form in [month, date]) {
-        expect(
-          form,
-          form == shown ? findsOneWidget : findsNothing,
-          reason: 'in $room',
-        );
-      }
-    }
-    expect(find.byType(TextButton), findsNothing);
+    await pumpStrip(tester);
+    expect(chips(), 7);
+
+    await pumpStrip(tester, room: 560);
+    expect(day(19), findsOneWidget, reason: 'today never leaves the middle');
+    expect(chips(), lessThan(7));
+
+    await pumpStrip(tester, room: 460);
+    expect(day(19), findsOneWidget);
+    expect(chips(), lessThan(7));
+
+    await pumpStrip(tester, room: 200);
+    expect(tester.takeException(), isNull);
+    expect(chips(), 0, reason: 'no room for a week');
+    expect(month, findsNothing);
+    expect(date, findsOneWidget, reason: 'one button for the day instead');
   });
 }

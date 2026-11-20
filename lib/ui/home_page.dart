@@ -35,6 +35,7 @@ import '../data/auto_titles.dart';
 import '../data/daily_separator.dart';
 import '../data/editor_workspace.dart';
 import '../data/folders.dart';
+import '../data/note_days.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/tags.dart';
@@ -138,6 +139,7 @@ class HomePage extends StatefulWidget {
     this.tasks,
     this.tags,
     this.folders,
+    this.days,
     required this.store,
     this.welcomeNoteId,
     this.launchIntent = LaunchIntent.open,
@@ -178,6 +180,10 @@ class HomePage extends StatefulWidget {
 
   /// The person's folders and the notes filed in them.
   final FolderStore? folders;
+
+  /// The day each note was given, where one was given. Null leaves days out,
+  /// as in a build that has no folders either.
+  final NoteDayStore? days;
   final LocalStore store;
 
   /// The welcome note seeded by this launch, if this launch seeded one.
@@ -1211,6 +1217,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _onNotesChanged() {
+    if (widget.days case final days?) {
+      for (final id in _dayOfFreshNote.keys.toList()) {
+        final note = widget.notes.byId(id);
+        if (note == null) {
+          _dayOfFreshNote.remove(id);
+          continue;
+        }
+        if (note.isEmpty && note.attachments.isEmpty) continue;
+        days.setDay(id, _dayOfFreshNote.remove(id)!);
+      }
+    }
     final collectionIds =
         (_archiveMode
                 ? widget.notes.archivedNotes
@@ -1935,6 +1952,49 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _noteSwitchWorkspace = null;
     preview?.commit();
     _scheduleDiscardAbandonedBlanks();
+  }
+
+  /// The day a note was given, where it has one.
+  DateTime? _ownDayOf(Note note) => widget.days?.dayOf(note.id);
+
+  /// Whether the list's Upcoming fold is open.
+  bool _upcomingOpen = false;
+
+  /// The day a note started from a tapped day will be given once it has its
+  /// first words: a page left untouched writes neither the note nor a day.
+  final Map<String, DateTime> _dayOfFreshNote = {};
+
+  /// Writes on [day]: a page with no note behind it until the first words, so
+  /// leaving it untouched leaves nothing.
+  void _writeOnDay(DateTime day) {
+    final days = widget.days;
+    if (days == null) return;
+    _createNote();
+    final note = widget.notes.byId(_selectedId);
+    if (note == null) return;
+    if (note.isEmpty && note.attachments.isEmpty) {
+      _dayOfFreshNote[note.id] = day;
+    } else {
+      days.setDay(note.id, day);
+    }
+  }
+
+  /// Gives the note whose page is open another day, or none at all.
+  Future<void> _moveToAnotherDay(Note note) async {
+    final days = widget.days;
+    if (days == null) return;
+    final displayTime = widget.prefs.displayTime;
+    final today = dayShown(widget.notes.now(), displayTime);
+    final picked = await showDayPicker(
+      context,
+      today: today,
+      filled: days.dayOf(note.id) ?? noteDay(note, displayTime),
+      firstWeekday: firstWeekday(context),
+    );
+    if (picked == null || !mounted) return;
+    if (days.setDay(note.id, picked) == false) {
+      Toast.show(context, 'Every note already has a day', isError: true);
+    }
   }
 
   /// Starts a new note, unless the one already open is a new note.
@@ -3358,6 +3418,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
       displayTime: displayTime,
       firstWeekday: firstWeekday(context),
+      ownDay: widget.days == null ? null : _ownDayOf,
+      onWriteOn: widget.days == null || !listVisible ? null : _writeOnDay,
       onOpenNote: listVisible || folderId != null ? null : _openFromDay,
     );
   }
@@ -3852,6 +3914,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               grouping: widget.prefs.notesGrouping,
               onGroupingChanged: (grouping) =>
                   widget.prefs.notesGrouping = grouping,
+              ownDay: widget.days == null ? null : _ownDayOf,
+              upcomingOpen: _upcomingOpen,
+              onUpcomingToggled: () =>
+                  setState(() => _upcomingOpen = !_upcomingOpen),
               when: _when,
               onWhenChanged: _setWhen,
               folders: switch (widget.folders) {
@@ -4150,6 +4216,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           label: pinned ? 'Unpin note' : 'Pin note',
           icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
+      if (mayEdit && widget.days != null) ...[
+        const KapyMenuAction(
+          value: 'day',
+          label: 'Move to another day',
+          icon: KapyIcons.calendarOutlined,
+        ),
+        if (widget.days!.dayOf(note.id) != null)
+          const KapyMenuAction(
+            value: 'undate',
+            label: 'Remove day',
+            icon: KapyIcons.calendarOutlined,
+          ),
+      ],
       if (mayEdit && !_specialMode && !note.isShared)
         const KapyMenuAction(
           value: 'hide',
@@ -4188,6 +4267,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (note == null) return;
     switch (action) {
+      case 'day':
+        unawaited(_moveToAnotherDay(note));
+      case 'undate':
+        widget.days?.clearDay(note.id);
       case 'pin':
         _togglePinnedNote(note.id);
       case 'hide':
@@ -4361,6 +4444,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         today: dayShown(widget.notes.now(), displayTime),
         displayTime: displayTime,
         firstTag: (note) => TagMarks.of(context, note.id).firstOrNull?.name,
+        ownDay: widget.days == null ? null : _ownDayOf,
       ),
       groupingMenu: NotesGroupingMenu(
         grouping: widget.prefs.notesGrouping,

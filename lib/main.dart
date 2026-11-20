@@ -178,6 +178,7 @@ Future<void> main([List<String> args = const []]) async {
       tasks: tasks,
       tags: tags,
       folders: folders,
+      days: days,
       chats: chats,
       // Here, where no test runs: see KapyNotesApp.deepLinks.
       deepLinks: DeepLinks.platform(),

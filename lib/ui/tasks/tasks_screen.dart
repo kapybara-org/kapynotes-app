@@ -13,6 +13,8 @@ import '../../data/task_details.dart';
 import '../context_menu.dart';
 import '../editor/note_header.dart';
 import '../keycap.dart';
+import '../note_day_scope.dart';
+import '../notes_grouping.dart' show dayShown;
 import '../sidebar_timestamp.dart';
 import '../tonal_button.dart';
 import 'task_marks.dart';
@@ -128,7 +130,26 @@ class TasksScreenState extends State<TasksScreen> {
 
   TasksController get _tasks => widget.controller;
 
-  List<TaskItem> _open(TaskBoard board) => board.openIn(widget.filter.noteId);
+  List<TaskItem> _open(TaskBoard board) {
+    final days = NoteDayScope.maybeOf(context);
+    final today = dayShown(_tasks.now(), (time) => time.toLocal());
+    return [
+      for (final item in board.openIn(widget.filter.noteId))
+        if (days == null || !days.taskWaits(item.note.id, today)) item,
+    ];
+  }
+
+  /// The tasks whose note waits for a later day: not on today's list, and
+  /// counted in one quiet line.
+  int _waiting(TaskBoard board) {
+    final days = NoteDayScope.maybeOf(context);
+    if (days == null) return 0;
+    final today = dayShown(_tasks.now(), (time) => time.toLocal());
+    return [
+      for (final item in board.openIn(widget.filter.noteId))
+        if (days.taskWaits(item.note.id, today)) item,
+    ].length;
+  }
 
   /// Pick again: every dot cleared, and the questions start over from the
   /// first task.
@@ -453,6 +474,22 @@ class TasksScreenState extends State<TasksScreen> {
                       14,
                       20,
                       FontWeight.w500,
+                      palette.textTertiary,
+                    ),
+                  ),
+                ),
+              if (_waiting(board) case final waiting when waiting > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                  child: Text(
+                    waiting == 1
+                        ? '1 task waits for its day'
+                        : '$waiting tasks wait for their day',
+                    key: const ValueKey('tasks-waiting-line'),
+                    style: uiStyle(
+                      13,
+                      18,
+                      FontWeight.w400,
                       palette.textTertiary,
                     ),
                   ),

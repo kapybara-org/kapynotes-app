@@ -55,6 +55,7 @@ import 'table_controls.dart';
 import 'table_geometry.dart';
 import 'note_footer.dart';
 import 'phone_format_bar.dart';
+import '../note_day_scope.dart';
 import 'note_header.dart';
 import '../sidebar_timestamp.dart';
 import '../tag_ui.dart';
@@ -7452,6 +7453,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           );
         },
         child: NoteMetaRow(
+          day: NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
           edited: SidebarTimestamp.edited(
             widget.lastUpdatedAt ?? now,
             now: now,

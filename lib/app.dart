@@ -37,6 +37,8 @@ import 'core/window_material.dart';
 import 'data/auto_titles.dart';
 import 'data/engine_provider.dart';
 import 'data/folders.dart';
+import 'data/note_days.dart';
+import 'ui/note_day_scope.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
 import 'data/tags.dart';
@@ -78,6 +80,7 @@ class KapyNotesApp extends StatefulWidget {
     this.tasks,
     this.tags,
     this.folders,
+    this.days,
     this.chats,
     this.recording,
     this.kapyAi,
@@ -109,6 +112,9 @@ class KapyNotesApp extends StatefulWidget {
 
   /// The person's folders and the notes filed in them.
   final FolderStore? folders;
+
+  /// The day each note was given, where one was given; null leaves days out.
+  final NoteDayStore? days;
 
   /// Kapy AI's chats, which the account syncs; Kapy AI keeps its own where
   /// this is left out.
@@ -791,7 +797,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             account: widget.account,
             child: SharingNoticeListener(
               account: widget.account,
-              child: HomePage(
+              child: withNoteDays(
+                widget.days,
+                HomePage(
                 notes: widget.notes,
                 engines: _engines!,
                 rates: widget.rates,
@@ -803,6 +811,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                 tasks: widget.tasks,
                 tags: widget.tags,
                 folders: widget.folders,
+                days: widget.days,
                 store: widget.store,
                 welcomeNoteId: _welcomeNoteId,
                 launchIntent: _launchIntent,
@@ -821,6 +830,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                 hiddenNotesGate: _hiddenNotesGate,
                 kapyAi: _kapyAi,
                 titleModel: _titleModel,
+                ),
               ),
             ),
           ),

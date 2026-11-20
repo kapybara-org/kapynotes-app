@@ -219,11 +219,17 @@ class FoldersTab extends StatefulWidget {
     required this.open,
     required this.onOpen,
     required this.noteRow,
+    this.upcoming = const [],
     this.inFront,
     this.onTab,
   });
 
   final FolderStore store;
+
+  /// The notes waiting for a day after today, folded above the tree as
+  /// Upcoming, beside Drawings (Sanjay, 20 Nov: the phone home shows no note
+  /// of a later day).
+  final List<Note> upcoming;
 
   /// The notes it files: the person's own, before any filter narrows them.
   final List<Note> notes;
@@ -247,9 +253,74 @@ class FoldersTab extends StatefulWidget {
   State<FoldersTab> createState() => _FoldersTabState();
 }
 
+/// The fold above the tree: the notes waiting for a later day, with how many
+/// there are, closed until it is opened.
+class _UpcomingRow extends StatelessWidget {
+  const _UpcomingRow({
+    super.key,
+    required this.count,
+    required this.open,
+    required this.onTap,
+  });
+
+  final int count;
+  final bool open;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        height: 36,
+        child: Row(
+          children: [
+            KapyIcon(
+              open ? KapyIcons.chevronDownRounded : KapyIcons.chevronRightRounded,
+              size: 12,
+              strokeWidth: 1.8,
+              color: palette.textTertiary,
+            ),
+            const SizedBox(width: 6),
+            KapyIcon(
+              KapyIcons.calendarOutlined,
+              size: 16,
+              strokeWidth: 1.8,
+              color: palette.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Upcoming',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: uiStyle(
+                  14,
+                  18,
+                  FontWeight.w500,
+                  palette.textPrimary,
+                ),
+              ),
+            ),
+            Text(
+              '$count',
+              style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FoldersTabState extends State<FoldersTab> {
   /// The folder whose name is a field.
   String? _renaming;
+
+  /// Whether the Upcoming fold is open: closed until it is.
+  bool _upcomingOpen = false;
 
   /// Whether a new folder is being named, in [_namingIn], null being the top.
   bool _naming = false;
@@ -394,6 +465,23 @@ class _FoldersTabState extends State<FoldersTab> {
           child: build(context),
         ),
       );
+    }
+
+    if (widget.upcoming.isNotEmpty) {
+      final count = widget.upcoming.length;
+      add(
+        (_) => _UpcomingRow(
+          key: const ValueKey('folders-upcoming'),
+          count: count,
+          open: _upcomingOpen,
+          onTap: () => setState(() => _upcomingOpen = !_upcomingOpen),
+        ),
+      );
+      if (_upcomingOpen) {
+        for (final note in widget.upcoming) {
+          add((_) => widget.noteRow(note, 1));
+        }
+      }
     }
 
     Widget field(int depth, [String initial = '']) => _FolderNameField(
