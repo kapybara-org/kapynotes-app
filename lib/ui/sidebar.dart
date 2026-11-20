@@ -120,9 +120,23 @@ typedef SidebarFolders = ({
 });
 
 /// What can be done to many picked notes at once.
-enum PickedAction { pin, unpin, hide, unhide, archive, restore, delete }
+enum PickedAction {
+  openTabs,
+  pin,
+  unpin,
+  hide,
+  unhide,
+  archive,
+  restore,
+  delete,
+}
+
+/// The menu on picked notes: the line that counts them, then its groups of
+/// actions, each set off from the next by a rule.
+typedef PickedMenu = ({String heading, List<List<KapyMenuAction>> groups});
 
 KapyIconData _pickedIcon(PickedAction action) => switch (action) {
+  PickedAction.openTabs => KapyIcons.openExternalRounded,
   PickedAction.pin => KapyIcons.pinOutlined,
   PickedAction.unpin => KapyIcons.pinRounded,
   PickedAction.hide => hiddenIcon,
@@ -419,7 +433,8 @@ class Sidebar extends StatelessWidget {
                     : const EdgeInsets.fromLTRB(18, 0, 18, 12),
                 child: controls,
               ),
-            if (_picking || (archiveMode && notes.isNotEmpty)) _pickBar(),
+            if (_picking || (archiveMode && notes.isNotEmpty))
+              _pickBar(context),
             Expanded(
               child: _BelowInvitations(
                 invitations:
@@ -659,6 +674,7 @@ extension on Sidebar {
         picked.where(applies).toList();
     final unpinned = those((note) => !pinnedNoteIds.contains(note.id));
     return [
+      if (onOpenInNewTab != null) (PickedAction.openTabs, picked),
       if (onTogglePin != null)
         unpinned.isEmpty
             ? (PickedAction.unpin, picked)
@@ -675,43 +691,104 @@ extension on Sidebar {
     ];
   }
 
-  /// What an action says it does, and to how many, in the width of a menu.
-  /// One note deletes as a row does, asking only if the reader still wants
-  /// to be asked; more always ask.
-  String _pickedLabel(PickedAction action, List<Note> notes) {
-    final many = notes.length > 1;
-    final count = many ? '${notes.length} notes' : 'note';
+  /// What an action says it does, under the line that counts the picked
+  /// notes. One that leaves some of them out says how many it acts on. One
+  /// note deletes as a row does, asking only if the reader still wants to be
+  /// asked; more always ask.
+  String _pickedLabel(PickedAction action, List<Note> notes, int picked) {
+    final some = notes.length < picked ? ' ${_count(notes.length)}' : '';
     return switch (action) {
-      PickedAction.pin => 'Pin $count',
-      PickedAction.unpin => 'Unpin $count',
-      PickedAction.hide => many ? 'Hide $count' : 'Move to Hidden Notes',
-      PickedAction.unhide =>
-        many ? 'Move ${notes.length} to Notes' : 'Move to Notes',
-      PickedAction.archive => 'Archive $count',
-      PickedAction.restore => 'Restore $count',
+      PickedAction.openTabs => 'Open in tabs',
+      PickedAction.pin => 'Pin$some',
+      PickedAction.unpin => 'Unpin$some',
+      PickedAction.hide => 'Move$some to Hidden Notes',
+      PickedAction.unhide => 'Move$some to Notes',
+      PickedAction.archive => 'Archive$some',
+      PickedAction.restore => 'Restore$some',
       PickedAction.delete =>
-        !many
+        notes.length == 1
             ? _deleteLabel(notes.single)
             : notes.every(_theirs)
-            ? 'Remove $count…'
-            : 'Delete $count…',
+            ? 'Remove ${_count(notes.length)}…'
+            : 'Delete ${_count(notes.length)}…',
     };
   }
 
-  /// The menu a right click or long press opens on picked notes.
-  List<KapyMenuAction> _pickedMenu() => [
-    for (final (action, notes) in _pickedChoices)
-      if (notes.isNotEmpty)
-        KapyMenuAction(
-          value: 'picked-${action.name}',
-          label: _pickedLabel(action, notes),
-          icon: _pickedIcon(action),
-          destructive:
-              action == PickedAction.archive || action == PickedAction.delete,
-        ),
+  static String _count(int notes) => notes == 1 ? '1 note' : '$notes notes';
+
+  /// The picked notes Tags… tags: all of them, as a row's Tags tags its note.
+  List<String> _taggable(BuildContext context) => TagShelf.maybeOf(context) == null
+      ? const []
+      : [for (final note in _picked) note.id];
+
+  /// The picked notes Move to folder… files: the ones a row would offer it on.
+  List<String> get _fileable => [
+    for (final note in _picked)
+      if (_files(note)) note.id,
   ];
 
-  void _choosePicked(String value) {
+  /// The menu a right click or long press opens on picked notes: how many,
+  /// then the row menu's groups. How to open them, what to do to them, and
+  /// the ways out of the list.
+  PickedMenu _pickedMenu(BuildContext context) {
+    final picked = _picked.length;
+    final choices = {
+      for (final (action, notes) in _pickedChoices)
+        if (notes.isNotEmpty) action: notes,
+    };
+    List<KapyMenuAction> those(List<PickedAction> actions) => [
+      for (final action in actions)
+        if (choices[action] case final notes?)
+          KapyMenuAction(
+            value: 'picked-${action.name}',
+            label: _pickedLabel(action, notes, picked),
+            icon: _pickedIcon(action),
+            destructive: action == PickedAction.delete,
+          ),
+    ];
+    return (
+      heading: _count(picked),
+      groups: [
+        those(const [PickedAction.openTabs]),
+        [
+          ...those(const [PickedAction.pin, PickedAction.unpin]),
+          if (_taggable(context).isNotEmpty)
+            const KapyMenuAction(
+              value: 'picked-tags',
+              label: 'Tags',
+              icon: KapyIcons.tagRounded,
+              hint: '›',
+            ),
+          if (_fileable.isNotEmpty)
+            const KapyMenuAction(
+              value: 'picked-folder',
+              label: 'Move to folder…',
+              icon: KapyIcons.folderMoveOutlined,
+            ),
+          ...those(const [
+            PickedAction.hide,
+            PickedAction.unhide,
+            PickedAction.restore,
+          ]),
+        ],
+        those(const [PickedAction.archive, PickedAction.delete]),
+      ],
+    );
+  }
+
+  /// Does what the picked notes' menu names. Tags and Move to folder… open
+  /// their pickers at [anchor]; the rest go to [onPicked].
+  Future<void> _choosePicked(
+    String value,
+    BuildContext context,
+    Offset anchor,
+  ) async {
+    if (value == 'picked-tags') {
+      return showTagPickerAt(context, anchor, _taggable(context));
+    }
+    if (folders case final folders? when value == 'picked-folder') {
+      return moveNotesToFolder(context, anchor, folders.store, _fileable);
+    }
     for (final (action, notes) in _pickedChoices) {
       if (value != 'picked-${action.name}' || notes.isEmpty) continue;
       onPicked?.call(action, [for (final note in notes) note.id]);
@@ -730,10 +807,15 @@ extension on Sidebar {
     return null;
   }
 
-  /// Over the list while notes are picked: how many, and what most often
-  /// happens to them. The rest is in their menu. Over the archive at rest,
-  /// its Select and Delete all.
-  Widget _pickBar() {
+  /// Over the list while notes are picked: how many, what can be done to
+  /// them, and Done. Over the archive at rest, its Select and Delete all.
+  ///
+  /// With a pointer the bar holds the picked notes' menu, minus Open in tabs,
+  /// where the list is wide enough for it; a narrower list keeps what most
+  /// often happens to them and Delete, and the rest stay in their menu. A
+  /// touch screen keeps that shorter bar, with Select all, since it has no
+  /// ⌘A to press.
+  Widget _pickBar(BuildContext context) {
     final picks = this.picks;
     if (picks == null || !picks.on) {
       return _PickActions(
@@ -756,45 +838,128 @@ extension on Sidebar {
     }
     final picked = _picked.length;
     final order = _order;
-    final (primary, primaryTip) = archiveMode
-        ? (PickedAction.restore, 'Restore selected')
+    final label = picked == 0 ? 'Select notes' : '$picked selected';
+    final primary = archiveMode
+        ? PickedAction.restore
         : hiddenMode
-        ? (PickedAction.unhide, 'Move selected to Notes')
-        : (PickedAction.archive, 'Archive selected');
-    final offered = {for (final (action, _) in _pickedChoices) action};
-    return _PickActions(
-      label: picked == 0 ? 'Select notes' : '$picked selected',
-      buttons: [
-        if (picked < order.length)
+        ? PickedAction.unhide
+        : PickedAction.archive;
+    final choices = {
+      for (final (action, notes) in _pickedChoices) action: notes,
+    };
+    List<Widget> those(List<PickedAction> actions) => [
+      for (final action in actions)
+        if (choices[action] case final notes?)
           _IconButton(
-            key: const ValueKey('pick-all'),
-            icon: KapyIcons.selectAllRounded,
-            tooltip: 'Select all',
-            onPressed: () => picks.all(order),
+            key: ValueKey('picked-${action.name}'),
+            icon: _pickedIcon(action),
+            tooltip: _pickedLabel(
+              action,
+              notes.isEmpty ? _picked : notes,
+              picked,
+            ),
+            onPressed: _pickedAction(action),
           ),
-        if (offered.contains(primary))
+    ];
+    final short = those([primary, PickedAction.delete]);
+    if (!AppPlatform.hasPointer) {
+      return _PickActions(
+        label: label,
+        buttons: [
+          if (picked < order.length)
+            _IconButton(
+              key: const ValueKey('pick-all'),
+              icon: KapyIcons.selectAllRounded,
+              tooltip: 'Select all',
+              onPressed: () => picks.all(order),
+            ),
+          ...short,
           _IconButton(
-            key: ValueKey('picked-${primary.name}'),
-            icon: _pickedIcon(primary),
-            tooltip: primaryTip,
-            onPressed: _pickedAction(primary),
+            key: const ValueKey('pick-done'),
+            icon: KapyIcons.closeRounded,
+            tooltip: 'Done selecting',
+            onPressed: picks.clear,
           ),
-        if (offered.contains(PickedAction.delete))
-          _IconButton(
-            key: const ValueKey('picked-delete'),
-            icon: deleteIcon,
-            tooltip: 'Delete selected',
-            onPressed: _pickedAction(PickedAction.delete),
-          ),
-        _IconButton(
-          key: const ValueKey('pick-done'),
-          icon: KapyIcons.closeRounded,
-          tooltip: 'Done selecting',
-          onPressed: picks.clear,
+        ],
+      );
+    }
+    final full = [
+      ...those(const [PickedAction.pin, PickedAction.unpin]),
+      if (_taggable(context).isNotEmpty)
+        _pickerButton('picked-tags', KapyIcons.tagRounded, 'Tags'),
+      if (_fileable.isNotEmpty)
+        _pickerButton(
+          'picked-folder',
+          KapyIcons.folderMoveOutlined,
+          'Move to folder…',
         ),
-      ],
+      ...those(const [
+        PickedAction.hide,
+        PickedAction.unhide,
+        PickedAction.restore,
+        PickedAction.archive,
+        PickedAction.delete,
+      ]),
+    ];
+    final done = TonalButton(
+      key: const ValueKey('pick-done'),
+      label: 'Done',
+      onPressed: picks.clear,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: label, style: _PickActions.labelStyle(context)),
+          textDirection: TextDirection.ltr,
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final needed =
+            _PickActions.padding.horizontal +
+            painter.width +
+            full.length * (AppControlMetrics.iconButtonExtent + _pickGap) +
+            _pickGap +
+            TonalButton.widthOf(context, 'Done');
+        painter.dispose();
+        final buttons = needed <= constraints.maxWidth ? full : short;
+        return _PickActions(
+          label: label,
+          buttons: [
+            for (final button in buttons) ...[
+              const SizedBox(width: _pickGap),
+              button,
+            ],
+            const SizedBox(width: _pickGap * 2),
+            done,
+          ],
+        );
+      },
     );
   }
+
+  /// The room between the picked notes' bar buttons.
+  static const double _pickGap = 6;
+
+  /// One of the picked notes' bar buttons that opens a picker under itself.
+  Widget _pickerButton(String value, KapyIconData icon, String tooltip) =>
+      Builder(
+        builder: (context) => _IconButton(
+          key: ValueKey(value),
+          icon: icon,
+          tooltip: tooltip,
+          onPressed: () {
+            final box = context.findRenderObject() as RenderBox?;
+            unawaited(
+              _choosePicked(
+                value,
+                context,
+                box?.localToGlobal(box.size.bottomLeft(Offset.zero)) ??
+                    Offset.zero,
+              ),
+            );
+          },
+        ),
+      );
 
   /// A ⌘-click, or a Ctrl-click off a Mac, on a note while nothing is
   /// picked: the one place that decides what it does. Where notes open in
@@ -1897,10 +2062,18 @@ class _PickActions extends StatelessWidget {
   final String label;
   final List<Widget> buttons;
 
+  static const padding = EdgeInsets.fromLTRB(12, 0, 8, 8);
+
+  static TextStyle labelStyle(BuildContext context) => TextStyle(
+    fontSize: AppTypeScale.small,
+    fontWeight: FontWeight.w400,
+    color: context.palette.textSecondary,
+  );
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
+      padding: padding,
       child: Row(
         children: [
           Expanded(
@@ -1910,11 +2083,7 @@ class _PickActions extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppTypeScale.small,
-                  fontWeight: FontWeight.w400,
-                  color: context.palette.textSecondary,
-                ),
+                style: labelStyle(context),
               ),
             ),
           ),
