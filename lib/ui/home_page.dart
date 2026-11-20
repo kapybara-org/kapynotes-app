@@ -4319,7 +4319,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // While the tab is split, the chord closes its focused pane first.
       closeShortcut: _workspace.isSplit
           ? null
-          : widget.shortcuts.bindingFor(ShortcutAction.closeTab)?.keycapLabel,
+          : widget.shortcuts.hintFor(ShortcutAction.closeTab)?.keycapLabel,
     );
   }
 
