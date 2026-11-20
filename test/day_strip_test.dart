@@ -24,8 +24,8 @@ void main() {
     updatedAt: edited,
   );
 
-  /// Pumps the strip in [room] at most, keeping When as the strip sets it,
-  /// and hands back every When it set.
+  /// Pumps the strip in [room] at most, with its month over its week, keeping
+  /// When as the strip sets it, and hands back every When it set.
   Future<List<WhenFilter>> pumpStrip(
     WidgetTester tester, {
     DateTime? today,
@@ -47,6 +47,11 @@ void main() {
               constraints: BoxConstraints(maxWidth: room),
               child: StatefulBuilder(
                 builder: (context, setState) => DayStrip(
+                  place: (month, week) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [month, ?week],
+                  ),
                   today: today ?? thursday,
                   when: current,
                   onWhenChanged: (when) => setState(() {
@@ -111,7 +116,8 @@ void main() {
       expect(day(date), findsOneWidget, reason: '$date November');
     }
     expect(day(15), findsNothing);
-    expect(find.text('Nov'), findsOneWidget);
+    // The month in full, as the header names it.
+    expect(find.text('November'), findsOneWidget);
     // Today goes by its weekday, never "Today".
     expect(find.text('Thu'), findsOneWidget);
     expect(find.text('Today'), findsNothing);
@@ -192,7 +198,7 @@ void main() {
 
   testWidgets('five days across two months name both', (tester) async {
     await pumpStrip(tester, today: DateTime(2026, 12, 2));
-    expect(find.text('Nov–Dec'), findsOneWidget);
+    expect(find.text('November–December'), findsOneWidget);
     expect(day(29), findsOneWidget);
     expect(day(3, month: 12), findsOneWidget);
   });
@@ -281,32 +287,42 @@ void main() {
     expect(find.text('November 2026'), findsOneWidget);
   });
 
-  testWidgets('short of room for the week it is one button, and short of room '
-      'for that it gives way', (tester) async {
+  testWidgets('short of room the week gives way and the month stays, and '
+      'short of room for the month or its one button, they give way too', (
+    tester,
+  ) async {
     final month = find.byKey(const ValueKey('day-strip-month'));
     final date = find.byKey(const ValueKey('day-strip-date'));
+    final back = find.byKey(const ValueKey('day-strip-back'));
     // A page back, with its Today button, the week is as wide as it gets.
     await pumpStrip(tester);
-    await tap(tester, find.byKey(const ValueKey('day-strip-back')));
-    final week = tester.getSize(find.byType(DayStrip)).width;
+    await tap(tester, back);
+    final week = tester
+        .getSize(find.ancestor(of: back, matching: find.byType(Row)).first)
+        .width;
+    final label = tester.getSize(month).width;
     await pumpStrip(tester, compact: true);
-    final button = tester.getSize(find.byType(DayStrip)).width;
+    final button = tester.getSize(date).width;
 
-    for (final (room, shown) in [
-      (week + 0.5, month),
-      (week - 0.5, date),
-      (button + 0.5, date),
-      (button - 0.5, null),
+    for (final (room, compact, shown, weekShown) in [
+      (week + 0.5, false, month, true),
+      (week - 0.5, false, month, false),
+      (label + 0.5, false, month, false),
+      (label - 0.5, false, null, false),
+      (button + 0.5, true, date, false),
+      (button - 0.5, true, null, false),
     ]) {
-      await pumpStrip(tester, room: room);
-      expect(tester.takeException(), isNull, reason: 'in $room');
+      await pumpStrip(tester, room: room, compact: compact);
+      final reason = 'in $room, compact $compact';
+      expect(tester.takeException(), isNull, reason: reason);
       for (final form in [month, date]) {
         expect(
           form,
           form == shown ? findsOneWidget : findsNothing,
-          reason: 'in $room',
+          reason: reason,
         );
       }
+      expect(back, weekShown ? findsOneWidget : findsNothing, reason: reason);
     }
     expect(find.byType(TextButton), findsNothing);
   });

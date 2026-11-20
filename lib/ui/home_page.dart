@@ -69,7 +69,7 @@ import '../data/writing_streak.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
-import 'editor/note_header.dart' show DateLineSaved;
+import 'editor/note_header.dart' show DateLineSaved, NoteFolders;
 import 'editor/image_insertion.dart';
 import 'editor/slash_commands.dart';
 import 'editor_panes.dart';
@@ -3286,15 +3286,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// The page's days, in My notes and on a folder in front, counting and
   /// narrowing what the list shows or what the folder holds. With the list
-  /// hidden and no folder in front, a day lists its notes instead.
-  Widget Function(bool compact)? _pageDays({required bool listVisible}) {
+  /// hidden and no folder in front, a day lists its notes instead. Their
+  /// month takes the bar's top left, so the open note's folders go in the
+  /// line above its title.
+  Widget Function(bool compact, PlaceDays place)? _pageDays({
+    required bool listVisible,
+  }) {
     final folderId = _folderInFront;
     if (folderId == null && (_space != LibrarySpace.notes || _specialMode)) {
       return null;
     }
     final displayTime = widget.prefs.displayTime;
-    return (compact) => DayStrip(
+    return (compact, place) => DayStrip(
       key: _dayStrip,
+      place: place,
       compact: compact,
       today: dayShown(widget.notes.now(), displayTime),
       when: _when,
@@ -3749,6 +3754,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final space = _space;
             final listFits = _listFits;
             final listShown = _listShown;
+            final pageDays = _pageDays(listVisible: listFits && listShown);
             final moreActions = _folderInFront == null
                 ? _pageActions(selected)
                 : [
@@ -3946,7 +3952,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               curve: Curves.easeOutCubic,
                               padding: EdgeInsets.fromLTRB(
                                 listFits && listShown ? 0 : pageInset,
-                                cramped ? 0 : pageInset,
+                                cramped || (listFits && listShown)
+                                    ? 0
+                                    : pageInset,
                                 pageInset,
                                 cramped ? 0 : pageInset,
                               ),
@@ -3963,10 +3971,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     else ...[
                                       if (!cramped)
                                         PageToolbar(
-                                          path: _pagePath(selected),
-                                          days: _pageDays(
-                                            listVisible: listFits && listShown,
-                                          ),
+                                          path: pageDays == null
+                                              ? _pagePath(selected)
+                                              : null,
+                                          days: pageDays,
                                           onOpenFolder: widget.folders == null
                                               ? null
                                               : _openFolder,
@@ -4022,10 +4030,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                   unloadedPictures:
                                                       unloaded.length,
                                                 ),
-                                                child: _buildWideWorkspace(
-                                                  sidebar,
-                                                  cramped: cramped,
-                                                ),
+                                                child: switch ((
+                                                  widget.folders,
+                                                  pageDays,
+                                                )) {
+                                                  (final folders?, _?) =>
+                                                    NoteFolders(
+                                                      tree: folders.tree,
+                                                      onOpenFolder: _openFolder,
+                                                      child:
+                                                          _buildWideWorkspace(
+                                                            sidebar,
+                                                            cramped: cramped,
+                                                          ),
+                                                    ),
+                                                  _ => _buildWideWorkspace(
+                                                    sidebar,
+                                                    cramped: cramped,
+                                                  ),
+                                                },
                                               ),
                                         ),
                                       ),
@@ -4048,16 +4071,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Where the page is, for its bar: the list's place, then the folder in
-  /// front with the folders it sits in, or the open note's folders, or a
-  /// drawing's name. Archived and Hidden notes are in no folder.
+  /// Where a page with no days is, for its bar: the list's place, then the
+  /// open note's folders, or a drawing's name. Archived and Hidden notes are
+  /// in no folder.
   PagePath _pagePath(Note? note) {
     final tree = widget.folders?.tree;
-    final folderId =
-        _folderInFront ??
-        (note == null || _specialMode || !_canFile(note)
-            ? null
-            : tree?.folderOf(note.id));
+    final folderId = note == null || _specialMode || !_canFile(note)
+        ? null
+        : tree?.folderOf(note.id);
     return PagePath(
       icon: _archiveMode
           ? archiveIcon
@@ -4074,8 +4095,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (tree != null && folderId != null)
           for (final folder in tree.pathOf(folderId))
             (name: folder.name, folderId: folder.id),
-        if (_folderInFront == null && note != null && note.isDrawing)
-          (name: note.title, folderId: null),
+        if (note != null && note.isDrawing) (name: note.title, folderId: null),
       ],
     );
   }
@@ -4697,7 +4717,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               SafeArea(
                 bottom: false,
                 child: PageToolbar(
-                  path: _pagePath(note),
                   back: (
                     to: _specialMode
                         ? _show.label
