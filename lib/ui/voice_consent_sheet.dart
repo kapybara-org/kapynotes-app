@@ -44,7 +44,7 @@ class _SpeechConsentSheet extends StatelessWidget {
               const SizedBox(height: 12),
               const _Point(
                 text:
-                    'A cloud summary sends the transcript to the same AI service. '
+                    'A cloud summary sends the transcript to an AI service too. '
                     'It is not kept, and it is never used to train AI.',
               ),
               const _Point(text: 'Your other notes stay private.'),
