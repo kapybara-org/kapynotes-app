@@ -374,6 +374,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // and that is a fact of the account, not of the notes.
     ?widget.account,
     ?widget.tasks,
+    ?widget.days,
   ]);
 
   /// Tasks, while the rail has it open.

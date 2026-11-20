@@ -735,7 +735,7 @@ class _DayPickerState extends State<DayPicker> {
     Widget cell(DateTime? day) {
       if (day == null) return const SizedBox.square(dimension: 32);
       final filled = day == widget.filled;
-      final notes = counts[day]!;
+      final notes = counts[day] ?? 0;
       final (weight, color) = filled
           ? (FontWeight.w600, palette.tonalForeground)
           : day == today

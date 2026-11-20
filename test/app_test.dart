@@ -8668,6 +8668,39 @@ void main() {
       );
     });
 
+    testWidgets('⋮ gives the open note another day, and Remove day takes it '
+        'off', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final plan = notes.create(body: 'Plan\nCall Ana');
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      final now = notes.now();
+      final later = DateTime(now.year, now.month, now.day + 2);
+      Future<void> tap(Finder target) async {
+        await tester.tap(target);
+        await tester.pumpAndSettle();
+      }
+
+      await tap(find.byKey(const ValueKey('page-more')));
+      await tap(find.byKey(const ValueKey('page-more-day')));
+      expect(tester.takeException(), isNull);
+      if (later.month != now.month) {
+        await tap(find.byTooltip('Next month'));
+      }
+      await tap(
+        find.byKey(
+          ValueKey('day-month-${later.year}-${later.month}-${later.day}'),
+        ),
+      );
+      expect(days.dayOf(plan.id), later);
+      expect(find.byKey(const ValueKey('note-day-pill')), findsOneWidget);
+
+      await tap(find.byKey(const ValueKey('page-more')));
+      await tap(find.byKey(const ValueKey('page-more-undate')));
+      expect(days.dayOf(plan.id), isNull);
+      expect(find.byKey(const ValueKey('note-day-pill')), findsNothing);
+    });
+
     testWidgets('a note for a later day waits, folded, under Upcoming', (
       tester,
     ) async {
