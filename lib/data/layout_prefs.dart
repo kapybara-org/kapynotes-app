@@ -96,6 +96,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _resultsVisibleKey = 'resultsVisible.v2';
   static const String _sidebarKey = 'sidebar.v1';
   static const String _hiddenFolderVisibleKey = 'hiddenFolderVisible.v1';
+  static const String _askBeforeDeletingKey = 'askBeforeDeleting.v1';
   static const String _noteCardsKey = 'noteCards.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
@@ -125,6 +126,9 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _recentlyOpenedNotesKey = 'recentlyOpenedNotes.v1';
   static const String _caretKey = 'caret.v1';
   static const String _appearanceKey = 'appearance.v1';
+  static const String _themeKey = 'theme.v1';
+  static const String _nightThemeKey = 'nightTheme.v1';
+  static const String _increaseContrastKey = 'increaseContrast.v1';
   static const String _appTextSizeKey = 'appTextSize.v1';
   static const String _paperKey = 'paper.v1';
   static const String _defaultNoteKey = 'defaultNote.v1';
@@ -148,6 +152,7 @@ class LayoutPrefs extends ChangeNotifier {
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = false;
   bool _hiddenFolderVisible = true;
+  bool _askBeforeDeleting = true;
   bool _noteCards = true;
   Size _windowSize = defaultWindowSize;
   Offset? _windowPosition;
@@ -162,6 +167,11 @@ class LayoutPrefs extends ChangeNotifier {
   final ValueNotifier<AppearanceMode> _appearance = ValueNotifier(
     AppearanceMode.system,
   );
+  final ValueNotifier<AppTheme> _theme = ValueNotifier(AppTheme.riverbank);
+  final ValueNotifier<NightTheme> _nightTheme = ValueNotifier(
+    const NightTheme(),
+  );
+  final ValueNotifier<bool?> _increaseContrast = ValueNotifier(null);
   final ValueNotifier<AppTextSize> _appTextSize = ValueNotifier(
     AppTextSize.standard,
   );
@@ -193,6 +203,12 @@ class LayoutPrefs extends ChangeNotifier {
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
   bool get hiddenFolderVisible => _hiddenFolderVisible;
+
+  /// Whether deleting one note asks first. Turned off by the question's own
+  /// "Don't ask again", and back on from Settings. Deleting several notes at
+  /// once asks whatever this says. Kept on this device, as every other
+  /// preference here is.
+  bool get askBeforeDeleting => _askBeforeDeleting;
 
   /// Whether the desktop notes list draws its notes as sticky cards rather
   /// than as rows. Cards are how the list first appears.
@@ -252,6 +268,19 @@ class LayoutPrefs extends ChangeNotifier {
   /// [transparencyListenable]: the app root rebuilds its theme from this, and
   /// [LayoutPrefs] notifies for every dragged pixel of the sidebar.
   ValueListenable<AppearanceMode> get appearanceListenable => _appearance;
+
+  /// Which of the six themes this device wears. Its own, never synced.
+  AppTheme get theme => _theme.value;
+  ValueListenable<AppTheme> get themeListenable => _theme;
+
+  /// "At night, use a different theme", with its theme and hours.
+  NightTheme get nightTheme => _nightTheme.value;
+  ValueListenable<NightTheme> get nightThemeListenable => _nightTheme;
+
+  /// Increase contrast as the person set it, or null where they never have
+  /// and it follows the system's own request for more contrast.
+  bool? get increaseContrast => _increaseContrast.value;
+  ValueListenable<bool?> get increaseContrastListenable => _increaseContrast;
 
   /// The text-size signal listened to by the app root. Keeping it narrower
   /// than [LayoutPrefs] avoids rebuilding the Navigator for panel drags and
@@ -366,6 +395,7 @@ class LayoutPrefs extends ChangeNotifier {
     // state for this session, not a preference carried into the next one.
     _sidebarVisible = false;
     _hiddenFolderVisible = _store.read<bool>(_hiddenFolderVisibleKey) ?? true;
+    _askBeforeDeleting = _store.read<bool>(_askBeforeDeletingKey) ?? true;
     _noteCards = _store.read<bool>(_noteCardsKey) ?? true;
     _windowSize = _clampWindowSize(
       Size(
@@ -391,6 +421,9 @@ class LayoutPrefs extends ChangeNotifier {
       AppearanceMode.values,
       AppearanceMode.system,
     );
+    _theme.value = _readEnum(_themeKey, AppTheme.values, AppTheme.riverbank);
+    _nightTheme.value = NightTheme.fromJson(_store.data[_nightThemeKey]);
+    _increaseContrast.value = _store.read<bool>(_increaseContrastKey);
     _appTextSize.value = _readEnum(
       _appTextSizeKey,
       AppTextSize.values,
@@ -531,6 +564,32 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _appearance.value) return;
     _appearance.value = value;
     _store.putNow(_appearanceKey, value.name);
+    notifyListeners();
+  }
+
+  set theme(AppTheme value) {
+    if (value == _theme.value) return;
+    _theme.value = value;
+    _store.putNow(_themeKey, value.name);
+    notifyListeners();
+  }
+
+  set nightTheme(NightTheme value) {
+    if (value == _nightTheme.value) return;
+    _nightTheme.value = value;
+    _store.putNow(_nightThemeKey, value.toJson());
+    notifyListeners();
+  }
+
+  /// Sets Increase contrast to [on] where the system currently [asks] for
+  /// something else, and otherwise goes back to following the system, so
+  /// that turning it off while the system asks keeps it off, and agreeing
+  /// with the system lets it lead again.
+  void setIncreaseContrast(bool on, {required bool asks}) {
+    final value = on == asks ? null : on;
+    if (value == _increaseContrast.value) return;
+    _increaseContrast.value = value;
+    _store.putNow(_increaseContrastKey, value);
     notifyListeners();
   }
 
@@ -814,6 +873,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _hiddenFolderVisible) return;
     _hiddenFolderVisible = value;
     _store.putNow(_hiddenFolderVisibleKey, value);
+    notifyListeners();
+  }
+
+  set askBeforeDeleting(bool value) {
+    if (value == _askBeforeDeleting) return;
+    _askBeforeDeleting = value;
+    _store.putNow(_askBeforeDeletingKey, value);
     notifyListeners();
   }
 

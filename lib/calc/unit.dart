@@ -76,6 +76,10 @@ class UnitDef {
   final double offset;
   final String category;
 
+  /// Whether the currency has a rate. One without is only a name a total
+  /// can be shown in, and nothing converts to or from it.
+  final bool rated;
+
   /// Every spelling that resolves to this unit. Written names are matched
   /// without case; compact symbols preserve case where it carries meaning.
   final List<String> aliases;
@@ -87,6 +91,7 @@ class UnitDef {
     required this.aliases,
     required this.category,
     this.offset = 0,
+    this.rated = true,
   });
 
   bool get isCurrency => category == 'currency';

@@ -253,6 +253,135 @@ void main() {
       );
     });
 
+    test('shows it with no rates at all', () {
+      final results = CalcEngine().evaluateDocument('10\n5\ntotal in eur');
+      expect(results[2]!.text, '15.00 EUR');
+      expect(
+        CalcEngine().evaluateDocument('10\n5\nsum in eur')[2]!.text,
+        '15.00 EUR',
+      );
+      expect(
+        CalcEngine().evaluateDocument('10\n5\navg in gbp')[2]!.text,
+        '7.50 GBP',
+      );
+    });
+
+    test('takes only a real currency code, with rates or without', () {
+      for (final engine in [CalcEngine(), _engine()]) {
+        for (final word in ['may', 'Jan', 'xyz', 'all', 'try']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+        expect(engine.evaluateDocument('Total in May')[0], isNull);
+        expect(
+          engine.evaluateDocument('10\n5\nsum in zar')[2]!.text,
+          '15.00 ZAR',
+        );
+      }
+    });
+
+    test('takes a code that is also a word only in capitals', () {
+      for (final engine in [CalcEngine(), _engine()]) {
+        for (final word in ['bob', 'Bob', 'mad', 'gel', 'ron', 'Try', 'lak']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+        for (final code in ['TRY', 'MAD', 'BOB', 'ALL', 'ZWG', 'XCG']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $code')[2]!.text,
+            '15.00 $code',
+            reason: code,
+          );
+        }
+        for (final word in ['LAK', 'ANG', 'ZWL']) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+      }
+    });
+
+    test(
+      'takes a code that is also a word only in capitals once it has a rate',
+      () {
+        final engine = CalcEngine(
+          ratesPerUsd: const {
+            'EUR': 0.5,
+            'ALL': 100.0,
+            'TRY': 30.0,
+            'BOB': 7.0,
+            'MAD': 10.0,
+            'GEL': 2.5,
+            'RON': 4.0,
+            'MOP': 8.0,
+            'PEN': 4.0,
+            'TOP': 2.0,
+            'SOS': 570.0,
+          },
+        );
+        for (final word in [
+          'all',
+          'All',
+          'try',
+          'Try',
+          'bob',
+          'mad',
+          'gel',
+          'ron',
+          'mop',
+          'pen',
+          'top',
+          'sos',
+        ]) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $word')[2],
+            isNull,
+            reason: word,
+          );
+        }
+        for (final code in [
+          'ALL',
+          'TRY',
+          'BOB',
+          'MAD',
+          'GEL',
+          'RON',
+          'MOP',
+          'PEN',
+          'TOP',
+          'SOS',
+        ]) {
+          expect(
+            engine.evaluateDocument('10\n5\ntotal in $code')[2]!.text,
+            '15.00 $code',
+            reason: code,
+          );
+        }
+        expect(engine.evaluateDocument('30 TRY in usd')[0]!.text, '1.00 USD');
+        expect(engine.evaluateDocument('5 try')[0]?.text, isNot('5.00 TRY'));
+        expect(engine.evaluateDocument('5 TRY')[0]!.text, '5.00 TRY');
+        expect(engine.evaluateDocument('\$5 in eur')[0]!.text, '2.50 EUR');
+      },
+    );
+
+    test('has no rate to convert money with when there are none', () {
+      expect(CalcEngine().evaluateDocument('\$10\n5\ntotal in eur')[2], isNull);
+      expect(CalcEngine().evaluateDocument('100 usd in eur')[0], isNull);
+      expect(CalcEngine().evaluateDocument('5 in eur')[0], isNull);
+      expect(
+        CalcEngine().evaluateDocument('total = 5\ntotal in eur')[1],
+        isNull,
+      );
+    });
+
     test('leaves a plain number and a name the note gave a value alone', () {
       expect(_line('5 in eur'), isNull);
       expect(_engine().evaluateDocument('total = 5\ntotal in eur')[1], isNull);

@@ -140,6 +140,9 @@ class FakeServer {
   /// and not applied, as `applyOps` answers them.
   int guestDeletes = 0;
 
+  /// Times a space's note keys were asked for.
+  int noteKeyFetches = 0;
+
   /// A server from before hidden notes: no list in the spaces it serves, and
   /// hiding a note is a 404.
   bool beforeHiddenNotes = false;
@@ -1253,6 +1256,7 @@ class FakeServer {
   }
 
   List<WireNoteKey> noteKeys(String userId, String spaceId) {
+    noteKeyFetches++;
     final space = _member(userId, spaceId);
     return [
       for (final note in _liveNotes(spaceId))

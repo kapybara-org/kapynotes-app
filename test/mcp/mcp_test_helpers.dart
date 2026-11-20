@@ -59,8 +59,7 @@ class McpFixture {
         .create(body: 'Old receipts\n- [ ] file taxes', authored: false)
         .id;
     notes.archive(archived);
-    drawing = notes.create().id;
-    notes.setDrawingMode(drawing, drawing: true);
+    drawing = notes.create(drawing: true).id;
     shared = notes
         .create(
           body: 'Team plan\n☐ Ship it',

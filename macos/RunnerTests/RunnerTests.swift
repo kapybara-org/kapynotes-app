@@ -45,4 +45,17 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse(MenuBarPanel.isSupported(by: engine("KapyObjectEngine", switchType: "@")))
   }
 
+  /// The engine gives the window's controller every view's semantics. The
+  /// panel's must reach the panel, by the view id each batch ends with, or
+  /// VoiceOver finds its controls inside the window.
+  func testMenuBarPanelRoutesEachViewsSemantics() {
+    XCTAssertTrue(MenuBarPanel.routesSemantics)
+    var batch = [Int](repeating: 0, count: 6)
+    batch[0] = 6 * MemoryLayout<Int>.size
+    batch[5] = 7
+    batch.withUnsafeBytes { XCTAssertEqual(MenuBarPanel.viewId(of: $0.baseAddress!), 7) }
+    batch[0] = 5 * MemoryLayout<Int>.size
+    batch.withUnsafeBytes { XCTAssertNil(MenuBarPanel.viewId(of: $0.baseAddress!)) }
+  }
+
 }

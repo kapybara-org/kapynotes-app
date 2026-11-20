@@ -130,7 +130,7 @@ class SpacesRail extends StatelessWidget {
     return Material(
       type: MaterialType.transparency,
       child: Container(
-        width: width,
+        width: width + MediaQuery.paddingOf(context).left,
         decoration: BoxDecoration(
           color: palette.railBackground,
           border: Border(right: BorderSide(color: palette.railBorder)),

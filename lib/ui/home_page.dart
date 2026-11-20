@@ -24,6 +24,7 @@ import '../speech/transcription_queue.dart';
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
 import '../core/quick_capture.dart';
+import '../core/status_bar.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/engine_provider.dart';
@@ -77,6 +78,7 @@ import 'kapy_ai/kapy_ai_panel.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
+import 'note_picks.dart';
 import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
@@ -95,12 +97,23 @@ import 'split_view.dart';
 import 'toolbar.dart';
 import 'window_drag_area.dart';
 import 'draw/drawing_canvas.dart';
-import 'draw/note_mode_switch.dart';
 
 /// The narrowest window that holds the notes list beside the page. Below it a
 /// phone switches to the compact editor with a notes drawer, while a desktop
 /// window keeps the rail and the page and opens the list over the page.
 const double kTwoPaneBreakpoint = 720;
+
+/// The height a page needs above a software keyboard to keep its toolbar, its
+/// margins and the editor's top and bottom padding. A phone on its side has
+/// less, and gives them up while the keyboard is up so the lines being typed
+/// stay in sight; a tablet has more. Measured from the top of the window, so
+/// hiding the status bar for the room does not change the answer.
+const double kCrampedPageHeight = 240;
+
+/// Whether a window of [size], [keyboardInset] of it under the keyboard,
+/// leaves a cramped page; see [kCrampedPageHeight].
+bool isCrampedPage(Size size, double keyboardInset) =>
+    keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -240,6 +253,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   String? _selectedId;
 
+  /// Whether this page has hidden Android's status bar; see [_syncStatusBar].
+  bool _statusBarHidden = false;
+
   /// The search the ⌘K menu carries into Archive. Only Archive is narrowed by
   /// it, and leaving Archive drops it.
   String _archiveQuery = '';
@@ -292,11 +308,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// scrubbing or an active Ctrl/Cmd switch session.
   bool _selectionAutofocusSuppressed = false;
 
-  /// Whether the archive is picking notes rather than opening them, and which
-  /// ones have been picked. Both are cleared on the way out of the archive:
-  /// a selection is about the list you made it in.
-  bool _selectingArchived = false;
-  final Set<String> _checkedArchived = {};
+  /// The notes picked to act on together. Let go of on the way into or out
+  /// of the archive or Hidden Notes: a selection is about the list it was
+  /// made in.
+  final NotePicks _picks = NotePicks();
   Timer? _kapyIdleTimer;
 
   /// Lets the compact layout close its own drawer, which is otherwise only
@@ -394,7 +409,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Opens on the tab that lists the note it opens on.
     _showTabOf(_selectedId);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+    FocusManager.instance.addListener(_syncStatusBar);
     widget.notes.addListener(_onNotesChanged);
+    _picks.addListener(_onPicksChanged);
     widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
     widget.account?.addListener(_offerRecoveryKey);
     // The system-wide new-note shortcut has already raised the window by the
@@ -434,6 +451,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.account?.sync?.leaveNote(_selectedId);
     _namer?.dispose();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    FocusManager.instance.removeListener(_syncStatusBar);
+    if (_statusBarHidden) unawaited(StatusBar.setHidden(false));
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
@@ -448,11 +467,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyPanel.dispose();
     _taskAddFocus.dispose();
     _taskController?.dispose();
+    _picks.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _syncStatusBar();
     if (_hiddenMode &&
         _hiddenSystemUiDepth == 0 &&
         state != AppLifecycleState.resumed) {
@@ -465,7 +486,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // been holding that fact since the intent or the URL arrived, and gives
       // it up once, to whoever asks first — so asking on every resume costs
       // an ordinary resume one unanswered question and nothing else.
-      unawaited(QuickCapture.launchIntent().then(_runWidgetAction));
+      unawaited(_runWidgetActions(QuickCapture.launchIntent()));
     } else {
       // A window can lose the matching modifier-up event while focus moves to
       // the operating system. Commit the last preview so the switcher cannot
@@ -478,9 +499,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
-    if (mounted && _drawingsOnly && _usesCompactLayout) {
-      setState(() => _drawingsOnly = false);
-    }
+    _syncStatusBar();
     // An open compact drawer is disposed when a phone turns or a tablet's
     // window widens into the two-pane layout. Scaffold cannot report a closing
     // transition after that disposal, so clear the transient flag here.
@@ -507,6 +526,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         setState(() => _adoptWorkspaceSelection(previous));
       }
     }
+  }
+
+  /// Hides Android's status bar while the keyboard leaves a phone on its side
+  /// a cramped page to write in, and shows it again as soon as that stops:
+  /// the keyboard closes, the phone turns upright, the caret leaves the note,
+  /// or the app leaves the foreground. iPhones hide it in landscape on their
+  /// own.
+  void _syncStatusBar() {
+    if (!AppPlatform.isAndroid || !mounted) return;
+    final view = View.of(context);
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    final hide =
+        (lifecycle == null || lifecycle == AppLifecycleState.resumed) &&
+        isCrampedPage(
+          view.physicalSize / view.devicePixelRatio,
+          view.viewInsets.bottom / view.devicePixelRatio,
+        ) &&
+        (_selectedEditor?.writing ?? false);
+    if (hide == _statusBarHidden) return;
+    _statusBarHidden = hide;
+    unawaited(StatusBar.setHidden(hide));
   }
 
   void _beginOpenSession() {
@@ -564,10 +604,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// Runs the action [intent] names, then one whose answer missed the
+  /// launch's deadline, once that answer arrives.
+  Future<void> _runWidgetActions(Future<LaunchIntent> intent) async {
+    await _runWidgetAction(await intent);
+    await _runWidgetAction(await QuickCapture.lateIntent());
+  }
+
   Future<void> _runInitialImageAndWidgetActions() async {
     final interruptedSelection = await _recoverInterruptedImageSelection();
     if (!mounted || interruptedSelection) return;
-    await _runWidgetAction(widget.launchIntent);
+    await _runWidgetActions(Future.value(widget.launchIntent));
   }
 
   Future<List<XFile>> _acquireImages(
@@ -922,7 +969,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     try {
       await widget.account?.speech?.acceptConsent(speechConsentVersion);
-      prefs?.transcriptionDeclinedVersion = null;
+      prefs?.consentGiven();
       queue.needsConsent = false;
       for (final entry in queue.entries) {
         queue.retry(entry.noteId, entry.hash);
@@ -1269,16 +1316,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Lists the tab [id] is in, when a note is opened from somewhere other
   /// than the list: a link, a pane, the note put back after the archive. A
   /// row the reader clicked is in the tab on screen already, and the reader
-  /// switching tabs moves no selection, so neither is overruled. A note that
-  /// is not a drawing takes the list out of Drawings, for the same reason.
+  /// switching tabs moves no selection, so neither is overruled. For the
+  /// same reason a note takes the list out of Drawings, and a drawing takes it
+  /// into Drawings.
   void _showTabOf(String? id) {
-    if (id == null || _specialMode) return;
+    if (id == null) return;
     final note = widget.notes.byId(id);
     if (note == null) return;
-    if (_drawingsOnly) {
-      if (note.isDrawing) return;
-      _drawingsOnly = false;
+    if (_drawingsOnly ? !note.isDrawing : !_listedInNotes(note)) {
+      _drawingsOnly = !_drawingsOnly;
     }
+    if (_specialMode || _drawingsOnly) return;
     final sharing = widget.account?.sharing;
     if (sharing != null) _sidebarTab = sidebarTabOf(note, sharing);
   }
@@ -1696,8 +1744,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           body: drawing || body.isNotEmpty ? body : Note.blankBody,
           authored: body.isNotEmpty,
           hidden: creatingHidden,
+          drawing: drawing,
         );
-    if (drawing) widget.notes.setDrawingMode(note.id, drawing: true);
     if (blank == null) {
       _freshNoteIds.add(note.id);
     } else {
@@ -1764,32 +1812,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         : () => _archiveNote(id);
   }
 
-  void _archiveNote(String id) {
-    if (!_canEditNote(widget.notes.byId(id))) return;
+  void _archiveNote(String id) => _archiveNotes([id]);
+
+  /// Files notes away: one from its row or the keyboard, or every picked one
+  /// the reader may change, in one go.
+  void _archiveNotes(List<String> ids) {
+    final going = [
+      for (final id in ids)
+        if (_canEditNote(widget.notes.byId(id))) id,
+    ];
+    if (going.isEmpty) return;
     _recordKapyActivity();
-    _totalAnimatedFor.remove(id);
-    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    final index = widget.notes.activeIndexOf(id);
-    final archivingSelected = id == _selectedId;
+    _letGo(going);
+    final open = _selectedId;
+    final archivingSelected = going.contains(open);
+    final index = archivingSelected ? widget.notes.activeIndexOf(open!) : -1;
     final closesPane = !_usesCompactLayout && _workspace.isSplit;
-    widget.notes.archive(id);
+    widget.notes.archiveAll(going);
+    _picks.clear();
     Toast.show(
       context,
-      'Moved to Archive',
+      going.length == 1
+          ? 'Moved to Archive'
+          : 'Moved ${going.length} notes to Archive',
       icon: archiveIcon,
       action: 'View',
-      onAction: () => _viewArchived(id),
+      onAction: () => _viewArchived(going.first),
     );
-    if (!archivingSelected) return;
-    // Its pane closed with it, and the pane beside it has the focus. Opening
-    // the next note in the list there would take the place of a note the
-    // reader chose to keep on screen.
+    if (archivingSelected) _openInPlaceOf(index, closesPane: closesPane);
+  }
+
+  /// Forgets what the page kept for notes that are leaving the list.
+  void _letGo(Iterable<String> ids) {
+    for (final id in ids) {
+      _totalAnimatedFor.remove(id);
+      if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
+    }
+  }
+
+  /// Opens what takes the place of the open note, which has just left the
+  /// list from [index] of the store's notes: archived, hidden or deleted.
+  ///
+  /// In a split its pane closed with it, and the pane beside it has the
+  /// focus: opening the next note in the list there would take the place of
+  /// a note the reader chose to keep on screen. Otherwise the next one down.
+  void _openInPlaceOf(int index, {required bool closesPane}) {
     if (closesPane) {
       widget.prefs.lastOpenedNoteId = _selectedId;
       _focusSelectedEditorHere();
       return;
     }
-
     final next = _successorInList(index);
     setState(() => _setSelectedId(next));
     widget.prefs.lastOpenedNoteId = next;
@@ -1820,15 +1892,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return null;
   }
 
-  void _restoreNote(String id) {
-    if (!_canEditNote(widget.notes.byId(id))) return;
-    _recordKapyActivity();
-    final restoringSelected = id == _selectedId;
-    final index = _visibleNotes.indexWhere((note) => note.id == id);
-    widget.notes.restore(id);
-    Toast.show(context, 'Note restored', icon: restoreIcon);
-    if (!restoringSelected) return;
+  void _restoreNote(String id) => _restoreNotes([id]);
 
+  /// Returns archived notes to the list, one or every picked one.
+  void _restoreNotes(List<String> ids) {
+    final going = [
+      for (final id in ids)
+        if (_canEditNote(widget.notes.byId(id))) id,
+    ];
+    if (going.isEmpty) return;
+    _recordKapyActivity();
+    final index = _visibleNotes.indexWhere((note) => note.id == _selectedId);
+    widget.notes.restoreAll(going);
+    _picks.clear();
+    Toast.show(
+      context,
+      going.length == 1 ? 'Note restored' : '${going.length} notes restored',
+      icon: restoreIcon,
+    );
+    if (going.contains(_selectedId)) _openNearby(index);
+  }
+
+  /// Opens the note now at [index] of the list on screen, or the last one,
+  /// once the open note has gone from the archive or Hidden Notes.
+  void _openNearby(int index) {
     final remaining = _visibleNotes;
     final next = remaining.isEmpty
         ? null
@@ -1837,11 +1924,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.prefs.lastOpenedNoteId = next;
   }
 
-  Future<void> _hideNote(String id) async {
-    var note = widget.notes.byId(id);
-    if (note == null || note.isArchived || note.isHidden || note.isShared) {
-      return;
-    }
+  Future<void> _hideNote(String id) => _hideNotes([id]);
+
+  /// Moves the reader's own notes behind Hidden Notes, one or every picked
+  /// one, once Hidden Notes is set up.
+  Future<void> _hideNotes(List<String> ids) async {
+    bool hides(Note? note) =>
+        note != null && !note.isArchived && !note.isHidden && !note.isShared;
+    if (!ids.any((id) => hides(widget.notes.byId(id)))) return;
     if (_hiddenAuthBusy) return;
     setState(() => _hiddenAuthBusy = true);
     final configured = await widget.hiddenNotesGate.ensureConfigured(context);
@@ -1849,90 +1939,127 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() => _hiddenAuthBusy = false);
     if (!configured) return;
 
-    note = widget.notes.byId(id);
-    if (note == null || note.isArchived || note.isHidden || note.isShared) {
-      return;
-    }
+    final going = [
+      for (final id in ids)
+        if (hides(widget.notes.byId(id))) id,
+    ];
+    if (going.isEmpty) return;
     _recordKapyActivity();
-    _totalAnimatedFor.remove(id);
-    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    final index = widget.notes.activeIndexOf(id);
-    final hidingSelected = id == _selectedId;
+    _letGo(going);
+    final open = _selectedId;
+    final hidingSelected = going.contains(open);
+    final index = hidingSelected ? widget.notes.activeIndexOf(open!) : -1;
     final closesPane = !_usesCompactLayout && _workspace.isSplit;
-    widget.notes.hide(id);
+    widget.notes.hideAll(going);
+    _picks.clear();
     final shortcut = widget.shortcuts
         .bindingFor(ShortcutAction.toggleHiddenFolder)
         ?.displayLabel;
+    final them = going.length == 1 ? 'it' : 'them';
     final discovery = AppPlatform.hasPointer && shortcut != null
-        ? 'Press $shortcut to find it.'
+        ? 'Press $shortcut to find $them.'
         : widget.prefs.hiddenFolderVisible
-        ? 'Choose Hidden in the notes filter to find it.'
-        : 'Show it from Settings to find it.';
-    Toast.show(context, 'Moved to Hidden Notes. $discovery', icon: hiddenIcon);
-    if (!hidingSelected) return;
-    if (closesPane) {
-      widget.prefs.lastOpenedNoteId = _selectedId;
-      _focusSelectedEditorHere();
-      return;
-    }
-    final next = _successorInList(index);
-    setState(() => _setSelectedId(next));
-    widget.prefs.lastOpenedNoteId = next;
-    if (_usesCompactLayout && next == null) _scheduleInitialNote();
-    _focusSelectedEditorAtEnd();
-  }
-
-  void _unhideNote(String id) {
-    final note = widget.notes.byId(id);
-    if (note == null || !note.isHidden) return;
-    _recordKapyActivity();
-    final unhiddenSelected = id == _selectedId;
-    final index = _visibleNotes.indexWhere((item) => item.id == id);
-    widget.notes.unhide(id);
-    Toast.show(context, 'Moved to Notes', icon: unhideIcon);
-    if (!unhiddenSelected) return;
-
-    final remaining = _visibleNotes;
-    final next = remaining.isEmpty
-        ? null
-        : remaining[index.clamp(0, remaining.length - 1)].id;
-    setState(() => _setSelectedId(next));
-    widget.prefs.lastOpenedNoteId = next;
-  }
-
-  void _togglePinnedNote(String id) {
-    _recordKapyActivity();
-    final pinned = widget.notes.togglePinned(id);
-    if (pinned == null) return;
+        ? 'Choose Hidden in the notes filter to find $them.'
+        : 'Show it from Settings to find $them.';
     Toast.show(
       context,
-      pinned ? 'Note pinned' : 'Note unpinned',
+      going.length == 1
+          ? 'Moved to Hidden Notes. $discovery'
+          : 'Moved ${going.length} notes to Hidden Notes. $discovery',
+      icon: hiddenIcon,
+    );
+    if (hidingSelected) _openInPlaceOf(index, closesPane: closesPane);
+  }
+
+  void _unhideNote(String id) => _unhideNotes([id]);
+
+  /// Returns hidden notes to the ordinary list, one or every picked one.
+  void _unhideNotes(List<String> ids) {
+    final going = [
+      for (final id in ids)
+        if (widget.notes.byId(id)?.isHidden ?? false) id,
+    ];
+    if (going.isEmpty) return;
+    _recordKapyActivity();
+    final index = _visibleNotes.indexWhere((note) => note.id == _selectedId);
+    widget.notes.unhideAll(going);
+    _picks.clear();
+    Toast.show(
+      context,
+      going.length == 1
+          ? 'Moved to Notes'
+          : 'Moved ${going.length} notes to Notes',
+      icon: unhideIcon,
+    );
+    if (going.contains(_selectedId)) _openNearby(index);
+  }
+
+  void _togglePinnedNote(String id) =>
+      _pinNotes([id], pinned: !widget.notes.isPinned(id));
+
+  /// Pins notes, or unpins them: one from its row, or every picked one.
+  void _pinNotes(List<String> ids, {required bool pinned}) {
+    _recordKapyActivity();
+    final changed = widget.notes.pinAll(ids, pinned: pinned);
+    if (changed == 0) return;
+    _picks.clear();
+    final count = changed == 1 ? 'Note' : '$changed notes';
+    Toast.show(
+      context,
+      pinned ? '$count pinned' : '$count unpinned',
       icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
     );
   }
 
-  /// Throws one archived note away for good.
+  /// Does what was chosen for the picked notes, to the ones the list says
+  /// it applies to.
+  void _actOnPicked(PickedAction action, List<String> ids) {
+    switch (action) {
+      case PickedAction.pin || PickedAction.unpin:
+        _pinNotes(ids, pinned: action == PickedAction.pin);
+      case PickedAction.hide:
+        unawaited(_hideNotes(ids));
+      case PickedAction.unhide:
+        _unhideNotes(ids);
+      case PickedAction.archive:
+        _archiveNotes(ids);
+      case PickedAction.restore:
+        _restoreNotes(ids);
+      case PickedAction.delete:
+        unawaited(_deletePicked(ids));
+    }
+  }
+
+  void _onPicksChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Throws one note away for good.
   ///
   /// Guarded by a question, because nothing here can undo it: the note leaves
   /// this device and, through the tombstone, every other one it syncs to. A
   /// note somebody else shares with this account only leaves its own notes.
+  /// The question offers not to be asked again, and Settings asks it again.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
     if (note == null || !_canEditNote(note)) return;
     _recordKapyActivity();
-    final title = note.title.trim();
-    final name = title.isEmpty ? 'this note' : '"$title"';
     final owner = _sharedBy(note);
-    final confirmed = await _confirmDelete(
-      title: owner == null ? 'Delete note?' : 'Remove from your notes?',
-      body: owner == null
-          ? 'Permanently deletes $name from every synced device.'
-          : 'Removes $name from your notes, and from your other devices '
-                'once they are up to date. $owner and '
-                "everyone it's shared with keep it.",
-      action: owner == null ? 'Delete' : 'Remove',
-    );
-    if (!confirmed || !mounted) return;
+    if (widget.prefs.askBeforeDeleting) {
+      final title = note.title.trim();
+      final name = title.isEmpty ? 'this note' : '"$title"';
+      final confirmed = await _confirmDelete(
+        title: owner == null ? 'Delete note?' : 'Remove from your notes?',
+        body: owner == null
+            ? 'Permanently deletes $name from every synced device.'
+            : 'Removes $name from your notes, and from your other devices '
+                  'once they are up to date. $owner and '
+                  "everyone it's shared with keep it.",
+        action: owner == null ? 'Delete' : 'Remove',
+        canStopAsking: true,
+      );
+      if (!confirmed || !mounted) return;
+    }
     _forget([id]);
     if (owner == null) {
       _announceDeleted(1);
@@ -1985,8 +2112,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _announceForgotten(ids, theirs);
   }
 
-  Future<void> _deleteChecked() async {
-    final ids = _checkedArchived
+  /// Throws picked notes away. One goes as its row's Delete does, asking
+  /// only if the reader still wants to be asked; several always ask, with
+  /// how many, because nothing brings them back.
+  Future<void> _deletePicked(List<String> picked) async {
+    if (picked.length == 1) return _deleteNote(picked.single);
+    final ids = picked
         .where((id) => _canEditNote(widget.notes.byId(id)))
         .toList();
     if (ids.isEmpty) return;
@@ -2003,6 +2134,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
+    _picks.clear();
     _announceForgotten(ids, theirs);
   }
 
@@ -2014,43 +2146,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Toast.show(context, 'Removed from your notes', icon: deleteIcon);
   }
 
-  void _restoreChecked() {
-    final ids = _checkedArchived.toList();
-    if (ids.isEmpty) return;
-    _recordKapyActivity();
-    for (final id in ids) {
-      if (_canEditNote(widget.notes.byId(id))) widget.notes.restore(id);
-    }
-    setState(() {
-      _checkedArchived.clear();
-      _selectingArchived = false;
-      _setSelectedId(_visibleNotes.firstOrNull?.id);
-    });
-    widget.prefs.lastOpenedNoteId = _selectedId;
-    Toast.show(
-      context,
-      ids.length == 1 ? 'Note restored' : '${ids.length} notes restored',
-      icon: restoreIcon,
-    );
-  }
-
   /// The part every delete shares: take the notes out, drop whatever the
   /// selection and the editor were holding onto, and reclaim the pictures and
   /// recordings nothing refers to any more.
   void _forget(List<String> ids) {
     final removing = ids.toSet();
-    for (final id in removing) {
-      _totalAnimatedFor.remove(id);
-      if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    }
+    _letGo(removing);
     final losingSelected = removing.contains(_selectedId);
+    final index = losingSelected
+        ? widget.notes.activeIndexOf(_selectedId!)
+        : -1;
+    final closesPane = !_usesCompactLayout && _workspace.isSplit;
     widget.notes.deleteAll(removing);
+    _picks.drop(removing);
     setState(() {
-      _checkedArchived.removeAll(removing);
-      if (_checkedArchived.isEmpty) _selectingArchived = false;
-      if (losingSelected) _setSelectedId(_visibleNotes.firstOrNull?.id);
+      if (losingSelected && _specialMode) {
+        _setSelectedId(_visibleNotes.firstOrNull?.id);
+      }
     });
-    if (losingSelected) widget.prefs.lastOpenedNoteId = _selectedId;
+    if (losingSelected && _specialMode) {
+      widget.prefs.lastOpenedNoteId = _selectedId;
+    } else if (losingSelected) {
+      _openInPlaceOf(index, closesPane: closesPane);
+    }
     // The notes are gone, so their attachments have no owner. See
     // [NotesStore.sweepBlobs] for why this is the only place that counts.
     unawaited(widget.notes.sweepBlobs());
@@ -2070,24 +2188,57 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// One question, asked the same way every time, with the destructive answer
   /// marked as one.
+  ///
+  /// [canStopAsking] adds "Don’t ask again", for one note at a time only.
+  /// Ticked, it counts once the answer is yes; deleting several notes at once
+  /// always asks.
   Future<bool> _confirmDelete({
     required String title,
     required String body,
     required String action,
+    bool canStopAsking = false,
   }) async {
+    var stopAsking = false;
     final answer = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
-          child: Text(
-            body,
-            style: TextStyle(
-              fontSize: AppTypeScale.control,
-              color: context.palette.textPrimary,
-              height: 1.4,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                body,
+                style: TextStyle(
+                  fontSize: AppTypeScale.control,
+                  color: context.palette.textPrimary,
+                  height: 1.4,
+                ),
+              ),
+              if (canStopAsking) ...[
+                const SizedBox(height: 10),
+                StatefulBuilder(
+                  builder: (context, setState) => CheckboxListTile(
+                    key: const ValueKey('delete-stop-asking'),
+                    value: stopAsking,
+                    onChanged: (value) =>
+                        setState(() => stopAsking = value ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      'Don’t ask again',
+                      style: TextStyle(
+                        fontSize: AppTypeScale.control,
+                        color: context.palette.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         actions: [
@@ -2106,33 +2257,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ],
       ),
     );
-    return answer ?? false;
+    final confirmed = answer ?? false;
+    if (confirmed && stopAsking) widget.prefs.askBeforeDeleting = false;
+    return confirmed;
   }
-
-  void _toggleChecked(String id) {
-    setState(() {
-      if (!_checkedArchived.remove(id)) _checkedArchived.add(id);
-    });
-  }
-
-  void _checkAllArchived() =>
-      setState(() => _checkedArchived.addAll(_visibleNotes.map((n) => n.id)));
-
-  void _startSelecting() => setState(() => _selectingArchived = true);
-
-  void _cancelSelecting() => setState(() {
-    _selectingArchived = false;
-    _checkedArchived.clear();
-  });
 
   void _toggleArchive() {
     _recordKapyActivity();
+    _picks.clear();
     setState(() {
       final entering = !_archiveMode;
       _archiveMode = entering;
       _hiddenMode = false;
-      _selectingArchived = false;
-      _checkedArchived.clear();
       _archiveQuery = '';
       if (entering) {
         _setSelectedId(_narrowed(widget.notes.archivedNotes).firstOrNull?.id);
@@ -2171,11 +2307,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() => _hiddenAuthBusy = false);
     if (!unlocked) return;
 
+    _picks.clear();
     setState(() {
       _archiveMode = false;
       _hiddenMode = true;
-      _selectingArchived = false;
-      _checkedArchived.clear();
       _archiveQuery = '';
       _setSelectedId(_narrowed(widget.notes.hiddenNotes).firstOrNull?.id);
     });
@@ -2185,6 +2320,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _leaveHiddenNotes() {
     if (!_hiddenMode || !mounted) return;
     final previous = _selectedId;
+    _picks.clear();
     setState(() {
       _hiddenMode = false;
       _archiveQuery = '';
@@ -2593,6 +2729,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// choice of note.
   void _setSidebarTab(SidebarTab tab) {
     if (tab == _sidebarTab) return;
+    _picks.clear();
     setState(() => _sidebarTab = tab);
   }
 
@@ -3013,12 +3150,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// Narrows [notes] to the space the list is showing. The ordinary list is
-  /// split by whose the notes are once there is an account to have shared
-  /// anything with, or narrowed to drawings from the rail, and everything that
+  /// Narrows [notes] to the space the list is showing, and everything that
   /// walks the list (the arrow keys, the note after an archived one) walks
-  /// what is on screen. Drawings keeps to drawings in the archive and Hidden
-  /// Notes too; from Notes, both hold every note of theirs.
+  /// what is on screen. Drawings live in Drawings and every other space lists
+  /// notes, in the archive and Hidden Notes too. The ordinary list is also
+  /// split by whose the notes are once there is an account to have shared
+  /// anything with.
   List<Note> _narrowed(List<Note> notes) {
     if (_drawingsOnly) {
       return [
@@ -3026,14 +3163,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (note.isDrawing) note,
       ];
     }
-    if (_specialMode) return notes;
-    final sharing = widget.account?.sharing;
-    if (sharing == null) return notes;
+    final sharing = _specialMode ? null : widget.account?.sharing;
     return [
       for (final note in notes)
-        if (sidebarTabOf(note, sharing) == _sidebarTab) note,
+        if (_listedInNotes(note) &&
+            (sharing == null || sidebarTabOf(note, sharing) == _sidebarTab))
+          note,
     ];
   }
+
+  /// Whether a list other than Drawings holds [note]: a note does, and so
+  /// does a drawing that a sync race left words beside, for those words.
+  bool _listedInNotes(Note note) =>
+      _phoneListsDrawings || !note.isDrawing || note.hasTextBesideDrawing;
+
+  /// Phone-only and temporary: a phone has no Drawings to go to until Phone
+  /// v2's tab bar brings one, so until then its Notes list keeps the drawings
+  /// too. Phone v2 deletes this and its one use above.
+  bool get _phoneListsDrawings => _usesCompactLayout;
 
   /// The space the rail shows as open.
   LibrarySpace get _space => _tasksMode
@@ -3089,6 +3236,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _showSpace(LibrarySpace space) {
     _pinnedOnly = false;
     _clearFilter();
+    _picks.clear();
     setState(() {
       _tasksMode = space == LibrarySpace.tasks;
       _drawingsOnly = space == LibrarySpace.drawings;
@@ -3236,6 +3384,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // A tablet reaches this layout too, and it has no Scaffold to resize
     // around the software keyboard. Desktop reports zero here.
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final cramped = isCrampedPage(MediaQuery.sizeOf(context), keyboardInset);
     // The canvas left around the page, on every side but the one against the
     // notes list, whose own margin keeps the two apart.
     const pageInset = 12.0;
@@ -3359,15 +3508,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             archiveMode: _archiveMode,
                             hiddenMode: _hiddenMode,
                             onDelete: _deleteNote,
+                            asksBeforeDeleting: widget.prefs.askBeforeDeleting,
                             onDeleteAll: () => unawaited(_deleteAllArchived()),
-                            selecting: _selectingArchived,
-                            checkedIds: _checkedArchived,
-                            onToggleChecked: _toggleChecked,
-                            onStartSelecting: _startSelecting,
-                            onCancelSelecting: _cancelSelecting,
-                            onCheckAll: _checkAllArchived,
-                            onDeleteChecked: () => unawaited(_deleteChecked()),
-                            onRestoreChecked: _restoreChecked,
+                            picks: _picks,
+                            onPicked: _actOnPicked,
                             onShare: widget.account == null ? null : _shareNote,
                             sharing: widget.account?.sharing,
                             collaborators:
@@ -3432,9 +3576,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               curve: Curves.easeOutCubic,
                               padding: EdgeInsets.fromLTRB(
                                 listFits && listShown ? 0 : pageInset,
+                                cramped ? 0 : pageInset,
                                 pageInset,
-                                pageInset,
-                                pageInset,
+                                cramped ? 0 : pageInset,
                               ),
                               child: PageCard(
                                 child: Column(
@@ -3447,59 +3591,53 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         listVisible: listFits && listShown,
                                       )
                                     else ...[
-                                      PageToolbar(
-                                        space: _listTitle,
-                                        section: pinned ? 'Pinned' : null,
-                                        listVisible: listFits && listShown,
-                                        onShowList: _toggleList,
-                                        showListShortcut: _sidebarShortcut,
-                                        noun: space == LibrarySpace.drawings
-                                            ? 'drawing'
-                                            : 'note',
-                                        onCreate: _createInSpace,
-                                        newNoteShortcut: widget.shortcuts
-                                            .bindingFor(ShortcutAction.newNote)
-                                            ?.displayLabel,
-                                        noteOpen: selected != null,
-                                        syncStatus: widget.account?.syncStatus,
-                                        unloadedPictures: unloaded.length,
-                                        onShowUnloadedPicture: unloaded.isEmpty
-                                            ? null
-                                            : () => _selectedEditor
-                                                  ?.showAttachment(
-                                                    unloaded.first.offset,
-                                                  ),
-                                        members: _selectedMembers,
-                                        present: _selectedPresence,
-                                        currentUserId:
-                                            widget.account?.sharing?.userId ??
-                                            '',
-                                        noteShared: selected?.isShared ?? false,
-                                        onShare: _shareSelected,
-                                        assistant: _kapyAiButton(
-                                          extent: AppPlatform.hasPointer
-                                              ? 32
-                                              : AppControlMetrics
-                                                    .iconButtonExtent,
-                                          gap: 6,
-                                        ),
-                                        moreActions: _pageActions(selected),
-                                        onMore: (action) =>
-                                            _runPageAction(action, selected),
-                                        updates: widget.updates,
-                                        center:
-                                            selected != null &&
-                                                _canChooseMode(selected)
-                                            ? NoteModeSwitch(
-                                                drawing: selected.isDrawing,
-                                                onChanged: (drawing) =>
-                                                    _setDrawingMode(
-                                                      selected.id,
-                                                      drawing: drawing,
-                                                    ),
+                                      if (!cramped)
+                                        PageToolbar(
+                                          space: _listTitle,
+                                          section: pinned ? 'Pinned' : null,
+                                          listVisible: listFits && listShown,
+                                          onShowList: _toggleList,
+                                          showListShortcut: _sidebarShortcut,
+                                          noun: space == LibrarySpace.drawings
+                                              ? 'drawing'
+                                              : 'note',
+                                          onCreate: _createInSpace,
+                                          newNoteShortcut: widget.shortcuts
+                                              .bindingFor(
+                                                ShortcutAction.newNote,
                                               )
-                                            : null,
-                                      ),
+                                              ?.displayLabel,
+                                          noteOpen: selected != null,
+                                          syncStatus:
+                                              widget.account?.syncStatus,
+                                          unloadedPictures: unloaded.length,
+                                          onShowUnloadedPicture:
+                                              unloaded.isEmpty
+                                              ? null
+                                              : () => _selectedEditor
+                                                    ?.showAttachment(
+                                                      unloaded.first.offset,
+                                                    ),
+                                          members: _selectedMembers,
+                                          present: _selectedPresence,
+                                          currentUserId:
+                                              widget.account?.sharing?.userId ??
+                                              '',
+                                          noteShared:
+                                              selected?.isShared ?? false,
+                                          onShare: _shareSelected,
+                                          assistant: _kapyAiButton(
+                                            extent: AppPlatform.hasPointer
+                                                ? 32
+                                                : AppControlMetrics
+                                                      .iconButtonExtent,
+                                            gap: 6,
+                                          ),
+                                          moreActions: _pageActions(selected),
+                                          onMore: (action) =>
+                                              _runPageAction(action, selected),
+                                          updates: widget.updates,
+                                        ),
                                       Expanded(child: _buildWideWorkspace()),
                                     ],
                                   ],
@@ -3783,7 +3921,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _drawerOpen = isOpen;
             if (isOpen) _drawerContentReady = true;
           });
-          if (!isOpen) _focusSelectedEditorAtEnd();
+          if (!isOpen) {
+            _picks.clear();
+            _focusSelectedEditorAtEnd();
+          }
         },
         drawer: Drawer(
           width: drawerWidth,
@@ -3830,15 +3971,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       archiveMode: _archiveMode,
                       hiddenMode: _hiddenMode,
                       onDelete: _deleteNote,
+                      asksBeforeDeleting: widget.prefs.askBeforeDeleting,
                       onDeleteAll: () => unawaited(_deleteAllArchived()),
-                      selecting: _selectingArchived,
-                      checkedIds: _checkedArchived,
-                      onToggleChecked: _toggleChecked,
-                      onStartSelecting: _startSelecting,
-                      onCancelSelecting: _cancelSelecting,
-                      onCheckAll: _checkAllArchived,
-                      onDeleteChecked: () => unawaited(_deleteChecked()),
-                      onRestoreChecked: _restoreChecked,
+                      picks: _picks,
+                      onPicked: _actOnPicked,
                       streak: widget.notes.streak,
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,
@@ -3860,6 +3996,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       archiveShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.deleteNote,
                       ),
+                      drawings: _drawingsOnly,
                       updates: widget.updates,
                       controls: _notesControls(_space, cards: false),
                     ),
@@ -3939,8 +4076,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildCompactEditor(Note note) {
-    if (note.isDrawing) return _buildDrawing(note, modeSwitch: true);
-    final editor = ListenableBuilder(
+    if (_opensAsDrawing(note)) return _buildDrawing(note);
+    return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
         listenable: _toolbarSources,
@@ -4019,7 +4156,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
-    return _withModeSwitch(note, editor);
   }
 
   Widget _buildEditor(
@@ -4028,7 +4164,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required bool active,
     VoidCallback? onFocus,
   }) {
-    if (note.isDrawing) return _buildDrawing(note, onFocus: onFocus);
+    if (_opensAsDrawing(note)) return _buildDrawing(note, onFocus: onFocus);
+    final cramped = isCrampedPage(
+      MediaQuery.sizeOf(context),
+      MediaQuery.viewInsetsOf(context).bottom,
+    );
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -4061,6 +4201,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
           resultsVisible: widget.prefs.resultsVisible,
+          cramped: cramped,
           autofocus:
               active && !_selectionAutofocusSuppressed && _readyToTypeIn(note),
           startAtEnd: active && _readyToTypeIn(note),
@@ -4122,48 +4263,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Whether [note] can still become a drawing, or go back to being a page:
-  /// only while it is blank, and only for somebody who may write in it.
-  bool _canChooseMode(Note note) =>
-      _canWriteNote(note) &&
-      !note.isArchived &&
-      note.isEmpty &&
-      note.attachments.isEmpty;
-
-  /// The phone's editor, with "Write | Draw" over its corner while the note
-  /// is new.
-  ///
-  /// Always the same Stack, with or without the switch: the first keystroke
-  /// takes the switch away, and a tree that changed shape under the editor
-  /// at that moment would rebuild it out from under the caret.
-  Widget _withModeSwitch(Note note, Widget editor) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        editor,
-        if (_canChooseMode(note))
-          Positioned(
-            top: 10,
-            right: 14,
-            child: NoteModeSwitch(
-              drawing: false,
-              onChanged: (drawing) {
-                if (drawing) _setDrawingMode(note.id, drawing: true);
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  void _setDrawingMode(String id, {required bool drawing}) {
-    final note = widget.notes.byId(id);
-    if (note == null || !_canChooseMode(note)) return;
-    // The caret was in the page this note is no longer going to be.
-    if (drawing) FocusManager.instance.primaryFocus?.unfocus();
-    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    widget.notes.setDrawingMode(id, drawing: drawing);
-  }
+  /// Whether [note] opens on the canvas. A drawing does, except from a list
+  /// that holds it for the words a sync race left beside it, where it opens
+  /// as those words.
+  bool _opensAsDrawing(Note note) =>
+      note.isDrawing && (_drawingsOnly || !note.hasTextBesideDrawing);
 
   /// The page with nothing open on it, which in Drawings points at New
   /// drawing rather than offering a note.
@@ -4175,13 +4279,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         )
       : EmptyState(onCreate: _createNote);
 
-  /// A phone shows Write | Draw in the drawing's title row when
-  /// [modeSwitch]; a window shows it in the page toolbar.
-  Widget _buildDrawing(
-    Note note, {
-    VoidCallback? onFocus,
-    bool modeSwitch = false,
-  }) {
+  Widget _buildDrawing(Note note, {VoidCallback? onFocus}) {
     final canWrite = _canWriteNote(note);
     return DrawingCanvas(
       key: ValueKey('drawing-${note.id}'),
@@ -4194,9 +4292,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
-      onSwitchToWrite: modeSwitch && _canChooseMode(note)
-          ? () => _setDrawingMode(note.id, drawing: false)
-          : null,
       onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
       onTitleChanged: (title) => _updateDrawing(note.id, title: title),
     );

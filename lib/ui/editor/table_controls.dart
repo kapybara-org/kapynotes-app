@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/scheduler.dart';
@@ -841,7 +842,10 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
                           rect.width *
                           2 -
                       1,
-                  0,
+                  (_chipCenter(frame, axis, band).dy - rect.top) /
+                          rect.height *
+                          2 -
+                      1,
                 )
               : Alignment.center,
           axis: axis,
@@ -1086,10 +1090,17 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
         height: 44,
       );
       // Never past the screen's edge, where a finger finds only half of it
-      // and the system's back swipe the rest.
-      return target.left >= _left
-          ? target
-          : target.shift(Offset(_left - target.left, 0));
+      // and the system's back swipe the rest. A column grip's chip sits
+      // outside the table's corner, and only that chip may: the rest of the
+      // target stays at the table's edge, clear of the line above it and of
+      // the heading beside it.
+      final inset = axis == TableAxis.column
+          ? Offset(
+              math.max(0.0, grid.left - target.left - _touchChip),
+              math.max(0.0, grid.top - target.top - _touchChip),
+            )
+          : Offset(math.max(0.0, _left - target.left), 0);
+      return target.shift(inset);
     }
     return axis == TableAxis.row
         ? Rect.fromCenter(
@@ -1106,12 +1117,18 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
 
   static const double _touchOutset = 11;
 
-  /// Where a phone grip's chip is drawn: just outside the grid, clear of the
-  /// open cell's field.
+  /// How far a phone grip's chip reaches from its centre. The target around it
+  /// is larger, for a finger, and that extra must not cover a line of text.
+  static const double _touchChip = 7;
+
+  /// Where a phone grip's chip is drawn. A row's sits just outside the grid,
+  /// clear of the open cell's field. A column's sits just inside the table's
+  /// top edge, centred on its column: above the table it covers the line the
+  /// table follows, and the heading sits above the chip.
   static Offset _chipCenter(TableFrame frame, TableAxis axis, Rect band) =>
       axis == TableAxis.row
       ? Offset(frame.grid.left - _touchOutset, band.center.dy)
-      : Offset(band.center.dx, frame.grid.top - _touchOutset);
+      : Offset(band.center.dx, frame.grid.top + _touchChip);
 
   /// The left edge of the layer, in global coordinates, as of its last build.
   double _left = 0;
@@ -1210,6 +1227,7 @@ class _GripState extends State<_Grip> {
     final short = widget.touch ? 14.0 : 12.0;
     final start = widget.onDragStart;
     final chip = Container(
+      key: const ValueKey('table-grip-chip'),
       width: row ? short : long,
       height: row ? long : short,
       decoration: BoxDecoration(

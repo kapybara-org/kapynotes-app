@@ -173,15 +173,36 @@ class Phrases {
     ..._minors.keys,
   ]);
 
+  static final RegExp _negation = _spokenPattern(
+    r'(?<![\p{L}\p{M}\p{N}])(?:not|or|नहीं|या)\s+$',
+  );
+  static final RegExp _conjunction = _spokenPattern(
+    r'(?<![\p{L}\p{M}\p{N}])(?:and|और)\s+$',
+  );
+
+  /// The number a [_spelled] match of [text] says, or null where it does not
+  /// count: its words make no number, it follows 'not' or 'or', or it is a
+  /// whole unit after 'and' (a minor unit after 'and' is a compound amount).
+  static int? _spelledValue(String text, Match match) {
+    final before = text.substring(0, match.start);
+    final minor = _minors.containsKey(match.group(2)!.toLowerCase());
+    if (_negation.hasMatch(before) ||
+        (!minor && _conjunction.hasMatch(before))) {
+      return null;
+    }
+    return NumberWords.value(match.group(1)!);
+  }
+
   static final RegExp _spelled = _spokenPattern(
     '(${NumberWords.pattern})\\s*($_spelledCurrencies)$_end',
   );
 
   /// Whether [line] holds an amount in number words, which makes it a
   /// calculation even where it holds no digit.
-  static bool hasSpelledAmount(String line) => _spelled
-      .allMatches(_decomposed(line))
-      .any((m) => NumberWords.value(m.group(1)!) != null);
+  static bool hasSpelledAmount(String line) {
+    final text = _decomposed(line);
+    return _spelled.allMatches(text).any((m) => _spelledValue(text, m) != null);
+  }
 
   static final RegExp _minorAlone = _spokenPattern(
     '$_number\\s*(euro\\s+cents?|${_alternatives(_minors.keys)})$_end',
@@ -214,7 +235,7 @@ class Phrases {
   static String? spoken(String source) {
     final text = _decomposed(source);
     var written = text.replaceAllMapped(_spelled, (m) {
-      final number = NumberWords.value(m.group(1)!);
+      final number = _spelledValue(text, m);
       return number == null ? m.group(0)! : '$number ${m.group(2)}';
     });
     written = written.replaceAllMapped(

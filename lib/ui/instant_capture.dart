@@ -127,7 +127,7 @@ class _CaptureSurface extends StatelessWidget {
                 fontWeight: FontWeight.w300,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
               ),
-              cursorColor: KapyTheme.accentFor(brightness),
+              cursorColor: palette.accent,
               backgroundCursorColor: palette.editorBackground,
               selectionColor: palette.selection,
               keyboardType: TextInputType.multiline,

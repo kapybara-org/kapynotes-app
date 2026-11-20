@@ -184,6 +184,11 @@ class SpeechCodes {
 /// `SPEECH_CONSENT_VERSION` in the contract.
 const int speechConsentVersion = 2;
 
+/// The providers this build's notice names to people who agreed to cloud
+/// transcription under an older consent sheet's providers. Raised when the
+/// providers change again, so the notice is shown once more.
+const int speechProviderNoticeVersion = 1;
+
 /// Whole-request timeout, covering a slow upload as well as the providers.
 /// Longer than every timeout inside it, so a slow provider surfaces as a
 /// refusal from the server rather than a socket closed under us.

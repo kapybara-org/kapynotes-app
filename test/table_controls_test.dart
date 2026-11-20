@@ -772,6 +772,30 @@ void main() {
       );
     }, variant: _phone);
 
+    testWidgets('a column grip stays below the line above the table', (
+      tester,
+    ) async {
+      final desk = await editCell(tester);
+      final frame = frameOf(desk);
+      // The grip's chip is what draws. Its target is larger, for a finger,
+      // and only the chip of it may sit above the table.
+      final chip = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey('table-column-grip-0')),
+          matching: find.byKey(const ValueKey('table-grip-chip')),
+        ),
+      );
+      expect(
+        chip.top,
+        greaterThanOrEqualTo(frame.grid.top),
+        reason: 'the line above the table is clear of the grip',
+      );
+      expect(
+        chip.left,
+        greaterThanOrEqualTo(frame.grid.left),
+        reason: 'the grip stays inside the table',
+      );
+    }, variant: _phone);
     testWidgets('grips are at least 44 points', (tester) async {
       await editCell(tester);
       for (final key in ['table-row-grip-2', 'table-column-grip-0']) {

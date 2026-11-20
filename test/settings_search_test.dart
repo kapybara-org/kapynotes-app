@@ -239,12 +239,14 @@ void main() {
       expect(field.focusNode!.hasFocus, isTrue);
 
       await _type(tester, 'dark');
-      expect(_resultTargets(tester).first, 'theme-setting');
+      expect(_resultTargets(tester).first, 'mode-setting');
       // Where it lives, and what it changes.
       expect(
         find.descendant(
-          of: _result('theme-setting'),
-          matching: find.text('Appearance › Look · colours for the whole app'),
+          of: _result('mode-setting'),
+          matching: find.text(
+            'Appearance › Look · follow your computer, or choose one.',
+          ),
         ),
         findsOneWidget,
       );
@@ -253,9 +255,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // The pane it belongs to, scrolled to it, and the search let go.
-      expect(find.byKey(const ValueKey('theme-setting')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mode-setting')), findsOneWidget);
       expect(
-        _onScreen(tester, find.byKey(const ValueKey('theme-setting'))),
+        _onScreen(tester, find.byKey(const ValueKey('mode-setting'))),
         isTrue,
       );
       expect(find.text('Writing font'), findsOneWidget);

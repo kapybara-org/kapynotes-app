@@ -175,6 +175,24 @@ void main() {
     expect((LayoutPrefs(store)..load()).hiddenFolderVisible, isFalse);
   });
 
+  test('deleting a note asks by default, and a no survives a launch', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.askBeforeDeleting, isTrue);
+
+    var notified = 0;
+    prefs.addListener(() => notified++);
+    prefs.askBeforeDeleting = false;
+    prefs.askBeforeDeleting = false;
+
+    expect(notified, 1);
+    expect(store.data['askBeforeDeleting.v1'], isFalse);
+    expect((LayoutPrefs(store)..load()).askBeforeDeleting, isFalse);
+
+    prefs.askBeforeDeleting = true;
+    expect((LayoutPrefs(store)..load()).askBeforeDeleting, isTrue);
+  });
+
   test('startup note follows the last opened note by default', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
@@ -1203,5 +1221,43 @@ void main() {
     prefs.toggleSidebar();
     expect(prefs.sidebarVisible, isTrue);
     expect((LayoutPrefs(store)..load()).sidebarVisible, isFalse);
+  });
+  test('the theme, At night and Increase contrast reach the disk at once '
+      'and come back on the next launch', () {
+    final disk = _FlushOnlyStore();
+    final prefs = LayoutPrefs(disk)..load();
+    expect(prefs.theme, AppTheme.riverbank);
+    expect(prefs.nightTheme, const NightTheme());
+    expect(
+      prefs.increaseContrast,
+      isNull,
+      reason: 'it follows the system until somebody sets it',
+    );
+
+    const night = NightTheme(
+      enabled: true,
+      theme: AppTheme.dusk,
+      from: 21 * 60,
+      to: 7 * 60,
+    );
+    prefs.theme = AppTheme.fjord;
+    prefs.nightTheme = night;
+    prefs.setIncreaseContrast(true, asks: false);
+
+    final relaunched = _MemoryStore()..data.addAll(disk.persisted);
+    final restored = LayoutPrefs(relaunched)..load();
+    expect(restored.theme, AppTheme.fjord);
+    expect(restored.nightTheme, night);
+    expect(restored.increaseContrast, isTrue);
+
+    // Set to what the system asks for, it goes back to following it.
+    restored.setIncreaseContrast(true, asks: true);
+    expect(restored.increaseContrast, isNull);
+    expect((LayoutPrefs(relaunched)..load()).increaseContrast, isNull);
+  });
+
+  test('a theme this version does not know reads as Riverbank', () {
+    final store = _MemoryStore()..data['theme.v1'] = 'contrast';
+    expect((LayoutPrefs(store)..load()).theme, AppTheme.riverbank);
   });
 }

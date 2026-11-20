@@ -183,6 +183,7 @@ class NoteEditor extends StatefulWidget {
     required this.engine,
     required this.highlighter,
     this.keepResultRoom = false,
+    this.cramped = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -341,6 +342,11 @@ class NoteEditor extends StatefulWidget {
   /// at the right of its first row, as a phone does. Otherwise the result
   /// follows the writing at the end of its line, on a leader.
   final bool keepResultRoom;
+
+  /// Whether the page around this editor is too short for its top and bottom
+  /// padding, as on a phone on its side with the keyboard up. The lines take
+  /// that room instead.
+  final bool cramped;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -485,6 +491,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// Whether this note is being written in: its own field has focus, or one of
   /// its cells does.
   bool get _editingNote => _focusNode.hasFocus || _editingCell != null;
+
+  /// Whether this note is being written in; see [_editingNote].
+  bool get writing => _editingNote;
+
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
@@ -3590,17 +3600,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           columns: choice.tableColumns ?? 2,
         );
         final firstHeader = table.indexOf('Column 1');
-        _replaceCommandValue(
-          replaceWithSlashCommandBlock(
-            _controller.value,
-            range,
-            table,
-            selectionInBlock: TextSelection(
-              baseOffset: firstHeader,
-              extentOffset: firstHeader + 'Column 1'.length,
-            ),
+        final inserted = replaceWithSlashCommandBlock(
+          _controller.value,
+          range,
+          table,
+          selectionInBlock: TextSelection(
+            baseOffset: firstHeader,
+            extentOffset: firstHeader + 'Column 1'.length,
           ),
         );
+        _replaceCommandValue(inserted);
+        _openNewTable(inserted.selection.baseOffset);
         break;
       case SlashCommandType.checklist:
         if (typed) {
@@ -6938,6 +6948,27 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (moved) _ensureCellVisible();
   }
 
+  /// Opens the table the slash menu has just written on its first cell, with
+  /// the placeholder selected to type over, as a tapped cell is opened.
+  void _openNewTable(int offset) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final field = _field;
+      if (!mounted || field == null) return;
+      final table = markdownTableAt(
+        _controller.markdownFor(_controller.text),
+        offset,
+      );
+      final rect = table == null ? null : _cellRect(field, table, 0, 0);
+      if (table == null || rect == null) return;
+      _showCellEditor(table, 0, 0, rect);
+      final cell = _cellEditor.field;
+      cell.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: cell.text.length,
+      );
+    });
+  }
+
   /// Scrolls the note just far enough for the open cell to be seen, clear of a
   /// software keyboard and of the toolbar over it.
   ///
@@ -7698,9 +7729,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // No home indicator inset here: the footer below runs under it and keeps
     // its own controls clear of it, so an inset on the text would only open a
     // second gap above a bar that already covers that strip.
-    final basePadding = AppPlatform.isMobile
+    var basePadding = AppPlatform.isMobile
         ? EditorMetrics.mobilePadding
         : EditorMetrics.padding;
+    if (widget.cramped) basePadding = basePadding.copyWith(top: 0, bottom: 0);
     final textStyle = EditorMetrics.textStyle(
       palette.textPrimary,
       widget.writingFont,
