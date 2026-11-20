@@ -1709,6 +1709,7 @@ void main() {
       SizedBox(
         width: 280,
         child: Sidebar(
+          windowBar: const SizedBox(),
           notes: bob.notes.notes,
           selectedId: null,
           query: '',

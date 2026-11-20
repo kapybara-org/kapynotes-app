@@ -1979,7 +1979,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
     if (note == null || !_canRemoveNote(note)) return;
-    _recordKapyActivity();
     final owner = _sharedBy(note);
     if (widget.prefs.askBeforeDeleting) {
       final title = note.title.trim();
@@ -2036,7 +2035,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .map((note) => note.id)
         .toList();
     if (ids.isEmpty) return;
-    _recordKapyActivity();
     final removed = _sharedByOthers(ids);
     final confirmed = await _confirmDelete(
       title: 'Empty Archived Notes?',
@@ -2057,7 +2055,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .where((id) => _canRemoveNote(widget.notes.byId(id)))
         .toList();
     if (ids.isEmpty) return;
-    _recordKapyActivity();
     final removed = _sharedByOthers(ids);
     final theirs = removed == ids.length;
     final confirmed = await _confirmDelete(
