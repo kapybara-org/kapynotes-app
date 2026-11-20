@@ -770,10 +770,17 @@ extension on Sidebar {
   }
 
   /// A ⌘-click, or a Ctrl-click off a Mac, on a note while nothing is
-  /// picked: the one place that decides what it does. It starts picking with
-  /// the open note and this one, as Finder does.
-  void _commandClick(Note note) =>
-      picks!.toggle(note.id, open: _highlighted?.id);
+  /// picked: the one place that decides what it does. Where notes open in
+  /// tabs it opens the note in a tab behind, as a browser does, and a note
+  /// with a tab already stays where it is. Elsewhere, as in the archive, it
+  /// starts picking with the open note and this one, as Finder does.
+  void _commandClick(Note note) {
+    if (onOpenInNewTab case final openInNewTab?) {
+      if (!tabbedIds.contains(note.id)) openInNewTab(note.id);
+      return;
+    }
+    picks!.toggle(note.id, open: _highlighted?.id);
+  }
 
   /// Lets a mouse press dragged down the rows pick every note it crosses.
   Widget _sweeps(Widget list) {

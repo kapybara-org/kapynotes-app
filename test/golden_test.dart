@@ -693,9 +693,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(NoteRow, 'Trip ideas'));
     await tester.pumpAndSettle();
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.tap(find.widgetWithText(NoteRow, 'Old receipts'));
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.pumpAndSettle();
   }
 
