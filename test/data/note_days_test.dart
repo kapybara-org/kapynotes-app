@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
-import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/stamped.dart';
 
@@ -24,9 +23,6 @@ const noteB = '0195f0d0-1111-4222-8333-00000000000b';
 
 String noteIdFor(int i) =>
     '0195f0d0-2222-4333-8444-${i.toRadixString(16).padLeft(12, '0')}';
-
-Note noteAt(String id, DateTime at) =>
-    Note(id: id, body: 'Plan', createdAt: DateTime(2026, 11, 1), updatedAt: at);
 
 void acknowledgeAll(NoteDayStore days) {
   days.hold();
@@ -52,14 +48,10 @@ void main() {
   test(
     'a day is set, read back, and a note sits on it rather than its last edit',
     () {
-      final note = noteAt(noteA, DateTime(2026, 11, 19, 8));
       expect(days.dayOf(noteA), isNull);
-      expect(days.dayOfNote(note), DateTime(2026, 11, 19));
 
       expect(days.setDay(noteA, DateTime(2026, 11, 21)), isTrue);
       expect(days.dayOf(noteA), DateTime(2026, 11, 21));
-      expect(days.dayOfNote(note), DateTime(2026, 11, 21));
-      expect(days.hasDay(noteA), isTrue);
       expect(days.owed.single.key, noteA);
       expect(days.owed.single.payload, {
         'kind': 'noteDay',
@@ -84,12 +76,10 @@ void main() {
   test(
     'clearing goes back to the last-edit day, and clearing an undated note changes nothing',
     () {
-      final note = noteAt(noteA, DateTime(2026, 11, 19, 8));
       days.setDay(noteA, DateTime(2026, 11, 21));
       acknowledgeAll(days);
       expect(days.clearDay(noteA), isTrue);
       expect(days.dayOf(noteA), isNull);
-      expect(days.dayOfNote(note), DateTime(2026, 11, 19));
       expect(days.owed.single.payload, isNull, reason: 'a tombstone');
       expect(days.clearDay(noteA), isFalse);
       expect(days.clearDay(noteB), isFalse);
@@ -131,10 +121,11 @@ void main() {
       acknowledgeAll(days);
       days.applyRemoteDelete(noteA, ahead);
       days.applyRemoteDelete(noteB, ahead);
-      expect(days.noteIds, unorderedEquals([
-        noteA,
-        noteB,
-      ]), reason: 'both clears are ahead of us');
+      expect(
+        days.noteIds,
+        unorderedEquals([noteA, noteB]),
+        reason: 'both clears are ahead of us',
+      );
 
       days.forgetNote(noteA);
       expect(days.noteIds, [noteB]);
@@ -145,35 +136,15 @@ void main() {
     },
   );
 
-  test(
-    'notes on a day, and the ones waiting for a later one, soonest first',
-    () {
-      final notes = [
-        noteAt(noteA, DateTime(2026, 11, 19, 8)),
-        noteAt(noteB, DateTime(2026, 11, 19, 9)),
-        noteAt(noteIdFor(0), DateTime(2026, 11, 19, 10)),
-        noteAt(noteIdFor(1), DateTime(2026, 11, 17, 10)),
-      ];
-      days.setDay(noteA, DateTime(2026, 11, 21));
-      days.setDay(noteB, DateTime(2026, 11, 19));
-      days.setDay(noteIdFor(1), DateTime(2026, 11, 17));
-
-      final today = DateTime(2026, 11, 19);
-      expect(days.notesOn(notes, today), [notes[1], notes[2]]);
-      expect(days.notesOn(notes, DateTime(2026, 11, 21)), [notes[0]]);
-      expect(days.notesOn(notes, DateTime(2026, 11, 17)), [notes[3]]);
-      expect(days.upcoming(notes, today), [notes[0]]);
-      expect(days.waits(notes[0], today), isTrue);
-      expect(days.waits(notes[1], today), isFalse);
-      expect(days.waits(notes[2], today), isFalse);
-      expect(days.taskWaits(noteA, today), isTrue);
-      expect(days.taskWaits(noteB, today), isFalse);
-      expect(days.taskWaits(noteIdFor(2), today), isFalse, reason: 'no day');
-
-      days.setDay(noteIdFor(1), DateTime(2026, 11, 23));
-      expect(days.upcoming(notes, today), [notes[0], notes[3]]);
-    },
-  );
+  test('a task waits only while its note waits for a later day', () {
+    days.setDay(noteA, DateTime(2026, 11, 21));
+    days.setDay(noteB, DateTime(2026, 11, 19));
+    final today = DateTime(2026, 11, 19);
+    expect(days.taskWaits(noteA, today), isTrue);
+    expect(days.taskWaits(noteB, today), isFalse, reason: 'its day is today');
+    expect(days.taskWaits(noteIdFor(2), today), isFalse, reason: 'no day');
+    expect(days.taskWaits(noteA, DateTime(2026, 11, 21)), isFalse);
+  });
 
   test('the later day wins, whichever device merges', () {
     days.applyRemote(

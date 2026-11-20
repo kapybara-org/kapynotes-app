@@ -1183,15 +1183,28 @@ class SeeAllLink extends StatelessWidget {
 /// The heading over one group of the notes list: a day with its date beside
 /// it, a tag or a letter, then a hairline to the edge.
 class NotesGroupHeading extends StatelessWidget {
-  const NotesGroupHeading({super.key, required this.label, this.detail});
+  const NotesGroupHeading({
+    super.key,
+    required this.label,
+    this.detail,
+    this.onTap,
+    this.folded,
+  });
 
   final String label;
   final String? detail;
 
+  /// Opens or closes the fold this heading names, when it folds.
+  final VoidCallback? onTap;
+
+  /// Whether the notes under this heading are folded away: null when the
+  /// heading folds nothing.
+  final bool? folded;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return SizedBox(
+    final heading = SizedBox(
       height: MediaQuery.textScalerOf(context).scale(16),
       child: CustomMultiChildLayout(
         delegate: _GroupHeadingLayout(),
@@ -1200,16 +1213,35 @@ class NotesGroupHeading extends StatelessWidget {
             id: _GroupHeadingPart.label,
             child: Semantics(
               header: true,
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _figtree(
-                  AppTypeScale.body,
-                  16,
-                  FontWeight.w600,
-                  palette.textPrimary,
-                ),
+              button: folded != null,
+              expanded: folded == null ? null : !folded!,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (folded case final folded?)
+                    KapyIcon(
+                      folded
+                          ? KapyIcons.chevronRightRounded
+                          : KapyIcons.chevronDownRounded,
+                      size: 12,
+                      strokeWidth: 1.8,
+                      color: palette.textTertiary,
+                    ),
+                  if (folded != null) const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _figtree(
+                        AppTypeScale.body,
+                        16,
+                        FontWeight.w600,
+                        palette.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1234,6 +1266,13 @@ class NotesGroupHeading extends StatelessWidget {
           ),
         ],
       ),
+    );
+    final onTap = this.onTap;
+    if (onTap == null) return heading;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: heading,
     );
   }
 }

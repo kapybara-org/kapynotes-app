@@ -903,6 +903,12 @@ void main() {
       await tester.tap(_button);
       await settle(tester);
 
+      expect(find.byKey(const ValueKey('day-strip-forward')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('day-strip-date')),
+        findsOneWidget,
+        reason: 'the day keeps its one button beside the panel',
+      );
       await expectLater(
         find.byType(KapyNotesApp),
         matchesGoldenFile('goldens/kapy_ai_narrow_dark.png'),

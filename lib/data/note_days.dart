@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import 'local_store.dart';
-import 'note.dart';
 import 'record_book.dart';
 import 'stamped.dart';
 
@@ -132,45 +131,10 @@ class NoteDayStore extends ChangeNotifier {
     return slot == null || slot.deleted ? null : dayOfKey(slot.value.day.v);
   }
 
-  /// Whether [note] was given a day of its own.
-  bool hasDay(String noteId) => dayOf(noteId) != null;
-
   /// How many more notes may be given a day.
   int get room {
     final live = _days.slots.values.where((slot) => !slot.deleted).length;
     return live >= noteDayRecordsMax ? 0 : noteDayRecordsMax - live;
-  }
-
-  /// The day [note] sits on: its own when it has one, and the day it was
-  /// last edited otherwise.
-  DateTime dayOfNote(Note note) =>
-      dayOf(note.id) ??
-      DateTime(note.updatedAt.year, note.updatedAt.month, note.updatedAt.day);
-
-  /// The [notes] that sit on [day], in the order they came in.
-  List<Note> notesOn(Iterable<Note> notes, DateTime day) => [
-    for (final note in notes)
-      if (dayOfNote(note) == DateTime(day.year, day.month, day.day)) note,
-  ];
-
-  /// The notes waiting for a day after [today], the soonest day first.
-  List<Note> upcoming(Iterable<Note> notes, DateTime today) {
-    final from = DateTime(today.year, today.month, today.day);
-    final waiting = [
-      for (final note in notes)
-        if (dayOf(note.id) case final day? when day.isAfter(from))
-          (note: note, day: day),
-    ];
-    waiting.sort((a, b) => a.day.compareTo(b.day));
-    return [for (final each in waiting) each.note];
-  }
-
-  /// Whether [note] waits for its day: a note given a day after [today], so
-  /// it shows in Upcoming and its tasks stay out of Tasks until then.
-  bool waits(Note note, DateTime today) {
-    final day = dayOf(note.id);
-    return day != null &&
-        day.isAfter(DateTime(today.year, today.month, today.day));
   }
 
   /// Whether a task in [noteId] waits for the note's day, which keeps it out

@@ -6,6 +6,7 @@ import '../../data/folders.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
 import '../collaborator_colors.dart';
+import '../sidebar_timestamp.dart';
 import 'note_footer.dart' show typingStatusText;
 
 /// The note title's hand-drawn underline, under its last word: Paper's clay
@@ -101,6 +102,7 @@ class NoteMetaRow extends StatelessWidget {
   const NoteMetaRow({
     super.key,
     required this.edited,
+    this.day,
     this.done = 0,
     this.tasks = 0,
     this.total,
@@ -114,6 +116,10 @@ class NoteMetaRow extends StatelessWidget {
   });
 
   final String edited;
+
+  /// The day the note was given, where it has one: a pill before the time, so
+  /// the line reads "Fri 21 · 9:41" rather than the day it was last edited.
+  final DateTime? day;
 
   /// Counts what was done today, as over Tasks' one list: "3 of 13 done
   /// today".
@@ -163,6 +169,23 @@ class NoteMetaRow extends StatelessWidget {
         ? null
         : Text(saved.label, key: const ValueKey('note-saved'), style: quiet);
     final items = <Widget>[
+      if (day case final day?)
+        Container(
+          key: const ValueKey('note-day-pill'),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: palette.tonalBackground,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            SidebarTimestamp.weekdayAndDay(day),
+            maxLines: 1,
+            style: strong.copyWith(
+              color: palette.tonalForeground,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
       Text(edited, key: const ValueKey('note-edited'), style: quiet),
       if (savedLabel != null)
         switch (saved?.tooltip) {
