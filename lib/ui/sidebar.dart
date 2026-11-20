@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -3096,6 +3097,12 @@ class _NoteRowState extends State<NoteRow> {
         ],
       );
     }
+    await _choose(choice, at: position);
+  }
+
+  /// Does what a choice from the menu names, whether it came from the menu, at
+  /// [at], or from VoiceOver, which has no pointer and gets the row's corner.
+  Future<void> _choose(String? choice, {Offset? at}) async {
     if (!mounted) return;
     if (widget.selecting) {
       if (choice != null) widget.onPickedAction?.call(choice);
@@ -3111,7 +3118,15 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'pin') widget.onTogglePin?.call();
     if (choice == 'open-side') widget.onOpenToSide?.call();
     if (choice == 'tags' && context.mounted) {
-      await showTagPickerAt(context, position, widget.note.id);
+      final box = context.findRenderObject() as RenderBox?;
+      await showTagPickerAt(
+        context,
+        at ??
+            (box == null
+                ? Offset.zero
+                : box.localToGlobal(box.size.bottomRight(Offset.zero))),
+        widget.note.id,
+      );
     }
   }
 
@@ -3348,6 +3363,14 @@ class _NoteRowState extends State<NoteRow> {
           container: true,
           button: true,
           selected: widget.selecting ? widget.checked : widget.selected,
+          // VoiceOver cannot right-click, and the row's ⋯ button is easy to
+          // miss, so its menu's choices are actions on the row itself. Same
+          // list, so the two can never drift.
+          customSemanticsActions: {
+            for (final action in _availableActions())
+              CustomSemanticsAction(label: action.label): () =>
+                  unawaited(_choose(action.value)),
+          },
           child: GestureDetector(
             onTap: _open,
             onSecondaryTapDown: !hasMenu
