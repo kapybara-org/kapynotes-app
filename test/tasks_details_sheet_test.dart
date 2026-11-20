@@ -195,6 +195,56 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('an ask made before the screen opened still opens its sheet', (
+    tester,
+  ) async {
+    await setUpTasks(
+      tester,
+      'Errands\n☐ One\n  First detail\n☐ Two\n  Second detail',
+    );
+    final two = tasks.read().open.last;
+    // The menu bar click that happens while the app is still showing Notes.
+    tasks.requestSheet(two.id);
+    await pumpScreen(tester);
+
+    expect(sheetOpen(), isTrue);
+    expect(sheetDetails(tester), 'Second detail');
+
+    // The same task asked for again still arrives.
+    tasks.requestSheet(two.id);
+    await tester.pumpAndSettle();
+    expect(sheetOpen(), isTrue);
+    await settle(tester);
+  });
+
+  testWidgets('typing in the sheet leaves a picture line exactly as it was', (
+    tester,
+  ) async {
+    await setUpTasks(
+      tester,
+      'Errands\n☐ Hide the menu\n  The menu stays up.\n  ￼\n☐ Book flights',
+    );
+    final hide = tasks.read().open.first;
+    await pumpScreen(tester);
+
+    await tester.tap(nameIn(hide.id, 'Hide the menu'));
+    await tester.pumpAndSettle();
+
+    final field = find.descendant(
+      of: find.byType(TaskDetailsSheet),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(field, 'The menu stays up, then shrinks.\n￼');
+    await tester.pumpAndSettle();
+
+    expect(
+      noteBody(),
+      'Errands\n☐ Hide the menu\n  The menu stays up, then shrinks.\n  ￼\n☐ Book flights',
+    );
+    expect(noteBody().contains('picture'), isFalse);
+    await settle(tester);
+  });
+
   testWidgets('a smaller task inside the details counts on its parent', (
     tester,
   ) async {

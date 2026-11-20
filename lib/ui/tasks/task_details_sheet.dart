@@ -59,7 +59,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
     super.dispose();
   }
 
-  String _plain(TaskItem item) => taskDetailsText(item.note.body, item.line);
+  String _plain(TaskItem item) => taskDetailsWords(item.note.body, item.line);
 
   @override
   Widget build(BuildContext context) {
