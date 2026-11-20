@@ -2,10 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart' show kMiddleMouseButton;
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
+import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
 import 'context_menu.dart';
+
+/// Whether the click under way asks for a tab behind the one in front:
+/// ⌘-click on a Mac and Ctrl-click elsewhere, as a browser opens a link.
+bool clickOpensTabBehind() {
+  final keyboard = HardwareKeyboard.instance;
+  return AppPlatform.isMacOS
+      ? keyboard.isMetaPressed
+      : keyboard.isControlPressed;
+}
 
 /// One open note on the tab row.
 @immutable
