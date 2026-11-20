@@ -451,25 +451,28 @@ class _PhoneTaskName extends StatelessWidget {
               dimension: 44,
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: done ? sage : null,
-                    border: Border.all(
-                      color: done ? sage : palette.checkboxBorder,
-                      width: 1.5,
+                child: Opacity(
+                  opacity: editable ? 1 : lockedBoxOpacity,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: done ? sage : null,
+                      border: Border.all(
+                        color: done ? sage : palette.checkboxBorder,
+                        width: 1.5,
+                      ),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    borderRadius: BorderRadius.circular(6),
+                    child: done
+                        ? KapyIcon(
+                            KapyIcons.checkRounded,
+                            size: 15,
+                            strokeWidth: 2.2,
+                            color: palette.paperColor,
+                          )
+                        : null,
                   ),
-                  child: done
-                      ? KapyIcon(
-                          KapyIcons.checkRounded,
-                          size: 15,
-                          strokeWidth: 2.2,
-                          color: palette.paperColor,
-                        )
-                      : null,
                 ),
               ),
             ),
