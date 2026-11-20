@@ -732,6 +732,41 @@ void main() {
     );
   });
 
+  for (final scale in [1.0, 2.0, 3.1]) {
+    testWidgets('a phone pinned card holds its second line whole at '
+        '$scale× text', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpForGolden(
+        tester,
+        size: const Size(393, 852),
+        brightness: Brightness.light,
+        platform: TargetPlatform.iOS,
+        withPinnedNote: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.pumpAndSettle();
+
+      final pinned = find.byKey(const ValueKey('phone-pinned'));
+      if (scale == 1) expect(tester.getSize(pinned).height, 142);
+      final room = tester.getRect(
+        find.descendant(of: pinned, matching: find.byType(ClipRect)).first,
+      );
+      final snippet = tester.getRect(
+        find
+            .descendant(
+              of: pinned,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is Text && widget.maxLines == 2,
+              ),
+            )
+            .first,
+      );
+      expect(snippet.bottom, lessThanOrEqualTo(room.bottom + 0.5));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('desktop dark pinned note section', (tester) async {
     await pumpForGolden(
       tester,
