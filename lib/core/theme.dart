@@ -651,6 +651,11 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
 class EditorMetrics {
   const EditorMetrics._();
 
+  /// Whether the note is laid out as Riverbank's page: a 680px column under
+  /// a title with its meta row, headings with room above them, and rows of
+  /// [lineHeight] that may grow. Phones keep their own structure.
+  static bool get page => !AppPlatform.isMobile;
+
   /// How far in a quote's words start on the page, past its 3px bar and the
   /// 14px after it.
   static const double quoteIndent = 17;
