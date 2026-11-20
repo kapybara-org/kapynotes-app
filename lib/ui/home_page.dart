@@ -77,7 +77,14 @@ import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
 import 'command_menu.dart';
 import 'empty_state.dart';
-import 'folders_ui.dart' show FolderPage, folderRefusalText;
+import 'folders_ui.dart'
+    show
+        FolderPage,
+        folderActions,
+        folderRefusalText,
+        moveNotesToFolder,
+        runFolderAction,
+        showFolderMenu;
 import 'context_menu.dart';
 import 'day_strip.dart';
 import 'hidden_notes_gate.dart';
@@ -1794,12 +1801,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return () => _closeTab('${front.id}');
   }
 
-  /// Opens [id] in a tab of its own behind the one in front, and leaves the
-  /// screen as it is.
-  void _openInNewTab(String id) {
+  /// Opens each of [ids] in a tab of its own at the end of the row, behind
+  /// the one in front, and leaves the screen as it is.
+  void _openInNewTabs(List<String> ids) {
     if (_specialMode || _usesCompactLayout) return;
     final previous = _selectedId;
-    if (!_workspace.openInNewTab(id)) return;
+    var opened = false;
+    for (final id in ids) {
+      opened = _workspace.openInNewTab(id) || opened;
+    }
+    if (!opened) return;
     setState(() => _adoptWorkspaceSelection(previous));
   }
 
@@ -2289,6 +2300,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// it applies to.
   void _actOnPicked(PickedAction action, List<String> ids) {
     switch (action) {
+      case PickedAction.openTabs:
+        _openInNewTabs(ids);
+        _picks.clear();
       case PickedAction.pin || PickedAction.unpin:
         _pinNotes(ids, pinned: action == PickedAction.pin);
       case PickedAction.hide:
@@ -3323,14 +3337,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _hiddenMode ||
       (widget.prefs.hiddenFolderVisible && widget.notes.hiddenNotes.isNotEmpty);
 
-  /// The notes filter and the list/cards switch, for the list beside the
-  /// rail. A phone's drawer has the filter alone, as its list has no cards.
-  /// On a folder's page the filter sits beside the switch, and leaves out
-  /// Archive and Hidden, whose notes are in no folder.
+  /// The notes filter, the sort and the list/cards switch, for the list
+  /// beside the rail. A phone's drawer has the filter alone, as its list has
+  /// no cards and no sort, and the archive, Hidden Notes and the pinned list
+  /// keep their own order, so they have no sort. On a folder's page the
+  /// filter sits beside the switch, and leaves out Archive and Hidden, whose
+  /// notes are in no folder.
   Widget _notesControls(
     LibrarySpace space, {
     bool cards = true,
     bool onFolder = false,
+    bool sort = true,
   }) => NotesListControls(
     show: _show,
     offersShow: !onFolder && space != LibrarySpace.shared,
@@ -3351,6 +3368,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     weekShown: () => DayStrip.showsWeek(_dayStrip),
     cards: widget.prefs.noteCards,
     onCardsChanged: cards ? (cards) => widget.prefs.noteCards = cards : null,
+    grouping: sort ? widget.prefs.notesGrouping : null,
+    onGroupingChanged: sort
+        ? (grouping) => widget.prefs.notesGrouping = grouping
+        : null,
     alignEnd: onFolder,
   );
 
@@ -3385,11 +3406,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Opens a note from a day's list under the page's days, or with [behind]
   /// in a tab behind, as a click in the list would.
   void _openFromDay(String id, {required bool behind}) =>
-      behind ? _openInNewTab(id) : _select(id);
+      behind ? _openInNewTabs([id]) : _select(id);
 
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
   Future<void> _openCommandMenu() async {
     _recordKapyActivity();
+    final shown = _tasksMode ? null : _shownNote(_selectedId);
     final choice = await showCommandMenu(
       context,
       notes: widget.notes,
@@ -3415,7 +3437,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : (noteId) => [
               for (final tag in widget.tags!.tagsOf(noteId)) tagMarkOf(tag),
             ],
-      tagNote: _tasksMode ? null : _shownNote(_selectedId),
+      tagNote: shown,
+      fileNote: shown != null && _canMoveToFolder(shown) ? shown : null,
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,
         kapyAi: _kapyAi,
@@ -3453,6 +3476,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case OpenFolderChoice(:final folderId):
         _showNotes(NotesShow.all);
         _openFolder(folderId, behind: false);
+      case MoveToFolderChoice(:final note):
+        final window = MediaQuery.sizeOf(context);
+        unawaited(
+          moveNotesToFolder(
+            context,
+            Offset(
+              (window.width - TagPopover.defaultWidth) / 2,
+              commandMenuTop(window),
+            ),
+            widget.folders!,
+            [note.id],
+          ),
+        );
       case OpenTaskChoice(:final task):
         _showSpace(LibrarySpace.tasks);
         setState(() => _taskFilter = TaskFilter.note(task.note.id));
@@ -3654,6 +3690,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? null
       : _workspace.frontTab?.folderId;
 
+  /// Whether Move to folder… files [note] from ⌘K or the page's More, as it
+  /// does from the note's row: one of the person's own, beside the folders.
+  bool _canMoveToFolder(Note note) =>
+      widget.folders != null &&
+      !_specialMode &&
+      !_usesCompactLayout &&
+      _canFile(note);
+
   /// Whether folders hold [note]: one of the person's own notes, and not a
   /// drawing.
   bool _canFile(Note note) {
@@ -3801,7 +3845,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final listShown = _listShown;
             final moreActions = _folderInFront == null
                 ? _pageActions(selected)
-                : [?_onTopAction];
+                : [
+                    ?_onTopAction,
+                    for (final group in folderActions()) ...group,
+                  ];
             final unloaded = [
               for (final ref in selected?.attachments ?? const [])
                 if (ref case NoteImageRef(src: _?, isPreparing: false)) ref,
@@ -3829,7 +3876,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ? _enterSelectedEditorFromSidebar
                   : null,
               onOpenToSide: _specialMode ? null : _openNoteToSide,
-              onOpenInNewTab: _specialMode ? null : _openInNewTab,
+              onOpenInNewTab: _specialMode
+                  ? null
+                  : (id) => _openInNewTabs([id]),
               onOpenSelectedInNewTab: _specialMode
                   ? null
                   : _openSelectedInNewTab,
@@ -3873,10 +3922,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               engine: widget.engines.engine,
               now: widget.notes.now,
               cards: widget.prefs.noteCards,
-              controls: _notesControls(space),
+              controls: _notesControls(
+                space,
+                sort: !_specialMode && !_showingPinnedOnly,
+              ),
               grouping: widget.prefs.notesGrouping,
-              onGroupingChanged: (grouping) =>
-                  widget.prefs.notesGrouping = grouping,
               when: _when,
               onWhenChanged: _setWhen,
               folders: switch (widget.folders) {
@@ -4043,9 +4093,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                           moreActions: moreActions,
                                           onMore: moreActions.isEmpty
                                               ? null
-                                              : (action) => _runPageAction(
+                                              : (action, at) => _runPageAction(
                                                   action,
                                                   selected,
+                                                  at,
                                                 ),
                                           updates: widget.updates,
                                         ),
@@ -4175,6 +4226,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           label: pinned ? 'Unpin note' : 'Pin note',
           icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
+      if (note != null && _canMoveToFolder(note))
+        const KapyMenuAction(
+          value: 'folder',
+          label: 'Move to folder…',
+          icon: KapyIcons.folderMoveOutlined,
+        ),
       if (mayEdit && !_specialMode && !note.isShared)
         const KapyMenuAction(
           value: 'hide',
@@ -4199,22 +4256,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           label: _specialMode ? 'Delete permanently' : 'Archive note',
           icon: _specialMode ? deleteIcon : archiveIcon,
           hint: removeShortcut,
-          destructive: true,
+          destructive: _specialMode,
         ),
     ];
   }
 
-  void _runPageAction(String action, Note? note) {
+  /// Does what the page's More menu names: the window's own actions, then
+  /// the folder's in front or the open note's. [at] is where a list or a
+  /// field it opens goes.
+  void _runPageAction(String action, Note? note, Offset at) {
     switch (action) {
       case 'split':
         _splitEditor();
       case 'on-top':
         _pinToggle?.call();
     }
+    if (_folderInFront case final folderId?) {
+      if (widget.folders!.tree.byId(folderId) case final folder?) {
+        unawaited(_runFolderAction(action, folder, at));
+      }
+      return;
+    }
     if (note == null) return;
     switch (action) {
       case 'pin':
         _togglePinnedNote(note.id);
+      case 'folder':
+        unawaited(moveNotesToFolder(context, at, widget.folders!, [note.id]));
       case 'hide':
         unawaited(_hideNote(note.id));
       case 'restore':
@@ -4263,7 +4331,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         moreActions: [?_onTopAction],
         onMore: _pinToggle == null
             ? null
-            : (action) => _runPageAction(action, null),
+            : (action, at) => _runPageAction(action, null, at),
         actions: [
           if (!filter.done)
             TextButton.icon(
@@ -4387,14 +4455,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         displayTime: displayTime,
         firstTag: (note) => TagMarks.of(context, note.id).firstOrNull?.name,
       ),
-      groupingMenu: NotesGroupingMenu(
-        grouping: widget.prefs.notesGrouping,
-        onChanged: (grouping) => widget.prefs.notesGrouping = grouping,
-      ),
       noteTile: sidebar.noteTile,
       onTab: _openFolder,
+      onMenu: (folder, at) => unawaited(_showFolderMenu(folder, at)),
     );
   }
+
+  /// A folder card's menu on its folder's page.
+  Future<void> _showFolderMenu(Folder folder, Offset at) async {
+    final action = await showFolderMenu(context, at, folder, newInside: false);
+    if (action == null || !mounted) return;
+    await _runFolderAction(action, folder, at);
+  }
+
+  /// Does a folder's action from its card or, while it is in front, from the
+  /// page's More. [at] is where a list or a field it opens goes.
+  Future<void> _runFolderAction(String action, Folder folder, Offset at) =>
+      runFolderAction(
+        context,
+        action,
+        at,
+        store: widget.folders!,
+        notes: _folderNotes,
+        folder: folder,
+      );
 
   Widget _buildPane(int index) {
     final pane = _workspace.panes[index];
@@ -4551,7 +4635,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                       drawings: _drawingsOnly,
                       updates: widget.updates,
-                      controls: _notesControls(_space, cards: false),
+                      controls: _notesControls(
+                        _space,
+                        cards: false,
+                        sort: false,
+                      ),
                     ),
                   ),
                 )

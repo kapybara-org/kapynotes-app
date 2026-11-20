@@ -40,6 +40,16 @@ class OpenFolderChoice extends CommandChoice {
   final String folderId;
 }
 
+/// File [note] where the folder list, opened in the menu's place, picks.
+class MoveToFolderChoice extends CommandChoice {
+  const MoveToFolderChoice(this.note);
+  final Note note;
+}
+
+/// How far down the window the ⌘K menu sits, and a list that follows it,
+/// such as Move to folder…'s.
+double commandMenuTop(Size window) => (window.height * 0.1).clamp(16.0, 88.0);
+
 /// Show a task in Tasks, among its note's.
 class OpenTaskChoice extends CommandChoice {
   const OpenTaskChoice(this.task);
@@ -139,6 +149,7 @@ Future<CommandChoice?> showCommandMenu(
   SettingsHost? settingsIndex,
   TagShelf? tags,
   Note? tagNote,
+  Note? fileNote,
   List<TagMark> Function(String noteId)? marksOf,
 }) {
   final dark = context.palette.brightness == Brightness.dark;
@@ -162,6 +173,7 @@ Future<CommandChoice?> showCommandMenu(
         settingsIndex: settingsIndex,
         tags: tags,
         tagNote: tagNote,
+        fileNote: fileNote,
         onChosen: (choice) => Navigator.of(context).pop(choice),
       );
       return marksOf == null ? menu : TagMarks(marksOf: marksOf, child: menu);
@@ -188,6 +200,7 @@ class CommandMenu extends StatefulWidget {
     this.settingsIndex,
     this.tags,
     this.tagNote,
+    this.fileNote,
   });
 
   final NotesStore notes;
@@ -217,6 +230,10 @@ class CommandMenu extends StatefulWidget {
 
   /// The note Tag note... tags: the one open, or null for none.
   final Note? tagNote;
+
+  /// The note Move to folder… files: the one open, where folders can hold
+  /// it, or null.
+  final Note? fileNote;
 
   /// How many of each kind the menu shows.
   static const int perKind = 3;
@@ -473,22 +490,31 @@ class _CommandMenuState extends State<CommandMenu> {
     ].take(CommandMenu.perKind);
     final lowered = text.toLowerCase();
     final tagNote = widget.tagNote;
+    final fileNote = widget.fileNote;
+    final named = lowered.length >= 2;
     final actions = [
       if (tags != null &&
           tagNote != null &&
-          lowered.length >= 2 &&
-          'tag note'.startsWith(lowered)) ...[
-        const _Line.heading('Actions'),
+          named &&
+          'tag note'.startsWith(lowered))
         _Line.row(
           icon: KapyIcons.tagRounded,
           title: 'Tag note…',
           trailing: tagNote.title,
           action: () => setState(
-            () =>
-                _picker = TagPickerController(shelf: tags, noteId: tagNote.id),
+            () => _picker = TagPickerController(
+              shelf: tags,
+              noteIds: [tagNote.id],
+            ),
           ),
         ),
-      ],
+      if (fileNote != null && named && 'move to folder'.startsWith(lowered))
+        _Line.row(
+          icon: KapyIcons.folderMoveOutlined,
+          title: 'Move to folder…',
+          trailing: fileNote.title,
+          choice: MoveToFolderChoice(fileNote),
+        ),
     ];
     final settingsFirst =
         settings.isNotEmpty &&
@@ -500,7 +526,7 @@ class _CommandMenuState extends State<CommandMenu> {
       ],
     ];
     return [
-      ...actions,
+      if (actions.isNotEmpty) ...[const _Line.heading('Actions'), ...actions],
       if (settingsFirst) ...settingsLines,
       if (written.isNotEmpty) ...[
         const _Line.heading('Notes'),
@@ -657,7 +683,7 @@ class _CommandMenuState extends State<CommandMenu> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final dark = palette.brightness == Brightness.dark;
-    final top = (MediaQuery.sizeOf(context).height * 0.1).clamp(16.0, 88.0);
+    final top = commandMenuTop(MediaQuery.sizeOf(context));
     final terms = noteSearchTerms(_field.text);
     final menu = Align(
       alignment: Alignment.topCenter,
@@ -1066,7 +1092,7 @@ class _CommandMenuState extends State<CommandMenu> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (picker.shelf.isShared(picker.noteId))
+                if (picker.noteIds.any(picker.shelf.isShared))
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                     child: Text(

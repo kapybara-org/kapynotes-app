@@ -153,7 +153,7 @@ class PageToolbar extends StatelessWidget {
   /// Everything else the page offers, under More. A page with no onMore has
   /// nothing to put there and shows no More at all.
   final List<KapyMenuAction> moreActions;
-  final ValueChanged<String>? onMore;
+  final void Function(String value, Offset at)? onMore;
 
   /// Offers "Update and restart" once a release has downloaded. Null where
   /// the app does not update itself.
@@ -354,16 +354,19 @@ class PageToolbar extends StatelessWidget {
     ];
   }
 
-  /// Opens under More, its right edge on the button's.
-  void _showMore(BuildContext context, ValueChanged<String> onMore) {
+  /// Opens under More, its right edge on the button's. A choice that opens
+  /// a list of its own opens it there too.
+  void _showMore(
+    BuildContext context,
+    void Function(String value, Offset at) onMore,
+  ) {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
+    final at = box.localToGlobal(Offset(box.size.width, box.size.height + 4));
     unawaited(
       showKapyContextMenu<String>(
         context: context,
-        globalPosition: box.localToGlobal(
-          Offset(box.size.width, box.size.height + 4),
-        ),
+        globalPosition: at,
         items: [
           for (final action in moreActions)
             PopupMenuItem(
@@ -375,7 +378,7 @@ class PageToolbar extends StatelessWidget {
             ),
         ],
       ).then((choice) {
-        if (choice != null) onMore(choice);
+        if (choice != null) onMore(choice, at);
       }),
     );
   }

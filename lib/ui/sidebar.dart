@@ -131,10 +131,6 @@ enum PickedAction {
   delete,
 }
 
-/// The menu on picked notes: the line that counts them, then its groups of
-/// actions, each set off from the next by a rule.
-typedef PickedMenu = ({String heading, List<List<KapyMenuAction>> groups});
-
 KapyIconData _pickedIcon(PickedAction action) => switch (action) {
   PickedAction.openTabs => KapyIcons.openExternalRounded,
   PickedAction.pin => KapyIcons.pinOutlined,
@@ -203,7 +199,6 @@ class Sidebar extends StatelessWidget {
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
     this.grouping = NotesGrouping.byDate,
-    this.onGroupingChanged,
     this.when = NotesWhen.anyTime,
     this.onWhenChanged,
     this.folders,
@@ -377,10 +372,8 @@ class Sidebar extends StatelessWidget {
   final bool pinnedOnly;
   final ValueChanged<bool>? onPinnedOnlyChanged;
 
-  /// How the list beside the rail groups what Pinned leaves, and the menu
-  /// on its first heading that changes it; without one there is no menu.
+  /// How the list beside the rail groups what Pinned leaves.
   final NotesGrouping grouping;
-  final ValueChanged<NotesGrouping>? onGroupingChanged;
 
   /// How far back the filter reaches, for an empty list to say so and to
   /// offer any time again.
@@ -674,7 +667,8 @@ extension on Sidebar {
         picked.where(applies).toList();
     final unpinned = those((note) => !pinnedNoteIds.contains(note.id));
     return [
-      if (onOpenInNewTab != null) (PickedAction.openTabs, picked),
+      if (onOpenInNewTab != null)
+        (PickedAction.openTabs, those((note) => !tabbedIds.contains(note.id))),
       if (onTogglePin != null)
         unpinned.isEmpty
             ? (PickedAction.unpin, picked)
@@ -717,7 +711,8 @@ extension on Sidebar {
   static String _count(int notes) => notes == 1 ? '1 note' : '$notes notes';
 
   /// The picked notes Tags… tags: all of them, as a row's Tags tags its note.
-  List<String> _taggable(BuildContext context) => TagShelf.maybeOf(context) == null
+  List<String> _taggable(BuildContext context) =>
+      TagShelf.maybeOf(context) == null
       ? const []
       : [for (final note in _picked) note.id];
 
@@ -730,7 +725,7 @@ extension on Sidebar {
   /// The menu a right click or long press opens on picked notes: how many,
   /// then the row menu's groups. How to open them, what to do to them, and
   /// the ways out of the list.
-  PickedMenu _pickedMenu(BuildContext context) {
+  KapyMenu _pickedMenu(BuildContext context) {
     final picked = _picked.length;
     final choices = {
       for (final (action, notes) in _pickedChoices)
@@ -812,9 +807,10 @@ extension on Sidebar {
   ///
   /// With a pointer the bar holds the picked notes' menu, minus Open in tabs,
   /// where the list is wide enough for it; a narrower list keeps what most
-  /// often happens to them and Delete, and the rest stay in their menu. A
-  /// touch screen keeps that shorter bar, with Select all, since it has no
-  /// ⌘A to press.
+  /// often happens to them and Delete, and the rest stay in their menu.
+  /// Before anything is picked, as the archive's Select notes leaves it, it
+  /// holds Select all instead. A touch screen keeps the shorter bar, with
+  /// Select all until everything is picked, since it has no ⌘A to press.
   Widget _pickBar(BuildContext context) {
     final picks = this.picks;
     if (picks == null || !picks.on) {
@@ -847,9 +843,10 @@ extension on Sidebar {
     final choices = {
       for (final (action, notes) in _pickedChoices) action: notes,
     };
+    // Nothing to act on yet: no row of greyed buttons.
     List<Widget> those(List<PickedAction> actions) => [
       for (final action in actions)
-        if (choices[action] case final notes?)
+        if (choices[action] case final notes? when picked > 0)
           _IconButton(
             key: ValueKey('picked-${action.name}'),
             icon: _pickedIcon(action),
@@ -861,18 +858,18 @@ extension on Sidebar {
             onPressed: _pickedAction(action),
           ),
     ];
+    final selectAll = _IconButton(
+      key: const ValueKey('pick-all'),
+      icon: KapyIcons.selectAllRounded,
+      tooltip: 'Select all',
+      onPressed: () => picks.all(order),
+    );
     final short = those([primary, PickedAction.delete]);
     if (!AppPlatform.hasPointer) {
       return _PickActions(
         label: label,
         buttons: [
-          if (picked < order.length)
-            _IconButton(
-              key: const ValueKey('pick-all'),
-              icon: KapyIcons.selectAllRounded,
-              tooltip: 'Select all',
-              onPressed: () => picks.all(order),
-            ),
+          if (picked < order.length) selectAll,
           ...short,
           _IconButton(
             key: const ValueKey('pick-done'),
@@ -918,10 +915,14 @@ extension on Sidebar {
             _PickActions.padding.horizontal +
             painter.width +
             full.length * (AppControlMetrics.iconButtonExtent + _pickGap) +
-            _pickGap +
-            TonalButton.widthOf(context, 'Done');
+            _pickGap * 2 +
+            TonalButton.widthOf(context, 'Done', icon: false);
         painter.dispose();
-        final buttons = needed <= constraints.maxWidth ? full : short;
+        final buttons = picked == 0
+            ? [selectAll]
+            : needed <= constraints.maxWidth
+            ? full
+            : short;
         return _PickActions(
           label: label,
           buttons: [
@@ -1372,7 +1373,6 @@ extension on Sidebar {
         heading(_groupHeading(groups, key));
         section(groups.byGroup[key]!);
       }
-      final onGroupingChanged = this.onGroupingChanged;
       final grouped = groupNotes(
         groups.mine,
         grouping,
@@ -1380,18 +1380,12 @@ extension on Sidebar {
         displayTime: displayTime,
         firstTag: (note) => TagMarks.of(context, note.id).firstOrNull?.name,
       );
-      for (final (index, group) in grouped.indexed) {
+      for (final group in grouped) {
         heading(
           NotesGroupHeading(
             key: ValueKey('sidebar-group-${group.label}'),
             label: group.label,
             detail: group.detail,
-            trailing: index == 0 && onGroupingChanged != null
-                ? NotesGroupingMenu(
-                    grouping: grouping,
-                    onChanged: onGroupingChanged,
-                  )
-                : null,
           ),
         );
         section(group.notes);
@@ -2064,11 +2058,16 @@ class _PickActions extends StatelessWidget {
 
   static const padding = EdgeInsets.fromLTRB(12, 0, 8, 8);
 
-  static TextStyle labelStyle(BuildContext context) => TextStyle(
-    fontSize: AppTypeScale.small,
-    fontWeight: FontWeight.w400,
-    color: context.palette.textSecondary,
-  );
+  /// The count's style over the text around the bar, so that the bar
+  /// measures the count in the face it reads in.
+  static TextStyle labelStyle(BuildContext context) =>
+      DefaultTextStyle.of(context).style.merge(
+        TextStyle(
+          fontSize: AppTypeScale.small,
+          fontWeight: FontWeight.w400,
+          color: context.palette.textSecondary,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -3224,9 +3223,11 @@ class NoteRow extends StatefulWidget {
   final VoidCallback? onPickTo;
 
   /// While picking, the menu a right click or long press opens instead of
-  /// the note's own, for every picked note, and what was chosen from it.
-  final List<KapyMenuAction> Function()? pickedActions;
-  final ValueChanged<String>? onPickedAction;
+  /// the note's own, for every picked note, and what was chosen from it,
+  /// with the row's context and where a picker it opens goes.
+  final KapyMenu Function(BuildContext context)? pickedActions;
+  final Future<void> Function(String value, BuildContext context, Offset at)?
+  onPickedAction;
 
   /// Whether the note is in a shared space, which the row marks so a person
   /// typing knows somebody else can see it.
@@ -3292,184 +3293,201 @@ class _NoteRowState extends State<NoteRow> {
     widget.onTap();
   }
 
-  List<KapyMenuAction> _availableActions() {
-    if (widget.selecting) return widget.pickedActions?.call() ?? const [];
+  KapyMenu _menu() {
+    if (widget.selecting) {
+      return widget.pickedActions?.call(context) ??
+          (heading: null, groups: const []);
+    }
     // Named only where there is a keyboard to press it on: this same menu
     // opens on a long press on a phone, and a chord nobody there can type is
     // a line of noise beside the thing they came to tap.
     final archiveShortcut = AppPlatform.hasPointer
         ? widget.archiveShortcut
         : null;
-    return [
-      if (AppPlatform.isMobile && widget.onToggleChecked != null)
-        const KapyMenuAction(
-          value: 'select',
-          label: 'Select',
-          icon: KapyIcons.checklistRounded,
-        ),
-      if (_canOpenInNewTab)
-        KapyMenuAction(
-          value: 'open-tab',
-          label: 'Open in new tab',
-          icon: KapyIcons.openExternalRounded,
-          hint: AppPlatform.isMacOS ? '⌘↵' : 'Ctrl+Enter',
-        ),
-      if (_canOpenToSide)
-        KapyMenuAction(
-          value: 'open-side',
-          label: 'Open to the side',
-          icon: KapyIcons.viewColumnOutlined,
-          hint: AppPlatform.isMacOS ? '⌥ Click' : 'Alt+Click',
-        ),
-      if (widget.onTogglePin != null)
-        KapyMenuAction(
-          value: 'pin',
-          label: widget.pinned ? 'Unpin note' : 'Pin note',
-          icon: widget.pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
-        ),
-      if (TagShelf.maybeOf(context) != null)
-        const KapyMenuAction(
-          value: 'tags',
-          label: 'Tags',
-          icon: KapyIcons.tagRounded,
-          hint: '›',
-        ),
-      if (widget.folders != null)
-        const KapyMenuAction(
-          value: 'folder',
-          label: 'Move to folder…',
-          icon: KapyIcons.folderMoveOutlined,
-        ),
-      if (widget.onShare != null)
-        KapyMenuAction(
-          value: 'share',
-          label: widget.shared ? 'Manage sharing' : 'Share note',
-          icon: KapyIcons.peopleOutlined,
-        ),
-      if (widget.onHide != null)
-        const KapyMenuAction(
-          value: 'hide',
-          label: 'Move to Hidden Notes',
-          icon: hiddenIcon,
-        ),
-      if (widget.onRestore != null)
-        const KapyMenuAction(
-          value: 'restore',
-          label: 'Restore note',
-          icon: restoreIcon,
-        ),
-      if (widget.onUnhide != null)
-        const KapyMenuAction(
-          value: 'unhide',
-          label: 'Move to Notes',
-          icon: unhideIcon,
-        ),
-      // The ways out of the list end the menu, in the warning colour, the one
-      // that keeps the note before the one that does not. The shortcut is
-      // named on whichever of them it does: archiving in the list, deleting
-      // where the note is already archived or hidden.
-      if (widget.onArchive != null)
-        KapyMenuAction(
-          value: 'archive',
-          label: 'Archive note',
-          icon: archiveIcon,
-          hint: archiveShortcut?.displayLabel,
-          destructive: true,
-        ),
-      if (widget.onDelete != null)
-        KapyMenuAction(
-          value: 'delete',
-          label: widget.deleteLabel,
-          icon: deleteIcon,
-          hint: widget.onArchive == null ? archiveShortcut?.displayLabel : null,
-          destructive: true,
-        ),
-    ];
+    return (
+      heading: null,
+      groups: [
+        [
+          if (AppPlatform.isMobile && widget.onToggleChecked != null)
+            const KapyMenuAction(
+              value: 'select',
+              label: 'Select',
+              icon: KapyIcons.checklistRounded,
+            ),
+          if (_canOpenInNewTab)
+            KapyMenuAction(
+              value: 'open-tab',
+              label: 'Open in new tab',
+              icon: KapyIcons.openExternalRounded,
+              hint: AppPlatform.isMacOS ? '⌘↵' : 'Ctrl+Enter',
+            ),
+          if (_canOpenToSide)
+            KapyMenuAction(
+              value: 'open-side',
+              label: 'Open to the side',
+              icon: KapyIcons.viewColumnOutlined,
+              hint: AppPlatform.isMacOS ? '⌥ Click' : 'Alt+Click',
+            ),
+        ],
+        [
+          if (widget.onTogglePin != null)
+            KapyMenuAction(
+              value: 'pin',
+              label: widget.pinned ? 'Unpin note' : 'Pin note',
+              icon: widget.pinned
+                  ? KapyIcons.pinRounded
+                  : KapyIcons.pinOutlined,
+            ),
+          if (TagShelf.maybeOf(context) != null)
+            const KapyMenuAction(
+              value: 'tags',
+              label: 'Tags',
+              icon: KapyIcons.tagRounded,
+              hint: '›',
+            ),
+          if (widget.folders != null)
+            const KapyMenuAction(
+              value: 'folder',
+              label: 'Move to folder…',
+              icon: KapyIcons.folderMoveOutlined,
+            ),
+          if (widget.onShare != null)
+            KapyMenuAction(
+              value: 'share',
+              label: widget.shared ? 'Manage sharing' : 'Share note',
+              icon: KapyIcons.peopleOutlined,
+            ),
+          if (widget.onHide != null)
+            const KapyMenuAction(
+              value: 'hide',
+              label: 'Move to Hidden Notes',
+              icon: hiddenIcon,
+            ),
+          if (widget.onRestore != null)
+            const KapyMenuAction(
+              value: 'restore',
+              label: 'Restore note',
+              icon: restoreIcon,
+            ),
+          if (widget.onUnhide != null)
+            const KapyMenuAction(
+              value: 'unhide',
+              label: 'Move to Notes',
+              icon: unhideIcon,
+            ),
+        ],
+        // The ways out of the list end the menu, the one that keeps the note
+        // before the one that does not, and only deleting is in the warning
+        // colour. The shortcut is named on whichever of them it does:
+        // archiving in the list, deleting where the note is already archived
+        // or hidden.
+        [
+          if (widget.onArchive != null)
+            KapyMenuAction(
+              value: 'archive',
+              label: 'Archive note',
+              icon: archiveIcon,
+              hint: archiveShortcut?.displayLabel,
+            ),
+          if (widget.onDelete != null)
+            KapyMenuAction(
+              value: 'delete',
+              label: widget.deleteLabel,
+              icon: deleteIcon,
+              hint: widget.onArchive == null
+                  ? archiveShortcut?.displayLabel
+                  : null,
+              destructive: true,
+            ),
+        ],
+      ],
+    );
   }
 
   String _actionKey(String value) => '$value-note-${widget.note.id}';
 
-  Future<String?> _showTouchActions(
-    BuildContext context,
-    List<KapyMenuAction> actions,
-  ) => showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    barrierColor: Theme.of(context).drawerTheme.scrimColor,
-    builder: (sheetContext) {
-      final palette = sheetContext.palette;
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: palette.surfaceBackground,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppRadii.dialog),
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 34,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: palette.controlBorder,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-                    child: Text(
-                      widget.note.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.body,
-                        fontWeight: FontWeight.w400,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                  ),
-                  for (final action in actions)
-                    InkWell(
-                      key: ValueKey(_actionKey(action.value)),
-                      onTap: () => Navigator.of(sheetContext).pop(action.value),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 14,
-                        ),
-                        child: KapyMenuActionRow(action, touch: true),
-                      ),
-                    ),
-                ],
+  /// The menu as a sheet on a phone: what it acts on, the note's title
+  /// unless the menu names its own, over every line of it.
+  Future<String?> _showTouchActions(BuildContext context, KapyMenu menu) =>
+      showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Theme.of(context).drawerTheme.scrimColor,
+        builder: (sheetContext) {
+          final palette = sheetContext.palette;
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: palette.surfaceBackground,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppRadii.dialog),
               ),
             ),
-          ),
-        ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 34,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: palette.controlBorder,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+                        child: Text(
+                          menu.heading ?? widget.note.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppTypeScale.body,
+                            fontWeight: FontWeight.w400,
+                            color: palette.textPrimary,
+                          ),
+                        ),
+                      ),
+                      for (final action in menu.groups.expand((group) => group))
+                        InkWell(
+                          key: ValueKey(_actionKey(action.value)),
+                          onTap: () =>
+                              Navigator.of(sheetContext).pop(action.value),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
+                            child: KapyMenuActionRow(action, touch: true),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       );
-    },
-  );
 
   /// Right-click on desktop, long-press on touch, or the row's More button.
   Future<void> _showContextMenu(BuildContext context, Offset position) async {
     // While picking, the menu is the picked notes', and the note it was
     // opened on is one of them.
     if (widget.selecting && !widget.checked) widget.onToggleChecked?.call();
-    final actions = _availableActions();
-    if (actions.isEmpty) return;
+    final menu = _menu();
+    if (menu.groups.every((group) => group.isEmpty)) return;
 
     String? choice;
     if (AppPlatform.isMobile) {
-      choice = await _showTouchActions(context, actions);
+      choice = await _showTouchActions(context, menu);
     } else {
       // A card is narrower than the menu, so beside the rail the menu keeps
       // to the whole list rather than to the note it belongs to.
@@ -3493,15 +3511,7 @@ class _NoteRowState extends State<NoteRow> {
         context: context,
         globalPosition: position,
         preferredGlobalBounds: preferredBounds,
-        items: [
-          for (final action in actions)
-            PopupMenuItem(
-              key: ValueKey(_actionKey(action.value)),
-              value: action.value,
-              height: 36,
-              child: KapyMenuActionRow(action, touch: false),
-            ),
-        ],
+        items: kapyMenuItems(menu, key: _actionKey),
       );
     }
     await _choose(choice, at: position);
@@ -3511,8 +3521,18 @@ class _NoteRowState extends State<NoteRow> {
   /// [at], or from VoiceOver, which has no pointer and gets the row's corner.
   Future<void> _choose(String? choice, {Offset? at}) async {
     if (!mounted) return;
+    Offset anchor() {
+      final box = context.findRenderObject() as RenderBox?;
+      return at ??
+          (box == null
+              ? Offset.zero
+              : box.localToGlobal(box.size.bottomRight(Offset.zero)));
+    }
+
     if (widget.selecting) {
-      if (choice != null) widget.onPickedAction?.call(choice);
+      if (choice != null) {
+        await widget.onPickedAction?.call(choice, context, anchor());
+      }
       return;
     }
     if (choice == 'select') widget.onToggleChecked?.call();
@@ -3525,19 +3545,11 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'pin') widget.onTogglePin?.call();
     if (choice == 'open-side') widget.onOpenToSide?.call();
     if (choice == 'open-tab') widget.onOpenInNewTab?.call();
-    Offset anchor() {
-      final box = context.findRenderObject() as RenderBox?;
-      return at ??
-          (box == null
-              ? Offset.zero
-              : box.localToGlobal(box.size.bottomRight(Offset.zero)));
-    }
-
     if (choice == 'tags' && context.mounted) {
-      await showTagPickerAt(context, anchor(), widget.note.id);
+      await showTagPickerAt(context, anchor(), [widget.note.id]);
     }
     if (widget.folders case final folders? when choice == 'folder' && mounted) {
-      await moveNoteToFolder(context, anchor(), folders, widget.note.id);
+      await moveNotesToFolder(context, anchor(), folders, [widget.note.id]);
     }
   }
 
@@ -3798,7 +3810,7 @@ class _NoteRowState extends State<NoteRow> {
           // miss, so its menu's choices are actions on the row itself. Same
           // list, so the two can never drift.
           customSemanticsActions: {
-            for (final action in _availableActions())
+            for (final action in _menu().groups.expand((group) => group))
               CustomSemanticsAction(label: action.label): () =>
                   unawaited(_choose(action.value)),
           },
