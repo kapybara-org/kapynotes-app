@@ -487,7 +487,7 @@ Future<void> showTagPickerAt(
     barrierColor: Colors.transparent,
     transitionDuration: Duration.zero,
     pageBuilder: (context, _, _) => CustomSingleChildLayout(
-      delegate: _AtPoint(position),
+      delegate: PopoverAtPoint(position),
       child: TagPicker(
         shelf: shelf,
         noteId: noteId,
@@ -497,8 +497,9 @@ Future<void> showTagPickerAt(
   );
 }
 
-class _AtPoint extends SingleChildLayoutDelegate {
-  _AtPoint(this.point);
+/// Lays a popover out with its corner at [point], kept inside the window.
+class PopoverAtPoint extends SingleChildLayoutDelegate {
+  PopoverAtPoint(this.point);
 
   final Offset point;
 
@@ -513,7 +514,7 @@ class _AtPoint extends SingleChildLayoutDelegate {
   );
 
   @override
-  bool shouldRelayout(_AtPoint oldDelegate) => oldDelegate.point != point;
+  bool shouldRelayout(PopoverAtPoint oldDelegate) => oldDelegate.point != point;
 }
 
 /// The chips at the end of a note's meta line, then + Tag. A chip's × takes
