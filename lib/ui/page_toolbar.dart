@@ -306,57 +306,49 @@ class PageToolbar extends StatelessWidget {
     );
   }
 
-  /// A phone's bar, outside the desktop's band: the way back at the left,
-  /// the collaborators after it, then the note's actions.
+  /// A phone's bar, outside the desktop's band, as Phone v2 has it: the way
+  /// back at the left, the collaborators after it, then the note's actions.
   Widget _phoneBar(
     ({String to, VoidCallback onPressed}) back,
     double width,
     double extent,
-  ) {
-    final avatars = actions == null && members.isNotEmpty;
-    return Row(
-      children: [
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, slot) => Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: _BackButton(
-                          to: back.to,
-                          onPressed: back.onPressed,
-                        ),
-                      ),
-                    ],
+  ) => Row(
+    children: [
+      Expanded(
+        child: LayoutBuilder(
+          builder: (context, slot) => Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _BackButton(to: back.to, onPressed: back.onPressed),
+                ),
+              ),
+              if (actions == null && members.isNotEmpty)
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.min(
+                      slot.maxWidth,
+                      (width - _phonePadding.horizontal) / 3,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8, right: 6),
+                    child: MemberAvatars(
+                      members: members,
+                      present: present,
+                      currentUserId: currentUserId,
+                      onPressed: onShare,
+                    ),
                   ),
                 ),
-                if (avatars)
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: math.min(slot.maxWidth, width / 3),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 16),
-                      child: MemberAvatars(
-                        members: members,
-                        present: present,
-                        currentUserId: currentUserId,
-                        onPressed: onShare,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
-        SizedBox(width: avatars ? 8 : 16),
-        ..._actions(width, extent),
-      ],
-    );
-  }
+      ),
+      ..._actions(width, extent),
+    ],
+  );
 
   /// The collaborators, giving way first, then Saved and Share 8 apart,
   /// Kapy AI behind its hairline, and More last. A phone's bar keeps Phone
