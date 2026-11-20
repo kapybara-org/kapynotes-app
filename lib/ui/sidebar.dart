@@ -1394,7 +1394,7 @@ extension on Sidebar {
       // A phone's list never shows a note waiting for a later day: those wait
       // under Upcoming in Folders, and join Today on their day.
       final grouped = groupNotes(
-        _besideRail
+        !phone
             ? groups.mine
             : [
                 for (final note in groups.mine)
