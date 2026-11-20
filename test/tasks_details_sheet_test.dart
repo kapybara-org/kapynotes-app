@@ -135,6 +135,27 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('a task with details shows the lines mark, and one without shows none', (
+    tester,
+  ) async {
+    await setUpTasks(
+      tester,
+      'Errands\n☐ Hide the menu\n  It shrinks to a pill.\n☐ Book flights',
+    );
+    await pumpScreen(tester);
+    final open = tasks.read().open;
+
+    Finder markIn(String id) => find.descendant(
+      of: rowOf(id),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is KapyIcon && widget.icon == KapyIcons.alignLeft,
+      ),
+    );
+    expect(markIn(open[0].id), findsOneWidget);
+    expect(markIn(open[1].id), findsNothing);
+    await settle(tester);
+  });
+
   testWidgets('the arrows move the sheet, Space marks done, Esc closes it', (
     tester,
   ) async {
