@@ -1044,6 +1044,9 @@ class AppWeight {
   static const double body = 400;
   static const double selected = 460;
   static const double button = 500;
+
+  /// Old name for [button]. Buttons and chips sit here, not rows.
+  static const double rowTitle = button;
   static const double section = 520;
   static const double page = 600;
 
@@ -1062,6 +1065,20 @@ class AppWeight {
     if (axis < 510) return FontWeight.w500;
     if (axis < 560) return FontWeight.w600;
     return FontWeight.w700;
+  }
+
+  /// [axis] as the platform's Bold Text setting wants it.
+  ///
+  /// `Text` honours Bold Text by merging `fontWeight: bold`, and an explicit
+  /// `wght` axis outranks that merge. A style built here therefore carries
+  /// its own bold step, or the whole interface would ignore the setting.
+  /// It rebuilds with the rest of the app on
+  /// `didChangeAccessibilityFeatures`.
+  static double bold(double axis) {
+    final features = WidgetsBinding.instance.platformDispatcher
+        .accessibilityFeatures;
+    if (!features.boldText) return axis;
+    return math.min(axis + 200, 700);
   }
 
   static List<FontVariation> variations(
@@ -1089,8 +1106,8 @@ TextStyle chromeStyle({
   fontSize: size,
   height: line / size,
   leadingDistribution: TextLeadingDistribution.even,
-  fontWeight: AppWeight.named(weight),
-  fontVariations: AppWeight.variations(weight, extra: extra),
+  fontWeight: AppWeight.named(AppWeight.bold(weight)),
+  fontVariations: AppWeight.variations(AppWeight.bold(weight), extra: extra),
   color: color,
   letterSpacing: 0,
   fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
