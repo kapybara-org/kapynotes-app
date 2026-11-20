@@ -4,8 +4,8 @@ import XPC
 
 /// Backs the `kapynotes/tool_runner` channel: Codex and Claude Code for the
 /// sandboxed app, run by KapyToolRunner.xpc, which is embedded in the
-/// Developer ID build and in development builds, and never in the Mac App
-/// Store build (KAPY_TOOL_RUNNER in packaging/release.sh).
+/// Developer ID build and in development builds, and never in a build with
+/// KAPY_TOOL_RUNNER = NO (macos/Runner/Configs/AppInfo.xcconfig).
 ///
 /// The app checks the service as the service checks the app: our team's
 /// signature and the service's own identifier, read from the bundle that

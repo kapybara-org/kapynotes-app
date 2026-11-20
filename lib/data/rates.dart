@@ -150,7 +150,6 @@ class RatesRepository extends ChangeNotifier {
 
   RateSnapshot? get snapshot => _snapshot;
   bool get isRefreshing => _refreshing;
-  bool get hasRates => _snapshot != null;
 
   Map<String, double> get rates => _snapshot?.rates ?? const {};
   RateProvider get provider => _snapshot?.provider ?? RateProvider.frankfurter;

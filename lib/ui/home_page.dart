@@ -1713,12 +1713,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return true;
   }
 
-  /// A note's name on a task's mark, with its space's after it when it is
-  /// shared.
-  String _taskNoteLabel(Note note) {
-    final space = widget.account?.sharing?.spaceById(note.spaceId);
-    return space == null ? note.title : '${note.title} · ${space.name}';
-  }
+  /// A note's name on a task's mark, with its space's name after it when
+  /// that name exists. Shared by the Tasks list, the phone home, and ⌘K.
+  String _taskNoteLabel(Note note) => taskNoteLabel(
+    note,
+    widget.account?.sharing?.spaceById(note.spaceId),
+  );
 
   /// Opens a task's note where it lives, leaving Tasks.
   void _openTaskNote(String id) {

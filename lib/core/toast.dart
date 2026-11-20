@@ -217,10 +217,15 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     super.initState();
     final duration = widget.duration;
     if (duration != null) {
-      _lifetimeController = AnimationController(vsync: this, duration: duration)
-        ..forward().then((_) {
-          if (mounted) widget.onElapsed();
-        });
+      _lifetimeController =
+          AnimationController(
+              vsync: this,
+              duration: duration,
+              animationBehavior: AnimationBehavior.preserve,
+            )
+            ..forward().then((_) {
+              if (mounted) widget.onElapsed();
+            });
     }
   }
 

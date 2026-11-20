@@ -119,16 +119,6 @@ int imagesOnLineAt(String body, int offset, List<NoteAttachmentRef> refs) {
   return count;
 }
 
-/// The index of [offset] among the images on its own line, counting from zero.
-int imageIndexOnLineAt(String body, int offset, List<NoteAttachmentRef> refs) {
-  final line = _lineRangeAt(body, offset);
-  var index = 0;
-  for (final ref in refs) {
-    if (ref.offset >= line.start && ref.offset < offset) index++;
-  }
-  return line.start <= offset ? index : 0;
-}
-
 ({int start, int end}) _lineRangeAt(String body, int offset) {
   if (offset < 0 || offset > body.length) return (start: 0, end: body.length);
   var start = offset;
