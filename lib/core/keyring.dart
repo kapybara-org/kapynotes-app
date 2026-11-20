@@ -70,4 +70,10 @@ abstract final class KeyringNotice {
 
   static const String connect =
       "$_absent, so a connection won't be remembered after you quit.";
+
+  /// Hidden Notes keeps its PIN in the same keyring, so without one it can be
+  /// neither set up nor opened. Said here rather than in the gate so it reads
+  /// in the voice of the other notices.
+  static const String hiddenNotes =
+      "$_absent, so Hidden Notes can't be opened or set up on this computer.";
 }
