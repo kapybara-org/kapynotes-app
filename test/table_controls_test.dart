@@ -29,9 +29,9 @@ void main() {
     // The keycap glyphs a Mac's menus print, which no loaded test face has.
     final symbols = FontLoader('Noto Sans')
       ..addFont(
-        File('/System/Library/Fonts/Apple Symbols.ttf')
-            .readAsBytes()
-            .then(ByteData.sublistView),
+        File(
+          '/System/Library/Fonts/Apple Symbols.ttf',
+        ).readAsBytes().then(ByteData.sublistView),
       );
     await symbols.load();
   });
@@ -780,10 +780,23 @@ void main() {
       final grip = tester.getRect(
         find.byKey(const ValueKey('table-column-grip-0')),
       );
+      // The grip's chip is what draws. Its target is larger, for a finger,
+      // and only the chip of it may sit above the table.
+      final chip = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey('table-column-grip-0')),
+          matching: find.byKey(const ValueKey('table-grip-chip')),
+        ),
+      );
       expect(
-        grip.top,
+        chip.top,
         greaterThanOrEqualTo(frame.grid.top),
         reason: 'the line above the table is clear of the grip',
+      );
+      expect(
+        chip.left,
+        greaterThanOrEqualTo(frame.grid.left),
+        reason: 'the grip stays inside the table',
       );
     }, variant: _phone);
     testWidgets('grips are at least 44 points', (tester) async {
