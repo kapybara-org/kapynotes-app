@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/keyring.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -65,6 +66,15 @@ void main() {
       scoped ? McpScope(service: service, child: pane) : pane,
     );
   }
+
+  testWidgets('a missing keyring is named before an app is connected', (
+    tester,
+  ) async {
+    KeyringStatus.debugReset(available: false);
+    addTearDown(KeyringStatus.debugReset);
+    await pumpPane(tester);
+    expect(find.text(KeyringNotice.connect), findsOneWidget);
+  });
 
   testWidgets('is off until turned on, then shows its address', (tester) async {
     await pumpPane(tester);

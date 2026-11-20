@@ -27,6 +27,17 @@ class LinuxDesktop {
   /// when an extension is switched on or a panel restarts.
   static Future<bool> hasTrayHost() => _ask('hasTrayHost');
 
+  /// Whether the session bus has a keyring, or can start one. A missing bus
+  /// answers no. Not Linux answers yes: other platforms keep their own store.
+  static Future<bool> hasKeyring() async {
+    if (!AppPlatform.isLinux) return true;
+    try {
+      return await channel.invokeMethod<bool>('hasKeyring') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<bool> _ask(String method) async {
     if (!AppPlatform.isLinux) return false;
     try {

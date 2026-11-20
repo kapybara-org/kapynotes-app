@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/keyring.dart';
 import '../../core/platform.dart';
 import '../../core/text_file_export.dart';
 import '../../core/theme.dart';
@@ -331,6 +332,8 @@ class _SignInFormState extends State<_SignInForm> {
               'Sync encrypted notes across your devices.',
       },
       children: [
+        if (!KeyringStatus.instance.available)
+          const _Message(KeyringNotice.signIn),
         ..._fields(),
         ..._actions(),
         if (_note != null) _Message(_note!),
@@ -733,6 +736,8 @@ class _PassphraseFormState extends State<_PassphraseForm> {
     title: 'Save your passphrase',
     blurb: 'Use it to unlock your notes on other devices.',
     children: [
+      if (!KeyringStatus.instance.available)
+        const _Message(KeyringNotice.passphrase),
       GeneratedPassphrase(
         passphrase: _passphrase,
         saveTextFile: widget.saveTextFile,
@@ -872,6 +877,8 @@ class _UnlockFormState extends State<_UnlockForm> {
               null => 'Enter your passphrase to unlock notes on this device.',
             },
       children: [
+        if (!KeyringStatus.instance.available)
+          const _Message(KeyringNotice.unlock),
         _Field(
           key: ValueKey(_usingRecoveryKey),
           controller: _input,
@@ -1054,6 +1061,8 @@ class _ReadyState extends State<_Ready> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      if (!KeyringStatus.instance.available)
+        const SettingsNote(KeyringNotice.syncing),
       SettingsGroup(
         children: [
           if (_editing)

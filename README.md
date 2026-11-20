@@ -119,7 +119,18 @@ built on Ubuntu 22.04 so that they run on its glibc (2.35) and anything newer:
   with `kapynotes` on PATH, the desktop entry, the hicolor icons and the
   AppStream metainfo. dpkg-shlibdeps writes Depends from every ELF in it, and
   the script adds `libgl1`, `libegl1` and `libgles2` itself, because
-  libepoxy dlopens them where dpkg-shlibdeps cannot see.
+  libepoxy dlopens them where dpkg-shlibdeps cannot see. On Ubuntu or Debian,
+  update the package lists first, then install the file you downloaded:
+
+  ```bash
+  sudo apt update
+  sudo apt install ./KapyNotes-<version>-amd64.deb
+  ```
+
+  The arm64 file is `KapyNotes-<version>-arm64.deb`. Staying signed in needs a
+  keyring running on this computer (GNOME Keyring or KWallet). The package
+  recommends GNOME Keyring, which is also what provides the keyring on KDE in
+  Debian 13. Installing the package is not enough if the keyring is not running.
 - **`KapyNotes-<version>-<arch>.AppImage`**: the same bundle behind the static
   type-2 runtime, so it mounts without libfuse2, which Ubuntu 24.04 no longer
   installs, and runs with `APPIMAGE_EXTRACT_AND_RUN=1` where there is no FUSE

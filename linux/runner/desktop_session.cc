@@ -60,6 +60,44 @@ static void has_tray_host(FlMethodCall* method_call) {
       host_cb, g_object_ref(method_call));
 }
 
+// Whether the session bus has a keyring, or a service file that can start one.
+//
+// Asked without starting anything. libsecret's own call logs a warning every
+// time the name is missing, so this answers first and the Dart side then
+// skips the keystore for the rest of the launch.
+static gboolean keyring_on_bus(GDBusConnection* bus) {
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GVariant) owned = g_dbus_connection_call_sync(
+      bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+      "org.freedesktop.DBus", "NameHasOwner",
+      g_variant_new("(s)", "org.freedesktop.secrets"), G_VARIANT_TYPE("(b)"),
+      G_DBUS_CALL_FLAGS_NO_AUTO_START, 2000, nullptr, &error);
+  if (owned != nullptr) {
+    gboolean yes = FALSE;
+    g_variant_get(owned, "(b)", &yes);
+    if (yes) return TRUE;
+  }
+  g_clear_error(&error);
+  g_autoptr(GVariant) names = g_dbus_connection_call_sync(
+      bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+      "org.freedesktop.DBus", "ListActivatableNames", nullptr,
+      G_VARIANT_TYPE("(as)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, 2000, nullptr,
+      nullptr);
+  if (names == nullptr) return FALSE;
+  g_auto(GStrv) list = nullptr;
+  g_variant_get(names, "(^as)", &list);
+  for (gchar** name = list; name != nullptr && *name != nullptr; name++) {
+    if (g_strcmp0(*name, "org.freedesktop.secrets") == 0) return TRUE;
+  }
+  return FALSE;
+}
+
+static void has_keyring(FlMethodCall* method_call) {
+  g_autoptr(GDBusConnection) bus =
+      g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+  respond(method_call, bus != nullptr && keyring_on_bus(bus));
+}
+
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
                            gpointer user_data) {
   const gchar* method = fl_method_call_get_name(method_call);
@@ -69,6 +107,10 @@ static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
   }
   if (g_strcmp0(method, "hasTrayHost") == 0) {
     has_tray_host(method_call);
+    return;
+  }
+  if (g_strcmp0(method, "hasKeyring") == 0) {
+    has_keyring(method_call);
     return;
   }
   fl_method_call_respond_not_implemented(method_call, nullptr);

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/keyring.dart';
 import '../core/platform.dart';
 import 'auth_api.dart';
 
@@ -217,8 +218,9 @@ SecureStore platformSecureStore() {
 /// the old service at WhenUnlocked, so a restored iPhone still asks for the
 /// old PIN. Moved to a device-only entry, a restored phone would have no PIN,
 /// and whoever opened Hidden Notes would set one and see them.
-SecureStore hiddenNotesSecureStore() =>
-    AppPlatform.isIOS ? const PlatformSecureStore() : platformSecureStore();
+SecureStore hiddenNotesSecureStore() => AppPlatform.isIOS
+    ? const PlatformSecureStore()
+    : KeyringGuardedStore(platformSecureStore(), KeyringStatus.instance);
 
 /// Moves each of [keys] now rather than on its next read, so nothing waits
 /// in an old store that backups carry.
@@ -235,43 +237,103 @@ Future<void> moveEntries(SecureStore store, Iterable<String> keys) async {
 /// box with no libsecret, a device locked at the wrong moment. Failing soft
 /// costs one passphrase prompt per launch. Throwing would cost the launch.
 class ForgivingSecureStore implements SecureStore {
-  const ForgivingSecureStore(this._inner);
+  const ForgivingSecureStore(this._inner, {this.status});
 
   final SecureStore _inner;
 
+  /// When set, a failure is remembered and later calls skip the keystore, so
+  /// a missing keyring logs once instead of once per entry.
+  final KeyringStatus? status;
+
+  bool get _skip => status != null && !status!.available;
+
   @override
   Future<String?> read(String key) async {
+    if (_skip) return null;
     try {
       return await _inner.read(key);
     } catch (error) {
-      debugPrint('KapyNotes: keystore unreadable ($key): $error');
+      _failed('KapyNotes: keystore unreadable ($key): $error');
       return null;
     }
   }
 
   @override
   Future<void> write(String key, String value) async {
+    if (_skip) return;
     try {
       await _inner.write(key, value);
     } catch (error) {
       // The key stays in memory for this session, so sync keeps working; only
       // the next launch pays for it.
-      debugPrint('KapyNotes: keystore not writable ($key): $error');
+      _failed('KapyNotes: keystore not writable ($key): $error');
     }
   }
 
   @override
   Future<void> delete(String key) async {
+    if (_skip) return;
     try {
       await _inner.delete(key);
     } catch (error) {
-      debugPrint('KapyNotes: keystore not clearable ($key): $error');
+      _failed('KapyNotes: keystore not clearable ($key): $error');
     }
+  }
+
+  void _failed(String line) {
+    if (status != null) {
+      status!.markUnavailable();
+      return;
+    }
+    debugPrint(line);
   }
 }
 
 /// What the app should use.
-SecureStore defaultSecureStore() => ForgivingSecureStore(platformSecureStore());
+SecureStore defaultSecureStore() =>
+    ForgivingSecureStore(platformSecureStore(), status: KeyringStatus.instance);
+
+/// Thrown when this launch already knows the keyring is not running.
+class MissingKeyring implements Exception {
+  const MissingKeyring();
+
+  @override
+  String toString() => 'no keyring is running';
+}
+
+/// Fails at once when this launch already found no keyring, so a read does not
+/// ask libsecret again and log the same failure.
+///
+/// Strict on purpose, unlike [ForgivingSecureStore]: the caller has to refuse
+/// rather than carry on as if nothing were stored.
+class KeyringGuardedStore implements SecureStore {
+  const KeyringGuardedStore(this._inner, this._status);
+
+  final SecureStore _inner;
+  final KeyringStatus _status;
+
+  void _require() {
+    if (!_status.available) throw const MissingKeyring();
+  }
+
+  @override
+  Future<String?> read(String key) async {
+    _require();
+    return _inner.read(key);
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    _require();
+    return _inner.write(key, value);
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    _require();
+    return _inner.delete(key);
+  }
+}
 
 /// For tests and for platforms without a keystore. Nothing here outlives the
 /// process, which for a test is the point and for a user means one extra
