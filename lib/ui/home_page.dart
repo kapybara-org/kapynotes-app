@@ -78,6 +78,7 @@ import 'command_menu.dart';
 import 'empty_state.dart';
 import 'folders_ui.dart' show FolderPage, folderRefusalText;
 import 'context_menu.dart';
+import 'day_strip.dart';
 import 'hidden_notes_gate.dart';
 import 'kapy_ai/kapy_ai_panel.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
@@ -273,7 +274,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   TagFilter _tagFilter = const TagFilter();
 
   /// How far back that list reaches, kept the same way.
-  NotesWhen _when = NotesWhen.anyTime;
+  WhenFilter _when = NotesWhen.anyTime;
 
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
@@ -358,6 +359,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   TaskFilter _taskFilter = const TaskFilter.all();
   final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
   final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
+
+  /// The page's days, keyed so they keep their place in the week wherever
+  /// the bar is built, and so When can ask whether the week is on show.
+  final _dayStrip = GlobalKey();
   late final TasksController? _taskController = switch (widget.tasks) {
     final tasks? => TasksController(
       notes: widget.notes,
@@ -2500,7 +2505,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  void _setWhen(NotesWhen when) => setState(() => _when = when);
+  void _setWhen(WhenFilter when) => setState(() => _when = when);
 
   /// The tags the lists offer, in the person's order, each with how many
   /// notes carry it: the archived ones in Archive, and otherwise the rest,
@@ -3183,10 +3188,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     when: _when,
     onWhenChanged: _setWhen,
     today: dayShown(widget.notes.now(), widget.prefs.displayTime),
+    weekShown: () => DayStrip.showsWeek(_dayStrip),
     cards: widget.prefs.noteCards,
     onCardsChanged: cards ? (cards) => widget.prefs.noteCards = cards : null,
     alignEnd: onFolder,
   );
+
+  /// The page's days, in My notes and on a folder in front, counting and
+  /// narrowing what the list shows or what the folder holds. With the list
+  /// hidden and no folder in front, a day lists its notes instead.
+  Widget Function(bool compact)? _pageDays({required bool listVisible}) {
+    final folderId = _folderInFront;
+    if (folderId == null && (_space != LibrarySpace.notes || _specialMode)) {
+      return null;
+    }
+    final displayTime = widget.prefs.displayTime;
+    return (compact) => DayStrip(
+      key: _dayStrip,
+      compact: compact,
+      today: dayShown(widget.notes.now(), displayTime),
+      when: _when,
+      onWhenChanged: _setWhen,
+      notes: folderId == null
+          ? _filtered(widget.notes.search(''), anyTime: true)
+          : widget.folders!.tree.notesIn(
+              _filtered(_folderNotes, anyTime: true),
+              folderId,
+              deep: true,
+            ),
+      displayTime: displayTime,
+      firstWeekday: firstWeekday(context),
+      onOpenNote: listVisible || folderId != null ? null : _openFromDay,
+    );
+  }
+
+  /// Opens a note from a day's list under the page's days, or with [behind]
+  /// in a tab behind, as a click in the list would.
+  void _openFromDay(String id, {required bool behind}) =>
+      behind ? _openInNewTab(id) : _select(id);
 
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
   Future<void> _openCommandMenu() async {
@@ -3345,18 +3384,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// or Hidden or Archive while the filter has one chosen.
   String get _listTitle => _specialMode ? _show.label : _space.title;
 
-  /// [notes] narrowed to the space and to the media the filter has ticked.
-  /// Drawings has no media filter: every item in it is a drawing.
-  List<Note> _filtered(List<Note> notes) {
+  /// [notes] narrowed to the space, to the tags and media the filter has
+  /// ticked, and unless [anyTime] to When's days. Drawings has no media
+  /// filter: every item in it is a drawing.
+  List<Note> _filtered(List<Note> notes, {bool anyTime = false}) {
     final tags = widget.tags;
     final byTag = tags == null ? const TagFilter() : _tagsNarrowed;
     final byMedia =
         !_drawingsOnly && _mediaFilter.length < NoteMedia.values.length;
     final displayTime = widget.prefs.displayTime;
-    final span = _when.span(
-      today: dayShown(widget.notes.now(), displayTime),
-      firstWeekday: firstWeekday(context),
-    );
+    final span = anyTime
+        ? null
+        : _when.span(
+            today: dayShown(widget.notes.now(), displayTime),
+            firstWeekday: firstWeekday(context),
+          );
     return [
       for (final note in _narrowed(notes))
         if ((span == null || span.covers(noteDay(note, displayTime))) &&
@@ -3797,6 +3839,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     else ...[
                                       PageToolbar(
                                         path: _pagePath(selected),
+                                        days: _pageDays(
+                                          listVisible: listFits && listShown,
+                                        ),
                                         onOpenFolder: widget.folders == null
                                             ? null
                                             : _openFolder,
@@ -3845,6 +3890,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                 saved: _savedOnDateLine(
                                                   selected,
                                                   page.maxWidth,
+                                                  unloadedPictures:
+                                                      unloaded.length,
                                                 ),
                                                 child: _buildWideWorkspace(
                                                   sidebar,
@@ -3904,14 +3951,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Saved, for the open note's date line while the page is too narrow for
-  /// it in the bar.
+  /// it in the bar, or for the count of pictures that didn't load that
+  /// stands in for it there.
   ({String label, String? tooltip})? _savedOnDateLine(
     Note? note,
-    double pageWidth,
-  ) {
+    double pageWidth, {
+    required int unloadedPictures,
+  }) {
     if (note == null ||
         _folderInFront != null ||
-        pageWidth >= PageToolbar.savedWidth) {
+        PageToolbar.savedFits(pageWidth, unloadedPictures: unloadedPictures)) {
       return null;
     }
     final saved = savedState(widget.account?.syncStatus);

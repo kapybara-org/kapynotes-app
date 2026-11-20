@@ -342,8 +342,8 @@ class Sidebar extends StatelessWidget {
 
   /// How far back the filter reaches, for an empty list to say so and to
   /// offer any time again.
-  final NotesWhen when;
-  final ValueChanged<NotesWhen>? onWhenChanged;
+  final WhenFilter when;
+  final ValueChanged<WhenFilter>? onWhenChanged;
 
   /// The person's folders: the Folders tab, and Move to folder… on their own
   /// notes. Null leaves folders out. While the tree shows, [notes] are the

@@ -108,6 +108,9 @@ Future<void> pumpForGolden(
   /// Tasks on the rail, read from the notes' checklist lines.
   bool withTasks = false,
 
+  /// Notes written earlier in the week, for the page's days and their dots.
+  bool withWeek = false,
+
   /// Which build the image is of.
   ///
   /// Sizes in this app resolve from [AppPlatform.hasPointer], not from the
@@ -235,6 +238,36 @@ Future<void> pumpForGolden(
         )
       : null;
 
+  if (withWeek) {
+    Map<String, Object?> note(String id, String body, DateTime edited) => {
+      'id': id,
+      'body': body,
+      'createdAt': edited.millisecondsSinceEpoch,
+      'updatedAt': edited.millisecondsSinceEpoch,
+    };
+    store.data['notes.v1'] = [
+      note(
+        'standup',
+        'Standup notes\nShip the week',
+        DateTime(2026, 8, 31, 10, 5),
+      ),
+      note(
+        'gym',
+        'Gym plan\nLegs, then a long walk',
+        DateTime(2026, 8, 31, 19, 30),
+      ),
+      note(
+        'books',
+        'Book ideas\nPiranesi, The Overstory',
+        DateTime(2026, 8, 31, 22, 10),
+      ),
+      note(
+        'pricing',
+        'Pricing ideas\n1,799 INR',
+        DateTime(2026, 8, 29, 16, 20),
+      ),
+    ];
+  }
   await notes.load();
   await tasks?.load();
   prefs.load();
@@ -1001,6 +1034,67 @@ void main() {
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, See all at the heading's end, and amounts in mono.
+  // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so the
+  // list is narrowed to it with its chip beside the filter, and the fill has
+  // left today, whose weekday stays sage.
+  for (final brightness in Brightness.values) {
+    testWidgets('desktop ${brightness.name} week, a day picked', (
+      tester,
+    ) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(1280, 800),
+        brightness: brightness,
+        withWeek: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile(
+          'goldens/desktop_${brightness.name}_week_day_picked.png',
+        ),
+      );
+    });
+  }
+
+  // The month under "Aug–Sep ▾", on the picked day's month, with the days
+  // that have notes brighter and September still to come.
+  testWidgets('desktop dark week, the month open', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+    );
+    for (final key in ['day-strip-2026-8-31', 'day-strip-month']) {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_week_month_open.png'),
+    );
+  });
+
+  // With the list hidden there is nothing to narrow, so a day lists its
+  // notes under the week.
+  testWidgets('desktop dark week, a day listed', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+      sidebarVisible: false,
+    );
+    await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_week_day_listed.png'),
+    );
+  });
+
   testWidgets('desktop dark tags', (tester) async {
     await pumpForGolden(
       tester,

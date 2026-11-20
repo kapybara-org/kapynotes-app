@@ -1388,7 +1388,7 @@ BoxDecoration _menuSurface(CalcPalette palette) => BoxDecoration(
 class _WhenChip extends StatelessWidget {
   const _WhenChip({required this.when, required this.onClear});
 
-  final NotesWhen when;
+  final WhenFilter when;
   final VoidCallback onClear;
 
   @override
@@ -1491,6 +1491,7 @@ class NotesListControls extends StatelessWidget {
     this.when,
     this.onWhenChanged,
     required this.today,
+    this.weekShown,
     this.alignEnd = false,
   });
 
@@ -1527,12 +1528,17 @@ class NotesListControls extends StatelessWidget {
   final TagFilter? tags;
   final ValueChanged<TagFilter>? onTagsChanged;
 
-  /// How far back the list reaches; null leaves When out of the menu.
-  final NotesWhen? when;
-  final ValueChanged<NotesWhen>? onWhenChanged;
+  /// What When narrows the list to; null leaves When out of the menu.
+  final WhenFilter? when;
+  final ValueChanged<WhenFilter>? onWhenChanged;
 
   /// The day When's spans count back from, as the list shows days.
   final DateTime today;
+
+  /// Whether the page's bar shows the week, for When's menu to point there
+  /// for a single day. Asked as the menu opens, since the bar trades the
+  /// week for one button where it is short of room.
+  final bool Function()? weekShown;
 
   /// Whether the filter sits at the row's end beside the switch, as it does
   /// on a folder's page, rather than at its start.
@@ -1623,6 +1629,7 @@ class NotesListControls extends StatelessWidget {
                 when: when,
                 onWhenChanged: onWhenChanged,
                 today: today,
+                weekShown: weekShown,
                 everything: everything,
                 narrowed: narrowed,
               ),
@@ -1701,6 +1708,7 @@ class _NotesFilter extends StatefulWidget {
     required this.when,
     required this.onWhenChanged,
     required this.today,
+    required this.weekShown,
     required this.everything,
     required this.narrowed,
   });
@@ -1715,9 +1723,10 @@ class _NotesFilter extends StatefulWidget {
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
   final TagFilter? tags;
   final ValueChanged<TagFilter>? onTagsChanged;
-  final NotesWhen? when;
-  final ValueChanged<NotesWhen>? onWhenChanged;
+  final WhenFilter? when;
+  final ValueChanged<WhenFilter>? onWhenChanged;
   final DateTime today;
+  final bool Function()? weekShown;
 
   /// What the button says while nothing is narrowed.
   final String everything;
@@ -1763,6 +1772,7 @@ class _NotesFilterState extends State<_NotesFilter> {
     _FilterSubmenu.when when widget.when != null => _WhenMenu(
       when: widget.when!,
       today: widget.today,
+      footnote: widget.weekShown?.call() ?? false,
       onChanged: _chooseWhen,
     ),
     _FilterSubmenu.tags when widget.tags != null => _TagsMenu(
@@ -2078,8 +2088,8 @@ class _FilterMenu extends StatelessWidget {
   /// Null for All media.
   final ValueChanged<NoteMedia?> onTick;
 
-  /// How far back the list reaches; null leaves When out.
-  final NotesWhen? when;
+  /// What When narrows the list to; null leaves When out.
+  final WhenFilter? when;
 
   /// Opens or closes the When submenu.
   final VoidCallback onWhen;
@@ -2470,16 +2480,19 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
 }
 
 /// The filter's When submenu, beside the When row: each span with the days
-/// it covers, and a tick on the one the list reaches back over.
+/// it covers, and a tick on the one the list reaches back over. While the
+/// page shows the week, a footnote points there for a single day.
 class _WhenMenu extends StatelessWidget {
   const _WhenMenu({
     required this.when,
     required this.today,
+    required this.footnote,
     required this.onChanged,
   });
 
-  final NotesWhen when;
+  final WhenFilter when;
   final DateTime today;
+  final bool footnote;
   final ValueChanged<NotesWhen> onChanged;
 
   @override
@@ -2519,6 +2532,26 @@ class _WhenMenu extends StatelessWidget {
           for (final (index, span) in NotesWhen.values.indexed) ...[
             if (index > 0) const SizedBox(height: 1),
             row(span),
+          ],
+          if (footnote) ...[
+            Container(
+              height: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              color: palette.separator,
+            ),
+            Padding(
+              key: const ValueKey('notes-when-footnote'),
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+              child: Text(
+                'For one day, click it in the week at the top of the page',
+                style: _figtree(
+                  AppTypeScale.small,
+                  16,
+                  FontWeight.w400,
+                  palette.textTertiary,
+                ),
+              ),
+            ),
           ],
         ],
       ),

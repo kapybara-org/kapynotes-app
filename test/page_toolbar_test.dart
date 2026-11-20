@@ -4,9 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_service.dart' show SyncStatus;
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/day_strip.dart';
+import 'package:kapy_notes/ui/notes_grouping.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
@@ -61,8 +64,10 @@ void main() {
     VoidCallback? onShowList,
     void Function(String folderId, {required bool behind})? onOpenFolder,
     Widget? assistant,
+    Widget Function(bool compact)? days,
   }) => PageToolbar(
     path: path,
+    days: days,
     listVisible: listVisible,
     onShowList: onShowList ?? () {},
     showListShortcut: 'Cmd + \\',
@@ -111,6 +116,39 @@ void main() {
     expect(tester.getTopLeft(share).dx - tester.getTopRight(saved).dx, 8);
     expect(tester.getTopLeft(more).dx - tester.getTopRight(share).dx, 8);
     expect(tester.getTopRight(find.byKey(ai)).dx, rect.right - 16);
+  });
+
+  testWidgets('the days sit between the path and the actions with as much '
+      'room on either side, and give way to one button below 720', (
+    tester,
+  ) async {
+    final compact = <bool>[];
+    Widget days(bool narrow) {
+      compact.add(narrow);
+      return SizedBox(
+        key: const ValueKey('days'),
+        width: narrow ? 96 : 316,
+        height: 64,
+      );
+    }
+
+    await tester.pumpWidget(harness(toolbar(days: days)));
+    final strip = find.byKey(const ValueKey('days'));
+    final before = tester.getTopLeft(strip).dx - tester.getTopRight(path).dx;
+    expect(before, greaterThan(16));
+    expect(tester.getTopLeft(saved).dx - tester.getTopRight(strip).dx, before);
+    // The days' column starts 8 down, as every control's centre is 40 down.
+    expect(tester.getTopLeft(strip).dy, tester.getTopLeft(bar).dy + 8);
+    expect(compact.last, isFalse);
+
+    await tester.pumpWidget(
+      harness(toolbar(days: days), width: 719 + 2 * border),
+    );
+    expect(compact.last, isTrue);
+    await tester.pumpWidget(
+      harness(toolbar(days: days), width: 720 + 2 * border),
+    );
+    expect(compact.last, isFalse);
   });
 
   testWidgets('with the list hidden it leads with the way back to it', (
@@ -338,6 +376,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('Saved goes to the date line wherever neither it nor the count of '
+      "pictures that didn't load fits the bar", () {
+    expect(PageToolbar.savedFits(560, unloadedPictures: 0), isTrue);
+    expect(PageToolbar.savedFits(559, unloadedPictures: 0), isFalse);
+    expect(PageToolbar.savedFits(684, unloadedPictures: 123), isFalse);
+    expect(PageToolbar.savedFits(685, unloadedPictures: 123), isTrue);
+  });
+
   testWidgets('More lists its actions and hands back the one picked', (
     tester,
   ) async {
@@ -396,6 +442,30 @@ void main() {
         ),
     ];
 
+    // The days as My notes shows them, with notes on three of them.
+    Widget week(bool compact) => DayStrip(
+      compact: compact,
+      today: DateTime(2026, 11, 19),
+      when: NotesWhen.anyTime,
+      onWhenChanged: (_) {},
+      notes: [
+        for (final (index, edited) in [
+          DateTime(2026, 11, 17, 9),
+          DateTime(2026, 11, 18, 10),
+          DateTime(2026, 11, 18, 17),
+          DateTime(2026, 11, 19, 8),
+        ].indexed)
+          Note(
+            id: '$index',
+            body: 'Note $index',
+            createdAt: edited,
+            updatedAt: edited,
+          ),
+      ],
+      displayTime: (at) => at,
+      firstWeekday: DateTime.monday,
+    );
+
     testWidgets('keeps its collaborators with the rest on the right', (
       tester,
     ) async {
@@ -427,7 +497,8 @@ void main() {
       }
     });
 
-    testWidgets('give way before More leaves the bar', (tester) async {
+    testWidgets('give way, and the days with them, before More leaves the '
+        'bar', (tester) async {
       addTearDown(tester.view.reset);
       tester.view.devicePixelRatio = 1;
       final crowd = [
@@ -450,6 +521,7 @@ void main() {
               listVisible: listVisible,
               members: crowd,
               assistant: const SizedBox(width: 38, height: 32),
+              days: week,
             ),
             width: width,
           ),
@@ -472,7 +544,7 @@ void main() {
           addTearDown(tester.view.reset);
           await tester.pumpWidget(
             harness(
-              toolbar(listVisible: width > 600, members: members),
+              toolbar(listVisible: width > 600, members: members, days: week),
               width: width,
               brightness: brightness,
             ),
