@@ -69,17 +69,18 @@ class NoteTabRow extends StatelessWidget {
   /// The keys that close the active tab, as a keycap prints them.
   final String? closeShortcut;
 
-  static TextStyle _labelStyle(Color color) => TextStyle(
-    fontSize: 13,
-    height: 16 / 13,
-    fontWeight: FontWeight.w500,
-    color: color,
-  );
+  static TextStyle _labelStyle(Color color, {bool active = false}) =>
+      chromeStyle(
+        size: 13,
+        line: 16,
+        weight: active ? AppWeight.button : AppWeight.body,
+        color: color,
+      );
 
-  static TextStyle _moreStyle(Color color) => TextStyle(
-    fontSize: 12,
-    height: 16 / 12,
-    fontWeight: FontWeight.w500,
+  static TextStyle _moreStyle(Color color) => chromeStyle(
+    size: 12,
+    line: 16,
+    weight: AppWeight.body,
     color: color,
   );
 
@@ -101,7 +102,7 @@ class NoteTabRow extends StatelessWidget {
       return width;
     }
 
-    final labelStyle = _labelStyle(palette.textSecondary);
+    final labelStyle = _labelStyle(palette.textPrimary, active: true);
     final titles = {
       for (final tab in tabs) tab.id: textWidth(tab.title, labelStyle),
     };
@@ -337,6 +338,7 @@ class _TabChipState extends State<_TabChip> {
       overflow: TextOverflow.ellipsis,
       style: NoteTabRow._labelStyle(
         active ? palette.textPrimary : palette.textSecondary,
+        active: active,
       ),
     );
     return Semantics(

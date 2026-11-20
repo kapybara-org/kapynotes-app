@@ -15,14 +15,18 @@ import 'notes_grouping.dart' show NoteGroup;
 import 'notes_list.dart' show NoteCardFace, NotesGroupHeading;
 import 'tag_ui.dart' show PopoverAtPoint, TagPopover, notesCount;
 
-TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
-    TextStyle(
-      fontSize: size,
-      height: line / size,
-      leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: weight,
-      color: color,
-    );
+TextStyle _figtree(
+  double size,
+  double line,
+  FontWeight weight,
+  Color color, {
+  double? axis,
+}) => chromeStyle(
+  size: size,
+  line: line,
+  weight: axis ?? AppWeight.axisOf(weight),
+  color: color,
+);
 
 /// Where a tree row at [depth] starts: 8 in, and 16 more a level.
 double _indent(int depth) => 8 + (depth - 1) * 16.0;
@@ -580,8 +584,9 @@ class _FolderRowState extends State<_FolderRow> {
                     style: _figtree(
                       13,
                       16,
-                      selected ? FontWeight.w500 : FontWeight.w400,
+                      FontWeight.w400,
                       selected ? palette.textPrimary : palette.textSecondary,
+                      axis: selected ? AppWeight.selected : AppWeight.body,
                     ),
                   ),
                 ),
@@ -881,8 +886,9 @@ class TreeNoteFace extends StatelessWidget {
               style: _figtree(
                 13,
                 16,
-                selected ? FontWeight.w500 : FontWeight.w400,
+                FontWeight.w400,
                 colour,
+                axis: selected ? AppWeight.selected : AppWeight.body,
               ),
             ),
           ),

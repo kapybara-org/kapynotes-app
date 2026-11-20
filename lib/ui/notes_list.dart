@@ -169,24 +169,22 @@ TextStyle _handwritten(
   Color color,
 ) {
   const face = WritingFont.handwritten;
-  return TextStyle(
-    fontFamily: face.fontFamily,
-    fontFamilyFallback: face.fontFamilyFallback,
-    fontVariations: face.fontVariations,
-    fontSize: size,
-    height: line / size,
-    leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: weight,
+  return chromeStyle(
+    size: size,
+    line: line,
+    weight: AppWeight.axisOf(weight),
     color: color,
+    family: face.fontFamily,
+    fallback: face.fontFamilyFallback,
+    extra: face.faceVariations,
   );
 }
 
 TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
-    TextStyle(
-      fontSize: size,
-      height: line / size,
-      leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: weight,
+    chromeStyle(
+      size: size,
+      line: line,
+      weight: AppWeight.axisOf(weight),
       color: color,
     );
 
