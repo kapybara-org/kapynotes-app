@@ -182,6 +182,59 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  testWidgets('a tap on the dimmed list above the sheet closes it', (
+    tester,
+  ) async {
+    await pumpPhone(tester);
+    await tester.tap(
+      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(const Offset(195, 120));
+    await tester.pumpAndSettle();
+    expect(find.byType(PhoneTaskDetailsSheet), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('a pull down on the body, below half, closes the sheet', (
+    tester,
+  ) async {
+    await pumpPhone(tester);
+    await tester.tap(
+      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.descendant(
+        of: find.byType(PhoneTaskDetailsSheet),
+        matching: find.text('Errands'),
+      ),
+      const Offset(0, 300),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(PhoneTaskDetailsSheet), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('the sheet closes when its task leaves the note', (tester) async {
+    await pumpPhone(tester);
+    await tester.tap(
+      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(PhoneTaskDetailsSheet), findsOneWidget);
+
+    notes.updateBody(notes.allNotes.first.id, 'Errands\n☐ Book flights');
+    await tasks.reconcileNow();
+    await tester.pumpAndSettle();
+    expect(find.byType(PhoneTaskDetailsSheet), findsNothing);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('Book flights'), findsWidgets);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('the sheet edits the note it came from, and opens it', (
     tester,
   ) async {
@@ -244,12 +297,24 @@ void main() {
         ),
       );
       expect(field.readOnly, isTrue);
+      expect(field.decoration?.hintText, isNull);
       expect(
         find.text('You can view this note, not change it.'),
         findsOneWidget,
       );
+      final box = find.byKey(const ValueKey('phone-details-box'));
+      expect(tester.widget<GestureDetector>(box).onTap, isNull);
+      expect(
+        tester
+            .widget<Semantics>(
+              find.ancestor(of: box, matching: find.byType(Semantics)).first,
+            )
+            .properties
+            .onTap,
+        isNull,
+      );
 
-      await tester.tap(find.byKey(const ValueKey('phone-details-box')));
+      await tester.tap(box);
       await tester.pumpAndSettle();
       expect(notes.allNotes.first.body, before);
       expect(find.text('Open in note'), findsOneWidget);

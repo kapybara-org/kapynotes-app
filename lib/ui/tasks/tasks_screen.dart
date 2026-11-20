@@ -308,7 +308,15 @@ class TasksScreenState extends State<TasksScreen> {
           if (candidate.id == item.id) shown = candidate;
         }
         final current = shown;
-        if (current == null) return const SizedBox.shrink();
+        if (current == null) {
+          final route = ModalRoute.of(context);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted && (route?.isCurrent ?? false)) {
+              Navigator.of(context).pop();
+            }
+          });
+          return const SizedBox.shrink();
+        }
         return PhoneTaskDetailsSheet(
           item: current,
           tasks: _tasks,

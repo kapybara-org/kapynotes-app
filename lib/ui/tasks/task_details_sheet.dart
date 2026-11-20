@@ -321,73 +321,92 @@ class _PhoneTaskDetailsSheetState extends State<PhoneTaskDetailsSheet> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final height = constraints.maxHeight;
-          return Align(
-            alignment: Alignment.bottomCenter,
-            child: AnimatedContainer(
-              key: const ValueKey('phone-details-body'),
-              duration: _dragged == null
-                  ? const Duration(milliseconds: 180)
-                  : Duration.zero,
-              curve: Curves.easeOutCubic,
-              height: height * _open,
-              decoration: BoxDecoration(
-                color: palette.editorBackground,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(AppRadii.surface),
+          // The route is the whole screen tall, so the dimmed list above the
+          // sheet is this, and a tap on it closes the sheet as the barrier
+          // would. A pull anywhere on the sheet moves it.
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  key: const ValueKey('phone-details-scrim'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onClose,
                 ),
-                border: Border(top: BorderSide(color: palette.separator)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  GestureDetector(
-                    key: const ValueKey('phone-details-grabber'),
-                    behavior: HitTestBehavior.opaque,
-                    onVerticalDragUpdate: (details) =>
-                        _dragUpdate(details, height),
-                    onVerticalDragEnd: _dragEnd,
-                    child: SizedBox(
-                      height: 22,
-                      child: Center(
-                        child: Container(
-                          width: 36,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: palette.textTertiary,
-                            borderRadius: BorderRadius.circular(2),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (details) =>
+                      _dragUpdate(details, height),
+                  onVerticalDragEnd: _dragEnd,
+                  child: AnimatedContainer(
+                    key: const ValueKey('phone-details-body'),
+                    duration: _dragged == null
+                        ? const Duration(milliseconds: 180)
+                        : Duration.zero,
+                    curve: Curves.easeOutCubic,
+                    height: height * _open,
+                    decoration: BoxDecoration(
+                      color: palette.editorBackground,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(AppRadii.surface),
+                      ),
+                      border: Border(top: BorderSide(color: palette.separator)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          key: const ValueKey('phone-details-grabber'),
+                          height: 22,
+                          child: Center(
+                            child: Container(
+                              width: 36,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: palette.textTertiary,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    // Pulled below half, the body keeps its half-height layout
-                    // and slides out of view rather than squeezing.
-                    child: ClipRect(
-                      child: OverflowBox(
-                        alignment: Alignment.topCenter,
-                        minHeight: 0,
-                        maxHeight: math.max(
-                          height * _open - 22,
-                          height * _half - 22,
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottom),
-                          child: TaskDetailsSheet(
-                            item: widget.item,
-                            tasks: widget.tasks,
-                            onClose: widget.onClose,
-                            onOpenNote: widget.onOpenNote,
-                            images: widget.images,
-                            phone: true,
+                        Expanded(
+                          // Pulled below half, the body keeps its half-height layout
+                          // and slides out of view rather than squeezing.
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.topCenter,
+                              minHeight: 0,
+                              maxHeight: math.max(
+                                height * _open - 22,
+                                height * _half - 22,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  12 + bottom,
+                                ),
+                                child: TaskDetailsSheet(
+                                  item: widget.item,
+                                  tasks: widget.tasks,
+                                  onClose: widget.onClose,
+                                  onOpenNote: widget.onOpenNote,
+                                  images: widget.images,
+                                  phone: true,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           );
         },
       ),
