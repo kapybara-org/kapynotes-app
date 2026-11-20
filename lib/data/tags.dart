@@ -550,6 +550,11 @@ class TagStore extends ChangeNotifier {
     }
   }
 
+  /// A note the server never had takes its tags record with it, unsent.
+  void dropNote(String noteId) {
+    if (_notes.slots.remove(noteId) != null) _save();
+  }
+
   /// Lets go of [noteId]'s tags record once it is a delete the server has and
   /// this device's clock has passed: a tag put on from then on outranks it
   /// by its own time.

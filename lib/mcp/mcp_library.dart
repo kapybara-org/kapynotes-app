@@ -188,8 +188,9 @@ class McpLibrary {
   /// What the calculator answers on each line, keyed by line number from 1.
   Map<int, String> resultsOf(Note note) {
     if (note.isDrawing) return const {};
+    final results = _engine().evaluateDocument(note.body, titled: true);
     return {
-      for (final entry in _engine().evaluateDocument(note.body).entries)
+      for (final entry in results.entries)
         entry.key + 1: entry.value.text,
     };
   }

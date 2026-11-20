@@ -309,12 +309,55 @@ class TasksScreenState extends State<TasksScreen> {
   );
 
   void _openSheet(TaskItem item) {
+    if (widget.phone) {
+      unawaited(_openPhoneSheet(item));
+      return;
+    }
     setState(() {
       _sheetId = item.id;
       _sheetIndex = _open(_tasks.read()).indexWhere((row) => row.id == item.id);
     });
     _listFocus.requestFocus();
   }
+
+  /// A phone's sheet pulls up over the list, and follows the task as it is
+  /// edited, so what it shows is what the note now says.
+  Future<void> _openPhoneSheet(TaskItem item) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Theme.of(context).drawerTheme.scrimColor,
+    builder: (context) => ListenableBuilder(
+      listenable: _tasks,
+      builder: (context, _) {
+        final board = _tasks.read();
+        TaskItem? shown;
+        for (final candidate in [...board.open, ...board.done]) {
+          if (candidate.id == item.id) shown = candidate;
+        }
+        final current = shown;
+        if (current == null) {
+          final route = ModalRoute.of(context);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted && (route?.isCurrent ?? false)) {
+              Navigator.of(context).pop();
+            }
+          });
+          return const SizedBox.shrink();
+        }
+        return PhoneTaskDetailsSheet(
+          item: current,
+          tasks: _tasks,
+          images: widget.images,
+          onClose: () => Navigator.of(context).pop(),
+          onOpenNote: () {
+            Navigator.of(context).pop();
+            widget.onOpenNote(current.note.id);
+          },
+        );
+      },
+    ),
+  );
 
   KeyEventResult _listKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent || _sheetId == null) {
@@ -557,7 +600,7 @@ class TasksScreenState extends State<TasksScreen> {
               done: done,
               label: board.isHome(item) ? null : widget.labelOf(item.note),
               onTick: () => _tick(item, open.indexOf(item), done: !done),
-              onOpenNote: () => widget.onOpenNote(item.note.id),
+              onOpen: () => _openSheet(item),
               onMark: () => _cycleMark(item),
             )
         else
@@ -2120,7 +2163,7 @@ class _PhoneTaskRow extends StatelessWidget {
     required this.done,
     required this.label,
     required this.onTick,
-    required this.onOpenNote,
+    required this.onOpen,
     required this.onMark,
   });
 
@@ -2128,7 +2171,7 @@ class _PhoneTaskRow extends StatelessWidget {
   final bool done;
   final String? label;
   final VoidCallback onTick;
-  final VoidCallback onOpenNote;
+  final VoidCallback onOpen;
   final VoidCallback onMark;
 
   String get _markAction => item.doNow
@@ -2168,7 +2211,7 @@ class _PhoneTaskRow extends StatelessWidget {
       },
       child: InkWell(
         key: ValueKey('phone-task-${item.id}'),
-        onTap: onOpenNote,
+        onTap: onOpen,
         child: GestureDetector(
           onLongPressStart: done
               ? null
@@ -2253,6 +2296,7 @@ class _PhoneTaskRow extends StatelessWidget {
                     ],
                   ),
                 ),
+                TaskDetailsIcon(item: item),
                 if (!done && (item.doNow || item.dotted))
                   Padding(
                     padding: const EdgeInsets.only(left: 8),

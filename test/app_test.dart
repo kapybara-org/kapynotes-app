@@ -2210,7 +2210,7 @@ void main() {
     await pumpApp(tester);
     await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
-    await tester.enterNote('rev = 7000000');
+    await tester.enterNote('Revenue\nrev = 7000000');
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ResultChip, '7,000,000'), findsOneWidget);
     expect(
@@ -4063,7 +4063,7 @@ void main() {
 
   testWidgets('results have a shortcut like the notes list', (tester) async {
     await pumpApp(tester);
-    notes.create(body: '2 + 2');
+    notes.create(body: 'Sums\n2 + 2');
     await tester.pumpAndSettle();
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.sidebarVisible, isTrue);

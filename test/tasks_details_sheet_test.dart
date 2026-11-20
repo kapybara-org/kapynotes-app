@@ -40,7 +40,11 @@ void main() {
 
   DateTime tick() => clock = clock.add(const Duration(milliseconds: 1));
 
-  Future<void> setUpTasks(WidgetTester tester, String body) async {
+  Future<void> setUpTasks(
+    WidgetTester tester,
+    String body, {
+    bool editable = true,
+  }) async {
     clock = DateTime(2026, 11, 17, 9);
     final store = _MemoryStore();
     notes = NotesStore(store);
@@ -56,7 +60,7 @@ void main() {
     tasks = TasksController(
       notes: notes,
       library: library,
-      canEdit: (_) => true,
+      canEdit: (_) => editable,
       now: tick,
     );
     await tasks.reconcileNow();
@@ -155,6 +159,49 @@ void main() {
     expect(markIn(open[1].id), findsNothing);
     await settle(tester);
   });
+
+  testWidgets(
+    'a note shared to view only shows its details and takes nothing',
+    (tester) async {
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Hide the menu\n  It shrinks to a pill.\n☐ Book flights',
+        editable: false,
+      );
+      await pumpScreen(tester);
+      final open = tasks.read().open;
+
+      await tester.tap(nameIn(open[0].id, 'Hide the menu'));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byType(TaskDetailsSheet),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(field.readOnly, isTrue);
+      expect(field.decoration?.hintText, isNull);
+      expect(sheetDetails(tester), 'It shrinks to a pill.');
+      expect(
+        find.text('You can view this note, not change it.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await tester.tap(nameIn(open[1].id, 'Book flights'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add details'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(TaskDetailsSheet),
+          matching: find.byType(TextField),
+        ),
+        findsNothing,
+      );
+      await settle(tester);
+    },
+  );
 
   testWidgets('the arrows move the sheet, Space marks done, Esc closes it', (
     tester,

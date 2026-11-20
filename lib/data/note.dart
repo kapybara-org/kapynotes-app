@@ -264,6 +264,11 @@ class Note {
       (body.trim().isEmpty || body.trim() == untitled) &&
       (drawing?.isEmpty ?? true);
 
+  /// Exactly as "new note" starts it: [blankBody], with no picture,
+  /// recording or canvas.
+  bool get isBlank =>
+      body == blankBody && attachments.isEmpty && drawing == null;
+
   /// Whether the first line is still the title a new note starts with.
   bool get hasDefaultTitle => firstLine == untitled;
 
