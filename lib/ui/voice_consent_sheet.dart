@@ -1,15 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
-import '../speech/speech_api.dart';
 
 /// Asks, once, before anything is sent anywhere.
 ///
-/// Voice notes are the first thing this app sends off the device in plaintext:
-/// everything else — the note body, its formats, its attachments — is sealed
-/// before it leaves. So this is opt-in, it names who hears the audio, and
-/// declining leaves a perfectly good voice memo behind rather than a broken
-/// feature.
+/// Voice notes are the first thing this app sends off the device in a form
+/// that can be read: everything else is private before it leaves. So this is
+/// opt-in, it says what is sent, and declining leaves a voice memo behind
+/// rather than a broken feature.
 ///
 /// Not dismissible by tapping past it, for the same reason the sharing rules
 /// are not: agreeing is a decision, and a stray tap is not one.
@@ -38,42 +36,25 @@ class _SpeechConsentSheet extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'To transcribe a recording, Kapy Notes sends its audio through '
-                "our server and OpenRouter to Microsoft's MAI-Transcribe 2, or, "
-                "when that model is busy or unavailable, to NVIDIA's Nemotron "
-                '3.5 Transcribe. Kapy Notes does not store the uploaded audio on '
-                'its server.',
+                'To turn a recording into text, Kapy Notes sends the audio to '
+                'Kapy cloud, where an AI service turns it into text. The audio '
+                'is not kept, and it is never used to train AI.',
                 style: TextStyle(color: palette.textPrimary, height: 1.45),
               ),
               const SizedBox(height: 12),
-              _Point(
+              const _Point(
                 text:
-                    'OpenRouter requests require zero-data-retention providers.',
+                    'A cloud summary sends the transcript to an AI service too. '
+                    'It is not kept, and it is never used to train AI.',
               ),
-              _Point(
+              const _Point(text: 'Your other notes stay private.'),
+              const _Point(
                 text:
-                    'Cloud summaries send the transcript text to MiniMax M3.1 '
-                    'Flash through OpenRouter.',
+                    'Recordings you already have stay as voice memos until you '
+                    'choose to transcribe them.',
               ),
-              _Point(
-                text:
-                    'Existing recordings stay as voice memos until you choose '
-                    'to transcribe them.',
-              ),
-              _Point(
-                text: 'All other note content stays end-to-end encrypted.',
-              ),
-              _Point(
-                text:
-                    'Turn transcription off anytime in Settings › Voice & AI.',
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Version $speechConsentVersion',
-                style: TextStyle(
-                  fontSize: AppTypeScale.caption,
-                  color: palette.textTertiary,
-                ),
+              const _Point(
+                text: 'Turn this off anytime in Settings › Voice & AI.',
               ),
             ],
           ),

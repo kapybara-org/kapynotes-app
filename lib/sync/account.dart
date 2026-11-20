@@ -872,7 +872,7 @@ class Account extends ChangeNotifier {
       notifyListeners();
       return false;
     } catch (error) {
-      _lastError = 'Could not reach the server. Try again when you are online.';
+      _lastError = 'Couldn’t reach Kapy cloud. Try again when you’re online.';
       notifyListeners();
       return false;
     }
@@ -1053,9 +1053,8 @@ class Account extends ChangeNotifier {
     final name = await deviceName(_user?.name);
     if (name == null || _token != token) return;
     try {
-      await _syncApiFor(
-        token,
-      ).reportDevice(name: name, platform: thisDevicePlatform);
+      await _syncApiFor(token)
+          .reportDevice(name: name, platform: thisDevicePlatform);
       _putForThisAccount(_reportedEntry, now);
     } on SyncException {
       // Only ever a nicer sentence on another device; the next pass retries.
@@ -1086,9 +1085,8 @@ class Account extends ChangeNotifier {
     final token = _token;
     if (token == null) return (proof: null, problem: KeyCodeProblem.offline);
     try {
-      final proof = await _syncApiFor(
-        token,
-      ).verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
+      final proof = await _syncApiFor(token)
+          .verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
       return (proof: proof, problem: null);
     } on SyncRefusedException catch (error) {
       return (

@@ -744,7 +744,7 @@ class McpTools {
         output: null,
         error:
             'Changes are off. Turn on Allow changes in Kapy Notes, '
-            'Settings, MCP.',
+            'Settings, AI apps.',
         activity: 'Couldn’t ${_verb(name)}: changes are off',
         undo: null,
       );
