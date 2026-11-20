@@ -69,15 +69,10 @@ class NoteMetaRow extends StatelessWidget {
     this.readOnlyLabel,
     this.readOnlyIcon,
     this.onReadOnlyPressed,
-    this.today = false,
     this.tags,
   });
 
   final String edited;
-
-  /// Counts what was done today, as over Tasks' one list: "3 of 13 done
-  /// today".
-  final bool today;
 
   /// Ticked boxes out of every box in the note. No boxes, no progress.
   final int done;
@@ -117,7 +112,7 @@ class NoteMetaRow extends StatelessWidget {
     );
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
-    final progress = '$done of $tasks done${today ? ' today' : ''}';
+    final progress = '$done of $tasks done';
     final items = <Widget>[
       Text(edited, key: const ValueKey('note-edited'), style: quiet),
       if (tasks > 0)

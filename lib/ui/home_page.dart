@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:flutter/services.dart'
     show
         HardwareKeyboard,
+        KeyDownEvent,
         KeyEvent,
         KeyUpEvent,
         LogicalKeyboardKey,
@@ -61,6 +62,7 @@ import '../sync/spaces.dart';
 import '../data/rates.dart';
 import 'share_dialog.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/task_folds.dart';
 import '../data/update_checker.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
@@ -355,6 +357,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     null => null,
   };
 
+  /// Whether "How Tasks works" was put away, on this device. Null until
+  /// read, so the card never flashes.
+  TaskFolds? _taskFolds;
+
+  Future<void> _loadTaskFolds() async {
+    final folds = await TaskFolds.open();
+    if (mounted) setState(() => _taskFolds = folds);
+  }
+
   /// The welcome note while it is still exactly as it was written.
   ///
   /// Not persisted, and cleared the moment the reader types into it: from then
@@ -375,6 +386,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     FocusManager.instance.addListener(_syncStatusBar);
+    if (_taskController != null) unawaited(_loadTaskFolds());
     _kapyAiWasOn = _kapyAiOn;
     _kapyAi?.addListener(_onKapyAi);
     if (widget.titleModel case final model?) {
@@ -3232,6 +3244,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onCompleteTask: _tasksMode
                 ? () => _tasksPage.currentState?.completeDoNow()
                 : null,
+            onKeepChoice: _tasksMode
+                ? () => _tasksPage.currentState?.keepChoice() ?? false
+                : null,
+            onTakeNext: _tasksMode
+                ? () => _tasksPage.currentState?.takeNext() ?? false
+                : null,
+            onStartEarly: _tasksMode
+                ? () => _tasksPage.currentState?.startEarly() ?? false
+                : null,
             onSearch: _openCommandMenu,
             onNewTask: _taskController == null ? null : _newTask,
             onNewDrawing: () => _createNote(drawing: true),
@@ -3360,6 +3381,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               ShortcutAction.findNotes,
                             ),
                             searchPlaceholder: _searchPlaceholder,
+                            onGotIt: switch (_taskFolds) {
+                              final folds? when !folds.howSeen =>
+                                () => setState(folds.markHowSeen),
+                              _ => null,
+                            },
                             windowBar: SidebarWindowBar(
                               title: space.title,
                               count: taskBoard.open.length,
@@ -3655,8 +3681,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  /// Tasks on the page: its own breadcrumb and Pick again over Today, or
-  /// over the Done view.
+  void _openTasksDone() =>
+      setState(() => _taskFilter = const TaskFilter.done());
+
+  /// Tasks on the page: Today and its date, how much is done and Choose
+  /// again over Today, or the breadcrumb over the Done view.
   List<Widget> _buildTasksPage(
     TasksController tasks, {
     required bool listVisible,
@@ -3666,7 +3695,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? null
         : widget.notes.byId(filter.noteId);
     final home = note != null && tasks.read().home?.id == note.id;
-    final palette = context.palette;
     return [
       PageToolbar(
         space: LibrarySpace.tasks.title,
@@ -3675,6 +3703,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             : note == null || home
             ? 'Today'
             : _taskNoteLabel(note),
+        crumb: filter.done
+            ? null
+            : TasksTodayCrumb(
+                title: note == null || home ? 'Today' : _taskNoteLabel(note),
+                now: tasks.now(),
+              ),
         listVisible: listVisible,
         onShowList: _toggleList,
         showListShortcut: _sidebarShortcut,
@@ -3690,30 +3724,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             : (action) => _runPageAction(action, null),
         actions: [
           if (!filter.done)
-            TextButton.icon(
-              key: const ValueKey('tasks-pick-again'),
-              onPressed: () => _tasksPage.currentState?.pickAgain(),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 32),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                foregroundColor: palette.textTertiary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadii.control),
-                ),
-                textStyle: uiStyle(
-                  12.5,
-                  16,
-                  FontWeight.w500,
-                  palette.textTertiary,
-                ),
-              ),
-              icon: KapyIcon(
-                KapyIcons.refreshRounded,
-                size: 15,
-                strokeWidth: 1.8,
-                color: palette.textTertiary,
-              ),
-              label: const Text('Pick again'),
+            TasksBandActions(
+              controller: tasks,
+              filter: filter,
+              onChooseAgain: () => _tasksPage.currentState?.chooseAgain(),
             ),
         ],
       ),
@@ -3725,6 +3739,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           addFocus: _taskAddFocus,
           labelOf: _taskNoteLabel,
           onOpenNote: _openTaskNote,
+          onOpenDone: _openTasksDone,
           images: widget.notes.blobs,
           newTaskShortcut: widget.shortcuts
               .hintFor(ShortcutAction.newNote)
@@ -3947,6 +3962,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       addFocus: _taskAddFocus,
                       labelOf: _taskNoteLabel,
                       onOpenNote: _openTaskNote,
+                      onOpenDone: _openTasksDone,
                     )
                   : _phoneNotes(),
             ),
@@ -4372,6 +4388,9 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.focusNode,
     required this.onNewNote,
     required this.onCompleteTask,
+    this.onKeepChoice,
+    this.onTakeNext,
+    this.onStartEarly,
     required this.onSearch,
     required this.onNewTask,
     required this.onNewDrawing,
@@ -4404,8 +4423,39 @@ class _DesktopShortcuts extends StatelessWidget {
   final FocusNode focusNode;
   final VoidCallback onNewNote;
 
+  /// The pair's keys, unless they belong to a field being typed in.
+  KeyEventResult _pairKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    final action = switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowLeft => onKeepChoice,
+      LogicalKeyboardKey.arrowRight => onTakeNext,
+      LogicalKeyboardKey.escape => onStartEarly,
+      _ => null,
+    };
+    if (action == null) return KeyEventResult.ignored;
+    final focused = FocusManager.instance.primaryFocus?.context;
+    if (focused != null &&
+        (focused.widget is EditableText ||
+            focused.findAncestorWidgetOfExactType<EditableText>() != null)) {
+      return KeyEventResult.ignored;
+    }
+    return action() ? KeyEventResult.handled : KeyEventResult.ignored;
+  }
+
   /// Done on Do now, while Tasks is open: ⌘↵, or Ctrl+Enter.
   final VoidCallback? onCompleteTask;
+
+  /// The pair on Tasks: ← keeps your choice, → takes the next task, and esc
+  /// starts with your choice so far.
+  final bool Function()? onKeepChoice;
+  final bool Function()? onTakeNext;
+  final bool Function()? onStartEarly;
   final VoidCallback onSearch;
   final VoidCallback? onNewTask;
   final VoidCallback onNewDrawing;
@@ -4517,7 +4567,12 @@ class _DesktopShortcuts extends StatelessWidget {
         ?shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.activator:
             ?onToggleKapyAi,
       },
-      child: Focus(focusNode: focusNode, autofocus: autofocus, child: child),
+      child: Focus(
+        focusNode: focusNode,
+        autofocus: autofocus,
+        onKeyEvent: _pairKey,
+        child: child,
+      ),
     );
   }
 }

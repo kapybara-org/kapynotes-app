@@ -10,14 +10,13 @@ import '../../core/theme.dart';
 import '../../data/blob_store.dart';
 import '../../data/note.dart';
 import '../../data/task_board.dart';
-import '../../data/task_details.dart';
+import '../checklist_pie.dart';
 import '../context_menu.dart';
-import '../editor/note_header.dart';
-import '../keycap.dart';
 import '../sidebar_timestamp.dart';
-import '../tonal_button.dart';
-import 'task_marks.dart';
+import 'task_choice.dart';
+import 'task_choice_cards.dart';
 import 'task_details_sheet.dart';
+import 'task_marks.dart';
 import 'tasks_controller.dart';
 
 /// The chord that finishes Do now, as its button prints it.
@@ -28,12 +27,12 @@ String? get doneShortcutLabel => !AppPlatform.hasPointer
     : 'Ctrl+↵';
 
 /// Tasks' page: Today, the one list worked with Mark Forster's Final Version
-/// Perfected, or the Done view.
+/// Perfected in plain words, or the Done view.
 ///
-/// Today is a header with the day and how much of it is done, the row that
-/// adds a task to the end of the list, Do now (or the questions that pick
-/// it), and the list in the order tasks were added. There are no dates to
-/// plan by and no sort: FVP needs the one fixed order.
+/// Today is the row that adds a task to the end of the list, then the pair
+/// that chooses what to work on next, Do now, or the evening's close; then
+/// Up next and the rest of the list in the order tasks were added. There are
+/// no dates to plan by and no sort: the method needs the one fixed order.
 class TasksScreen extends StatefulWidget {
   const TasksScreen({
     super.key,
@@ -42,14 +41,24 @@ class TasksScreen extends StatefulWidget {
     required this.addFocus,
     required this.labelOf,
     required this.onOpenNote,
+    required this.onOpenDone,
     this.images,
     this.newTaskShortcut,
     this.phone = false,
+    this.sheet = false,
+    this.scrollController,
   });
 
-  /// A phone's Tasks: a large title with how many are done, no keycaps, and
-  /// rows that check off in place and stay until the screen is left.
+  /// A phone's Tasks: stacked cards you tap, no keys, and rows that check
+  /// off in place and stay until the screen is left.
   final bool phone;
+
+  /// The phone's Tasks inside the sheet over a note (M15): the same body
+  /// under the sheet's own title, without the add row.
+  final bool sheet;
+
+  /// The sheet's scroll, so dragging the list drags the sheet.
+  final ScrollController? scrollController;
 
   final TasksController controller;
   final TaskFilter filter;
@@ -59,11 +68,14 @@ class TasksScreen extends StatefulWidget {
   final String Function(Note note) labelOf;
   final ValueChanged<String> onOpenNote;
 
+  /// Opens the Done view, from the evening's "N finished today".
+  final VoidCallback onOpenDone;
+
   /// Where a task's picture is stored, so Do now and the sheet can show it.
   /// Null in a test that does not draw pictures.
   final BlobStore? images;
 
-  /// Printed on the add row's keycap at rest.
+  /// Printed on the add row at rest.
   final String? newTaskShortcut;
 
   @override
@@ -73,13 +85,10 @@ class TasksScreen extends StatefulWidget {
 class TasksScreenState extends State<TasksScreen> {
   final _words = TextEditingController();
 
-  /// Tasks a phone checked off on this visit, by the place they held, so
-  /// their rows stay, struck through, until the screen is left.
+  /// Tasks a phone checked off on this visit, by the place they held in the
+  /// rest of the list, so their rows stay, struck through, until the screen
+  /// is left.
   final Map<String, (int, TaskItem)> _ticked = {};
-
-  /// Where the next scan starts after Do now was done or sent back: only
-  /// tasks after it are asked about, until the next Pick again.
-  int? _resumeAfter;
 
   /// The note the add row writes into, once chosen in its picker; until then
   /// the sidebar's filter decides.
@@ -92,8 +101,6 @@ class TasksScreenState extends State<TasksScreen> {
   final _listFocus = FocusNode(debugLabel: 'tasks-list');
   bool _notice = false;
   Timer? _noticeTimer;
-  bool _allCandidates = false;
-  String? _autoPicked;
 
   @override
   void initState() {
@@ -122,9 +129,8 @@ class TasksScreenState extends State<TasksScreen> {
       widget.addFocus.addListener(_focusChanged);
     }
     if (oldWidget.filter != widget.filter) {
-      _resumeAfter = null;
+      _tasks.forgetPair();
       _targetChosen = false;
-      _allCandidates = false;
     }
   }
 
@@ -141,55 +147,55 @@ class TasksScreenState extends State<TasksScreen> {
   void _focusChanged() => setState(() {});
 
   TasksController get _tasks => widget.controller;
+  String? get _noteId => widget.filter.noteId;
 
-  List<TaskItem> _open(TaskBoard board) => board.openIn(widget.filter.noteId);
+  List<TaskItem> _open(TaskBoard board) => board.openIn(_noteId);
 
-  /// Pick again: every dot cleared, and the questions start over from the
-  /// first task.
-  void pickAgain() {
-    _tasks.clearPicks(_open(_tasks.read()));
-    setState(() {
-      _resumeAfter = null;
-      _allCandidates = false;
-    });
-  }
+  TaskChoice get _choice => _tasks.choiceIn(_noteId);
 
-  /// Done on Do now, from its button or the keyboard.
+  /// Choose again: every choice cleared, from the first pair.
+  void chooseAgain() => _tasks.chooseAgain(noteId: _noteId);
+
+  /// Done on Do now, from its button or ⌘↵.
   void completeDoNow() {
-    final item = _doNow(_open(_tasks.read()));
-    if (item == null) return;
-    _resumeAfter = item.entry.position;
-    unawaited(_tasks.setDone(item, done: true));
-  }
-
-  /// A click on a row's mark: none, then picked, then Do now, then none
-  /// again. Picking by hand ends the questions about that task, so a task
-  /// picked last stays picked until it is clicked again.
-  void _cycleMark(TaskItem item) {
-    if (item.doNow) {
-      _autoPicked = null;
-      _tasks.clearPick(item);
-    } else if (item.dotted) {
-      _tasks.doNow(item);
-    } else {
-      _autoPicked = item.id;
-      _tasks.dot(item);
+    if (widget.filter.done) return;
+    if (_choice.stage case DoNowStage(:final item)) {
+      unawaited(_tasks.finish(item, noteId: _noteId));
     }
   }
 
-  void _notFinished(TaskItem item) {
-    setState(() => _resumeAfter = item.entry.position);
-    _tasks.sendToEnd(item);
+  PairStage? get _pair => widget.filter.done
+      ? null
+      : switch (_choice.stage) {
+          final PairStage pair => pair,
+          _ => null,
+        };
+
+  /// ←: your choice so far stays. False when no pair is showing.
+  bool keepChoice() {
+    final pair = _pair;
+    if (pair == null) return false;
+    _tasks.keepChoice(pair);
+    return true;
   }
 
-  TaskItem? _doNow(List<TaskItem> open) {
-    for (final item in open) {
-      if (item.doNow) return item;
-    }
-    return null;
+  /// →: the next task becomes your choice so far.
+  bool takeNext() {
+    final pair = _pair;
+    if (pair == null) return false;
+    _tasks.takeNext(pair);
+    return true;
   }
 
-  String? get _addInto => _targetChosen ? _target : widget.filter.noteId;
+  /// esc: start with your choice so far, while Start with shows.
+  bool startEarly() {
+    final pair = _pair;
+    if (pair == null || pair.pairsLeft == 0) return false;
+    _tasks.startWith(pair.left);
+    return true;
+  }
+
+  String? get _addInto => _targetChosen ? _target : _noteId;
 
   Future<void> _add() async {
     final words = _words.text;
@@ -241,6 +247,24 @@ class TasksScreenState extends State<TasksScreen> {
     );
   }
 
+  /// What a row's menu, its ⋮, a right-click or a long press, offers.
+  List<TaskMenuChoice?> _menuFor(TaskItem item, {required bool upNext}) => [
+    TaskMenuChoice('Do now', () => _tasks.makeDoNow(item)),
+    if (upNext)
+      TaskMenuChoice('Take out of Up next', () => _tasks.takeOutOfUpNext(item))
+    else
+      TaskMenuChoice('Add to Up next', () => _tasks.dot(item)),
+    TaskMenuChoice('Move to the end', () => _tasks.moveToEnd(item)),
+    null,
+    if (!widget.phone) TaskMenuChoice('Details', () => _openSheet(item)),
+    TaskMenuChoice(
+      'Open “${widget.labelOf(item.note)}”',
+      () => widget.onOpenNote(item.note.id),
+    ),
+    null,
+    TaskMenuChoice('Remove…', () => unawaited(_remove(item))),
+  ];
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.controller,
@@ -250,12 +274,10 @@ class TasksScreenState extends State<TasksScreen> {
         builder: (context, constraints) {
           final phone = widget.phone;
           final width = phone
-              ? constraints.maxWidth - 40
-              : math.min(700.0, constraints.maxWidth - 48);
-          final reach = phone || widget.filter.done || AppPlatform.hasPointer
-              ? 0.0
-              : _markReach;
+              ? constraints.maxWidth - 42
+              : math.min(680.0, constraints.maxWidth - 48);
           return SingleChildScrollView(
+            controller: widget.scrollController,
             padding: EdgeInsets.only(
               top: phone ? 0 : 20,
               bottom: phone ? 120 : 48,
@@ -264,13 +286,13 @@ class TasksScreenState extends State<TasksScreen> {
               alignment: Alignment.topLeft,
               child: Padding(
                 padding: EdgeInsets.only(
-                  left: (constraints.maxWidth - width) / 2 - reach,
+                  left: (constraints.maxWidth - width) / 2,
                 ),
                 child: SizedBox(
-                  width: width + reach,
+                  width: width,
                   child: widget.filter.done
                       ? _done(board)
-                      : _withSheet(board, _today(board, reach)),
+                      : _withSheet(board, _today(board)),
                 ),
               ),
             ),
@@ -357,189 +379,189 @@ class TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  Widget _today(TaskBoard board, double reach) {
-    final palette = context.palette;
+  String? _labelOf(TaskBoard board, TaskItem item) =>
+      board.isHome(item) ? null : widget.labelOf(item.note);
+
+  Widget _row(TaskBoard board, TaskItem item, {bool upNext = false}) {
+    if (widget.phone) {
+      return _PhoneTaskRow(
+        key: ValueKey(item.id),
+        item: item,
+        done: false,
+        now: _tasks.now(),
+        label: _labelOf(board, item),
+        menu: _menuFor(item, upNext: upNext),
+        onTick: () => _tick(item, done: true),
+        onOpenNote: () => widget.onOpenNote(item.note.id),
+        onKeep: () => _tasks.keep(item),
+        onRemove: () => unawaited(_remove(item)),
+      );
+    }
+    return _TaskRow(
+      key: ValueKey(item.id),
+      item: item,
+      now: _tasks.now(),
+      label: _labelOf(board, item),
+      wash: item.id == _washId,
+      menu: _menuFor(item, upNext: upNext),
+      onTick: () => unawaited(_tasks.setDone(item, done: true)),
+      onOpenNote: () => widget.onOpenNote(item.note.id),
+      onOpen: () => _openSheet(item),
+      onKeep: () => _tasks.keep(item),
+      onRemove: () => unawaited(_remove(item)),
+    );
+  }
+
+  Widget _today(TaskBoard board) {
+    final ink = TaskInk.of(context);
+    final phone = widget.phone;
     final now = _tasks.now();
     final open = _open(board);
-    final doneToday = board.doneSince(
-      DateTime(now.year, now.month, now.day),
-      noteId: widget.filter.noteId,
-    );
-    final doNow = _doNow(open);
+    final today = DateTime(now.year, now.month, now.day);
+    final finished = [
+      for (final item in board.done.reversed)
+        if ((_noteId == null || item.note.id == _noteId) &&
+            !item.doneAt!.isBefore(today))
+          item,
+    ];
+    final choice = _choice;
+    final stage = choice.stage;
+    String? labelOf(TaskItem item) => _labelOf(board, item);
+    final rest = phone ? _phoneRest(board, choice.rest) : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: EdgeInsets.only(left: reach),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (widget.phone)
-                _PhoneTodayTitle(
-                  done: doneToday,
-                  total: doneToday + open.length,
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.only(left: 10, bottom: 18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const _TodayTitle(),
-                      const SizedBox(height: 10),
-                      NoteMetaRow(
-                        edited: SidebarTimestamp.fullDay(now),
-                        done: doneToday,
-                        tasks: doneToday + open.length,
-                        today: true,
-                      ),
-                    ],
-                  ),
-                ),
-              _AddRow(
-                phone: widget.phone,
-                controller: _words,
-                focus: widget.addFocus,
-                shortcut: widget.newTaskShortcut,
-                target: _addInto == null ? null : _tasks.notes.byId(_addInto),
-                labelOf: widget.labelOf,
-                choices: _pickerNotes(board),
-                onChoose: (noteId) => setState(() {
-                  _target = noteId;
-                  _targetChosen = true;
-                }),
-                onSubmit: () => unawaited(_add()),
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 160),
-                child: _notice
-                    ? Padding(
-                        padding: const EdgeInsets.only(left: 36, top: 8),
-                        child: Text(
-                          'Added to the end of the list',
-                          key: const ValueKey('tasks-added-notice'),
-                          style: uiStyle(
-                            13,
-                            16,
-                            FontWeight.w500,
-                            palette.accentText,
-                          ),
-                        ),
-                      )
-                    : const SizedBox(width: double.infinity),
-              ),
-              const SizedBox(height: 14),
-              if (doNow != null)
-                _DoNowCard(
-                  phone: widget.phone,
-                  item: doNow,
-                  label: board.isHome(doNow)
-                      ? null
-                      : widget.labelOf(doNow.note),
-                  onOpenNote: () => widget.onOpenNote(doNow.note.id),
-                  onOpen: () => _openSheet(doNow),
-                  images: widget.images,
-                  onNotFinished: () => _notFinished(doNow),
-                  onDone: completeDoNow,
-                )
-              else if (open.isNotEmpty)
-                _picker(board, open),
-              if (widget.phone)
-                Padding(
-                  padding: const EdgeInsets.only(top: 24, bottom: 4),
-                  child: Semantics(
-                    header: true,
-                    child: Text(
-                      'The list',
-                      style: uiStyle(
-                        15,
-                        20,
-                        FontWeight.w500,
-                        palette.textSecondary,
-                      ),
-                    ),
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        'The list',
-                        style: handStyle(
-                          15,
-                          22,
-                          FontWeight.w600,
-                          palette.textSubheading,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${open.length}',
-                        style: uiStyle(
-                          12,
-                          16,
-                          FontWeight.w600,
-                          palette.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (open.isEmpty && _ticked.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-                  child: Text(
-                    'Nothing on the list.',
-                    style: uiStyle(
-                      14,
-                      20,
-                      FontWeight.w500,
-                      palette.textTertiary,
-                    ),
-                  ),
-                ),
-            ],
+        if (phone)
+          _PhoneTodayTitle(
+            now: now,
+            done: finished.length,
+            total: finished.length + open.length,
+            sheet: widget.sheet,
           ),
-        ),
-        if (widget.phone)
-          for (final (item, done) in _phoneRows(open))
-            _PhoneTaskRow(
-              key: ValueKey(item.id),
-              item: item,
-              done: done,
-              label: board.isHome(item) ? null : widget.labelOf(item.note),
-              onTick: () => _tick(item, open.indexOf(item), done: !done),
-              onOpenNote: () => widget.onOpenNote(item.note.id),
-              onMark: () => _cycleMark(item),
-            )
-        else
-          for (final item in open)
-            _TaskRow(
-              key: ValueKey(item.id),
-              item: item,
-              now: _tasks.now(),
-              label: board.isHome(item) ? null : widget.labelOf(item.note),
-              wash: item.id == _washId,
-              onMark: () => _cycleMark(item),
-              onTick: () => unawaited(_tasks.setDone(item, done: true)),
-              onOpenNote: () => widget.onOpenNote(item.note.id),
-              onOpen: () => _openSheet(item),
-              onKeep: () => _tasks.keep(item),
-              onRemove: () => unawaited(_remove(item)),
+        if (!widget.sheet) ...[
+          _AddRow(
+            phone: phone,
+            controller: _words,
+            focus: widget.addFocus,
+            shortcut: widget.newTaskShortcut,
+            target: _addInto == null ? null : _tasks.notes.byId(_addInto),
+            labelOf: widget.labelOf,
+            choices: _pickerNotes(board),
+            onChoose: (noteId) => setState(() {
+              _target = noteId;
+              _targetChosen = true;
+            }),
+            onSubmit: () => unawaited(_add()),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 160),
+            child: _notice
+                ? Padding(
+                    padding: EdgeInsets.only(left: phone ? 14 : 12, top: 8),
+                    child: Text(
+                      'Added to the end of the list',
+                      key: const ValueKey('tasks-added-notice'),
+                      style: taskText(12, 16, ink.sage, 500),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+        const SizedBox(height: 14),
+        switch (stage) {
+          EmptyStage() => Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+            child: _ticked.isEmpty
+                ? Text(
+                    'Nothing on the list.',
+                    style: taskText(13, 18, ink.quiet),
+                  )
+                : null,
+          ),
+          PairStage() => TaskPairCard(
+            pair: stage,
+            now: now,
+            labelOf: labelOf,
+            justDone: _tasks.justDone,
+            phone: phone,
+            onKeep: () => _tasks.keepChoice(stage),
+            onTake: () => _tasks.takeNext(stage),
+            onStart: () => _tasks.startWith(stage.left),
+          ),
+          DoNowStage(:final item) => TaskDoNowCard(
+            item: item,
+            label: labelOf(item),
+            images: widget.images,
+            phone: phone,
+            doneShortcut: doneShortcutLabel,
+            onOpen: () =>
+                phone ? widget.onOpenNote(item.note.id) : _openSheet(item),
+            onNotFinished: () => _tasks.notFinished(item, noteId: _noteId),
+            onDone: () => unawaited(_tasks.finish(item, noteId: _noteId)),
+          ),
+          EveningStage(:final left) => TaskEveningCard(
+            finished: finished.length,
+            phone: phone,
+            onKeepGoing: _tasks.keepGoing,
+            left: [for (final item in left) _row(board, item)],
+          ),
+        },
+        if (stage is EveningStage && finished.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: TaskFinishedLine(
+              finished: finished,
+              onPressed: widget.onOpenDone,
             ),
+          ),
+        if (choice.upNext.isNotEmpty) ...[
+          _Heading('Up next', phone: phone),
+          for (final item in choice.upNext) _row(board, item, upNext: true),
+        ],
+        if (choice.rest.isNotEmpty || (rest?.isNotEmpty ?? false))
+          Container(
+            margin: EdgeInsets.only(
+              top: choice.upNext.isEmpty ? (phone ? 12 : 12) : (phone ? 4 : 0),
+            ),
+            padding: EdgeInsets.only(top: choice.upNext.isEmpty ? 0 : 8),
+            decoration: BoxDecoration(
+              border: choice.upNext.isEmpty
+                  ? null
+                  : Border(top: BorderSide(color: ink.hairline)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (rest != null)
+                  for (final (item, done) in rest)
+                    done
+                        ? _PhoneTaskRow(
+                            key: ValueKey(item.id),
+                            item: item,
+                            done: true,
+                            now: now,
+                            label: labelOf(item),
+                            menu: const [],
+                            onTick: () => _tick(item, done: false),
+                            onOpenNote: () => widget.onOpenNote(item.note.id),
+                            onKeep: () {},
+                            onRemove: () {},
+                          )
+                        : _row(board, item)
+                else
+                  for (final item in choice.rest) _row(board, item),
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  /// The open tasks, with the ones checked off on this visit back in the
-  /// places they held.
-  List<(TaskItem, bool)> _phoneRows(List<TaskItem> open) {
-    final rows = [for (final item in open) (item, false)];
-    final ids = {for (final item in open) item.id};
+  /// The rest of the list, with the tasks a phone checked off on this visit
+  /// back in the places they held.
+  List<(TaskItem, bool)> _phoneRest(TaskBoard board, List<TaskItem> rest) {
+    final rows = [for (final item in rest) (item, false)];
+    final ids = {for (final item in board.open) item.id};
     final ticked = _ticked.values.toList()..sort((a, b) => a.$1 - b.$1);
     for (final (index, item) in ticked) {
       if (ids.contains(item.id)) continue;
@@ -548,10 +570,12 @@ class TasksScreenState extends State<TasksScreen> {
     return rows;
   }
 
-  void _tick(TaskItem item, int index, {required bool done}) {
+  void _tick(TaskItem item, {required bool done}) {
+    final rest = _choice.rest;
     setState(() {
       if (done) {
-        _ticked[item.id] = (index, item);
+        final at = rest.indexWhere((row) => row.id == item.id);
+        _ticked[item.id] = (at < 0 ? 0 : at, item);
       } else {
         _ticked.remove(item.id);
       }
@@ -567,56 +591,6 @@ class TasksScreenState extends State<TasksScreen> {
       for (final item in [...board.open, ...board.done])
         if (seen.add(item.note.id)) item.note,
     ];
-  }
-
-  /// The questions that pick Do now. With nothing dotted, the first task is
-  /// asked about on its own; after that, the tasks after the newest dot are
-  /// held up against it, one pick at a time. When nothing is left to ask
-  /// about, the newest dot is Do now.
-  Widget _picker(TaskBoard board, List<TaskItem> open) {
-    final dots = [
-      for (final item in open)
-        if (item.dotted) item,
-    ];
-    String? labelOf(TaskItem item) =>
-        board.isHome(item) ? null : widget.labelOf(item.note);
-    if (dots.isEmpty) {
-      final first = open.first;
-      return _ReadyCard(
-        phone: widget.phone,
-        item: first,
-        label: labelOf(first),
-        onYes: () => _tasks.doNow(first),
-        onNotYet: () => _tasks.dot(first),
-      );
-    }
-    final benchmark = dots.last;
-    final floor = math.max(benchmark.entry.position, _resumeAfter ?? 0);
-    final candidates = [
-      for (final item in open)
-        if (!item.dotted && item.entry.position > floor) item,
-    ];
-    if (candidates.isEmpty) {
-      if (_autoPicked != benchmark.id) {
-        _autoPicked = benchmark.id;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _tasks.doNow(benchmark);
-        });
-      }
-      return const SizedBox.shrink();
-    }
-    return _MoreThanCard(
-      benchmark: benchmark,
-      candidates: candidates,
-      labelOf: labelOf,
-      showAll: _allCandidates,
-      onShowAll: () => setState(() => _allCandidates = true),
-      onPick: (item) {
-        setState(() => _allCandidates = false);
-        _tasks.dot(item);
-      },
-      onNone: () => _tasks.doNow(benchmark),
-    );
   }
 
   Widget _done(TaskBoard board) {
@@ -707,37 +681,31 @@ class TasksScreenState extends State<TasksScreen> {
   }
 }
 
-/// "Today" in the title's hand, with the clay underline a note's title gets.
-class _TodayTitle extends StatelessWidget {
-  const _TodayTitle();
+/// "Up next" over the chosen tasks.
+class _Heading extends StatelessWidget {
+  const _Heading(this.text, {required this.phone});
+
+  final String text;
+  final bool phone;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    header: true,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Text(
-          'Today',
-          style: handStyle(
-            EditorMetrics.titleFontSize,
-            EditorMetrics.titleRow,
-            EditorMetrics.titleWeight,
-            context.palette.textPrimary,
-          ),
+  Widget build(BuildContext context) {
+    final ink = TaskInk.of(context);
+    return Semantics(
+      header: true,
+      child: Padding(
+        padding: phone
+            ? const EdgeInsets.only(top: 16, bottom: 2)
+            : const EdgeInsets.only(left: 10, top: 24, bottom: 6),
+        child: Text(
+          text,
+          style: phone
+              ? taskText(13, 18, ink.quiet, 520)
+              : taskText(12, 16, ink.quiet, 520),
         ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: LayoutBuilder(
-              builder: (context, box) => NoteTitleUnderline(
-                word: Rect.fromLTWH(0, 0, box.maxWidth, box.maxHeight),
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 /// Adding a task: a quiet filled row, always open, with the note it goes
@@ -765,35 +733,31 @@ class _AddRow extends StatelessWidget {
   final ValueChanged<String?> onChoose;
   final VoidCallback onSubmit;
 
-  /// A phone's row: 44 pt, a quiet well, and no keycaps.
+  /// A phone's row: taller, larger words, and no keys.
   final bool phone;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
+    final ink = TaskInk.of(context);
     final focused = focus.hasFocus;
     final shortcut = this.shortcut;
+    final words = phone
+        ? taskText(15, 20, ink.text)
+        : taskText(13, 18, ink.text);
     return Container(
       key: const ValueKey('tasks-add-row'),
-      height: phone ? 44 : 40,
-      padding: EdgeInsets.only(left: phone ? 14 : 10, right: 6),
+      constraints: BoxConstraints(minHeight: phone ? 44 : 40),
+      padding: EdgeInsets.only(left: phone ? 14 : 12, right: phone ? 6 : 8),
       decoration: BoxDecoration(
-        color: phone
-            ? palette.wellBackground
-            : Color.lerp(
-                palette.editorBackground,
-                palette.controlBackground,
-                0.5,
-              ),
-        borderRadius: BorderRadius.circular(phone ? 12 : AppRadii.control),
+        color: ink.card,
+        borderRadius: BorderRadius.circular(phone ? 10 : 9),
       ),
       child: Row(
         children: [
           KapyIcon(
             KapyIcons.addRounded,
             size: 16,
-            strokeWidth: 1.8,
-            color: focused ? palette.accentText : palette.textTertiary,
+            color: focused ? ink.sage : ink.quiet,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -808,34 +772,24 @@ class _AddRow extends StatelessWidget {
                 onSubmitted: (_) => onSubmit(),
                 onEditingComplete: () {},
                 textInputAction: TextInputAction.done,
-                cursorColor: palette.accentText,
-                style: uiStyle(16, 28, FontWeight.w500, palette.textPrimary),
-                decoration: phone
-                    ? InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Add a task',
-                        hintStyle: uiStyle(
-                          16,
-                          28,
-                          FontWeight.w500,
-                          palette.textTertiary,
-                        ),
-                        // A phone's field is the whole 44 pt row.
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                      )
-                    : InputDecoration.collapsed(
-                        hintText: 'Add a task…',
-                        hintStyle: uiStyle(
-                          16,
-                          28,
-                          FontWeight.w500,
-                          palette.textTertiary,
-                        ),
-                      ),
+                cursorColor: ink.sage,
+                style: words,
+                decoration: InputDecoration(
+                  isDense: true,
+                  filled: false,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  hintText: phone ? 'Add a task' : 'Add a task…',
+                  hintStyle: words.copyWith(color: ink.quiet),
+                  contentPadding: EdgeInsets.symmetric(
+                    vertical: phone ? 12 : 11,
+                  ),
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           _NotePicker(
             target: target,
             labelOf: labelOf,
@@ -846,10 +800,21 @@ class _AddRow extends StatelessWidget {
           ),
           if (!phone) ...[
             const SizedBox(width: 10),
-            if (focused)
-              const ExcludeSemantics(child: Keycap('↵'))
-            else if (shortcut != null)
-              ExcludeSemantics(child: Keycap(shortcut)),
+            ExcludeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  focused ? '↵' : shortcut ?? '',
+                  style: TextStyle(
+                    fontFamily: AppFonts.mono,
+                    fontFamilyFallback: AppFonts.monoFallback,
+                    fontSize: 11,
+                    height: 14 / 11,
+                    color: ink.quiet,
+                  ),
+                ),
+              ),
+            ),
           ],
         ],
       ),
@@ -880,52 +845,56 @@ class _NotePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
+    final ink = TaskInk.of(context);
     final target = this.target;
     return Tooltip(
       message: 'Add to a note',
       child: InkWell(
         key: const ValueKey('tasks-note-picker'),
         canRequestFocus: false,
-        borderRadius: BorderRadius.circular(AppRadii.control),
+        borderRadius: BorderRadius.circular(phone ? 8 : 6),
         onTap: () => _open(context),
-        child: Container(
-          // A phone's target is 44 pt tall; a window's chip stays small.
+        child: SizedBox(
           height: phone ? 44 : 28,
-          constraints: const BoxConstraints(maxWidth: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            border: Border.all(color: palette.controlBorder),
-            borderRadius: BorderRadius.circular(AppRadii.control),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              NoteSwatch(note: target),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  target == null ? 'No note' : labelOf(target),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: uiStyle(
-                    12.5,
-                    16,
-                    FontWeight.w600,
-                    palette.textSecondary,
-                  ),
-                ),
+          child: Center(
+            widthFactor: 1,
+            child: Container(
+              height: phone ? 30 : 28,
+              constraints: const BoxConstraints(maxWidth: 200),
+              padding: EdgeInsets.only(
+                left: phone ? 10 : 9,
+                right: phone ? 10 : 8,
               ),
-              if (chevron) ...[
-                const SizedBox(width: 6),
-                KapyIcon(
-                  KapyIcons.chevronDownRounded,
-                  size: 11,
-                  strokeWidth: 2,
-                  color: palette.textTertiary,
-                ),
-              ],
-            ],
+              decoration: BoxDecoration(
+                color: ink.lifted,
+                borderRadius: BorderRadius.circular(phone ? 8 : 6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  NoteSwatch(note: target, size: phone ? 13 : 8),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      target == null ? 'No note' : labelOf(target),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: phone
+                          ? taskText(13, 18, ink.secondary)
+                          : taskText(12, 16, ink.secondary, 500),
+                    ),
+                  ),
+                  if (chevron) ...[
+                    const SizedBox(width: 6),
+                    KapyIcon(
+                      KapyIcons.chevronDownRounded,
+                      size: 12,
+                      color: ink.quiet,
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -965,764 +934,44 @@ class _NotePicker extends StatelessWidget {
   }
 }
 
-/// The one task to work on now, with the two ways out of it.
-class _DoNowCard extends StatelessWidget {
-  const _DoNowCard({
-    required this.phone,
-    required this.item,
-    required this.label,
-    required this.onOpenNote,
-    required this.onOpen,
-    this.images,
-    required this.onNotFinished,
-    required this.onDone,
-  });
-
-  final TaskItem item;
-  final String? label;
-  final VoidCallback onOpenNote;
-  final VoidCallback onOpen;
-  final BlobStore? images;
-  final VoidCallback onNotFinished;
-  final VoidCallback onDone;
-
-  /// A phone's card: the task under DO NOW, its note, then Done and Not
-  /// finished as two pills beneath.
-  final bool phone;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final label = this.label;
-    if (phone) return _phone(context, palette, label);
-    return Container(
-      key: const ValueKey('tasks-do-now'),
-      padding: const EdgeInsets.only(top: 14, bottom: 14, right: 16),
-      decoration: BoxDecoration(
-        color: palette.editorBackground,
-        border: Border.all(color: palette.controlBorder),
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              width: 3,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'DO NOW',
-                    style: uiStyle(
-                      11,
-                      14,
-                      FontWeight.w700,
-                      palette.accentText,
-                    ).copyWith(letterSpacing: 0.66),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onOpen,
-                    child: Text(
-                      item.words,
-                      style: uiStyle(
-                        20,
-                        28,
-                        FontWeight.w600,
-                        palette.textPrimary,
-                      ),
-                    ),
-                  ),
-                  if (taskBlockOf(item.note.body, item.line)?.details
-                      case final details?) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            foldedPreview(details.preview),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: uiStyle(
-                              13,
-                              20,
-                              FontWeight.w400,
-                              palette.textTertiary,
-                            ),
-                          ),
-                        ),
-                        TaskDetailPicture(
-                          item: item,
-                          details: details,
-                          images: images,
-                          size: 36,
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: label == null
-                            ? const SizedBox.shrink()
-                            : Align(
-                                alignment: Alignment.centerLeft,
-                                child: NoteMark(
-                                  note: item.note,
-                                  label: label,
-                                  onPressed: onOpenNote,
-                                ),
-                              ),
-                      ),
-                      Tooltip(
-                        message: 'Moves it to the end of the list',
-                        child: TextButton.icon(
-                          key: const ValueKey('tasks-not-finished'),
-                          onPressed: onNotFinished,
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(0, 32),
-                            padding: const EdgeInsets.symmetric(horizontal: 11),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppRadii.control,
-                              ),
-                            ),
-                            foregroundColor: palette.textSecondary,
-                            textStyle: uiStyle(
-                              13,
-                              16,
-                              FontWeight.w600,
-                              palette.textSecondary,
-                            ),
-                          ),
-                          icon: KapyIcon(
-                            KapyIcons.undoRounded,
-                            size: 14,
-                            strokeWidth: 1.9,
-                            color: palette.textSecondary,
-                          ),
-                          label: const Text('Not finished'),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      TonalButton(
-                        key: const ValueKey('tasks-done'),
-                        tall: true,
-                        icon: KapyIcons.checkRounded,
-                        label: 'Done',
-                        shortcut: doneShortcutLabel,
-                        onPressed: onDone,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _phone(BuildContext context, CalcPalette palette, String? label) {
-    final sage = Theme.of(context).colorScheme.primary;
-    Widget pill({
-      required Key key,
-      required String text,
-      required VoidCallback onPressed,
-      required bool tonal,
-    }) => Semantics(
-      button: true,
-      label: text,
-      excludeSemantics: true,
-      onTap: onPressed,
-      child: GestureDetector(
-        key: key,
-        behavior: HitTestBehavior.opaque,
-        onTap: onPressed,
-        child: SizedBox(
-          height: 44,
-          child: Center(
-            child: Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: tonal ? palette.tonalBackground : null,
-                border: tonal ? null : Border.all(color: palette.controlBorder),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Text(
-                text,
-                style: uiStyle(
-                  15,
-                  20,
-                  FontWeight.w500,
-                  tonal ? palette.tonalForeground : palette.textPrimary,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    return Container(
-      key: const ValueKey('tasks-do-now'),
-      padding: const EdgeInsets.fromLTRB(0, 14, 16, 10),
-      decoration: BoxDecoration(
-        color: palette.cardBackground,
-        border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              width: 3,
-              decoration: BoxDecoration(
-                color: sage,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'DO NOW',
-                    style: uiStyle(
-                      11,
-                      14,
-                      FontWeight.w700,
-                      palette.accentText,
-                    ).copyWith(letterSpacing: 0.66),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    item.words,
-                    style: uiStyle(
-                      17,
-                      22,
-                      FontWeight.w500,
-                      palette.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  GestureDetector(
-                    onTap: onOpenNote,
-                    child: Text(
-                      label ?? 'No note',
-                      style: uiStyle(
-                        13.5,
-                        18,
-                        FontWeight.w400,
-                        palette.textTertiary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    spacing: 8,
-                    children: [
-                      pill(
-                        key: const ValueKey('tasks-done'),
-                        text: 'Done',
-                        onPressed: onDone,
-                        tonal: true,
-                      ),
-                      pill(
-                        key: const ValueKey('tasks-not-finished'),
-                        text: 'Not finished',
-                        onPressed: onNotFinished,
-                        tonal: false,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The card the picking questions are asked on.
-class _PickCard extends StatelessWidget {
-  const _PickCard({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      key: const ValueKey('tasks-picker'),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: palette.editorBackground,
-        border: Border.all(color: palette.pageBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(AppRadii.dialog),
-        boxShadow: [
-          BoxShadow(
-            color: palette.shadow.withAlpha(0x66),
-            offset: const Offset(0, 16),
-            blurRadius: 32,
-            spreadRadius: -20,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final (index, child) in children.indexed) ...[
-            if (index > 0) const SizedBox(height: 14),
-            child,
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// A full-width or fitted button on the picking card: tonal for the way
-/// forward, quiet for the other.
-class _PickButton extends StatelessWidget {
-  const _PickButton({
-    super.key,
-    required this.label,
-    required this.onPressed,
-    this.tonal = false,
-    this.icon,
-  });
+/// One entry in a row's menu.
+class TaskMenuChoice {
+  const TaskMenuChoice(this.label, this.onSelected);
 
   final String label;
-  final VoidCallback onPressed;
-  final bool tonal;
-  final KapyIconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final ink = tonal ? palette.tonalForeground : palette.textSubheading;
-    final icon = this.icon;
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 36),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        backgroundColor: tonal
-            ? palette.tonalBackground
-            : palette.controlBackground,
-        foregroundColor: ink,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.control),
-          side: tonal
-              ? BorderSide.none
-              : BorderSide(color: palette.controlBorder),
-        ),
-        textStyle: uiStyle(13, 16, FontWeight.w700, ink),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            KapyIcon(icon, size: 15, strokeWidth: 2, color: ink),
-            const SizedBox(width: 7),
-          ],
-          Flexible(
-            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-        ],
-      ),
-    );
-  }
+  final VoidCallback onSelected;
 }
 
-/// Fast FVP's one check before the scan: the first task, on its own.
-class _ReadyCard extends StatelessWidget {
-  const _ReadyCard({
-    required this.phone,
-    required this.item,
-    required this.label,
-    required this.onYes,
-    required this.onNotYet,
-  });
-
-  final TaskItem item;
-  final String? label;
-  final VoidCallback onYes;
-  final VoidCallback onNotYet;
-
-  /// A phone says it in fewer words, to fit both on one line.
-  final bool phone;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final label = this.label;
-    return _PickCard(
-      children: [
-        Text(
-          'First on the list',
-          style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            border: Border.all(color: palette.controlBorder),
-            borderRadius: BorderRadius.circular(AppRadii.surface),
+/// Opens a row's menu at [position]. A null between entries draws a line.
+Future<void> _showTaskMenu(
+  BuildContext context,
+  Offset position,
+  List<TaskMenuChoice?> menu, {
+  required bool phone,
+}) async {
+  final choice = await showKapyContextMenu<int>(
+    context: context,
+    globalPosition: position,
+    requestFocus: false,
+    items: [
+      for (final (index, entry) in menu.indexed)
+        if (entry == null)
+          const PopupMenuDivider(height: 9)
+        else
+          PopupMenuItem(
+            key: ValueKey('task-menu-${entry.label}'),
+            value: index,
+            height: phone ? 44 : 32,
+            child: Text(entry.label),
           ),
-          child: Row(
-            children: [
-              const _Dot(),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  item.words,
-                  style: uiStyle(15, 22, FontWeight.w600, palette.textPrimary),
-                ),
-              ),
-              if (label != null) ...[
-                const SizedBox(width: 10),
-                NoteMark(note: item.note, label: label),
-              ],
-            ],
-          ),
-        ),
-        Text(
-          'Ready to do this now?',
-          style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
-        ),
-        Row(
-          children: [
-            _PickButton(
-              key: const ValueKey('tasks-ready-yes'),
-              label: phone ? 'Do it now' : 'Yes, do it now',
-              icon: KapyIcons.checkRounded,
-              tonal: true,
-              onPressed: onYes,
-            ),
-            const SizedBox(width: 8),
-            _PickButton(
-              key: const ValueKey('tasks-ready-not-yet'),
-              label: phone ? 'Not yet' : 'Not yet, look further',
-              onPressed: onNotYet,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// FVP's question, held up against the newest dot: the tasks after it, one
-/// pick at a time.
-class _MoreThanCard extends StatelessWidget {
-  const _MoreThanCard({
-    required this.benchmark,
-    required this.candidates,
-    required this.labelOf,
-    required this.showAll,
-    required this.onShowAll,
-    required this.onPick,
-    required this.onNone,
-  });
-
-  static const int _shown = 5;
-
-  final TaskItem benchmark;
-  final List<TaskItem> candidates;
-  final String? Function(TaskItem item) labelOf;
-  final bool showAll;
-  final VoidCallback onShowAll;
-  final ValueChanged<TaskItem> onPick;
-  final VoidCallback onNone;
-
-  /// The benchmark's words inside the question, with a capital that only
-  /// starts a sentence brought down.
-  String get _named {
-    final words = benchmark.words;
-    if (words.length > 1 && words[1] == words[1].toLowerCase()) {
-      return words[0].toLowerCase() + words.substring(1);
-    }
-    return words;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final shown = showAll ? candidates : candidates.take(_shown).toList();
-    final more = candidates.length - shown.length;
-    return _PickCard(
-      children: [
-        Text.rich(
-          TextSpan(
-            text: 'What do you want to do more than ',
-            children: [
-              TextSpan(
-                text: _named,
-                style: TextStyle(color: palette.tonalForeground),
-              ),
-              const TextSpan(text: '?'),
-            ],
-          ),
-          style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final item in shown)
-              _CandidateRow(
-                key: ValueKey('tasks-candidate-${item.id}'),
-                item: item,
-                label: labelOf(item),
-                onPick: () => onPick(item),
-              ),
-            if (more > 0)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: onShowAll,
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 26),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    foregroundColor: palette.textTertiary,
-                    textStyle: uiStyle(
-                      12.5,
-                      16,
-                      FontWeight.w500,
-                      palette.textTertiary,
-                    ),
-                  ),
-                  child: Text('+ $more more below'),
-                ),
-              ),
-          ],
-        ),
-        Container(height: 1, color: palette.separator),
-        _PickButton(
-          key: const ValueKey('tasks-pick-none'),
-          label: 'None. Do “${benchmark.words}”',
-          icon: KapyIcons.checkRounded,
-          onPressed: onNone,
-        ),
-      ],
-    );
-  }
-}
-
-class _CandidateRow extends StatefulWidget {
-  const _CandidateRow({
-    super.key,
-    required this.item,
-    required this.label,
-    required this.onPick,
-  });
-
-  final TaskItem item;
-  final String? label;
-  final VoidCallback onPick;
-
-  @override
-  State<_CandidateRow> createState() => _CandidateRowState();
-}
-
-class _CandidateRowState extends State<_CandidateRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
-    final label = widget.label;
-    final lit = _hovered || !AppPlatform.hasPointer;
-    return InkWell(
-      onTap: widget.onPick,
-      onHover: (value) => setState(() => _hovered = value),
-      borderRadius: BorderRadius.circular(AppRadii.control),
-      hoverColor: palette.controlBackground,
-      child: SizedBox(
-        height: 40,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 10, right: 8),
-          child: Row(
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _hovered ? accent.withAlpha(0x40) : null,
-                  border: Border.all(
-                    color: _hovered ? accent : palette.checkboxBorder,
-                    width: 1.5,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  widget.item.words,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: uiStyle(
-                    14.5,
-                    20,
-                    FontWeight.w500,
-                    palette.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              if (lit)
-                Container(
-                  height: 26,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: palette.tonalBackground,
-                    borderRadius: BorderRadius.circular(AppRadii.control),
-                  ),
-                  child: Text(
-                    'Pick',
-                    style: uiStyle(
-                      12.5,
-                      16,
-                      FontWeight.w700,
-                      palette.tonalForeground,
-                    ),
-                  ),
-                )
-              else if (label != null)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 220),
-                  child: NoteMark(note: widget.item.note, label: label),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A picked task's mark in the list's gutter.
-class _Dot extends StatelessWidget {
-  const _Dot();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 8,
-    height: 8,
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.primary,
-      borderRadius: BorderRadius.circular(AppRadii.small),
-    ),
+    ],
   );
+  if (choice != null) menu[choice]?.onSelected();
 }
 
-/// What a click on a hovered row would pick: the dot, hollow and faint.
-class _HollowDot extends StatelessWidget {
-  const _HollowDot();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 8,
-    height: 8,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.all(color: context.palette.textTertiary, width: 1.2),
-    ),
-  );
-}
-
-/// Do now's mark in the gutter: the dot, ringed.
-class _Ring extends StatelessWidget {
-  const _Ring();
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    return Container(
-      width: 10,
-      height: 10,
-      decoration: BoxDecoration(
-        color: accent,
-        shape: BoxShape.circle,
-        border: Border.all(color: context.palette.editorBackground, width: 2),
-        boxShadow: [BoxShadow(color: accent, spreadRadius: 1.5)],
-      ),
-    );
-  }
-}
-
-/// A box, ticked or not, the size and weight of a note's checkbox.
-class _Box extends StatelessWidget {
-  const _Box({
-    required this.done,
-    required this.onPressed,
-    required this.label,
-  });
-
-  final bool done;
-  final VoidCallback onPressed;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
-    return Semantics(
-      checked: done,
-      label: label,
-      button: true,
-      child: InkResponse(
-        onTap: onPressed,
-        radius: 16,
-        child: Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: done ? accent : palette.editorBackground,
-            border: done
-                ? null
-                : Border.all(color: palette.checkboxBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(AppRadii.compact),
-          ),
-          child: done
-              ? KapyIcon(
-                  KapyIcons.checkRounded,
-                  size: 14,
-                  strokeWidth: 2.2,
-                  color: palette.paperColor,
-                )
-              : null,
-        ),
-      ),
-    );
-  }
-}
-
-/// How far a touch row's mark reaches into the page margin, so the target is
-/// 44 points wide while the dot and the words stay where the desktop has them.
-const double _markReach = 24;
-
-/// One task in the list: its mark in the gutter, its box and words, and at
-/// the end what is worth knowing about it.
+/// One task in the list: its box and words, then ↺, its details mark and
+/// its note. Hovered, it says when it was added and offers its menu; left
+/// untouched for two weeks, it asks whether it's still wanted.
 class _TaskRow extends StatefulWidget {
   const _TaskRow({
     super.key,
@@ -1730,7 +979,7 @@ class _TaskRow extends StatefulWidget {
     required this.now,
     required this.label,
     required this.wash,
-    required this.onMark,
+    required this.menu,
     required this.onTick,
     required this.onOpenNote,
     required this.onOpen,
@@ -1746,9 +995,7 @@ class _TaskRow extends StatefulWidget {
 
   /// Just added: a sage wash that fades.
   final bool wash;
-
-  /// A click on the mark: picks the task, makes it Do now, or clears it.
-  final VoidCallback onMark;
+  final List<TaskMenuChoice?> menu;
   final VoidCallback onTick;
   final VoidCallback onOpenNote;
   final VoidCallback onOpen;
@@ -1761,63 +1008,26 @@ class _TaskRow extends StatefulWidget {
 
 class _TaskRowState extends State<_TaskRow> {
   bool _hovered = false;
+  final _more = GlobalKey();
+
+  void _openMenu(Offset at) =>
+      unawaited(_showTaskMenu(context, at, widget.menu, phone: false));
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
+    final ink = TaskInk.of(context);
     final item = widget.item;
     final label = widget.label;
-    final stale =
-        !item.doNow &&
-        widget.now.millisecondsSinceEpoch - item.lastTouched >=
-            TaskBoard.staleAfter.inMilliseconds;
-    final quiet = uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary);
+    final stale = taskIsStale(item, widget.now);
+    final quiet = taskText(12, 16, ink.quiet);
     final touch = !AppPlatform.hasPointer;
-    final (Widget mark, String tip, String action) = item.doNow
-        ? (const _Ring(), 'Do now · click to clear', 'Clear pick')
-        : item.dotted
-        ? (const _Dot(), 'Picked to do next · click for Do now', 'Make Do now')
-        : (
-            _hovered && !touch ? const _HollowDot() : const SizedBox.shrink(),
-            'Pick to do next',
-            'Pick',
-          );
-    final rowHeight = touch ? 44.0 : 38.0;
-    final reach = touch ? _markReach : 0.0;
-    final row = SizedBox(
-      height: rowHeight,
+    final row = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: touch ? 44 : 36),
       child: Padding(
-        padding: const EdgeInsets.only(right: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         child: Row(
           children: [
-            Tooltip(
-              message: tip,
-              excludeFromSemantics: true,
-              child: Semantics(
-                button: true,
-                label: '$action: ${item.words}',
-                onTap: widget.onMark,
-                excludeSemantics: true,
-                child: InkWell(
-                  key: ValueKey('task-mark-${item.id}'),
-                  onTap: widget.onMark,
-                  borderRadius: BorderRadius.circular(AppRadii.compact),
-                  hoverColor: Colors.transparent,
-                  splashColor: Colors.transparent,
-                  highlightColor: Colors.transparent,
-                  child: SizedBox(
-                    width: 20 + reach,
-                    height: rowHeight,
-                    child: Padding(
-                      padding: EdgeInsets.only(left: reach),
-                      child: Center(child: mark),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            _Box(done: false, onPressed: widget.onTick, label: item.words),
+            _RowBox(onPressed: widget.onTick, label: item.words),
             const SizedBox(width: 10),
             Expanded(
               child: GestureDetector(
@@ -1829,16 +1039,10 @@ class _TaskRowState extends State<_TaskRow> {
                       : item.words,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: uiStyle(
-                    16,
-                    28,
-                    FontWeight.w500,
-                    stale ? palette.textSecondary : palette.textPrimary,
-                  ),
+                  style: taskText(13, 18, stale ? ink.quiet : ink.text),
                 ),
               ),
             ),
-            TaskDetailsIcon(item: item),
             if (stale) ...[
               const SizedBox(width: 10),
               Padding(
@@ -1855,59 +1059,145 @@ class _TaskRowState extends State<_TaskRow> {
                 style: quiet,
               ),
             ],
-            if (item.entry.enteredAt != 0 && !stale)
+            if (_hovered && !stale) ...[
+              const SizedBox(width: 8),
               Tooltip(
-                message: 'Not finished, moved to the end',
-                child: SizedBox.square(
-                  dimension: 22,
-                  child: Center(
+                message: 'More',
+                child: InkWell(
+                  key: _more,
+                  onTap: () {
+                    final box =
+                        _more.currentContext!.findRenderObject()! as RenderBox;
+                    _openMenu(
+                      box.localToGlobal(Offset(0, box.size.height + 4)),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: ink.chip,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                     child: KapyIcon(
-                      KapyIcons.undoRounded,
+                      KapyIcons.moreVerticalRounded,
                       size: 14,
-                      strokeWidth: 1.9,
-                      color: palette.textTertiary,
+                      color: ink.secondary,
                     ),
                   ),
                 ),
               ),
-            if (label != null) ...[
-              const SizedBox(width: 10),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: NoteMark(
-                  note: item.note,
-                  label: label,
-                  onPressed: widget.onOpenNote,
+            ],
+            if (item.entry.enteredAt != 0 && !stale && !_hovered)
+              Tooltip(
+                message: 'Not finished, moved to the end',
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: KapyIcon(
+                    KapyIcons.undoRounded,
+                    size: 14,
+                    color: ink.quiet,
+                  ),
                 ),
               ),
-            ],
+            if (!_hovered && !stale) TaskDetailsIcon(item: item),
+            const SizedBox(width: 16),
+            SizedBox(
+              width: 150,
+              child: label == null
+                  ? null
+                  : Align(
+                      alignment: Alignment.centerLeft,
+                      child: NoteMark(
+                        note: item.note,
+                        label: label,
+                        onPressed: widget.onOpenNote,
+                      ),
+                    ),
+            ),
           ],
         ),
       ),
     );
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: widget.wash ? 1 : 0, end: 0),
-        duration: const Duration(seconds: 2),
-        curve: Curves.easeIn,
-        builder: (context, wash, child) => DecoratedBox(
-          decoration: BoxDecoration(
-            color: wash > 0
-                ? Color.lerp(
-                    palette.controlBackground,
-                    palette.tonalBackground,
-                    wash,
-                  )
-                : _hovered
-                ? palette.controlBackground
-                : null,
-            borderRadius: BorderRadius.circular(AppRadii.control),
+    return Semantics(
+      customSemanticsActions: {
+        for (final entry in widget.menu.nonNulls)
+          CustomSemanticsAction(label: entry.label): entry.onSelected,
+      },
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onSecondaryTapUp: (details) => _openMenu(details.globalPosition),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: widget.wash ? 1 : 0, end: 0),
+            duration: const Duration(seconds: 2),
+            curve: Curves.easeIn,
+            builder: (context, wash, child) => DecoratedBox(
+              decoration: BoxDecoration(
+                color: wash > 0
+                    ? Color.lerp(
+                        ink.rowHover,
+                        context.palette.tonalBackground,
+                        wash,
+                      )
+                    : _hovered
+                    ? ink.rowHover
+                    : null,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: child,
+            ),
+            child: row,
           ),
-          child: child,
         ),
-        child: row,
+      ),
+    );
+  }
+}
+
+/// An open task's box, as the boards draw it.
+class _RowBox extends StatelessWidget {
+  const _RowBox({
+    required this.onPressed,
+    required this.label,
+    this.phone = false,
+  });
+
+  final VoidCallback onPressed;
+  final String label;
+  final bool phone;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = TaskInk.of(context);
+    final size = phone ? 20.0 : 16.0;
+    return Semantics(
+      checked: false,
+      label: label,
+      button: true,
+      excludeSemantics: true,
+      onTap: onPressed,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: SizedBox(
+          width: phone ? 44 : 20,
+          height: phone ? 44 : 28,
+          child: Align(
+            alignment: phone ? Alignment.centerLeft : Alignment.center,
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                border: Border.all(color: ink.quiet, width: phone ? 1.5 : 1.25),
+                borderRadius: BorderRadius.circular(phone ? 5 : 4),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1926,28 +1216,24 @@ class _RowButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final ink = strong ? palette.textSubheading : palette.textSecondary;
-    return TextButton(
+    final ink = TaskInk.of(context);
+    return TaskButton(
+      semantics: label,
       onPressed: onPressed,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 24),
-        padding: const EdgeInsets.symmetric(horizontal: 9),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        backgroundColor: strong ? palette.controlBackground : null,
-        foregroundColor: ink,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+      fill: strong ? ink.rowHover : null,
+      height: 24,
+      radius: 4,
+      padding: 9,
+      children: [
+        Text(
+          label,
+          style: taskText(12, 16, strong ? ink.text : ink.secondary, 500),
         ),
-        textStyle: uiStyle(12, 16, FontWeight.w600, ink),
-      ),
-      child: Text(label),
+      ],
     );
   }
 }
 
-/// A finished task in the Done view: ticked, quieter, with the time it was
-/// finished. Unticking puts it back at the end of the list.
 class _DoneRow extends StatelessWidget {
   const _DoneRow({
     super.key,
@@ -2016,50 +1302,109 @@ class _DoneRow extends StatelessWidget {
   }
 }
 
-/// A phone's title over Tasks: "Today", large, with the clay underline, and
-/// how many of today's are done at the far end.
-class _PhoneTodayTitle extends StatelessWidget {
-  const _PhoneTodayTitle({required this.done, required this.total});
+class _Box extends StatelessWidget {
+  const _Box({
+    required this.done,
+    required this.onPressed,
+    required this.label,
+  });
 
-  final int done;
-  final int total;
+  final bool done;
+  final VoidCallback onPressed;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Expanded(
-                child: Semantics(
-                  header: true,
-                  child: Text(
-                    'Today',
-                    style: TextStyle(
-                      fontFamily: AppFonts.title,
-                      fontFamilyFallback: AppFonts.uiFallback,
-                      fontSize: 28,
-                      height: 36 / 28,
-                      color: palette.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              Text(
-                '$done of $total done',
-                key: const ValueKey('tasks-done-count'),
-                style: uiStyle(15, 20, FontWeight.w400, palette.textTertiary),
-              ),
-            ],
+    final accent = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      checked: done,
+      label: label,
+      button: true,
+      child: InkResponse(
+        onTap: onPressed,
+        radius: 16,
+        child: Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: done ? accent : palette.editorBackground,
+            border: done
+                ? null
+                : Border.all(color: palette.checkboxBorder, width: 1.5),
+            borderRadius: BorderRadius.circular(AppRadii.compact),
           ),
-          const SizedBox(height: 8),
-          Container(width: 44, height: 2, color: palette.clay),
+          child: done
+              ? KapyIcon(
+                  KapyIcons.checkRounded,
+                  size: 14,
+                  strokeWidth: 2.2,
+                  color: palette.paperColor,
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// A phone's line over Today: "Today" with the date, and how many of
+/// today's are done at the far end.
+class _PhoneTodayTitle extends StatelessWidget {
+  const _PhoneTodayTitle({
+    required this.now,
+    required this.done,
+    required this.total,
+    required this.sheet,
+  });
+
+  final DateTime now;
+  final int done;
+  final int total;
+
+  /// Under the sheet's own title, with nothing between it and the body.
+  final bool sheet;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = TaskInk.of(context);
+    return Padding(
+      padding: EdgeInsets.only(top: sheet ? 0 : 22, bottom: sheet ? 0 : 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              'Today',
+              style: TextStyle(
+                fontFamily: AppFonts.title,
+                fontFamilyFallback: AppFonts.uiFallback,
+                fontSize: 19,
+                height: 24 / 19,
+                color: ink.text,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              SidebarTimestamp.dayAndDate(now),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: taskText(13, 16, ink.quiet),
+            ),
+          ),
+          Text(
+            '$done of $total done',
+            key: const ValueKey('tasks-done-count'),
+            style: taskText(
+              13,
+              16,
+              ink.quiet,
+            ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+          ),
         ],
       ),
     );
@@ -2068,152 +1413,170 @@ class _PhoneTodayTitle extends StatelessWidget {
 
 /// A phone's task row: the box, then the task with its note under it. A tap
 /// on the box checks it off in place, a tap on the words opens the note at
-/// the task, and a long press offers Pick.
+/// the task, and a long press opens the row menu.
 class _PhoneTaskRow extends StatelessWidget {
   const _PhoneTaskRow({
     super.key,
     required this.item,
     required this.done,
+    required this.now,
     required this.label,
+    required this.menu,
     required this.onTick,
     required this.onOpenNote,
-    required this.onMark,
+    required this.onKeep,
+    required this.onRemove,
   });
 
   final TaskItem item;
   final bool done;
+  final DateTime now;
   final String? label;
+  final List<TaskMenuChoice?> menu;
   final VoidCallback onTick;
   final VoidCallback onOpenNote;
-  final VoidCallback onMark;
-
-  String get _markAction => item.doNow
-      ? 'Clear pick'
-      : item.dotted
-      ? 'Make Do now'
-      : 'Pick';
-
-  Future<void> _menu(BuildContext context, Offset position) async {
-    final overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final choice = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        position & Size.zero,
-        Offset.zero & overlay.size,
-      ),
-      items: [
-        PopupMenuItem(
-          key: ValueKey('phone-task-pick-${item.id}'),
-          value: 'pick',
-          height: 44,
-          child: Text(_markAction),
-        ),
-      ],
-    );
-    if (choice == 'pick') onMark();
-  }
+  final VoidCallback onKeep;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final ink = TaskInk.of(context);
     final palette = context.palette;
-    final sage = Theme.of(context).colorScheme.primary;
+    final stale = !done && taskIsStale(item, now);
+    final meta = taskText(13, 18, ink.quiet);
+    Widget link(String text, VoidCallback onPressed, {bool strong = false}) =>
+        Semantics(
+          button: true,
+          label: text,
+          excludeSemantics: true,
+          onTap: onPressed,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onPressed,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+              child: Center(
+                widthFactor: 1,
+                child: Text(
+                  text,
+                  style: taskText(
+                    13,
+                    18,
+                    strong ? ink.text : ink.secondary,
+                    500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
     return Semantics(
       customSemanticsActions: {
-        CustomSemanticsAction(label: _markAction): onMark,
+        for (final entry in menu.nonNulls)
+          CustomSemanticsAction(label: entry.label): entry.onSelected,
       },
       child: InkWell(
         key: ValueKey('phone-task-${item.id}'),
         onTap: onOpenNote,
         child: GestureDetector(
-          onLongPressStart: done
+          onLongPressStart: done || menu.isEmpty
               ? null
-              : (details) => unawaited(_menu(context, details.globalPosition)),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 48),
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: palette.separator, width: 0.5),
-              ),
-            ),
+              : (details) => unawaited(
+                  _showTaskMenu(
+                    context,
+                    details.globalPosition,
+                    menu,
+                    phone: true,
+                  ),
+                ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               children: [
-                Semantics(
-                  checked: done,
-                  label: item.words,
-                  excludeSemantics: true,
-                  onTap: onTick,
-                  child: GestureDetector(
-                    key: ValueKey('phone-task-box-${item.id}'),
-                    behavior: HitTestBehavior.opaque,
+                if (done)
+                  Semantics(
+                    checked: true,
+                    label: item.words,
+                    button: true,
+                    excludeSemantics: true,
                     onTap: onTick,
-                    child: SizedBox.square(
-                      dimension: 44,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: done ? sage : null,
-                            border: Border.all(
-                              color: done ? sage : palette.checkboxBorder,
-                              width: 1.5,
+                    child: GestureDetector(
+                      key: ValueKey('phone-task-box-${item.id}'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onTick,
+                      child: SizedBox.square(
+                        dimension: 44,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: ink.sage,
+                              borderRadius: BorderRadius.circular(5),
                             ),
-                            borderRadius: BorderRadius.circular(6),
+                            child: KapyIcon(
+                              KapyIcons.checkRounded,
+                              size: 14,
+                              strokeWidth: 2.2,
+                              color: palette.paperColor,
+                            ),
                           ),
-                          child: done
-                              ? KapyIcon(
-                                  KapyIcons.checkRounded,
-                                  size: 15,
-                                  strokeWidth: 2.2,
-                                  color: palette.paperColor,
-                                )
-                              : null,
                         ),
                       ),
                     ),
+                  )
+                else
+                  KeyedSubtree(
+                    key: ValueKey('phone-task-box-${item.id}'),
+                    child: _RowBox(
+                      onPressed: onTick,
+                      label: item.words,
+                      phone: true,
+                    ),
                   ),
-                ),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        item.words,
-                        style:
-                            uiStyle(
-                              16,
-                              22,
-                              FontWeight.w500,
-                              done ? palette.textTertiary : palette.textPrimary,
-                            ).copyWith(
-                              decoration: done
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                      ),
-                      Text(
-                        label ?? 'No note',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: uiStyle(
-                          12.5,
-                          16,
-                          FontWeight.w400,
-                          palette.textTertiary,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          item.words,
+                          style:
+                              taskText(
+                                16,
+                                22,
+                                done || stale ? ink.quiet : ink.text,
+                              ).copyWith(
+                                decoration: done
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              ),
                         ),
-                      ),
-                    ],
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          children: [
+                            Text(label ?? 'No note', style: meta),
+                            if (item.entry.enteredAt != 0 && !done)
+                              KapyIcon(
+                                KapyIcons.undoRounded,
+                                size: 14,
+                                color: ink.quiet,
+                              ),
+                            if (stale) ...[
+                              Text('·  Still want this?', style: meta),
+                              link('Keep', onKeep, strong: true),
+                              link('Remove', onRemove),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                if (!done && (item.doNow || item.dotted))
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: item.doNow ? const _Ring() : const _Dot(),
-                  ),
               ],
             ),
           ),
@@ -2221,4 +1584,119 @@ class _PhoneTaskRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The band over Today on a window: "Today" or the note's name, then the
+/// date.
+class TasksTodayCrumb extends StatelessWidget {
+  const TasksTodayCrumb({super.key, required this.title, required this.now});
+
+  final String title;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = TaskInk.of(context);
+    return Row(
+      key: const ValueKey('tasks-band-title'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Flexible(
+          child: Semantics(
+            header: true,
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: taskText(13, 18, ink.text, 500),
+            ),
+          ),
+        ),
+        const SizedBox(width: 9),
+        Text(
+          SidebarTimestamp.dayAndDate(now),
+          style: taskText(13, 18, ink.quiet),
+        ),
+      ],
+    );
+  }
+}
+
+/// The band's right side over Today: how much of today is done, and Choose
+/// again while anything is chosen.
+class TasksBandActions extends StatelessWidget {
+  const TasksBandActions({
+    super.key,
+    required this.controller,
+    required this.filter,
+    required this.onChooseAgain,
+  });
+
+  final TasksController controller;
+  final TaskFilter filter;
+  final VoidCallback onChooseAgain;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      final ink = TaskInk.of(context);
+      final board = controller.read();
+      final now = controller.now();
+      final done = board.doneSince(
+        DateTime(now.year, now.month, now.day),
+        noteId: filter.noteId,
+      );
+      final total = done + board.openIn(filter.noteId).length;
+      final chosen = controller.choiceIn(filter.noteId).chosen;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ChecklistPie(
+            done: done,
+            total: total,
+            fill: ink.sage,
+            check: context.palette.paperColor,
+          ),
+          const SizedBox(width: 6),
+          ExcludeSemantics(
+            child: Text(
+              '$done of $total done today',
+              key: const ValueKey('tasks-done-today'),
+              style: taskText(
+                12,
+                16,
+                ink.quiet,
+              ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+            ),
+          ),
+          if (chosen) ...[
+            const SizedBox(width: 14),
+            TaskButton(
+              key: const ValueKey('tasks-choose-again'),
+              semantics: 'Choose again',
+              onPressed: onChooseAgain,
+              height: 28,
+              padding: 8,
+              children: [
+                KapyIcon(
+                  KapyIcons.refreshRounded,
+                  size: 14,
+                  color: ink.secondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Choose again',
+                  style: taskText(13, 18, ink.secondary, 500),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(width: 8),
+        ],
+      );
+    },
+  );
 }

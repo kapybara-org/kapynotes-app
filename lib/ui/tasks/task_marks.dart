@@ -73,9 +73,7 @@ class TaskDetailsIcon extends StatelessWidget {
             ? 'Has a picture'
             : 'Has details',
         child: KapyIcon(
-          details.hasMedia
-              ? KapyIcons.imageOutlined
-              : KapyIcons.alignLeft,
+          details.hasMedia ? KapyIcons.imageOutlined : KapyIcons.alignLeft,
           size: 14,
           color: context.palette.textTertiary,
         ),
@@ -107,7 +105,11 @@ class NoteSwatch extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final note = this.note;
-    final radius = size >= 14 ? 4.0 : 3.0;
+    final radius = size >= 14
+        ? 4.0
+        : size <= 8
+        ? 2.0
+        : 3.0;
     if (note == null) {
       return CustomPaint(
         size: Size.square(size),
@@ -123,7 +125,9 @@ class NoteSwatch extends StatelessWidget {
             (palette.brightness == Brightness.dark
                 ? const Color(0xFF3A3530)
                 : const Color(0xFFD9D2C1)),
-        border: Border.all(color: palette.textPrimary.withAlpha(0x24)),
+        border: size <= 8
+            ? null
+            : Border.all(color: palette.textPrimary.withAlpha(0x24)),
         borderRadius: BorderRadius.circular(radius),
       ),
     );
@@ -185,21 +189,21 @@ class NoteMark extends StatelessWidget {
         child: SizedBox(
           height: 24,
           child: Padding(
-            padding: const EdgeInsets.only(left: 4, right: 2),
+            padding: const EdgeInsets.only(right: 2),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                NoteSwatch(note: note),
+                NoteSwatch(note: note, size: 8),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: handStyle(
-                      12.5,
+                    style: uiStyle(
+                      12,
                       16,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textSecondary,
                     ),
                   ),

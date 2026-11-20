@@ -579,6 +579,10 @@ class KapyIcons {
     0xE083,
     HugeIcons.strokeRoundedUndo02,
   );
+  static const sunsetRounded = KapyIconData(
+    0xE0E8,
+    HugeIcons.strokeRoundedSunset,
+  );
   static const redoRounded = KapyIconData(
     0xE084,
     HugeIcons.strokeRoundedRedo02,

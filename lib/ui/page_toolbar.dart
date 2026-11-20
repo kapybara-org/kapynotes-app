@@ -31,6 +31,7 @@ class PageToolbar extends StatelessWidget {
     required this.onShowList,
     required this.onCreate,
     this.section,
+    this.crumb,
     this.showListShortcut,
     this.noun = 'note',
     this.newNoteShortcut,
@@ -55,6 +56,9 @@ class PageToolbar extends StatelessWidget {
   /// place in it, such as Pinned.
   final String space;
   final String? section;
+
+  /// Drawn in place of the breadcrumb, as Tasks' Today and its date.
+  final Widget? crumb;
 
   final bool listVisible;
   final VoidCallback onShowList;
@@ -195,10 +199,12 @@ class PageToolbar extends StatelessWidget {
                               alignment: Alignment.centerLeft,
                               child: onBack == null
                                   ? WindowDragArea(
-                                      child: _Breadcrumb(
-                                        space: space,
-                                        section: section,
-                                      ),
+                                      child:
+                                          crumb ??
+                                          _Breadcrumb(
+                                            space: space,
+                                            section: section,
+                                          ),
                                     )
                                   : _BackButton(to: space, onPressed: onBack),
                             ),
