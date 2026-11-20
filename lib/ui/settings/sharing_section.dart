@@ -658,7 +658,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     });
     if (joined != null && mounted) {
       setState(() => _joinOpen = false);
-      Toast.show(context, 'Joined $joined. The notes arrive in a moment');
+      Toast.show(context, joinedLine);
     }
   }
 
@@ -762,10 +762,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
                 onAccept: () => _run(
                   'invites',
                   () => _sharing.acceptInvite(invite.token),
-                  done:
-                      'Joined. The notes arrive when '
-                      '${_first(invite.inviterDisplayName)} next opens Kapy '
-                      'Notes',
+                  done: joinedLine,
                 ),
               ),
           ],
@@ -1224,8 +1221,9 @@ class _SharePickerState extends State<SharePicker> {
       }
       if (!mounted) return;
       final who = person == null ? email : person.name.trim().split(' ').first;
-      Navigator.of(context)
-          .pop('Shared ${done == 1 ? '1 note' : '$done notes'} with $who');
+      Navigator.of(
+        context,
+      ).pop('Shared ${done == 1 ? '1 note' : '$done notes'} with $who');
     } catch (error) {
       if (!mounted) return;
       setState(() {

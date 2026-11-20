@@ -1984,7 +1984,7 @@ void main() {
       expect(find.text('Nothing shared yet'), findsOneWidget);
       expect(
         find.text(
-          'Open a note and press Share. Only the people you choose can see it.',
+          'Pick notes and someone to share them with. Only the people you add, or anyone with a link you turn on, can see them.',
         ),
         findsOneWidget,
       );

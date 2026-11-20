@@ -4,6 +4,14 @@ import '../../core/theme.dart';
 import '../../sync/account.dart';
 import '../../sync/joining.dart';
 
+/// What follows a join everywhere: the notes come from a device that
+/// already holds their key, so they arrive once one of those is open.
+const notesArriveLine =
+    'The notes arrive when someone already sharing them next opens Kapy '
+    'Notes.';
+
+const joinedLine = 'Joined. $notesArriveLine';
+
 /// Makes the account's [Joining] reachable from anywhere under the app,
 /// dialogs included.
 ///

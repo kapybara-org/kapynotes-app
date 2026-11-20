@@ -343,7 +343,7 @@ void main() {
       expect(find.text('You are in “Family”.'), findsOneWidget);
       expect(
         find.text(
-          'The notes arrive the next time Priya or another member is online.',
+          notesArriveLine,
         ),
         findsOneWidget,
       );

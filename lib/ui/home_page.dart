@@ -4003,15 +4003,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// Shared on a phone: a page reached from Home, which its arrow goes back
+  /// to.
+  bool get _sharedPage => !_specialMode && _space == LibrarySpace.shared;
+
   /// The phone's home for Notes, Drawings and Shared: the list beside the
   /// rail, drawn for a phone under the space's large title.
   Widget _phoneNotes() => Sidebar(
+    key: _sharedPage ? const ValueKey('shared-page') : null,
     phone: true,
     windowBar: PhoneListTitle(
       title: !_specialMode && _space == LibrarySpace.notes
           ? 'Notes'
           : _listTitle,
       count: _matchingCount,
+      onBack: _sharedPage ? () => _showSpace(LibrarySpace.notes) : null,
     ),
     notes: _visibleNotes,
     pinnedNoteIds: widget.notes.pinnedNoteIds,
@@ -4045,6 +4051,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? _searchPlaceholder
         : _space == LibrarySpace.drawings
         ? 'Search drawings'
+        : _sharedPage
+        ? 'Search shared notes'
         : _taskController == null
         ? 'Search notes'
         : 'Search notes and tasks',
