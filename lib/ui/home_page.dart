@@ -4036,6 +4036,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onPicked: _actOnPicked,
     onShare: widget.account == null ? null : _shareNote,
     sharing: widget.account?.sharing,
+    onOpenPerson: widget.account?.sharing == null ? null : _openPerson,
+    onStartSharing: widget.account?.sharing == null ? null : _startSharing,
     collaborators: widget.account?.sync?.collaboratorsByNote ?? const {},
     tab: _sidebarTab,
     onTabChanged: _setSidebarTab,
