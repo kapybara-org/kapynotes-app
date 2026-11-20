@@ -1,23 +1,31 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../../data/blob_store.dart';
 import '../../data/note.dart';
 import '../../data/task_board.dart';
+import '../../data/task_details.dart';
 import '../context_menu.dart';
 import '../editor/note_header.dart';
 import '../keycap.dart';
 import '../sidebar_timestamp.dart';
 import '../tonal_button.dart';
 import 'task_marks.dart';
+import 'task_details_sheet.dart';
 import 'tasks_controller.dart';
 
 /// The chord that finishes Do now, as its button prints it.
-String get doneShortcutLabel => AppPlatform.isMacOS ? '⌘↵' : 'Ctrl+↵';
+String? get doneShortcutLabel => !AppPlatform.hasPointer
+    ? null
+    : AppPlatform.isMacOS
+    ? '⌘↵'
+    : 'Ctrl+↵';
 
 /// Tasks' page: Today, the one list worked with Mark Forster's Final Version
 /// Perfected, or the Done view.
@@ -34,8 +42,14 @@ class TasksScreen extends StatefulWidget {
     required this.addFocus,
     required this.labelOf,
     required this.onOpenNote,
+    this.images,
     this.newTaskShortcut,
+    this.phone = false,
   });
+
+  /// A phone's Tasks: a large title with how many are done, no keycaps, and
+  /// rows that check off in place and stay until the screen is left.
+  final bool phone;
 
   final TasksController controller;
   final TaskFilter filter;
@@ -44,6 +58,10 @@ class TasksScreen extends StatefulWidget {
   /// A note's name as a task's mark shows it.
   final String Function(Note note) labelOf;
   final ValueChanged<String> onOpenNote;
+
+  /// Where a task's picture is stored, so Do now and the sheet can show it.
+  /// Null in a test that does not draw pictures.
+  final BlobStore? images;
 
   /// Printed on the add row's keycap at rest.
   final String? newTaskShortcut;
@@ -55,6 +73,10 @@ class TasksScreen extends StatefulWidget {
 class TasksScreenState extends State<TasksScreen> {
   final _words = TextEditingController();
 
+  /// Tasks a phone checked off on this visit, by the place they held, so
+  /// their rows stay, struck through, until the screen is left.
+  final Map<String, (int, TaskItem)> _ticked = {};
+
   /// Where the next scan starts after Do now was done or sent back: only
   /// tasks after it are asked about, until the next Pick again.
   int? _resumeAfter;
@@ -65,6 +87,9 @@ class TasksScreenState extends State<TasksScreen> {
   bool _targetChosen = false;
 
   String? _washId;
+  String? _sheetId;
+  int _sheetIndex = 0;
+  final _listFocus = FocusNode(debugLabel: 'tasks-list');
   bool _notice = false;
   Timer? _noticeTimer;
   bool _allCandidates = false;
@@ -74,6 +99,19 @@ class TasksScreenState extends State<TasksScreen> {
   void initState() {
     super.initState();
     widget.addFocus.addListener(_focusChanged);
+    widget.controller.sheetRequest.addListener(_takeSheetRequest);
+    // An ask made before this screen existed — a menu bar click while the app
+    // was showing Notes — is waiting for its first listener.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _takeSheetRequest();
+    });
+  }
+
+  void _takeSheetRequest() {
+    final request = widget.controller.sheetRequest.value;
+    if (request == null || !mounted) return;
+    widget.controller.sheetRequest.value = null;
+    setState(() => _sheetId = request.id);
   }
 
   @override
@@ -92,6 +130,8 @@ class TasksScreenState extends State<TasksScreen> {
 
   @override
   void dispose() {
+    widget.controller.sheetRequest.removeListener(_takeSheetRequest);
+    _listFocus.dispose();
     widget.addFocus.removeListener(_focusChanged);
     _noticeTimer?.cancel();
     _words.dispose();
@@ -208,12 +248,18 @@ class TasksScreenState extends State<TasksScreen> {
       final board = _tasks.read();
       return LayoutBuilder(
         builder: (context, constraints) {
-          final width = math.min(700.0, constraints.maxWidth - 48);
-          final reach = widget.filter.done || AppPlatform.hasPointer
+          final phone = widget.phone;
+          final width = phone
+              ? constraints.maxWidth - 40
+              : math.min(700.0, constraints.maxWidth - 48);
+          final reach = phone || widget.filter.done || AppPlatform.hasPointer
               ? 0.0
               : _markReach;
           return SingleChildScrollView(
-            padding: const EdgeInsets.only(top: 20, bottom: 48),
+            padding: EdgeInsets.only(
+              top: phone ? 0 : 20,
+              bottom: phone ? 120 : 48,
+            ),
             child: Align(
               alignment: Alignment.topLeft,
               child: Padding(
@@ -224,7 +270,7 @@ class TasksScreenState extends State<TasksScreen> {
                   width: width + reach,
                   child: widget.filter.done
                       ? _done(board)
-                      : _today(board, reach),
+                      : _withSheet(board, _today(board, reach)),
                 ),
               ),
             ),
@@ -233,6 +279,83 @@ class TasksScreenState extends State<TasksScreen> {
       );
     },
   );
+
+  void _openSheet(TaskItem item) {
+    setState(() {
+      _sheetId = item.id;
+      _sheetIndex = _open(_tasks.read()).indexWhere((row) => row.id == item.id);
+    });
+    _listFocus.requestFocus();
+  }
+
+  KeyEventResult _listKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent || _sheetId == null) {
+      return KeyEventResult.ignored;
+    }
+    if (!_listFocus.hasFocus) return KeyEventResult.ignored;
+    final open = _open(_tasks.read());
+    if (open.isEmpty) return KeyEventResult.ignored;
+    // Where the sheet's task sits now: after Space marks it done it leaves the
+    // open list, and the arrows go on from where it was.
+    final shown = open.indexWhere((row) => row.id == _sheetId);
+    final index = shown >= 0 ? shown : _sheetIndex.clamp(0, open.length - 1);
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() => _sheetId = null);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      final next = event.logicalKey == LogicalKeyboardKey.arrowDown
+          ? (index + 1).clamp(0, open.length - 1)
+          : (index - 1).clamp(0, open.length - 1);
+      setState(() {
+        _sheetIndex = next;
+        _sheetId = open[next].id;
+      });
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.space) {
+      unawaited(_tasks.setDone(open[index], done: !open[index].line.done));
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _withSheet(TaskBoard board, Widget list) {
+    final id = _sheetId;
+    TaskItem? item;
+    if (id != null) {
+      for (final candidate in [...board.open, ...board.done]) {
+        if (candidate.id == id) item = candidate;
+      }
+    }
+    final shown = Focus(
+      focusNode: _listFocus,
+      onKeyEvent: _listKey,
+      child: list,
+    );
+    if (item == null || !EditorMetrics.page) return shown;
+    final openItem = item;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 3, child: shown),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 300,
+          height: 440,
+          child: TaskDetailsSheet(
+            key: ValueKey(openItem.id),
+            item: openItem,
+            tasks: _tasks,
+            onClose: () => setState(() => _sheetId = null),
+            onOpenNote: () => widget.onOpenNote(openItem.note.id),
+            images: widget.images,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _today(TaskBoard board, double reach) {
     final palette = context.palette;
@@ -251,23 +374,30 @@ class TasksScreenState extends State<TasksScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 10, bottom: 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const _TodayTitle(),
-                    const SizedBox(height: 10),
-                    NoteMetaRow(
-                      edited: SidebarTimestamp.fullDay(now),
-                      done: doneToday,
-                      tasks: doneToday + open.length,
-                      today: true,
-                    ),
-                  ],
+              if (widget.phone)
+                _PhoneTodayTitle(
+                  done: doneToday,
+                  total: doneToday + open.length,
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(left: 10, bottom: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _TodayTitle(),
+                      const SizedBox(height: 10),
+                      NoteMetaRow(
+                        edited: SidebarTimestamp.fullDay(now),
+                        done: doneToday,
+                        tasks: doneToday + open.length,
+                        today: true,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               _AddRow(
+                phone: widget.phone,
                 controller: _words,
                 focus: widget.addFocus,
                 shortcut: widget.newTaskShortcut,
@@ -301,45 +431,65 @@ class TasksScreenState extends State<TasksScreen> {
               const SizedBox(height: 14),
               if (doNow != null)
                 _DoNowCard(
+                  phone: widget.phone,
                   item: doNow,
                   label: board.isHome(doNow)
                       ? null
                       : widget.labelOf(doNow.note),
                   onOpenNote: () => widget.onOpenNote(doNow.note.id),
+                  onOpen: () => _openSheet(doNow),
+                  images: widget.images,
                   onNotFinished: () => _notFinished(doNow),
                   onDone: completeDoNow,
                 )
               else if (open.isNotEmpty)
                 _picker(board, open),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
+              if (widget.phone)
+                Padding(
+                  padding: const EdgeInsets.only(top: 24, bottom: 4),
+                  child: Semantics(
+                    header: true,
+                    child: Text(
                       'The list',
                       style: uiStyle(
                         15,
-                        22,
-                        FontWeight.w600,
-                        palette.textSubheading,
+                        20,
+                        FontWeight.w500,
+                        palette.textSecondary,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${open.length}',
-                      style: metaStyle(
-                        12,
-                        16,
-                        palette.textTertiary,
-                        tabular: true,
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        'The list',
+                        style: handStyle(
+                          15,
+                          22,
+                          FontWeight.w600,
+                          palette.textSubheading,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        '${open.length}',
+                        style: uiStyle(
+                          12,
+                          16,
+                          FontWeight.w600,
+                          palette.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (open.isEmpty)
+              if (open.isEmpty && _ticked.isEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
                   child: Text(
@@ -355,21 +505,58 @@ class TasksScreenState extends State<TasksScreen> {
             ],
           ),
         ),
-        for (final item in open)
-          _TaskRow(
-            key: ValueKey(item.id),
-            item: item,
-            now: _tasks.now(),
-            label: board.isHome(item) ? null : widget.labelOf(item.note),
-            wash: item.id == _washId,
-            onMark: () => _cycleMark(item),
-            onTick: () => unawaited(_tasks.setDone(item, done: true)),
-            onOpenNote: () => widget.onOpenNote(item.note.id),
-            onKeep: () => _tasks.keep(item),
-            onRemove: () => unawaited(_remove(item)),
-          ),
+        if (widget.phone)
+          for (final (item, done) in _phoneRows(open))
+            _PhoneTaskRow(
+              key: ValueKey(item.id),
+              item: item,
+              done: done,
+              label: board.isHome(item) ? null : widget.labelOf(item.note),
+              onTick: () => _tick(item, open.indexOf(item), done: !done),
+              onOpenNote: () => widget.onOpenNote(item.note.id),
+              onMark: () => _cycleMark(item),
+            )
+        else
+          for (final item in open)
+            _TaskRow(
+              key: ValueKey(item.id),
+              item: item,
+              now: _tasks.now(),
+              label: board.isHome(item) ? null : widget.labelOf(item.note),
+              wash: item.id == _washId,
+              onMark: () => _cycleMark(item),
+              onTick: () => unawaited(_tasks.setDone(item, done: true)),
+              onOpenNote: () => widget.onOpenNote(item.note.id),
+              onOpen: () => _openSheet(item),
+              onKeep: () => _tasks.keep(item),
+              onRemove: () => unawaited(_remove(item)),
+            ),
       ],
     );
+  }
+
+  /// The open tasks, with the ones checked off on this visit back in the
+  /// places they held.
+  List<(TaskItem, bool)> _phoneRows(List<TaskItem> open) {
+    final rows = [for (final item in open) (item, false)];
+    final ids = {for (final item in open) item.id};
+    final ticked = _ticked.values.toList()..sort((a, b) => a.$1 - b.$1);
+    for (final (index, item) in ticked) {
+      if (ids.contains(item.id)) continue;
+      rows.insert(math.min(index, rows.length), (item, true));
+    }
+    return rows;
+  }
+
+  void _tick(TaskItem item, int index, {required bool done}) {
+    setState(() {
+      if (done) {
+        _ticked[item.id] = (index, item);
+      } else {
+        _ticked.remove(item.id);
+      }
+    });
+    unawaited(_tasks.setDone(item, done: done));
   }
 
   /// The notes the add row can write into: the ones with tasks, then the
@@ -396,6 +583,7 @@ class TasksScreenState extends State<TasksScreen> {
     if (dots.isEmpty) {
       final first = open.first;
       return _ReadyCard(
+        phone: widget.phone,
         item: first,
         label: labelOf(first),
         onYes: () => _tasks.doNow(first),
@@ -458,17 +646,16 @@ class TasksScreenState extends State<TasksScreen> {
                       40,
                       FontWeight.w700,
                       palette.textPrimary,
-                      axis: AppWeight.page,
                     ),
                   ),
                   const SizedBox(width: 10),
                   Text(
                     '${board.done.length} completed',
-                    style: metaStyle(
+                    style: uiStyle(
                       13,
                       16,
+                      FontWeight.w600,
                       palette.textTertiary,
-                      tabular: true,
                     ),
                   ),
                 ],
@@ -490,7 +677,7 @@ class TasksScreenState extends State<TasksScreen> {
                 Flexible(
                   child: Text(
                     SidebarTimestamp.doneDay(day, now: now),
-                    style: uiStyle(
+                    style: handStyle(
                       15,
                       22,
                       FontWeight.w600,
@@ -501,12 +688,7 @@ class TasksScreenState extends State<TasksScreen> {
                 const SizedBox(width: 8),
                 Text(
                   '${items.length}',
-                  style: metaStyle(
-                    12,
-                    16,
-                    palette.textTertiary,
-                    tabular: true,
-                  ),
+                  style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
                 ),
               ],
             ),
@@ -540,9 +722,8 @@ class _TodayTitle extends StatelessWidget {
           style: handStyle(
             EditorMetrics.titleFontSize,
             EditorMetrics.titleRow,
-            FontWeight.w600,
+            EditorMetrics.titleWeight,
             context.palette.textPrimary,
-            axis: AppWeight.page,
           ),
         ),
         Positioned.fill(
@@ -564,6 +745,7 @@ class _TodayTitle extends StatelessWidget {
 /// next one; Escape leaves.
 class _AddRow extends StatelessWidget {
   const _AddRow({
+    required this.phone,
     required this.controller,
     required this.focus,
     required this.shortcut,
@@ -583,6 +765,9 @@ class _AddRow extends StatelessWidget {
   final ValueChanged<String?> onChoose;
   final VoidCallback onSubmit;
 
+  /// A phone's row: 44 pt, a quiet well, and no keycaps.
+  final bool phone;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -590,15 +775,17 @@ class _AddRow extends StatelessWidget {
     final shortcut = this.shortcut;
     return Container(
       key: const ValueKey('tasks-add-row'),
-      height: 40,
-      padding: const EdgeInsets.only(left: 10, right: 6),
+      height: phone ? 44 : 40,
+      padding: EdgeInsets.only(left: phone ? 14 : 10, right: 6),
       decoration: BoxDecoration(
-        color: Color.lerp(
-          palette.editorBackground,
-          palette.controlBackground,
-          0.5,
-        ),
-        borderRadius: BorderRadius.circular(AppRadii.control),
+        color: phone
+            ? palette.wellBackground
+            : Color.lerp(
+                palette.editorBackground,
+                palette.controlBackground,
+                0.5,
+              ),
+        borderRadius: BorderRadius.circular(phone ? 12 : AppRadii.control),
       ),
       child: Row(
         children: [
@@ -623,15 +810,28 @@ class _AddRow extends StatelessWidget {
                 textInputAction: TextInputAction.done,
                 cursorColor: palette.accentText,
                 style: uiStyle(16, 28, FontWeight.w500, palette.textPrimary),
-                decoration: InputDecoration.collapsed(
-                  hintText: 'Add a task…',
-                  hintStyle: uiStyle(
-                    16,
-                    28,
-                    FontWeight.w500,
-                    palette.textTertiary,
-                  ),
-                ),
+                decoration: phone
+                    ? InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Add a task',
+                        hintStyle: uiStyle(
+                          16,
+                          28,
+                          FontWeight.w500,
+                          palette.textTertiary,
+                        ),
+                        // A phone's field is the whole 44 pt row.
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      )
+                    : InputDecoration.collapsed(
+                        hintText: 'Add a task…',
+                        hintStyle: uiStyle(
+                          16,
+                          28,
+                          FontWeight.w500,
+                          palette.textTertiary,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -642,12 +842,15 @@ class _AddRow extends StatelessWidget {
             choices: choices,
             onChoose: onChoose,
             chevron: !focused,
+            phone: phone,
           ),
-          const SizedBox(width: 10),
-          if (focused)
-            const ExcludeSemantics(child: Keycap('↵'))
-          else if (shortcut != null)
-            ExcludeSemantics(child: Keycap(shortcut)),
+          if (!phone) ...[
+            const SizedBox(width: 10),
+            if (focused)
+              const ExcludeSemantics(child: Keycap('↵'))
+            else if (shortcut != null)
+              ExcludeSemantics(child: Keycap(shortcut)),
+          ],
         ],
       ),
     );
@@ -663,6 +866,7 @@ class _NotePicker extends StatelessWidget {
     required this.choices,
     required this.onChoose,
     required this.chevron,
+    required this.phone,
   });
 
   final Note? target;
@@ -670,6 +874,9 @@ class _NotePicker extends StatelessWidget {
   final List<Note> choices;
   final ValueChanged<String?> onChoose;
   final bool chevron;
+
+  /// Whether this sits in a phone's row, where a target is 44 pt tall.
+  final bool phone;
 
   @override
   Widget build(BuildContext context) {
@@ -683,7 +890,8 @@ class _NotePicker extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.control),
         onTap: () => _open(context),
         child: Container(
-          height: 28,
+          // A phone's target is 44 pt tall; a window's chip stays small.
+          height: phone ? 44 : 28,
           constraints: const BoxConstraints(maxWidth: 200),
           padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
@@ -703,7 +911,7 @@ class _NotePicker extends StatelessWidget {
                   style: uiStyle(
                     12.5,
                     16,
-                    FontWeight.w500,
+                    FontWeight.w600,
                     palette.textSecondary,
                   ),
                 ),
@@ -760,9 +968,12 @@ class _NotePicker extends StatelessWidget {
 /// The one task to work on now, with the two ways out of it.
 class _DoNowCard extends StatelessWidget {
   const _DoNowCard({
+    required this.phone,
     required this.item,
     required this.label,
     required this.onOpenNote,
+    required this.onOpen,
+    this.images,
     required this.onNotFinished,
     required this.onDone,
   });
@@ -770,13 +981,20 @@ class _DoNowCard extends StatelessWidget {
   final TaskItem item;
   final String? label;
   final VoidCallback onOpenNote;
+  final VoidCallback onOpen;
+  final BlobStore? images;
   final VoidCallback onNotFinished;
   final VoidCallback onDone;
+
+  /// A phone's card: the task under DO NOW, its note, then Done and Not
+  /// finished as two pills beneath.
+  final bool phone;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final label = this.label;
+    if (phone) return _phone(context, palette, label);
     return Container(
       key: const ValueKey('tasks-do-now'),
       padding: const EdgeInsets.only(top: 14, bottom: 14, right: 16),
@@ -806,20 +1024,51 @@ class _DoNowCard extends StatelessWidget {
                     style: uiStyle(
                       11,
                       14,
-                      FontWeight.w600,
+                      FontWeight.w700,
                       palette.accentText,
-                    ).copyWith(letterSpacing: 0.3),
+                    ).copyWith(letterSpacing: 0.66),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    item.words,
-                    style: uiStyle(
-                      20,
-                      28,
-                      FontWeight.w400,
-                      palette.textPrimary,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onOpen,
+                    child: Text(
+                      item.words,
+                      style: uiStyle(
+                        20,
+                        28,
+                        FontWeight.w600,
+                        palette.textPrimary,
+                      ),
                     ),
                   ),
+                  if (taskBlockOf(item.note.body, item.line)?.details
+                      case final details?) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            foldedPreview(details.preview),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: uiStyle(
+                              13,
+                              20,
+                              FontWeight.w400,
+                              palette.textTertiary,
+                            ),
+                          ),
+                        ),
+                        TaskDetailPicture(
+                          item: item,
+                          details: details,
+                          images: images,
+                          size: 36,
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -852,7 +1101,7 @@ class _DoNowCard extends StatelessWidget {
                             textStyle: uiStyle(
                               13,
                               16,
-                              FontWeight.w500,
+                              FontWeight.w600,
                               palette.textSecondary,
                             ),
                           ),
@@ -873,6 +1122,131 @@ class _DoNowCard extends StatelessWidget {
                         label: 'Done',
                         shortcut: doneShortcutLabel,
                         onPressed: onDone,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _phone(BuildContext context, CalcPalette palette, String? label) {
+    final sage = Theme.of(context).colorScheme.primary;
+    Widget pill({
+      required Key key,
+      required String text,
+      required VoidCallback onPressed,
+      required bool tonal,
+    }) => Semantics(
+      button: true,
+      label: text,
+      excludeSemantics: true,
+      onTap: onPressed,
+      child: GestureDetector(
+        key: key,
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: SizedBox(
+          height: 44,
+          child: Center(
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: tonal ? palette.tonalBackground : null,
+                border: tonal ? null : Border.all(color: palette.controlBorder),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Text(
+                text,
+                style: uiStyle(
+                  15,
+                  20,
+                  FontWeight.w500,
+                  tonal ? palette.tonalForeground : palette.textPrimary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return Container(
+      key: const ValueKey('tasks-do-now'),
+      padding: const EdgeInsets.fromLTRB(0, 14, 16, 10),
+      decoration: BoxDecoration(
+        color: palette.cardBackground,
+        border: Border.all(color: palette.separator),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: sage,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'DO NOW',
+                    style: uiStyle(
+                      11,
+                      14,
+                      FontWeight.w700,
+                      palette.accentText,
+                    ).copyWith(letterSpacing: 0.66),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    item.words,
+                    style: uiStyle(
+                      17,
+                      22,
+                      FontWeight.w500,
+                      palette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  GestureDetector(
+                    onTap: onOpenNote,
+                    child: Text(
+                      label ?? 'No note',
+                      style: uiStyle(
+                        13.5,
+                        18,
+                        FontWeight.w400,
+                        palette.textTertiary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    spacing: 8,
+                    children: [
+                      pill(
+                        key: const ValueKey('tasks-done'),
+                        text: 'Done',
+                        onPressed: onDone,
+                        tonal: true,
+                      ),
+                      pill(
+                        key: const ValueKey('tasks-not-finished'),
+                        text: 'Not finished',
+                        onPressed: onNotFinished,
+                        tonal: false,
                       ),
                     ],
                   ),
@@ -981,6 +1355,7 @@ class _PickButton extends StatelessWidget {
 /// Fast FVP's one check before the scan: the first task, on its own.
 class _ReadyCard extends StatelessWidget {
   const _ReadyCard({
+    required this.phone,
     required this.item,
     required this.label,
     required this.onYes,
@@ -992,6 +1367,9 @@ class _ReadyCard extends StatelessWidget {
   final VoidCallback onYes;
   final VoidCallback onNotYet;
 
+  /// A phone says it in fewer words, to fit both on one line.
+  final bool phone;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -1000,7 +1378,7 @@ class _ReadyCard extends StatelessWidget {
       children: [
         Text(
           'First on the list',
-          style: metaStyle(12, 16, palette.textTertiary),
+          style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
         ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1015,7 +1393,7 @@ class _ReadyCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   item.words,
-                  style: uiStyle(15, 22, FontWeight.w400, palette.textPrimary),
+                  style: uiStyle(15, 22, FontWeight.w600, palette.textPrimary),
                 ),
               ),
               if (label != null) ...[
@@ -1027,13 +1405,13 @@ class _ReadyCard extends StatelessWidget {
         ),
         Text(
           'Ready to do this now?',
-          style: handStyle(18, 25, FontWeight.w500, palette.textPrimary),
+          style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
         ),
         Row(
           children: [
             _PickButton(
               key: const ValueKey('tasks-ready-yes'),
-              label: 'Yes, do it now',
+              label: phone ? 'Do it now' : 'Yes, do it now',
               icon: KapyIcons.checkRounded,
               tonal: true,
               onPressed: onYes,
@@ -1041,7 +1419,7 @@ class _ReadyCard extends StatelessWidget {
             const SizedBox(width: 8),
             _PickButton(
               key: const ValueKey('tasks-ready-not-yet'),
-              label: 'Not yet, look further',
+              label: phone ? 'Not yet' : 'Not yet, look further',
               onPressed: onNotYet,
             ),
           ],
@@ -1102,7 +1480,7 @@ class _MoreThanCard extends StatelessWidget {
               const TextSpan(text: '?'),
             ],
           ),
-          style: handStyle(18, 25, FontWeight.w500, palette.textPrimary),
+          style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
         ),
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1355,6 +1733,7 @@ class _TaskRow extends StatefulWidget {
     required this.onMark,
     required this.onTick,
     required this.onOpenNote,
+    required this.onOpen,
     required this.onKeep,
     required this.onRemove,
   });
@@ -1372,6 +1751,7 @@ class _TaskRow extends StatefulWidget {
   final VoidCallback onMark;
   final VoidCallback onTick;
   final VoidCallback onOpenNote;
+  final VoidCallback onOpen;
   final VoidCallback onKeep;
   final VoidCallback onRemove;
 
@@ -1391,7 +1771,7 @@ class _TaskRowState extends State<_TaskRow> {
         !item.doNow &&
         widget.now.millisecondsSinceEpoch - item.lastTouched >=
             TaskBoard.staleAfter.inMilliseconds;
-    final quiet = metaStyle(12.5, 16, palette.textTertiary);
+    final quiet = uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary);
     final touch = !AppPlatform.hasPointer;
     final (Widget mark, String tip, String action) = item.doNow
         ? (const _Ring(), 'Do now · click to clear', 'Clear pick')
@@ -1440,18 +1820,25 @@ class _TaskRowState extends State<_TaskRow> {
             _Box(done: false, onPressed: widget.onTick, label: item.words),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                item.words,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: uiStyle(
-                  16,
-                  28,
-                  FontWeight.w400,
-                  stale ? palette.textSecondary : palette.textPrimary,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onOpen,
+                child: Text(
+                  item.hasGroup
+                      ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
+                      : item.words,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: uiStyle(
+                    16,
+                    28,
+                    FontWeight.w500,
+                    stale ? palette.textSecondary : palette.textPrimary,
+                  ),
                 ),
               ),
             ),
+            TaskDetailsIcon(item: item),
             if (stale) ...[
               const SizedBox(width: 10),
               Padding(
@@ -1552,7 +1939,7 @@ class _RowButton extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.compact),
         ),
-        textStyle: uiStyle(12, 16, FontWeight.w500, ink),
+        textStyle: uiStyle(12, 16, FontWeight.w600, ink),
       ),
       child: Text(label),
     );
@@ -1598,7 +1985,7 @@ class _DoneRow extends StatelessWidget {
                       style: uiStyle(
                         16,
                         28,
-                        FontWeight.w400,
+                        FontWeight.w500,
                         palette.textMuted,
                       ),
                     ),
@@ -1619,10 +2006,217 @@ class _DoneRow extends StatelessWidget {
               child: Text(
                 SidebarTimestamp.clock(item.doneAt!),
                 textAlign: TextAlign.right,
-                style: metaStyle(12.5, 16, palette.textTertiary, tabular: true),
+                style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A phone's title over Tasks: "Today", large, with the clay underline, and
+/// how many of today's are done at the far end.
+class _PhoneTodayTitle extends StatelessWidget {
+  const _PhoneTodayTitle({required this.done, required this.total});
+
+  final int done;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    'Today',
+                    style: TextStyle(
+                      fontFamily: AppFonts.title,
+                      fontFamilyFallback: AppFonts.uiFallback,
+                      fontSize: 28,
+                      height: 36 / 28,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+              Text(
+                '$done of $total done',
+                key: const ValueKey('tasks-done-count'),
+                style: uiStyle(15, 20, FontWeight.w400, palette.textTertiary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(width: 44, height: 2, color: palette.clay),
+        ],
+      ),
+    );
+  }
+}
+
+/// A phone's task row: the box, then the task with its note under it. A tap
+/// on the box checks it off in place, a tap on the words opens the note at
+/// the task, and a long press offers Pick.
+class _PhoneTaskRow extends StatelessWidget {
+  const _PhoneTaskRow({
+    super.key,
+    required this.item,
+    required this.done,
+    required this.label,
+    required this.onTick,
+    required this.onOpenNote,
+    required this.onMark,
+  });
+
+  final TaskItem item;
+  final bool done;
+  final String? label;
+  final VoidCallback onTick;
+  final VoidCallback onOpenNote;
+  final VoidCallback onMark;
+
+  String get _markAction => item.doNow
+      ? 'Clear pick'
+      : item.dotted
+      ? 'Make Do now'
+      : 'Pick';
+
+  Future<void> _menu(BuildContext context, Offset position) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & Size.zero,
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          key: ValueKey('phone-task-pick-${item.id}'),
+          value: 'pick',
+          height: 44,
+          child: Text(_markAction),
+        ),
+      ],
+    );
+    if (choice == 'pick') onMark();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final sage = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      customSemanticsActions: {
+        CustomSemanticsAction(label: _markAction): onMark,
+      },
+      child: InkWell(
+        key: ValueKey('phone-task-${item.id}'),
+        onTap: onOpenNote,
+        child: GestureDetector(
+          onLongPressStart: done
+              ? null
+              : (details) => unawaited(_menu(context, details.globalPosition)),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: palette.separator, width: 0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                Semantics(
+                  checked: done,
+                  label: item.words,
+                  excludeSemantics: true,
+                  onTap: onTick,
+                  child: GestureDetector(
+                    key: ValueKey('phone-task-box-${item.id}'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onTick,
+                    child: SizedBox.square(
+                      dimension: 44,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: done ? sage : null,
+                            border: Border.all(
+                              color: done ? sage : palette.checkboxBorder,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: done
+                              ? KapyIcon(
+                                  KapyIcons.checkRounded,
+                                  size: 15,
+                                  strokeWidth: 2.2,
+                                  color: palette.paperColor,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        item.words,
+                        style:
+                            uiStyle(
+                              16,
+                              22,
+                              FontWeight.w500,
+                              done ? palette.textTertiary : palette.textPrimary,
+                            ).copyWith(
+                              decoration: done
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                      ),
+                      Text(
+                        label ?? 'No note',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: uiStyle(
+                          12.5,
+                          16,
+                          FontWeight.w400,
+                          palette.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!done && (item.doNow || item.dotted))
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: item.doNow ? const _Ring() : const _Dot(),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

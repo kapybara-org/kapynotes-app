@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/file_export.dart';
+import 'package:kapy_notes/core/keyring.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/text_file_export.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -110,6 +111,32 @@ Future<void> openPasswordCodeStep(WidgetTester tester) async {
 
 void main() {
   setUpAll(loadTestFonts);
+
+  testWidgets('a missing keyring is named before sign-in and before sync', (
+    tester,
+  ) async {
+    KeyringStatus.debugReset(available: false);
+    addTearDown(KeyringStatus.debugReset);
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    expect(find.text(KeyringNotice.signIn), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'someone@example.com');
+    await tester.tap(find.text('Email me a code'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save your passphrase'), findsOneWidget);
+    expect(find.text(KeyringNotice.passphrase), findsOneWidget);
+    expect(find.text(KeyringNotice.signIn), findsNothing);
+    app.account.dispose();
+  });
 
   testWidgets('a signed-out account is offered a way in', (tester) async {
     final app = build();

@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
@@ -91,7 +92,7 @@ class NoteMetaRow extends StatelessWidget {
 
   /// Set only when the note cannot be changed: what that is called here.
   final String? readOnlyLabel;
-  final IconData? readOnlyIcon;
+  final KapyIconData? readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
 
   /// The note's tag chips and + Tag, at the end of the line.
@@ -189,18 +190,38 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
+    final facts = [
+      for (final (index, item) in items.indexed) ...[
+        if (index > 0) ...[
+          const SizedBox(width: _gap),
+          dot,
+          const SizedBox(width: _gap),
+        ],
+        item,
+      ],
+    ];
+    if (AppPlatform.isMobile) {
+      // Grows with the text size and the tags' 44 pt targets rather than
+      // clipping them to a fixed row.
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: EditorMetrics.metaRow),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 16, child: Row(children: facts)),
+            const SizedBox(height: 8),
+            // The tags' own targets are 44 pt tall on a phone, so the row
+            // gives them the room rather than clipping them to the pill.
+            SizedBox(height: AppPlatform.hasPointer ? 22 : 44, child: tags),
+          ],
+        ),
+      );
+    }
     return SizedBox(
       height: EditorMetrics.metaRow,
       child: Row(
         children: [
-          for (final (index, item) in items.indexed) ...[
-            if (index > 0) ...[
-              const SizedBox(width: _gap),
-              dot,
-              const SizedBox(width: _gap),
-            ],
-            item,
-          ],
+          ...facts,
           if (tags case final tags?) ...[
             const SizedBox(width: _gap),
             dot,
@@ -222,7 +243,7 @@ class _ReadOnly extends StatelessWidget {
   });
 
   final String label;
-  final IconData? icon;
+  final KapyIconData? icon;
   final TextStyle style;
   final VoidCallback? onPressed;
 
@@ -232,7 +253,7 @@ class _ReadOnly extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (icon case final icon?) ...[
-          Icon(icon, size: 13, color: style.color),
+          KapyIcon(icon, size: 13, color: style.color),
           const SizedBox(width: 4),
         ],
         Text(label, key: const ValueKey('view-only-status'), style: style),

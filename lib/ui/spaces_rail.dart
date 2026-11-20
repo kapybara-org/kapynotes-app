@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -10,6 +12,7 @@ import '../data/update_checker.dart';
 import '../data/writing_streak.dart';
 import '../sync/auth_api.dart';
 import '../sync/sync_service.dart';
+import 'context_menu.dart';
 import 'installed_version.dart';
 import 'profile_avatar.dart';
 import 'streak_badge.dart';
@@ -682,4 +685,340 @@ class _Dot extends StatelessWidget {
       border: Border.all(color: context.palette.railBackground, width: 2),
     ),
   );
+}
+
+/// A phone's way around: the rail's destinations along the bottom, Settings
+/// at the end, and the + beside them. A tap on the + makes what [space] holds
+/// (on Tasks it adds a task); a long press offers [createActions], the rest of
+/// the desktop's New. iOS floats a glass bar over [child]; Android uses
+/// Material's navigation bar and a floating action button.
+class PhoneSpaces extends StatelessWidget {
+  const PhoneSpaces({
+    super.key,
+    required this.space,
+    required this.onSelected,
+    required this.onSettingsPressed,
+    required this.createLabel,
+    required this.onCreate,
+    required this.createActions,
+    required this.onCreateAction,
+    required this.child,
+    this.showTasks = true,
+    this.invitations,
+  });
+
+  final LibrarySpace space;
+  final ValueChanged<LibrarySpace> onSelected;
+  final VoidCallback onSettingsPressed;
+
+  /// What a tap on the + makes, such as "New note".
+  final String createLabel;
+  final VoidCallback onCreate;
+  final List<KapyMenuAction> createActions;
+  final ValueChanged<String> onCreateAction;
+  final Widget child;
+  final bool showTasks;
+
+  /// Invitations waiting under Shared, which is only there with sharing.
+  final int? invitations;
+
+  static const double _barHeight = 60;
+  static const double _barLift = 30;
+  static const double _plusExtent = 56;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final invitations = this.invitations;
+    final items =
+        <({LibrarySpace? to, KapyIconData icon, String label, int badge})>[
+          (
+            to: LibrarySpace.notes,
+            icon: KapyIcons.noteOutlined,
+            label: 'Notes',
+            badge: 0,
+          ),
+          if (showTasks)
+            (
+              to: LibrarySpace.tasks,
+              icon: KapyIcons.tasksOutlined,
+              label: 'Tasks',
+              badge: 0,
+            ),
+          (
+            to: LibrarySpace.drawings,
+            icon: KapyIcons.penRounded,
+            label: 'Drawings',
+            badge: 0,
+          ),
+          if (invitations != null)
+            (
+              to: LibrarySpace.shared,
+              icon: KapyIcons.groupOutlined,
+              label: 'Shared',
+              badge: invitations,
+            ),
+          (
+            to: null,
+            icon: KapyIcons.settingsGearOutlined,
+            label: 'Settings',
+            badge: 0,
+          ),
+        ];
+    void choose(LibrarySpace? to) =>
+        to == null ? onSettingsPressed() : onSelected(to);
+    final plus = Builder(
+      builder: (context) => _PlusButton(
+        label: createLabel,
+        onPressed: onCreate,
+        onLongPress: () => _showCreateMenu(context),
+      ),
+    );
+
+    if (AppPlatform.isAndroid) {
+      final selected = items.indexWhere((item) => item.to == space);
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: child,
+        floatingActionButton: plus,
+        bottomNavigationBar: NavigationBar(
+          key: const ValueKey('phone-bar'),
+          selectedIndex: math.max(0, selected),
+          backgroundColor: palette.railBackground,
+          indicatorColor: palette.tonalBackground,
+          surfaceTintColor: Colors.transparent,
+          onDestinationSelected: (index) => choose(items[index].to),
+          destinations: [
+            for (final item in items)
+              NavigationDestination(
+                key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
+                icon: Badge(
+                  isLabelVisible: item.badge > 0,
+                  label: Text('${item.badge}'),
+                  child: KapyIcon(item.icon, size: 22, color: palette.railInk),
+                ),
+                selectedIcon: KapyIcon(
+                  item.icon,
+                  size: 22,
+                  color: palette.tonalForeground,
+                ),
+                label: item.label,
+              ),
+          ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBody: true,
+      body: child,
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, _barLift),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: items.length > 4 ? 360 : 300,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(_barHeight / 2),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                    child: Container(
+                      key: const ValueKey('phone-bar'),
+                      height: _barHeight,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: palette.editorBackground.withValues(alpha: 0.86),
+                        borderRadius: BorderRadius.circular(_barHeight / 2),
+                        border: Border.all(
+                          color: palette.separator,
+                          width: AppHairline.of(context),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          for (final item in items)
+                            Expanded(
+                              child: _BarItem(
+                                key: ValueKey(
+                                  'bar-${item.to?.name ?? 'settings'}',
+                                ),
+                                icon: item.icon,
+                                label: item.label,
+                                selected: item.to == space,
+                                badge: item.badge,
+                                onPressed: () => choose(item.to),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            plus,
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The rest of New, rising from the + where the thumb already is.
+  void _showCreateMenu(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || createActions.isEmpty) return;
+    unawaited(
+      showKapyContextMenu<String>(
+        context: context,
+        globalPosition: box.localToGlobal(Offset(box.size.width, 0)),
+        items: [
+          for (final action in createActions)
+            PopupMenuItem(
+              key: ValueKey('phone-new-${action.value}'),
+              value: action.value,
+              enabled: action.enabled,
+              height: 44,
+              child: KapyMenuActionRow(action, touch: true),
+            ),
+        ],
+      ).then((choice) {
+        if (choice != null) onCreateAction(choice);
+      }),
+    );
+  }
+}
+
+/// One of the bar's destinations: its icon over its name in a 52 pt pill,
+/// tonal while it is the one on screen.
+class _BarItem extends StatelessWidget {
+  const _BarItem({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.badge,
+    required this.onPressed,
+  });
+
+  final KapyIconData icon;
+  final String label;
+  final bool selected;
+  final int badge;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final ink = selected ? palette.tonalForeground : palette.railInk;
+    return Semantics(
+      container: true,
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: ExcludeSemantics(
+          child: Container(
+            height: 52,
+            decoration: BoxDecoration(
+              color: selected ? palette.tonalBackground : null,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    KapyIcon(icon, size: 22, strokeWidth: 1.7, color: ink),
+                    const SizedBox(height: 3),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.fade,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 13 / 10.5,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: ink,
+                      ),
+                    ),
+                  ],
+                ),
+                if (badge > 0)
+                  Positioned(
+                    top: 4,
+                    right: 8,
+                    child: _Badge(
+                      key: ValueKey(
+                        '${(key! as ValueKey<String>).value}-badge',
+                      ),
+                      count: badge,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The phone's one main action: a round + in the accent.
+class _PlusButton extends StatelessWidget {
+  const _PlusButton({
+    required this.label,
+    required this.onPressed,
+    required this.onLongPress,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: label,
+      onLongPressHint: 'More to make',
+      excludeSemantics: true,
+      child: Material(
+        key: const ValueKey('phone-new'),
+        color: scheme.primary,
+        shape: const CircleBorder(),
+        elevation: AppPlatform.isAndroid ? 3 : 0,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          onLongPress: onLongPress,
+          splashFactory: AppPlatform.isAndroid ? null : NoSplash.splashFactory,
+          child: SizedBox.square(
+            dimension: PhoneSpaces._plusExtent,
+            child: Center(
+              child: KapyIcon(
+                KapyIcons.addRounded,
+                size: 26,
+                strokeWidth: 2.2,
+                color: scheme.onPrimary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

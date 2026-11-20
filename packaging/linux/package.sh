@@ -463,6 +463,16 @@ depends="$(cd "$DEBROOT" && dpkg-shlibdeps -O -l"$PKG/usr/lib/kapynotes/lib" "${
   sed -n 's/^shlibs:Depends=//p')" || { cat "$WORK/shlibdeps.log" >&2; die "dpkg-shlibdeps failed"; }
 grep -v 'is not used by any binary\|was not linked against\|could avoid a useless dependency' "$WORK/shlibdeps.log" >&2 || true
 [[ -n "$depends" ]] || die "dpkg-shlibdeps produced no Depends"
+# The tray plugin links libayatana-appindicator3 at build time, and the
+# loader will not start the app without it, so that dependency stays a
+# Depends. dpkg-shlibdeps also lists libayatana-ido3 and
+# libayatana-indicator3 because the plugin's link line pulls them in; the
+# appindicator package depends on them too. Do not move any of the three to
+# Recommends.
+#
+# gnome-keyring is what provides the keyring on Debian 13, including on KDE:
+# kwallet6 6.13 does not. libpam-gnome-keyring starts the daemon at login.
+# Installing either package is not enough if the daemon is not running.
 # GTK and the Flutter engine draw through libepoxy, which dlopens libGL (GTK's
 # GLX context on X11), libEGL and libGLESv2 (the engine's own context) instead
 # of linking them, so dpkg-shlibdeps sees none of the three.
@@ -478,7 +488,7 @@ Architecture: $DEBARCH
 Maintainer: $MAINTAINER
 Installed-Size: $(du -sk --exclude=DEBIAN "$PKG" | cut -f1)
 Depends: $depends
-Recommends: gnome-keyring
+Recommends: gnome-keyring, libpam-gnome-keyring
 Section: editors
 Priority: optional
 Homepage: $HOMEPAGE
@@ -491,7 +501,8 @@ Description: notes where every line is a live calculator
  transcribed on the device. They stay on this computer and work offline;
  sync between devices is optional and end-to-end encrypted.
  .
- Sync keeps its key in the Secret Service (GNOME Keyring or KWallet).
+ Staying signed in needs a keyring running on this computer, GNOME Keyring
+ or KWallet. Without one, sign-in lasts until you quit.
 EOF
 (cd "$PKG" && find usr -type f -print0 | sort -z | xargs -0 md5sum) >"$PKG/DEBIAN/md5sums"
 chmod 0644 "$PKG/DEBIAN/control" "$PKG/DEBIAN/md5sums"

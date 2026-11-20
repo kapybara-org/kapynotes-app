@@ -38,7 +38,6 @@ import '../speech/summary_instructions.dart';
 import '../speech/transcriber.dart';
 import '../sync/account.dart';
 import 'account/plan_group.dart';
-import 'account/sharing_pane.dart';
 import 'account/sync_pane.dart';
 import 'control_surface.dart';
 import 'export_import.dart';
@@ -49,6 +48,7 @@ import 'mcp_pane.dart';
 import 'mobile_data_sheet.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
+import 'settings/sharing_section.dart';
 import 'settings_rows.dart';
 import 'theme_cards.dart';
 import 'settings_search.dart';
@@ -72,6 +72,7 @@ enum SettingsSection {
   window,
   shortcuts,
   account,
+  sharing,
   about,
 }
 
@@ -90,6 +91,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.window => 'Window',
     SettingsSection.shortcuts => 'Shortcuts',
     SettingsSection.account => 'Account & sync',
+    SettingsSection.sharing => 'Sharing',
     SettingsSection.about => 'About & updates',
   };
 
@@ -101,6 +103,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
     SettingsSection.account => KapyIcons.accountCircleOutlined,
+    SettingsSection.sharing => KapyIcons.peopleOutlined,
     SettingsSection.about => KapyIcons.infoOutlined,
   };
 
@@ -122,7 +125,9 @@ extension SettingsSectionCopy on SettingsSection {
       'What the window shows, and what happens when it closes',
     SettingsSection.shortcuts =>
       'Every key, grouped by what it does. Click a key to change it',
-    SettingsSection.account => 'Your profile, sync, plan, sharing and sign-out',
+    SettingsSection.account => 'Your profile, sync, plan and sign-out',
+    SettingsSection.sharing =>
+      'The people you share notes with, and what each of them can see',
     SettingsSection.about => 'The version you have, updates and what changed',
   };
 }
@@ -159,6 +164,8 @@ Future<void> showSettings(
   SettingsSection? section,
   String? reveal,
   String? notice,
+  SharingStart? sharingStart,
+  ValueChanged<String>? onOpenNote,
 }) {
   SettingsDialog build({required bool asSheet}) => SettingsDialog(
     layoutPrefs: layoutPrefs,
@@ -182,6 +189,8 @@ Future<void> showSettings(
     section: section,
     reveal: reveal,
     notice: notice,
+    sharingStart: sharingStart,
+    onOpenNote: onOpenNote,
     asSheet: asSheet,
   );
 
@@ -237,6 +246,8 @@ class SettingsDialog extends StatefulWidget {
     this.section,
     this.reveal,
     this.notice,
+    this.sharingStart,
+    this.onOpenNote,
     this.onIndex,
     this.asSheet = false,
   });
@@ -298,6 +309,14 @@ class SettingsDialog extends StatefulWidget {
   /// The row [section] opens scrolled to and lit, by its key: "Manage
   /// accounts…" in Kapy AI lands on Your accounts.
   final String? reveal;
+
+  /// Where Sharing opens, when [section] is Sharing: one person's page, or
+  /// Share with someone.
+  final SharingStart? sharingStart;
+
+  /// Opens a note once settings has closed, for Sharing's Open. Null leaves
+  /// Open out.
+  final ValueChanged<String>? onOpenNote;
 
   /// Why whatever sent the user here did so — "Sign in first to share this
   /// note" — said as a toast once this is on screen. Raised here rather than
@@ -649,7 +668,8 @@ class _SettingsDialogState extends State<SettingsDialog>
     // computer keeps them. Closing the notice at the top of the list must not
     // be the last way in.
     SettingsSection.about => widget.updates != null || AppPlatform.isMobile,
-    SettingsSection.account => widget.account != null,
+    SettingsSection.account ||
+    SettingsSection.sharing => widget.account != null,
     // Present even signed out, and even with no transcription configured:
     // recording works without an account, and the pane says so rather than
     // hiding and leaving the user to wonder where the setting went.
@@ -853,6 +873,24 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   void _openSheetSection(SettingsSection section) =>
       setState(() => _sheetSection = section);
+
+  /// Leaves settings for a note shared from or to this account.
+  void _openNote(String id) {
+    Navigator.of(context).pop();
+    widget.onOpenNote?.call(id);
+  }
+
+  /// The plan, in Account & sync, from sharing's Pro line.
+  void _showPlan() {
+    if (widget.asSheet) {
+      _openSheetSection(SettingsSection.account);
+    } else {
+      _showSection(SettingsSection.account);
+    }
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(_reveal(const ValueKey<String>('plan-current'))),
+    );
+  }
 
   /// Back to the list of categories, whether that came from the button, the
   /// system back gesture, or a swipe from the edge.
@@ -1317,10 +1355,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   }
 
   String _keys(ShortcutAction action) =>
-      widget.shortcuts.bindingFor(action)?.displayLabel ?? '';
+      widget.shortcuts.hintFor(action)?.displayLabel ?? '';
 
   String _keycaps(ShortcutAction action) =>
-      widget.shortcuts.bindingFor(action)?.keycapLabel ?? '';
+      widget.shortcuts.hintFor(action)?.keycapLabel ?? '';
 
   // ---------------------------------------------------------------------------
   // The settings themselves
@@ -1405,7 +1443,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     SettingsSection.window => _windowGroups(),
     SettingsSection.shortcuts => _shortcutGroups(),
     SettingsSection.about => _aboutGroups(),
-    SettingsSection.account || SettingsSection.mcp => const [],
+    SettingsSection.account ||
+    SettingsSection.sharing ||
+    SettingsSection.mcp => const [],
   };
 
   /// The slider's left end is Off, and the rest of it is the amount from its
@@ -2106,6 +2146,12 @@ class _SettingsDialogState extends State<SettingsDialog>
         .bindingFor(ShortcutAction.toggleKapyAi)
         ?.keycapLabel;
     final deviceLine = kapyDeviceModelLine(ai.device);
+    // What Kapy AI does, which stays true even when nothing on this device can
+    // answer: the note then says what would make it work.
+    final blurb = [
+      'Answers from your notes in a panel beside the page',
+      if (keys != null && AppPlatform.isDesktop) '$keys opens it',
+    ].join('. ');
     final accounts = [...ai.accounts]
       ..sort((a, b) => a.kind.index.compareTo(b.kind.index));
     return [
@@ -2113,13 +2159,13 @@ class _SettingsDialogState extends State<SettingsDialog>
         _toggle(
           'kapy-ai-toggle',
           'Kapy AI',
-          ai.device.status == DeviceModelStatus.unavailable
-              ? 'No model on this device. Kapy AI Cloud on Pro still answers, '
-                    'and so does a key you add'
-              : [
-                  'Answers from your notes in a panel beside the page',
-                  if (keys != null && AppPlatform.isDesktop) '$keys opens it',
-                ].join('. '),
+          switch (ai.device.note) {
+            final note? => '$blurb. $note',
+            null when ai.device.status == DeviceModelStatus.unavailable =>
+              'No model on this device. Kapy AI Cloud on Pro still answers, '
+                  'and so does a key you add',
+            null => blurb,
+          },
           value: ai.enabled,
           onChanged: (value) => ai.enabled = value,
           byDefault: true,
@@ -2549,6 +2595,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
       if (sections.contains(SettingsSection.account))
         ..._accountSearchEntries(widget.account!),
+      if (sections.contains(SettingsSection.sharing))
+        ..._sharingSearchEntries(widget.account!),
       ...mcpSearchEntries(McpScope.maybeOf(context)),
       // Settings that live where they are used. Found here, and said where.
       SettingsSearchEntry(
@@ -2581,6 +2629,64 @@ class _SettingsDialogState extends State<SettingsDialog>
     ];
   }
 
+  /// Sharing's rows are there only once the account can share; until then
+  /// the category itself is the place, and it says what is missing.
+  List<SettingsSearchEntry<SettingsSection>> _sharingSearchEntries(
+    Account account,
+  ) {
+    const section = SettingsSection.sharing;
+    final sharing = account.sharing;
+    if (sharing == null) return const [];
+    SettingsSearchEntry<SettingsSection> entry(
+      String title,
+      String target,
+      List<String> keywords,
+    ) => SettingsSearchEntry(
+      section: section,
+      sectionLabel: section.label,
+      title: title,
+      icon: section.icon,
+      target: target,
+      keywords: keywords,
+    );
+    return [
+      if (sharing.invites.isNotEmpty)
+        entry('Invitations waiting for you', 'sharing-invites', const [
+          'accept',
+          'decline',
+          'invited',
+        ]),
+      entry('People you share with', 'sharing-people', const [
+        'share',
+        'collaborate',
+        'shared notes',
+        'access',
+        'stop sharing',
+      ]),
+      entry('Share with someone', 'share-with-someone', const [
+        'invite',
+        'add person',
+        'email',
+      ]),
+      if (sharing.teams.any(
+        (space) => space.isOwner && space.invites.isNotEmpty,
+      ))
+        entry('Invitations you sent', 'sharing-sent', const [
+          'pending',
+          'cancel invitation',
+          'invite link',
+        ]),
+      entry('Join with a link or code', 'join-row', const [
+        'invite',
+        'invitation',
+        'link',
+        'code',
+        'join',
+      ]),
+      entry('Blocked people', 'blocked-people', const ['unblock', 'block']),
+    ];
+  }
+
   /// The account's rows change with where the account stands, so its
   /// entries do too: a signed-out account has a form, not a Sign out button.
   List<SettingsSearchEntry<SettingsSection>> _accountSearchEntries(
@@ -2601,7 +2707,6 @@ class _SettingsDialogState extends State<SettingsDialog>
       group: group,
       keywords: keywords,
     );
-    final sharing = account.sharing;
     return switch (account.state) {
       AccountState.ready => [
         entry(
@@ -2631,27 +2736,6 @@ class _SettingsDialogState extends State<SettingsDialog>
           group: 'Plan',
           keywords: ['space', 'attachments', 'usage', 'quota', 'limit'],
         ),
-        if (sharing != null) ...[
-          entry(
-            'Shared spaces',
-            target: 'sharing-group',
-            group: 'Sharing',
-            keywords: ['sharing', 'share', 'collaborate', 'invitations'],
-          ),
-          entry(
-            'Join with an invitation',
-            target: 'join-row',
-            group: 'Sharing',
-            keywords: ['invite', 'invitation', 'link', 'code', 'join'],
-          ),
-          if (sharing.blocks.isNotEmpty)
-            entry(
-              'Blocked people',
-              target: 'blocked-people',
-              group: 'Sharing',
-              keywords: ['unblock', 'block'],
-            ),
-        ],
         entry(
           'Sign out',
           target: 'sign-out-row',
@@ -3153,8 +3237,19 @@ class _SettingsDialogState extends State<SettingsDialog>
         account: widget.account!,
         middle: [
           PlanGroup(account: widget.account!, cloudAccess: widget.cloudAccess),
-          SharingPane(account: widget.account!),
         ],
+      ),
+    ],
+    SettingsSection.sharing => [
+      SharingSection(
+        account: widget.account!,
+        notes: widget.notes,
+        displayTime: widget.layoutPrefs.displayTime,
+        start: widget.section == SettingsSection.sharing
+            ? widget.sharingStart
+            : null,
+        onOpenNote: widget.onOpenNote == null ? null : _openNote,
+        onShowPlan: _showPlan,
       ),
     ],
     SettingsSection.about => widget.updates == null

@@ -452,14 +452,16 @@ void main() {
   });
 
   group('clicking the blank page below a note', () {
-    /// The middle of ruled row [row], counting the first line of the note as
-    /// row 0 — the point a reader aims at when they click an empty line.
+    /// The middle of ruled row [row], counting the title as row 0 and the
+    /// first row under it as row 1 — the point a reader aims at when they
+    /// click an empty line.
     Offset rowCenter(WidgetTester tester, int row) {
       final editable = NoteDriver(tester);
       final origin = editable.toGlobal(Offset.zero);
+      final body = editable.state.layout.heights!.topOf(1);
       return Offset(
         origin.dx + 40,
-        origin.dy + (row + 0.5) * editable.rowHeight,
+        origin.dy + body + (row - 0.5) * editable.rowHeight,
       );
     }
 
@@ -472,7 +474,9 @@ void main() {
           offset: state.widget.controller.value.selection.baseOffset,
         ),
       );
-      return (rect.center.dy / editable.rowHeight).floor();
+      final body = editable.state.layout.heights!.topOf(1);
+      if (rect.center.dy < body) return 0;
+      return ((rect.center.dy - body) / editable.rowHeight).floor() + 1;
     }
 
     Future<void> pumpEditor(
@@ -481,9 +485,6 @@ void main() {
       bool readOnly = false,
       ValueChanged<String>? onBodyChanged,
     }) async {
-      // Ruled rows all the way down, which on the page start under the
-      // title's taller row and its meta row instead.
-      _onPhone();
       tester.view.physicalSize = const Size(900, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -982,9 +983,7 @@ void main() {
   });
 
   testWidgets('dims only the slash comment portion of a line', (tester) async {
-    // A phone's look: on the page the first line is the note's title.
-    _onPhone();
-    const body = '  // travel assumptions\n2 + 2';
+    const body = 'Trip\n  // travel assumptions\n2 + 2';
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
@@ -993,7 +992,7 @@ void main() {
       (span) => span.text?.contains('//') ?? false,
     );
     final indentation = rendered.children!.whereType<TextSpan>().firstWhere(
-      (span) => span.text == '  ',
+      (span) => span.text?.endsWith('  ') ?? false,
     );
 
     expect(comment.text, '// travel assumptions');
@@ -1303,64 +1302,34 @@ void main() {
   testWidgets('styles pasted URLs as links without changing their text', (
     tester,
   ) async {
-    // A phone's look: on the page a link is a chip and the first line a
-    // title, both of which editor_page_test covers.
-    _onPhone();
-    const body = 'Links\nRead https://example.com/docs?q=notes.';
-    const linkText = 'https://example.com/docs?q=notes';
-    final linkStart = body.indexOf(linkText);
-    final linkEnd = linkStart + linkText.length;
+    const body = 'Reading\nRead https://example.com/docs?q=notes.';
 
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
-    final rendered = NoteDriver(tester).span;
-    var offset = 0;
-    var sawLinkRun = false;
-    var sawTrailingPeriod = false;
-    for (final span in rendered.children!.whereType<TextSpan>()) {
-      final text = span.text ?? '';
-      final end = offset + text.length;
-      if (offset >= linkStart && end <= linkEnd && text.isNotEmpty) {
-        sawLinkRun = true;
-        expect(
-          span.style!.color,
-          Theme.of(tester.element(noteField)).colorScheme.primary,
-        );
-        expect(
-          span.style?.decoration?.contains(TextDecoration.underline) ?? false,
-          isFalse,
-        );
-        expect(
-          span.style?.fontWeight,
-          tester.widget<NoteField>(noteField).style.fontWeight,
-        );
-      }
-      if (offset == linkEnd && text == '.') {
-        sawTrailingPeriod = true;
-        expect(
-          span.style?.decoration?.contains(TextDecoration.underline) ?? false,
-          isFalse,
-        );
-        expect(span.style?.fontStyle, isNot(FontStyle.italic));
-      }
-      offset = end;
-    }
-
-    expect(sawLinkRun, isTrue);
-    expect(sawTrailingPeriod, isTrue);
+    final runs = NoteDriver(tester).span.children!.whereType<TextSpan>();
+    // The page's link chip, which keeps its scheme out of sight.
+    final address = runs.firstWhere(
+      (span) => span.text == 'example.com/docs?q=notes',
+    );
+    expect(address.style!.fontFamily, AppFonts.mono);
+    expect(address.style!.decoration, TextDecoration.none);
+    // The full stop after it is the sentence's, not the address's.
+    final period = runs.firstWhere((span) => span.text == '.');
+    expect(period.style?.fontFamily, isNot(AppFonts.mono));
+    expect(
+      period.style?.decoration?.contains(TextDecoration.underline) ?? false,
+      isFalse,
+    );
+    expect(period.style?.fontStyle, isNot(FontStyle.italic));
     expect(tester.widget<NoteField>(noteField).controller.text, body);
   });
 
-  testWidgets('a link inside a comment keeps the comment colour', (
-    tester,
-  ) async {
+  testWidgets('a link inside a comment is still a link', (tester) async {
     // A slash comment, a hash after a sum and a quoted annotation, then
     // prose, where the same kind of address still shows as a link.
-    // A phone's look: on the page a link is a chip and the first line a
-    // title, both of which editor_page_test covers.
-    _onPhone();
     const body =
+        'Links\n'
         '//buy from unipile (https://www.unipile.com/pricing-api/)\n'
         '2 + 2 # rates at https://example.com/rates\n'
         '3 * 4 "see example.com/tax"\n'
@@ -1376,7 +1345,12 @@ void main() {
       final end = start + text.length;
       final runs = <TextSpan>[];
       var offset = 0;
-      for (final span in rendered.children!.whereType<TextSpan>()) {
+      // The title's last letter stands in a placeholder of its own.
+      for (final span in rendered.children!) {
+        if (span is! TextSpan) {
+          offset++;
+          continue;
+        }
         final length = span.text?.length ?? 0;
         if (length > 0 && offset >= start && offset + length <= end) {
           runs.add(span);
@@ -1387,21 +1361,16 @@ void main() {
       return runs;
     }
 
+    // Each a chip on the page, as in prose.
     for (final link in [
       'https://www.unipile.com/pricing-api/',
       'https://example.com/rates',
       'example.com/tax',
+      'https://example.com/docs',
     ]) {
       for (final run in runsOf(link)) {
-        expect(run.style!.color, KapyTheme.darkPalette.comment, reason: link);
-        expect(run.style!.fontStyle, FontStyle.italic, reason: link);
+        expect(run.style!.fontFamily, AppFonts.mono, reason: link);
       }
-    }
-    for (final run in runsOf('https://example.com/docs')) {
-      expect(
-        run.style!.color,
-        Theme.of(tester.element(noteField)).colorScheme.primary,
-      );
     }
 
     // Quiet, but still a link: a click on it offers to open it.
@@ -2124,11 +2093,11 @@ void main() {
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
-        'Keep emphasis',
+        'Note\nKeep emphasis',
         initialFormats: const [
-          NoteFormatRange(start: 0, end: 4, format: NoteFormat.bold),
-          NoteFormatRange(start: 5, end: 13, format: NoteFormat.italic),
-          NoteFormatRange(start: 0, end: 13, format: NoteFormat.subtitle),
+          NoteFormatRange(start: 5, end: 9, format: NoteFormat.bold),
+          NoteFormatRange(start: 10, end: 18, format: NoteFormat.italic),
+          NoteFormatRange(start: 5, end: 18, format: NoteFormat.subtitle),
         ],
         onFormatsChanged: changes.add,
       ),
@@ -2136,8 +2105,8 @@ void main() {
     await tester.pumpAndSettle();
     final field = tester.widget<NoteField>(noteField);
     field.controller.selection = const TextSelection(
-      baseOffset: 0,
-      extentOffset: 13,
+      baseOffset: 5,
+      extentOffset: 18,
     );
     await tester.pump();
     await revealFormatting(tester);
@@ -2146,8 +2115,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 4, format: NoteFormat.bold),
-      NoteFormatRange(start: 5, end: 13, format: NoteFormat.italic),
+      NoteFormatRange(start: 5, end: 9, format: NoteFormat.bold),
+      NoteFormatRange(start: 10, end: 18, format: NoteFormat.italic),
     ]);
     final rendered = NoteDriver(tester).span;
     final bold = rendered.children!.whereType<TextSpan>().firstWhere(
@@ -2357,24 +2326,46 @@ void main() {
     expect(field.controller.text, '${bulletPrefix}Task');
   });
 
-  testWidgets('creates, completes, and removes a checklist item', (
+  testWidgets('the format bar offers Details on a task, drawn as lines', (
     tester,
   ) async {
     _onPhone();
-    await tester.pumpWidget(harness('Task'));
+    await tester.pumpWidget(harness('☐ Task'));
     await tester.pumpAndSettle();
     final field = tester.widget<NoteField>(noteField);
     field.controller.selection = const TextSelection.collapsed(offset: 4);
     await tester.pump();
     await revealFormatting(tester);
 
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('format-details')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is KapyIcon && widget.icon == KapyIcons.alignLeft,
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('creates, completes, and removes a checklist item', (
+    tester,
+  ) async {
+    _onPhone();
+    await tester.pumpWidget(harness('List\nTask'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 9);
+    await tester.pump();
+    await revealFormatting(tester);
+
     await tester.tap(find.byKey(const ValueKey('format-checklist')));
     await tester.pumpAndSettle();
-    expect(field.controller.text, '☐ Task');
+    expect(field.controller.text, 'List\n☐ Task');
 
     final editable = NoteDriver(tester);
     final checkbox = editable
-        .boxesFor(const TextSelection(baseOffset: 0, extentOffset: 1))
+        .boxesFor(const TextSelection(baseOffset: 5, extentOffset: 6))
         .single;
     final checkboxCenter = editable.toGlobal(
       Offset(
@@ -2384,7 +2375,7 @@ void main() {
     );
     await tester.tapAt(checkboxCenter);
     await tester.pumpAndSettle();
-    expect(field.controller.text, '☑ Task');
+    expect(field.controller.text, 'List\n☑ Task');
     final rendered = editable.span;
     final completed = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Task',
@@ -2393,11 +2384,11 @@ void main() {
 
     await tester.tapAt(checkboxCenter);
     await tester.pumpAndSettle();
-    expect(field.controller.text, '☐ Task');
+    expect(field.controller.text, 'List\n☐ Task');
 
     await tester.tap(find.byKey(const ValueKey('format-checklist')));
     await tester.pumpAndSettle();
-    expect(field.controller.text, 'Task');
+    expect(field.controller.text, 'List\nTask');
   });
 
   testWidgets('Enter keeps a nested item at its own depth', (tester) async {
@@ -3021,6 +3012,101 @@ void main() {
     final target = tester.getSize(chipWithText('42'));
     expect(target.width, greaterThanOrEqualTo(44));
     expect(target.height, greaterThanOrEqualTo(44));
+  });
+
+  testWidgets('a phone result takes a tap only inside its own line', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    const body = 'Sums\n1 + 1\n2 + 2\n3 + 3';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    final target = tester.getRect(chipWithText('4'));
+    final line = lineRect(tester, body, 2);
+    // The 44 pt target is taller than its line, so it reaches into the
+    // lines on either side of it.
+    expect(target.height, greaterThanOrEqualTo(44));
+    expect(target.top, lessThan(line.top));
+    expect(target.bottom, greaterThan(line.bottom));
+
+    for (final y in [target.top + 1, line.top - 1, line.bottom + 1]) {
+      await tester.tapAt(Offset(target.center.dx, y));
+      await tester.pump(const Duration(seconds: 3));
+    }
+    expect(copied, isNot(contains('4')));
+
+    await tester.tapAt(Offset(target.center.dx, line.center.dy));
+    await tester.pump(const Duration(seconds: 3));
+    expect(copied.last, '4');
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a phone shows a long week result whole (KAP-143)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      harness('Phrases\nweek 44 2026', keepResultRoom: true),
+    );
+    await tester.pumpAndSettle();
+
+    final result = find.descendant(
+      of: find.byType(ResultChip),
+      matching: find.byType(RichText),
+    );
+    expect(
+      tester.widget<RichText>(result).text.toPlainText(),
+      startsWith('Oct 26'),
+    );
+    expect(
+      tester.renderObject<RenderParagraph>(result).didExceedMaxLines,
+      isFalse,
+    );
+  });
+
+  testWidgets('a phone keeps room for a result at each text size', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const body =
+        'Trip\nFlights for the two of us to Lisbon in October = 2 * 1147.50 eur';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    // The same result, measured once already, at a larger size.
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+
+    final pill = tester.getRect(chipWithText('2,295.00 EUR'));
+    final editable = NoteDriver(tester);
+    final calculation = editable.boxesFor(
+      TextSelection(
+        baseOffset: body.indexOf('\n') + 1,
+        extentOffset: body.length,
+      ),
+    );
+    for (final box in calculation) {
+      expect(
+        editable.toGlobal(Offset(box.right, 0)).dx,
+        lessThanOrEqualTo(pill.left),
+      );
+    }
   });
 
   testWidgets('on a 390 pt phone, prose reaches the right margin and a '
@@ -4066,5 +4152,32 @@ total to usd''';
         NoteFormatRange(start: 0, end: 6, format: NoteFormat.bold),
       ]);
     });
+  });
+
+  testWidgets('on its side with the keyboard up, a phone keeps the row it is '
+      'typing in sight (KAP-174)', (tester) async {
+    tester.view.physicalSize = const Size(852, 393);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+    addTearDown(tester.view.reset);
+    const body =
+        'Trip\nFlights = 2 * 1147.50 eur\nHotels = 4 * 210\nDinners = 3 * 48';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    // The note stops above the keyboard, so the lines have room at all.
+    final field = tester.getRect(noteField);
+    expect(field.bottom, lessThanOrEqualTo(393 - 260 + 0.5));
+    expect(tester.takeException(), isNull);
+
+    // A tap at the foot of the note leaves that row on screen.
+    await tester.tapAt(Offset(field.center.dx, field.bottom - 6));
+    await tester.pumpAndSettle();
+    final driver = NoteDriver(tester);
+    final caret = driver
+        .caretRect(driver.value.selection.extent)
+        .shift(driver.toGlobal(Offset.zero));
+    expect(caret.bottom, lessThanOrEqualTo(field.bottom + 0.5));
+    expect(caret.top, greaterThanOrEqualTo(field.top - 0.5));
   });
 }

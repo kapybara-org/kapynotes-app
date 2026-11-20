@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/editor_font.dart';
 import '../../core/theme.dart';
 import '../../data/note.dart';
+import '../../data/task_board.dart';
+import '../../data/task_details.dart';
 import '../../sync/spaces.dart';
 import '../tag_colours.dart';
 
@@ -59,6 +61,37 @@ TextStyle handStyle(
     extra: hand.faceVariations,
     tabular: tabular,
   );
+}
+
+/// A quiet mark that a task has details: lines for words, a picture mark for
+/// a picture or a video. Never a dot, so it cannot be read as a tag.
+class TaskDetailsIcon extends StatelessWidget {
+  const TaskDetailsIcon({super.key, required this.item});
+
+  final TaskItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final details = taskBlockOf(item.note.body, item.line)?.details;
+    if (details == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Tooltip(
+        message: details.hasVideo
+            ? 'Has a picture or video'
+            : details.hasPicture
+            ? 'Has a picture'
+            : 'Has details',
+        child: KapyIcon(
+          details.hasMedia
+              ? KapyIcons.imageOutlined
+              : KapyIcons.alignLeft,
+          size: 14,
+          color: context.palette.textTertiary,
+        ),
+      ),
+    );
+  }
 }
 
 /// Figtree, every label and every task's words.

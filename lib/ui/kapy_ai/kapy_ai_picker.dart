@@ -81,24 +81,31 @@ class KapyAiPicker extends StatelessWidget {
     final groups = <List<Widget>>[
       [
         const _Label('On this device'),
-        switch (device.status) {
-          _
-              when deviceModel == null ||
-                  device.status == DeviceModelStatus.unavailable =>
-            _Row(
-              key: const ValueKey('kapy-ai-model-device-none'),
+        if (device.note case final note?)
+          Padding(
+            key: const ValueKey('kapy-ai-device-note'),
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+            child: Text(note, style: kapyText(13, 18, palette.textSecondary)),
+          )
+        else
+          switch (device.status) {
+            _
+                when deviceModel == null ||
+                    device.status == DeviceModelStatus.unavailable =>
+              _Row(
+                key: const ValueKey('kapy-ai-model-device-none'),
+                icon: KapyIcons.computerOutlined,
+                title: 'On-device model',
+                subline: 'This $word can’t run one',
+              ),
+            DeviceModelStatus.needsSystemFeature => _Row(
+              key: ValueKey('kapy-ai-model-device-${deviceModel.id}'),
               icon: KapyIcons.computerOutlined,
-              title: 'On-device model',
-              subline: 'This $word can’t run one',
+              title: deviceModel.plainLabel,
+              subline: 'Turn it on in System Settings first',
             ),
-          DeviceModelStatus.needsSystemFeature => _Row(
-            key: ValueKey('kapy-ai-model-device-${deviceModel.id}'),
-            icon: KapyIcons.computerOutlined,
-            title: deviceModel.plainLabel,
-            subline: 'Turn it on in System Settings first',
-          ),
-          _ => modelRow(deviceModel, deviceModel.whereItRuns(word)),
-        },
+            _ => modelRow(deviceModel, deviceModel.whereItRuns(word)),
+          },
       ],
       [
         const _Label('Kapy AI'),

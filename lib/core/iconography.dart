@@ -479,6 +479,10 @@ class KapyIcons {
     0xE0DB,
     HugeIcons.strokeRoundedSourceCode,
   );
+  static const infiniteRounded = KapyIconData(
+    0xE0E7,
+    HugeIcons.strokeRoundedInfinity01,
+  );
   static const dividerRounded = KapyIconData(
     0xE06F,
     HugeIcons.strokeRoundedMinusSign,
