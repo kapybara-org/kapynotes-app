@@ -318,11 +318,43 @@ class PageToolbar extends StatelessWidget {
     );
   }
 
-  /// Saved, Share and More, 8 apart, then Kapy AI.
+  /// Saved, Share and More, 8 apart, then Kapy AI. A phone's bar keeps
+  /// Phone v2's: Share's icon, then Kapy AI and More.
   List<Widget> _actions(double width, double extent) {
     final updates = this.updates;
     final actions = this.actions;
     final onMore = this.onMore;
+    Widget more(
+      void Function(String value, Offset at) onMore, {
+      required double radius,
+      required double size,
+    }) => Builder(
+      builder: (buttonContext) => CompactIconButton(
+        key: const ValueKey('page-more'),
+        tooltip: 'More',
+        extent: extent,
+        radius: radius,
+        onPressed: moreActions.isEmpty
+            ? null
+            : () => _showMore(buttonContext, onMore),
+        icon: KapyIcon(KapyIcons.moreRounded, size: size, strokeWidth: 2.2),
+      ),
+    );
+    if (back != null) {
+      return [
+        TonalButton(
+          key: const ValueKey('page-share'),
+          tall: true,
+          icon: KapyIcons.personAddRounded,
+          tooltip: noteShared ? 'Manage sharing' : 'Share',
+          onPressed: onShare,
+        ),
+        const SizedBox(width: 6),
+        ?assistant,
+        if (onMore != null)
+          more(onMore, radius: 10, size: AppControlMetrics.iconAction),
+      ];
+    }
     return [
       if (updates != null)
         UpdateRestartButton(
@@ -354,22 +386,7 @@ class PageToolbar extends StatelessWidget {
       ],
       if (onMore != null) ...[
         if (actions == null || actions.isNotEmpty) const SizedBox(width: 8),
-        Builder(
-          builder: (buttonContext) => CompactIconButton(
-            key: const ValueKey('page-more'),
-            tooltip: 'More',
-            extent: extent,
-            radius: 8,
-            onPressed: moreActions.isEmpty
-                ? null
-                : () => _showMore(buttonContext, onMore),
-            icon: const KapyIcon(
-              KapyIcons.moreRounded,
-              size: 16,
-              strokeWidth: 2.2,
-            ),
-          ),
-        ),
+        more(onMore, radius: 8, size: 16),
       ],
       ?assistant,
     ];
