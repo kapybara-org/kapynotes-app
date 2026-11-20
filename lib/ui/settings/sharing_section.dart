@@ -318,7 +318,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
       if (person.isInvited) 'Invited',
       if (mine > 0) 'You share ${_count(mine)}',
       if (theirs > 0)
-        mine > 0 ? 'shares $theirs with you' : 'Shares $theirs with you',
+        mine > 0 ? 'they share $theirs with you' : 'Shares $theirs with you',
       if (mine == 0 && theirs == 0) 'Nothing shared right now',
     ].join(' · ');
   }
@@ -769,8 +769,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
                   () => _sharing.acceptInvite(invite.token),
                   done:
                       'Joined. The notes arrive when '
-                      '${_first(invite.inviterDisplayName)} or another '
-                      'member syncs',
+                      '${_first(invite.inviterDisplayName)} next opens Kapy '
+                      'Notes',
                 ),
               ),
           ],

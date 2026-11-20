@@ -300,7 +300,10 @@ void main() {
 
     final row = find.byKey(person(priya));
     expect(row, findsOneWidget);
-    expect(find.text('You share 2 notes · shares 1 with you'), findsOneWidget);
+    expect(
+      find.text('You share 2 notes · they share 1 with you'),
+      findsOneWidget,
+    );
 
     await tester.tap(row);
     await tester.pumpAndSettle();

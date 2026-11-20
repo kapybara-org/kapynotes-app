@@ -3605,7 +3605,7 @@ class _ShareGroupHeader extends StatelessWidget {
   /// Everyone in one of its notes right now, by account.
   final Set<String> present;
 
-  /// A member's key changed and nobody has looked yet.
+  /// A member's safety code changed and nobody has looked yet.
   final bool attention;
   final VoidCallback? onTap;
 
@@ -3618,7 +3618,7 @@ class _ShareGroupHeader extends StatelessWidget {
       children: [
         if (attention) ...[
           Tooltip(
-            message: "A member's key changed",
+            message: "A member's safety code changed",
             child: KapyIcon(
               KapyIcons.warningRounded,
               size: AppControlMetrics.iconInline,
@@ -3688,7 +3688,7 @@ class _ShareGroupHeader extends StatelessWidget {
         label: [
           title,
           ?presenceStatusText(here),
-          if (attention) "A member's key changed",
+          if (attention) "A member's safety code changed",
         ].join('. '),
         child: ExcludeSemantics(
           child: InkWell(
