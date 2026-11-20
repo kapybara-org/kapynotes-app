@@ -58,6 +58,24 @@ void main() {
     expect(find.text('Image added'), findsNothing);
   });
 
+  testWidgets('an Undo toast stays its full time with animations turned off', (
+    tester,
+  ) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    late BuildContext context;
+    await tester.pumpWidget(_harness((value) => context = value));
+
+    Toast.show(context, 'Removed Priya', action: 'Undo', onAction: () {});
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 3900));
+    expect(find.text('Undo'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Removed Priya'), findsNothing);
+  });
+
   testWidgets('a waiting toast can complete before its first frame', (
     tester,
   ) async {
