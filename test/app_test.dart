@@ -45,8 +45,6 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
-import 'package:kapy_notes/ui/app_logo.dart';
-import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';

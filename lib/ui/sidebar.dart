@@ -434,9 +434,7 @@ class Sidebar extends StatelessWidget {
                 Padding(
                   padding: phone
                       ? const EdgeInsets.only(bottom: 2)
-                      : _besideRail
-                      ? const EdgeInsets.fromLTRB(16, 0, 16, 12)
-                      : const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                      : const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: controls,
                 ),
             if (_picking || (archiveMode && notes.isNotEmpty))

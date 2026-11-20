@@ -4295,6 +4295,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
+  /// The open tabs, under the toolbar while there is more than one.
+  Widget _buildTabRow() {
+    final front = _workspace.frontTab;
+    return NoteTabRow(
+      tabs: [
+        for (final tab in _workspace.tabs)
+          if (tab.folderId case final folderId?) ...[
+            if (widget.folders?.tree.byId(folderId) case final folder?)
+              NoteTab(
+                id: '${tab.id}',
+                title: folder.name,
+                icon: KapyIcons.folderOutlined,
+              ),
+          ] else if (widget.notes.byId(tab.noteId) case final note?)
+            NoteTab(id: '${tab.id}', title: note.title, icon: _tabIcon(note)),
+      ],
+      activeId: front == null ? null : '${front.id}',
+      recentIds: [for (final tab in _workspace.recentTabs) '${tab.id}'],
+      onSelect: _activateTab,
+      onClose: _closeTab,
+      onCloseOthers: _closeOtherTabs,
+      // While the tab is split, the chord closes its focused pane first.
+      closeShortcut: _workspace.isSplit
+          ? null
+          : widget.shortcuts.bindingFor(ShortcutAction.closeTab)?.keycapLabel,
+    );
+  }
+
+  /// The rail's icon for where a tab's note lives.
+  static KapyIconData _tabIcon(Note note) => note.isDrawing
+      ? KapyIcons.penRounded
+      : note.isShared
+      ? KapyIcons.groupOutlined
+      : KapyIcons.noteOutlined;
+
   Widget _buildWideWorkspace(Sidebar sidebar, {required bool cramped}) {
     if (_specialMode) {
       final selected = widget.notes.byId(_selectedId);

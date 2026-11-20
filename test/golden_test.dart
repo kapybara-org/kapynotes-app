@@ -28,7 +28,6 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
-import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
