@@ -322,12 +322,33 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   String _peoplePhrase(Space space) =>
       space.peoplePhrase(_sharing.userId) ?? 'The people here';
 
+  /// Access is for everything shared with that person together, so a change
+  /// that reaches further than this note asks first, naming what else.
   Future<void> _changeAccess(String email, SpaceRole role) async {
+    final name = _nameOf(email);
+    final others = [
+      for (final note in _sharing.notesIn(_note.spaceId!))
+        if (!note.isHidden && note.id != _note.id) note,
+    ];
+    if (others.isNotEmpty) {
+      final ok = await askFirst(
+        context,
+        title: role.canEdit ? 'Let $name edit?' : 'Let $name only view?',
+        body: others.length == 1
+            ? '$name sees this note together with ${others.single.title}, '
+                  'so the change is for both.'
+            : '$name sees ${others.length + 1} notes you share together, '
+                  'and the change is for all of them.',
+        action: 'Change access',
+      );
+      if (ok == null || !mounted) return;
+    }
     await _run(() async {
       await _sharing.changeAccessTo(_note.id, email, role);
-      setState(
-        () => _notice =
-            '${_nameOf(email)} can ${role.canEdit ? 'now edit' : 'now only view'} this note',
+      if (!mounted) return;
+      Toast.show(
+        context,
+        '$name ${role.canEdit ? 'can edit' : 'can view'} now',
       );
     });
   }
@@ -756,8 +777,8 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           spaceId: space?.id,
           enabled: enabled,
           opensMore: (space?.liveNotes ?? 0) > 1
-              ? 'The link opens all ${space!.liveNotes} notes here, not only '
-                    'this one.'
+              ? 'The link opens ${_notesPhrase(space!.liveNotes)} here, not '
+                    'only this one.'
               : null,
           onToggle: (on) => _toggleLink(joining, on),
           onCopy: _copyLinkOf,
@@ -1113,7 +1134,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                       joining: joining,
                       run: _panelRun,
                       scope: space.liveNotes > 1
-                          ? 'It opens all ${space.liveNotes} notes shared '
+                          ? 'It opens ${_notesPhrase(space.liveNotes)} shared '
                                 'here, not only the one you are in.'
                           : null,
                       enabled: enabled,
@@ -1554,6 +1575,10 @@ class _PeopleWithAccess extends StatelessWidget {
 
 String _accessLabel(SpaceRole role) => role.canEdit ? 'Can edit' : 'Can view';
 
+/// Two notes are both notes; more are counted.
+String _notesPhrase(int count) =>
+    count == 2 ? 'both notes' : 'all $count notes';
+
 class _PeopleCard extends StatelessWidget {
   const _PeopleCard({super.key, required this.rows});
 
@@ -1830,10 +1855,7 @@ class _InviteMenu extends StatelessWidget {
         const PopupMenuItem(value: 'copy', child: Text('Copy link')),
         const PopupMenuItem(value: 'resend', child: Text('Send again')),
         const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'cancel',
-          child: Text('Cancel', style: TextStyle(color: error)),
-        ),
+        const PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
       ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -2195,8 +2217,9 @@ class _AccessAndShare extends StatelessWidget {
             style: ButtonStyle(
               visualDensity: VisualDensity.compact,
               textStyle: WidgetStatePropertyAll(
-                Theme.of(context).textTheme.labelLarge
-                    ?.copyWith(fontSize: AppTypeScale.caption),
+                Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontSize: AppTypeScale.caption,
+                ),
               ),
             ),
             segments: const [
@@ -2254,13 +2277,12 @@ class _LinkRow extends StatelessWidget {
     final link = spaceId == null ? null : joining.linkOf(spaceId);
     final on = link != null;
     final detail = switch (link) {
-      null => 'Turn on to invite people without their email',
+      null => 'Off · Turn on to invite people without their email',
       final link => '${_linkRoleLabel(link)} · they still need to sign in',
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _Label('Invite link'),
         KapyControlSurface(
           key: const ValueKey('share-link'),
           padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
@@ -2271,7 +2293,7 @@ class _LinkRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      on ? 'Anyone with the link can join' : 'Off',
+                      'Invite link',
                       style: TextStyle(
                         fontSize: AppTypeScale.control,
                         color: palette.textPrimary,
@@ -2279,8 +2301,6 @@ class _LinkRow extends StatelessWidget {
                     ),
                     Text(
                       detail,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: AppTypeScale.caption,
                         color: palette.textTertiary,
@@ -2298,7 +2318,7 @@ class _LinkRow extends StatelessWidget {
                     minimumSize: const Size(0, 30),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  child: const Text('Copy'),
+                  child: const Text('Copy link'),
                 ),
               Semantics(
                 label: 'Invite link',

@@ -548,7 +548,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('Waiting to join (2)'), findsOneWidget);
+        expect(find.text('Waiting to join  2'), findsOneWidget);
         expect(find.text('Arun'), findsOneWidget);
         expect(find.text('arun@example.com'), findsOneWidget);
         expect(find.text('plain@example.com'), findsOneWidget);
@@ -563,7 +563,7 @@ void main() {
           'userIds': ['u1'],
         });
         expect(find.text('Arun'), findsNothing);
-        expect(find.text('Waiting to join (1)'), findsOneWidget);
+        expect(find.text('Waiting to join  1'), findsOneWidget);
       },
     );
 
@@ -844,7 +844,7 @@ void main() {
         await turnOn(tester);
 
         expect(
-          find.textContaining('The link opens all 2 notes here'),
+          find.textContaining('The link opens both notes here'),
           findsOneWidget,
         );
       },
