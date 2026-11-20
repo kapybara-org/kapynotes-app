@@ -10,6 +10,7 @@ import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/keycap.dart';
+import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
@@ -626,23 +627,31 @@ void main() {
       expect(words(open('Two')), findsOneWidget);
     });
 
-    testWidgets('a tap on the words opens the note, a long press offers Pick', (
-      tester,
-    ) async {
-      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
-      String? opened;
-      await pumpScreen(tester, phone: true, onOpenNote: (id) => opened = id);
-      final two = open('Two');
+    testWidgets(
+      'a tap on the words opens its details, Open in note opens the note, '
+      'a long press offers Pick',
+      (tester) async {
+        await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+        String? opened;
+        await pumpScreen(tester, phone: true, onOpenNote: (id) => opened = id);
+        final two = open('Two');
 
-      await tester.tap(words(two));
-      await settle(tester);
-      expect(opened, two.note.id);
+        await tester.tap(words(two));
+        await settle(tester);
+        expect(find.byType(PhoneTaskDetailsSheet), findsOneWidget);
+        expect(opened, isNull);
 
-      await tester.longPress(words(two));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(ValueKey('phone-task-pick-${two.id}')));
-      await settle(tester);
-      expect(open('Two').dotted, isTrue);
-    });
+        await tester.tap(find.text('Open in note'));
+        await settle(tester);
+        expect(find.byType(PhoneTaskDetailsSheet), findsNothing);
+        expect(opened, two.note.id);
+
+        await tester.longPress(words(two));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('phone-task-pick-${two.id}')));
+        await settle(tester);
+        expect(open('Two').dotted, isTrue);
+      },
+    );
   });
 }
