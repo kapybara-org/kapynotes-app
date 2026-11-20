@@ -89,7 +89,6 @@ void main() {
       expect(state.status, DeviceModelStatus.needsSystemFeature);
       expect(state.note, PlatformDeviceModel.appleOffNoRoom);
       expect(state.note, contains('System Settings'));
-      expect(state.note, contains('Pro'));
     },
   );
 }

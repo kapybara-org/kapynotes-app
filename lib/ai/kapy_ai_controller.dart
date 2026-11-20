@@ -209,14 +209,15 @@ class KapyAiController extends KapyAi {
   KapyModel get defaultModel {
     final stored = _store.defaultModel;
     if (stored != null && _usable(stored)) return stored;
-    // Someone who picked the device picked it for what it does not send. A
-    // device model that can answer still answers for them, even on Pro. When
-    // none can, their choice stays theirs: the pending state says why and
-    // offers what else could answer, so nothing moves on their behalf.
-    if (stored?.kind == KapyModelKind.device) {
-      final device = _deviceModel;
-      if (device != null && _usable(device)) return device;
-      return stored!;
+    // Whatever someone picked stays their pick. Kapy AI says why it cannot
+    // answer and offers what else could, rather than switching for them. A
+    // device model that can answer is the same choice, not a different one.
+    if (stored != null) {
+      if (stored.kind == KapyModelKind.device) {
+        final device = _deviceModel;
+        if (device != null && _usable(device)) return device;
+      }
+      return stored;
     }
     return isPro ? KapyModel.cloud : _fallback;
   }
@@ -243,6 +244,8 @@ class KapyAiController extends KapyAi {
       KapyAccountKind.claudeCode,
       model,
     ),
+    // A key is checked when it is used: a rejected one comes back as an
+    // account error, which is the card that offers the alternatives.
     KapyModelKind.openRouter => true,
   };
 
@@ -270,7 +273,16 @@ class KapyAiController extends KapyAi {
   @override
   KapyModel get model {
     final chosen = current?.model ?? _next ?? defaultModel;
-    return _usable(chosen) ? chosen : defaultModel;
+    if (_usable(chosen)) return chosen;
+    // A chat's own model is the person's choice too, so it is never swapped for
+    // another one: the pending state says why it cannot answer instead. A
+    // device model is the exception, because another one here is the same
+    // choice rather than a different model.
+    if (chosen.kind == KapyModelKind.device) {
+      final device = _deviceModel;
+      if (device != null && _usable(device)) return device;
+    }
+    return chosen;
   }
 
   @override
@@ -704,8 +716,8 @@ class KapyAiController extends KapyAi {
   /// What has to happen before [model] may answer, or null when nothing.
   KapyPending? _holdFor(KapyModel model) {
     final blocked = _device.state.note;
-    // Free, signed out and nothing on this device can answer: say what would
-    // work rather than sending the question to a cloud nobody asked for.
+    // Nothing on this device can answer and the person is not on Pro: the
+    // note says more than "part of Pro" would, so it goes first.
     if (blocked != null &&
         !isPro &&
         model.kind != KapyModelKind.codex &&
@@ -715,11 +727,26 @@ class KapyAiController extends KapyAi {
     }
     final account = _accountOf(model.kind);
     if (account != null) {
+      // A choice that cannot answer right now says so, rather than asking
+      // consent for a send that would fail. The card offers what would work.
+      if (!_usable(model)) {
+        return KapyAccountError(
+          account: account,
+          model: model,
+          fallbacks: _alternativesTo(model),
+        );
+      }
       return _store.hasAccountConsent(account)
           ? null
           : KapyAccountConsent(account);
     }
     if (model.kind == KapyModelKind.cloud) {
+      if (!isPro) {
+        return KapyFailed(
+          'Kapy AI Cloud is part of Pro.',
+          fallbacks: _alternativesTo(model),
+        );
+      }
       return _store.cloudConsent ? null : const KapyCloudConsent();
     }
     final state = _device.state;

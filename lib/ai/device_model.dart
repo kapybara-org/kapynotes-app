@@ -71,17 +71,16 @@ class PlatformDeviceModel extends DeviceModel {
   );
 
   /// Apple Intelligence is installed but off, and the downloadable model
-  /// cannot run here. Names the switch, because that is what the person has
-  /// to find in System Settings.
+  /// cannot run here. Just the reason and where to fix it: the notice carries
+  /// the alternatives as buttons, so naming them here would repeat the button
+  /// and, on Free, tell someone to use a plan the notice offers no way into.
   static const String appleOffNoRoom =
-      'Turn on Apple Intelligence in System Settings, or use Kapy AI Cloud '
-      'with Pro.';
+      'Turn on Apple Intelligence in System Settings.';
 
   /// Apple Intelligence is still downloading, and the downloadable model
-  /// cannot run here.
+  /// cannot run here. No instruction: it finishes on its own.
   static const String applePreparingNoRoom =
-      'Apple Intelligence is still downloading. Until then, Kapy AI Cloud '
-      'with Pro can answer.';
+      'Apple Intelligence is still downloading.';
 
   /// Unknown until [refresh] has asked: both answers are a channel call or
   /// a disk scan, and neither belongs in a constructor.
