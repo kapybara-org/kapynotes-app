@@ -120,17 +120,16 @@ class McpLibrary {
   }) {
     final trimmed = query.trim();
     final tagged = tag == null ? null : _tag(tag).id;
-    final pool =
-        [
-          if (!archivedOnly) ...notes.notes,
-          if (includeArchived || archivedOnly) ...notes.archivedNotes,
-        ].where(
-          (note) =>
-              !note.isHidden &&
-              (pinned == null || notes.isPinned(note.id) == pinned) &&
-              (tagged == null ||
-                  tags!.tagsOf(note.id).any((each) => each.id == tagged)),
-        );
+    final pool = [
+      if (!archivedOnly) ...notes.notes,
+      if (includeArchived || archivedOnly) ...notes.archivedNotes,
+    ].where(
+      (note) =>
+          !note.isHidden &&
+          (pinned == null || notes.isPinned(note.id) == pinned) &&
+          (tagged == null ||
+              tags!.tagsOf(note.id).any((each) => each.id == tagged)),
+    );
     final matches = trimmed.isEmpty
         ? pool.toList()
         : pool.where((note) => note.matches(trimmed)).toList();
@@ -179,11 +178,9 @@ class McpLibrary {
   /// What the calculator answers on each line, keyed by line number from 1.
   Map<int, String> resultsOf(Note note) {
     if (note.isDrawing) return const {};
+    final results = _engine().evaluateDocument(note.body, titled: true);
     return {
-      for (final entry
-          in _engine()
-              .evaluateDocument(CalcEngine.withoutTitle(note.body))
-              .entries)
+      for (final entry in results.entries)
         entry.key + 1: entry.value.text,
     };
   }
@@ -461,9 +458,7 @@ class McpLibrary {
       ];
       attachments = [
         for (final ref in attachments)
-          ref.offset >= region.end
-              ? ref.copyWith(offset: ref.offset + delta)
-              : ref,
+          ref.offset >= region.end ? ref.copyWith(offset: ref.offset + delta) : ref,
       ];
     }
     return _write(
@@ -577,9 +572,7 @@ class McpLibrary {
           'There’s no tag called “${name.trim()}”. Set create_missing to '
           'make it.',
         );
-      } else if (!missing.any(
-        (m) => m.toLowerCase() == name.trim().toLowerCase(),
-      )) {
+      } else if (!missing.any((m) => m.toLowerCase() == name.trim().toLowerCase())) {
         _clean(name, tagNameMax * 2, 'tag name');
         if (name.trim().isEmpty || name.trim().runes.length > tagNameMax) {
           throw const McpRefusal(
@@ -589,10 +582,7 @@ class McpLibrary {
         missing.add(name.trim());
       }
     }
-    final keep = [
-      for (final tagId in current)
-        if (!off.contains(tagId)) tagId,
-    ];
+    final keep = [for (final tagId in current) if (!off.contains(tagId)) tagId];
     final adding = {
       for (final tag in existing)
         if (!keep.contains(tag.id)) tag.id,
@@ -603,7 +593,10 @@ class McpLibrary {
     final created = [for (final name in missing) store.create(name)!];
     store.setTags(id, [...keep, ...adding, for (final tag in created) tag.id]);
     return (
-      added: [...existing.where((tag) => adding.contains(tag.id)), ...created],
+      added: [
+        ...existing.where((tag) => adding.contains(tag.id)),
+        ...created,
+      ],
       removed: [
         for (final tagId in current)
           if (off.contains(tagId)) store.byId(tagId)!,
@@ -625,8 +618,7 @@ class McpLibrary {
       );
     }
     if (colour != null) _colour(colour);
-    final tag =
-        store.create(name) ??
+    final tag = store.create(name) ??
         (throw const McpRefusal(
           'A tag’s name is 1 to $tagNameMax characters.',
         ));
@@ -690,9 +682,9 @@ class McpLibrary {
     final note = _splice(task.note, [
       (start: task.line.textStart, end: task.line.end, text: words),
     ]);
-    return tasksIn(
-      note,
-    ).firstWhere((each) => each.line.start == task.line.start);
+    return tasksIn(note).firstWhere(
+      (each) => each.line.start == task.line.start,
+    );
   }
 
   /// Takes a task's line out of its note. The note stays.
@@ -703,11 +695,7 @@ class McpLibrary {
 
   /// Moves a task to the end of [noteId], or before [beforeTaskId] there,
   /// ticked or not as it was, and in the style that note's tasks use.
-  McpTask moveTask(
-    String taskId, {
-    required String noteId,
-    String? beforeTaskId,
-  }) {
+  McpTask moveTask(String taskId, {required String noteId, String? beforeTaskId}) {
     final task = _taskAt(taskId);
     final target = _writable(noteId);
     if (beforeTaskId == taskId) return task;
@@ -771,8 +759,7 @@ class McpLibrary {
   /// A task box in the style [note]'s tasks already use.
   String _box(Note note, {bool done = false}) {
     final existing = taskLines(note.body);
-    final markdown =
-        existing.isNotEmpty &&
+    final markdown = existing.isNotEmpty &&
         !_glyphBox.hasMatch(
           note.body.substring(existing.first.start, existing.first.textStart),
         );

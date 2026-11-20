@@ -3430,6 +3430,22 @@ total to usd''';
     );
   });
 
+  testWidgets('a variable the title sets works below it, while the title '
+      'shows no answer and adds nothing to the total', (tester) async {
+    await tester.pumpWidget(harness('rent = 1200\nrent * 12'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ResultChip), findsOneWidget);
+    expect(chipWithText('14,400'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('note-total')))
+          .textSpan!
+          .toPlainText(),
+      'Total: 14,400',
+    );
+  });
+
   testWidgets('carries a variable down to later lines', (tester) async {
     await tester.pumpWidget(harness('Order\nsubtotal = 42\nsubtotal * 3'));
     await tester.pumpAndSettle();

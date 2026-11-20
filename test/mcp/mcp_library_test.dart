@@ -116,6 +116,8 @@ void main() {
   test('gives a note\'s title no answer, as the editor does', () {
     final note = f.library.create(title: 'Today', body: '2 + 2');
     expect(f.library.resultsOf(note), {2: '4'});
+    final rent = f.library.create(title: 'rent = 1200', body: 'rent / 2');
+    expect(f.library.resultsOf(rent), {2: '600'});
   });
 
   test('creates a note without counting it as the person’s writing', () {

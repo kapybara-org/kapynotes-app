@@ -812,7 +812,12 @@ class PhoneSpaces extends StatelessWidget {
                 key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
                 icon: Badge(
                   isLabelVisible: item.badge > 0,
-                  label: Text('${item.badge}'),
+                  label: Text(
+                    '${item.badge}',
+                    semanticsLabel: item.badge == 1
+                        ? '1 invitation'
+                        : '${item.badge} invitations',
+                  ),
                   child: KapyIcon(item.icon, size: 22, color: palette.railInk),
                 ),
                 selectedIcon: KapyIcon(

@@ -1,3 +1,4 @@
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -70,6 +71,37 @@ void main() {
     final semantics = tester.ensureSemantics();
     await pumpBar(tester, scale: 1, size: const Size(393, 852));
     expect(find.bySemanticsLabel('Shared, 2 invitations'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('TalkBack hears how many invitations wait under Shared', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final semantics = tester.ensureSemantics();
+    await pumpBar(tester, scale: 1, size: const Size(412, 915));
+    final labels = <String>[];
+    void walk(SemanticsNode node) {
+      labels.add(node.getSemanticsData().label);
+      node.visitChildren((child) {
+        walk(child);
+        return true;
+      });
+    }
+
+    walk(
+      tester
+          .binding
+          .renderViews
+          .first
+          .owner!
+          .semanticsOwner!
+          .rootSemanticsNode!,
+    );
+    final shared = labels.where((l) => l.contains('Shared'));
+    expect(shared, isNotEmpty);
+    expect(shared, everyElement(startsWith('2 invitations\nShared')));
     semantics.dispose();
   });
 }
