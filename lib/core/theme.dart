@@ -1074,6 +1074,10 @@ class AppWeight {
   /// its own bold step, or the whole interface would ignore the setting.
   /// It rebuilds with the rest of the app on
   /// `didChangeAccessibilityFeatures`.
+  ///
+  /// A consequence, taken deliberately: with Bold Text on, every step from
+  /// 500 up reaches 700, so a section label and a page title read alike.
+  /// Weight stops carrying their difference there; size and colour still do.
   static double bold(double axis) {
     final features = WidgetsBinding.instance.platformDispatcher
         .accessibilityFeatures;
