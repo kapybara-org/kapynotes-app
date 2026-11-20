@@ -25,6 +25,6 @@ KAPY_ENTITLEMENTS = Release
 KAPY_PROFILE =
 
 // Embeds KapyToolRunner.xpc, the unsandboxed helper that runs Codex and
-// Claude Code for the sandboxed app. The Mac App Store build turns it off
-// (packaging/release.sh), since the store accepts no unsandboxed code.
+// Claude Code for the sandboxed app. Set it to NO for a build that must carry
+// no unsandboxed code.
 KAPY_TOOL_RUNNER = YES
