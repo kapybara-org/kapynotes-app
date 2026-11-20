@@ -384,15 +384,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _stopSharing() async {
     final space = _space;
     if (space == null) return;
-    final audience = [
-      for (final member in space.othersThan(_sharing.userId))
-        (email: member.email, role: member.role),
-    ];
+    final audience = _sharing.audienceOf(space);
+    final people = space.othersThan(_sharing.userId).length;
     final who = _peoplePhrase(space);
     final ok = await _confirm(
       title: 'Stop sharing “${_note.title}”?',
       body:
-          '$who ${audience.length > 1 ? 'lose' : 'loses'} access. The note '
+          '$who ${people > 1 ? 'lose' : 'loses'} access. The note '
           'stays in your notes, with every change.',
       action: 'Stop sharing',
       destructive: true,
@@ -406,16 +404,10 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         'Stopped sharing “${_note.title}”',
         action: 'Undo',
         onAction: () => unawaited(
-          _run(() async {
-            for (final person in audience) {
-              await _sharing.addPerson(
-                _note.id,
-                person.email,
-                role: person.role,
-                allNotes: true,
-              );
-            }
-          }, notice: 'Shared again with $who'),
+          _run(
+            () => _sharing.shareNoteWithPeople(_note.id, audience),
+            notice: 'Shared again with $who',
+          ),
         ),
       );
     });

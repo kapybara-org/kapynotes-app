@@ -10,6 +10,7 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/tasks/task_choice.dart';
+import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
@@ -738,8 +739,8 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('a tap on the words opens the note; a long press opens the '
-        'row menu', (tester) async {
+    testWidgets('a tap on the words opens its details, Open in note opens '
+        'the note; a long press opens the row menu', (tester) async {
       await setUpTasks(tester, errands);
       String? opened;
       await pumpScreen(tester, phone: true, onOpenNote: (id) => opened = id);
@@ -747,6 +748,12 @@ void main() {
 
       await tester.tap(words(rent));
       await settle(tester);
+      expect(find.byType(PhoneTaskDetailsSheet), findsOneWidget);
+      expect(opened, isNull);
+
+      await tester.tap(find.text('Open in note'));
+      await settle(tester);
+      expect(find.byType(PhoneTaskDetailsSheet), findsNothing);
       expect(opened, rent.note.id);
 
       await tester.longPress(words(rent));

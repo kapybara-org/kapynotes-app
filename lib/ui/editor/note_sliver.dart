@@ -15,13 +15,15 @@ import 'note_lines.dart';
 /// line with a [row] is exactly that tall, in pixels at the note's own text
 /// size, rather than as tall as the note's strut and its writing make it. A
 /// line with an [inset] starts that far in from the column, and ends as far
-/// short of it.
+/// short of it. A line that wraps starts its later rows under its character
+/// at [hang], where its words begin after a list's marker or an indent.
 typedef LineSpan = ({
   InlineSpan span,
   List<PlaceholderDimensions> placeholders,
   bool folded,
   double? row,
   double inset,
+  int hang,
 });
 
 /// How the field draws its caret: [width] wide, [height] tall or a row of
@@ -328,6 +330,7 @@ class NoteLayout {
       drawn.placeholders,
       drawn.row,
       drawn.inset,
+      drawn.hang,
       width,
     );
     final kept = _kept.remove(key);
@@ -340,7 +343,7 @@ class NoteLayout {
         : drawn.span;
     final strutStyle = drawn.row == null ? strut : _forced(drawn.row!);
     final painter =
-        (drawn.inset == 0
+        (drawn.inset == 0 && drawn.hang == 0
               ? TextPainter(
                   text: text,
                   textDirection: TextDirection.ltr,
@@ -356,6 +359,7 @@ class NoteLayout {
                         strut.height! /
                         EditorMetrics.lineHeight,
                   ),
+                  hang: drawn.hang,
                   text: text,
                   textDirection: TextDirection.ltr,
                   strutStyle: strutStyle,
@@ -411,12 +415,20 @@ class NoteLayout {
 /// What a line draws, as the key its paragraph is kept under.
 @immutable
 class _Drawn {
-  const _Drawn(this.span, this.placeholders, this.row, this.inset, this.width);
+  const _Drawn(
+    this.span,
+    this.placeholders,
+    this.row,
+    this.inset,
+    this.hang,
+    this.width,
+  );
 
   final InlineSpan span;
   final List<PlaceholderDimensions> placeholders;
   final double? row;
   final double inset;
+  final int hang;
   final double width;
 
   @override
@@ -425,21 +437,26 @@ class _Drawn {
       other.span == span &&
       other.row == row &&
       other.inset == inset &&
+      other.hang == hang &&
       other.width == width &&
       listEquals(other.placeholders, placeholders);
 
   @override
   int get hashCode =>
-      Object.hash(span, row, inset, width, Object.hashAll(placeholders));
+      Object.hash(span, row, inset, hang, width, Object.hashAll(placeholders));
 }
 
 /// A line's paragraph set [inset] in from both edges of its column: it wraps
 /// [inset] short of each, and every place it is asked about or drawn is
 /// [inset] right of where the paragraph under it puts it, so that the line
 /// answers in its own, column coordinates, as a line with no inset does.
+///
+/// When the line wraps, its rows after the first also start under its
+/// character at [hang], and wrap that much shorter, as a list item's do.
 class InsetTextPainter extends TextPainter {
   InsetTextPainter({
-    required this.inset,
+    this.inset = 0,
+    this.hang = 0,
     super.text,
     super.textDirection,
     super.strutStyle,
@@ -447,26 +464,51 @@ class InsetTextPainter extends TextPainter {
   });
 
   final double inset;
+  final int hang;
+
+  /// How far right the rows after the first are moved, and where the first
+  /// row ends, once laid out.
+  double _hanging = 0;
+  double _firstRowBottom = double.infinity;
 
   Offset get _in => Offset(inset, 0);
 
-  TextBox _shifted(TextBox box) => TextBox.fromLTRBD(
-    box.left + inset,
-    box.top,
-    box.right + inset,
-    box.bottom,
-    box.direction,
-  );
+  double _shiftAt(double y) => inset + (y >= _firstRowBottom ? _hanging : 0);
+
+  TextBox _shifted(TextBox box) {
+    final dx = _shiftAt((box.top + box.bottom) / 2);
+    return TextBox.fromLTRBD(
+      box.left + dx,
+      box.top,
+      box.right + dx,
+      box.bottom,
+      box.direction,
+    );
+  }
 
   @override
-  void layout({double minWidth = 0.0, double maxWidth = double.infinity}) =>
-      super.layout(
-        minWidth: math.max(0.0, minWidth - 2 * inset),
-        maxWidth: math.max(0.0, maxWidth - 2 * inset),
-      );
+  void layout({double minWidth = 0.0, double maxWidth = double.infinity}) {
+    final min = math.max(0.0, minWidth - 2 * inset);
+    final max = math.max(0.0, maxWidth - 2 * inset);
+    _hanging = 0;
+    _firstRowBottom = double.infinity;
+    super.layout(minWidth: min, maxWidth: max);
+    if (hang <= 0 || super.computeLineMetrics().length < 2) return;
+    final hanging = super
+        .getOffsetForCaret(TextPosition(offset: hang), Rect.zero)
+        .dx;
+    if (hanging <= 0 || hanging >= max / 2) return;
+    super.layout(
+      minWidth: math.max(0.0, min - hanging),
+      maxWidth: max - hanging,
+    );
+    final first = super.computeLineMetrics().first;
+    _hanging = hanging;
+    _firstRowBottom = first.baseline + first.descent;
+  }
 
   @override
-  double get width => super.width + 2 * inset;
+  double get width => super.width + 2 * inset + _hanging;
 
   @override
   Size get size => Size(width, height);
@@ -476,15 +518,31 @@ class InsetTextPainter extends TextPainter {
       super.inlinePlaceholderBoxes?.map(_shifted).toList();
 
   @override
-  void paint(Canvas canvas, Offset offset) => super.paint(canvas, offset + _in);
+  void paint(Canvas canvas, Offset offset) {
+    if (_hanging == 0) return super.paint(canvas, offset + _in);
+    final split = offset.dy + _firstRowBottom;
+    final far = Rect.largest;
+    canvas
+      ..save()
+      ..clipRect(Rect.fromLTRB(far.left, far.top, far.right, split));
+    super.paint(canvas, offset + _in);
+    canvas
+      ..restore()
+      ..save()
+      ..clipRect(Rect.fromLTRB(far.left, split, far.right, far.bottom));
+    super.paint(canvas, offset + _in + Offset(_hanging, 0));
+    canvas.restore();
+  }
 
   @override
   TextPosition getPositionForOffset(Offset offset) =>
-      super.getPositionForOffset(offset - _in);
+      super.getPositionForOffset(offset - Offset(_shiftAt(offset.dy), 0));
 
   @override
-  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) =>
-      super.getOffsetForCaret(position, caretPrototype) + _in;
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) {
+    final at = super.getOffsetForCaret(position, caretPrototype);
+    return at + Offset(_shiftAt(at.dy + caretPrototype.height / 2 + 1), 0);
+  }
 
   @override
   List<TextBox> getBoxesForSelection(
@@ -510,7 +568,7 @@ class InsetTextPainter extends TextPainter {
         unscaledAscent: line.unscaledAscent,
         height: line.height,
         width: line.width,
-        left: line.left + inset,
+        left: line.left + inset + (line.lineNumber > 0 ? _hanging : 0),
         baseline: line.baseline,
         lineNumber: line.lineNumber,
       ),

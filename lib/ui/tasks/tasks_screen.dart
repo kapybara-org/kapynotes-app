@@ -303,12 +303,55 @@ class TasksScreenState extends State<TasksScreen> {
   );
 
   void _openSheet(TaskItem item) {
+    if (widget.phone) {
+      unawaited(_openPhoneSheet(item));
+      return;
+    }
     setState(() {
       _sheetId = item.id;
       _sheetIndex = _open(_tasks.read()).indexWhere((row) => row.id == item.id);
     });
     _listFocus.requestFocus();
   }
+
+  /// A phone's sheet pulls up over the list, and follows the task as it is
+  /// edited, so what it shows is what the note now says.
+  Future<void> _openPhoneSheet(TaskItem item) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Theme.of(context).drawerTheme.scrimColor,
+    builder: (context) => ListenableBuilder(
+      listenable: _tasks,
+      builder: (context, _) {
+        final board = _tasks.read();
+        TaskItem? shown;
+        for (final candidate in [...board.open, ...board.done]) {
+          if (candidate.id == item.id) shown = candidate;
+        }
+        final current = shown;
+        if (current == null) {
+          final route = ModalRoute.of(context);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted && (route?.isCurrent ?? false)) {
+              Navigator.of(context).pop();
+            }
+          });
+          return const SizedBox.shrink();
+        }
+        return PhoneTaskDetailsSheet(
+          item: current,
+          tasks: _tasks,
+          images: widget.images,
+          onClose: () => Navigator.of(context).pop(),
+          onOpenNote: () {
+            Navigator.of(context).pop();
+            widget.onOpenNote(current.note.id);
+          },
+        );
+      },
+    ),
+  );
 
   KeyEventResult _listKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent || _sheetId == null) {
@@ -392,7 +435,7 @@ class TasksScreenState extends State<TasksScreen> {
         label: _labelOf(board, item),
         menu: _menuFor(item, upNext: upNext),
         onTick: () => _tick(item, done: true),
-        onOpenNote: () => widget.onOpenNote(item.note.id),
+        onOpen: () => _openSheet(item),
         onKeep: () => _tasks.keep(item),
         onRemove: () => unawaited(_remove(item)),
       );
@@ -494,8 +537,7 @@ class TasksScreenState extends State<TasksScreen> {
             images: widget.images,
             phone: phone,
             doneShortcut: doneShortcutLabel,
-            onOpen: () =>
-                phone ? widget.onOpenNote(item.note.id) : _openSheet(item),
+            onOpen: () => _openSheet(item),
             onNotFinished: () => _tasks.notFinished(item, noteId: _noteId),
             onDone: () => unawaited(_tasks.finish(item, noteId: _noteId)),
           ),
@@ -543,7 +585,7 @@ class TasksScreenState extends State<TasksScreen> {
                             label: labelOf(item),
                             menu: const [],
                             onTick: () => _tick(item, done: false),
-                            onOpenNote: () => widget.onOpenNote(item.note.id),
+                            onOpen: () => _openSheet(item),
                             onKeep: () {},
                             onRemove: () {},
                           )
@@ -1412,8 +1454,8 @@ class _PhoneTodayTitle extends StatelessWidget {
 }
 
 /// A phone's task row: the box, then the task with its note under it. A tap
-/// on the box checks it off in place, a tap on the words opens the note at
-/// the task, and a long press opens the row menu.
+/// on the box checks it off in place, a tap on the words opens its details,
+/// and a long press opens the row menu.
 class _PhoneTaskRow extends StatelessWidget {
   const _PhoneTaskRow({
     super.key,
@@ -1423,7 +1465,7 @@ class _PhoneTaskRow extends StatelessWidget {
     required this.label,
     required this.menu,
     required this.onTick,
-    required this.onOpenNote,
+    required this.onOpen,
     required this.onKeep,
     required this.onRemove,
   });
@@ -1434,7 +1476,7 @@ class _PhoneTaskRow extends StatelessWidget {
   final String? label;
   final List<TaskMenuChoice?> menu;
   final VoidCallback onTick;
-  final VoidCallback onOpenNote;
+  final VoidCallback onOpen;
   final VoidCallback onKeep;
   final VoidCallback onRemove;
 
@@ -1477,7 +1519,7 @@ class _PhoneTaskRow extends StatelessWidget {
       },
       child: InkWell(
         key: ValueKey('phone-task-${item.id}'),
-        onTap: onOpenNote,
+        onTap: onOpen,
         child: GestureDetector(
           onLongPressStart: done || menu.isEmpty
               ? null
@@ -1577,6 +1619,7 @@ class _PhoneTaskRow extends StatelessWidget {
                     ),
                   ),
                 ),
+                TaskDetailsIcon(item: item),
               ],
             ),
           ),

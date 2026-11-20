@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/tags.dart';
@@ -713,6 +714,48 @@ void main() {
         expect(d.tags.tags, isEmpty);
         expect(d.tags.owed, isEmpty);
         d.dispose();
+      },
+    );
+  });
+
+  group('a blank new note', () {
+    test(
+      'its tags, pin and folder wait for its first letter, and go with it',
+      () async {
+        final (laptop, phone) = await pair();
+        Note blank() =>
+            laptop.notes.create(body: Note.blankBody, authored: false);
+        final tagged = blank();
+        final hidden = blank();
+        final left = blank();
+        final work = laptop.tags.create('Work')!;
+        laptop.tags.addTag(tagged.id, work.id);
+        laptop.notes.togglePinned(tagged.id);
+        laptop.notes.hide(hidden.id);
+        laptop.tags.addTag(left.id, work.id);
+        await laptop.pass();
+
+        String recordOf(Note note) => sharedVault().noteTagsRecordId(note.id);
+        expect(server.rows, isEmpty);
+        expect(stored().keys.toSet(), {work.id});
+
+        // Left as the page leaves it: deleted, and its tags with it, unsent.
+        laptop.notes.deleteAll([left.id]);
+        laptop.notes.updateBody(tagged.id, '${Note.blankBody}T');
+        laptop.notes.updateBody(hidden.id, '${Note.blankBody}H');
+        await laptop.pass();
+        await phone.pass();
+
+        expect(server.rows.keys.toSet(), {tagged.id, hidden.id});
+        expect(stored().keys.toSet(), {work.id, recordOf(tagged)});
+        expect(laptop.tags.owed, isEmpty);
+        expect(namesOn(phone, tagged.id), ['Work']);
+        expect(phone.notes.byId(hidden.id)!.isHidden, isTrue);
+        // A pin is this device's alone, and never reaches the server.
+        expect(laptop.notes.isPinned(tagged.id), isTrue);
+        expect(phone.notes.isPinned(tagged.id), isFalse);
+        laptop.dispose();
+        phone.dispose();
       },
     );
   });

@@ -455,6 +455,10 @@ class DocStore {
 
   DocRecord? get(String noteId) => _records[noteId];
 
+  /// Whether the server has never had anything of [noteId], with nothing on
+  /// its way there: no record, or one kept on this device alone.
+  bool neverSent(String noteId) => _records[noteId]?.isLocal ?? true;
+
   /// A fresh, empty document for a note the store has never seen.
   DocRecord create(String noteId, String spaceId) {
     final record = DocRecord(

@@ -184,16 +184,6 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
-    final facts = [
-      for (final (index, item) in items.indexed) ...[
-        if (index > 0) ...[
-          const SizedBox(width: _gap),
-          dot,
-          const SizedBox(width: _gap),
-        ],
-        item,
-      ],
-    ];
     if (AppPlatform.isMobile) {
       // Grows with the text size and the tags' 44 pt targets rather than
       // clipping them to a fixed row.
@@ -202,7 +192,27 @@ class NoteMetaRow extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(height: 16, child: Row(children: facts)),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 16),
+              child: Wrap(
+                key: const ValueKey('note-facts'),
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  for (final (index, item) in items.indexed)
+                    index == 0
+                        ? item
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: _gap),
+                              dot,
+                              const SizedBox(width: _gap),
+                              item,
+                            ],
+                          ),
+                ],
+              ),
+            ),
             const SizedBox(height: 8),
             // The tags' own targets are 44 pt tall on a phone, so the row
             // gives them the room rather than clipping them to the pill.
@@ -215,7 +225,14 @@ class NoteMetaRow extends StatelessWidget {
       height: EditorMetrics.metaRow,
       child: Row(
         children: [
-          ...facts,
+          for (final (index, item) in items.indexed) ...[
+            if (index > 0) ...[
+              const SizedBox(width: _gap),
+              dot,
+              const SizedBox(width: _gap),
+            ],
+            item,
+          ],
           if (tags case final tags?) ...[
             const SizedBox(width: _gap),
             dot,

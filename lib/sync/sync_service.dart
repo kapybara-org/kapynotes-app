@@ -1140,6 +1140,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     if (personal == null) return;
 
     for (final note in _notes.dirtyNotes) {
+      if (_holdsBack(note)) continue;
       final spaceId = note.spaceId ?? personal.id;
       // Left dirty, not diffed: the diff is taken once, when it can go.
       if (_needsPro.contains(spaceId)) continue;
@@ -1219,7 +1220,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         continue;
       }
       if (!space.canEdit) continue;
-      if (record == null) {
+      if (record == null || record.isLocal) {
         // Deleted before it was ever seeded: the server never had it.
         _notes.markSynced(tombstones: [stone]);
         continue;
@@ -1232,6 +1233,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _tasks?.schedule();
     }
   }
+
+  /// A blank new note the server has never had waits on this device, left
+  /// dirty, until something is written in it: one opened and left sends
+  /// nothing, and its first letter sends it whole, with whatever it was
+  /// filed under meanwhile. A note the server has, emptied, still goes.
+  bool _holdsBack(Note note) => note.isBlank && _docs.neverSent(note.id);
 
   Future<void> _uploadThenReconcile(Note note) async {
     final images = _images;
@@ -1944,6 +1951,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     ]..sort((a, b) => a.seq.compareTo(b.seq));
 
     final touched = <String, _Touched>{};
+    final retried = <String>{};
     for (final item in items) {
       if (item.seq <= _state.cursorFor(batch.spaceId)) continue;
       final noteId = item.noteId;
@@ -2001,6 +2009,18 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
             !local!.isDirty) {
           record.spaceId = there;
         }
+        if (item.deleted &&
+            record.outbox.any(
+              (entry) =>
+                  entry.spaceId == batch.spaceId &&
+                  entry.from != null &&
+                  entry.from != batch.spaceId,
+            )) {
+          // The note left this space and is already on its way back into
+          // it, as after Undo on Stop sharing: the marker is older than its
+          // return, so it does not take the note away.
+          touch.deleted = false;
+        }
         _docs.markDirty(noteId);
         continue;
       }
@@ -2027,7 +2047,20 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           continue;
         }
       }
-      final opened = await vault.openRaw(item.payload, contentKey);
+      var opened = await vault.openRaw(item.payload, contentKey);
+      if (opened == null && contentKey != null && retried.add(noteId)) {
+        // A note that left this space and came back gets its key minted
+        // again from epoch one, so the key held here for this epoch can be
+        // the one from before. Asked again, once per note per page.
+        final fresh = await _contentKeyFor(
+          record,
+          noteId,
+          space,
+          item.epoch,
+          stale: contentKey,
+        );
+        if (fresh != null) opened = await vault.openRaw(item.payload, fresh);
+      }
       if (opened == null) {
         debugPrint('KapyNotes: could not open op ${item.seq} of $noteId');
         continue;
@@ -2236,12 +2269,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     DocRecord record,
     String noteId,
     Space space,
-    int epoch,
-  ) async {
+    int epoch, {
+    Uint8List? stale,
+  }) async {
     final cached = record.keys[epoch];
-    if (cached != null) return cached;
+    if (cached != null && !listEquals(cached, stale)) return cached;
     final local = _notes.byId(noteId);
-    if (local?.contentKey != null && local!.contentKeyEpoch == epoch) {
+    if (local?.contentKey != null &&
+        local!.contentKeyEpoch == epoch &&
+        !listEquals(local.contentKey, stale)) {
       record.keys[epoch] = local.contentKey!;
       return local.contentKey;
     }
@@ -2263,7 +2299,36 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     } on SyncException catch (error) {
       debugPrint('KapyNotes: note keys unavailable: ${error.message}');
     }
-    return record.keys[epoch];
+    final fetched = record.keys[epoch];
+    if (fetched == null || listEquals(fetched, stale)) return null;
+    if (stale != null &&
+        local != null &&
+        local.spaceId == space.id &&
+        local.contentKeyEpoch == epoch) {
+      // The copy here still holds the key from before, and would seal its
+      // next edit under it where nobody else can read it. Whatever it already
+      // sealed under the old one goes up again whole, under the new one. It
+      // covers nothing: ops this device could not open are not in it, and
+      // the server would drop them for every other reader.
+      _notes.adoptKey(
+        noteId,
+        contentKey: fetched,
+        contentKeyEpoch: epoch,
+        contentKeyGeneration: record.keyGeneration ?? space.keyGeneration,
+      );
+      record.outbox.add(
+        OutboxEntry(
+          id: _nextRequestId(),
+          spaceId: space.id,
+          snapshot: record.doc.toSnapshot(),
+          covers: 0,
+        ),
+      );
+      record.opsSinceSnapshot = 0;
+      record.ownOpsSinceSnapshot = 0;
+      _scheduleSend();
+    }
+    return fetched;
   }
 
   // -------------------------------------------------------------------------
@@ -2593,14 +2658,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     await _docs.load();
     _reconcileDirty();
     final mine = _notes.notesIn(spaceId);
-    if (mine.any((note) => note.isDirty)) return false;
-    for (final note in mine) {
+    final going = mine.where((note) => !_holdsBack(note)).toList();
+    if (going.any((note) => note.isDirty)) return false;
+    for (final note in going) {
       final record = _docs.get(note.id);
       if (record == null || record.hasPending) return false;
     }
 
     final at = _now();
-    for (final note in mine) {
+    for (final note in going) {
       final record = _docs.get(note.id)!;
       final snapshot = WireSnapshot(
         covers: _state.cursorFor(personal.id),
