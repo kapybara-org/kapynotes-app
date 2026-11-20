@@ -449,6 +449,11 @@ class ShortcutPrefs extends ChangeNotifier {
   /// that bind keys leave the entry out of the map entirely.
   ShortcutBinding? bindingFor(ShortcutAction action) => _bindings[action];
 
+  /// The binding a tooltip, label or keycap names: none without a pointer,
+  /// because a phone's screen keyboard has none of these keys.
+  ShortcutBinding? hintFor(ShortcutAction action) =>
+      AppPlatform.hasPointer ? _bindings[action] : null;
+
   ShortcutAction? conflictFor(
     ShortcutAction action,
     ShortcutBinding candidate,

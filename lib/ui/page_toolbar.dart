@@ -48,6 +48,7 @@ class PageToolbar extends StatelessWidget {
     this.onMore,
     this.updates,
     this.actions,
+    this.onBack,
   });
 
   /// The breadcrumb: the space the list is showing, then the open note's
@@ -103,9 +104,17 @@ class PageToolbar extends StatelessWidget {
   /// to put there.
   final List<Widget>? actions;
 
+  /// A phone's way back to the list the page was pushed over, in place of
+  /// the breadcrumb and the list's controls.
+  final VoidCallback? onBack;
+
   static const double height = 56;
 
+  /// A phone's page bar: the back button and the note's actions, each 44.
+  static const double phoneHeight = 44;
+
   static const _padding = EdgeInsets.only(left: 24, right: 16);
+  static const _phonePadding = EdgeInsets.only(left: 4, right: 6);
 
   /// Narrower than this, Saved steps aside for the breadcrumb.
   static const double _savedWidth = 460;
@@ -130,10 +139,14 @@ class PageToolbar extends StatelessWidget {
     final showListShortcut = this.showListShortcut;
     final newNoteShortcut = this.newNoteShortcut;
     final updates = this.updates;
+    final onBack = this.onBack;
 
     return Container(
       key: const ValueKey('page-toolbar'),
-      height: AppControlMetrics.scaleBar(context, height),
+      height: AppControlMetrics.scaleBar(
+        context,
+        onBack == null ? height : phoneHeight,
+      ),
       color: palette.isGlass ? palette.paperColor : null,
       child: Stack(
         children: [
@@ -141,11 +154,11 @@ class PageToolbar extends StatelessWidget {
             child: WindowDragArea(child: SizedBox.expand()),
           ),
           Padding(
-            padding: _padding,
+            padding: onBack == null ? _padding : _phonePadding,
             child: LayoutBuilder(
               builder: (context, constraints) => Row(
                 children: [
-                  if (!listVisible) ...[
+                  if (onBack == null && !listVisible) ...[
                     CompactIconButton(
                       key: const ValueKey('page-show-list'),
                       tooltip: ['Show notes', ?showListShortcut].join('  '),
@@ -180,12 +193,14 @@ class PageToolbar extends StatelessWidget {
                           Expanded(
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: WindowDragArea(
-                                child: _Breadcrumb(
-                                  space: space,
-                                  section: section,
-                                ),
-                              ),
+                              child: onBack == null
+                                  ? WindowDragArea(
+                                      child: _Breadcrumb(
+                                        space: space,
+                                        section: section,
+                                      ),
+                                    )
+                                  : _BackButton(to: space, onPressed: onBack),
                             ),
                           ),
                           if (actions == null && members.isNotEmpty)
@@ -295,7 +310,8 @@ class PageToolbar extends StatelessWidget {
               key: ValueKey('page-more-${action.value}'),
               value: action.value,
               enabled: action.enabled,
-              height: 36,
+              // A phone's sheet gives each action a 44 pt target.
+              height: AppPlatform.hasPointer ? 36 : 44,
               child: KapyMenuActionRow(action, touch: false),
             ),
         ],
@@ -421,5 +437,65 @@ class _SaveStatus extends StatelessWidget {
       ),
     );
     return tooltip == null ? row : Tooltip(message: tooltip, child: row);
+  }
+}
+
+/// Back to the list: "‹ Notes" on iOS, and on Android Material's arrow
+/// alone, as the system back gesture names nothing either.
+class _BackButton extends StatelessWidget {
+  const _BackButton({required this.to, required this.onPressed});
+
+  final String to;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    if (AppPlatform.isAndroid) {
+      return IconButton(
+        key: const ValueKey('page-back'),
+        tooltip: 'Back',
+        onPressed: onPressed,
+        color: palette.textPrimary,
+        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22, strokeWidth: 1.9),
+      );
+    }
+    return Semantics(
+      button: true,
+      label: 'Back to $to',
+      excludeSemantics: true,
+      child: TextButton(
+        key: const ValueKey('page-back'),
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.only(right: 8),
+          foregroundColor: palette.accentText,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: Colors.transparent,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            KapyIcon(
+              KapyIcons.chevronLeftRounded,
+              size: 24,
+              strokeWidth: 2,
+              color: palette.accentText,
+            ),
+            Text(
+              to,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppTypeScale.body,
+                fontWeight: FontWeight.w500,
+                color: palette.accentText,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

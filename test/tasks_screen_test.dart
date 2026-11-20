@@ -9,6 +9,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
@@ -44,8 +45,12 @@ void main() {
     WidgetTester tester, {
     TaskFilter filter = const TaskFilter.all(),
     ThemeData? theme,
+    bool phone = false,
+    ValueChanged<String>? onOpenNote,
   }) async {
-    await tester.binding.setSurfaceSize(const Size(900, 1000));
+    await tester.binding.setSurfaceSize(
+      phone ? const Size(393, 852) : const Size(900, 1000),
+    );
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
@@ -56,8 +61,9 @@ void main() {
             filter: filter,
             addFocus: addFocus,
             labelOf: (note) => note.title,
-            onOpenNote: (_) {},
+            onOpenNote: onOpenNote ?? (_) {},
             newTaskShortcut: '⌘N',
+            phone: phone,
           ),
         ),
       ),
@@ -536,5 +542,107 @@ void main() {
         );
       });
     }
+  });
+
+  group('on a phone', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
+
+    Finder phoneBox(TaskItem item) =>
+        find.byKey(ValueKey('phone-task-box-${item.id}'));
+
+    TaskItem open(String words) =>
+        tasks.read().open.firstWhere((item) => item.words == words);
+
+    Finder words(TaskItem item) => find.descendant(
+      of: find.byKey(ValueKey('phone-task-${item.id}')),
+      matching: find.text(item.words),
+    );
+
+    testWidgets('a large Today with the count done, and no keycaps', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester, phone: true);
+
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('0 of 2 done'), findsOneWidget);
+      expect(find.byType(Keycap), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('tasks-add-row'))).height,
+        44,
+      );
+      expect(
+        tester
+            .getSize(find.byKey(ValueKey('phone-task-${open('One').id}')))
+            .height,
+        greaterThanOrEqualTo(48),
+      );
+      expect(tester.getSize(phoneBox(open('One'))), const Size(44, 44));
+      await settle(tester);
+    });
+
+    testWidgets('a checked row stays, struck through, and unchecks again', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester, phone: true);
+      final one = open('One');
+
+      final two = open('Two');
+      await tester.tap(phoneBox(one));
+      await settle(tester);
+      expect([for (final i in tasks.read().open) i.words], ['Two']);
+      expect(words(one), findsOneWidget);
+      expect(
+        tester.getTopLeft(words(one)).dy,
+        lessThan(tester.getTopLeft(words(two)).dy),
+      );
+      expect(
+        tester.widget<Text>(words(one)).style?.decoration,
+        TextDecoration.lineThrough,
+      );
+
+      await tester.tap(phoneBox(one));
+      await settle(tester);
+      expect([
+        for (final i in tasks.read().open) i.words,
+      ], containsAll(['One', 'Two']));
+      expect(
+        tester.widget<Text>(words(open('One'))).style?.decoration,
+        isNot(TextDecoration.lineThrough),
+      );
+    });
+
+    testWidgets('a checked row leaves once the screen is left', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester, phone: true);
+      final one = open('One');
+      await tester.tap(phoneBox(one));
+      await settle(tester);
+
+      await tester.pumpWidget(const SizedBox());
+      await pumpScreen(tester, phone: true);
+      expect(find.byKey(ValueKey('phone-task-${one.id}')), findsNothing);
+      expect(words(open('Two')), findsOneWidget);
+    });
+
+    testWidgets('a tap on the words opens the note, a long press offers Pick', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      String? opened;
+      await pumpScreen(tester, phone: true, onOpenNote: (id) => opened = id);
+      final two = open('Two');
+
+      await tester.tap(words(two));
+      await settle(tester);
+      expect(opened, two.note.id);
+
+      await tester.longPress(words(two));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('phone-task-pick-${two.id}')));
+      await settle(tester);
+      expect(open('Two').dotted, isTrue);
+    });
   });
 }
