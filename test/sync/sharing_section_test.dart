@@ -605,7 +605,7 @@ void main() {
     await confirm(tester);
     expect(find.byKey(const ValueKey('sharing-error')), findsOneWidget);
     expect(
-      find.text('Could not reach the server. Try again in a moment.'),
+      find.text('Couldn’t reach Kapy cloud. Try again in a moment.'),
       findsOneWidget,
     );
     expect(find.text('Sharing failed'), findsNothing);
