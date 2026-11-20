@@ -7,6 +7,7 @@ import 'ai/device_model.dart';
 import 'ai/kapy_ai.dart';
 import 'ai/kapy_ai_controller.dart';
 import 'ai/kapy_chat_book.dart';
+import 'core/keyring.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
 import 'core/appearance.dart';
@@ -30,6 +31,7 @@ import 'speech/transcription_queue.dart';
 import 'audio/voice_recording_controller.dart';
 import 'core/quick_capture.dart';
 import 'core/deep_links.dart';
+import 'core/system_contrast.dart';
 import 'core/theme.dart';
 import 'core/window_material.dart';
 import 'data/auto_titles.dart';
@@ -269,6 +271,16 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// has, and wherever it cannot, the surfaces keep their opaque paint, since
   /// tints over an unblurred window show black through every gap.
   bool _glassBehindWindow = false;
+
+  /// Whether macOS or Android asks for more contrast, where Flutter's own
+  /// accessibility features cannot say.
+  final SystemContrast _systemContrast = SystemContrast();
+
+  /// Reads the clock on each whole minute while At night is on.
+  Timer? _nightTimer;
+
+  /// Whether the clock was last read inside the night.
+  bool _atNight = false;
   late final HiddenNotesGate _hiddenNotesGate;
 
   @override
@@ -279,6 +291,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     widget.prefs.transparencyListenable.addListener(_applyWindowMaterial);
     widget.prefs.transparencyAmountListenable.addListener(_applyWindowMaterial);
     _applyWindowMaterial();
+    widget.prefs.nightThemeListenable.addListener(_followNight);
+    _followNight();
+    unawaited(_systemContrast.start());
     // Quitting from the tray never passes through the platform's exit
     // request, so the flush that request would have triggered has to be
     // handed over explicitly. This state owns the store; nothing below it
@@ -476,12 +491,17 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       binding.addPostFrameCallback((_) {
         if (!mounted) return;
         widget.updates?.loadCache();
-        unawaited(_mcp?.load());
         final account = widget.account;
-        if (account != null) {
-          account.planTerms?.loadCache();
-          unawaited(account.restore());
-        }
+        account?.planTerms?.loadCache();
+        // Before any keystore read: one question, then the session and the
+        // assistant connections. A missing keyring is known by then, so those
+        // reads do not each log the same failure.
+        unawaited(() async {
+          await KeyringStatus.probe();
+          if (!mounted) return;
+          unawaited(_mcp?.load());
+          unawaited(account?.restore());
+        }());
         unawaited(widget.tasks?.load());
         _scheduleBackgroundFetches();
       });
@@ -563,6 +583,56 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     if (on != _glassBehindWindow) setState(() => _glassBehindWindow = on);
   }
 
+  /// Reads the clock on every whole minute while At night is on, and
+  /// rebuilds the window when the night begins or ends. One long timer would
+  /// run late after a sleep, a clock or time zone change, or a spring-forward
+  /// night, and Flutter reports none of those on the desktop.
+  void _followNight() {
+    _nightTimer?.cancel();
+    final night = widget.prefs.nightTheme;
+    final now = widget.notes.now();
+    final atNight = night.activeAt(now);
+    if (atNight != _atNight) setState(() => _atNight = atNight);
+    if (!night.enabled) return;
+    _nightTimer = Timer(
+      const Duration(minutes: 1) -
+          Duration(
+            seconds: now.second,
+            milliseconds: now.millisecond,
+            microseconds: now.microsecond,
+          ),
+      _followNight,
+    );
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() => setState(() {});
+
+  /// Whether the system asks for more contrast: Flutter's own report, or the
+  /// platform's where Flutter has none.
+  bool get _systemAsksForContrast =>
+      _systemContrast.value ||
+      WidgetsBinding
+          .instance
+          .platformDispatcher
+          .accessibilityFeatures
+          .highContrast;
+
+  /// The themes a window wears now. Increase contrast follows the system
+  /// until the switch in Settings says otherwise.
+  WindowLook _look({bool transparency = false}) {
+    final prefs = widget.prefs;
+    return KapyTheme.window(
+      mode: prefs.appearance,
+      theme: prefs.theme,
+      night: prefs.nightTheme,
+      wallClock: widget.notes.now(),
+      increaseContrast: prefs.increaseContrast ?? _systemAsksForContrast,
+      transparency: transparency && prefs.transparencyEnabled,
+      amount: prefs.transparencyAmount,
+    );
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -570,6 +640,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     widget.prefs.transparencyAmountListenable.removeListener(
       _applyWindowMaterial,
     );
+    widget.prefs.nightThemeListenable.removeListener(_followNight);
+    _nightTimer?.cancel();
+    _systemContrast.dispose();
     widget.updates?.onBeforeQuitForUpdate = null;
     _rateRefreshTimer?.cancel();
     _updateCheckTimer?.cancel();
@@ -602,6 +675,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // backgrounded is the moment to make sure everything is on disk.
     if (state == AppLifecycleState.resumed) {
       _scheduleBackgroundFetches();
+      // A suspended phone fires no timers, so the night may have begun or
+      // ended while nothing was running to notice.
+      _followNight();
       sync?.resume();
       // Coming back is the likeliest moment for another device to have moved
       // on without us.
@@ -651,100 +727,105 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
     final integration = widget.desktopIntegration;
     final panelTasks = _panelTasks;
+    final looks = [
+      widget.prefs.appearanceListenable,
+      widget.prefs.themeListenable,
+      widget.prefs.nightThemeListenable,
+      widget.prefs.increaseContrastListenable,
+      _systemContrast,
+    ];
     final app = ListenableBuilder(
       listenable: Listenable.merge([
+        ...looks,
         widget.prefs.transparencyListenable,
         widget.prefs.transparencyAmountListenable,
-        widget.prefs.appearanceListenable,
         widget.prefs.appTextSizeListenable,
       ]),
-      builder: (context, _) => MaterialApp(
-        title: AppWordmark.name,
-        debugShowCheckedModeBanner: false,
-        navigatorObservers: [_popupKeyboardObserver],
-        theme: KapyTheme.light(
-          transparency: widget.prefs.transparencyEnabled,
-          amount: widget.prefs.transparencyAmount,
-        ),
-        darkTheme: KapyTheme.dark(
-          transparency: widget.prefs.transparencyEnabled,
-          amount: widget.prefs.transparencyAmount,
-        ),
-        themeMode: widget.prefs.appearance.themeMode,
-        // The glass palette only applies once the window has a blurred
-        // desktop behind it, and not while an accessibility mode asks for
-        // solid surfaces. High Contrast is an explicit request for stronger
-        // separation: keep the saved choice, but put the opaque paint back
-        // for as long as the mode is on. macOS' own Reduce Transparency
-        // already flattens the material behind the window; this covers the
-        // Flutter side of it. Either way it costs a single palette copy
-        // rather than a rebuilt ColorScheme on every frame.
-        builder: (context, child) {
-          final solid =
-              !_glassBehindWindow || MediaQuery.highContrastOf(context);
-          Widget result = child ?? const SizedBox.shrink();
-          if (widget.prefs.transparencyEnabled && solid) {
-            final theme = Theme.of(context);
-            final palette = theme.extension<CalcPalette>()!;
-            result = Theme(
-              data: theme.copyWith(extensions: [palette.opaque]),
+      builder: (context, _) {
+        final look = _look(transparency: true);
+        return MaterialApp(
+          title: AppWordmark.name,
+          debugShowCheckedModeBanner: false,
+          navigatorObservers: [_popupKeyboardObserver],
+          theme: look.light,
+          darkTheme: look.dark,
+          themeMode: look.mode,
+          // The glass palette only applies once the window has a blurred
+          // desktop behind it, and not while an accessibility mode asks for
+          // solid surfaces. High Contrast is an explicit request for stronger
+          // separation: keep the saved choice, but put the opaque paint back
+          // for as long as the mode is on. macOS' own Reduce Transparency
+          // already flattens the material behind the window; this covers the
+          // Flutter side of it. Either way it costs a single palette copy
+          // rather than a rebuilt ColorScheme on every frame.
+          builder: (context, child) {
+            final asks = _systemAsksForContrast;
+            final solid = !_glassBehindWindow || asks;
+            Widget result = child ?? const SizedBox.shrink();
+            if (widget.prefs.transparencyEnabled && solid) {
+              final theme = Theme.of(context);
+              final palette = theme.extension<CalcPalette>()!;
+              result = Theme(
+                data: theme.copyWith(extensions: [palette.opaque]),
+                child: result,
+              );
+            }
+
+            result = JoiningScope(account: widget.account, child: result);
+
+            final media = MediaQuery.of(context);
+            return MediaQuery(
+              data: media.copyWith(
+                textScaler: widget.prefs.appTextSize.applyTo(media.textScaler),
+                highContrast: asks,
+              ),
               child: result,
             );
-          }
-
-          result = JoiningScope(account: widget.account, child: result);
-
-          final media = MediaQuery.of(context);
-          return MediaQuery(
-            data: media.copyWith(
-              textScaler: widget.prefs.appTextSize.applyTo(media.textScaler),
-            ),
-            child: result,
-          );
-        },
-        // Prose autocorrection has no place in a calculator, and the app is
-        // plain-text only, so the default Material scroll behaviour is enough.
-        // Under the Navigator, so that it can open a dialog; above the home
-        // screen, so that a link is acted on wherever the person is.
-        home: JoinLinkListener(
-          links: widget.deepLinks,
-          account: widget.account,
-          child: SharingNoticeListener(
+          },
+          // Prose autocorrection has no place in a calculator, and the app is
+          // plain-text only, so the default Material scroll behaviour is enough.
+          // Under the Navigator, so that it can open a dialog; above the home
+          // screen, so that a link is acted on wherever the person is.
+          home: JoinLinkListener(
+            links: widget.deepLinks,
             account: widget.account,
-            child: HomePage(
-              notes: widget.notes,
-              engines: _engines!,
-              rates: widget.rates,
-              prefs: widget.prefs,
-              shortcuts: widget.shortcuts,
-              updates: widget.updates,
-              desktopIntegration: widget.desktopIntegration,
+            child: SharingNoticeListener(
               account: widget.account,
-              tasks: widget.tasks,
-              tags: widget.tags,
-              folders: widget.folders,
-              store: widget.store,
-              welcomeNoteId: _welcomeNoteId,
-              launchIntent: _launchIntent,
-              recording: _recording,
-              player: _player,
-              transcriptions: _transcriptions,
-              voicePrefs: _voicePrefs,
-              cloudAccess: _cloudAccess,
-              localModels: _localModels,
-              deviceSummarizer: _deviceSummarizer,
-              deviceTranscriber: _deviceTranscriber,
-              summarizer: _summarizer,
-              transcriber: _transcriber,
-              imageAcquirer: widget.imageAcquirer,
-              lostImageRetriever: widget.lostImageRetriever,
-              hiddenNotesGate: _hiddenNotesGate,
-              kapyAi: _kapyAi,
-              titleModel: _titleModel,
+              child: HomePage(
+                notes: widget.notes,
+                engines: _engines!,
+                rates: widget.rates,
+                prefs: widget.prefs,
+                shortcuts: widget.shortcuts,
+                updates: widget.updates,
+                desktopIntegration: widget.desktopIntegration,
+                account: widget.account,
+                tasks: widget.tasks,
+                tags: widget.tags,
+                folders: widget.folders,
+                store: widget.store,
+                welcomeNoteId: _welcomeNoteId,
+                launchIntent: _launchIntent,
+                recording: _recording,
+                player: _player,
+                transcriptions: _transcriptions,
+                voicePrefs: _voicePrefs,
+                cloudAccess: _cloudAccess,
+                localModels: _localModels,
+                deviceSummarizer: _deviceSummarizer,
+                deviceTranscriber: _deviceTranscriber,
+                summarizer: _summarizer,
+                transcriber: _transcriber,
+                imageAcquirer: widget.imageAcquirer,
+                lostImageRetriever: widget.lostImageRetriever,
+                hiddenNotesGate: _hiddenNotesGate,
+                kapyAi: _kapyAi,
+                titleModel: _titleModel,
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
     final mcp = _mcp;
     final scoped = mcp == null ? app : McpScope(service: mcp, child: app);
@@ -752,7 +833,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     return ViewAnchor(
       view: MenuBarPanelView(
         controller: integration.panel,
-        prefs: widget.prefs,
+        look: _look,
+        lookChanges: Listenable.merge(looks),
         panel: (context) => MenuBarPanel(
           controller: integration.panel,
           notes: widget.notes,

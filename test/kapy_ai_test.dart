@@ -588,9 +588,7 @@ void main() {
 
       expect(find.text('Before the first answer'), findsOneWidget);
       expect(
-        find.textContaining(
-          'where an AI service answers it',
-        ),
+        find.textContaining('where an AI service answers it'),
         findsOneWidget,
       );
       expect(
@@ -800,7 +798,7 @@ void main() {
       expect(find.text('Codex is signed out'), findsOneWidget);
       expect(
         find.text(
-          'Sign in inside Codex, then check again, or pick another model.',
+          'Sign in inside Codex, then check again.',
         ),
         findsOneWidget,
       );
@@ -836,7 +834,7 @@ void main() {
       );
 
       expect(
-        find.text('Check the key in Settings, or pick another model.'),
+        find.text('Check the key in Settings.'),
         findsOneWidget,
       );
       await tester.tap(find.text('Open Settings'));

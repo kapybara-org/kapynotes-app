@@ -32,7 +32,6 @@ class VoicePrefs extends ChangeNotifier {
 
   static const String _languageKey = 'voice.language.v1';
   static const String _summarizeKey = 'voice.summarize.v1';
-  static const String _playbackSpeedKey = 'voice.playbackSpeed.v1';
   static const String _declinedVersionKey =
       'voice.transcriptionDeclinedVersion.v1';
   static const String _summaryEngineKey = 'voice.summaryEngine.v1';
@@ -42,7 +41,6 @@ class VoicePrefs extends ChangeNotifier {
 
   String? _language;
   bool _summarize = true;
-  double _playbackSpeed = 1;
   int? _declinedVersion;
   SummaryEngine _summaryEngine = SummaryEngine.cloud;
   TranscriptEngine _transcriptEngine = TranscriptEngine.cloud;
@@ -57,7 +55,6 @@ class VoicePrefs extends ChangeNotifier {
   String? get language => _language;
 
   bool get summarize => _summarize;
-  double get playbackSpeed => _playbackSpeed;
 
   /// Where the summary is written.
   ///
@@ -103,9 +100,6 @@ class VoicePrefs extends ChangeNotifier {
 
     final summarize = _store.data[_summarizeKey];
     _summarize = summarize is bool ? summarize : true;
-
-    final speed = _store.data[_playbackSpeedKey];
-    _playbackSpeed = speed is num ? _clampSpeed(speed.toDouble()) : 1;
 
     final declined = _store.data[_declinedVersionKey];
     _declinedVersion = declined is int ? declined : null;
@@ -163,14 +157,6 @@ class VoicePrefs extends ChangeNotifier {
     notifyListeners();
   }
 
-  set playbackSpeed(double value) {
-    final next = _clampSpeed(value);
-    if (next == _playbackSpeed) return;
-    _playbackSpeed = next;
-    _store.putNow(_playbackSpeedKey, next);
-    notifyListeners();
-  }
-
   set summaryEngine(SummaryEngine value) {
     if (value == _summaryEngine) return;
     _summaryEngine = value;
@@ -210,16 +196,15 @@ class VoicePrefs extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Consent given on this build: an earlier refusal no longer stands.
+  void consentGiven() {
+    transcriptionDeclinedVersion = null;
+  }
+
   /// Whether the consent sheet should be offered for [version].
   ///
   /// False once they have said no to this exact version, and true again when
   /// it is raised — a new version is a different question.
   bool shouldOfferConsent(int version) =>
       _declinedVersion == null || _declinedVersion! < version;
-
-  /// A speed outside this range is a corrupt record, not a preference.
-  static double _clampSpeed(double value) {
-    if (value.isNaN || value <= 0) return 1;
-    return value.clamp(0.5, 3.0);
-  }
 }

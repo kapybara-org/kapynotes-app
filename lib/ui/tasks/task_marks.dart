@@ -3,6 +3,9 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/editor_font.dart';
 import '../../core/theme.dart';
 import '../../data/note.dart';
+import '../../data/task_board.dart';
+import '../../data/task_details.dart';
+import '../../sync/spaces.dart';
 import '../tag_colours.dart';
 
 /// What the Tasks sidebar narrows the page to: every open task, the Done
@@ -24,6 +27,18 @@ class TaskFilter {
   int get hashCode => Object.hash(noteId, done);
 }
 
+/// A note's name on a task's mark, with its space's name after it when that
+/// name exists.
+///
+/// A personal space has no name of its own, and a team space can arrive
+/// without one. [Space.name] is null in both cases. Printing it anyway shows
+/// "Title · null" beside the task, on the Tasks list, on phones, and in ⌘K.
+String taskNoteLabel(Note note, Space? space) {
+  final name = space?.name?.trim();
+  if (name == null || name.isEmpty) return note.title;
+  return '${note.title} · $name';
+}
+
 /// Shantell Sans, the hand the app titles things in.
 TextStyle handStyle(double size, double line, FontWeight weight, Color color) {
   const hand = WritingFont.handwritten;
@@ -36,6 +51,37 @@ TextStyle handStyle(double size, double line, FontWeight weight, Color color) {
     fontWeight: weight,
     color: color,
   );
+}
+
+/// A quiet mark that a task has details: lines for words, a picture mark for
+/// a picture or a video. Never a dot, so it cannot be read as a tag.
+class TaskDetailsIcon extends StatelessWidget {
+  const TaskDetailsIcon({super.key, required this.item});
+
+  final TaskItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final details = taskBlockOf(item.note.body, item.line)?.details;
+    if (details == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Tooltip(
+        message: details.hasVideo
+            ? 'Has a picture or video'
+            : details.hasPicture
+            ? 'Has a picture'
+            : 'Has details',
+        child: KapyIcon(
+          details.hasMedia
+              ? KapyIcons.imageOutlined
+              : KapyIcons.textFieldsRounded,
+          size: 14,
+          color: context.palette.textTertiary,
+        ),
+      ),
+    );
+  }
 }
 
 /// Figtree, every label and every task's words.

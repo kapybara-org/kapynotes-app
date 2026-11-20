@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/keyring.dart';
 import '../../core/platform.dart';
 import '../../core/text_file_export.dart';
 import '../../core/theme.dart';
@@ -15,6 +16,7 @@ import '../../sync/key_bundle.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'encryption_pane.dart';
+import 'password_row.dart';
 import 'recovery_key_dialog.dart';
 import 'sign_out_others_row.dart';
 import '../profile_avatar.dart';
@@ -329,6 +331,8 @@ class _SignInFormState extends State<_SignInForm> {
               'Sync encrypted notes across your devices.',
       },
       children: [
+        if (!KeyringStatus.instance.available)
+          const _Message(KeyringNotice.signIn),
         ..._fields(),
         ..._actions(),
         if (_note != null) _Message(_note!),
@@ -731,6 +735,8 @@ class _PassphraseFormState extends State<_PassphraseForm> {
     title: 'Save your passphrase',
     blurb: 'Use it to unlock your notes on other devices.',
     children: [
+      if (!KeyringStatus.instance.available)
+        const _Message(KeyringNotice.passphrase),
       GeneratedPassphrase(
         passphrase: _passphrase,
         saveTextFile: widget.saveTextFile,
@@ -870,6 +876,8 @@ class _UnlockFormState extends State<_UnlockForm> {
               null => 'Enter your passphrase to unlock notes on this device.',
             },
       children: [
+        if (!KeyringStatus.instance.available)
+          const _Message(KeyringNotice.unlock),
         _Field(
           key: ValueKey(_usingRecoveryKey),
           controller: _input,
@@ -1052,6 +1060,8 @@ class _ReadyState extends State<_Ready> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      if (!KeyringStatus.instance.available)
+        const SettingsNote(KeyringNotice.syncing),
       SettingsGroup(
         children: [
           if (_editing)
@@ -1067,6 +1077,7 @@ class _ReadyState extends State<_Ready> {
               account: account,
               onEdit: () => setState(() => _editing = true),
             ),
+          PasswordRow(account: account),
           SettingsRow(
             key: const ValueKey('sync-status'),
             title: 'Sync',

@@ -32,6 +32,10 @@ import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
 import '../../data/note.dart';
+import '../../data/task_details.dart';
+import '../../data/task_folds.dart';
+import '../../data/task_index.dart' show wordsDigest;
+import '../../data/task_lines.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../compact_icon_button.dart';
@@ -91,7 +95,9 @@ import 'note_video_view.dart';
 import 'paste_feedback.dart';
 import 'remote_carets.dart';
 import 'note_field.dart';
-import 'note_sliver.dart' show LineTrailing, lineTrailingGap;
+import 'note_sliver.dart' show LineSpan, LineTrailing, lineTrailingGap;
+import 'task_details_chrome.dart';
+import 'task_details_editing.dart';
 import 'results_gutter.dart';
 import 'editor_context_menu.dart';
 import 'selection_bubble.dart';
@@ -183,6 +189,7 @@ class NoteEditor extends StatefulWidget {
     required this.engine,
     required this.highlighter,
     this.keepResultRoom = false,
+    this.cramped = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -341,6 +348,11 @@ class NoteEditor extends StatefulWidget {
   /// at the right of its first row, as a phone does. Otherwise the result
   /// follows the writing at the end of its line, on a leader.
   final bool keepResultRoom;
+
+  /// Whether the page around this editor is too short for its top and bottom
+  /// padding, as on a phone on its side with the keyboard up. The lines take
+  /// that room instead.
+  final bool cramped;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -485,7 +497,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// Whether this note is being written in: its own field has focus, or one of
   /// its cells does.
   bool get _editingNote => _focusNode.hasFocus || _editingCell != null;
+
+  /// Whether this note is being written in; see [_editingNote].
+  bool get writing => _editingNote;
+
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
+
+  /// Folds and the first-time hint. Device-local; never written into the note.
+  TaskFolds? _folds;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
 
@@ -652,6 +671,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // Anchored to a rect that scrolling invalidates, so it goes rather than
     // drifts away from the link it points at.
     _scrollController.addListener(_handleEditorScroll);
+    unawaited(_loadFolds());
     widget.shortcuts.addListener(_onShortcutsChanged);
     widget.player?.addListener(_onPlaybackChanged);
     _isEmpty = initialText.isEmpty;
@@ -1304,6 +1324,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _onControllerChanged() {
+    _openFoldUnderCaret();
     _recordKapyPeekActivity();
     final value = _controller.value;
     if (_convertedPaste case final paste? when value.text != paste.text) {
@@ -1869,12 +1890,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
     final selection = base.selection;
     final caret = selection.isValid ? selection.end : base.text.length;
-    final result = insertImagesIntoBody(
+    final raw = insertImagesIntoBody(
       body: base.text,
       existing: _attachments,
       caret: caret,
       incoming: refs,
     );
+    final result = attachMediaUnderTask(bodyBefore: base.text, inserted: raw);
+    if (result.body != raw.body) _usedDetails();
     _nextAttachments = result.attachments;
     // A picture carries no inline style, and must not inherit the bold the
     // writer happened to have switched on.
@@ -3590,17 +3613,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           columns: choice.tableColumns ?? 2,
         );
         final firstHeader = table.indexOf('Column 1');
-        _replaceCommandValue(
-          replaceWithSlashCommandBlock(
-            _controller.value,
-            range,
-            table,
-            selectionInBlock: TextSelection(
-              baseOffset: firstHeader,
-              extentOffset: firstHeader + 'Column 1'.length,
-            ),
+        final inserted = replaceWithSlashCommandBlock(
+          _controller.value,
+          range,
+          table,
+          selectionInBlock: TextSelection(
+            baseOffset: firstHeader,
+            extentOffset: firstHeader + 'Column 1'.length,
           ),
         );
+        _replaceCommandValue(inserted);
+        _openNewTable(inserted.selection.baseOffset);
         break;
       case SlashCommandType.checklist:
         if (typed) {
@@ -3823,6 +3846,124 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return _handleTabIndent(node, event);
   }
 
+  Future<void> _loadFolds() async {
+    final folds = await TaskFolds.open();
+    if (!mounted) return;
+    setState(() => _folds = folds);
+  }
+
+  void _usedDetails() {
+    final folds = _folds;
+    if (folds == null || folds.hintSeen) return;
+    folds.markHintSeen();
+    setState(() {});
+  }
+
+  String _foldKey(String words) => wordsDigest(words);
+
+  String? _blockText;
+  List<TaskBlock>? _blockCache;
+  List<({TaskDetails details, bool folded})>? _foldedBlocks;
+
+  List<TaskBlock> _blocks() {
+    final text = _controller.text;
+    if (_blockText != text || _blockCache == null) {
+      _blockText = text;
+      _blockCache = taskBlocks(text, attachments: _attachments);
+      _foldedBlocks = null;
+    }
+    return _blockCache!;
+  }
+
+  /// The details blocks with whether each is folded, worked out once for the
+  /// text and the folds as they are now: the layout asks per line.
+  List<({TaskDetails details, bool folded})> _folded() {
+    final blocks = _blocks();
+    return _foldedBlocks ??= [
+      for (final block in blocks)
+        if (block.details != null)
+          (details: block.details!, folded: _taskFolded(block.task)),
+    ];
+  }
+
+  bool _taskFolded(TaskLine task) {
+    final folds = _folds;
+    final words = _controller.text.substring(task.textStart, task.end).trim();
+    if (folds == null) return task.done;
+    return folds.isFolded(widget.noteId, _foldKey(words), done: task.done);
+  }
+
+  bool get _caretInTask {
+    final selection = _controller.selection;
+    if (!selection.isValid) return false;
+    final line = markdownLinePrefix(_controller.text, selection.extentOffset);
+    return line.isTask &&
+        selection.extentOffset >= line.contentStart &&
+        _controller.text
+            .substring(line.contentStart, line.lineEnd)
+            .trim()
+            .isNotEmpty;
+  }
+
+  void _dropIntoDetails() {
+    final dropped = shiftEnterDetails(_controller.value);
+    if (dropped == null) return;
+    _controller.value = dropped;
+    _usedDetails();
+    _focusNode.requestFocus();
+  }
+
+  void _openFoldUnderCaret() {
+    final folds = _folds;
+    final selection = _controller.selection;
+    if (folds == null || !selection.isValid) return;
+    final text = _controller.text;
+    final at = selection.extentOffset.clamp(0, text.length);
+    for (final block in _blocks()) {
+      final details = block.details;
+      if (details == null || !_taskFolded(block.task)) continue;
+      if (at < details.start || at > details.end) continue;
+      final words = text.substring(block.task.textStart, block.task.end).trim();
+      folds.setFolded(widget.noteId, _foldKey(words), folded: false);
+      _foldedBlocks = null;
+      setState(() {});
+      return;
+    }
+  }
+
+  void _toggleFold(TaskLine task) {
+    final folds = _folds;
+    if (folds == null) return;
+    final words = _controller.text.substring(task.textStart, task.end).trim();
+    folds.setFolded(widget.noteId, _foldKey(words), folded: !_taskFolded(task));
+    _foldedBlocks = null;
+    setState(() {});
+  }
+
+  /// Hides a folded task's details, leaving the first of those lines as a
+  /// quiet row the preview is drawn on. The note's text is not touched.
+  LineSpan _adjustTaskFold(int start, int end, LineSpan span) {
+    if (start >= _controller.text.length) return span;
+    final where = foldedLineFor(start, _folded());
+    if (where == FoldedLine.keep) return span;
+    if (where == FoldedLine.hidden) {
+      return (
+        span: span.span,
+        placeholders: span.placeholders,
+        folded: true,
+        row: span.row,
+        inset: span.inset,
+      );
+    }
+    return (
+      span: const TextSpan(text: ''),
+      placeholders: const <PlaceholderDimensions>[],
+      folded: false,
+      row: EditorMetrics.page ? 22 : 44,
+      inset: span.inset,
+    );
+  }
+
   /// Tab nests the current item, Shift+Tab lifts it out.
   ///
   /// Only claimed when the caret is actually on a list line. Everywhere else
@@ -3852,6 +3993,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         pressed.contains(LogicalKeyboardKey.shiftLeft) ||
         pressed.contains(LogicalKeyboardKey.shiftRight);
     if (_indentCode(outdent: outdent)) return KeyEventResult.handled;
+    final attached = tabTaskDetails(_controller.value, detach: outdent);
+    if (attached != null) {
+      _controller.value = attached;
+      _usedDetails();
+      return KeyEventResult.handled;
+    }
     if (!_showIndentControls) return KeyEventResult.ignored;
     // Claim the key even at the ends of the range, or Tab would silently fall
     // through to focus traversal exactly when the list stops moving.
@@ -5820,6 +5967,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         _toggleChecklist,
         active: _lineStyleActive(NoteLineStyle.checklist),
       ),
+      if (_caretInTask)
+        action(
+          'format-details',
+          'Details',
+          KapyIcons.textFieldsRounded,
+          _dropIntoDetails,
+          active: _folds?.hintSeen == false,
+        ),
       action(
         'format-bullets',
         'Bulleted list',
@@ -6938,6 +7093,27 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (moved) _ensureCellVisible();
   }
 
+  /// Opens the table the slash menu has just written on its first cell, with
+  /// the placeholder selected to type over, as a tapped cell is opened.
+  void _openNewTable(int offset) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final field = _field;
+      if (!mounted || field == null) return;
+      final table = markdownTableAt(
+        _controller.markdownFor(_controller.text),
+        offset,
+      );
+      final rect = table == null ? null : _cellRect(field, table, 0, 0);
+      if (table == null || rect == null) return;
+      _showCellEditor(table, 0, 0, rect);
+      final cell = _cellEditor.field;
+      cell.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: cell.text.length,
+      );
+    });
+  }
+
   /// Scrolls the note just far enough for the open cell to be seen, clear of a
   /// software keyboard and of the toolbar over it.
   ///
@@ -7698,9 +7874,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // No home indicator inset here: the footer below runs under it and keeps
     // its own controls clear of it, so an inset on the text would only open a
     // second gap above a bar that already covers that strip.
-    final basePadding = AppPlatform.isMobile
+    var basePadding = AppPlatform.isMobile
         ? EditorMetrics.mobilePadding
         : EditorMetrics.padding;
+    if (widget.cramped) basePadding = basePadding.copyWith(top: 0, bottom: 0);
     final textStyle = EditorMetrics.textStyle(
       palette.textPrimary,
       widget.writingFont,
@@ -8252,23 +8429,43 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     required double columnWidth,
     required LineTrailing? Function(int line)? trailingOf,
   }) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: padding.left,
-        top: padding.top,
-        bottom: padding.bottom,
-      ),
-      child: Focus(
-        // Not a focus stop of its own; it only watches the field below for Tab
-        // before the app's traversal shortcuts can claim it.
-        canRequestFocus: false,
-        skipTraversal: true,
-        onKeyEvent: _handleEditorKey,
-        child: Actions(
-          actions: {UndoTextIntent: _ShortcutUndoAction(_undoMarkdownShortcut)},
-          child: _textField(textStyle, strut, columnWidth, trailingOf),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(
+            left: padding.left,
+            top: padding.top,
+            bottom: padding.bottom,
+          ),
+          child: Focus(
+            // Not a focus stop of its own; it only watches the field below for Tab
+            // before the app's traversal shortcuts can claim it.
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: _handleEditorKey,
+            child: Actions(
+              actions: {
+                UndoTextIntent: _ShortcutUndoAction(_undoMarkdownShortcut),
+              },
+              child: _textField(textStyle, strut, columnWidth, trailingOf),
+            ),
+          ),
         ),
-      ),
+        Positioned.fill(
+          child: TaskDetailsChrome(
+            field: _field,
+            text: _controller.text,
+            caret: _controller.selection.isValid
+                ? _controller.selection.extentOffset
+                : -1,
+            folded: _taskFolded,
+            onToggle: _toggleFold,
+            showHint: _folds != null && !_folds!.hintSeen,
+            origin: Offset(padding.left, padding.top),
+          ),
+        ),
+      ],
     );
   }
 
@@ -8411,6 +8608,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 columnWidth: columnWidth,
                 trailingOf: trailingOf,
                 selectionOf: _tableSelectionOf,
+                adjustSpan: _adjustTaskFold,
                 cursorWidth: EditorMetrics.cursorWidth,
                 cursorHeight: EditorMetrics.cursorHeight(
                   widget.writingFont,
@@ -8433,6 +8631,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     ),
                     _MarkdownStructureFormatter(_controller.markdownFor),
                   ],
+                  TaskDetailsFormatter(onEnteredDetails: _usedDetails),
                   _ListContinuationFormatter(
                     markdown: widget.markdownEnabled
                         ? _controller.markdownFor

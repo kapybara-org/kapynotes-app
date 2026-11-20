@@ -145,11 +145,11 @@ jobs:
 
       - run: flutter pub get
 
-      # Obfuscated, symbols split out — the same flags release.sh passes on
-      # every other platform; see its header. The symbols are what makes a
-      # stack trace from this build readable, so they ride along as an
-      # artifact and publish attaches them to the release.
-      - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols/windows
+      # Obfuscated, symbols split out, Kapy AI on: the same flags release.sh
+      # passes on every other platform. See dart_size_flags. The symbols are
+      # what makes a stack trace from this build readable, so they ride along
+      # as an artifact and publish attaches them to the release.
+      - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols/windows --dart-define=KAPYNOTES_KAPY_AI=true
 
       # Flutter's native host uses the Visual C++ runtime. Put the matching
       # app-local DLLs beside it so the installer also works on a clean PC,
@@ -343,10 +343,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # deb-src for the mirrors the packages come from, so package.sh can
-      # fetch the source of each library it bundles at the version installed.
+      # apt-mirrors.sh gives apt a fallback mirror list and retries. deb-src
+      # for the mirrors the packages come from, so package.sh can fetch the
+      # source of each library it bundles at the version installed.
       - name: Install build dependencies
         run: |
+          sudo sh .github/apt-mirrors.sh
           sed -n 's/^deb /deb-src /p' /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/deb-src.list
           grep -q '^deb-src ' /etc/apt/sources.list.d/deb-src.list
           sudo apt-get update

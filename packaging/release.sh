@@ -5,14 +5,13 @@
 #   mac-direct    → build/release/KapyNotes-<version>.dmg  notarised, to ship
 #   mac-unsigned  → build/release/KapyNotes-<version>-unsigned.dmg  CI only
 #   ios           → build/release/kapy-ios.ipa       for App Store Connect
-#   mac-store     → build/release/kapy-macos.pkg     Mac App Store (not in use yet)
 #   android       → build/release/kapy-android.aab   for Google Play
 #   linux         → build/release/KapyNotes-<version>-linux-<arch>.tar.gz,
 #                   KapyNotes-<version>-<debarch>.deb and
 #                   KapyNotes-<version>-<arch>.AppImage, unsigned, for the
 #                   arch of the Linux machine it runs on
 #
-# Usage:  packaging/release.sh [mac-direct|mac-unsigned|ios|mac-store|android|linux]
+# Usage:  packaging/release.sh [mac-direct|mac-unsigned|ios|android|linux]
 #
 # `dmg-template` regenerates the committed DMG window layout; see
 # build_dmg_template. It is a maintenance command, not a build.
@@ -84,7 +83,9 @@ dart_size_flags() {
   local target="$1"
   rm -rf "$SYMBOLS/$target"
   mkdir -p "$SYMBOLS/$target"
-  echo "--obfuscate --split-debug-info=$SYMBOLS/$target"
+  # Kapy AI ships on from 1.35.0. A local debug build and the tests stay off
+  # unless they pass the same define, so the suite still covers the off path.
+  echo "--obfuscate --split-debug-info=$SYMBOLS/$target --dart-define=KAPYNOTES_KAPY_AI=true"
 }
 
 info() { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$1"; }
@@ -353,25 +354,6 @@ verify_tool_runner() {
   fi
 }
 
-build_mac_store() {
-  info "macOS $VERSION ($BUILD_NUMBER) → Mac App Store"
-  prepare_macos
-  # The store takes no unsandboxed code, so this build has no tool runner and
-  # never offers Codex or Claude Code (lib/ai/kapy_ai_controller.dart).
-  archive_macos "$ARCHIVES/kapy-appstore.xcarchive" KAPY_TOOL_RUNNER=NO
-  if [[ -e "$ARCHIVES/kapy-appstore.xcarchive/Products/Applications/$APP_NAME.app/Contents/XPCServices/KapyToolRunner.xpc" ]]; then
-    echo "error: the Mac App Store archive contains KapyToolRunner.xpc" >&2
-    exit 1
-  fi
-  rm -rf "$OUT/appstore"
-  xcodebuild -exportArchive \
-    -archivePath "$ARCHIVES/kapy-appstore.xcarchive" \
-    -exportOptionsPlist "$ROOT/packaging/ExportOptions-macos-appstore.plist" \
-    -exportPath "$OUT/appstore"
-  cp "$OUT/appstore/"*.pkg "$OUT/kapy-macos.pkg"
-  echo "  → $OUT/kapy-macos.pkg"
-}
-
 build_android() {
   info "Android $VERSION ($BUILD_NUMBER) → Google Play"
   "$ROOT/packaging/preflight_android.sh" --archive
@@ -489,12 +471,11 @@ build_linux() {
 case "${1:-mac-direct}" in
   mac-direct)   build_mac_direct ;;
   ios)          build_ios ;;
-  mac-store)    build_mac_store ;;
   mac-unsigned) build_mac_unsigned ;;
   android)      build_android ;;
   dmg-template) build_dmg_template ;;
   linux)        build_linux ;;
-  *)            echo "Usage: $0 [mac-direct|mac-unsigned|ios|mac-store|android|linux|dmg-template]" >&2; exit 1 ;;
+  *)            echo "Usage: $0 [mac-direct|mac-unsigned|ios|android|linux|dmg-template]" >&2; exit 1 ;;
 esac
 
 info "Done"

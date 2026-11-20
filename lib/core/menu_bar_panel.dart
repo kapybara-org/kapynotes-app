@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show FlutterView;
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -21,13 +22,58 @@ typedef MenuBarWindowActions = ({
 /// The panel is a second view on this engine (macos/Runner/MenuBarPanel.swift),
 /// so it is drawn by the same isolate and writes through the same stores as
 /// the window. This opens and closes it; [MenuBarPanelView] draws into it.
-class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver {
+class MenuBarPanelController extends ChangeNotifier
+    with WidgetsBindingObserver {
   MenuBarPanelController({
     MethodChannel channel = const MethodChannel('kapynotes/menubar_panel'),
     this.takesKey = true,
   }) : _channel = channel {
     _channel.setMethodCallHandler(_onNativeCall);
     WidgetsBinding.instance.addObserver(this);
+    _routeSemanticsActions();
+  }
+
+  static bool _routingActions = false;
+
+  /// The macOS engine sends every accessibility action to the window's view,
+  /// whichever view the element is in, so a VoiceOver press on the panel's
+  /// Tasks tab looked for that node in the window and did nothing. Node ids
+  /// are unique across views, except each view's root, so an action on a node
+  /// its view does not have goes to the view that has it.
+  static void _routeSemanticsActions() {
+    if (_routingActions) return;
+    final dispatcher = WidgetsBinding.instance.platformDispatcher;
+    final handle = dispatcher.onSemanticsActionEvent;
+    if (handle == null) return;
+    _routingActions = true;
+    dispatcher.onSemanticsActionEvent = (event) {
+      if (event.nodeId == 0 || _viewHas(event.viewId, event.nodeId)) {
+        return handle(event);
+      }
+      for (final view in RendererBinding.instance.renderViews) {
+        final viewId = view.flutterView.viewId;
+        if (viewId != event.viewId && _viewHas(viewId, event.nodeId)) {
+          return handle(event.copyWith(viewId: viewId));
+        }
+      }
+      handle(event);
+    };
+  }
+
+  static bool _viewHas(int viewId, int nodeId) {
+    bool has(SemanticsNode node) {
+      if (node.id == nodeId) return true;
+      var found = false;
+      node.visitChildren((child) => !(found = has(child)));
+      return found;
+    }
+
+    for (final view in RendererBinding.instance.renderViews) {
+      if (view.flutterView.viewId != viewId) continue;
+      final root = view.owner?.semanticsOwner?.rootSemanticsNode;
+      return root != null && has(root);
+    }
+    return false;
   }
 
   static const double maxHeight = 600;
@@ -83,8 +129,9 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
   /// Whether this engine can host the panel at all. False off macOS, and on
   /// an engine without the switch the panel needs, where the icon keeps its
   /// menu.
-  Future<bool> get isSupported => _supported ??= _ask<bool>('isSupported')
-      .then((supported) => supported ?? false);
+  Future<bool> get isSupported => _supported ??= _ask<bool>(
+    'isSupported',
+  ).then((supported) => supported ?? false);
 
   /// What a plain click on the icon does: opens or closes the panel, and
   /// answers true; or answers false when the menu should open instead,

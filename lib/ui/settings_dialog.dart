@@ -28,13 +28,11 @@ import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
 import '../data/voice_prefs.dart';
-import '../speech/apple_summarizer.dart';
 import '../speech/cloud_access.dart';
-import '../speech/gemma_summarizer.dart';
+import '../speech/device_summaries.dart';
 import '../speech/local_model_store.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_api.dart';
-import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
 import '../speech/summary_instructions.dart';
 import '../speech/transcriber.dart';
@@ -52,6 +50,7 @@ import 'mobile_data_sheet.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
 import 'settings_rows.dart';
+import 'theme_cards.dart';
 import 'settings_search.dart';
 import 'settings_update_card.dart';
 import 'sidebar_timestamp.dart';
@@ -646,7 +645,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   bool _isAvailable(SettingsSection section) => switch (section) {
     SettingsSection.window ||
     SettingsSection.shortcuts => AppPlatform.isDesktop,
-    SettingsSection.about => widget.updates != null,
+    // A phone has no updater, but the notes still live here, the same place a
+    // computer keeps them. Closing the notice at the top of the list must not
+    // be the last way in.
+    SettingsSection.about => widget.updates != null || AppPlatform.isMobile,
     SettingsSection.account => widget.account != null,
     // Present even signed out, and even with no transcription configured:
     // recording works without an account, and the pane says so rather than
@@ -693,52 +695,24 @@ class _SettingsDialogState extends State<SettingsDialog>
     final speech = widget.account?.speech;
     if (speech == null || _speechBusy) return false;
 
-    if (on) {
-      final accepted = await showSpeechConsentSheet(context);
-      if (!accepted) {
-        widget.voicePrefs?.transcriptionDeclinedVersion = speechConsentVersion;
-        return false;
-      }
-      if (!mounted) return false;
-    }
     setState(() {
       _speechBusy = true;
       _speechError = null;
     });
-    final progress = Toast.showProgress(
+    final status = await setCloudTranscription(
       context,
-      on
-          ? 'Turning on cloud transcription…'
-          : 'Turning off cloud transcription…',
+      speech: speech,
+      prefs: widget.voicePrefs,
+      on: on,
+      onError: (message) => setState(() => _speechError = message),
     );
-    var changed = false;
-    try {
-      // Version 0 withdraws.
-      final status = await speech.acceptConsent(on ? speechConsentVersion : 0);
-      if (on) widget.voicePrefs?.transcriptionDeclinedVersion = null;
-      changed = on ? status.isAccepted : !status.isAccepted;
-      if (mounted) {
-        setState(() => _speechConsent = status);
-        progress.success(
-          on
-              ? 'Cloud transcription turned on'
-              : 'Cloud transcription turned off',
-        );
-      } else {
-        progress.dismiss();
-      }
-    } catch (error) {
-      final message = describeSpeechError(error);
-      if (mounted) {
-        setState(() => _speechError = message);
-        progress.error(message);
-      } else {
-        progress.dismiss();
-      }
-    } finally {
-      if (mounted) setState(() => _speechBusy = false);
+    if (mounted) {
+      setState(() {
+        _speechBusy = false;
+        if (status != null) _speechConsent = status;
+      });
     }
-    return changed;
+    return status != null && status.isAccepted == on;
   }
 
   Future<void> _selectCloudTranscription(VoicePrefs prefs) async {
@@ -1270,6 +1244,45 @@ class _SettingsDialogState extends State<SettingsDialog>
     widget.layoutPrefs.defaultNoteId = selected.isEmpty ? null : selected;
   }
 
+  Future<void> _chooseNightTheme() async {
+    final prefs = widget.layoutPrefs;
+    final chosen = await showDialog<AppTheme>(
+      context: context,
+      builder: (context) => _ListPickerDialog<AppTheme>(
+        title: 'Night theme',
+        options: AppTheme.values,
+        selected: prefs.nightTheme.theme,
+        label: (theme) => theme.label,
+        keyFor: (theme) => 'night-theme-${theme.name}',
+        leading: (theme) =>
+            _AccentRing(KapyTheme.palette(theme, Brightness.dark).accent),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    prefs.nightTheme = prefs.nightTheme.copyWith(theme: chosen);
+  }
+
+  /// The hour the night starts at, or the hour it ends at.
+  Future<void> _chooseNightHour({required bool start}) async {
+    final prefs = widget.layoutPrefs;
+    final night = prefs.nightTheme;
+    final chosen = await showDialog<int>(
+      context: context,
+      builder: (context) => _ListPickerDialog<int>(
+        title: start ? 'Night starts at' : 'Night ends at',
+        options: [for (var hour = 0; hour < 24; hour++) hour * 60],
+        selected: start ? night.from : night.to,
+        label: NightTheme.clock,
+        keyFor: (minute) => 'night-hour-$minute',
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    final now = prefs.nightTheme;
+    prefs.nightTheme = start
+        ? now.copyWith(from: chosen)
+        : now.copyWith(to: chosen);
+  }
+
   Future<void> _changePin() async {
     final gate = widget.hiddenNotes;
     if (gate == null) return;
@@ -1401,6 +1414,11 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   List<_Group> _appearanceGroups() {
     final prefs = widget.layoutPrefs;
+    final touch = !AppPlatform.hasPointer;
+    final night = prefs.nightTheme;
+    // The app puts every platform's request for more contrast here, the ones
+    // Flutter cannot read included.
+    final systemAsks = MediaQuery.highContrastOf(context);
     final scale = prefs.editorTextScale;
     final percent = '${(scale * 100).round()}%';
     final transparency = prefs.transparencyEnabled
@@ -1415,9 +1433,11 @@ class _SettingsDialogState extends State<SettingsDialog>
     return [
       _Group('Look', [
         _choice<AppearanceMode>(
-          'theme-setting',
-          'Theme',
-          'Colours for the whole app',
+          'mode-setting',
+          'Mode',
+          touch
+              ? 'Follow your device, or choose one.'
+              : 'Follow your computer, or choose one.',
           options: AppearanceMode.values,
           selected: prefs.appearance,
           label: (mode) => mode.label,
@@ -1426,6 +1446,116 @@ class _SettingsDialogState extends State<SettingsDialog>
           keyPrefix: 'appearance',
           keywords: ['dark mode', 'light mode', 'night', 'colour', 'color'],
         ),
+        _Setting(
+          'theme-setting',
+          'Theme',
+          subtitle: 'Each comes in dark and light; Midnight is dark only.',
+          keywords: [
+            'colour',
+            'color',
+            'palette',
+            'scheme',
+            for (final theme in AppTheme.values) theme.label,
+          ],
+          value: prefs.theme.label,
+          changed: prefs.theme != AppTheme.riverbank,
+          onReset: () => prefs.theme = AppTheme.riverbank,
+          below: ThemeCards(
+            selected: prefs.theme,
+            onSelected: (theme) => prefs.theme = theme,
+          ),
+        ),
+        _toggle(
+          'increase-contrast-setting',
+          'Increase contrast',
+          touch
+              ? 'Stronger text and borders in any theme.'
+              : 'Stronger text, borders and tag labels in any theme. Turns '
+                    'on with your system setting.',
+          value: prefs.increaseContrast ?? systemAsks,
+          onChanged: (on) => prefs.setIncreaseContrast(on, asks: systemAsks),
+          byDefault: systemAsks,
+          keywords: [
+            'accessibility',
+            'high contrast',
+            'legibility',
+            'readability',
+            'borders',
+          ],
+        ),
+        _toggle(
+          'night-theme-setting',
+          'At night, use a different theme',
+          touch
+              ? 'Switches back in the morning.'
+              : 'It switches by itself, and back again in the morning.',
+          value: night.enabled,
+          onChanged: (on) => prefs.nightTheme = night.copyWith(enabled: on),
+          byDefault: false,
+          keywords: ['bedtime', 'evening', 'schedule', 'sleep', 'late'],
+        ),
+        if (night.enabled) ...[
+          _Setting(
+            'night-theme-choice-setting',
+            'Night theme',
+            keywords: ['bedtime', 'evening'],
+            value: night.theme.label,
+            changed: night.theme != const NightTheme().theme,
+            onReset: () => prefs.nightTheme = night.copyWith(
+              theme: const NightTheme().theme,
+            ),
+            control: SettingsMenuButton(
+              key: const ValueKey('night-theme-button'),
+              leading: _AccentRing(
+                KapyTheme.palette(night.theme, Brightness.dark).accent,
+              ),
+              label: night.theme.label,
+              onPressed: _chooseNightTheme,
+            ),
+          ),
+          _Setting(
+            'night-hours-setting',
+            'From',
+            keywords: ['bedtime', 'hours', 'time', 'until'],
+            value:
+                '${NightTheme.clock(night.from)} to '
+                '${NightTheme.clock(night.to)}',
+            changed:
+                night.from != const NightTheme().from ||
+                night.to != const NightTheme().to,
+            onReset: () => prefs.nightTheme = night.copyWith(
+              from: const NightTheme().from,
+              to: const NightTheme().to,
+            ),
+            control: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SettingsMenuButton(
+                  key: const ValueKey('night-from-button'),
+                  label: NightTheme.clock(night.from),
+                  chevron: false,
+                  onPressed: () => _chooseNightHour(start: true),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    'to',
+                    style: TextStyle(
+                      color: context.palette.textTertiary,
+                      fontSize: SettingsMetrics.buttonLabelSize,
+                    ),
+                  ),
+                ),
+                SettingsMenuButton(
+                  key: const ValueKey('night-to-button'),
+                  label: NightTheme.clock(night.to),
+                  chevron: false,
+                  onPressed: () => _chooseNightHour(start: false),
+                ),
+              ],
+            ),
+          ),
+        ],
         _choice<PaperStyle>(
           'paper-setting',
           'Paper',
@@ -1678,6 +1808,24 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
         ),
       ]),
+      _Group('Deleting', [
+        _toggle(
+          'ask-before-deleting-toggle',
+          'Ask before deleting notes',
+          'Deleting several notes at once always asks',
+          value: prefs.askBeforeDeleting,
+          onChanged: (value) => prefs.askBeforeDeleting = value,
+          byDefault: true,
+          keywords: [
+            'delete',
+            'confirm',
+            'confirmation',
+            'warning',
+            'don’t ask again',
+            'remove',
+          ],
+        ),
+      ]),
       if (AppPlatform.isDesktop || _usesPin)
         _Group('Hidden Notes', [
           if (AppPlatform.isDesktop)
@@ -1732,10 +1880,6 @@ class _SettingsDialogState extends State<SettingsDialog>
         .firstOrNull;
     final builtInSpeech = _deviceTranscriptState == TranscriberReadiness.ready;
     final builtInSummary = _deviceSummaryState == SummarizerReadiness.ready;
-    // Linux has no summariser of its own and is not offered the downloaded
-    // one, so its summaries are the cloud's or none.
-    final deviceSummaries =
-        AppleSummarizer.isPossibleHere || GemmaSummarizer.isPossibleHere;
     final consented = _speechConsent?.isAccepted ?? false;
     final transcription = access?.transcription;
     final summaries = access?.summaries;
@@ -1863,7 +2007,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       _Group(
         'Summaries',
         [
-          if (deviceSummaries)
+          if (deviceSummariesPossible)
             _Setting(
               'summarise-with',
               'Summarise with',
@@ -1962,6 +2106,12 @@ class _SettingsDialogState extends State<SettingsDialog>
         .bindingFor(ShortcutAction.toggleKapyAi)
         ?.keycapLabel;
     final deviceLine = kapyDeviceModelLine(ai.device);
+    // What Kapy AI does, which stays true even when nothing on this device can
+    // answer: the note then says what would make it work.
+    final blurb = [
+      'Answers from your notes in a panel beside the page',
+      if (keys != null && AppPlatform.isDesktop) '$keys opens it',
+    ].join('. ');
     final accounts = [...ai.accounts]
       ..sort((a, b) => a.kind.index.compareTo(b.kind.index));
     return [
@@ -1969,13 +2119,13 @@ class _SettingsDialogState extends State<SettingsDialog>
         _toggle(
           'kapy-ai-toggle',
           'Kapy AI',
-          ai.device.status == DeviceModelStatus.unavailable
-              ? 'No model on this device. Kapy AI Cloud on Pro still answers, '
-                    'and so does a key you add'
-              : [
-                  'Answers from your notes in a panel beside the page',
-                  if (keys != null && AppPlatform.isDesktop) '$keys opens it',
-                ].join('. '),
+          switch (ai.device.note) {
+            final note? => '$blurb. $note',
+            null when ai.device.status == DeviceModelStatus.unavailable =>
+              'No model on this device. Kapy AI Cloud on Pro still answers, '
+                  'and so does a key you add',
+            null => blurb,
+          },
           value: ai.enabled,
           onChanged: (value) => ai.enabled = value,
           byDefault: true,
@@ -2398,7 +2548,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         SettingsSearchEntry(
           section: SettingsSection.about,
           sectionLabel: SettingsSection.about.label,
-          title: 'Release notes',
+          title: AppPlatform.isMobile ? "What's new" : 'Release notes',
           icon: SettingsSection.about.icon,
           target: 'changelog',
           keywords: const ['changelog', 'what’s new', 'versions', 'history'],
@@ -2464,6 +2614,11 @@ class _SettingsDialogState extends State<SettingsDialog>
           'Your name and picture',
           target: 'profile-card',
           keywords: ['profile', 'display name', 'photo', 'avatar', 'email'],
+        ),
+        entry(
+          'Password',
+          target: 'password-row',
+          keywords: ['sign in', 'log in', 'login'],
         ),
         entry(
           'Sync',
@@ -2558,7 +2713,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     // but a margin of itself.
     final width = math.min(_dialogWidth, media.width - 48);
     final height = math.min(_dialogHeight, media.height - 48);
-    final paned = AppPlatform.isWindows || width >= _railBreakpoint;
+    // The rail needs the room a wide dialog has; a Windows window resized
+    // narrow stacks its sections like any other.
+    final paned = width >= _railBreakpoint;
     const corners = BorderRadius.all(Radius.circular(AppRadii.dialog));
 
     return Dialog(
@@ -2772,7 +2929,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                               title: 'Settings',
                               bottomInset: bottomInset,
                               children: [
-                                if (!_searching) const SettingsWhatsNewRow(),
+                                if (!_searching)
+                                  SettingsWhatsNewRow(prefs: widget.layoutPrefs),
                                 // No autofocus: a keyboard that rises the
                                 // moment settings opens would cover the very
                                 // list it is there to search.
@@ -2900,7 +3058,11 @@ class _SettingsDialogState extends State<SettingsDialog>
                           ),
                         ),
                         if (updates != null) ...[
-                          SettingsUpdateCard(updates: updates, maxHeight: left),
+                          SettingsUpdateCard(
+                            updates: updates,
+                            layoutPrefs: widget.layoutPrefs,
+                            maxHeight: left,
+                          ),
                           const SizedBox(height: 10),
                           _VersionStatus(updates: updates),
                         ],
@@ -2999,18 +3161,20 @@ class _SettingsDialogState extends State<SettingsDialog>
         ],
       ),
     ],
-    SettingsSection.about => [
-      ..._fromGroups(_aboutGroups()),
-      SizedBox(height: SettingsMetrics.groupGap),
-      // Keyed here rather than on the group below it: a search result scrolls
-      // to what it lands on and lights it, and the group is taller than the
-      // window by a dozen releases.
-      SettingsLabel(
-        widget.updates!.hasUpdate ? "What's new" : 'Release notes',
-        key: const ValueKey('changelog'),
-      ),
-      _ChangelogGroup(updates: widget.updates!),
-    ],
+    SettingsSection.about => widget.updates == null
+        ? const [_QuietWhatsNewRow()]
+        : [
+            ..._fromGroups(_aboutGroups()),
+            SizedBox(height: SettingsMetrics.groupGap),
+            // Keyed here rather than on the group below it: a search result
+            // scrolls to what it lands on and lights it, and the group is
+            // taller than the window by a dozen releases.
+            SettingsLabel(
+              widget.updates!.hasUpdate ? "What's new" : 'Release notes',
+              key: const ValueKey('changelog'),
+            ),
+            _ChangelogGroup(updates: widget.updates!),
+          ],
     _ => _fromGroups(_groupsFor(section)),
   };
 
@@ -3051,27 +3215,34 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   Widget _shortcutsFooter() {
     final changed = _changedShortcuts;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            changed == 0
-                ? 'Every shortcut is as it came'
-                : '${_count(changed, 'shortcut')} changed',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: context.palette.textDescription,
+    return LayoutBuilder(
+      builder: (context, box) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              changed == 0
+                  ? 'Every shortcut is as it came'
+                  : '${_count(changed, 'shortcut')} changed',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: context.palette.textDescription,
+              ),
             ),
           ),
-        ),
-        SettingsRowButton(
-          key: const ValueKey('restore-shortcut-defaults'),
-          label: 'Restore all shortcuts…',
-          onPressed: changed == 0
-              ? null
-              : () => unawaited(_restoreShortcutDefaults()),
-        ),
-      ],
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: math.max(0, box.maxWidth - 12),
+            ),
+            child: SettingsRowButton(
+              key: const ValueKey('restore-shortcut-defaults'),
+              label: 'Restore all shortcuts…',
+              onPressed: changed == 0
+                  ? null
+                  : () => unawaited(_restoreShortcutDefaults()),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3181,87 +3352,101 @@ class _AppearancePreview extends StatelessWidget {
         topInset: 18,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Trip budget',
-                      style: body.copyWith(
-                        fontFamily: heading.fontFamily,
-                        fontFamilyFallback: heading.fontFamilyFallback,
-                        fontVariations: heading.fontVariations,
-                        fontSize: 20 * scale,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Flights are booked. The hotel is still open.',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: body,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'saved = 12345678',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: body,
-                          ),
+          child: LayoutBuilder(
+            builder: (context, box) => Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Trip budget',
+                        style: body.copyWith(
+                          fontFamily: heading.fontFamily,
+                          fontFamilyFallback: heading.fontFamilyFallback,
+                          fontVariations: heading.fontVariations,
+                          fontSize: 20 * scale,
                         ),
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: palette.tonalBackground,
-                            borderRadius: BorderRadius.circular(
-                              AppRadii.compact,
-                            ),
-                          ),
-                          child: Text(
-                            ResultFormatter.sample(prefs.digitGrouping),
-                            style: TextStyle(
-                              fontFamily: AppPlatform.monoFontFallback.first,
-                              fontFamilyFallback: AppPlatform.monoFontFallback,
-                              fontSize: 12.5,
-                              color: palette.tonalForeground,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // A phone is too narrow to label the preview beside the note.
-              if (AppPlatform.hasPointer) ...[
-                const SizedBox(width: 24),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('Preview', style: caption),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Changes as you choose',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: palette.textDescription,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text(
+                        'Flights are booked. The hotel is still open.',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: body,
+                      ),
+                      const SizedBox(height: 4),
+                      LayoutBuilder(
+                        builder: (context, line) => Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'saved = 12345678',
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: body,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: math.max(0, line.maxWidth - 10),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: palette.tonalBackground,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.compact,
+                                  ),
+                                ),
+                                child: Text(
+                                  ResultFormatter.sample(prefs.digitGrouping),
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily:
+                                        AppPlatform.monoFontFallback.first,
+                                    fontFamilyFallback:
+                                        AppPlatform.monoFontFallback,
+                                    fontSize: 12.5,
+                                    color: palette.tonalForeground,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                // A phone is too narrow to label the preview beside the note.
+                if (AppPlatform.hasPointer && box.maxWidth >= 360) ...[
+                  const SizedBox(width: 24),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Preview', style: caption),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Changes as you choose',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textDescription,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -3310,7 +3495,12 @@ class _TransparencySlider extends StatelessWidget {
         Text('Off', style: end),
         const SizedBox(width: 4),
         if (AppPlatform.hasPointer)
-          SizedBox(width: 160, child: slider)
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: slider,
+            ),
+          )
         else
           Expanded(child: slider),
         const SizedBox(width: 4),
@@ -3517,21 +3707,24 @@ class _SearchHints extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    Widget hint(String keys, String what) => Padding(
-      padding: const EdgeInsets.only(right: 18),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Keycap(keys),
-          const SizedBox(width: 8),
-          Text(
+    Widget hint(String keys, String what) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Keycap(keys),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
             what,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12.5, color: palette.textDescription),
           ),
-        ],
-      ),
+        ),
+      ],
     );
-    return Row(
+    return Wrap(
+      spacing: 18,
+      runSpacing: 6,
       children: [
         hint('↵', 'Go to the setting'),
         hint('↑↓', 'Move'),
@@ -3555,7 +3748,6 @@ class _Keycap extends StatelessWidget {
       height: recording ? 26 : 24,
       constraints: const BoxConstraints(minWidth: 28),
       padding: EdgeInsets.symmetric(horizontal: recording ? 9 : 8),
-      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: recording ? null : palette.surfaceBackground,
         borderRadius: BorderRadius.circular(AppRadii.compact),
@@ -3566,14 +3758,20 @@ class _Keycap extends StatelessWidget {
           width: recording ? 1.5 : 1,
         ),
       ),
-      child: Text(
-        keys,
-        style: TextStyle(
-          fontFamily: AppPlatform.monoFontFallback.first,
-          fontFamilyFallback: AppPlatform.monoFontFallback,
-          fontSize: 12,
-          height: 1.2,
-          color: keys.isEmpty ? palette.textTertiary : palette.textPrimary,
+      child: Center(
+        widthFactor: 1,
+        child: Text(
+          keys,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: AppPlatform.monoFontFallback.first,
+            fontFamilyFallback: AppPlatform.monoFontFallback,
+            fontSize: 12,
+            height: 1.2,
+            color: keys.isEmpty ? palette.textTertiary : palette.textPrimary,
+          ),
         ),
       ),
     );
@@ -3749,20 +3947,30 @@ class _ShortcutRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: SettingsRowCopy(title: label, changed: changed),
-              ),
-              if (changed && !recording) ...[
-                SettingsResetButton(onPressed: onReset),
-                const SizedBox(width: 4),
+          LayoutBuilder(
+            builder: (context, box) => Row(
+              children: [
+                Expanded(
+                  child: SettingsRowCopy(title: label, changed: changed),
+                ),
+                if (changed && !recording) ...[
+                  SettingsResetButton(onPressed: onReset),
+                  const SizedBox(width: 4),
+                ],
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.max(0, box.maxWidth - 40),
+                  ),
+                  child: recording
+                      ? Focus(
+                          focusNode: focusNode,
+                          onKeyEvent: onKey,
+                          child: keys,
+                        )
+                      : keys,
+                ),
               ],
-              if (recording)
-                Focus(focusNode: focusNode, onKeyEvent: onKey, child: keys)
-              else
-                keys,
-            ],
+            ),
           ),
           if (notice case final notice? when !recording) ...[
             const SizedBox(height: 4),
@@ -4885,6 +5093,51 @@ class _ReleaseRow extends StatelessWidget {
   }
 }
 
+/// The phone's lasting way to the notes. The notice at the top of Settings
+/// can be closed; this row cannot, and it lives in About, where a computer
+/// keeps the same route.
+class _QuietWhatsNewRow extends StatelessWidget {
+  const _QuietWhatsNewRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SettingsGroup(
+      children: [
+        Semantics(
+          link: true,
+          child: InkWell(
+            key: const ValueKey('changelog'),
+            onTap: () => unawaited(openChangelogPage(context)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Padding(
+                padding: SettingsMetrics.padding,
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: SettingsRowCopy(
+                        title: "What's new",
+                        subtitle: 'See what changed',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    KapyIcon(
+                      KapyIcons.openExternalRounded,
+                      size: 15,
+                      color: palette.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Opens the changelog page itself.
 class _ChangelogLinkRow extends StatelessWidget {
   const _ChangelogLinkRow();
@@ -4917,6 +5170,119 @@ class _ChangelogLinkRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A theme's accent as a ring, beside its name where a theme is chosen.
+class _AccentRing extends StatelessWidget {
+  const _AccentRing(this.color);
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 12,
+    height: 12,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: color, width: 3),
+    ),
+  );
+}
+
+/// One of a short list, opened from a row's menu button with the current
+/// choice in view: the night theme, an hour.
+class _ListPickerDialog<T> extends StatefulWidget {
+  const _ListPickerDialog({
+    required this.title,
+    required this.options,
+    required this.selected,
+    required this.label,
+    required this.keyFor,
+    this.leading,
+  });
+
+  final String title;
+  final List<T> options;
+  final T selected;
+  final String Function(T option) label;
+  final String Function(T option) keyFor;
+  final Widget Function(T option)? leading;
+
+  @override
+  State<_ListPickerDialog<T>> createState() => _ListPickerDialogState<T>();
+}
+
+class _ListPickerDialogState<T> extends State<_ListPickerDialog<T>> {
+  static const double _rowHeight = 44;
+  static const double _maxHeight = 352;
+
+  late final double _height = math.min(
+    _maxHeight,
+    _rowHeight * widget.options.length,
+  );
+
+  late final ScrollController _scroll = ScrollController(
+    initialScrollOffset:
+        ((widget.options.indexOf(widget.selected) + 0.5) * _rowHeight -
+                _height / 2)
+            .clamp(0.0, _rowHeight * widget.options.length - _height),
+  );
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return AlertDialog(
+      title: Text(widget.title),
+      contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      content: SizedBox(
+        width: math.min(320, MediaQuery.sizeOf(context).width - 80),
+        height: _height,
+        child: ListView.builder(
+          controller: _scroll,
+          itemExtent: _rowHeight,
+          itemCount: widget.options.length,
+          itemBuilder: (context, index) {
+            final option = widget.options[index];
+            final selected = option == widget.selected;
+            final leading = widget.leading;
+            return Semantics(
+              selected: selected,
+              button: true,
+              child: ListTile(
+                key: ValueKey(widget.keyFor(option)),
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                leading: leading?.call(option),
+                minLeadingWidth: 12,
+                title: Text(widget.label(option)),
+                trailing: KapyIcon(
+                  selected
+                      ? KapyIcons.checkCircleRounded
+                      : KapyIcons.circleOutlined,
+                  size: 18,
+                  color: selected ? palette.accent : palette.textTertiary,
+                ),
+                onTap: () => Navigator.of(context).pop(option),
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
     );
   }
 }

@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
-import '../core/appearance.dart';
 import '../core/app_tray.dart';
 import '../core/menu_bar_panel.dart';
 import '../core/platform.dart';
@@ -18,6 +17,7 @@ import '../data/shortcut_prefs.dart';
 import '../data/task_board.dart';
 import 'keycap.dart';
 import 'sidebar_timestamp.dart';
+import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
 
 /// Whether the panel may check [note]'s tasks or add one to it: not while the
@@ -41,29 +41,36 @@ class MenuBarPanelView extends StatelessWidget {
   const MenuBarPanelView({
     super.key,
     required this.controller,
-    required this.prefs,
+    required this.look,
+    required this.lookChanges,
     required this.panel,
   });
 
   final MenuBarPanelController controller;
-  final LayoutPrefs prefs;
+
+  /// The themes the panel wears now: the window's, without transparency.
+  final WindowLook Function() look;
+
+  /// Whatever changes [look].
+  final Listenable lookChanges;
 
   /// The panel itself, built only while it is open.
   final WidgetBuilder panel;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([controller, prefs.appearanceListenable]),
+    listenable: Listenable.merge([controller, lookChanges]),
     builder: (context, _) {
       final view = controller.view;
       if (view == null) return const ViewCollection(views: []);
+      final look = this.look();
       return View(
         view: view,
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: KapyTheme.light(),
-          darkTheme: KapyTheme.dark(),
-          themeMode: prefs.appearance.themeMode,
+          theme: look.light,
+          darkTheme: look.dark,
+          themeMode: look.mode,
           home: controller.isOpen
               ? KeyedSubtree(
                   key: ValueKey(controller.openings),
@@ -439,13 +446,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
   }
 
   void _openTask(TaskItem item) {
-    final home = widget.tasks.read().home;
-    final noteId = item.note.id;
-    unawaited(
-      widget.inWindow(
-        (window) => noteId == home?.id ? window.openTasks() : window.openNote(noteId),
-      ),
-    );
+    widget.tasks.requestSheet(item.id);
+    unawaited(widget.inWindow((window) => window.openTasks()));
   }
 
   // ---------------------------------------------------------------------------
@@ -1214,6 +1216,7 @@ class _TaskRow extends StatelessWidget {
                   : null,
             ),
           ),
+          TaskDetailsIcon(item: item),
           const SizedBox(width: 10),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 120),

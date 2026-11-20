@@ -1,4 +1,5 @@
 import '../data/time_zones.dart';
+import 'number_words.dart';
 import 'unit.dart';
 import 'unit_registry.dart';
 import 'value.dart';
@@ -155,7 +156,7 @@ class Phrases {
 
   static final String _scale = _alternatives(_scales.keys);
   static final String _currency =
-      '${_alternatives(_majors.keys)}|usd|inr|eur|gbp|jpy|cad|aud|aed|sgd|chf|cny';
+      '${_alternatives(_majors.keys)}|usd|inr|eur|gbp|jpy|cad|aud|aed|sgd|chf|cny|npr|pkr|bdt|lkr';
 
   /// A scale word counts only with a currency attached, a symbol before the
   /// number or a currency word or code after the scale, so '2 lakh people'
@@ -164,6 +165,44 @@ class Phrases {
     '(?:(?<=[\$€£¥₹]\\s*)|(?=\\d+(?:\\.\\d+)?\\s*(?:$_scale)$_end\\s*(?:$_currency)$_end))'
     '$_number\\s*($_scale)$_end',
   );
+
+  /// A number in words with a currency word after it. Pounds are left out
+  /// because 'seventy pounds' is as likely a weight.
+  static final String _spelledCurrencies = _alternatives([
+    ..._majors.keys.where((word) => !word.startsWith('pound')),
+    ..._minors.keys,
+  ]);
+
+  static final RegExp _negation = _spokenPattern(
+    r'(?<![\p{L}\p{M}\p{N}])(?:not|or|नहीं|या)\s+$',
+  );
+  static final RegExp _conjunction = _spokenPattern(
+    r'(?<![\p{L}\p{M}\p{N}])(?:and|और)\s+$',
+  );
+
+  /// The number a [_spelled] match of [text] says, or null where it does not
+  /// count: its words make no number, it follows 'not' or 'or', or it is a
+  /// whole unit after 'and' (a minor unit after 'and' is a compound amount).
+  static int? _spelledValue(String text, Match match) {
+    final before = text.substring(0, match.start);
+    final minor = _minors.containsKey(match.group(2)!.toLowerCase());
+    if (_negation.hasMatch(before) ||
+        (!minor && _conjunction.hasMatch(before))) {
+      return null;
+    }
+    return NumberWords.value(match.group(1)!);
+  }
+
+  static final RegExp _spelled = _spokenPattern(
+    '(${NumberWords.pattern})\\s*($_spelledCurrencies)$_end',
+  );
+
+  /// Whether [line] holds an amount in number words, which makes it a
+  /// calculation even where it holds no digit.
+  static bool hasSpelledAmount(String line) {
+    final text = _decomposed(line);
+    return _spelled.allMatches(text).any((m) => _spelledValue(text, m) != null);
+  }
 
   static final RegExp _minorAlone = _spokenPattern(
     '$_number\\s*(euro\\s+cents?|${_alternatives(_minors.keys)})$_end',
@@ -195,7 +234,11 @@ class Phrases {
   /// 20 cents' as '15.2 usd', or null where it holds none.
   static String? spoken(String source) {
     final text = _decomposed(source);
-    var written = text.replaceAllMapped(
+    var written = text.replaceAllMapped(_spelled, (m) {
+      final number = _spelledValue(text, m);
+      return number == null ? m.group(0)! : '$number ${m.group(2)}';
+    });
+    written = written.replaceAllMapped(
       _scaled,
       (m) =>
           '${double.parse(m.group(1)!) * _scales[m.group(2)!.toLowerCase()]!}',

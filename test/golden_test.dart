@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/folders.dart';
@@ -30,6 +31,7 @@ import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
+import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
@@ -671,11 +673,64 @@ void main() {
     await fillAndOpenArchive(tester);
     await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+    await tester.tap(find.byKey(const ValueKey('pick-all')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_archive_selecting.png'),
+    );
+  });
+
+  /// Two notes picked in the ordinary list: the bar over it, and the menu a
+  /// right click opens on them.
+  Future<void> pickTwo(WidgetTester tester) async {
+    for (final body in [
+      'Old receipts\nCoffee: 12.40',
+      'Trip ideas\nLisbon in April',
+    ]) {
+      goldenNotes.create(body: body);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Trip ideas'));
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tap(find.widgetWithText(NoteRow, 'Old receipts'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('desktop light notes, two picked', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.light,
+      platform: TargetPlatform.macOS,
+    );
+    await pickTwo(tester);
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_light_notes_picked.png'),
+    );
+  });
+
+  testWidgets('desktop dark notes, two picked, with their menu', (
+    tester,
+  ) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.macOS,
+    );
+    await pickTwo(tester);
+    await tester.tap(
+      find.widgetWithText(NoteRow, 'Old receipts'),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_notes_picked_menu.png'),
     );
   });
 
@@ -1480,6 +1535,34 @@ void main() {
     );
   });
 
+  testWidgets('phone notes, two picked', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(390, 760),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
+    );
+    for (final body in [
+      'Old receipts\nCoffee: 12.40',
+      'Trip ideas\nLisbon in April',
+    ]) {
+      goldenNotes.create(body: body);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.widgetWithText(NoteRow, 'Trip ideas'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Select'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Old receipts'));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/phone_notes_picked.png'),
+    );
+  });
+
   group('⌘K menu', () {
     /// The trip notes p-7-0 searches: two notes, two tasks in one of them, a
     /// drawing, and one more in Archive. Pumped at Paper's 1440 × 900.
@@ -1705,4 +1788,102 @@ void main() {
       );
     });
   }
+  group('themes', () {
+    Future<void> showAppearanceFromTheTop(WidgetTester tester) async {
+      await tapSettings(tester);
+      await tester.pumpAndSettle();
+      await Scrollable.ensureVisible(
+        tester.element(find.byKey(const ValueKey('mode-setting'))),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    for (final theme in AppTheme.values) {
+      for (final side in Brightness.values) {
+        if (theme == AppTheme.midnight && side == Brightness.light) continue;
+        final name = '${theme.name}_${side.name}';
+
+        // Riverbank's window is desktop_dark.png and desktop_light.png.
+        if (theme != AppTheme.riverbank) {
+          testWidgets('${theme.label} ${side.name}', (tester) async {
+            await pumpForGolden(
+              tester,
+              size: const Size(760, 520),
+              brightness: side,
+            );
+            goldenPrefs.theme = theme;
+            await tester.pumpAndSettle();
+            await expectLater(
+              find.byType(KapyNotesApp),
+              matchesGoldenFile('goldens/theme_$name.png'),
+            );
+          });
+        }
+
+        testWidgets('${theme.label} ${side.name}, picked in Settings', (
+          tester,
+        ) async {
+          await pumpForGolden(
+            tester,
+            size: const Size(1000, 800),
+            brightness: side,
+          );
+          goldenPrefs.theme = theme;
+          await showAppearanceFromTheTop(tester);
+          await expectLater(
+            find.byType(KapyNotesApp),
+            matchesGoldenFile('goldens/theme_settings_$name.png'),
+          );
+        });
+      }
+    }
+
+    for (final (theme, side) in [
+      (AppTheme.riverbank, Brightness.dark),
+      (AppTheme.graphite, Brightness.light),
+    ]) {
+      testWidgets('${theme.label} ${side.name} with Increase contrast on', (
+        tester,
+      ) async {
+        await pumpForGolden(
+          tester,
+          size: const Size(760, 520),
+          brightness: side,
+        );
+        goldenPrefs.theme = theme;
+        goldenPrefs.setIncreaseContrast(true, asks: false);
+        await tester.pumpAndSettle();
+        await expectLater(
+          find.byType(KapyNotesApp),
+          matchesGoldenFile(
+            'goldens/theme_${theme.name}_${side.name}_increased_contrast.png',
+          ),
+        );
+      });
+    }
+
+    testWidgets('the picker on a phone, with At night on', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(390, 1180),
+        brightness: Brightness.dark,
+        platform: TargetPlatform.iOS,
+      );
+      goldenPrefs.nightTheme = const NightTheme(enabled: true);
+      await tapSettings(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('settings-section-appearance')),
+      );
+      await tester.pumpAndSettle();
+      await Scrollable.ensureVisible(
+        tester.element(find.byKey(const ValueKey('mode-setting'))),
+      );
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/phone_settings_themes.png'),
+      );
+    });
+  });
 }

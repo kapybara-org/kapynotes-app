@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
@@ -38,6 +40,11 @@ class SplitView extends StatefulWidget {
   final bool overlay;
   final double minSidebarWidth;
   final double maxSidebarWidth;
+
+  /// The shortest the sidebar beside the body is laid out. A phone on its side
+  /// with the keyboard up leaves less, and the sidebar is cut off at the
+  /// bottom rather than squeezed.
+  static const double minSidebarHeight = 240;
 
   @override
   State<SplitView> createState() => _SplitViewState();
@@ -98,6 +105,10 @@ class _SplitViewState extends State<SplitView> {
         );
         final width = clamped(_dragWidth ?? widget.sidebarWidth);
         final beside = widget.sidebarVisible && !overlay;
+        final listHeight = math.max(
+          constraints.maxHeight,
+          SplitView.minSidebarHeight,
+        );
 
         return Stack(
           children: [
@@ -114,9 +125,11 @@ class _SplitViewState extends State<SplitView> {
                       width: beside ? width : 0,
                       child: ClipRect(
                         child: OverflowBox(
-                          alignment: Alignment.centerLeft,
+                          alignment: Alignment.topLeft,
                           minWidth: width,
                           maxWidth: width,
+                          minHeight: listHeight,
+                          maxHeight: listHeight,
                           child: widget.sidebar,
                         ),
                       ),

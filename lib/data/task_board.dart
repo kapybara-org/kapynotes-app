@@ -1,5 +1,6 @@
 import '../crdt/note_doc.dart';
 import 'note.dart';
+import 'task_details.dart';
 import 'task_index.dart';
 import 'task_lines.dart';
 
@@ -12,6 +13,8 @@ class TaskItem {
     required this.words,
     required this.line,
     this.demoted = false,
+    this.groupDone = 0,
+    this.groupTotal = 1,
   });
 
   final TaskEntry entry;
@@ -31,6 +34,13 @@ class TaskItem {
   /// Whether a newer Do now elsewhere has taken this task's, which is still
   /// stored on its record.
   final bool demoted;
+
+  /// Done and total for this task and the smaller tasks indented under it.
+  /// A task with none is 0 of 1, or 1 of 1 once it is done.
+  final int groupDone;
+  final int groupTotal;
+
+  bool get hasGroup => groupTotal > 1;
   DateTime? get doneAt => switch (entry.doneAt.v) {
     final at? => DateTime.fromMillisecondsSinceEpoch(at),
     null => null,
@@ -42,6 +52,8 @@ class TaskItem {
     words: words,
     line: line,
     demoted: true,
+    groupDone: groupDone,
+    groupTotal: groupTotal,
   );
 
   /// When it was last added, put back, picked, edited or kept.
@@ -100,11 +112,15 @@ class TaskBoard {
         final index = taskLineIndex(doc, lines, entry.anchor);
         if (index < 0 || !taken.add(index)) continue;
         final line = lines[index];
+        if (taskIsNested(text, line)) continue;
+        final count = taskGroupCount(text, line);
         final item = TaskItem(
           entry: entry,
           note: note,
           words: text.substring(line.textStart, line.end).trim(),
           line: line,
+          groupDone: count.done,
+          groupTotal: count.total,
         );
         if (!line.done) {
           open.add(item);

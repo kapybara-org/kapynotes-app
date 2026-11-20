@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/keyring.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -65,6 +66,15 @@ void main() {
       scoped ? McpScope(service: service, child: pane) : pane,
     );
   }
+
+  testWidgets('a missing keyring is named before an app is connected', (
+    tester,
+  ) async {
+    KeyringStatus.debugReset(available: false);
+    addTearDown(KeyringStatus.debugReset);
+    await pumpPane(tester);
+    expect(find.text(KeyringNotice.connect), findsOneWidget);
+  });
 
   testWidgets('is off until turned on, then shows its address', (tester) async {
     await pumpPane(tester);
@@ -251,10 +261,40 @@ void main() {
     await pumpPane(tester, scoped: false);
     expect(
       find.text(
-        'Assistants connect through Kapy Notes on your Mac or Windows PC.',
+        'Assistants connect through Kapy Notes on your Mac, Windows PC or '
+        'Linux computer.',
       ),
       findsOneWidget,
     );
+    expect(
+      mcpSearchEntries(null).single.description,
+      'Assistants connect through Kapy Notes on your Mac, Windows PC or '
+      'Linux computer',
+    );
+  });
+
+  test('a phone’s MCP row in Settings says what its pane says', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    for (final phone in [TargetPlatform.android, TargetPlatform.iOS]) {
+      AppPlatform.debugTargetPlatformOverride = phone;
+      expect(
+        SettingsSection.mcp.summary,
+        'Assistants connect through Kapy Notes on your Mac, Windows PC or '
+        'Linux computer',
+      );
+    }
+    for (final desktop in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = desktop;
+      expect(
+        SettingsSection.mcp.summary,
+        'Let the AI apps you use read and change your notes, on this computer '
+        'only',
+      );
+    }
   });
 
   testWidgets('settings search finds it by the words people use', (

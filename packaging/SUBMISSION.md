@@ -10,7 +10,6 @@ relying on it: `packaging/upload_ios.sh confirm` and `packaging/upload_play.py c
 | `KapyNotes-<version>.dmg` | Direct, kapynotes.com | **current plan** | `packaging/release.sh mac-direct` |
 | `kapy-ios.ipa` | iOS App Store | **live, 1.29.0**; 1.32.0 (38) in review, phased release | `packaging/release.sh ios` |
 | `kapy-android.aab` | Google Play | **live, 1.29.0**; 1.32.0 (38) in review, staged at 20% | `packaging/release.sh android` |
-| `kapy-macos.pkg` | Mac App Store | not in use | `packaging/release.sh mac-store` |
 
 The product is called **Kapy Notes** in the Dock, on the Home Screen, in the
 bundle (`Kapy Notes.app`), and in the in-app wordmark. The App Store listing
