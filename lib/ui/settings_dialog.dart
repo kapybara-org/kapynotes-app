@@ -2146,6 +2146,12 @@ class _SettingsDialogState extends State<SettingsDialog>
         .bindingFor(ShortcutAction.toggleKapyAi)
         ?.keycapLabel;
     final deviceLine = kapyDeviceModelLine(ai.device);
+    // What Kapy AI does, which stays true even when nothing on this device can
+    // answer: the note then says what would make it work.
+    final blurb = [
+      'Answers from your notes in a panel beside the page',
+      if (keys != null && AppPlatform.isDesktop) '$keys opens it',
+    ].join('. ');
     final accounts = [...ai.accounts]
       ..sort((a, b) => a.kind.index.compareTo(b.kind.index));
     return [
@@ -2153,13 +2159,13 @@ class _SettingsDialogState extends State<SettingsDialog>
         _toggle(
           'kapy-ai-toggle',
           'Kapy AI',
-          ai.device.status == DeviceModelStatus.unavailable
-              ? 'No model on this device. Kapy AI Cloud on Pro still answers, '
-                    'and so does a key you add'
-              : [
-                  'Answers from your notes in a panel beside the page',
-                  if (keys != null && AppPlatform.isDesktop) '$keys opens it',
-                ].join('. '),
+          switch (ai.device.note) {
+            final note? => '$blurb. $note',
+            null when ai.device.status == DeviceModelStatus.unavailable =>
+              'No model on this device. Kapy AI Cloud on Pro still answers, '
+                  'and so does a key you add',
+            null => blurb,
+          },
           value: ai.enabled,
           onChanged: (value) => ai.enabled = value,
           byDefault: true,
