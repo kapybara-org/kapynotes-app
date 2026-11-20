@@ -645,6 +645,34 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   }
 }
 
+/// The crisp system's fills, worked out from the palette instead of listed
+/// in it: each is the text colour at an alpha over the surface, so a theme
+/// only has to say what its surface and ink are.
+extension CrispFills on CalcPalette {
+  /// 1 px line that splits panes and sits under a header band.
+  Color get hairline => textPrimary.withValues(alpha: 0.06);
+
+  /// A field, a card, the Do now block, the phone bar.
+  Color get fillRest =>
+      Color.alphaBlend(textPrimary.withValues(alpha: 0.04), editorBackground);
+
+  /// A control sitting on a field, a secondary button, a hover.
+  Color get fillControl =>
+      Color.alphaBlend(textPrimary.withValues(alpha: 0.06), editorBackground);
+
+  /// A selected row or segment, today in a week strip.
+  Color get fillSelected =>
+      Color.alphaBlend(textPrimary.withValues(alpha: 0.07), editorBackground);
+
+  /// The selected note card, one step lighter again so it reads on a list.
+  Color get fillSelectedCard =>
+      Color.alphaBlend(textPrimary.withValues(alpha: 0.10), editorBackground);
+
+  /// The one sage-tinted control in a page.
+  Color get fillSageTint =>
+      Color.alphaBlend(accent.withValues(alpha: 0.16), editorBackground);
+}
+
 /// Editor metrics shared by the text field, its measurer and the gutter.
 /// Any mismatch between these three shows up as misaligned results, so they
 /// are defined exactly once.
@@ -1232,8 +1260,8 @@ class AppWeight {
   /// 500 up reaches 700, so a section label and a page title read alike.
   /// Weight stops carrying their difference there; size and colour still do.
   static double bold(double axis) {
-    final features = WidgetsBinding.instance.platformDispatcher
-        .accessibilityFeatures;
+    final features =
+        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures;
     if (!features.boldText) return axis;
     return math.min(axis + 200, 700);
   }
@@ -1429,18 +1457,18 @@ class KapyTheme {
     chipOther: Color(0xFFB3C79C),
     textPrimary: Color(0xFFE2DCCF),
     textSecondary: Color(0xFFA29A8A),
-    textTertiary: Color(0xFFA09A8C),
-    separator: Color(0xFF35312B),
+    textTertiary: Color(0xFF968E7F),
+    separator: Color(0x0FE2DCCF),
     sidebarBackground: Color(0xFF1C1A17),
-    editorBackground: Color(0xFF23201C),
-    gutterBackground: Color(0xFF23201C),
-    surfaceBackground: Color(0xFF23201C),
-    controlBackground: Color(0xFF2A2722),
-    controlBorder: Color(0xFF312D27),
-    selectedBackground: Color(0xFF36322B),
-    selectedBorder: Color(0xFF7D9468),
+    editorBackground: Color(0xFF1C1A17),
+    gutterBackground: Color(0xFF1C1A17),
+    surfaceBackground: Color(0xFF1C1A17),
+    controlBackground: Color(0xFF24221E),
+    controlBorder: Color(0x0FE2DCCF),
+    selectedBackground: Color(0xFF2A2824),
+    selectedBorder: Color(0xFF2A2824),
     selection: Color(0x4D7D9468),
-    hover: Color(0xFF2E2A25),
+    hover: Color(0xFF282622),
     paperFiber: Color(0x00000000),
     paperRuling: Color(0xFF2E2A25),
     railBackground: Color(0xFF171512),
@@ -1463,20 +1491,20 @@ class KapyTheme {
     textSubheading: Color(0xFFD3CCBE),
     textMuted: Color(0xFFB2AA9A),
     textDescription: Color(0xFF9C9485),
-    cardBackground: Color(0xFF292621),
-    paneEdge: Color(0xFF2C2924),
+    cardBackground: Color(0xFF24221E),
+    paneEdge: Color(0x0FE2DCCF),
     switchTrackOff: Color(0xFF3A362F),
     checkboxBorder: Color(0xFF645D51),
     lineCommand: Color(0xFF6B6458),
     writingHint: Color(0xFF4F4A42),
     cardTitle: Color(0xFFD9D3C6),
     accentText: Color(0xFF9DB384),
-    pageBorder: Color(0xFF2E2A25),
+    pageBorder: Color(0x0FE2DCCF),
     textDivider: Color(0xFF554F47),
     switchThumb: Color(0xFFE2DCCF),
-    wellBackground: Color(0xFF1F1D19),
-    segmentSelected: Color(0xFF35312B),
-    shadow: Color(0xFF000000),
+    wellBackground: Color(0xFF1C1A17),
+    segmentSelected: Color(0xFF2A2824),
+    shadow: Color(0x00000000),
     accent: Color(0xFF7D9468),
     onAccent: Color(0xFF1C1A17),
     codeKeyword: Color(0xFFCF7A57),
@@ -2552,9 +2580,7 @@ class KapyTheme {
           ),
           tapTargetSize: tapTarget,
           textStyle: ladder(
-            base.textTheme.labelLarge?.copyWith(
-              fontSize: AppTypeScale.control,
-            ),
+            base.textTheme.labelLarge?.copyWith(fontSize: AppTypeScale.control),
             AppWeight.rowTitle,
           ),
           overlayColor: Colors.transparent,

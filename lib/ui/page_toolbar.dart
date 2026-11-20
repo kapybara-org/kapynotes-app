@@ -162,6 +162,8 @@ class PageToolbar extends StatelessWidget {
                     TonalButton(
                       key: const ValueKey('page-new-note'),
                       icon: KapyIcons.addRounded,
+                      ghost: true,
+                      sageIcon: true,
                       tooltip: ['New $noun', ?newNoteShortcut].join('  '),
                       onPressed: onCreate,
                     ),
@@ -239,6 +241,7 @@ class PageToolbar extends StatelessWidget {
                     TonalButton(
                       key: const ValueKey('page-share'),
                       tall: true,
+                      ghost: true,
                       icon: KapyIcons.personAddRounded,
                       label: constraints.maxWidth >= _shareLabelWidth
                           ? 'Share'

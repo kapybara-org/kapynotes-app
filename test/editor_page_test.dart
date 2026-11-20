@@ -144,7 +144,6 @@ void main() {
     await tester.pump();
     expect(find.bySemanticsLabel('1 of 3 done'), findsOneWidget);
     semantics.dispose();
-    expect(find.byKey(const ValueKey('note-title-underline')), findsOneWidget);
     // The meta row stands in the room under the title, and the body starts
     // below it. Line positions are where a caret's top goes, a few pixels
     // into the row.

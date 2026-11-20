@@ -427,7 +427,7 @@ void main() {
       tasks.dot(row('One'));
       Finder dotOf(String words) =>
           find.descendant(of: markOf(row(words)), matching: shape());
-      double heading() => tester.getTopLeft(find.text('The list')).dx;
+      double heading() => tester.getTopLeft(find.text('One')).dx;
       (double, double, double) offsets() => (
         tester.getTopLeft(dotOf('One')).dx - heading(),
         tester.getTopLeft(box('One')).dx - heading(),

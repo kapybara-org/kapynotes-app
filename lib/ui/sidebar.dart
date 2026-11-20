@@ -2010,6 +2010,8 @@ class SidebarWindowBar extends StatelessWidget {
                         key: const ValueKey('sidebar-new-note'),
                         icon: KapyIcons.addRounded,
                         label: label ? 'New $noun' : null,
+                        ghost: true,
+                        sageIcon: true,
                         shortcut: keycap ? newNoteShortcut?.keycapLabel : null,
                         // Without its keycap the button still teaches the
                         // chord, on hover.

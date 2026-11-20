@@ -416,34 +416,9 @@ class TasksScreenState extends State<TasksScreen> {
                 )
               else if (open.isNotEmpty)
                 _picker(board, open),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      'The list',
-                      style: uiStyle(
-                        15,
-                        22,
-                        FontWeight.w600,
-                        palette.textSubheading,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${open.length}',
-                      style: metaStyle(
-                        12,
-                        16,
-                        palette.textTertiary,
-                        tabular: true,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // The rows are their own group: the gap does the work the
+              // label used to, without a heading over them.
+              const SizedBox(height: 24),
               if (open.isEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
@@ -607,12 +582,7 @@ class TasksScreenState extends State<TasksScreen> {
                 const SizedBox(width: 8),
                 Text(
                   '${items.length}',
-                  style: metaStyle(
-                    12,
-                    16,
-                    palette.textTertiary,
-                    tabular: true,
-                  ),
+                  style: metaStyle(12, 16, palette.textTertiary, tabular: true),
                 ),
               ],
             ),

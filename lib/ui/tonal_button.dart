@@ -20,6 +20,8 @@ class TonalButton extends StatelessWidget {
     this.shortcut,
     this.tooltip,
     this.tall = false,
+    this.ghost = false,
+    this.sageIcon = false,
   }) : assert(icon != null || label != null),
        assert(
          label != null || tooltip != null,
@@ -39,6 +41,14 @@ class TonalButton extends StatelessWidget {
   /// The page toolbar's Share: two points taller, with rounder corners and a
   /// finer icon than the notes list's New note.
   final bool tall;
+
+  /// A button with no fill until the pointer is over it: the crisp design's
+  /// way of leaving a page one main action instead of several.
+  final bool ghost;
+
+  /// A ghost button whose icon carries the sage that marks the page's main
+  /// action, as New note's plus does.
+  final bool sageIcon;
 
   /// How wide a button with an icon, [label] and, if given, [shortcut]'s
   /// keycap lays out at the reader's text size, for a bar that has to choose
@@ -65,10 +75,8 @@ class TonalButton extends StatelessWidget {
             : 6 + Keycap.widthOf(context, shortcut, tonal: true) + 6);
   }
 
-  static TextStyle? _labelStyle(BuildContext context) => Theme.of(context)
-      .textTheme
-      .labelLarge
-      ?.copyWith(
+  static TextStyle? _labelStyle(BuildContext context) =>
+      Theme.of(context).textTheme.labelLarge?.copyWith(
         fontSize: AppTypeScale.control,
         fontWeight: FontWeight.w500,
         fontVariations: AppWeight.variations(AppWeight.rowTitle),
@@ -83,65 +91,99 @@ class TonalButton extends StatelessWidget {
     final pointer = AppPlatform.hasPointer;
     final fine = pointer && (tall || label == null);
 
-    final button = FilledButton(
-      onPressed: onPressed,
-      style: ButtonStyle(
-        minimumSize: WidgetStatePropertyAll(
-          Size.square(
-            tall && pointer ? 32 : AppControlMetrics.tonalButtonHeight,
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null)
+          KapyIcon(
+            icon,
+            size: fine ? 15 : AppControlMetrics.iconControl,
+            strokeWidth: fine ? 2 : 2.2,
+            color: ghost && sageIcon ? palette.accent : null,
+          ),
+        if (icon != null && label != null) const SizedBox(width: 6),
+        if (label != null) Text(label),
+        if (shortcut != null) ...[
+          const SizedBox(width: 6),
+          ExcludeSemantics(child: Keycap(shortcut, tonal: true)),
+        ],
+      ],
+    );
+
+    final shape = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll(
+        Size.square(tall && pointer ? 32 : AppControlMetrics.tonalButtonHeight),
+      ),
+      shape: tall
+          ? const WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(
+                  Radius.circular(AppRadii.control),
+                ),
+              ),
+            )
+          : null,
+      padding: WidgetStatePropertyAll(
+        label == null
+            ? EdgeInsets.zero
+            : EdgeInsetsDirectional.only(
+                start: icon == null
+                    ? 12
+                    : tall
+                    ? 10
+                    : 9,
+                end: shortcut == null ? 12 : 6,
+              ),
+      ),
+      textStyle: WidgetStatePropertyAll(_labelStyle(context)),
+    );
+
+    final Widget button;
+    if (ghost) {
+      button = TextButton(
+        onPressed: onPressed,
+        style:
+            TextButton.styleFrom(
+              minimumSize: shape.minimumSize?.resolve({}),
+              shape: shape.shape?.resolve({}),
+              padding: shape.padding?.resolve({}),
+              textStyle: _labelStyle(context),
+              foregroundColor: palette.textSecondary,
+            ).merge(
+              ButtonStyle(
+                backgroundColor: KapyTheme.fillStates(
+                  Colors.transparent,
+                  ink: palette.textPrimary,
+                  disabled: Colors.transparent,
+                ),
+                foregroundColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.disabled)
+                      ? palette.textTertiary
+                      : palette.textSecondary,
+                ),
+                overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              ),
+            ),
+        child: content,
+      );
+    } else {
+      button = FilledButton(
+        onPressed: onPressed,
+        style: shape.copyWith(
+          backgroundColor: KapyTheme.fillStates(
+            palette.tonalBackground,
+            ink: palette.tonalForeground,
+            disabled: palette.controlBackground,
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.textTertiary
+                : palette.tonalForeground,
           ),
         ),
-        shape: tall
-            ? const WidgetStatePropertyAll(
-                RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(AppRadii.control),
-                  ),
-                ),
-              )
-            : null,
-        padding: WidgetStatePropertyAll(
-          label == null
-              ? EdgeInsets.zero
-              : EdgeInsetsDirectional.only(
-                  start: icon == null
-                      ? 12
-                      : tall
-                      ? 10
-                      : 9,
-                  end: shortcut == null ? 12 : 6,
-                ),
-        ),
-        backgroundColor: KapyTheme.fillStates(
-          palette.tonalBackground,
-          ink: palette.tonalForeground,
-          disabled: palette.controlBackground,
-        ),
-        foregroundColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.disabled)
-              ? palette.textTertiary
-              : palette.tonalForeground,
-        ),
-        textStyle: WidgetStatePropertyAll(_labelStyle(context)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null)
-            KapyIcon(
-              icon,
-              size: fine ? 15 : AppControlMetrics.iconControl,
-              strokeWidth: fine ? 2 : 2.2,
-            ),
-          if (icon != null && label != null) const SizedBox(width: 6),
-          if (label != null) Text(label),
-          if (shortcut != null) ...[
-            const SizedBox(width: 6),
-            ExcludeSemantics(child: Keycap(shortcut, tonal: true)),
-          ],
-        ],
-      ),
-    );
+        child: content,
+      );
+    }
 
     final tooltip = this.tooltip;
     if (tooltip == null) return button;
