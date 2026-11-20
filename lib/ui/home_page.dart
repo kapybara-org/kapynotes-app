@@ -1715,10 +1715,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A note's name on a task's mark, with its space's name after it when
   /// that name exists. Shared by the Tasks list, the phone home, and ⌘K.
-  String _taskNoteLabel(Note note) => taskNoteLabel(
-    note,
-    widget.account?.sharing?.spaceById(note.spaceId),
-  );
+  String _taskNoteLabel(Note note) =>
+      taskNoteLabel(note, widget.account?.sharing?.spaceById(note.spaceId));
 
   /// Opens a task's note where it lives, leaving Tasks.
   void _openTaskNote(String id) {
@@ -2046,7 +2044,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The question offers not to be asked again, and Settings asks it again.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
-    if (note == null || !_canEditNote(note)) return;
+    if (note == null || !_canRemoveNote(note)) return;
     _recordKapyActivity();
     final owner = _sharedBy(note);
     if (widget.prefs.askBeforeDeleting) {
@@ -2122,7 +2120,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _deletePicked(List<String> picked) async {
     if (picked.length == 1) return _deleteNote(picked.single);
     final ids = picked
-        .where((id) => _canEditNote(widget.notes.byId(id)))
+        .where((id) => _canRemoveNote(widget.notes.byId(id)))
         .toList();
     if (ids.isEmpty) return;
     _recordKapyActivity();
@@ -2497,6 +2495,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (note == null) return false;
     if (!note.isShared) return true;
     return widget.account?.sharing?.canEdit(note) ?? false;
+  }
+
+  /// Whether [note] may leave this account's notes: what it may change, and
+  /// a note somebody else shares with it, view-only too.
+  bool _canRemoveNote(Note? note) {
+    if (note == null) return false;
+    if (!note.isShared) return true;
+    return widget.account?.sharing?.mayRemove(note) ?? false;
   }
 
   int _videoAttachmentMaxBytes(Note note) {
@@ -3734,6 +3740,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           value: 'unhide',
           label: 'Move to Notes',
           icon: unhideIcon,
+        ),
+      if (!mayEdit && note != null && _sharedBy(note) != null)
+        KapyMenuAction(
+          value: 'delete',
+          label: widget.prefs.askBeforeDeleting
+              ? 'Remove note…'
+              : 'Remove note',
+          icon: deleteIcon,
+          destructive: true,
         ),
       if (mayEdit)
         KapyMenuAction(
