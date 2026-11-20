@@ -116,6 +116,15 @@ const double kCrampedPageHeight = 240;
 bool isCrampedPage(Size size, double keyboardInset) =>
     keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
 
+/// What the toast says once notes are gone: [deleted] of the reader's own,
+/// gone for good, and [removed] that somebody else shares, which only left
+/// the reader's notes.
+String forgottenMessage({required int deleted, required int removed}) {
+  if (deleted == 0) return 'Removed from your notes';
+  final gone = deleted == 1 ? 'Note deleted' : '$deleted notes deleted';
+  return removed == 0 ? gone : '$gone, and $removed removed from your notes';
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -2111,7 +2120,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceForgotten(ids, theirs);
+    _announceForgotten(ids);
   }
 
   /// Throws picked notes away. One goes as its row's Delete does, asking
@@ -2137,15 +2146,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!confirmed || !mounted) return;
     _forget(ids);
     _picks.clear();
-    _announceForgotten(ids, theirs);
+    _announceForgotten(ids);
   }
 
   bool _allSharedByOthers(List<String> ids) =>
       ids.every((id) => _sharedBy(widget.notes.byId(id)) != null);
 
-  void _announceForgotten(List<String> ids, bool theirs) {
-    if (!theirs) return _announceDeleted(ids.length);
-    Toast.show(context, 'Removed from your notes', icon: deleteIcon);
+  void _announceForgotten(List<String> ids) {
+    final removed = ids
+        .where((id) => _sharedBy(widget.notes.byId(id)) != null)
+        .length;
+    Toast.show(
+      context,
+      forgottenMessage(deleted: ids.length - removed, removed: removed),
+      icon: deleteIcon,
+    );
   }
 
   /// The part every delete shares: take the notes out, drop whatever the

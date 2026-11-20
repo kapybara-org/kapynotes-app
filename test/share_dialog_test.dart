@@ -28,6 +28,7 @@ import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
@@ -1633,6 +1634,20 @@ void main() {
           .action
           .label,
       'Remove 2 notes…',
+    );
+  });
+
+  test('the toast after a mixed delete says which notes are gone for good', () {
+    expect(forgottenMessage(deleted: 1, removed: 0), 'Note deleted');
+    expect(forgottenMessage(deleted: 3, removed: 0), '3 notes deleted');
+    expect(forgottenMessage(deleted: 0, removed: 2), 'Removed from your notes');
+    expect(
+      forgottenMessage(deleted: 1, removed: 2),
+      'Note deleted, and 2 removed from your notes',
+    );
+    expect(
+      forgottenMessage(deleted: 2, removed: 1),
+      '2 notes deleted, and 1 removed from your notes',
     );
   });
 
