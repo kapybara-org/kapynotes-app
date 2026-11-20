@@ -7,6 +7,7 @@ import 'ai/device_model.dart';
 import 'ai/kapy_ai.dart';
 import 'ai/kapy_ai_controller.dart';
 import 'ai/kapy_chat_book.dart';
+import 'core/keyring.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
 import 'core/appearance.dart';
@@ -477,12 +478,17 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       binding.addPostFrameCallback((_) {
         if (!mounted) return;
         widget.updates?.loadCache();
-        unawaited(_mcp?.load());
         final account = widget.account;
-        if (account != null) {
-          account.planTerms?.loadCache();
-          unawaited(account.restore());
-        }
+        account?.planTerms?.loadCache();
+        // Before any keystore read: one question, then the session and the
+        // assistant connections. A missing keyring is known by then, so those
+        // reads do not each log the same failure.
+        unawaited(() async {
+          await KeyringStatus.probe();
+          if (!mounted) return;
+          unawaited(_mcp?.load());
+          unawaited(account?.restore());
+        }());
         unawaited(widget.tasks?.load());
         _scheduleBackgroundFetches();
       });

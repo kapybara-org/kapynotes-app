@@ -1,7 +1,9 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/keyring.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 
 /// Counts reads, so the caching claim can be checked rather than assumed.
@@ -99,4 +101,83 @@ void main() {
     await store.writeMasterKey(key(5));
     await store.clear();
   });
+
+  test(
+    'a missing keyring is asked once, and the key stays for this launch only',
+    () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final status = KeyringStatus();
+      var calls = 0;
+      final backing = _CountingBroken(() => calls++);
+      final lines = <String>[];
+      final previous = debugPrint;
+      debugPrint = (message, {wrapWidth}) => lines.add('$message');
+      addTearDown(() => debugPrint = previous);
+
+      final session = KeyStore(ForgivingSecureStore(backing, status: status));
+      await session.readMasterKey();
+      await session.writeMasterKey(key(5));
+      await session.readToken();
+      await session.writeToken('session');
+
+      // The first refusal is remembered. Later calls do not ask again.
+      expect(calls, 1);
+      expect(status.available, isFalse);
+      expect(lines, hasLength(1));
+      expect(lines.single, contains('keyring is not running'));
+      // This launch still has the key it just made.
+      expect(await session.readMasterKey(), key(5));
+      expect(await session.readToken(), 'session');
+
+      // The next launch does not.
+      final next = KeyStore(ForgivingSecureStore(backing, status: status));
+      expect(await next.readMasterKey(), isNull);
+      expect(await next.readToken(), isNull);
+      expect(calls, 1);
+    },
+  );
+
+  test('elsewhere a refusal is transient, so it is not remembered', () async {
+    // A locked keychain or a denied prompt on macOS or Windows opens again
+    // later in the same launch. Marking the store unavailable would keep
+    // Hidden Notes from unlocking until the app was relaunched.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final status = KeyringStatus();
+    final previous = debugPrint;
+    debugPrint = (message, {wrapWidth}) {};
+    addTearDown(() => debugPrint = previous);
+
+    final store = KeyStore(ForgivingSecureStore(BrokenStore(), status: status));
+    expect(await store.readMasterKey(), isNull);
+
+    expect(status.available, isTrue);
+    // And the Hidden Notes store is the one 1.33 used, unwrapped.
+    expect(hiddenNotesSecureStore(), isA<MigratingSecureStore>());
+  });
+}
+
+class _CountingBroken implements SecureStore {
+  _CountingBroken(this.onCall);
+
+  final void Function() onCall;
+
+  @override
+  Future<String?> read(String key) async {
+    onCall();
+    throw Exception('no keystore');
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    onCall();
+    throw Exception('no keystore');
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    onCall();
+    throw Exception('no keystore');
+  }
 }

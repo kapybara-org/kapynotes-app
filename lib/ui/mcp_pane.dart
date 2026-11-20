@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/keyring.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../mcp/mcp_clients.dart';
@@ -167,6 +168,8 @@ class _McpPaneState extends State<McpPane> {
         ),
         const SizedBox(height: SettingsMetrics.groupGap),
         const SettingsLabel('Connect an app', key: ValueKey('mcp-connect')),
+        if (!KeyringStatus.instance.available)
+          const SettingsNote(KeyringNotice.connect),
         SettingsGroup(
           children: [
             for (final kind in McpClientKind.values)
