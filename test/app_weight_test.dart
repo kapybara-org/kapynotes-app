@@ -3,6 +3,8 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('the ladder uses the in-between steps the variable faces can draw', () {
     expect(AppWeight.axisOf(FontWeight.w400), 400);
     expect(AppWeight.axisOf(FontWeight.w500), 500);

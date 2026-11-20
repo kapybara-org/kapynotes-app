@@ -1220,6 +1220,20 @@ class AppWeight {
     return FontWeight.w700;
   }
 
+  /// [axis] as the platform's Bold Text setting wants it.
+  ///
+  /// `Text` honours Bold Text by merging `fontWeight: bold`, and an explicit
+  /// `wght` axis outranks that merge. A style built here therefore carries
+  /// its own bold step, or the whole interface would ignore the setting.
+  /// It rebuilds with the rest of the app on
+  /// `didChangeAccessibilityFeatures`.
+  static double bold(double axis) {
+    final features = WidgetsBinding.instance.platformDispatcher
+        .accessibilityFeatures;
+    if (!features.boldText) return axis;
+    return math.min(axis + 200, 700);
+  }
+
   /// `wght` at [axis], keeping any other axes already set (the handwriting
   /// face's informality pins, for instance).
   static List<FontVariation> variations(
@@ -1249,27 +1263,31 @@ TextStyle chromeStyle({
   bool tabular = false,
   double letterSpacing = 0,
   FontStyle? fontStyle,
-}) => TextStyle(
-  fontFamily: family ?? AppFonts.ui,
-  fontFamilyFallback: fallback ?? AppFonts.uiFallback,
-  fontSize: size,
-  height: line / size,
-  leadingDistribution: TextLeadingDistribution.even,
-  fontWeight: AppWeight.named(weight),
-  fontVariations: AppWeight.variations(weight, extra: extra),
-  color: color,
-  letterSpacing: letterSpacing,
-  fontStyle: fontStyle,
-  fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
-);
+}) {
+  final axis = AppWeight.bold(weight);
+  return TextStyle(
+    fontFamily: family ?? AppFonts.ui,
+    fontFamilyFallback: fallback ?? AppFonts.uiFallback,
+    fontSize: size,
+    height: line / size,
+    leadingDistribution: TextLeadingDistribution.even,
+    fontWeight: AppWeight.named(axis),
+    fontVariations: AppWeight.variations(axis, extra: extra),
+    color: color,
+    letterSpacing: letterSpacing,
+    fontStyle: fontStyle,
+    fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
+  );
+}
 
 /// The same ladder, applied to a style the theme already built.
 TextStyle? ladder(TextStyle? style, double weight) {
   if (style == null) return null;
+  final axis = AppWeight.bold(weight);
   return style.copyWith(
-    fontWeight: AppWeight.named(weight),
+    fontWeight: AppWeight.named(axis),
     fontVariations: AppWeight.variations(
-      weight,
+      axis,
       extra: style.fontVariations ?? const [],
     ),
   );
