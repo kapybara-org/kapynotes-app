@@ -83,7 +83,9 @@ dart_size_flags() {
   local target="$1"
   rm -rf "$SYMBOLS/$target"
   mkdir -p "$SYMBOLS/$target"
-  echo "--obfuscate --split-debug-info=$SYMBOLS/$target"
+  # Kapy AI ships on from 1.35.0. A local debug build and the tests stay off
+  # unless they pass the same define, so the suite still covers the off path.
+  echo "--obfuscate --split-debug-info=$SYMBOLS/$target --dart-define=KAPYNOTES_KAPY_AI=true"
 }
 
 info() { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$1"; }

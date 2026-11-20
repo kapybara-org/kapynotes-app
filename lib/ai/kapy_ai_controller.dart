@@ -687,6 +687,14 @@ class KapyAiController extends KapyAi {
 
   /// What has to happen before [model] may answer, or null when nothing.
   KapyPending? _holdFor(KapyModel model) {
+    final blocked = _device.state.note;
+    if (blocked != null &&
+        !isPro &&
+        model.kind != KapyModelKind.codex &&
+        model.kind != KapyModelKind.claudeCode &&
+        model.kind != KapyModelKind.openRouter) {
+      return KapyFailed(blocked);
+    }
     final account = _accountOf(model.kind);
     if (account != null) {
       return _store.hasAccountConsent(account)
@@ -704,8 +712,8 @@ class KapyAiController extends KapyAi {
         received: state.receivedBytes,
         total: state.totalBytes,
       ),
-      DeviceModelStatus.needsSystemFeature => const KapyFailed(
-        'Turn on Apple Intelligence in System Settings, then try again.',
+      DeviceModelStatus.needsSystemFeature => KapyFailed(
+        state.note ?? PlatformDeviceModel.appleOffNoRoom,
       ),
       DeviceModelStatus.unavailable => const KapyFailed(
         "This device can't run an on-device model.",

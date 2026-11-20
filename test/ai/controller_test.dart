@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kapy_notes/ai/answer_engine.dart';
+import 'package:kapy_notes/ai/device_model.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
 import 'package:kapy_notes/ai/kapy_chat_book.dart';
@@ -308,6 +309,19 @@ void main() {
       expect(ai.cloudUsage!.remaining, 0);
       await ai.proceed();
       expect(ai.current!.messages.last.text, 'device answer');
+    });
+
+    test('no room and Apple Intelligence off is not a dead end', () async {
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      final ai = await build();
+      await ai.ask('Lisbon?');
+      expect((ai.pending! as KapyFailed).message, device.state.note);
+      expect(sent, isEmpty);
     });
 
     test('offline keeps the question for Try again', () async {

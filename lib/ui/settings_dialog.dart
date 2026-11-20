@@ -2110,13 +2110,14 @@ class _SettingsDialogState extends State<SettingsDialog>
         _toggle(
           'kapy-ai-toggle',
           'Kapy AI',
-          ai.device.status == DeviceModelStatus.unavailable
-              ? 'No model on this device. Kapy AI Cloud on Pro still answers, '
-                    'and so does a key you add'
-              : [
-                  'Answers from your notes in a panel beside the page',
-                  if (keys != null && AppPlatform.isDesktop) '$keys opens it',
-                ].join('. '),
+          ai.device.note ??
+              (ai.device.status == DeviceModelStatus.unavailable
+                  ? 'No model on this device. Kapy AI Cloud on Pro still '
+                        'answers, and so does a key you add'
+                  : [
+                      'Answers from your notes in a panel beside the page',
+                      if (keys != null && AppPlatform.isDesktop) '$keys opens it',
+                    ].join('. ')),
           value: ai.enabled,
           onChanged: (value) => ai.enabled = value,
           byDefault: true,
