@@ -1041,13 +1041,15 @@ extension on Sidebar {
         heading(_groupHeading(groups, key));
         section(groups.byGroup[key]!);
       }
-      if (groups.mine.isNotEmpty) {
-        if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
-          heading(const _PhoneHeading('Recent'));
-        } else {
-          gap(8);
-        }
-        section(groups.mine);
+      // A day at a time, newest first, under the day a person would name it
+      // by: the day the note was last edited.
+      for (final day in _phoneDays(
+        groups.mine,
+        now: now(),
+        displayTime: displayTime,
+      )) {
+        heading(_PhoneDayHeading(day.label));
+        section(day.notes);
       }
     } else {
       if (pinned.isNotEmpty) {
@@ -3090,6 +3092,73 @@ class _IconButton extends StatelessWidget {
 }
 
 /// A heading over a phone's list: Pinned, Recent.
+/// A day's notes on a phone's list, named the way a person names the day:
+/// "Today Wed 19", "Yesterday Tue 18", then "Wed 18 Nov".
+List<({String label, List<Note> notes})> _phoneDays(
+  List<Note> notes, {
+  required DateTime now,
+  required DateTime Function(DateTime) displayTime,
+}) {
+  final days = <DateTime, List<Note>>{};
+  for (final note in notes) {
+    final shown = displayTime(note.updatedAt);
+    (days[DateTime(shown.year, shown.month, shown.day)] ??= []).add(note);
+  }
+  final today = displayTime(now);
+  final start = DateTime(today.year, today.month, today.day);
+  return [
+    for (final day in days.entries)
+      (label: _phoneDayName(day.key, start), notes: day.value),
+  ];
+}
+
+const _phoneWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const _phoneMonths = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+String _phoneDayName(DateTime day, DateTime today) {
+  final weekday = _phoneWeekdays[day.weekday - 1];
+  final since = today.difference(day).inDays;
+  if (since == 0) return 'Today $weekday ${day.day}';
+  if (since == 1) return 'Yesterday $weekday ${day.day}';
+  return '$weekday ${day.day} ${_phoneMonths[day.month - 1]}';
+}
+
+/// A day's heading on a phone's list: quiet, and in the note title's own
+/// face, as Home and Tasks both draw it.
+class _PhoneDayHeading extends StatelessWidget {
+  const _PhoneDayHeading(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Text(
+      label,
+      style: TextStyle(
+        fontFamily: AppFonts.title,
+        fontFamilyFallback: AppFonts.uiFallback,
+        fontSize: 19,
+        height: 24 / 19,
+        color: context.palette.textSecondary,
+      ),
+    ),
+  );
+}
+
 class _PhoneHeading extends StatelessWidget {
   const _PhoneHeading(this.label);
 

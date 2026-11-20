@@ -625,11 +625,12 @@ class NoteListRowFace extends StatelessWidget {
     final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
-    final first = TagMarks.of(context, note.id).firstOrNull;
+    final tagMarks = TagMarks.of(context, note.id);
+    final first = tagMarks.firstOrNull;
     final tint = first?.colour?.card(palette) ?? palette.surfaceBackground;
     // The border is always there, clear until the row is open or ringed, so
     // opening a note does not nudge its text.
-    return Container(
+    final row = Container(
       padding: touch
           ? const EdgeInsets.symmetric(horizontal: 20, vertical: 12)
           : const EdgeInsets.all(6.5),
@@ -665,8 +666,8 @@ class NoteListRowFace extends StatelessWidget {
                 Row(
                   children: [
                     // Untagged rows keep the dot's room, so titles line up.
-                    // A phone's rows start at the margin.
-                    if (!touch || first != null) ...[
+                    // A phone's dots sit in the column after the time.
+                    if (!touch) ...[
                       SizedBox(
                         width: TagDots.size,
                         child: first == null
@@ -686,10 +687,10 @@ class NoteListRowFace extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: touch
-                            ? _figtree(
-                                15.5,
-                                20,
-                                FontWeight.w600,
+                            ? _handwritten(
+                                18,
+                                24,
+                                FontWeight.w400,
                                 palette.textPrimary,
                               )
                             : _figtree(
@@ -701,16 +702,46 @@ class NoteListRowFace extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      date,
-                      maxLines: 1,
-                      style: _figtree(
-                        touch ? 12.5 : AppTypeScale.small,
-                        16,
-                        FontWeight.w400,
-                        palette.textTertiary,
+                    if (touch)
+                      // Fixed, so the times line up down the list, and the
+                      // tag dots come after the time rather than leading the
+                      // title.
+                      SizedBox(
+                        width: 72,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              date,
+                              maxLines: 1,
+                              style: _figtree(
+                                12.5,
+                                16,
+                                FontWeight.w400,
+                                palette.textTertiary,
+                              ),
+                            ),
+                            if (tagMarks.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              TagDots(
+                                tags: tagMarks,
+                                ground: marked ? tint : palette.paperColor,
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    else
+                      Text(
+                        date,
+                        maxLines: 1,
+                        style: _figtree(
+                          AppTypeScale.small,
+                          16,
+                          FontWeight.w400,
+                          palette.textTertiary,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 SizedBox(height: touch ? 4 : 3),
@@ -748,6 +779,15 @@ class NoteListRowFace extends StatelessWidget {
           ),
         ],
       ),
+    );
+    // A phone's rows are divided by a hairline rather than a box: the list
+    // reads as one column down the page.
+    if (!touch) return row;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.separator)),
+      ),
+      child: row,
     );
   }
 }
