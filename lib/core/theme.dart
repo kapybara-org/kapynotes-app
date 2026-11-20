@@ -679,6 +679,11 @@ class EditorMetrics {
   static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
+  /// While the page's days have the bar's top left, a filed note's folders
+  /// sit in a line of their own [pathGap] above its title.
+  static const double pathRow = 16;
+  static const double pathGap = 8;
+
   /// A heading against 16px writing: on the page 22, 19 and 17, each in a
   /// 28px line at the bottom of a row of 40 for the first level and 36 below
   /// it, and a step smaller on a phone. Set with proportional leading, nearly

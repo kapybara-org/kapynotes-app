@@ -12,8 +12,10 @@ import '../sync/spaces.dart';
 import '../sync/sync_service.dart' show SyncStatus;
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
+import 'day_strip.dart' show PlaceDays;
 import 'member_avatars.dart';
 import 'note_tabs.dart' show clickOpensTabBehind;
+import 'page_card.dart';
 import 'tonal_button.dart';
 import 'toolbar.dart' show UpdateRestartButton;
 import 'unloaded_pictures_status.dart';
@@ -78,16 +80,17 @@ TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
       color: color,
     );
 
-/// The bar across the top of the page: where the page is, the page's days
-/// where it has them, then what can be done there, with Kapy AI at the far
-/// end.
+/// The band across the top of the page, on one line: the month at the top
+/// left of a page with days, its week centred on the page, and what can be
+/// done there on the right, ending with Kapy AI and More. A page with no
+/// days has its path at the top left instead.
 ///
 /// While the notes list is hidden it leads with the way back to the list.
 /// Its empty stretches drag the window.
 class PageToolbar extends StatelessWidget {
   const PageToolbar({
     super.key,
-    required this.path,
+    this.path,
     this.days,
     required this.listVisible,
     required this.onShowList,
@@ -107,15 +110,16 @@ class PageToolbar extends StatelessWidget {
     this.onMore,
     this.updates,
     this.actions,
-  });
+  }) : assert(path != null || days != null);
 
-  final PagePath path;
+  /// Where a page with no days is, at the top left.
+  final PagePath? path;
 
-  /// The page's days, between the path and the actions with as much room on
-  /// either side: the week, or with compact one button for the day on a page
-  /// too narrow for it. They have the room the collaborators leave, and fit
-  /// themselves to it. Null on a page that has no days.
-  final Widget Function(bool compact)? days;
+  /// The page's days, which put their month at the top left and their week
+  /// in the middle through the place they are given. With compact, one
+  /// button for the day stands in the month's place and the week gives way.
+  /// Null on a page that has no days, which shows its [path] instead.
+  final Widget Function(bool compact, PlaceDays place)? days;
 
   /// Shows a folder from the path in this tab, or with behind in a new tab
   /// behind it.
@@ -146,12 +150,12 @@ class PageToolbar extends StatelessWidget {
   /// put as the selection comes and goes.
   final VoidCallback? onShare;
 
-  /// Kapy AI's button, last in the bar behind a hairline. It hides with its
+  /// Kapy AI's button, behind a hairline before More. It hides with its
   /// hairline while Kapy AI is off.
   final Widget? assistant;
 
-  /// Everything else the page offers, under More. A page with no onMore has
-  /// nothing to put there and shows no More at all.
+  /// Everything else the page offers, under More at the bar's far end. A
+  /// page with no onMore has nothing to put there and shows no More at all.
   final List<KapyMenuAction> moreActions;
   final void Function(String value, Offset at)? onMore;
 
@@ -163,10 +167,20 @@ class PageToolbar extends StatelessWidget {
   /// and Share go.
   final List<Widget>? actions;
 
-  static const double height = 72;
+  /// The band is 52 from the page's top, the page card's edge included, so
+  /// it lines up with the list's bar beside it.
+  static const double height = 52 - PageCard.borderWidth;
+
+  /// The top left's slot and the actions', each from its edge of the page
+  /// with its inset: the week sits centred between them, 12 clear of each.
+  static const double slot = 208;
+
+  /// Where the top left's words start, and where the actions end.
+  static const double _start = 18;
+  static const double _end = 12;
 
   /// Narrower than this, the path keeps its icon, a fold and its last level,
-  /// and the week gives way to one button for the day.
+  /// and the days give way to one button for the day.
   static const double _fullWidth = 720;
 
   /// Narrower than this, Saved moves to the note's date line and the path
@@ -201,16 +215,21 @@ class PageToolbar extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
-          final avatars = actions == null && members.isNotEmpty;
-          return Stack(
-            fit: StackFit.expand,
+          // The month's button starts 8 before its words, and the way back
+          // to the list sits 8 in.
+          Widget band(Widget lead, [Widget? week]) => CustomMultiChildLayout(
+            delegate: _Band(
+              start: !listVisible
+                  ? 8
+                  : days == null
+                  ? _start
+                  : _start - 8,
+            ),
             children: [
-              const Positioned.fill(
-                child: WindowDragArea(child: SizedBox.expand()),
-              ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(listVisible ? 16 : 8, 8, 16, 0),
+              LayoutId(
+                id: _Slot.lead,
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     if (!listVisible) ...[
                       CompactIconButton(
@@ -227,69 +246,40 @@ class PageToolbar extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, slot) => Row(
-                          children: [
-                            Expanded(
-                              child: LayoutBuilder(
-                                builder: (context, rest) => Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Flexible(
-                                      child: _Path(
-                                        path: path,
-                                        form: width >= _fullWidth
-                                            ? _PathForm.full
-                                            : width >= _savedWidth
-                                            ? _PathForm.short
-                                            : _PathForm.last,
-                                        onOpenFolder: onOpenFolder,
-                                      ),
-                                    ),
-                                    if (days != null) ...[
-                                      ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          maxWidth: rest.maxWidth,
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(
-                                            left: 16,
-                                          ),
-                                          child: days(width < _fullWidth),
-                                        ),
-                                      ),
-                                      const SizedBox.shrink(),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                            if (avatars)
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: math.min(slot.maxWidth, width / 3),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 16),
-                                  child: MemberAvatars(
-                                    members: members,
-                                    present: present,
-                                    currentUserId: currentUserId,
-                                    onPressed: onShare,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: avatars ? 8 : 16),
-                    ..._actions(width, extent),
+                    Flexible(child: lead),
                   ],
                 ),
               ),
+              if (week != null) LayoutId(id: _Slot.week, child: week),
+              LayoutId(
+                id: _Slot.actions,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _actions(width, extent),
+                ),
+              ),
+            ],
+          );
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              const Positioned.fill(
+                child: WindowDragArea(child: SizedBox.expand()),
+              ),
+              if (days != null)
+                days(width < _fullWidth, band)
+              else
+                band(
+                  _Path(
+                    path: path!,
+                    form: width >= _fullWidth
+                        ? _PathForm.full
+                        : width >= _savedWidth
+                        ? _PathForm.short
+                        : _PathForm.last,
+                    onOpenFolder: onOpenFolder,
+                  ),
+                ),
             ],
           );
         },
@@ -297,12 +287,29 @@ class PageToolbar extends StatelessWidget {
     );
   }
 
-  /// Saved, Share and More, 8 apart, then Kapy AI.
+  /// The collaborators, giving way first, then Saved and Share 8 apart,
+  /// Kapy AI behind its hairline, and More last.
   List<Widget> _actions(double width, double extent) {
     final updates = this.updates;
     final actions = this.actions;
     final onMore = this.onMore;
+    final assistant = this.assistant;
     return [
+      if (actions == null && members.isNotEmpty)
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: width / 3),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: MemberAvatars(
+                members: members,
+                present: present,
+                currentUserId: currentUserId,
+                onPressed: onShare,
+              ),
+            ),
+          ),
+        ),
       if (updates != null)
         UpdateRestartButton(
           updates: updates,
@@ -331,8 +338,12 @@ class PageToolbar extends StatelessWidget {
           onPressed: onShare,
         ),
       ],
+      ?assistant,
       if (onMore != null) ...[
-        if (actions == null || actions.isNotEmpty) const SizedBox(width: 8),
+        if (assistant != null)
+          const SizedBox(width: 4)
+        else if (actions == null || actions.isNotEmpty)
+          const SizedBox(width: 8),
         Builder(
           builder: (buttonContext) => CompactIconButton(
             key: const ValueKey('page-more'),
@@ -343,14 +354,13 @@ class PageToolbar extends StatelessWidget {
                 ? null
                 : () => _showMore(buttonContext, onMore),
             icon: const KapyIcon(
-              KapyIcons.moreRounded,
+              KapyIcons.moreVerticalRounded,
               size: 16,
               strokeWidth: 2.2,
             ),
           ),
         ),
       ],
-      ?assistant,
     ];
   }
 
@@ -384,7 +394,82 @@ class PageToolbar extends StatelessWidget {
   }
 }
 
-/// How much of the path a page's width leaves room for.
+enum _Slot { lead, week, actions }
+
+/// The band's one line, every part centred down it: the lead from [start],
+/// the actions ending [PageToolbar._end] from the right, and the week
+/// centred on the page between two equal slots, each [PageToolbar.slot] or
+/// as wide as the lead or the actions need, with 12 clear of each.
+class _Band extends MultiChildLayoutDelegate {
+  _Band({required this.start});
+
+  final double start;
+
+  static const double _clear = 12;
+
+  @override
+  void performLayout(Size size) {
+    double middle(Size child) => (size.height - child.height) / 2;
+    final end = size.width - PageToolbar._end;
+    final actions = layoutChild(
+      _Slot.actions,
+      BoxConstraints.loose(Size(math.max(0, end - start), size.height)),
+    );
+    positionChild(_Slot.actions, Offset(end - actions.width, middle(actions)));
+    final lead = layoutChild(
+      _Slot.lead,
+      BoxConstraints.loose(
+        Size(math.max(0, end - actions.width - 16 - start), size.height),
+      ),
+    );
+    positionChild(_Slot.lead, Offset(start, middle(lead)));
+    if (!hasChild(_Slot.week)) return;
+    final slot = math.max(
+      PageToolbar.slot,
+      math.max(start + lead.width, size.width - end + actions.width),
+    );
+    final week = layoutChild(
+      _Slot.week,
+      BoxConstraints.loose(
+        Size(math.max(0, size.width - 2 * (slot + _clear)), size.height),
+      ),
+    );
+    positionChild(
+      _Slot.week,
+      Offset((size.width - week.width) / 2, middle(week)),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_Band oldDelegate) => oldDelegate.start != start;
+}
+
+/// A note's folders in a light line above its title, outermost first, on a
+/// page whose top left has its days: "Work › Clients › Acme". They open as
+/// the path's do, and a deep one folds its middle into "…".
+class NotePathLine extends StatelessWidget {
+  const NotePathLine({
+    super.key,
+    required this.folders,
+    required this.onOpenFolder,
+  });
+
+  final List<PagePlace> folders;
+  final void Function(String folderId, {required bool behind}) onOpenFolder;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: EditorMetrics.pathRow,
+    child: _Path(
+      path: PagePath(icon: KapyIcons.folderOutlined, root: '', levels: folders),
+      form: _PathForm.line,
+      onOpenFolder: onOpenFolder,
+    ),
+  );
+}
+
+/// How much of the path shows: in the bar, as much as the page's width
+/// leaves room for, and above a note's title, its folders.
 enum _PathForm {
   /// The root and the last two levels, with anything between folded.
   full,
@@ -394,10 +479,16 @@ enum _PathForm {
 
   /// The last level alone, after its icon.
   last,
+
+  /// The folders alone, quiet and with no icon, in the line above a note's
+  /// title: up to three, or the first and the last two with those between
+  /// folded.
+  line,
 }
 
-/// The page's path, on one line that never wraps: the root's icon and name,
-/// then each level after a chevron. Folders open from it.
+/// The page's path, on one line that never wraps: in the bar the root's icon
+/// and name, then each level after a chevron, and above a note's title its
+/// folders alone. Folders open from it.
 class _Path extends StatefulWidget {
   const _Path({required this.path, required this.form, this.onOpenFolder});
 
@@ -419,8 +510,12 @@ class _PathState extends State<_Path> {
     final path = widget.path;
     final levels = path.levels;
     final form = widget.form;
-    final cap = form == _PathForm.full ? 200.0 : 160.0;
-    final above = _figtree(13, 16, FontWeight.w400, palette.textTertiary);
+    final light = form == _PathForm.line;
+    final keyName = light ? 'note-path' : 'page-path';
+    final cap = form == _PathForm.full || light ? 200.0 : 160.0;
+    final above = light
+        ? _figtree(12, 16, FontWeight.w400, palette.textTertiary)
+        : _figtree(13, 16, FontWeight.w400, palette.textTertiary);
     final here = _figtree(13, 16, FontWeight.w500, palette.textPrimary);
     final last = levels.lastOrNull;
     final base = DefaultTextStyle.of(context).style;
@@ -440,9 +535,9 @@ class _PathState extends State<_Path> {
       color: palette.textSecondary,
     );
     Widget chevron() {
-      fixed += 20;
+      fixed += light ? 24 : 20;
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: EdgeInsets.symmetric(horizontal: light ? 6 : 4),
         child: KapyIcon(
           KapyIcons.chevronRightRounded,
           size: 12,
@@ -469,6 +564,7 @@ class _PathState extends State<_Path> {
             name: name,
             style: style,
             folderId: folderId,
+            keyName: keyName,
             onOpen: widget.onOpenFolder,
           ),
         ),
@@ -477,7 +573,7 @@ class _PathState extends State<_Path> {
 
     Widget fold(Iterable<PagePlace> hidden) {
       fixed += 24;
-      return _fold(hidden.toList());
+      return _fold(hidden.toList(), keyName: keyName, light: light);
     }
 
     final children = switch (form) {
@@ -514,34 +610,64 @@ class _PathState extends State<_Path> {
           level(place.name, place == last ? here : above, place.folderId),
         ],
       ],
+      _PathForm.line => [
+        for (final (index, place) in levels.indexed)
+          if (levels.length <= 3 || index == 0) ...[
+            if (index > 0) chevron(),
+            level(place.name, above, place.folderId),
+          ] else if (index >= levels.length - 2) ...[
+            if (index == levels.length - 2) ...[
+              chevron(),
+              fold(levels.sublist(1, index)),
+            ],
+            chevron(),
+            level(place.name, above, place.folderId),
+          ],
+      ],
     };
     painter.dispose();
     final row = Row(
-      key: const ValueKey('page-path'),
+      key: ValueKey(keyName),
       mainAxisSize: MainAxisSize.min,
       children: children,
     );
-    final hidden = long || levels.length > (form == _PathForm.full ? 2 : 0);
+    final hidden =
+        long ||
+        levels.length >
+            switch (form) {
+              _PathForm.full => 2,
+              _PathForm.line => 3,
+              _ => 0,
+            };
+    final spoken = light
+        ? [for (final level in levels) level.name].join(' › ')
+        : path.spoken;
     // Too narrow to read even one name, it steps aside rather than overflow.
     return LayoutBuilder(
       builder: (context, constraints) => constraints.maxWidth < fixed + 24
           ? const SizedBox.shrink()
           : hidden || fixed + line > constraints.maxWidth
-          ? Tooltip(message: path.spoken, child: row)
+          ? Tooltip(message: spoken, child: row)
           : row,
     );
   }
 
-  /// "…" for the levels the path leaves out, opening them as a menu.
-  Widget _fold(List<PagePlace> hidden) {
+  /// "…" for the levels the path leaves out, opening them as a menu; in the
+  /// light line, as tall as the line.
+  Widget _fold(
+    List<PagePlace> hidden, {
+    required String keyName,
+    required bool light,
+  }) {
     final palette = context.palette;
+    final height = light ? 16.0 : 24.0;
     return Builder(
       builder: (buttonContext) => TextButton(
-        key: const ValueKey('page-path-fold'),
-        onPressed: () => _showFold(buttonContext, hidden),
+        key: ValueKey('$keyName-fold'),
+        onPressed: () => _showFold(buttonContext, hidden, keyName: keyName),
         style: TextButton.styleFrom(
-          minimumSize: const Size(0, 24),
-          fixedSize: const Size.fromHeight(24),
+          minimumSize: Size(0, height),
+          fixedSize: Size.fromHeight(height),
           padding: const EdgeInsets.symmetric(horizontal: 6),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           visualDensity: VisualDensity.compact,
@@ -557,7 +683,9 @@ class _PathState extends State<_Path> {
                 ? BorderSide.none
                 : BorderSide(color: palette.controlBorder),
           ),
-          textStyle: _figtree(13, 16, FontWeight.w600, palette.textSecondary),
+          textStyle: light
+              ? _figtree(12, 16, FontWeight.w600, palette.textSecondary)
+              : _figtree(13, 16, FontWeight.w600, palette.textSecondary),
         ),
         child: const Text('…', semanticsLabel: 'Folders in between'),
       ),
@@ -566,7 +694,11 @@ class _PathState extends State<_Path> {
 
   /// Lists [hidden] 8 under "…", each a level further in, and opens the one
   /// picked as a click on the path would.
-  Future<void> _showFold(BuildContext context, List<PagePlace> hidden) async {
+  Future<void> _showFold(
+    BuildContext context,
+    List<PagePlace> hidden, {
+    required String keyName,
+  }) async {
     final box = context.findRenderObject() as RenderBox?;
     final onOpen = widget.onOpenFolder;
     if (box == null || onOpen == null) return;
@@ -579,7 +711,7 @@ class _PathState extends State<_Path> {
         for (final (depth, place) in hidden.indexed)
           if (place.folderId case final folderId?)
             PopupMenuItem(
-              key: ValueKey('page-path-$folderId'),
+              key: ValueKey('$keyName-$folderId'),
               value: folderId,
               height: 32,
               child: Padding(
@@ -624,12 +756,17 @@ class _Level extends StatelessWidget {
   const _Level({
     required this.name,
     required this.style,
+    required this.keyName,
     this.folderId,
     this.onOpen,
   });
 
   final String name;
   final TextStyle style;
+
+  /// What the path's keys start with: page-path in the bar, note-path in
+  /// the line above a note's title.
+  final String keyName;
   final String? folderId;
   final void Function(String folderId, {required bool behind})? onOpen;
 
@@ -653,7 +790,7 @@ class _Level extends StatelessWidget {
           }
         },
         child: GestureDetector(
-          key: ValueKey('page-path-open-$folderId'),
+          key: ValueKey('$keyName-open-$folderId'),
           behavior: HitTestBehavior.opaque,
           onTap: () => onOpen(folderId, behind: clickOpensTabBehind()),
           child: Semantics(button: true, child: text),

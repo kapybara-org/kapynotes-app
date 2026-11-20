@@ -40,6 +40,7 @@ import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../compact_icon_button.dart';
 import '../notebook_paper.dart';
+import '../page_toolbar.dart' show NotePathLine, PagePlace;
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
 import '../kapy_page_peek.dart';
@@ -7420,6 +7421,32 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  /// The note's folders in the line above its title, scrolled with it.
+  Widget _pathLine(
+    List<PagePlace> folders,
+    void Function(String folderId, {required bool behind}) onOpenFolder,
+    EdgeInsets padding,
+  ) => ClipRect(
+    child: ListenableBuilder(
+      listenable: _scrollController,
+      builder: (context, line) => Stack(
+        children: [
+          Positioned(
+            left: padding.left,
+            right: padding.right,
+            top:
+                padding.top -
+                EditorMetrics.pathRow -
+                EditorMetrics.pathGap -
+                (_scrollController.hasClients ? _scrollController.offset : 0),
+            child: line!,
+          ),
+        ],
+      ),
+      child: NotePathLine(folders: folders, onOpenFolder: onOpenFolder),
+    ),
+  );
+
   /// The title's underline and the meta row under it, scrolled with the
   /// text they belong to.
   Widget _titleMarks(_TitleLayout title, EdgeInsets padding) {
@@ -7878,6 +7905,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         ? EditorMetrics.mobilePadding
         : EditorMetrics.padding;
     if (widget.cramped) basePadding = basePadding.copyWith(top: 0, bottom: 0);
+    final noteFolders = EditorMetrics.page
+        ? NoteFolders.maybeOf(context)
+        : null;
+    final folders = <PagePlace>[
+      for (final folder
+          in noteFolders?.tree.pathOfNote(widget.noteId) ?? const [])
+        (name: folder.name, folderId: folder.id),
+    ];
+    if (folders.isNotEmpty) {
+      basePadding = basePadding.copyWith(
+        top: basePadding.top + EditorMetrics.pathRow + EditorMetrics.pathGap,
+      );
+    }
     final textStyle = EditorMetrics.textStyle(
       palette.textPrimary,
       widget.writingFont,
@@ -8312,6 +8352,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             onMove: _moveTableLine,
                             onResize: _resizeTableColumn,
                             onMenu: _showTableMenu,
+                          ),
+                        ),
+                      if (noteFolders != null && folders.isNotEmpty)
+                        Positioned.fill(
+                          child: _pathLine(
+                            folders,
+                            noteFolders.onOpenFolder,
+                            padding,
                           ),
                         ),
                       if (title != null)
