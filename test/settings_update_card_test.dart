@@ -661,6 +661,40 @@ void main() {
     );
   });
 
+  // A narrow Mac window is still a computer: its About pane keeps the
+  // updater and the full release history, rather than the phone's single row.
+  testWidgets('a narrow window with a pointer keeps the whole About pane', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(520, 560);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = _MemoryStore();
+    final notes = NotesStore(store);
+    await notes.load();
+    final updates = _checker(store);
+    await updates.history.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Scaffold(
+          body: SettingsDialog(
+            layoutPrefs: LayoutPrefs(store)..load(),
+            shortcuts: ShortcutPrefs(store)..load(),
+            rates: RatesRepository(store),
+            notes: notes,
+            updates: updates,
+            section: SettingsSection.about,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('update-row')), findsOneWidget);
+    expect(find.text('See what changed'), findsNothing);
+  });
+
   testWidgets('the close button uses each theme’s quiet text color', (
     tester,
   ) async {
