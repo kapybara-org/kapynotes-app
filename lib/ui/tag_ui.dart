@@ -181,8 +181,9 @@ class TagPicker extends StatefulWidget {
 
 /// What a tag list for some notes does: the field's words find tags or name
 /// a new one, a row ticks or unticks, and a refused name or a full note says
-/// why. A tag is ticked when every one of the notes has it, so ticking adds
-/// it to the ones without it and unticking takes it off them all. The
+/// why. A tag is ticked when every one of the notes has it and dashed when
+/// only some do. Ticking puts it on the rest, and unticking takes it off them
+/// all, as does a dashed tag that the notes without it have no room for. The
 /// popover and ⌘K's Tag note... both draw it.
 class TagPickerController extends ChangeNotifier {
   TagPickerController({required this.shelf, required this.noteIds});
@@ -228,29 +229,48 @@ class TagPickerController extends ChangeNotifier {
     ];
   }
 
-  bool isOn(String tagId) => noteIds.every(
-    (noteId) => _store.tagsOf(noteId).any((tag) => tag.id == tagId),
-  );
+  /// True when every one of the notes has [tagId], null when only some of
+  /// them do, and false when none does.
+  bool? isOn(String tagId) {
+    final holding = noteIds.where((noteId) => _has(noteId, tagId)).length;
+    return holding == noteIds.length ? true : (holding == 0 ? false : null);
+  }
+
+  bool _has(String noteId, String tagId) =>
+      _store.tagsOf(noteId).any((tag) => tag.id == tagId);
 
   void toggle(String tagId) {
-    if (isOn(tagId)) {
+    final without = [
+      for (final noteId in noteIds)
+        if (!_has(noteId, tagId)) noteId,
+    ];
+    final room = without.any(
+      (noteId) => _store.tagsOf(noteId).length < noteTagsMax,
+    );
+    if (without.length < noteIds.length && !room) {
       for (final noteId in noteIds) {
         _store.removeTag(noteId, tagId);
       }
       _problem = null;
     } else {
-      _problem = _addToAll(tagId) ? null : _tooMany;
+      _problem = _add(tagId, without);
     }
     notifyListeners();
   }
 
-  /// Puts [tagId] on every note, and says whether they all had room for it.
-  bool _addToAll(String tagId) {
-    var all = true;
-    for (final noteId in noteIds) {
-      if (!_store.addTag(noteId, tagId)) all = false;
+  /// Puts [tagId] on [ids], and says how far it went where some of them had
+  /// no room for it.
+  String? _add(String tagId, List<String> ids) {
+    var full = 0;
+    for (final noteId in ids) {
+      if (!_store.addTag(noteId, tagId)) full++;
     }
-    return all;
+    if (full == 0) return null;
+    final holding = noteIds.where((noteId) => _has(noteId, tagId)).length;
+    if (holding == 0) return _tooMany;
+    return 'Added to $holding of ${noteIds.length} notes. '
+        '${full == 1 ? 'One already has' : '$full already have'} '
+        '$noteTagsMax tags.';
   }
 
   /// A name another tag has, in any case, picks that tag. One the lists
@@ -267,7 +287,7 @@ class TagPickerController extends ChangeNotifier {
       _problem = _tooMany;
     } else if (_store.create(query.text) case final tag?) {
       query.clear();
-      _problem = _addToAll(tag.id) ? null : _tooMany;
+      _problem = _add(tag.id, noteIds);
       _at = 0;
     } else {
       _problem = 'A tag name is 1 to $tagNameMax characters.';
@@ -316,7 +336,7 @@ class _TagPickerState extends State<TagPicker> {
         required Widget leading,
         required String label,
         String? count,
-        bool ticked = false,
+        bool? ticked = false,
         required VoidCallback onTap,
       }) => MouseRegion(
         cursor: SystemMouseCursors.click,
@@ -354,14 +374,16 @@ class _TagPickerState extends State<TagPicker> {
                 const SizedBox(width: 9),
                 SizedBox(
                   width: 14,
-                  child: ticked
-                      ? KapyIcon(
-                          KapyIcons.checkRounded,
+                  child: ticked == false
+                      ? null
+                      : KapyIcon(
+                          ticked == null
+                              ? KapyIcons.removeRounded
+                              : KapyIcons.checkRounded,
                           size: 14,
                           strokeWidth: 1.8,
                           color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
+                        ),
                 ),
               ],
             ),
