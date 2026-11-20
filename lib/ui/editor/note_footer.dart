@@ -28,7 +28,7 @@ class NoteFooter extends StatelessWidget {
     this.typing = const [],
     this.readOnly = false,
     this.readOnlyLabel = 'View only',
-    this.readOnlyIcon = Icons.visibility_outlined,
+    this.readOnlyIcon = KapyIcons.visibilityOutlined,
     this.onReadOnlyPressed,
   });
 
@@ -41,7 +41,7 @@ class NoteFooter extends StatelessWidget {
   /// What [readOnly] is called here: View only for the sharing role, or the
   /// note limit's own words. [onReadOnlyPressed], when set, explains it.
   final String readOnlyLabel;
-  final IconData readOnlyIcon;
+  final KapyIconData readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
 
   static const double _edgeInset = 10;
@@ -134,7 +134,7 @@ class _ReadOnlyStatus extends StatelessWidget {
   });
 
   final String label;
-  final IconData icon;
+  final KapyIconData icon;
   final VoidCallback? onPressed;
 
   @override
@@ -143,7 +143,7 @@ class _ReadOnlyStatus extends StatelessWidget {
     final status = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
+        KapyIcon(
           icon,
           size: AppControlMetrics.iconAction,
           color: palette.textTertiary,

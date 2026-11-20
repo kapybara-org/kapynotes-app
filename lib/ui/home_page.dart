@@ -4171,8 +4171,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           readOnly: !_canWriteNote(note),
           readOnlyLabel: _limitHolds(note) ? 'Read-only on Free' : 'View only',
           readOnlyIcon: _limitHolds(note)
-              ? Icons.lock_outline_rounded
-              : Icons.visibility_outlined,
+              ? KapyIcons.lockRounded
+              : KapyIcons.visibilityOutlined,
           onReadOnlyPressed: _limitHolds(note)
               ? () => unawaited(_explainNoteLimit(creating: false))
               : null,
@@ -4276,8 +4276,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           readOnly: !_canWriteNote(note),
           readOnlyLabel: _limitHolds(note) ? 'Read-only on Free' : 'View only',
           readOnlyIcon: _limitHolds(note)
-              ? Icons.lock_outline_rounded
-              : Icons.visibility_outlined,
+              ? KapyIcons.lockRounded
+              : KapyIcons.visibilityOutlined,
           onReadOnlyPressed: _limitHolds(note)
               ? () => unawaited(_explainNoteLimit(creating: false))
               : null,
