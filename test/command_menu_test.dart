@@ -485,7 +485,7 @@ void main() {
       expect(find.byType(Keycap), findsNothing);
     });
 
-    testWidgets('Go to has no Tasks, which a desktop lists', (tester) async {
+    testWidgets('Go to lists Tasks on a phone as on a desktop', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await setUpNotes(tester);
@@ -497,7 +497,7 @@ void main() {
       await pumpMenu(tester);
       expect(row('Notes'), findsOneWidget);
       expect(row('Drawings'), findsOneWidget);
-      expect(row('Tasks'), findsNothing);
+      expect(row('Tasks'), findsOneWidget);
     });
   });
 

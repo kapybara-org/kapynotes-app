@@ -187,7 +187,13 @@ class TaskSync {
     }
     await _docs.load();
     _reconcile();
-    _deletedNotes().forEach(_tags.forgetNote);
+    for (final noteId in _deletedNotes()) {
+      if (_docs.neverSent(noteId)) {
+        _tags.dropNote(noteId);
+      } else {
+        _tags.forgetNote(noteId);
+      }
+    }
     await _push();
   }
 
@@ -209,10 +215,11 @@ class TaskSync {
   /// Sends what the task index and the tags owe, then what the chats owe, in
   /// chunks of their own: a push over the account's limit is refused whole,
   /// and a chunk that held a task or a tag with the chats would take it down
-  /// with them. A record that loses comes back as the server holds it, is
-  /// merged in with a later `updatedAt`, and goes up again: a few rounds at
-  /// most, since only another device writing the same record in the same
-  /// moment can make one lose twice.
+  /// with them. A note's tags wait for the note: none go up for one the
+  /// server has never had. A record that loses comes back as the server
+  /// holds it, is merged in with a later `updatedAt`, and goes up again: a
+  /// few rounds at most, since only another device writing the same record
+  /// in the same moment can make one lose twice.
   Future<void> _push() async {
     for (var round = 0; round < 3 && !_disposed; round++) {
       final owed = [
@@ -224,12 +231,13 @@ class TaskSync {
             acknowledge: () => _index.acknowledge(item.id, item.updatedAt),
           ),
         for (final item in _tags.owed)
-          (
-            id: item.kind == Tag.kind ? item.key : _noteTagsId(item.key),
-            updatedAt: item.updatedAt,
-            payload: item.payload,
-            acknowledge: () => _tags.acknowledge(item),
-          ),
+          if (item.kind == Tag.kind || !_docs.neverSent(item.key))
+            (
+              id: item.kind == Tag.kind ? item.key : _noteTagsId(item.key),
+              updatedAt: item.updatedAt,
+              payload: item.payload,
+              acknowledge: () => _tags.acknowledge(item),
+            ),
       ];
       final owedChats = [
         if (_chatsSync)

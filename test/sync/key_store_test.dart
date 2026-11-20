@@ -138,6 +138,37 @@ void main() {
     },
   );
 
+  test(
+    'signing out clears the keyring even after it refused earlier',
+    () async {
+      // A dismissed unlock prompt marks the keyring unavailable for the rest
+      // of the launch. Reads and writes skip it from then on, but a sign-out
+      // must still reach it, or the next launch finds the session it ended.
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final backing = _RecordingStore({
+        'kapynotes.masterKey': base64.encode(key(5)),
+        'kapynotes.pendingMasterKey': base64.encode(key(6)),
+        'kapynotes.sessionToken': 'session',
+        'kapynotes.sessionUser': '{}',
+      });
+      final status = KeyringStatus(available: false);
+      final store = KeyStore(ForgivingSecureStore(backing, status: status));
+
+      expect(await store.readToken(), isNull);
+      await store.clear();
+
+      expect(backing.reads, isEmpty);
+      expect(backing.deleted, [
+        'kapynotes.masterKey',
+        'kapynotes.pendingMasterKey',
+        'kapynotes.sessionToken',
+        'kapynotes.sessionUser',
+      ]);
+      expect(backing.values, isEmpty);
+    },
+  );
+
   test('elsewhere a refusal is transient, so it is not remembered', () async {
     // A locked keychain or a denied prompt on macOS or Windows opens again
     // later in the same launch. Marking the store unavailable would keep
@@ -156,6 +187,29 @@ void main() {
     // And the Hidden Notes store is the one 1.33 used, unwrapped.
     expect(hiddenNotesSecureStore(), isA<MigratingSecureStore>());
   });
+}
+
+class _RecordingStore implements SecureStore {
+  _RecordingStore(this.values);
+
+  final Map<String, String> values;
+  final reads = <String>[];
+  final deleted = <String>[];
+
+  @override
+  Future<String?> read(String key) async {
+    reads.add(key);
+    return values[key];
+  }
+
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+
+  @override
+  Future<void> delete(String key) async {
+    deleted.add(key);
+    values.remove(key);
+  }
 }
 
 class _CountingBroken implements SecureStore {

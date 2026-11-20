@@ -11,6 +11,7 @@ import '../../core/theme.dart';
 import '../../data/note_format.dart';
 import 'code_highlighting.dart';
 import 'editor_formatting.dart';
+import 'markdown_editing.dart';
 import 'markdown_syntax.dart';
 import 'note_math.dart';
 import 'note_sliver.dart';
@@ -374,6 +375,9 @@ class HighlightingController extends TextEditingController {
             .any((formula) => formula.start < start && formula.end >= end),
         row: forced?.row,
         inset: forced?.inset ?? 0,
+        hang: forced == null
+            ? markdownLinePrefix(text, start).contentStart - start
+            : 0,
       );
     };
   }
