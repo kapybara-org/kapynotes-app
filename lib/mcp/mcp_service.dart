@@ -272,7 +272,7 @@ class McpService extends ChangeNotifier {
         continue;
       }
     }
-    _problem = 'Kapy Notes couldn’t find a free port on this computer.';
+    _problem = 'Kapy Notes couldn’t open a connection on this computer.';
   }
 
   String? _authenticate(String token) {

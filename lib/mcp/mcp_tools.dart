@@ -156,10 +156,13 @@ class McpTools {
           'attachments; read a voice note’s transcript with read_voice_note. '
           'A drawing has no body and comes as SVG, each element with its id. '
           'read_only says why the note can’t be changed, if it can’t.',
-      'inputSchema': _object({
-        'id': _id,
-        'offset': {'type': 'integer', 'minimum': 0, 'default': 0},
-      }, ['id']),
+      'inputSchema': _object(
+        {
+          'id': _id,
+          'offset': {'type': 'integer', 'minimum': 0, 'default': 0},
+        },
+        ['id'],
+      ),
       'outputSchema': _object(
         {
           'note': _summary,
@@ -232,14 +235,17 @@ class McpTools {
           'Reads a voice note’s summary, the posts written from it, and its '
           'transcript, one line per stretch of speech with its time and '
           'speaker. Long transcripts come in pages through offset.',
-      'inputSchema': _object({
-        'note_id': _id,
-        'voice_id': {
-          'type': 'string',
-          'description': 'voice_id from read_note’s attachments.',
+      'inputSchema': _object(
+        {
+          'note_id': _id,
+          'voice_id': {
+            'type': 'string',
+            'description': 'voice_id from read_note’s attachments.',
+          },
+          'offset': {'type': 'integer', 'minimum': 0, 'default': 0},
         },
-        'offset': {'type': 'integer', 'minimum': 0, 'default': 0},
-      }, ['note_id', 'voice_id']),
+        ['note_id', 'voice_id'],
+      ),
       'outputSchema': _object(
         {
           'duration_ms': {'type': 'integer'},
@@ -271,7 +277,14 @@ class McpTools {
             'type': ['integer', 'null'],
           },
         },
-        ['duration_ms', 'summary', 'takes', 'transcript', 'offset', 'next_offset'],
+        [
+          'duration_ms',
+          'summary',
+          'takes',
+          'transcript',
+          'offset',
+          'next_offset',
+        ],
       ),
       'annotations': _readHints,
     },
@@ -312,10 +325,7 @@ class McpTools {
       'inputSchema': _object({}),
       'outputSchema': _object(
         {
-          'tags': {
-            'type': 'array',
-            'items': _tagSchema,
-          },
+          'tags': {'type': 'array', 'items': _tagSchema},
         },
         ['tags'],
       ),
@@ -328,13 +338,16 @@ class McpTools {
           'Creates a note. The title becomes its first line and the body '
           'follows as plain text; "☐ " or "- [ ] " starts a task line. '
           'Tags it carries must exist, or set create_missing_tags.',
-      'inputSchema': _object({
-        'title': {'type': 'string', 'minLength': 1, 'maxLength': 200},
-        'body': {'type': 'string', 'maxLength': 100000},
-        'tags': _tagNames,
-        'create_missing_tags': {'type': 'boolean', 'default': false},
-        'pinned': {'type': 'boolean', 'default': false},
-      }, ['title']),
+      'inputSchema': _object(
+        {
+          'title': {'type': 'string', 'minLength': 1, 'maxLength': 200},
+          'body': {'type': 'string', 'maxLength': 100000},
+          'tags': _tagNames,
+          'create_missing_tags': {'type': 'boolean', 'default': false},
+          'pinned': {'type': 'boolean', 'default': false},
+        },
+        ['title'],
+      ),
       'outputSchema': _object({'note': _summary}, ['note']),
       'annotations': _writeHints,
     },
@@ -342,10 +355,13 @@ class McpTools {
       'name': 'append_to_note',
       'title': 'Add to a note',
       'description': 'Adds text at the end of a note, on a new line.',
-      'inputSchema': _object({
-        'id': _id,
-        'text': {'type': 'string', 'minLength': 1, 'maxLength': 20000},
-      }, ['id', 'text']),
+      'inputSchema': _object(
+        {
+          'id': _id,
+          'text': {'type': 'string', 'minLength': 1, 'maxLength': 20000},
+        },
+        ['id', 'text'],
+      ),
       'outputSchema': _object({'note': _summary}, ['note']),
       'annotations': _writeHints,
     },
@@ -361,27 +377,30 @@ class McpTools {
           'still what you read). All edits refer to the note as it is '
           'before this call and may not overlap. Attachments can’t be '
           'removed.',
-      'inputSchema': _object({
-        'id': _id,
-        'edits': {
-          'type': 'array',
-          'minItems': 1,
-          'maxItems': McpLibrary.maxEdits,
-          'items': {
-            'type': 'object',
-            'properties': {
-              'find': {'type': 'string', 'minLength': 1, 'maxLength': 20000},
-              'replacement': {'type': 'string', 'maxLength': 20000},
-              'occurrence': {'type': 'integer', 'minimum': 0},
-              'start': {'type': 'integer', 'minimum': 0},
-              'end': {'type': 'integer', 'minimum': 0},
-              'text': {'type': 'string', 'maxLength': 20000},
-              'expected': {'type': 'string', 'maxLength': 20000},
+      'inputSchema': _object(
+        {
+          'id': _id,
+          'edits': {
+            'type': 'array',
+            'minItems': 1,
+            'maxItems': McpLibrary.maxEdits,
+            'items': {
+              'type': 'object',
+              'properties': {
+                'find': {'type': 'string', 'minLength': 1, 'maxLength': 20000},
+                'replacement': {'type': 'string', 'maxLength': 20000},
+                'occurrence': {'type': 'integer', 'minimum': 0},
+                'start': {'type': 'integer', 'minimum': 0},
+                'end': {'type': 'integer', 'minimum': 0},
+                'text': {'type': 'string', 'maxLength': 20000},
+                'expected': {'type': 'string', 'maxLength': 20000},
+              },
+              'additionalProperties': false,
             },
-            'additionalProperties': false,
           },
         },
-      }, ['id', 'edits']),
+        ['id', 'edits'],
+      ),
       'outputSchema': _object({'note': _summary}, ['note']),
       'annotations': {..._writeHints, 'destructiveHint': true},
     },
@@ -393,12 +412,15 @@ class McpTools {
           'it or brings it back from the archive. Archived notes are kept, '
           'read-only, and can be brought back; nothing is deleted. The '
           'person can undo each of these.',
-      'inputSchema': _object({
-        'id': _id,
-        'title': {'type': 'string', 'minLength': 1, 'maxLength': 200},
-        'pinned': {'type': 'boolean'},
-        'archived': {'type': 'boolean'},
-      }, ['id']),
+      'inputSchema': _object(
+        {
+          'id': _id,
+          'title': {'type': 'string', 'minLength': 1, 'maxLength': 200},
+          'pinned': {'type': 'boolean'},
+          'archived': {'type': 'boolean'},
+        },
+        ['id'],
+      ),
       'outputSchema': _object({'note': _summary}, ['note']),
       'annotations': {..._writeHints, 'idempotentHint': true},
     },
@@ -409,12 +431,15 @@ class McpTools {
           'Puts tags on a note and takes them off, by name. A tag that '
           'doesn’t exist is refused unless create_missing is true. A note '
           'carries at most $noteTagsMax tags.',
-      'inputSchema': _object({
-        'id': _id,
-        'add': _tagNames,
-        'remove': _tagNames,
-        'create_missing': {'type': 'boolean', 'default': false},
-      }, ['id']),
+      'inputSchema': _object(
+        {
+          'id': _id,
+          'add': _tagNames,
+          'remove': _tagNames,
+          'create_missing': {'type': 'boolean', 'default': false},
+        },
+        ['id'],
+      ),
       'outputSchema': _object(
         {
           'tags': {
@@ -433,18 +458,21 @@ class McpTools {
           'Creates a tag, renames one, changes its colour, or deletes it. '
           'Deleting a tag keeps every note; it only comes off them. Colours: '
           '${tagColours.join(', ')}, or none.',
-      'inputSchema': _object({
-        'action': {
-          'type': 'string',
-          'enum': ['create', 'rename', 'recolour', 'delete'],
+      'inputSchema': _object(
+        {
+          'action': {
+            'type': 'string',
+            'enum': ['create', 'rename', 'recolour', 'delete'],
+          },
+          'tag': {'type': 'string', 'description': 'The tag’s name.'},
+          'new_name': {'type': 'string', 'maxLength': tagNameMax},
+          'colour': {
+            'type': 'string',
+            'enum': [...tagColours, noTagColour],
+          },
         },
-        'tag': {'type': 'string', 'description': 'The tag’s name.'},
-        'new_name': {'type': 'string', 'maxLength': tagNameMax},
-        'colour': {
-          'type': 'string',
-          'enum': [...tagColours, noTagColour],
-        },
-      }, ['action', 'tag']),
+        ['action', 'tag'],
+      ),
       'outputSchema': _object({'tag': _tagSchema}, ['tag']),
       'annotations': {..._writeHints, 'destructiveHint': true},
     },
@@ -452,10 +480,13 @@ class McpTools {
       'name': 'add_task',
       'title': 'Add a task',
       'description': 'Adds a checklist item at the end of a note.',
-      'inputSchema': _object({
-        'note_id': _id,
-        'text': {'type': 'string', 'minLength': 1, 'maxLength': 500},
-      }, ['note_id', 'text']),
+      'inputSchema': _object(
+        {
+          'note_id': _id,
+          'text': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+        },
+        ['note_id', 'text'],
+      ),
       'outputSchema': _object({'task': _task}, ['task']),
       'annotations': _writeHints,
     },
@@ -465,15 +496,15 @@ class McpTools {
       'description':
           'Ticks a task off, or back on. Use an id from list_tasks; if the '
           'line has changed since, list the tasks again.',
-      'inputSchema': _object({
-        'task_id': {'type': 'string'},
-        'done': {'type': 'boolean'},
-      }, ['task_id', 'done']),
+      'inputSchema': _object(
+        {
+          'task_id': {'type': 'string'},
+          'done': {'type': 'boolean'},
+        },
+        ['task_id', 'done'],
+      ),
       'outputSchema': _object({'task': _task}, ['task']),
-      'annotations': {
-        ..._writeHints,
-        'idempotentHint': true,
-      },
+      'annotations': {..._writeHints, 'idempotentHint': true},
     },
     {
       'name': 'edit_task',
@@ -483,19 +514,25 @@ class McpTools {
           'of a note or before another task there (move_to_note_id, '
           'before_task_id), or takes its line out of the note (remove). '
           'A moved task keeps its tick.',
-      'inputSchema': _object({
-        'task_id': {'type': 'string'},
-        'text': {'type': 'string', 'minLength': 1, 'maxLength': 500},
-        'move_to_note_id': _id,
-        'before_task_id': {'type': 'string'},
-        'remove': {'type': 'boolean'},
-      }, ['task_id']),
-      'outputSchema': _object({
-        'task': {
-          'type': ['object', 'null'],
-          'properties': _task['properties'],
+      'inputSchema': _object(
+        {
+          'task_id': {'type': 'string'},
+          'text': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+          'move_to_note_id': _id,
+          'before_task_id': {'type': 'string'},
+          'remove': {'type': 'boolean'},
         },
-      }, ['task']),
+        ['task_id'],
+      ),
+      'outputSchema': _object(
+        {
+          'task': {
+            'type': ['object', 'null'],
+            'properties': _task['properties'],
+          },
+        },
+        ['task'],
+      ),
       'annotations': {..._writeHints, 'destructiveHint': true},
     },
     {
@@ -599,8 +636,9 @@ class McpTools {
     if (writeTools.contains(name) && !writes) {
       return (
         output: null,
-        error: 'Changes are off. Turn on Allow changes in Kapy Notes, '
-            'Settings, MCP.',
+        error:
+            'Changes are off. Turn on Allow changes in Kapy Notes, '
+            'Settings, AI apps.',
         activity: 'Couldn’t ${_verb(name)}: changes are off',
         undo: null,
       );
@@ -710,7 +748,8 @@ class McpTools {
       if (lineEnd > offset + McpLibrary.pageSize ~/ 2) end = lineEnd + 1;
     }
     final firstLine = '\n'.allMatches(body.substring(0, offset)).length + 1;
-    final lastLine = firstLine + '\n'.allMatches(body.substring(offset, end)).length;
+    final lastLine =
+        firstLine + '\n'.allMatches(body.substring(offset, end)).length;
     return (
       output: {
         'note': _summaryOf(note),
@@ -724,9 +763,7 @@ class McpTools {
               {'line': line, 'value': value},
         ],
         'read_only': library.readOnlyReason(note),
-        'attachments': [
-          for (final ref in note.attachments) _attachmentOf(ref),
-        ],
+        'attachments': [for (final ref in note.attachments) _attachmentOf(ref)],
         'drawing': switch (note.drawing) {
           null => null,
           final drawing => {
@@ -752,9 +789,7 @@ class McpTools {
     final limit = _int(args, 'limit', min: 1, max: 200) ?? 50;
     final tasks = library
         .tasks(noteId: _string(args, 'note_id'))
-        .where(
-          (task) => status == 'all' || task.done == (status == 'done'),
-        )
+        .where((task) => status == 'all' || task.done == (status == 'done'))
         .take(limit)
         .toList();
     return (
@@ -763,7 +798,8 @@ class McpTools {
       },
       error: null,
       undo: null,
-      activity: 'Listed ${_count(tasks.length, '${status == 'all' ? '' : '$status '}task')}',
+      activity:
+          'Listed ${_count(tasks.length, '${status == 'all' ? '' : '$status '}task')}',
     );
   }
 
@@ -943,7 +979,9 @@ class McpTools {
       final after = library.rename(id, title);
       if (after.title != oldTitle) {
         final newFirst = after.isDrawing ? after.body : after.firstLine;
-        done.add('Renamed “${_clip(oldTitle, 30)}” to “${_clip(after.title, 30)}”');
+        done.add(
+          'Renamed “${_clip(oldTitle, 30)}” to “${_clip(after.title, 30)}”',
+        );
         undos.add((
           possible: () {
             final now = library.notes.byId(id);
@@ -1027,7 +1065,8 @@ class McpTools {
     final added = [for (final tag in change.added) tag.id];
     final removed = [for (final tag in change.removed) tag.id];
     final parts = [
-      if (change.added.isNotEmpty) 'Tagged “${_clip(note.title, 40)}” with ${_names(change.added)}',
+      if (change.added.isNotEmpty)
+        'Tagged “${_clip(note.title, 40)}” with ${_names(change.added)}',
       if (change.removed.isNotEmpty)
         '${change.added.isEmpty ? 'Took' : 'took'} ${_names(change.removed)} off'
             '${change.added.isEmpty ? ' “${_clip(note.title, 40)}”' : ''}',
@@ -1046,7 +1085,8 @@ class McpTools {
                 final on = {for (final tag in store.tagsOf(id)) tag.id};
                 return added.every(on.contains) &&
                     removed.every(
-                      (tagId) => !on.contains(tagId) && store.byId(tagId) != null,
+                      (tagId) =>
+                          !on.contains(tagId) && store.byId(tagId) != null,
                     );
               },
               run: () {
@@ -1180,7 +1220,8 @@ class McpTools {
     );
     final name = '“${_clip(result.note.title, 40)}”';
     final parts = [
-      if (result.added.isNotEmpty) 'drew ${_count(result.added.length, 'shape')}',
+      if (result.added.isNotEmpty)
+        'drew ${_count(result.added.length, 'shape')}',
       if (remove.isNotEmpty) 'erased ${_count(remove.length, 'shape')}',
     ];
     return (
@@ -1321,12 +1362,23 @@ class McpTools {
     throw McpRefusal('$key must be true or false.');
   }
 
-  static int? _int(Map<String, Object?> args, String key, {int min = 0, int? max}) {
+  static int? _int(
+    Map<String, Object?> args,
+    String key, {
+    int min = 0,
+    int? max,
+  }) {
     final value = args[key];
     if (value == null) return null;
-    final number = value is int ? value : value is double && value == value.roundToDouble() ? value.toInt() : null;
+    final number = value is int
+        ? value
+        : value is double && value == value.roundToDouble()
+        ? value.toInt()
+        : null;
     if (number == null || number < min || (max != null && number > max)) {
-      throw McpRefusal('$key must be a whole number from $min${max == null ? '' : ' to $max'}.');
+      throw McpRefusal(
+        '$key must be a whole number from $min${max == null ? '' : ' to $max'}.',
+      );
     }
     return number;
   }
