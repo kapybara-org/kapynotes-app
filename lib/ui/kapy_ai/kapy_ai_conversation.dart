@@ -495,8 +495,10 @@ class KapyAiNotice extends StatelessWidget {
       _ => device,
     };
     KapyAiButton use(KapyModel model) => KapyAiButton(
-      // "On this device" is a label, not a name, so it cannot follow "Use".
-      model.kind == KapyModelKind.device
+      // "On this device" is a description that cannot follow "Use"; Apple
+      // Intelligence is the name the sentence above uses, and the row the
+      // person would otherwise have picked from.
+      model.kind == KapyModelKind.device && model.id != 'apple'
           ? 'Use this device'
           : 'Use ${model.plainLabel}',
       onPressed: () => unawaited(ai.answerWith(model)),

@@ -728,7 +728,7 @@ void main() {
       );
 
       expect(find.text('No answers left until 1 Dec'), findsOneWidget);
-      await tester.tap(find.text('Use this device'));
+      await tester.tap(find.text('Use Apple Intelligence'));
       expect(ai.calls, ['answerWith:apple']);
     });
 
@@ -782,7 +782,7 @@ void main() {
 
       expect(find.text('You’re offline'), findsOneWidget);
       await tester.tap(find.text('Try again'));
-      await tester.tap(find.text('Use this device'));
+      await tester.tap(find.text('Use Apple Intelligence'));
       expect(ai.calls, ['proceed', 'answerWith:apple']);
     });
 
