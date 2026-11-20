@@ -3077,6 +3077,48 @@ void main() {
     );
   });
 
+  for (final scale in [1.3, 2.0, 3.1]) {
+    testWidgets('a phone title at $scale× text keeps its last letter the size '
+        'of the rest, and its meta row clear of it', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      const body = 'Today\nFollow up on the launch checklist';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+
+      final letter = tester.getRect(
+        find.byWidgetPredicate(
+          (widget) => widget is RichText && widget.text.toPlainText() == 'y',
+        ),
+      );
+      final editable = NoteDriver(tester);
+      final a = editable
+          .boxesFor(const TextSelection(baseOffset: 3, extentOffset: 4))
+          .single;
+      final aTop = editable.toGlobal(Offset(a.left, a.top)).dy;
+      final aBottom = editable.toGlobal(Offset(a.left, a.bottom)).dy;
+      final aHeight = aBottom - aTop;
+      // Scaled once, as the title's row is, rather than twice.
+      expect(letter.height, closeTo(EditorMetrics.titleRow * scale, 1));
+      expect(letter.center.dy, closeTo((aTop + aBottom) / 2, aHeight * 0.3));
+
+      // The meta row sits under the title, and its words are not cut down
+      // to a fixed row.
+      final edited = find.byKey(const ValueKey('note-edited'));
+      final editedRect = tester.getRect(edited);
+      expect(editedRect.top, greaterThanOrEqualTo(letter.bottom - 1));
+      expect(editedRect.height, greaterThan(16 * scale * 0.9));
+      final facts = tester.getRect(find.byKey(const ValueKey('note-facts')));
+      expect(facts.bottom, greaterThanOrEqualTo(editedRect.bottom));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('a phone keeps room for a result at each text size', (
     tester,
   ) async {

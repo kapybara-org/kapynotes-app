@@ -207,7 +207,14 @@ class NoteMetaRow extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(height: 16, child: Row(children: facts)),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 16),
+              child: Wrap(
+                key: const ValueKey('note-facts'),
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: facts,
+              ),
+            ),
             const SizedBox(height: 8),
             // The tags' own targets are 44 pt tall on a phone, so the row
             // gives them the room rather than clipping them to the pill.

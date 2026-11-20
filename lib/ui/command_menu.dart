@@ -473,25 +473,23 @@ class _CommandMenuState extends State<CommandMenu> {
         choice: const NewDrawingChoice(),
       ),
       const _Line.heading('Go to'),
-      // A touch screen has no Tasks screen to go to.
       for (final space in widget.destinations)
-        if (!AppPlatform.isMobile || space != LibrarySpace.tasks)
-          _Line.row(
-            icon: switch (space) {
-              LibrarySpace.notes => KapyIcons.noteOutlined,
-              LibrarySpace.tasks => KapyIcons.tasksOutlined,
-              LibrarySpace.drawings => KapyIcons.penRounded,
-              LibrarySpace.shared => KapyIcons.groupOutlined,
-            },
-            title: space == LibrarySpace.notes ? 'Notes' : space.title,
-            keycap: switch (space) {
-              LibrarySpace.notes => _keycap(ShortcutAction.showNotes),
-              LibrarySpace.tasks => _keycap(ShortcutAction.showTasks),
-              LibrarySpace.drawings => _keycap(ShortcutAction.showDrawings),
-              LibrarySpace.shared => _keycap(ShortcutAction.showShared),
-            },
-            choice: GoToChoice(space),
-          ),
+        _Line.row(
+          icon: switch (space) {
+            LibrarySpace.notes => KapyIcons.noteOutlined,
+            LibrarySpace.tasks => KapyIcons.tasksOutlined,
+            LibrarySpace.drawings => KapyIcons.penRounded,
+            LibrarySpace.shared => KapyIcons.groupOutlined,
+          },
+          title: space == LibrarySpace.notes ? 'Notes' : space.title,
+          keycap: switch (space) {
+            LibrarySpace.notes => _keycap(ShortcutAction.showNotes),
+            LibrarySpace.tasks => _keycap(ShortcutAction.showTasks),
+            LibrarySpace.drawings => _keycap(ShortcutAction.showDrawings),
+            LibrarySpace.shared => _keycap(ShortcutAction.showShared),
+          },
+          choice: GoToChoice(space),
+        ),
       if (widget.showHidden)
         const _Line.row(
           icon: hiddenIcon,
@@ -1041,9 +1039,7 @@ class _CommandMenuState extends State<CommandMenu> {
                             : widget.askKapyAi
                             ? 'Search or Ask Kapy AI…'
                             : 'Search…',
-                        hintStyle: style.copyWith(
-                          color: palette.textTertiary,
-                        ),
+                        hintStyle: style.copyWith(color: palette.textTertiary),
                       )
                     : InputDecoration(
                         border: InputBorder.none,
@@ -1052,9 +1048,7 @@ class _CommandMenuState extends State<CommandMenu> {
                             : widget.askKapyAi
                             ? 'Search or Ask Kapy AI…'
                             : 'Search…',
-                        hintStyle: style.copyWith(
-                          color: palette.textTertiary,
-                        ),
+                        hintStyle: style.copyWith(color: palette.textTertiary),
                         // A phone's target is the whole 44 pt row: the field
                         // carries the room rather than a box around it.
                         contentPadding: const EdgeInsets.symmetric(

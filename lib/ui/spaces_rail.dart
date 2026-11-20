@@ -15,7 +15,6 @@ import '../sync/sync_service.dart';
 import 'context_menu.dart';
 import 'installed_version.dart';
 import 'profile_avatar.dart';
-import 'streak_badge.dart';
 import 'window_drag_area.dart';
 
 /// What the notes list beside the spaces rail can show.
@@ -402,15 +401,18 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// The writing streak: a flame over how many days in a row.
-///
-/// The same run [StreakBadge] shows in a list's heading, and it behaves the
-/// same way: lit in clay once today has been written in, waiting in grey
-/// until then, flaring for a moment as it catches.
+/// The writing streak: a flame over how many days in a row, lit in clay once
+/// today has been written in, waiting in grey until then, flaring for a
+/// moment as it catches.
 class _RailStreak extends StatelessWidget {
   const _RailStreak({super.key, required this.streak});
 
   final WritingStreak streak;
+
+  /// What the tooltip says, and so what a screen reader hears.
+  static String describe(WritingStreak streak) => streak.wroteToday
+      ? '${streak.days}-day writing streak'
+      : 'Write today to keep your ${streak.days}-day streak';
 
   @override
   Widget build(BuildContext context) {
@@ -422,7 +424,7 @@ class _RailStreak extends StatelessWidget {
     return Semantics(
       container: true,
       child: Tooltip(
-        message: StreakBadge.describe(streak),
+        message: describe(streak),
         triggerMode: TooltipTriggerMode.tap,
         child: ExcludeSemantics(
           child: TweenAnimationBuilder<double>(
@@ -729,11 +731,20 @@ class PhoneSpaces extends StatelessWidget {
     final palette = context.palette;
     final invitations = this.invitations;
     final items =
-        <({LibrarySpace? to, KapyIconData icon, String label, int badge})>[
+        <
+          ({
+            LibrarySpace? to,
+            KapyIconData icon,
+            String label,
+            String spoken,
+            int badge,
+          })
+        >[
           (
             to: LibrarySpace.notes,
             icon: KapyIcons.noteOutlined,
             label: 'Notes',
+            spoken: 'Notes',
             badge: 0,
           ),
           if (showTasks)
@@ -741,12 +752,14 @@ class PhoneSpaces extends StatelessWidget {
               to: LibrarySpace.tasks,
               icon: KapyIcons.tasksOutlined,
               label: 'Tasks',
+              spoken: 'Tasks',
               badge: 0,
             ),
           (
             to: LibrarySpace.drawings,
             icon: KapyIcons.penRounded,
             label: 'Drawings',
+            spoken: 'Drawings',
             badge: 0,
           ),
           if (invitations != null)
@@ -754,12 +767,19 @@ class PhoneSpaces extends StatelessWidget {
               to: LibrarySpace.shared,
               icon: KapyIcons.groupOutlined,
               label: 'Shared',
+              // The badge is drawn only, so the count goes in what is read.
+              spoken: switch (invitations) {
+                0 => 'Shared',
+                1 => 'Shared, 1 invitation',
+                _ => 'Shared, $invitations invitations',
+              },
               badge: invitations,
             ),
           (
             to: null,
             icon: KapyIcons.settingsGearOutlined,
             label: 'Settings',
+            spoken: 'Settings',
             badge: 0,
           ),
         ];
@@ -847,6 +867,7 @@ class PhoneSpaces extends StatelessWidget {
                                 ),
                                 icon: item.icon,
                                 label: item.label,
+                                spoken: item.spoken,
                                 selected: item.to == space,
                                 badge: item.badge,
                                 onPressed: () => choose(item.to),
@@ -899,6 +920,7 @@ class _BarItem extends StatelessWidget {
     super.key,
     required this.icon,
     required this.label,
+    required this.spoken,
     required this.selected,
     required this.badge,
     required this.onPressed,
@@ -906,6 +928,9 @@ class _BarItem extends StatelessWidget {
 
   final KapyIconData icon;
   final String label;
+
+  /// What a screen reader says: the label, with the badge's count in words.
+  final String spoken;
   final bool selected;
   final int badge;
   final VoidCallback onPressed;
@@ -918,7 +943,7 @@ class _BarItem extends StatelessWidget {
       container: true,
       button: true,
       selected: selected,
-      label: label,
+      label: spoken,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
@@ -943,6 +968,12 @@ class _BarItem extends StatelessWidget {
                       maxLines: 1,
                       softWrap: false,
                       overflow: TextOverflow.fade,
+                      // The pill is a fixed 52 pt, as iOS's tab bar is, and
+                      // keeps its labels near their size for the same
+                      // reason: past this they no longer fit under the icon.
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: 1.3),
                       style: TextStyle(
                         fontSize: 10.5,
                         height: 13 / 10.5,
