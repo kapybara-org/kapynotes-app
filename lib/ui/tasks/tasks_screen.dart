@@ -191,6 +191,11 @@ class TasksScreenState extends State<TasksScreen> {
 
   String? get _addInto => _targetChosen ? _target : widget.filter.noteId;
 
+  Note? get _addTarget {
+    final id = _addInto;
+    return id == null ? null : _tasks.notes.byId(id);
+  }
+
   Future<void> _add() async {
     final words = _words.text;
     if (words.trim().isEmpty) return;
@@ -209,11 +214,21 @@ class TasksScreenState extends State<TasksScreen> {
 
   Future<void> _remove(TaskItem item) async {
     final label = widget.labelOf(item.note);
+    // A note shared to view only keeps the line: the task only leaves this
+    // person's list.
+    final mine = _tasks.canEdit(item.note);
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove this task?'),
-        content: Text('Its line comes out of “$label”. You can undo this.'),
+        title: Text(
+          mine ? 'Remove this task?' : 'Remove this task from your list?',
+        ),
+        content: Text(
+          mine
+              ? 'Its line comes out of “$label”. You can undo this.'
+              : 'It stays in “$label” for you and everyone it’s shared with. '
+                    'You can undo this.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -232,7 +247,7 @@ class TasksScreenState extends State<TasksScreen> {
     if (undo == null) return;
     messenger?.showSnackBar(
       SnackBar(
-        content: const Text('Task removed'),
+        content: Text(mine ? 'Task removed' : 'Removed from your list'),
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => unawaited(undo()),
@@ -440,20 +455,35 @@ class TasksScreenState extends State<TasksScreen> {
                     ],
                   ),
                 ),
-              _AddRow(
-                phone: widget.phone,
-                controller: _words,
-                focus: widget.addFocus,
-                shortcut: widget.newTaskShortcut,
-                target: _addInto == null ? null : _tasks.notes.byId(_addInto),
-                labelOf: widget.labelOf,
-                choices: _pickerNotes(board),
-                onChoose: (noteId) => setState(() {
-                  _target = noteId;
-                  _targetChosen = true;
-                }),
-                onSubmit: () => unawaited(_add()),
-              ),
+              if (_addTarget case final target? when !_tasks.canEdit(target))
+                Padding(
+                  key: const ValueKey('tasks-add-view-only'),
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                  child: Text(
+                    'You can view this note, not change it.',
+                    style: uiStyle(
+                      13,
+                      18,
+                      FontWeight.w400,
+                      palette.textTertiary,
+                    ),
+                  ),
+                )
+              else
+                _AddRow(
+                  phone: widget.phone,
+                  controller: _words,
+                  focus: widget.addFocus,
+                  shortcut: widget.newTaskShortcut,
+                  target: _addTarget,
+                  labelOf: widget.labelOf,
+                  choices: _pickerNotes(board),
+                  onChoose: (noteId) => setState(() {
+                    _target = noteId;
+                    _targetChosen = true;
+                  }),
+                  onSubmit: () => unawaited(_add()),
+                ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 160),
                 child: _notice
@@ -484,7 +514,7 @@ class TasksScreenState extends State<TasksScreen> {
                   onOpen: () => _openSheet(doNow),
                   images: widget.images,
                   onNotFinished: () => _notFinished(doNow),
-                  onDone: completeDoNow,
+                  onDone: _tasks.canEdit(doNow.note) ? completeDoNow : null,
                 )
               else if (open.isNotEmpty)
                 _picker(board, open),
@@ -607,13 +637,14 @@ class TasksScreenState extends State<TasksScreen> {
     unawaited(_tasks.setDone(item, done: done));
   }
 
-  /// The notes the add row can write into: the ones with tasks, then the
-  /// note for tasks with no note leads as "No note".
+  /// The notes the add row can write into: the ones with tasks that this
+  /// person can change, then the note for tasks with no note leads as
+  /// "No note".
   List<Note> _pickerNotes(TaskBoard board) {
     final seen = <String>{?board.home?.id};
     return [
       for (final item in [...board.open, ...board.done])
-        if (seen.add(item.note.id)) item.note,
+        if (_tasks.canEdit(item.note) && seen.add(item.note.id)) item.note,
     ];
   }
 
@@ -1034,7 +1065,9 @@ class _DoNowCard extends StatelessWidget {
   final VoidCallback onOpen;
   final BlobStore? images;
   final VoidCallback onNotFinished;
-  final VoidCallback onDone;
+
+  /// Null on a note shared to view only, where Done is not shown.
+  final VoidCallback? onDone;
 
   /// A phone's card: the task under DO NOW, its note, then Done and Not
   /// finished as two pills beneath.
@@ -1164,15 +1197,17 @@ class _DoNowCard extends StatelessWidget {
                           label: const Text('Not finished'),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      TonalButton(
-                        key: const ValueKey('tasks-done'),
-                        tall: true,
-                        icon: KapyIcons.checkRounded,
-                        label: 'Done',
-                        shortcut: doneShortcutLabel,
-                        onPressed: onDone,
-                      ),
+                      if (onDone != null) ...[
+                        const SizedBox(width: 6),
+                        TonalButton(
+                          key: const ValueKey('tasks-done'),
+                          tall: true,
+                          icon: KapyIcons.checkRounded,
+                          label: 'Done',
+                          shortcut: doneShortcutLabel,
+                          onPressed: onDone,
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -1286,12 +1321,13 @@ class _DoNowCard extends StatelessWidget {
                   Row(
                     spacing: 8,
                     children: [
-                      pill(
-                        key: const ValueKey('tasks-done'),
-                        text: 'Done',
-                        onPressed: onDone,
-                        tonal: true,
-                      ),
+                      if (onDone case final done?)
+                        pill(
+                          key: const ValueKey('tasks-done'),
+                          text: 'Done',
+                          onPressed: done,
+                          tonal: true,
+                        ),
                       pill(
                         key: const ValueKey('tasks-not-finished'),
                         text: 'Not finished',
