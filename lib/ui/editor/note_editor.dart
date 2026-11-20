@@ -5971,7 +5971,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         action(
           'format-details',
           'Details',
-          KapyIcons.textFieldsRounded,
+          KapyIcons.alignLeft,
           _dropIntoDetails,
           active: _folds?.hintSeen == false,
         ),
