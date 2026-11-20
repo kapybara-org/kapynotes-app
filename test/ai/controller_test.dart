@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kapy_notes/ai/answer_engine.dart';
+import 'package:kapy_notes/ai/device_model.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
 import 'package:kapy_notes/ai/kapy_chat_book.dart';
@@ -94,21 +95,23 @@ void main() {
       expect(ai.cloudUsage?.remaining, 497);
     });
 
-    test('Free starts on the device and cannot use Cloud', () async {
+    test('Free keeps a stored Cloud pick and cannot use it', () async {
       final ai = await build(billing: await billingOn(pro: false));
       expect(ai.isPro, isFalse);
       expect(ai.defaultModel, FakeDeviceModel.apple);
       ai.defaultModel = KapyModel.cloud;
-      expect(ai.defaultModel, FakeDeviceModel.apple);
-      ai.pickModel(KapyModel.cloud);
-      expect(ai.model, FakeDeviceModel.apple);
+      // Kept rather than swapped for something they did not pick, and held
+      // with the device offered as the way forward.
+      expect(ai.defaultModel, KapyModel.cloud);
       expect(ai.cloudUsage, isNull);
       await ai.ask('Lisbon?');
+      final failed = ai.pending! as KapyFailed;
+      expect(failed.message, 'Kapy AI Cloud is part of Pro.');
+      expect(failed.fallbacks, [FakeDeviceModel.apple]);
       expect(sent.where((r) => r.url.path.contains('/ai/')), isEmpty);
-      expect(ai.current!.messages.last.text, 'device answer');
     });
 
-    test('a Free chat whose model is Cloud falls back', () async {
+    test('a Free chat on Cloud is held, not swapped', () async {
       store.data['kapyAi.chats.v1'] = {
         'chats': [
           {
@@ -123,7 +126,12 @@ void main() {
       };
       final ai = await build(billing: await billingOn(pro: false));
       ai.openChat('c');
-      expect(ai.model, FakeDeviceModel.apple);
+      expect(ai.model, KapyModel.cloud);
+      await ai.ask('Lisbon?');
+      expect(
+        (ai.pending! as KapyFailed).fallbacks,
+        [FakeDeviceModel.apple],
+      );
     });
 
     test('own accounts and the device answer on Free', () async {
@@ -145,7 +153,94 @@ void main() {
     test('a stored default that is no longer pickable falls back', () async {
       final ai = await build(billing: await billingOn(pro: true));
       ai.defaultModel = FakeDeviceModel.gemma;
-      expect(ai.defaultModel, KapyModel.cloud);
+      // Gemma is gone but this device can still answer, and it was a device
+      // model that was picked: the cloud is not what that person chose.
+      expect(ai.defaultModel, FakeDeviceModel.apple);
+    });
+
+    test('Pro that picked the device still answers on it', () async {
+      final ai = await build(billing: await billingOn(pro: true));
+      ai.defaultModel = FakeDeviceModel.apple;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.ready,
+          model: FakeDeviceModel.gemma,
+        ),
+      );
+      expect(ai.defaultModel, FakeDeviceModel.gemma);
+      await ai.ask('Lisbon?');
+      expect(sent, isEmpty);
+      expect(ai.current!.messages.last.text, 'device answer');
+    });
+
+    test('a device that cannot answer is offered, never switched to', () async {
+      final ai = await build(billing: await billingOn(pro: true));
+      ai.defaultModel = FakeDeviceModel.gemma;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      // Their choice stands: nothing leaves the device until they tap.
+      expect(ai.defaultModel, FakeDeviceModel.gemma);
+      await ai.ask('Lisbon?');
+      final failed = ai.pending! as KapyFailed;
+      expect(failed.message, PlatformDeviceModel.appleOffNoRoom);
+      expect(failed.fallbacks, [KapyModel.cloud]);
+      expect(sent, isEmpty);
+      // Tapping the cloud asks its consent, and only then sends.
+      await ai.answerWith(KapyModel.cloud);
+      expect(ai.pending, isA<KapyCloudConsent>());
+      expect(sent, isEmpty);
+      await ai.proceed();
+      expect(ai.current!.messages.last.text, 'cloud answer');
+    });
+
+    test('Free is offered no cloud on a device that cannot answer', () async {
+      final ai = await build(billing: await billingOn(pro: false));
+      ai.defaultModel = FakeDeviceModel.gemma;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      await ai.ask('Lisbon?');
+      final failed = ai.pending! as KapyFailed;
+      expect(failed.fallbacks, isEmpty);
+      expect(sent, isEmpty);
+    });
+
+    test('a device that cannot answer offers the accounts too', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final ai = await build(
+        billing: await billingOn(pro: true),
+        environment: const {
+          'APP_SANDBOX_CONTAINER_ID': 'com.kapybara.kapynotes',
+        },
+        toolHelper: FakeToolHelper(),
+        realTools: true,
+      );
+      ai.accounts;
+      await settle();
+      final codex = ai.accounts.firstWhere(
+        (a) => a.kind == KapyAccountKind.codex,
+      );
+      ai.defaultModel = FakeDeviceModel.gemma;
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      await ai.ask('Lisbon?');
+      final failed = ai.pending! as KapyFailed;
+      // The cloud and the account are both offered, and neither has been used.
+      expect(failed.fallbacks, contains(KapyModel.cloud));
+      expect(failed.fallbacks, contains(codex.models.first));
+      expect(sent.where((r) => r.method == 'POST'), isEmpty);
     });
   });
 
@@ -310,6 +405,19 @@ void main() {
       expect(ai.current!.messages.last.text, 'device answer');
     });
 
+    test('no room and Apple Intelligence off is not a dead end', () async {
+      device.set(
+        const DeviceModelState(
+          status: DeviceModelStatus.needsSystemFeature,
+          note: PlatformDeviceModel.appleOffNoRoom,
+        ),
+      );
+      final ai = await build();
+      await ai.ask('Lisbon?');
+      expect((ai.pending! as KapyFailed).message, device.state.note);
+      expect(sent, isEmpty);
+    });
+
     test('offline keeps the question for Try again', () async {
       var offline = true;
       server = (request) {
@@ -410,7 +518,7 @@ void main() {
 
   group('Windows', () {
     test(
-      'Codex and Claude Code are not offered, and a stored one falls back',
+      'Codex and Claude Code are not offered, and a stored one is kept',
       () async {
         AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -418,9 +526,11 @@ void main() {
         final ai = await build(environment: const {'HOME': 'C:/Users/someone'});
         await settle();
         expect(ai.accounts.map((a) => a.kind), [KapyAccountKind.openRouter]);
-        expect(ai.defaultModel, FakeDeviceModel.apple);
+        expect(ai.defaultModel, codex.model);
         ai.pickModel(claude.model);
         await ai.ask('Lisbon?');
+        final failed = ai.pending! as KapyAccountError;
+        expect(failed.fallbacks, [FakeDeviceModel.apple]);
         expect(codex.asked, isEmpty);
         expect(claude.asked, isEmpty);
       },
@@ -428,7 +538,7 @@ void main() {
   });
 
   group('a model Codex no longer offers', () {
-    test('falls back, in a stored chat and as the default', () async {
+    test('is kept, in a stored chat and as the default', () async {
       const gone = KapyModel(
         kind: KapyModelKind.codex,
         id: 'gpt-6-luna',
@@ -454,10 +564,14 @@ void main() {
         ai.accounts.firstWhere((a) => a.kind == KapyAccountKind.codex).models,
         [codex.model],
       );
-      expect(ai.defaultModel, FakeDeviceModel.apple);
+      expect(ai.defaultModel, gone);
       ai.openChat('c');
-      expect(ai.model, FakeDeviceModel.apple);
+      expect(ai.model, gone);
       await ai.ask('Lisbon?');
+      expect(
+        (ai.pending! as KapyAccountError).fallbacks,
+        contains(FakeDeviceModel.apple),
+      );
       expect(codex.asked, isEmpty);
     });
   });
@@ -550,7 +664,7 @@ void main() {
       expect(ai.accounts.map((a) => a.kind), [KapyAccountKind.openRouter]);
     });
 
-    test('a stored chat or default on either falls back', () async {
+    test('a stored chat or default on either is kept', () async {
       store.data['kapyAi.v1'] = {'defaultModel': codex.model.toJson()};
       store.data['kapyAi.chats.v1'] = {
         'chats': [
@@ -565,14 +679,15 @@ void main() {
         ],
       };
       final ai = await build(environment: sandbox);
-      expect(ai.defaultModel, FakeDeviceModel.apple);
+      expect(ai.defaultModel, codex.model);
       ai.openChat('c');
-      expect(ai.model, FakeDeviceModel.apple);
+      // The chat's own model is kept too, not swapped for the device.
+      expect(ai.model, claude.model);
       ai.pickModel(codex.model);
       await ai.ask('Lisbon?');
+      expect(ai.pending, isA<KapyAccountError>());
       expect(codex.asked, isEmpty);
       expect(claude.asked, isEmpty);
-      expect(ai.current!.messages.last.text, 'device answer');
     });
 
     test('an unsandboxed app keeps them', () async {

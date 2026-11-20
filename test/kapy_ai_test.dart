@@ -798,7 +798,7 @@ void main() {
       expect(find.text('Codex is signed out'), findsOneWidget);
       expect(
         find.text(
-          'Sign in inside Codex, then check again, or pick another model.',
+          'Sign in inside Codex, then check again.',
         ),
         findsOneWidget,
       );
@@ -834,7 +834,7 @@ void main() {
       );
 
       expect(
-        find.text('Check the key in Settings, or pick another model.'),
+        find.text('Check the key in Settings.'),
         findsOneWidget,
       );
       await tester.tap(find.text('Open Settings'));

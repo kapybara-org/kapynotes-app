@@ -49,7 +49,7 @@ String? kapyDeviceModelLine(DeviceModelState device) {
     DeviceModelStatus.downloading =>
       '${kapyGigabytes(device.receivedBytes)} of $size GB',
     DeviceModelStatus.needsSystemFeature =>
-      '${model.plainLabel} · turn it on in System Settings',
+      device.note ?? '${model.plainLabel} · turn it on in System Settings',
     DeviceModelStatus.unavailable => null,
   };
 }
