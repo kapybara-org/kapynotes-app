@@ -218,9 +218,19 @@ SecureStore platformSecureStore() {
 /// the old service at WhenUnlocked, so a restored iPhone still asks for the
 /// old PIN. Moved to a device-only entry, a restored phone would have no PIN,
 /// and whoever opened Hidden Notes would set one and see them.
-SecureStore hiddenNotesSecureStore() => AppPlatform.isIOS
-    ? const PlatformSecureStore()
-    : KeyringGuardedStore(platformSecureStore(), KeyringStatus.instance);
+///
+/// Linux only, the store refuses before touching libsecret once the launch has
+/// found no keyring, so the pane says so instead of logging the same failure.
+/// Every other platform keeps exactly the store it had: off Linux a keystore
+/// that refuses once may open on the next try.
+SecureStore hiddenNotesSecureStore() {
+  if (!AppPlatform.isLinux) {
+    return AppPlatform.isIOS
+        ? const PlatformSecureStore()
+        : platformSecureStore();
+  }
+  return KeyringGuardedStore(platformSecureStore(), KeyringStatus.instance);
+}
 
 /// Moves each of [keys] now rather than on its next read, so nothing waits
 /// in an old store that backups carry.
@@ -281,7 +291,10 @@ class ForgivingSecureStore implements SecureStore {
   }
 
   void _failed(String line) {
-    if (status != null) {
+    // Only Linux can know a keystore is absent rather than momentarily
+    // refusing: everywhere else a locked keychain or a denied prompt is
+    // transient, and a read may still succeed afterwards.
+    if (status != null && AppPlatform.isLinux) {
       status!.markUnavailable();
       return;
     }
@@ -303,6 +316,9 @@ class MissingKeyring implements Exception {
 
 /// Fails at once when this launch already found no keyring, so a read does not
 /// ask libsecret again and log the same failure.
+///
+/// Linux only, like the status it reads: elsewhere a keystore that refuses
+/// once may open on the next try.
 ///
 /// Strict on purpose, unlike [ForgivingSecureStore]: the caller has to refuse
 /// rather than carry on as if nothing were stored.

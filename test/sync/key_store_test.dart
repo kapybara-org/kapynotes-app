@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/keyring.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 
 /// Counts reads, so the caching claim can be checked rather than assumed.
@@ -104,6 +105,8 @@ void main() {
   test(
     'a missing keyring is asked once, and the key stays for this launch only',
     () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       final status = KeyringStatus();
       var calls = 0;
       final backing = _CountingBroken(() => calls++);
@@ -134,6 +137,25 @@ void main() {
       expect(calls, 1);
     },
   );
+
+  test('elsewhere a refusal is transient, so it is not remembered', () async {
+    // A locked keychain or a denied prompt on macOS or Windows opens again
+    // later in the same launch. Marking the store unavailable would keep
+    // Hidden Notes from unlocking until the app was relaunched.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final status = KeyringStatus();
+    final previous = debugPrint;
+    debugPrint = (message, {wrapWidth}) {};
+    addTearDown(() => debugPrint = previous);
+
+    final store = KeyStore(ForgivingSecureStore(BrokenStore(), status: status));
+    expect(await store.readMasterKey(), isNull);
+
+    expect(status.available, isTrue);
+    // And the Hidden Notes store is the one 1.33 used, unwrapped.
+    expect(hiddenNotesSecureStore(), isA<MigratingSecureStore>());
+  });
 }
 
 class _CountingBroken implements SecureStore {

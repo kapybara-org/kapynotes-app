@@ -65,37 +65,45 @@ static void has_tray_host(FlMethodCall* method_call) {
 // Asked without starting anything. libsecret's own call logs a warning every
 // time the name is missing, so this answers first and the Dart side then
 // skips the keystore for the rest of the launch.
-static gboolean keyring_on_bus(GDBusConnection* bus) {
-  g_autoptr(GError) error = nullptr;
+//
+// 1 when one is there or can start, 0 when the bus answered that none is, and
+// -1 when the bus could not be asked. The last is not a no: a question that
+// failed says nothing about the keyring, and treating it as one would tell
+// someone their keyring is not running when it is.
+static gint keyring_on_bus(GDBusConnection* bus) {
   g_autoptr(GVariant) owned = g_dbus_connection_call_sync(
       bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
       "org.freedesktop.DBus", "NameHasOwner",
       g_variant_new("(s)", "org.freedesktop.secrets"), G_VARIANT_TYPE("(b)"),
-      G_DBUS_CALL_FLAGS_NO_AUTO_START, 2000, nullptr, &error);
+      G_DBUS_CALL_FLAGS_NO_AUTO_START, 2000, nullptr, nullptr);
   if (owned != nullptr) {
     gboolean yes = FALSE;
     g_variant_get(owned, "(b)", &yes);
-    if (yes) return TRUE;
+    if (yes) return 1;
   }
-  g_clear_error(&error);
+  // The list carries the answer when the first call did not: it names every
+  // service that can provide the name, owned or not.
   g_autoptr(GVariant) names = g_dbus_connection_call_sync(
       bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
       "org.freedesktop.DBus", "ListActivatableNames", nullptr,
       G_VARIANT_TYPE("(as)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, 2000, nullptr,
       nullptr);
-  if (names == nullptr) return FALSE;
+  if (names == nullptr) return -1;
   g_auto(GStrv) list = nullptr;
   g_variant_get(names, "(^as)", &list);
   for (gchar** name = list; name != nullptr && *name != nullptr; name++) {
-    if (g_strcmp0(*name, "org.freedesktop.secrets") == 0) return TRUE;
+    if (g_strcmp0(*name, "org.freedesktop.secrets") == 0) return 1;
   }
-  return FALSE;
+  return 0;
 }
 
 static void has_keyring(FlMethodCall* method_call) {
   g_autoptr(GDBusConnection) bus =
       g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
-  respond(method_call, bus != nullptr && keyring_on_bus(bus));
+  // Asking is an optimisation and not the only gate: a read or a write that
+  // fails marks the keyring unavailable too, and logs one line. So anything
+  // short of a bus that answers "nothing provides it" counts as yes here.
+  respond(method_call, bus == nullptr || keyring_on_bus(bus) != 0);
 }
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
