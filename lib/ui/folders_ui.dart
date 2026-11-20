@@ -4,13 +4,13 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/folders.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
+import 'note_tabs.dart' show clickOpensTabBehind;
 import 'notes_grouping.dart' show NoteGroup;
 import 'notes_list.dart' show NoteCardFace, NotesGroupHeading;
 import 'tag_ui.dart' show PopoverAtPoint, TagPopover, notesCount;
@@ -26,15 +26,6 @@ TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
 
 /// Where a tree row at [depth] starts: 8 in, and 16 more a level.
 double _indent(int depth) => 8 + (depth - 1) * 16.0;
-
-/// Whether the click under way asks for a tab behind the one in front:
-/// ⌘-click on a Mac and Ctrl-click elsewhere, as a browser opens a link.
-bool _clickOpensTabBehind() {
-  final keyboard = HardwareKeyboard.instance;
-  return AppPlatform.isMacOS
-      ? keyboard.isMetaPressed
-      : keyboard.isControlPressed;
-}
 
 /// What a refused folder action says.
 String folderRefusalText(FolderRefusal refusal) => switch (refusal) {
@@ -529,7 +520,7 @@ class _FolderRowState extends State<_FolderRow> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTab != null
-              ? () => onTab(behind: _clickOpensTabBehind())
+              ? () => onTab(behind: clickOpensTabBehind())
               : line.empty
               ? null
               : widget.onToggle,
@@ -1644,7 +1635,7 @@ class _FolderCardState extends State<_FolderCard> {
         button: true,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => widget.onTab(behind: _clickOpensTabBehind()),
+          onTap: () => widget.onTab(behind: clickOpensTabBehind()),
           onTertiaryTapUp: (_) => widget.onTab(behind: true),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14),

@@ -1,3 +1,6 @@
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -15,6 +18,9 @@ void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+  // The page card's border, on each side of the bar.
+  const border = 1.5;
 
   Widget harness(
     PageToolbar toolbar, {
@@ -34,81 +40,90 @@ void main() {
     ),
   );
 
+  const clients = PagePath(
+    icon: KapyIcons.noteOutlined,
+    root: 'My notes',
+    levels: [
+      (name: 'Work', folderId: 'work'),
+      (name: 'Clients', folderId: 'clients'),
+    ],
+  );
+
   PageToolbar toolbar({
+    PagePath path = clients,
     bool listVisible = true,
     bool noteOpen = true,
     SyncStatus? syncStatus,
     int unloadedPictures = 0,
-    String? section = 'Pinned',
     List<SpaceMember> members = const [],
     List<KapyMenuAction> moreActions = const [],
     ValueChanged<String>? onMore,
     VoidCallback? onShowList,
-    VoidCallback? onCreate,
+    void Function(String folderId, {required bool behind})? onOpenFolder,
     Widget? assistant,
-    bool keepOnTop = false,
   }) => PageToolbar(
-    space: 'My notes',
-    section: section,
+    path: path,
     listVisible: listVisible,
     onShowList: onShowList ?? () {},
-    onCreate: onCreate ?? () {},
     showListShortcut: 'Cmd + \\',
-    newNoteShortcut: 'Cmd + N',
+    onOpenFolder: onOpenFolder ?? (_, {required behind}) {},
     noteOpen: noteOpen,
     syncStatus: syncStatus,
     unloadedPictures: unloadedPictures,
     members: members,
     currentUserId: 'me',
     onShare: () {},
-    pinned: true,
-    onTogglePin: () {},
-    onToggleKeepOnTop: keepOnTop ? () {} : null,
     assistant: assistant,
     moreActions: moreActions,
     onMore: onMore ?? (_) {},
   );
 
+  final bar = find.byKey(const ValueKey('page-toolbar'));
   final showList = find.byKey(const ValueKey('page-show-list'));
-  final newNote = find.byKey(const ValueKey('page-new-note'));
   final saved = find.byKey(const ValueKey('page-saved'));
+  final share = find.byKey(const ValueKey('page-share'));
+  final more = find.byKey(const ValueKey('page-more'));
+  final path = find.byKey(const ValueKey('page-path'));
+  final fold = find.byKey(const ValueKey('page-path-fold'));
+  const ai = ValueKey('ai');
+  Finder onPath(String text) =>
+      find.descendant(of: path, matching: find.text(text));
 
-  testWidgets('beside the list it leads with the breadcrumb alone', (
-    tester,
-  ) async {
-    await tester.pumpWidget(harness(toolbar()));
-
-    expect(showList, findsNothing);
-    expect(newNote, findsNothing);
-    final crumb = find.byKey(const ValueKey('page-breadcrumb'));
-    expect(
-      find.descendant(of: crumb, matching: find.text('My notes')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: crumb, matching: find.text('Pinned')),
-      findsOneWidget,
-    );
-    // Paper's 24 from the page's edge, inside its 1.5 border.
-    expect(tester.getTopLeft(crumb).dx, 25.5);
-  });
-
-  testWidgets('with the list hidden it leads with show-list and a new note', (
-    tester,
-  ) async {
-    var shown = 0;
-    var created = 0;
+  testWidgets('is 72 tall, with the path 16 in and every control centred 40 '
+      'down', (tester) async {
     await tester.pumpWidget(
       harness(
-        toolbar(
-          listVisible: false,
-          onShowList: () => shown++,
-          onCreate: () => created++,
-        ),
+        toolbar(assistant: const SizedBox(key: ai, width: 49, height: 32)),
       ),
     );
 
-    expect(tester.getSize(showList), const Size.square(30));
+    final rect = tester.getRect(bar);
+    expect(rect.height, 72);
+    expect(showList, findsNothing);
+    expect(find.byKey(const ValueKey('page-new-note')), findsNothing);
+    expect(tester.getTopLeft(path).dx, rect.left + 16);
+    for (final control in [path, saved, share, more, find.byKey(ai)]) {
+      expect(tester.getCenter(control).dy, rect.top + 40);
+    }
+    expect(tester.getSize(share).height, 32);
+    expect(tester.getSize(more), const Size.square(32));
+    // Saved, Share and More 8 apart, and Kapy AI last at the bar's end.
+    expect(tester.getTopLeft(share).dx - tester.getTopRight(saved).dx, 8);
+    expect(tester.getTopLeft(more).dx - tester.getTopRight(share).dx, 8);
+    expect(tester.getTopRight(find.byKey(ai)).dx, rect.right - 16);
+  });
+
+  testWidgets('with the list hidden it leads with the way back to it', (
+    tester,
+  ) async {
+    var shown = 0;
+    await tester.pumpWidget(
+      harness(toolbar(listVisible: false, onShowList: () => shown++)),
+    );
+
+    expect(tester.getSize(showList), const Size.square(32));
+    expect(tester.getTopLeft(showList).dx, tester.getRect(bar).left + 8);
+    expect(tester.getTopLeft(path).dx - tester.getTopRight(showList).dx, 8);
     expect(
       find.descendant(
         of: showList,
@@ -116,22 +131,142 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(
-      find.descendant(
-        of: newNote,
-        matching: find.byTooltip('New note  Cmd + N'),
-      ),
-      findsOneWidget,
-    );
-    expect(tester.getTopLeft(newNote).dx - tester.getTopRight(showList).dx, 4);
-    expect(
-      tester.getTopLeft(find.byKey(const ValueKey('page-breadcrumb'))).dx,
-      greaterThan(tester.getTopRight(newNote).dx + 18),
-    );
+    expect(find.byKey(const ValueKey('page-new-note')), findsNothing);
 
     await tester.tap(showList);
-    await tester.tap(newNote);
-    expect((shown, created), (1, 1));
+    expect(shown, 1);
+  });
+
+  testWidgets('the path names each level, with only where the page is in '
+      'primary', (tester) async {
+    await tester.pumpWidget(harness(toolbar()));
+
+    TextStyle style(String text) => tester.widget<Text>(onPath(text)).style!;
+    for (final text in ['My notes', 'Work']) {
+      expect(style(text).fontWeight, FontWeight.w400);
+      expect(style(text).color, KapyTheme.darkPalette.textTertiary);
+    }
+    expect(style('Clients').fontWeight, FontWeight.w500);
+    expect(style('Clients').color, KapyTheme.darkPalette.textPrimary);
+    expect(fold, findsNothing);
+    // All of it shows, so hovering has nothing to add.
+    expect(find.byTooltip('My notes › Work › Clients'), findsNothing);
+  });
+
+  testWidgets('a folder on the path opens in this tab on a click, and behind '
+      'it on ⌘-click or a middle click', (tester) async {
+    final opened = <(String, bool)>[];
+    await tester.pumpWidget(
+      harness(
+        toolbar(
+          onOpenFolder: (folderId, {required behind}) =>
+              opened.add((folderId, behind)),
+        ),
+      ),
+    );
+
+    await tester.tap(onPath('Work'));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.tap(onPath('Clients'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.tap(
+      onPath('Work'),
+      buttons: kMiddleMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    // My notes is a place on the rail, not a folder.
+    await tester.tap(onPath('My notes'));
+    expect(opened, [('work', false), ('clients', true), ('work', true)]);
+  });
+
+  testWidgets('a path deeper than two levels folds the middle into "…", '
+      'whose menu opens the folder picked', (tester) async {
+    final opened = <(String, bool)>[];
+    await tester.pumpWidget(
+      harness(
+        toolbar(
+          path: const PagePath(
+            icon: KapyIcons.noteOutlined,
+            root: 'My notes',
+            levels: [
+              (name: 'Work', folderId: 'work'),
+              (name: 'Clients', folderId: 'clients'),
+              (name: 'Acme', folderId: 'acme'),
+              (name: '2026', folderId: 'y2026'),
+            ],
+          ),
+          onOpenFolder: (folderId, {required behind}) =>
+              opened.add((folderId, behind)),
+        ),
+      ),
+    );
+
+    for (final text in ['My notes', 'Acme', '2026']) {
+      expect(onPath(text), findsOneWidget, reason: text);
+    }
+    expect(onPath('Work'), findsNothing);
+    expect(onPath('Clients'), findsNothing);
+    expect(
+      find.byTooltip('My notes › Work › Clients › Acme › 2026'),
+      findsOneWidget,
+    );
+
+    await tester.tap(fold);
+    await tester.pumpAndSettle();
+    Finder line(String folderId, String name) => find.descendant(
+      of: find.byKey(ValueKey('page-path-$folderId')),
+      matching: find.text(name),
+    );
+    // Each level sits 12 further in than the one it is inside.
+    expect(
+      tester.getTopLeft(line('clients', 'Clients')).dx -
+          tester.getTopLeft(line('work', 'Work')).dx,
+      12,
+    );
+    await tester.tap(line('clients', 'Clients'));
+    await tester.pumpAndSettle();
+    expect(opened, [('clients', false)]);
+  });
+
+  testWidgets('a narrower page keeps the last level, after a fold, then on '
+      'its own, and hovering shows the whole path', (tester) async {
+    await tester.pumpWidget(
+      harness(toolbar(listVisible: false), width: 640 + 2 * border),
+    );
+    expect(onPath('Clients'), findsOneWidget);
+    expect(onPath('My notes'), findsNothing);
+    expect(fold, findsOneWidget);
+    expect(find.byTooltip('My notes › Work › Clients'), findsOneWidget);
+
+    await tester.pumpWidget(
+      harness(toolbar(listVisible: false), width: 520 + 2 * border),
+    );
+    expect(onPath('Clients'), findsOneWidget);
+    expect(onPath('My notes'), findsNothing);
+    expect(fold, findsNothing);
+    expect(find.byTooltip('My notes › Work › Clients'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a long name stops at 200 and leaves the other names whole', (
+    tester,
+  ) async {
+    const long = 'Quarterly planning for the regional offices and partners';
+    await tester.pumpWidget(
+      harness(
+        toolbar(
+          path: const PagePath(
+            icon: KapyIcons.noteOutlined,
+            root: 'My notes',
+            levels: [(name: long, folderId: 'plans')],
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(onPath(long)).width, lessThanOrEqualTo(200));
+    expect(tester.getSize(onPath('My notes')).width, greaterThan(40));
+    expect(find.byTooltip('My notes › $long'), findsOneWidget);
   });
 
   testWidgets('Saved speaks for the open note, and for sync', (tester) async {
@@ -157,15 +292,27 @@ void main() {
     expect(saved, findsNothing);
   });
 
-  testWidgets('a narrow page gives Saved up before anything else', (
-    tester,
-  ) async {
-    await tester.pumpWidget(harness(toolbar(listVisible: false), width: 420));
+  testWidgets('below a 560 page Saved leaves the bar, and Share, More and '
+      'Kapy AI stay', (tester) async {
+    Widget at(double width) => harness(
+      toolbar(
+        listVisible: false,
+        assistant: const SizedBox(key: ai, width: 49, height: 32),
+      ),
+      width: width + 2 * border,
+    );
 
+    await tester.pumpWidget(at(560));
+    expect(saved, findsOneWidget);
+
+    await tester.pumpWidget(at(559));
     expect(saved, findsNothing);
-    for (final key in ['page-share', 'page-pin', 'page-more']) {
-      expect(find.byKey(ValueKey(key)), findsOneWidget);
-    }
+    expect(
+      find.descendant(of: share, matching: find.text('Share')),
+      findsOneWidget,
+    );
+    expect(more, findsOneWidget);
+    expect(find.byKey(ai), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -174,19 +321,19 @@ void main() {
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     final count = find.byType(UnloadedPicturesStatus);
+    Widget at(double width, {int unloaded = 0}) => harness(
+      toolbar(listVisible: false, unloadedPictures: unloaded),
+      width: width + 2 * border,
+    );
 
-    await tester.pumpWidget(harness(toolbar(listVisible: false), width: 560));
+    await tester.pumpWidget(at(600));
     expect(saved, findsOneWidget);
 
-    await tester.pumpWidget(
-      harness(toolbar(listVisible: false, unloadedPictures: 123), width: 560),
-    );
+    await tester.pumpWidget(at(600, unloaded: 123));
     expect(count, findsNothing);
     expect(saved, findsNothing);
 
-    await tester.pumpWidget(
-      harness(toolbar(listVisible: false, unloadedPictures: 123), width: 632),
-    );
+    await tester.pumpWidget(at(685, unloaded: 123));
     expect(count, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -217,7 +364,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.tap(more);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('page-more-split')));
     await tester.pumpAndSettle();
@@ -230,13 +377,10 @@ void main() {
 
   testWidgets('More has nothing to open with nothing to offer', (tester) async {
     await tester.pumpWidget(harness(toolbar()));
-    final more = tester.widget<IconButton>(
-      find.descendant(
-        of: find.byKey(const ValueKey('page-more')),
-        matching: find.byType(IconButton),
-      ),
+    final button = tester.widget<IconButton>(
+      find.descendant(of: more, matching: find.byType(IconButton)),
     );
-    expect(more.onPressed, isNull);
+    expect(button.onPressed, isNull);
   });
 
   group('a shared note', () {
@@ -306,7 +450,6 @@ void main() {
               listVisible: listVisible,
               members: crowd,
               assistant: const SizedBox(width: 38, height: 32),
-              keepOnTop: true,
             ),
             width: width,
           ),
