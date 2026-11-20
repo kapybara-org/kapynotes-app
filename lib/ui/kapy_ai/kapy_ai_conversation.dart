@@ -517,8 +517,8 @@ class KapyAiNotice extends StatelessWidget {
         'Before the first answer',
         [
           'Kapy AI sends your question and only the notes that match it '
-              'through Kapy cloud. Kapy keeps nothing, and it is never used '
-              'to train AI.',
+              'through Kapy cloud, where an AI service answers it. Kapy keeps '
+              'nothing, and it is never used to train AI.',
           'Hidden notes are never used, locked or unlocked.',
         ],
         [

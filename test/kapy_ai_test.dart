@@ -429,7 +429,7 @@ void main() {
       expect(ai.calls, ['pickModel:cloud']);
     });
 
-    testWidgets('names the device, and where each account’s models run', (
+    testWidgets('names the device, and what each account model is good for', (
       tester,
     ) async {
       await open(
@@ -448,7 +448,7 @@ void main() {
       expect(find.text('Apple Intelligence'), findsWidgets);
       expect(find.text('Codex on this Mac'), findsNWidgets(2));
       expect(find.text('Claude Code on this Mac'), findsOneWidget);
-      expect(find.text('Through your key'), findsOneWidget);
+      expect(find.text('Quick answers and short notes'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsOneWidget);
     });
 
@@ -589,7 +589,7 @@ void main() {
       expect(find.text('Before the first answer'), findsOneWidget);
       expect(
         find.textContaining(
-          'through Kapy cloud',
+          'where an AI service answers it',
         ),
         findsOneWidget,
       );

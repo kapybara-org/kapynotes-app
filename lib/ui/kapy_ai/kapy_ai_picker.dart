@@ -52,7 +52,7 @@ class KapyAiPicker extends StatelessWidget {
           accountRows.add(
             modelRow(
               model,
-              model.whereItRuns(word),
+              model.goodFor ?? model.whereItRuns(word),
               title: kapyChoiceLabel(model, account.models),
             ),
           );

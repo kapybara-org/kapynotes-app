@@ -68,6 +68,16 @@ class KapyModel {
     KapyModelKind.openRouter => 'Through your key',
   };
 
+  /// The picker's subline for the models a key offers. A name alone does not
+  /// say which one to pick, so each says what it is good for. Null when the
+  /// model is not one of these.
+  String? get goodFor => switch (id) {
+    'google/gemini-3.8-flash' => 'Quick answers and short notes',
+    'openai/gpt-5.5' => 'Harder questions and planning',
+    'anthropic/claude-sonnet-5.5' => 'Long writing and summaries',
+    _ => null,
+  };
+
   /// The picker's subline for an account model.
   String whereItRuns(String device) => switch (kind) {
     KapyModelKind.codex => 'Codex on this $device',

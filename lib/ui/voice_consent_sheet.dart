@@ -37,15 +37,15 @@ class _SpeechConsentSheet extends StatelessWidget {
             children: [
               Text(
                 'To turn a recording into text, Kapy Notes sends the audio to '
-                'Kapy cloud. The audio is not kept, and it is never used to '
-                'train AI.',
+                'Kapy cloud, where an AI service turns it into text. The audio '
+                'is not kept, and it is never used to train AI.',
                 style: TextStyle(color: palette.textPrimary, height: 1.45),
               ),
               const SizedBox(height: 12),
               const _Point(
                 text:
-                    'A cloud summary sends the transcript too. It is not kept, '
-                    'and it is never used to train AI.',
+                    'A cloud summary sends the transcript to the same AI service. '
+                    'It is not kept, and it is never used to train AI.',
               ),
               const _Point(text: 'Your other notes stay private.'),
               const _Point(
