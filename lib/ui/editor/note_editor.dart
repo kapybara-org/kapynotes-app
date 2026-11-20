@@ -3599,17 +3599,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           columns: choice.tableColumns ?? 2,
         );
         final firstHeader = table.indexOf('Column 1');
-        _replaceCommandValue(
-          replaceWithSlashCommandBlock(
-            _controller.value,
-            range,
-            table,
-            selectionInBlock: TextSelection(
-              baseOffset: firstHeader,
-              extentOffset: firstHeader + 'Column 1'.length,
-            ),
+        final inserted = replaceWithSlashCommandBlock(
+          _controller.value,
+          range,
+          table,
+          selectionInBlock: TextSelection(
+            baseOffset: firstHeader,
+            extentOffset: firstHeader + 'Column 1'.length,
           ),
         );
+        _replaceCommandValue(inserted);
+        _openNewTable(inserted.selection.baseOffset);
         break;
       case SlashCommandType.checklist:
         if (typed) {
@@ -6945,6 +6945,27 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       onRedo: () => _undoTableEdit(redo: true),
     );
     if (moved) _ensureCellVisible();
+  }
+
+  /// Opens the table the slash menu has just written on its first cell, with
+  /// the placeholder selected to type over, as a tapped cell is opened.
+  void _openNewTable(int offset) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final field = _field;
+      if (!mounted || field == null) return;
+      final table = markdownTableAt(
+        _controller.markdownFor(_controller.text),
+        offset,
+      );
+      final rect = table == null ? null : _cellRect(field, table, 0, 0);
+      if (table == null || rect == null) return;
+      _showCellEditor(table, 0, 0, rect);
+      final cell = _cellEditor.field;
+      cell.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: cell.text.length,
+      );
+    });
   }
 
   /// Scrolls the note just far enough for the open cell to be seen, clear of a

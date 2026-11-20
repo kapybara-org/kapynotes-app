@@ -369,6 +369,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addListener(_syncStatusBar);
     _kapyAiWasOn = _kapyAiOn;
     _kapyAi?.addListener(_onKapyAi);
     if (widget.titleModel case final model?) {
@@ -433,6 +434,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.account?.sync?.leaveNote(_selectedId);
     _namer?.dispose();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    FocusManager.instance.removeListener(_syncStatusBar);
+    if (_statusBarHidden) unawaited(StatusBar.setHidden(false));
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
@@ -451,6 +454,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _syncStatusBar();
     if (_hiddenMode &&
         _hiddenSystemUiDepth == 0 &&
         state != AppLifecycleState.resumed) {
@@ -3257,6 +3261,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // A tablet reaches this layout too, and it has no Scaffold to resize
     // around the software keyboard. Desktop reports zero here.
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    // A phone on its side with the keyboard up has no room to spare: the page
+    // gives up its bar and its margins for the lines being typed.
+    final cramped = isCrampedPage(MediaQuery.sizeOf(context), keyboardInset);
     // The canvas left around the page, on every side but the one against the
     // notes list, whose own margin keeps the two apart.
     const pageInset = 12.0;
@@ -3448,9 +3455,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               curve: Curves.easeOutCubic,
                               padding: EdgeInsets.fromLTRB(
                                 listFits && listShown ? 0 : pageInset,
+                                cramped ? 0 : pageInset,
                                 pageInset,
-                                pageInset,
-                                pageInset,
+                                cramped ? 0 : pageInset,
                               ),
                               child: PageCard(
                                 child: Column(
@@ -3463,48 +3470,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         listVisible: listFits && listShown,
                                       )
                                     else ...[
-                                      PageToolbar(
-                                        space: _listTitle,
-                                        section: pinned ? 'Pinned' : null,
-                                        listVisible: listFits && listShown,
-                                        onShowList: _toggleList,
-                                        showListShortcut: _sidebarShortcut,
-                                        noun: space == LibrarySpace.drawings
-                                            ? 'drawing'
-                                            : 'note',
-                                        onCreate: _createInSpace,
-                                        newNoteShortcut: widget.shortcuts
-                                            .hintFor(ShortcutAction.newNote)
-                                            ?.displayLabel,
-                                        noteOpen: selected != null,
-                                        syncStatus: widget.account?.syncStatus,
-                                        unloadedPictures: unloaded.length,
-                                        onShowUnloadedPicture: unloaded.isEmpty
-                                            ? null
-                                            : () => _selectedEditor
-                                                  ?.showAttachment(
-                                                    unloaded.first.offset,
-                                                  ),
-                                        members: _selectedMembers,
-                                        present: _selectedPresence,
-                                        currentUserId:
-                                            widget.account?.sharing?.userId ??
-                                            '',
-                                        noteShared: selected?.isShared ?? false,
-                                        onShare: _shareSelected,
-                                        assistant: _kapyAiButton(
-                                          extent: AppPlatform.hasPointer
-                                              ? 32
-                                              : AppControlMetrics
-                                                    .iconButtonExtent,
-                                          gap: 6,
+                                      if (!cramped)
+                                        PageToolbar(
+                                          space: _listTitle,
+                                          section: pinned ? 'Pinned' : null,
+                                          listVisible: listFits && listShown,
+                                          onShowList: _toggleList,
+                                          showListShortcut: _sidebarShortcut,
+                                          noun: space == LibrarySpace.drawings
+                                              ? 'drawing'
+                                              : 'note',
+                                          onCreate: _createInSpace,
+                                          newNoteShortcut: widget.shortcuts
+                                              .hintFor(ShortcutAction.newNote)
+                                              ?.displayLabel,
+                                          noteOpen: selected != null,
+                                          syncStatus:
+                                              widget.account?.syncStatus,
+                                          unloadedPictures: unloaded.length,
+                                          onShowUnloadedPicture:
+                                              unloaded.isEmpty
+                                              ? null
+                                              : () => _selectedEditor
+                                                    ?.showAttachment(
+                                                      unloaded.first.offset,
+                                                    ),
+                                          members: _selectedMembers,
+                                          present: _selectedPresence,
+                                          currentUserId:
+                                              widget.account?.sharing?.userId ??
+                                              '',
+                                          noteShared:
+                                              selected?.isShared ?? false,
+                                          onShare: _shareSelected,
+                                          assistant: _kapyAiButton(
+                                            extent: AppPlatform.hasPointer
+                                                ? 32
+                                                : AppControlMetrics
+                                                      .iconButtonExtent,
+                                            gap: 6,
+                                          ),
+                                          moreActions: _pageActions(selected),
+                                          onMore: (action) =>
+                                              _runPageAction(action, selected),
+                                          updates: widget.updates,
                                         ),
-                                        moreActions: _pageActions(selected),
-                                        onMore: (action) =>
-                                            _runPageAction(action, selected),
-                                        updates: widget.updates,
+                                      Expanded(
+                                        child: _buildWideWorkspace(
+                                          cramped: cramped,
+                                        ),
                                       ),
-                                      Expanded(child: _buildWideWorkspace()),
                                     ],
                                   ],
                                 ),
@@ -3692,12 +3707,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
-  Widget _buildWideWorkspace() {
+  Widget _buildWideWorkspace({required bool cramped}) {
     if (_specialMode) {
       final selected = widget.notes.byId(_selectedId);
       return selected == null
           ? EmptyState(onCreate: _createNote)
-          : _buildEditor(selected, key: _archiveEditorKey, active: true);
+          : _buildEditor(
+              selected,
+              key: _archiveEditorKey,
+              active: true,
+              cramped: cramped,
+            );
     }
     final panes = _workspace.panes;
     if (panes.isEmpty) return _emptyPage();
@@ -3708,12 +3728,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           setState(() => _workspace.weights = weights),
       onEqualize: () => setState(_workspace.equalizeWeights),
       children: [
-        for (var index = 0; index < panes.length; index++) _buildPane(index),
+        for (var index = 0; index < panes.length; index++)
+          _buildPane(index, cramped: cramped),
       ],
     );
   }
 
-  Widget _buildPane(int index) {
+  Widget _buildPane(int index, {required bool cramped}) {
     final pane = _workspace.panes[index];
     final note = _shownNote(pane.noteId);
     final active = _workspace.activePane == index;
@@ -3725,6 +3746,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         note,
         key: _paneEditorKey(note.id),
         active: active,
+        cramped: cramped,
         onFocus: () => _activatePane(index),
       );
     } else if (split) {
@@ -3824,7 +3846,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           view.physicalSize / view.devicePixelRatio,
           view.viewInsets.bottom / view.devicePixelRatio,
         ) &&
-        (_phonePageOpen || _selectedEditor?.writing == true);
+        (_phoneEditorKey.currentState?.writing ??
+            _selectedEditor?.writing ??
+            false);
     if (hide == _statusBarHidden) return;
     _statusBarHidden = hide;
     unawaited(StatusBar.setHidden(hide));
@@ -3989,36 +4013,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SafeArea(
-              bottom: false,
-              child: PageToolbar(
-                space: _specialMode
-                    ? _show.label
-                    : _space == LibrarySpace.notes
-                    ? 'Notes'
-                    : _space.title,
-                listVisible: true,
-                onShowList: _closePhonePage,
-                onBack: () =>
-                    unawaited(_phoneNavigator.currentState?.maybePop()),
-                noun: note.isDrawing ? 'drawing' : 'note',
-                onCreate: _createInSpace,
-                noteOpen: true,
-                syncStatus: widget.account?.sync?.status,
-                members: _selectedMembers,
-                present: _selectedPresence,
-                currentUserId: widget.account?.sharing?.userId ?? '',
-                noteShared: note.isShared,
-                onShare: _shareSelected,
-                assistant: _kapyAiButton(
-                  extent: AppControlMetrics.iconButtonExtent,
-                  gap: 2,
+            // The bar steps aside on its side with the keyboard up, so the
+            // lines take its room; Back is still the phone's gesture.
+            if (!cramped)
+              SafeArea(
+                bottom: false,
+                child: PageToolbar(
+                  space: _specialMode
+                      ? _show.label
+                      : _space == LibrarySpace.notes
+                      ? 'Notes'
+                      : _space.title,
+                  listVisible: true,
+                  onShowList: _closePhonePage,
+                  onBack: () =>
+                      unawaited(_phoneNavigator.currentState?.maybePop()),
+                  noun: note.isDrawing ? 'drawing' : 'note',
+                  onCreate: _createInSpace,
+                  noteOpen: true,
+                  syncStatus: widget.account?.sync?.status,
+                  members: _selectedMembers,
+                  present: _selectedPresence,
+                  currentUserId: widget.account?.sharing?.userId ?? '',
+                  noteShared: note.isShared,
+                  onShare: _shareSelected,
+                  assistant: _kapyAiButton(
+                    extent: AppControlMetrics.iconButtonExtent,
+                    gap: 2,
+                  ),
+                  moreActions: _pageActions(note, phone: true),
+                  onMore: (action) => _runPageAction(action, note),
+                  updates: widget.updates,
                 ),
-                moreActions: _pageActions(note, phone: true),
-                onMore: (action) => _runPageAction(action, note),
-                updates: widget.updates,
               ),
-            ),
             Expanded(
               child: SafeArea(
                 top: false,
@@ -4122,6 +4149,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Note note, {
     required GlobalKey<NoteEditorState> key,
     required bool active,
+    bool cramped = false,
     VoidCallback? onFocus,
   }) {
     if (_opensAsDrawing(note)) return _buildDrawing(note, onFocus: onFocus);
@@ -4134,6 +4162,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // A key per note keeps one note's editing state from leaking into
           // the next, and lets it follow its note when the panes reorder.
           key: key,
+          cramped: cramped,
           noteId: note.id,
           initialBody: note.body,
           initialFormats: note.formats,

@@ -1206,7 +1206,7 @@ void main() {
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
           packageName: 'com.kapybara.kapynotes',
-          version: '1.33.0',
+          version: '1.34.0',
           buildNumber: '1',
           buildSignature: '',
         );
