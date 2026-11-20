@@ -466,6 +466,51 @@ void main() {
     );
 
     test(
+      'a tag put back after a fast clock deleted the note\'s tags record stays on',
+      () async {
+        final (a, b) = await pair();
+        final note = a.notes.create(body: 'Plan');
+        final work = a.tags.create('Work')!;
+        a.tags.addTag(note.id, work.id);
+        await passes([a, b]);
+
+        a.clock = a.clock.add(const Duration(minutes: 4));
+        a.tags.forgetNote(note.id);
+        await passes([a, b]);
+        expect(b.tags.tagsOf(note.id), isEmpty);
+
+        b.tags.addTag(note.id, work.id);
+        await passes([b, a, b]);
+        expect(namesOn(a, note.id), ['Work']);
+        expect(namesOn(b, note.id), ['Work']);
+        expectSettled(a, b, note.id);
+        a.dispose();
+        b.dispose();
+      },
+    );
+
+    test(
+      'a rename made on a slow clock, after seeing the fast clock\'s name, wins',
+      () async {
+        final (a, b) = await pair();
+        final work = a.tags.create('Work')!;
+        await passes([a, b]);
+
+        a.clock = a.clock.add(const Duration(minutes: 4));
+        a.tags.rename(work.id, 'Office');
+        await passes([a, b]);
+        expect(b.tags.byId(work.id)!.name.v, 'Office');
+
+        b.tags.rename(work.id, 'Studio');
+        await passes([b, a, b]);
+        expect(a.tags.byId(work.id)!.name.v, 'Studio');
+        expect(b.tags.byId(work.id)!.name.v, 'Studio');
+        a.dispose();
+        b.dispose();
+      },
+    );
+
+    test(
       '"Work" created offline on both becomes one tag, each note moved in place',
       () async {
         final (a, b) = await pair();
