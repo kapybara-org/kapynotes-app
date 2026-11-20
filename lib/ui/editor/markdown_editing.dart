@@ -334,7 +334,11 @@ Iterable<MarkdownLinePrefix> _itemsAbove(
 ) sync* {
   var start = line.lineStart;
   while (start > 0) {
-    start = text.lastIndexOf('\n', start - 2) + 1;
+    // A line that starts at 1 sits under one that starts at 0; looking back
+    // from before that would be looking back past the start of the note.
+    final previous = start == 1 ? 0 : text.lastIndexOf('\n', start - 2) + 1;
+    if (previous >= start) return;
+    start = previous;
     final above = markdownLinePrefix(text, start);
     if (above.isBlank) continue;
     if (above.isListItem && !above.isQuoted) {
@@ -363,7 +367,9 @@ bool _continuesParagraph(String text, MarkdownLinePrefix line) {
       words.startsWith('~~~')) {
     return false;
   }
-  final above = text.lastIndexOf('\n', line.lineStart - 2) + 1;
+  final above = line.lineStart == 1
+      ? 0
+      : text.lastIndexOf('\n', line.lineStart - 2) + 1;
   return !markdownLinePrefix(text, above).isBlank;
 }
 

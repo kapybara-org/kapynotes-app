@@ -135,4 +135,13 @@ void main() {
 
     expect(words(read().openIn('b')), ['Call the garage']);
   });
+
+  test('a smaller task inside the details has no row of its own', () {
+    note('a', 'Trip\n☐ Parent\n  ☐ Child\n  ☑ Finished\n☐ Sibling');
+
+    final board = read();
+    expect(words(board.open), ['Parent', 'Sibling']);
+    expect(board.open.first.groupTotal, 3);
+    expect(board.open.first.groupDone, 1);
+  });
 }

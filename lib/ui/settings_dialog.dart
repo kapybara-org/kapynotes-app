@@ -664,7 +664,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   bool _isAvailable(SettingsSection section) => switch (section) {
     SettingsSection.window ||
     SettingsSection.shortcuts => AppPlatform.isDesktop,
-    SettingsSection.about => widget.updates != null,
+    // A phone has no updater, but the notes still live here, the same place a
+    // computer keeps them. Closing the notice at the top of the list must not
+    // be the last way in.
+    SettingsSection.about => widget.updates != null || AppPlatform.isMobile,
     SettingsSection.account ||
     SettingsSection.sharing => widget.account != null,
     // Present even signed out, and even with no transcription configured:
@@ -2579,7 +2582,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         SettingsSearchEntry(
           section: SettingsSection.about,
           sectionLabel: SettingsSection.about.label,
-          title: 'Release notes',
+          title: AppPlatform.isMobile ? "What's new" : 'Release notes',
           icon: SettingsSection.about.icon,
           target: 'changelog',
           keywords: const ['changelog', 'what’s new', 'versions', 'history'],
@@ -2998,7 +3001,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                               title: 'Settings',
                               bottomInset: bottomInset,
                               children: [
-                                if (!_searching) const SettingsWhatsNewRow(),
+                                if (!_searching)
+                                  SettingsWhatsNewRow(prefs: widget.layoutPrefs),
                                 // No autofocus: a keyboard that rises the
                                 // moment settings opens would cover the very
                                 // list it is there to search.
@@ -3126,7 +3130,11 @@ class _SettingsDialogState extends State<SettingsDialog>
                           ),
                         ),
                         if (updates != null) ...[
-                          SettingsUpdateCard(updates: updates, maxHeight: left),
+                          SettingsUpdateCard(
+                            updates: updates,
+                            layoutPrefs: widget.layoutPrefs,
+                            maxHeight: left,
+                          ),
                           const SizedBox(height: 10),
                           _VersionStatus(updates: updates),
                         ],
@@ -3236,18 +3244,20 @@ class _SettingsDialogState extends State<SettingsDialog>
         onShowPlan: _showPlan,
       ),
     ],
-    SettingsSection.about => [
-      ..._fromGroups(_aboutGroups()),
-      SizedBox(height: SettingsMetrics.groupGap),
-      // Keyed here rather than on the group below it: a search result scrolls
-      // to what it lands on and lights it, and the group is taller than the
-      // window by a dozen releases.
-      SettingsLabel(
-        widget.updates!.hasUpdate ? "What's new" : 'Release notes',
-        key: const ValueKey('changelog'),
-      ),
-      _ChangelogGroup(updates: widget.updates!),
-    ],
+    SettingsSection.about => widget.updates == null
+        ? const [_QuietWhatsNewRow()]
+        : [
+            ..._fromGroups(_aboutGroups()),
+            SizedBox(height: SettingsMetrics.groupGap),
+            // Keyed here rather than on the group below it: a search result
+            // scrolls to what it lands on and lights it, and the group is
+            // taller than the window by a dozen releases.
+            SettingsLabel(
+              widget.updates!.hasUpdate ? "What's new" : 'Release notes',
+              key: const ValueKey('changelog'),
+            ),
+            _ChangelogGroup(updates: widget.updates!),
+          ],
     _ => _fromGroups(_groupsFor(section)),
   };
 
@@ -5158,6 +5168,51 @@ class _ReleaseRow extends StatelessWidget {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// The phone's lasting way to the notes. The notice at the top of Settings
+/// can be closed; this row cannot, and it lives in About, where a computer
+/// keeps the same route.
+class _QuietWhatsNewRow extends StatelessWidget {
+  const _QuietWhatsNewRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SettingsGroup(
+      children: [
+        Semantics(
+          link: true,
+          child: InkWell(
+            key: const ValueKey('changelog'),
+            onTap: () => unawaited(openChangelogPage(context)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Padding(
+                padding: SettingsMetrics.padding,
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: SettingsRowCopy(
+                        title: "What's new",
+                        subtitle: 'See what changed',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    KapyIcon(
+                      KapyIcons.openExternalRounded,
+                      size: 15,
+                      color: palette.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

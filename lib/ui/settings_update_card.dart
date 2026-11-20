@@ -8,7 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../data/layout_prefs.dart';
 import '../data/update_checker.dart';
+import 'compact_icon_button.dart';
 import 'control_surface.dart';
 
 final Uri _changelogPage = Uri.parse('https://kapynotes.com/changelog');
@@ -37,8 +39,12 @@ Future<void> openChangelogPage(BuildContext context) async {
 /// version brought, with the changelog behind it. A phone updates through its
 /// store, so there is no card and nothing to restart, and the row needs no
 /// update checker: it only reads the version this build is.
+///
+/// Closing it hides that version. A later version shows the line again.
 class SettingsWhatsNewRow extends StatefulWidget {
-  const SettingsWhatsNewRow({super.key});
+  const SettingsWhatsNewRow({super.key, required this.prefs});
+
+  final LayoutPrefs prefs;
 
   @override
   State<SettingsWhatsNewRow> createState() => _SettingsWhatsNewRowState();
@@ -64,37 +70,79 @@ class _SettingsWhatsNewRowState extends State<SettingsWhatsNewRow> {
 
   @override
   Widget build(BuildContext context) {
-    if (_version.isEmpty) return const SizedBox.shrink();
-    final palette = context.palette;
-    return InkWell(
-      key: const ValueKey('settings-whats-new-row'),
-      onTap: () => unawaited(openChangelogPage(context)),
-      borderRadius: BorderRadius.circular(AppRadii.control),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  "What's new in $_version",
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                    color: palette.textDescription,
+    return ListenableBuilder(
+      listenable: widget.prefs,
+      builder: (context, _) {
+        if (_version.isEmpty || !widget.prefs.showWhatsNew(_version)) {
+          return const SizedBox.shrink();
+        }
+        final palette = context.palette;
+        return Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                key: const ValueKey('settings-whats-new-row'),
+                onTap: () => unawaited(openChangelogPage(context)),
+                borderRadius: BorderRadius.circular(AppRadii.control),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "What's new in $_version",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                              color: palette.textDescription,
+                            ),
+                          ),
+                        ),
+                        KapyIcon(
+                          KapyIcons.openExternalRounded,
+                          size: 15,
+                          color: palette.textTertiary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              KapyIcon(
-                KapyIcons.openExternalRounded,
-                size: 15,
-                color: palette.textTertiary,
-              ),
-            ],
-          ),
-        ),
+            ),
+            _HideWhatsNewButton(
+              onPressed: () => widget.prefs.dismissWhatsNew(_version),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Closes the "What's new" notice without opening it.
+class _HideWhatsNewButton extends StatelessWidget {
+  const _HideWhatsNewButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  static const String label = "Hide what's new";
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return CompactIconButton(
+      key: const ValueKey('settings-whats-new-hide'),
+      icon: KapyIcon(
+        KapyIcons.closeRounded,
+        size: AppPlatform.hasPointer ? 14 : 16,
+        color: palette.textTertiary,
       ),
+      tooltip: label,
+      semanticLabel: label,
+      foregroundColor: palette.textTertiary,
+      onPressed: onPressed,
     );
   }
 }
@@ -109,10 +157,12 @@ class SettingsUpdateCard extends StatefulWidget {
   const SettingsUpdateCard({
     super.key,
     required this.updates,
+    required this.layoutPrefs,
     this.maxHeight = double.infinity,
   });
 
   final UpdateChecker updates;
+  final LayoutPrefs layoutPrefs;
 
   /// The room the rail has left for it once every category is in view.
   final double maxHeight;
@@ -128,6 +178,7 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
   late final Listenable _listenable = Listenable.merge([
     widget.updates,
     widget.updates.history,
+    widget.layoutPrefs,
   ]);
 
   @override
@@ -174,7 +225,10 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
     final palette = context.palette;
     final staged = AppPlatform.isMobile ? null : updates.staged;
     final version = updates.currentVersion;
-    if (staged == null && version.isEmpty) return const SizedBox.shrink();
+    if (staged == null &&
+        (version.isEmpty || !widget.layoutPrefs.showWhatsNew(version))) {
+      return const SizedBox.shrink();
+    }
 
     final title = TextStyle(
       fontSize: 13,
@@ -257,7 +311,10 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
       for (final release in updates.history.releases)
         if (release.version == version) ...release.updateHighlights,
     ].take(_lines).toList();
-    const compactHeight = 2 * _pad + 18 + 8 + _lineHeight;
+    // The close button sets the title row's height. On a pointer it is 24;
+    // on touch, 44.
+    final titleRow = AppControlMetrics.iconButtonExtent;
+    final compactHeight = 2 * _pad + titleRow + 8 + _lineHeight;
     final fullHeight = compactHeight + notes.length * (6 + 2 * _lineHeight);
     final compact = fullHeight > room;
     if (compact && compactHeight > room) return const SizedBox.shrink();
@@ -265,7 +322,14 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("What's new in $version", style: title),
+          Row(
+            children: [
+              Expanded(child: Text("What's new in $version", style: title)),
+              _HideWhatsNewButton(
+                onPressed: () => widget.layoutPrefs.dismissWhatsNew(version),
+              ),
+            ],
+          ),
           if (!compact)
             for (final line in notes) ...[
               const SizedBox(height: 6),
