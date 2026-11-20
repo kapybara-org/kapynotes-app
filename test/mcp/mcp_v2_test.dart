@@ -970,6 +970,23 @@ void main() {
         }),
         'Folders go at most 10 levels deep.',
       );
+      final bare = McpTools(
+        McpLibrary(notes: f.notes, engine: () => f.engine, tags: f.tags),
+      );
+      for (final args in [
+        {'action': 'rename', 'folder_id': 'x', 'new_name': 'Y'},
+        {'action': 'move', 'folder_id': 'x'},
+        {'action': 'create', 'name': 'Y'},
+        {'action': 'delete', 'folder_id': 'x'},
+        {'action': 'restore', 'folder_id': 'x'},
+      ]) {
+        final result = bare.call('manage_folder', args, writes: true);
+        expect(
+          result.error,
+          'Folders aren’t available.',
+          reason: args['action'],
+        );
+      }
       expect(
         refused('manage_folder', {'action': 'move', 'folder_id': 'missing'}),
         'That folder was deleted.',

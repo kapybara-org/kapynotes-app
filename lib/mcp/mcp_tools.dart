@@ -1294,6 +1294,7 @@ class McpTools {
   McpToolResult _manageFolder(Map<String, Object?> args) {
     final action = _required(args, 'action');
     final store = library.folders;
+    if (store == null) throw const McpRefusal('Folders aren’t available.');
     switch (action) {
       case 'create':
         final name = _required(args, 'name');
@@ -1303,14 +1304,14 @@ class McpTools {
           output: {'folder': _folderOf(folder)},
           error: null,
           undo: (
-            possible: () => store!.tree.byId(folder.id) != null,
-            run: () => store!.delete(folder.id),
+            possible: () => store.tree.byId(folder.id) != null,
+            run: () => store.delete(folder.id),
           ),
           activity: 'Created folder “${folder.name}”',
         );
       case 'rename':
         final id = _required(args, 'folder_id');
-        final before = store!.tree.byId(id);
+        final before = store.tree.byId(id);
         if (before == null) {
           throw McpRefusal(McpLibrary.folderRefusal(FolderRefusal.gone));
         }
@@ -1326,7 +1327,7 @@ class McpTools {
         );
       case 'move':
         final id = _required(args, 'folder_id');
-        final before = store!.tree.byId(id);
+        final before = store.tree.byId(id);
         if (before == null) {
           throw McpRefusal(McpLibrary.folderRefusal(FolderRefusal.gone));
         }
@@ -1350,8 +1351,8 @@ class McpTools {
           output: {'folder': _folderOf(folder)},
           error: null,
           undo: (
-            possible: () => store!.tree.byId(id) == null,
-            run: () => store!.restore(id),
+            possible: () => store.tree.byId(id) == null,
+            run: () => store.restore(id),
           ),
           activity: 'Deleted folder “${folder.name}”; its notes stay',
         );
@@ -1362,8 +1363,8 @@ class McpTools {
           output: {'folder': _folderOf(folder)},
           error: null,
           undo: (
-            possible: () => store!.tree.byId(id) != null,
-            run: () => store!.delete(id),
+            possible: () => store.tree.byId(id) != null,
+            run: () => store.delete(id),
           ),
           activity: 'Restored folder “${folder.name}”',
         );
