@@ -8,12 +8,14 @@ import '../speech/speech_errors.dart';
 
 /// What leaves the device, said once, without naming who does the work.
 ///
-/// The audio goes to Kapy cloud, is not kept, and is never used to train AI.
-/// The privacy policy on kapynotes.com keeps the legal detail.
+/// The audio goes to Kapy cloud only to be turned into text, and Kapy does not
+/// keep it. The speech route cannot pin which hosts run it, so whether the AI
+/// service keeps it or trains on it is only asked, and the sheet promises
+/// neither. The privacy policy on kapynotes.com keeps the legal detail.
 const String _audioRoute =
     'To turn a recording into text, Kapy Notes sends the audio to Kapy cloud, '
-    'where an AI service turns it into text. The audio is not kept, and it is '
-    'never used to train AI.';
+    'where an AI service turns it into text. It is sent only for that, and '
+    'Kapy does not keep it.';
 
 const List<String> _cloudPoints = [
   'A cloud summary sends the transcript to an AI service too. It is not kept, '

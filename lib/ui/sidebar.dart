@@ -15,22 +15,17 @@ import '../data/folders.dart';
 import '../data/layout_prefs.dart' show NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
-import '../data/update_checker.dart';
-import '../data/writing_streak.dart';
 import '../sync/presence.dart';
 import '../sync/safety.dart';
 import '../sync/sharing.dart';
 import '../sync/spaces.dart';
 import '../sync/sync_api.dart' show SyncRefusedException;
-import 'app_logo.dart';
 import 'collaborator_colors.dart';
 import 'compact_icon_button.dart';
-import 'control_surface.dart';
 import 'context_menu.dart';
 import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
-import 'installed_version.dart';
 import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
@@ -38,7 +33,6 @@ import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
-import 'streak_badge.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
 import 'tonal_button.dart';
@@ -155,7 +149,6 @@ class Sidebar extends StatelessWidget {
     required this.onSearch,
     required this.onSelect,
     this.onClearQuery,
-    this.onCreate,
     this.onMoveSelect,
     this.onEnterSelected,
     this.onOpenToSide,
@@ -170,12 +163,9 @@ class Sidebar extends StatelessWidget {
     this.onTogglePin,
     this.onShare,
     this.sharing,
-    this.onSettingsPressed,
     this.searchShortcut,
     this.searchPlaceholder = 'Search',
-    this.settingsShortcut,
     this.archiveShortcut,
-    this.updates,
     this.archiveMode = false,
     this.hiddenMode = false,
     this.onDelete,
@@ -183,18 +173,21 @@ class Sidebar extends StatelessWidget {
     this.onDeleteAll,
     this.picks,
     this.onPicked,
-    this.streak,
     this.collaborators = const {},
     this.onOpenPerson,
     this.onStartSharing,
     this.tab = SidebarTab.mine,
     this.onTabChanged,
-    this.windowBar,
+    required this.windowBar,
     this.drawings = false,
     this.onNewDrawing,
     this.engine,
     this.now = DateTime.now,
     this.cards = false,
+    this.phone = false,
+    this.filtersOpen = true,
+    this.filtersActive = false,
+    this.onFiltersToggled,
     this.controls,
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
@@ -224,10 +217,6 @@ class Sidebar extends StatelessWidget {
   /// Drops [query]. Null leaves the field without its ✕.
   final VoidCallback? onClearQuery;
   final ValueChanged<String> onSelect;
-
-  /// Makes a note from the + beside the search field. Null leaves the + out,
-  /// as beside the spaces rail, where the window bar has New note.
-  final VoidCallback? onCreate;
 
   /// Selects a row reached by sidebar arrow keys without committing its MRU
   /// position. Null uses [onSelect], as compact layouts do.
@@ -273,13 +262,11 @@ class Sidebar extends StatelessWidget {
   /// Names the spaces shared notes are in. Null until the account is
   /// unlocked; the list then reads exactly as it did before sharing existed.
   final Sharing? sharing;
-  final VoidCallback? onSettingsPressed;
   final ShortcutBinding? searchShortcut;
 
   /// What the search field reads at rest: "Search", or "Search or Ask Kapy
   /// AI" where ⌘K can ask.
   final String searchPlaceholder;
-  final ShortcutBinding? settingsShortcut;
 
   /// The key that files the open note away, for the row's menu to name.
   ///
@@ -288,9 +275,6 @@ class Sidebar extends StatelessWidget {
   /// binding rather than written out, so a rebound key is not misnamed here.
   final ShortcutBinding? archiveShortcut;
 
-  /// Drives the Update badge beside the installed version. Null where the app
-  /// store owns updates; the version still comes from the installed package.
-  final UpdateChecker? updates;
   final bool archiveMode;
   final bool hiddenMode;
 
@@ -305,17 +289,12 @@ class Sidebar extends StatelessWidget {
   /// Empties the archive.
   final VoidCallback? onDeleteAll;
 
-  /// The notes picked to act on together. Null where none can be. While
-  /// any are picked, Back lets go of them rather than leaving the list.
+  /// The notes picked to act on together. Null where none can be.
   final NotePicks? picks;
 
   /// Does an action to the picked notes on screen it applies to, given in
   /// the list's order.
   final void Function(PickedAction action, List<String> ids)? onPicked;
-
-  /// The run of days something has been written, shown at the end of the
-  /// heading over the person's own notes. Null leaves it out.
-  final WritingStreak? streak;
 
   /// Whoever else has each shared note open right now, by note. A row with
   /// somebody in it says so where its timestamp would be.
@@ -344,7 +323,7 @@ class Sidebar extends StatelessWidget {
   /// the tabs are left out while [tab] still narrows the list, and
   /// invitations wait under Shared, where the rail's badge points. Without
   /// one, the list is the compact layout's drawer, under the wordmark.
-  final Widget? windowBar;
+  final Widget windowBar;
 
   /// Whether the list is the Drawings space: every item a drawing, shown by
   /// a thumbnail of it, with no media filter to narrow it by.
@@ -362,10 +341,28 @@ class Sidebar extends StatelessWidget {
   /// Whether the list beside the rail draws sticky cards rather than rows.
   final bool cards;
 
+  /// A phone's home: a large title over the list, pinned notes as cards in
+  /// a sideways row, the rest as rows that swipe, and a pull down for
+  /// Quick find. Only beside a [windowBar], which is the phone's title.
+  final bool phone;
+
   /// The notes filter and the list/cards switch, under the search beside the
   /// rail: see [NotesListControls]. Null leaves them out, as the compact list
   /// does.
   final Widget? controls;
+
+  /// Whether a phone's filter row is showing. The row is put away by default
+  /// so the list keeps the room, and the button beside the search brings it
+  /// back. Wide layouts always draw it.
+  final bool filtersOpen;
+
+  /// Whether a filter narrows the list while the row is put away, so the
+  /// button can say so rather than leave a hidden filter a surprise.
+  final bool filtersActive;
+
+  /// Puts a phone's filter row away and brings it back. Null on a wide
+  /// layout, where the row is always there and there is no button.
+  final VoidCallback? onFiltersToggled;
 
   /// Whether the list is showing every pinned note, after See all, rather
   /// than the four most recent over the rest.
@@ -393,8 +390,8 @@ class Sidebar extends StatelessWidget {
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
     // [CalcPalette.sidebarColor].
-    final list = ColoredBox(
-      color: palette.sidebarColor,
+    return ColoredBox(
+      color: phone ? palette.paperColor : palette.sidebarColor,
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
       child: SafeArea(
@@ -402,30 +399,44 @@ class Sidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            windowBar ?? const _Header(),
-            if (_showsTabs)
-              _SidebarTabs(
-                tab: tab,
-                invitations: sharing!.invites.length,
-                onChanged: onTabChanged!,
-              ),
+            windowBar,
             SidebarSearchField(
               onSearch: onSearch,
               query: query,
               onClear: onClearQuery,
-              onCreate: onCreate,
               shortcut: searchShortcut,
               placeholder: searchPlaceholder,
-              belowTabs: _showsTabs,
-              besideRail: _besideRail,
+              phone: phone,
+              trailing: phone && controls != null && onFiltersToggled != null
+                  ? _FiltersButton(
+                      active: filtersActive,
+                      onPressed: onFiltersToggled!,
+                    )
+                  : null,
             ),
             if (controls != null && !_foldersTab)
-              Padding(
-                padding: _besideRail
-                    ? const EdgeInsets.fromLTRB(16, 0, 16, 12)
-                    : const EdgeInsets.fromLTRB(18, 0, 18, 12),
-                child: controls,
-              ),
+              if (phone && onFiltersToggled != null)
+                // A phone keeps the filter row out of the way until the
+                // button asks for it, and the list slides up to take its
+                // room while it is put away.
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: filtersOpen
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: controls,
+                        )
+                      : const SizedBox(width: double.infinity),
+                )
+              else
+                Padding(
+                  padding: phone
+                      ? const EdgeInsets.only(bottom: 2)
+                      : const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: controls,
+                ),
             if (_picking || (archiveMode && notes.isNotEmpty))
               _pickBar(context),
             Expanded(
@@ -434,7 +445,7 @@ class Sidebar extends StatelessWidget {
                     !_specialMode &&
                         sharing != null &&
                         sharing!.invites.isNotEmpty &&
-                        (!_besideRail || _onSharedTab)
+                        _onSharedTab
                     ? _Invitations(
                         sharing: sharing!,
                         onJoined: onTabChanged == null
@@ -461,34 +472,15 @@ class Sidebar extends StatelessWidget {
                       ? _buildFolders(context)
                       : notes.isEmpty
                       ? _buildEmpty(context)
-                      : _sweeps(
-                          _besideRail
-                              ? _buildBesideRail(context)
-                              : _grouped
-                              ? _buildGrouped(context)
-                              : _buildUngrouped(context),
-                        ),
+                      : _sweeps(_buildBesideRail(context)),
                 ),
               ),
             ),
             if (folders?.onShown case final onShown?)
               NotesFoldersSwitch(folders: _foldersTab, onChanged: onShown),
-            if (onSettingsPressed != null)
-              _SidebarFooter(
-                onSettingsPressed: onSettingsPressed!,
-                settingsShortcut: settingsShortcut,
-                updates: updates,
-              ),
           ],
         ),
       ),
-    );
-    return PopScope(
-      canPop: !_picking,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) picks?.clear();
-      },
-      child: list,
     );
   }
 
@@ -510,11 +502,6 @@ extension on Sidebar {
   /// else's notes to show.
   bool get _tabbed => sharing != null && !_specialMode && onTabChanged != null;
 
-  bool get _besideRail => windowBar != null;
-
-  /// The rail beside the list switches between the two halves itself.
-  bool get _showsTabs => _tabbed && !_besideRail;
-
   bool get _onSharedTab => _tabbed && tab == SidebarTab.shared;
 
   bool get _foldersTab => folders?.shown ?? false;
@@ -527,27 +514,6 @@ extension on Sidebar {
       !_specialMode &&
       !note.isDrawing &&
       (sharing == null || sidebarTabOf(note, sharing!) == SidebarTab.mine);
-
-  bool get _hasPinned =>
-      !_specialMode && notes.any((note) => pinnedNoteIds.contains(note.id));
-
-  /// Sections appear once there is something meaningful to group, and over the
-  /// whole list, whose heading is where the count of notes and the streak
-  /// live. A search or the archive with no pins or shared notes in it stays
-  /// exactly as quiet as the list was before any of these existed.
-  bool get _grouped =>
-      _hasPinned ||
-      _summarised ||
-      (_tabbed
-          ? _onSharedTab && notes.isNotEmpty
-          : sharing != null && notes.any((note) => note.isShared));
-
-  /// Whether the heading over the person's own notes counts them and carries
-  /// the streak: over the whole list only. A search result is not the
-  /// library, the archive is where notes go once they are done with, and
-  /// other people's notes are not the person's writing.
-  bool get _summarised =>
-      !_specialMode && !_onSharedTab && query.trim().isEmpty;
 
   Widget _buildEmpty(BuildContext context) {
     final onWhenChanged = this.onWhenChanged;
@@ -595,29 +561,13 @@ extension on Sidebar {
     );
   }
 
-  Widget _buildUngrouped(BuildContext context) {
-    final extent = AppControlMetrics.scaleBar(
-      context,
-      AppControlMetrics.sidebarNoteRowExtent,
-    );
-    Widget rowBuilder(BuildContext context, int index) => SizedBox(
-      height: extent,
-      child: _row(
-        notes[index],
-        shared: sharing != null && notes[index].isShared,
-      ),
-    );
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-      itemCount: notes.length,
-      itemBuilder: rowBuilder,
-    );
-  }
-
   /// Whether the reader may change [note]: their own always, a shared one
   /// only where the space says so. The row's rule, and the keyboard's.
   bool _mayEdit(Note note) => sharing?.canEdit(note) ?? !note.isShared;
+
+  /// Whether the reader may take [note] out of their notes: what they may
+  /// change, and anything somebody else shares with them, view-only too.
+  bool _mayRemove(Note note) => sharing?.mayRemove(note) ?? !note.isShared;
 
   /// What a row's delete says it does. A note somebody else owns only leaves
   /// the reader's notes, as the question that follows says; their own goes
@@ -643,11 +593,7 @@ extension on Sidebar {
 
   /// The notes in the order their rows are painted, which is the order the
   /// arrows walk and a range of picks runs across.
-  List<Note> get _painted => _besideRail
-      ? _railOrder
-      : _grouped
-      ? _noteGroups.displayOrder
-      : notes;
+  List<Note> get _painted => _railOrder;
 
   List<String> get _order => [for (final note in _painted) note.id];
 
@@ -681,7 +627,7 @@ extension on Sidebar {
         (PickedAction.unhide, those(_mayEdit)),
       if (!_specialMode && onArchive != null)
         (PickedAction.archive, those(_mayEdit)),
-      if (onDelete != null) (PickedAction.delete, those(_mayEdit)),
+      if (onDelete != null) (PickedAction.delete, those(_mayRemove)),
     ];
   }
 
@@ -1018,7 +964,7 @@ extension on Sidebar {
     if (_picking) return _pickedAction(PickedAction.delete);
     if (onDelete == null) return null;
     final note = _highlighted;
-    if (note == null || !_mayEdit(note)) return null;
+    if (note == null || !_mayRemove(note)) return null;
     return () => onDelete!(note.id);
   }
 
@@ -1039,18 +985,11 @@ extension on Sidebar {
     (onMoveSelect ?? onSelect)(ordered[next].id);
   }
 
-  /// The space whose people a shared row shows at its end: wherever the row
-  /// is not already under that space's own heading, which shows them.
-  Space? _peopleOf(Note note, {required bool shared, required bool pinned}) {
-    if (!shared || !_tabbed || (_onSharedTab && !pinned)) return null;
-    return sharing?.spaceOf(note);
-  }
-
   Widget _row(
     Note note, {
     required bool shared,
     bool pinned = false,
-    NoteRowStyle style = NoteRowStyle.compact,
+    NoteRowStyle style = NoteRowStyle.row,
     int depth = 0,
   }) => MetaData(
     metaData: NotePickTarget(note.id),
@@ -1084,8 +1023,6 @@ extension on Sidebar {
     pinned: pinned,
     locked: lockedNoteIds.contains(note.id),
     collaborators: shared ? collaborators[note.id] ?? const [] : const [],
-    sharedWith: _peopleOf(note, shared: shared, pinned: pinned),
-    currentUserId: sharing?.userId ?? '',
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
     openElsewhere: openElsewhereIds.contains(note.id),
@@ -1108,7 +1045,7 @@ extension on Sidebar {
     onUnhide: !hiddenMode || onUnhide == null || !_mayEdit(note)
         ? null
         : () => onUnhide!(note.id),
-    onDelete: onDelete == null || !_mayEdit(note)
+    onDelete: onDelete == null || !_mayRemove(note)
         ? null
         : () => onDelete!(note.id),
     deleteLabel: _deleteLabel(note),
@@ -1209,26 +1146,29 @@ extension on Sidebar {
     final groups = _noteGroups;
     final pinned = _shownPinned(groups);
     final rows = <WidgetBuilder>[];
+    // A phone's Drawings is all thumbnails, two to a row.
+    final cards = this.cards || (phone && drawings);
     final style = switch ((cards, drawings)) {
       (true, true) => NoteRowStyle.drawingCard,
       (true, false) => NoteRowStyle.card,
       (false, true) => NoteRowStyle.drawingRow,
-      (false, false) => NoteRowStyle.row,
+      (false, false) => phone ? NoteRowStyle.touch : NoteRowStyle.row,
     };
+    final margin = phone ? 20.0 : 16.0;
     final noun = drawings ? 'drawing' : 'note';
     final onPinnedOnlyChanged = this.onPinnedOnlyChanged;
 
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
     void heading(Widget heading) {
-      if (rows.isNotEmpty) gap(24);
+      if (rows.isNotEmpty) gap(phone ? 22 : 24);
       rows.add(
         (_) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: margin),
           child: heading,
         ),
       );
-      gap(cards ? 8 : 4);
+      gap(phone ? 12 : cards ? 8 : 4);
     }
 
     void section(Iterable<Note> notes, {bool pinned = false}) {
@@ -1239,6 +1179,52 @@ extension on Sidebar {
         pinned: pinned,
         style: style,
       );
+      if (phone && pinned && !drawings) {
+        rows.add(
+          (context) => SizedBox(
+            height: AppControlMetrics.scaleBar(
+              context,
+              NoteCardFace.squareHeight,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) => ListView.separated(
+                key: const ValueKey('phone-pinned'),
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.symmetric(horizontal: margin),
+                itemCount: list.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (_, index) => SizedBox(
+                  width: (constraints.maxWidth - margin * 2 - 12) / 2,
+                  child: _row(
+                    list[index],
+                    shared: sharing != null && list[index].isShared,
+                    pinned: true,
+                    style: NoteRowStyle.square,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        return;
+      }
+      if (phone && !cards) {
+        for (final (index, each) in list.indexed) {
+          if (index > 0) {
+            rows.add(
+              (context) => Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: margin,
+                endIndent: margin,
+                color: context.palette.separator,
+              ),
+            );
+          }
+          rows.add((_) => note(each));
+        }
+        return;
+      }
       if (!cards) {
         for (final (index, each) in list.indexed) {
           if (index > 0) gap(2);
@@ -1256,7 +1242,7 @@ extension on Sidebar {
         final pair = list.skip(index).take(2).toList();
         rows.add(
           (context) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.symmetric(horizontal: margin),
             child: SizedBox(
               height: AppControlMetrics.scaleBar(
                 context,
@@ -1347,6 +1333,23 @@ extension on Sidebar {
         ),
       );
       section(groups.pinned, pinned: true);
+    } else if (phone) {
+      if (groups.pinned.isNotEmpty) {
+        heading(const _PhoneHeading('Pinned'));
+        section(groups.pinned, pinned: true);
+      }
+      for (final key in groups.groupOrder) {
+        heading(_groupHeading(groups, key));
+        section(groups.byGroup[key]!);
+      }
+      if (groups.mine.isNotEmpty) {
+        if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
+          heading(const _PhoneHeading('Recent'));
+        } else {
+          gap(8);
+        }
+        section(groups.mine);
+      }
     } else {
       if (pinned.isNotEmpty) {
         heading(
@@ -1395,7 +1398,9 @@ extension on Sidebar {
     return _fading(
       context,
       ListView.builder(
-        padding: const EdgeInsets.only(top: 4, bottom: 40),
+        physics: phone ? const AlwaysScrollableScrollPhysics() : null,
+        // A phone's list clears the floating bar and its +.
+        padding: EdgeInsets.only(top: 4, bottom: phone ? 120 : 40),
         itemCount: rows.length,
         itemBuilder: (context, index) => rows[index](context),
       ),
@@ -1427,9 +1432,10 @@ extension on Sidebar {
   /// [list] fading out at the foot of the list beside the rail.
   Widget _fading(BuildContext context, Widget list) {
     final palette = context.palette;
+    final ground = phone ? palette.paperColor : palette.sidebarColor;
     return Stack(
       children: [
-        list,
+        if (phone) _PullToFind(onPulled: onSearch, child: list) else list,
         Positioned(
           left: 0,
           right: 0,
@@ -1441,10 +1447,7 @@ extension on Sidebar {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    palette.sidebarColor.withValues(alpha: 0),
-                    palette.sidebarColor,
-                  ],
+                  colors: [ground.withValues(alpha: 0), ground],
                   stops: const [0, 0.85],
                 ),
               ),
@@ -1452,79 +1455,6 @@ extension on Sidebar {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildGrouped(BuildContext context) {
-    final groups = _noteGroups;
-    final pinned = groups.pinned;
-    final mine = groups.mine;
-    final hasSharedSections = groups.hasSharedSections;
-    final extent = AppControlMetrics.scaleBar(
-      context,
-      AppControlMetrics.sidebarNoteRowExtent,
-    );
-    // Pinned ones included: the number is how many notes are theirs, not how
-    // many happen to sit under the heading. Behind the tabs every note in
-    // this list is theirs, shared or not.
-    final ownCount = hasSharedSections && !_tabbed
-        ? notes.where((note) => !note.isShared).length
-        : notes.length;
-    final summary = _summarised && ownCount > 0;
-
-    // The order of the list as data, so that only the rows on screen are
-    // built. One pin used to turn the whole list into a widget per note,
-    // which for a long library is most of the sidebar's memory for nothing
-    // anybody can see.
-    final entries = <_GroupedEntry>[
-      if (pinned.isNotEmpty) ...[
-        const _GroupedLabel(
-          _SectionLabel(label: 'Pinned', icon: KapyIcons.pinOutlined),
-        ),
-        for (final note in pinned)
-          _GroupedNote(
-            note,
-            shared: sharing != null && note.isShared,
-            pinned: true,
-          ),
-      ],
-      for (final key in groups.groupOrder) ...[
-        _GroupedLabel(_groupHeading(groups, key)),
-        for (final note in groups.byGroup[key]!)
-          _GroupedNote(note, shared: true),
-      ],
-      // Kept when every note of theirs is pinned, as a heading with nothing
-      // under it, rather than the count and the streak leaving with the notes.
-      if (mine.isNotEmpty || summary) ...[
-        _GroupedLabel(
-          _SectionLabel(
-            label: drawings
-                ? 'Drawings'
-                : hasSharedSections && !_tabbed
-                ? 'My notes'
-                : 'Notes',
-            count: summary ? ownCount : null,
-            streak: summary && !drawings ? streak : null,
-          ),
-        ),
-        for (final note in mine)
-          _GroupedNote(note, shared: sharing != null && note.isShared),
-      ],
-    ];
-
-    Widget entryBuilder(BuildContext context, int index) =>
-        switch (entries[index]) {
-          _GroupedLabel(:final label) => label,
-          _GroupedNote(:final note, :final shared, :final pinned) => SizedBox(
-            height: extent,
-            child: _row(note, shared: shared, pinned: pinned),
-          ),
-        };
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-      itemCount: entries.length,
-      itemBuilder: entryBuilder,
     );
   }
 }
@@ -1801,25 +1731,6 @@ class _NoteListKeysState extends State<_NoteListKeys> {
   }
 }
 
-/// One line of the grouped sidebar: a heading, or a note under one.
-sealed class _GroupedEntry {
-  const _GroupedEntry();
-}
-
-class _GroupedLabel extends _GroupedEntry {
-  const _GroupedLabel(this.label);
-
-  final Widget label;
-}
-
-class _GroupedNote extends _GroupedEntry {
-  const _GroupedNote(this.note, {required this.shared, this.pinned = false});
-
-  final Note note;
-  final bool shared;
-  final bool pinned;
-}
-
 /// The note-only shape of the grouped list, shared by painting and keyboard
 /// navigation so the row above on screen is also the row Arrow Up selects.
 class SidebarNoteGroups {
@@ -1881,165 +1792,6 @@ class SidebarNoteGroups {
   ];
 }
 
-/// A heading over a group of notes. Small and quiet: the notes are the
-/// content, this only says whose they are.
-///
-/// The one over the person's own notes also says how many there are and, at
-/// its far end, how many days in a row they have written.
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({
-    required this.label,
-    this.icon,
-    this.count,
-    this.streak,
-  });
-
-  final String label;
-  final KapyIconData? icon;
-
-  /// How many notes the heading stands for, beside its name.
-  final int? count;
-
-  /// Shown only while there is a run to show: a zero would be a reproach
-  /// rather than a record.
-  final WritingStreak? streak;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final icon = this.icon;
-    final count = this.count;
-    final streak = this.streak;
-    return Padding(
-      // Room under the heading, so it reads as the head of the notes rather
-      // than as the top line of the first one.
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            KapyIcon(
-              icon,
-              size: AppControlMetrics.iconInline,
-              color: palette.textTertiary,
-            ),
-            const SizedBox(width: 5),
-          ],
-          // The count stays against the name and the streak holds the far
-          // edge; on a narrow sidebar the name gives way first.
-          Expanded(
-            child: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.caption,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 0.3,
-                      color: palette.textTertiary,
-                    ),
-                  ),
-                ),
-                if (count != null) ...[
-                  const SizedBox(width: 6),
-                  _NoteCount(count: count),
-                ],
-              ],
-            ),
-          ),
-          if (streak != null && streak.days > 0) ...[
-            const SizedBox(width: 8),
-            StreakBadge(key: const ValueKey('sidebar-streak'), streak: streak),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// How many notes a heading stands for.
-///
-/// A number on a quiet chip rather than "24 notes": it sits against a heading
-/// that already says what is being counted, the way a mail folder's does.
-class _NoteCount extends StatelessWidget {
-  const _NoteCount({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    // The tooltip is what a screen reader hears: "3 notes", where the bare
-    // figure would be read as just a number.
-    return Tooltip(
-      message: count == 1 ? '1 note' : '$count notes',
-      child: ExcludeSemantics(
-        child: Container(
-          key: const ValueKey('sidebar-note-count'),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: palette.hover,
-            borderRadius: BorderRadius.circular(AppRadii.pill),
-          ),
-          child: Text(
-            '$count',
-            style: TextStyle(
-              fontSize: AppTypeScale.caption,
-              fontWeight: FontWeight.w400,
-              height: 1.2,
-              color: palette.textTertiary,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SidebarFooter extends StatelessWidget {
-  const _SidebarFooter({
-    required this.onSettingsPressed,
-    this.settingsShortcut,
-    this.updates,
-  });
-
-  final VoidCallback onSettingsPressed;
-  final ShortcutBinding? settingsShortcut;
-  final UpdateChecker? updates;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      height: AppControlMetrics.scaleBar(
-        context,
-        AppControlMetrics.footerHeight,
-      ),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: palette.separator,
-            width: AppHairline.of(context),
-          ),
-        ),
-      ),
-      child: InstalledVersion(
-        updates: updates,
-        builder: (context, version, updateWaiting) => _SettingsEntry(
-          key: const ValueKey('sidebar-settings'),
-          onPressed: onSettingsPressed,
-          version: version,
-          hasUpdate: updateWaiting,
-          shortcut: settingsShortcut,
-        ),
-      ),
-    );
-  }
-}
-
 /// The bar over the list while notes are picked, and over the archive at
 /// rest: what it holds, then what can be done with it.
 ///
@@ -2091,131 +1843,6 @@ class _PickActions extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The way out of the notes list and into settings.
-///
-/// A labelled row rather than a bare gear. The sidebar is never narrower than
-/// 150pt, so there has always been room for the word, and a tooltip is a poor
-/// substitute for one: it needs a pointer to hover, which is exactly what the
-/// phone build does not have. Naming it also lets the row match the notes
-/// above it instead of reading as a stray control under them.
-class _SettingsEntry extends StatelessWidget {
-  const _SettingsEntry({
-    super.key,
-    required this.onPressed,
-    this.version = '',
-    this.hasUpdate = false,
-    this.shortcut,
-  });
-
-  final VoidCallback onPressed;
-  final String version;
-  final bool hasUpdate;
-  final ShortcutBinding? shortcut;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final tooltip = shortcut == null
-        ? 'Settings'
-        : 'Settings · ${shortcut!.displayLabel}';
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
-        button: true,
-        // The dot is the one part of this a screen reader cannot see.
-        label: hasUpdate ? 'Settings, update available' : 'Settings',
-        child: ExcludeSemantics(
-          child: InkWell(
-            onTap: onPressed,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  KapyIcon(
-                    KapyIcons.settingsOutlined,
-                    size: AppControlMetrics.footerIconControl,
-                    color: palette.textSecondary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Settings',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.control,
-                        color: palette.textSecondary,
-                      ),
-                    ),
-                  ),
-                  if (version.isNotEmpty)
-                    Text(
-                      key: const ValueKey('sidebar-app-version'),
-                      'v$version',
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.small,
-                        fontWeight: FontWeight.w400,
-                        color: palette.textTertiary,
-                      ),
-                    ),
-                  if (hasUpdate) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      key: const ValueKey('sidebar-update-badge'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: palette.selectedBackground,
-                        borderRadius: BorderRadius.circular(AppRadii.pill),
-                        border: Border.all(
-                          color: palette.chipCurrency.withValues(alpha: 0.35),
-                          width: AppHairline.of(context),
-                        ),
-                      ),
-                      child: Text(
-                        'Update',
-                        style: TextStyle(
-                          fontSize: AppPlatform.isWindows
-                              ? AppTypeScale.micro
-                              : 10,
-                          fontWeight: FontWeight.w400,
-                          color: palette.chipCurrency,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header();
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: AppControlMetrics.scaleBar(
-      context,
-      AppControlMetrics.toolbarHeight,
-    ),
-    child: Center(
-      child: AppWordmark(
-        markSize: AppControlMetrics.wordmarkMark,
-        fontSize: AppTypeScale.wordmark,
-        spacing: 6.5,
-      ),
-    ),
-  );
 }
 
 /// The bar across the top of the notes list in the wide window: the name of
@@ -2412,160 +2039,6 @@ class SidebarWindowBar extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// My Notes and Shared, as one segmented control at the top of the
-/// list.
-///
-/// Two segments rather than two more sections, because a shared library
-/// grows two ways at once and a single list made the person's own notes the
-/// ones at the bottom. A dot on the second segment says an invitation is
-/// waiting, for the moment the notice under the search field is scrolled
-/// past or missed.
-class _SidebarTabs extends StatelessWidget {
-  const _SidebarTabs({
-    required this.tab,
-    required this.invitations,
-    required this.onChanged,
-  });
-
-  final SidebarTab tab;
-  final int invitations;
-  final ValueChanged<SidebarTab> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final touch = !AppPlatform.hasPointer;
-    return Padding(
-      // The search field's gutter, so the two line up edge to edge.
-      padding: touch
-          ? const EdgeInsets.fromLTRB(10, 9, 10, 0)
-          : const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Container(
-        key: const ValueKey('sidebar-tabs'),
-        height: touch ? 34 : 28,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: palette.hover,
-          borderRadius: BorderRadius.circular(AppRadii.control),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: _SidebarTabButton(
-                key: const ValueKey('sidebar-tab-mine'),
-                label: 'My Notes',
-                selected: tab == SidebarTab.mine,
-                onTap: () => onChanged(SidebarTab.mine),
-              ),
-            ),
-            Expanded(
-              child: _SidebarTabButton(
-                key: const ValueKey('sidebar-tab-shared'),
-                label: 'Shared',
-                selected: tab == SidebarTab.shared,
-                waiting: invitations,
-                onTap: () => onChanged(SidebarTab.shared),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SidebarTabButton extends StatelessWidget {
-  const _SidebarTabButton({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.waiting = 0,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  /// Invitations waiting behind this tab, drawn as a dot.
-  final int waiting;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: switch (waiting) {
-        0 => label,
-        1 => '$label, 1 invitation',
-        _ => '$label, $waiting invitations',
-      },
-      child: ExcludeSemantics(
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: selected ? null : onTap,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              decoration: BoxDecoration(
-                color: selected
-                    ? palette.surfaceBackground
-                    : palette.surfaceBackground.withValues(alpha: 0),
-                borderRadius: BorderRadius.circular(AppRadii.compact),
-                border: Border.all(
-                  color: selected
-                      ? palette.controlBorder
-                      : palette.controlBorder.withValues(alpha: 0),
-                  width: AppHairline.of(context),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.small,
-                        fontWeight: selected
-                            ? FontWeight.w500
-                            : FontWeight.w400,
-                        color: selected
-                            ? palette.textPrimary
-                            : palette.textSecondary,
-                      ),
-                    ),
-                  ),
-                  if (waiting > 0) ...[
-                    const SizedBox(width: 5),
-                    Container(
-                      key: const ValueKey('sidebar-tab-invitation-dot'),
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: accent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -2908,27 +2381,23 @@ class SidebarSearchField extends StatelessWidget {
     required this.onSearch,
     this.query = '',
     this.onClear,
-    this.onCreate,
     this.shortcut,
     this.placeholder = 'Search',
-    this.belowTabs = false,
-    this.besideRail = false,
+    this.phone = false,
+    this.trailing,
   });
+
+  /// A phone's field: a quiet well, the entry to Quick find.
+  final bool phone;
+
+  /// A phone's filter button, beside the well. It stands outside the well's
+  /// own tap area, so pressing it never starts a search.
+  final Widget? trailing;
 
   final VoidCallback onSearch;
   final String query;
   final VoidCallback? onClear;
 
-  /// Sits under the tabs rather than the title bar, and needs less room
-  /// above it to read as part of the same header.
-  final bool belowTabs;
-
-  /// Drawn as the list beside the spaces rail draws it: a deeper field with
-  /// its shortcut on a keycap.
-  final bool besideRail;
-
-  /// The + beside the field. Null leaves it out.
-  final VoidCallback? onCreate;
   final ShortcutBinding? shortcut;
   final String placeholder;
 
@@ -2962,8 +2431,8 @@ class SidebarSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final searching = query.isNotEmpty;
-    if (besideRail) {
-      final end = _end(palette, 20);
+    final end = _end(palette, 20);
+    if (!phone) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Semantics(
@@ -3024,14 +2493,11 @@ class SidebarSearchField extends StatelessWidget {
       );
     }
 
-    final end = _end(palette, AppControlMetrics.fieldAdornmentSlot);
+    final trailing = this.trailing;
     return Padding(
-      // On a desktop the field keeps the sidebar's 12pt gutter, the edge the
-      // footer and archive actions hold, and the same room under the title
-      // bar. The list's own top padding makes up the gap beneath it.
-      padding: AppPlatform.hasPointer
-          ? EdgeInsets.fromLTRB(12, belowTabs ? 8 : 12, 12, 8)
-          : EdgeInsets.fromLTRB(10, belowTabs ? 8 : 9, 10, 9),
+      padding: phone
+          ? EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6)
+          : const EdgeInsets.fromLTRB(18, 0, 18, 12),
       child: Row(
         children: [
           Expanded(
@@ -3042,74 +2508,129 @@ class SidebarSearchField extends StatelessWidget {
                 key: const ValueKey('sidebar-search-field'),
                 behavior: HitTestBehavior.opaque,
                 onTap: onSearch,
-                child: InputDecorator(
-                  isEmpty: !searching,
-                  decoration: kapyFieldDecoration(
-                    context,
-                    hintText: placeholder,
-                    hintStyle: TextStyle(
-                      fontSize: AppTypeScale.control,
-                      color: palette.textTertiary,
-                    ),
-                    prefixIcon: Center(
-                      widthFactor: 1,
-                      heightFactor: 1,
-                      child: KapyIcon(
-                        KapyIcons.searchRounded,
-                        size: AppControlMetrics.iconSearch,
-                        color: palette.textTertiary,
-                      ),
-                    ),
-                    prefixIconConstraints: BoxConstraints(
-                      minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
-                      minHeight: AppControlMetrics.fieldAdornmentSlot,
-                    ),
-                    suffixIcon: end == null || searching
-                        ? end
-                        : Padding(
-                            padding: const EdgeInsetsDirectional.only(end: 8),
-                            child: Center(widthFactor: 1, child: end),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.text,
+                  child: Container(
+                    key: const ValueKey('sidebar-search-box'),
+                    // A phone's well is a 44 pt target, as every touch target is.
+                    height: phone ? 44 : 40,
+                    padding: const EdgeInsets.only(left: 14, right: 10),
+                    decoration: phone
+                        ? BoxDecoration(
+                            color: palette.wellBackground,
+                            borderRadius: BorderRadius.circular(12),
+                          )
+                        : BoxDecoration(
+                            color: palette.surfaceBackground,
+                            border: Border.all(
+                              color: palette.controlBorder,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.surface,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: palette.shadowAt(0x4D),
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
                           ),
-                    suffixIconConstraints: BoxConstraints(
-                      minWidth: AppControlMetrics.fieldAdornmentSlot,
-                      minHeight: AppControlMetrics.fieldAdornmentSlot,
-                    ),
-                    contentPadding: EdgeInsets.symmetric(
-                      vertical: AppControlMetrics.fieldVerticalPadding,
-                    ),
-                  ),
-                  child: Text(
-                    query,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.control,
-                      color: palette.textPrimary,
+                    child: Row(
+                      children: [
+                        KapyIcon(
+                          KapyIcons.searchRounded,
+                          size: 16,
+                          strokeWidth: 1.8,
+                          color: palette.textSecondary,
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            searching ? query : placeholder,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: phone ? 16 : 14,
+                              color: searching
+                                  ? palette.textPrimary
+                                  : palette.textTertiary,
+                            ),
+                          ),
+                        ),
+                        ?end,
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
           ),
-          if (onCreate case final onCreate?) ...[
-            const SizedBox(width: 6),
-            TonalButton(
-              key: const ValueKey('sidebar-new-note'),
-              icon: KapyIcons.addRounded,
-              tooltip: 'New note',
-              onPressed: onCreate,
-            ),
-          ],
+          if (trailing != null) ...[const SizedBox(width: 8), trailing],
         ],
       ),
     );
   }
 }
 
-/// How a [NoteRow] draws its note: the compact list's row, the desktop
-/// list's row or sticky card beside the spaces rail, or the Folders tab's
-/// note in an open folder ([filed]) or in none ([loose]).
-enum NoteRowStyle { compact, row, card, drawingRow, drawingCard, filed, loose }
+/// The button beside a phone's search well. The filter row shows while it is
+/// open, and it carries a dot while a filter it holds out of sight narrows
+/// the list.
+class _FiltersButton extends StatelessWidget {
+  const _FiltersButton({required this.active, required this.onPressed});
+
+  final bool active;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Semantics(
+            selected: active,
+            child: CompactIconButton(
+              key: const ValueKey('phone-filters'),
+              tooltip: 'Filters',
+              extent: 44,
+              onPressed: onPressed,
+              icon: KapyIcon(
+                KapyIcons.filterRounded,
+                size: 20,
+                strokeWidth: active ? 2 : 1.8,
+                color: active ? palette.textPrimary : palette.textSecondary,
+              ),
+            ),
+          ),
+          if (active)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                key: const ValueKey('phone-filters-dot'),
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: palette.accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How a [NoteRow] draws its note: the desktop list's row or sticky card
+/// beside the spaces rail, a phone's row and pinned card, or the Folders
+/// tab's note in an open folder ([filed]) or in none ([loose]).
+enum NoteRowStyle { row, card, drawingRow, drawingCard, touch, square, filed, loose }
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -3136,8 +2657,6 @@ class NoteRow extends StatefulWidget {
     this.pinned = false,
     this.shared = false,
     this.collaborators = const [],
-    this.sharedWith,
-    this.currentUserId = '',
     this.locked = false,
     this.selecting = false,
     this.checked = false,
@@ -3146,7 +2665,7 @@ class NoteRow extends StatefulWidget {
     this.onPickTo,
     this.pickedActions,
     this.onPickedAction,
-    this.style = NoteRowStyle.compact,
+    this.style = NoteRowStyle.row,
     this.depth = 0,
     this.engine,
     this.now = DateTime.now,
@@ -3236,14 +2755,6 @@ class NoteRow extends StatefulWidget {
   /// Whoever else has the note open right now. While anybody does, the row
   /// says who in place of when it was last changed.
   final List<Collaborator> collaborators;
-
-  /// The space whose people the row shows after its timestamp, as a small
-  /// stack of faces. Null where a heading above already shows them, or the
-  /// note is nobody's but the reader's.
-  final Space? sharedWith;
-
-  /// The reader, left out of [sharedWith]'s faces.
-  final String currentUserId;
 
   /// Whether the note limit holds the note read-only.
   final bool locked;
@@ -3492,10 +3003,7 @@ class _NoteRowState extends State<NoteRow> {
       // A card is narrower than the menu, so beside the rail the menu keeps
       // to the whole list rather than to the note it belongs to.
       final row =
-          (widget.style == NoteRowStyle.compact
-                      ? this.context
-                      : Scrollable.maybeOf(this.context)?.context ??
-                            this.context)
+          (Scrollable.maybeOf(this.context)?.context ?? this.context)
                   .findRenderObject()
               as RenderBox?;
       final rowOrigin = row?.localToGlobal(Offset.zero);
@@ -3517,8 +3025,8 @@ class _NoteRowState extends State<NoteRow> {
     await _choose(choice, at: position);
   }
 
-  /// Does what a choice from the menu names, whether it came from the menu, at
-  /// [at], or from VoiceOver, which has no pointer and gets the row's corner.
+  /// Runs one of the row's menu choices. The menu offers them, and so does the
+  /// row itself as accessibility actions, so both go through here.
   Future<void> _choose(String? choice, {Offset? at}) async {
     if (!mounted) return;
     Offset anchor() {
@@ -3560,6 +3068,7 @@ class _NoteRowState extends State<NoteRow> {
     final people = widget.collaborators;
     final card =
         widget.style == NoteRowStyle.card ||
+        widget.style == NoteRowStyle.square ||
         widget.style == NoteRowStyle.drawingCard;
     String stamp({bool clock = true}) => SidebarTimestamp.glance(
       note.updatedAt,
@@ -3583,7 +3092,8 @@ class _NoteRowState extends State<NoteRow> {
     final selected = widget.selected && !widget.selecting;
     final ringed = widget.openElsewhere && !widget.selected;
     final face = switch (widget.style) {
-      NoteRowStyle.card => NoteCardFace(
+      NoteRowStyle.card || NoteRowStyle.square => NoteCardFace(
+        square: widget.style == NoteRowStyle.square,
         note: note,
         glance: glance,
         date: date,
@@ -3631,7 +3141,8 @@ class _NoteRowState extends State<NoteRow> {
         hovering: _hovering,
         ringed: ringed,
       ),
-      NoteRowStyle.row || NoteRowStyle.compact => NoteListRowFace(
+      NoteRowStyle.row || NoteRowStyle.touch => NoteListRowFace(
+        touch: widget.style == NoteRowStyle.touch,
         note: note,
         glance: glance,
         date: date,
@@ -3688,8 +3199,6 @@ class _NoteRowState extends State<NoteRow> {
         ? null
         : widget.note.matchSnippet(widget.query.trim());
 
-    final foreground = palette.textPrimary;
-    final secondary = palette.textSecondary;
     final hasMenu = widget.selecting
         ? widget.pickedActions != null
         : widget.onTogglePin != null ||
@@ -3701,144 +3210,77 @@ class _NoteRowState extends State<NoteRow> {
               widget.onDelete != null ||
               widget.onShare != null;
 
-    final compact = widget.style == NoteRowStyle.compact;
-    final face = compact
-        ? AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(
-              color: (widget.selecting ? widget.checked : widget.selected)
-                  ? palette.selectedBackground
-                  : (_hovering ? palette.hover : Colors.transparent),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
-            ),
-            // Open in another pane: ringed rather than filled, so it reads
-            // as on screen without competing with the focused note's row.
-            // Painted over the row rather than around it, so nothing moves.
-            foregroundDecoration: widget.openElsewhere && !widget.selected
-                ? BoxDecoration(
-                    border: Border.all(color: palette.selectedBorder),
-                    borderRadius: BorderRadius.circular(AppRadii.compact),
-                  )
-                : null,
-            child: Row(
-              children: [
-                if (widget.selecting) ...[
-                  KapyIcon(
-                    widget.checked
-                        ? KapyIcons.checkCircleRounded
-                        : KapyIcons.circleOutlined,
-                    size: AppControlMetrics.iconControl,
-                    color: widget.checked
-                        ? Theme.of(context).colorScheme.primary
-                        : palette.textTertiary,
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        widget.note.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.control,
-                          fontWeight: FontWeight.w400,
-                          color: foreground,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      if (snippet != null)
-                        Text(
-                          snippet,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppTypeScale.caption,
-                            color: secondary,
-                          ),
-                        )
-                      else
-                        _UpdatedAtMetadata(
-                          updatedAt: widget.note.updatedAt,
-                          displayTime: widget.displayTime,
-                          shared: widget.shared,
-                          locked: widget.locked,
-                          collaborators: widget.collaborators,
-                          sharedWith: widget.sharedWith,
-                          currentUserId: widget.currentUserId,
-                        ),
-                    ],
-                  ),
-                ),
-                // One discoverable affordance owns every secondary action.
-                // It stays visible on every platform; right-click and long
-                // press remain shortcuts to the same labeled choices.
-                if (!widget.selecting && hasMenu) ...[
-                  const SizedBox(width: 4),
-                  Builder(
-                    builder: (buttonContext) => _RowAction(
-                      key: ValueKey('note-actions-${widget.note.id}'),
-                      icon: KapyIcons.moreVerticalRounded,
-                      tooltip: 'Note actions',
-                      onPressed: () => _showActionsFromButton(buttonContext),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          )
-        : _boardFace(snippet: snippet, hasMenu: hasMenu && !widget.selecting);
+    final face = _boardFace(
+      snippet: snippet,
+      hasMenu: hasMenu && !widget.selecting,
+    );
 
-    final row = Padding(
-      padding: EdgeInsets.symmetric(vertical: compact ? 1 : 0),
-      child: MouseRegion(
-        // The row is the main click target in the sidebar; matching the
-        // settings rows, which are InkWells and already say so.
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovering = true),
-        onExit: (_) => setState(() => _hovering = false),
-        child: Semantics(
-          container: true,
-          button: true,
-          selected: widget.selecting ? widget.checked : widget.selected,
-          // VoiceOver cannot right-click, and the row's ⋯ button is easy to
-          // miss, so its menu's choices are actions on the row itself. Same
-          // list, so the two can never drift.
-          customSemanticsActions: {
-            for (final action in _menu().groups.expand((group) => group))
-              CustomSemanticsAction(label: action.label): () =>
-                  unawaited(_choose(action.value)),
-          },
-          child: GestureDetector(
-            onTap: _open,
-            onSecondaryTapDown: !hasMenu
-                ? null
-                : (details) =>
-                      _showContextMenu(context, details.globalPosition),
-            onLongPressStart: !hasMenu
-                ? null
-                : (details) =>
-                      _showContextMenu(context, details.globalPosition),
-            behavior: HitTestBehavior.opaque,
-            child: Listener(
-              // A middle click opens the note in a tab behind, as a
-              // browser's middle click opens a link.
-              onPointerDown: (event) {
-                if (event.buttons == kMiddleMouseButton && _canOpenInNewTab) {
-                  widget.onOpenInNewTab!();
-                }
-              },
-              child: face,
-            ),
+    final row = MouseRegion(
+      // The row is the main click target in the sidebar; matching the
+      // settings rows, which are InkWells and already say so.
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Semantics(
+        container: true,
+        button: true,
+        selected: widget.selecting ? widget.checked : widget.selected,
+        // Neither VoiceOver nor TalkBack can right-click or long-press a row
+        // to reach its menu, so the menu's choices are actions on the row
+        // itself. Same list, so the two can never drift.
+        customSemanticsActions: {
+          for (final action in _menu().groups.expand((group) => group))
+            CustomSemanticsAction(label: action.label): () =>
+                unawaited(_choose(action.value)),
+        },
+        child: GestureDetector(
+          onTap: _open,
+          onSecondaryTapDown: !hasMenu
+              ? null
+              : (details) => _showContextMenu(context, details.globalPosition),
+          onLongPressStart: !hasMenu
+              ? null
+              : (details) => _showContextMenu(context, details.globalPosition),
+          behavior: HitTestBehavior.opaque,
+          child: Listener(
+            // A middle click opens the note in a tab behind, as a
+            // browser's middle click opens a link.
+            onPointerDown: (event) {
+              if (event.buttons == kMiddleMouseButton && _canOpenInNewTab) {
+                widget.onOpenInNewTab!();
+              }
+            },
+            child: face,
           ),
         ),
       ),
     );
+    if (widget.style == NoteRowStyle.touch && !widget.selecting) {
+      final onTogglePin = widget.onTogglePin;
+      final onArchive = widget.onArchive;
+      return _SwipeActions(
+        actions: [
+          if (onTogglePin != null)
+            (
+              key: 'pin',
+              label: widget.pinned ? 'Unpin' : 'Pin',
+              icon: KapyIcons.pinOutlined,
+              background: palette.clay,
+              onPressed: onTogglePin,
+            ),
+          if (onArchive != null)
+            (
+              key: 'archive',
+              label: 'Archive',
+              icon: KapyIcons.archiveOutlined,
+              background: palette.textSecondary,
+              onPressed: onArchive,
+            ),
+        ],
+        id: widget.note.id,
+        child: row,
+      );
+    }
     // Dragged onto the panes, to open beside a note there or in its place.
     // Only where there is a pointer to drag with and panes to take it.
     if (widget.onOpenToSide == null ||
@@ -3874,158 +3316,6 @@ class _RowAction extends StatelessWidget {
     icon: KapyIcon(icon, size: AppControlMetrics.iconAdornment),
     foregroundColor: context.palette.textTertiary,
   );
-}
-
-class _UpdatedAtMetadata extends StatelessWidget {
-  const _UpdatedAtMetadata({
-    required this.updatedAt,
-    required this.displayTime,
-    this.shared = false,
-    this.collaborators = const [],
-    this.sharedWith,
-    this.currentUserId = '',
-    this.locked = false,
-  });
-
-  final DateTime updatedAt;
-  final DateTime Function(DateTime) displayTime;
-  final bool shared;
-  final List<Collaborator> collaborators;
-  final Space? sharedWith;
-  final String currentUserId;
-  final bool locked;
-
-  /// Small enough to sit on the caption line without making the row taller.
-  static double get faceExtent => AppControlMetrics.iconInline + 2;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    if (collaborators.isNotEmpty) return _presence(context);
-    final timestamp = SidebarTimestamp.format(
-      updatedAt,
-      displayTime: displayTime,
-    );
-    final space = sharedWith;
-    final people = space?.peoplePhrase(currentUserId);
-    // The faces say it is shared, and with whom, so the row keeps the clock
-    // every other row has instead of the people glyph.
-    final faces = space != null && people != null;
-    final what = [
-      if (locked) 'Read-only',
-      if (faces) 'Shared with $people' else if (shared) 'Shared',
-    ];
-    return Semantics(
-      label: what.isEmpty
-          ? 'Updated $timestamp'
-          : '${what.join(', ')}, updated $timestamp',
-      child: ExcludeSemantics(
-        child: Row(
-          children: [
-            KapyIcon(
-              locked
-                  ? KapyIcons.lockRounded
-                  : shared && !faces
-                  ? KapyIcons.peopleOutlined
-                  : KapyIcons.scheduleRounded,
-              size: AppControlMetrics.iconInline,
-              color: palette.textTertiary,
-            ),
-            const SizedBox(width: 4),
-            // The time keeps its place against the icon and the faces follow
-            // it; on a narrow sidebar the time gives way first.
-            Flexible(
-              child: Text(
-                timestamp,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppTypeScale.caption,
-                  color: palette.textSecondary,
-                ),
-              ),
-            ),
-            if (faces) ...[
-              const SizedBox(width: 6),
-              SpacePeopleAvatars(
-                key: const ValueKey('note-row-people'),
-                space: space,
-                currentUserId: currentUserId,
-                extent: faceExtent,
-                maxAvatars: 3,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// "Priya is here", or "Priya is typing...", in the colours of their
-  /// carets: which shared note has company, readable from the list.
-  Widget _presence(BuildContext context) {
-    final palette = context.palette;
-    final typists = [
-      for (final person in collaborators)
-        if (person.typing) person.name,
-    ];
-    final text =
-        typingStatusText(typists) ??
-        presenceStatusText([for (final person in collaborators) person.name])!;
-    // One dot per person, up to two, overlapping inside the slot the clock
-    // icon takes on every other row, so the text lines up with theirs.
-    final slot = AppControlMetrics.iconInline;
-    final dot = slot * 0.55;
-    final shown = collaborators.take(2).toList();
-    final step = shown.length < 2 ? 0.0 : slot - dot;
-    final start = (slot - dot - step) / 2;
-    return Semantics(
-      label: 'Shared, $text',
-      child: ExcludeSemantics(
-        child: Row(
-          key: const ValueKey('note-row-presence'),
-          children: [
-            SizedBox(
-              width: slot,
-              height: dot,
-              child: Stack(
-                children: [
-                  for (var i = shown.length - 1; i >= 0; i--)
-                    Positioned(
-                      left: start + i * step,
-                      child: Container(
-                        width: dot,
-                        height: dot,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: collaboratorColor(
-                            shown[i].userId,
-                            on: palette.brightness,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppTypeScale.caption,
-                  fontWeight: FontWeight.w400,
-                  color: palette.textSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Who else is in a note, in as few words as the row has room for.
@@ -4308,6 +3598,268 @@ class _IconButton extends StatelessWidget {
       foregroundColor: onPressed == null
           ? context.palette.textTertiary
           : context.palette.textSecondary,
+    );
+  }
+}
+
+/// A heading over a phone's list: Pinned, Recent.
+class _PhoneHeading extends StatelessWidget {
+  const _PhoneHeading(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Text(
+      label,
+      style: TextStyle(
+        fontFamily: AppFonts.ui,
+        fontSize: 15,
+        height: 20 / 15,
+        fontWeight: FontWeight.w500,
+        color: context.palette.textSecondary,
+      ),
+    ),
+  );
+}
+
+/// A phone list's title: the space's name large, its count beside it, and
+/// the clay underline the note page draws.
+class PhoneListTitle extends StatelessWidget {
+  const PhoneListTitle({super.key, required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+      child: Semantics(
+        header: true,
+        label: '$title, $count',
+        excludeSemantics: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    key: const ValueKey('phone-list-title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppFonts.title,
+                      fontFamilyFallback: AppFonts.uiFallback,
+                      fontSize: 28,
+                      height: 36 / 28,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontFamily: AppFonts.ui,
+                    fontSize: 15,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(width: 44, height: 2, color: palette.clay),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens Quick find when the list is pulled down past its top, once per
+/// pull: iOS's bounce and Android's stretch alike.
+class _PullToFind extends StatefulWidget {
+  const _PullToFind({required this.onPulled, required this.child});
+
+  final VoidCallback onPulled;
+  final Widget child;
+
+  static const double distance = 72;
+
+  @override
+  State<_PullToFind> createState() => _PullToFindState();
+}
+
+class _PullToFindState extends State<_PullToFind> {
+  double _pull = 0;
+  bool _fired = false;
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    switch (notification) {
+      case ScrollStartNotification():
+        _pull = 0;
+        _fired = false;
+      case OverscrollNotification(:final overscroll, dragDetails: _?)
+          when overscroll < 0:
+        _pull -= overscroll;
+      case ScrollUpdateNotification(:final metrics, dragDetails: _?):
+        if (metrics.pixels < metrics.minScrollExtent) {
+          _pull = metrics.minScrollExtent - metrics.pixels;
+        }
+      default:
+    }
+    if (!_fired && _pull >= _PullToFind.distance) {
+      _fired = true;
+      widget.onPulled();
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: widget.child,
+      );
+}
+
+typedef _SwipeAction = ({
+  String key,
+  String label,
+  KapyIconData icon,
+  Color background,
+  VoidCallback onPressed,
+});
+
+/// A phone row that slides left to show its actions, Pin and Archive,
+/// which VoiceOver and TalkBack offer as actions on the row too.
+class _SwipeActions extends StatefulWidget {
+  const _SwipeActions({
+    required this.id,
+    required this.actions,
+    required this.child,
+  });
+
+  final String id;
+  final List<_SwipeAction> actions;
+  final Widget child;
+
+  static const double actionWidth = 76;
+
+  @override
+  State<_SwipeActions> createState() => _SwipeActionsState();
+}
+
+class _SwipeActionsState extends State<_SwipeActions>
+    with SingleTickerProviderStateMixin {
+  late final _open = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  );
+
+  double get _extent => widget.actions.length * _SwipeActions.actionWidth;
+
+  @override
+  void dispose() {
+    _open.dispose();
+    super.dispose();
+  }
+
+  void _settle(double velocity) {
+    final open = velocity < -300 || (velocity <= 300 && _open.value > 0.5);
+    unawaited(_open.animateTo(open ? 1 : 0, curve: Curves.easeOutCubic));
+  }
+
+  void _run(_SwipeAction action) {
+    _open.value = 0;
+    action.onPressed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.actions.isEmpty) return widget.child;
+    final palette = context.palette;
+    final foreground = palette.paperColor;
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) =>
+          _open.value -= details.primaryDelta! / _extent,
+      onHorizontalDragEnd: (details) => _settle(details.primaryVelocity ?? 0),
+      child: ClipRect(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (final action in widget.actions)
+                    SizedBox(
+                      width: _SwipeActions.actionWidth,
+                      child: Material(
+                        color: action.background,
+                        child: InkWell(
+                          key: ValueKey('swipe-${action.key}-${widget.id}'),
+                          onTap: () => _run(action),
+                          child: ExcludeSemantics(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              spacing: 4,
+                              children: [
+                                KapyIcon(
+                                  action.icon,
+                                  size: 20,
+                                  strokeWidth: 1.8,
+                                  color: foreground,
+                                ),
+                                Text(
+                                  action.label,
+                                  style: TextStyle(
+                                    fontFamily: AppFonts.ui,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: foreground,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            AnimatedBuilder(
+              animation: _open,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(-_open.value * _extent, 0),
+                child: child,
+              ),
+              child: ListenableBuilder(
+                listenable: _open,
+                builder: (context, child) => _open.value == 0
+                    ? child!
+                    : GestureDetector(
+                        onTap: () => _settle(1000),
+                        behavior: HitTestBehavior.opaque,
+                        child: AbsorbPointer(child: child),
+                      ),
+                child: ColoredBox(
+                  color: palette.paperColor,
+                  child: widget.child,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

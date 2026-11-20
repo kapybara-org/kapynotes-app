@@ -99,11 +99,11 @@ void _onPhone() {
 void main() {
   group('what the chip says', () {
     _onPhone();
-    testWidgets('an untranscribed recording is just a voice note', (
+    testWidgets('an untranscribed recording is just its length', (
       tester,
     ) async {
       await tester.pumpWidget(harness(recording()));
-      expect(find.text('Voice note'), findsOneWidget);
+      expect(find.text('Voice note'), findsNothing);
       expect(find.text('2:14'), findsOneWidget);
     });
 
@@ -122,8 +122,7 @@ void main() {
         ),
       );
       expect(find.text('Standup thoughts'), findsOneWidget);
-      expect(find.text('Ship it.'), findsOneWidget);
-      expect(find.byKey(const ValueKey('voice-summary-more')), findsOneWidget);
+      expect(find.text('Ship it.'), findsNothing);
     });
 
     testWidgets('every waiting state says something true', (tester) async {

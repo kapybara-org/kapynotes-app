@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
@@ -212,18 +213,38 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
+    final facts = [
+      for (final (index, item) in items.indexed) ...[
+        if (index > 0) ...[
+          const SizedBox(width: _gap),
+          dot,
+          const SizedBox(width: _gap),
+        ],
+        item,
+      ],
+    ];
+    if (AppPlatform.isMobile) {
+      // Grows with the text size and the tags' 44 pt targets rather than
+      // clipping them to a fixed row.
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: EditorMetrics.metaRow),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 16, child: Row(children: facts)),
+            const SizedBox(height: 8),
+            // The tags' own targets are 44 pt tall on a phone, so the row
+            // gives them the room rather than clipping them to the pill.
+            SizedBox(height: AppPlatform.hasPointer ? 22 : 44, child: tags),
+          ],
+        ),
+      );
+    }
     return SizedBox(
       height: EditorMetrics.metaRow,
       child: Row(
         children: [
-          for (final (index, item) in items.indexed) ...[
-            if (index > 0) ...[
-              const SizedBox(width: _gap),
-              dot,
-              const SizedBox(width: _gap),
-            ],
-            item,
-          ],
+          ...facts,
           if (tags case final tags?) ...[
             const SizedBox(width: _gap),
             dot,
