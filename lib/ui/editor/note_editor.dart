@@ -3952,6 +3952,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         folded: true,
         row: span.row,
         inset: span.inset,
+        hang: span.hang,
       );
     }
     return (
@@ -3960,6 +3961,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       folded: false,
       row: EditorMetrics.page ? 22 : 44,
       inset: span.inset,
+      hang: 0,
     );
   }
 
