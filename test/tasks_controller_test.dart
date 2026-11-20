@@ -137,7 +137,7 @@ void main() {
   });
 
   test(
-    'one task is Do now at a time, and Pick again clears every dot',
+    'one task is Do now at a time, and clearing the picks clears every dot',
     () async {
       notes.create(body: 'List\n☐ One\n☐ Two\n☐ Three');
       await tasks.reconcileNow();
@@ -175,25 +175,29 @@ void main() {
     expect([for (final i in now.open) i.doNow], [true, false, false]);
     expect([for (final i in now.open) i.dotted], [true, false, true]);
 
-    tasks.clearPick(now.open[0]);
+    tasks.takeOutOfUpNext(now.open[2]);
+    expect(tasks.index.byId(now.open[2].id)!.doNow.v, isFalse);
+    await tasks.setDone(tasks.read().open[0], done: true);
     now = tasks.read();
-    expect([for (final i in now.open) i.doNow], [false, false, false]);
-    expect([for (final i in now.open) i.dotted], [false, false, true]);
+    expect([for (final i in now.open) i.doNow], [false, false]);
+    expect([for (final i in now.open) i.dotted], [false, false]);
   });
 
-  test('clearing one pick leaves every other pick as it is', () async {
+  test('taking one task out of Up next leaves Do now and every other pick '
+      'as they are', () async {
     notes.create(body: 'List\n☐ One\n☐ Two\n☐ Three');
     await tasks.reconcileNow();
     var board = tasks.read();
     tasks.dot(board.open[0]);
+    tasks.dot(board.open[2]);
     later();
     tasks.doNow(board.open[1]);
     later();
-    tasks.clearPick(tasks.read().open[1]);
+    tasks.takeOutOfUpNext(tasks.read().open[0]);
 
     board = tasks.read();
-    expect([for (final i in board.open) i.doNow], [false, false, false]);
-    expect([for (final i in board.open) i.dotted], [true, false, false]);
+    expect([for (final i in board.open) i.doNow], [false, true, false]);
+    expect([for (final i in board.open) i.dotted], [false, true, true]);
   });
 
   test('Remove takes the line out, and undo puts it back in its place in '

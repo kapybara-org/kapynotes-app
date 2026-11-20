@@ -11,6 +11,7 @@ import '../../data/task_index.dart';
 import '../../data/task_library.dart';
 import '../../data/task_lines.dart';
 import '../editor/editor_formatting.dart';
+import 'task_choice.dart';
 
 /// What Tasks does to tasks: everything that writes, kept apart from how it
 /// looks. A task's box and words live in its note, so ticking, adding and
@@ -262,8 +263,8 @@ class TasksController extends ChangeNotifier {
     };
   }
 
-  /// Not finished: back in at the end of the list, without its dot.
-  void sendToEnd(TaskItem item) {
+  /// Back in at the end of the list, without its dot. Returns its new place.
+  int sendToEnd(TaskItem item) {
     final at = _stamp();
     _change(
       item,
@@ -274,9 +275,10 @@ class TasksController extends ChangeNotifier {
         doNow: Stamped(false, at),
       ),
     );
+    return at;
   }
 
-  /// Picked while scanning: a dot, and the question moves on to it.
+  /// Chosen: a dot, so it waits in Up next or is your choice so far.
   void dot(TaskItem item) {
     final at = _stamp();
     _change(
@@ -304,16 +306,11 @@ class TasksController extends ChangeNotifier {
     );
   }
 
-  /// One task's pick taken back: neither dotted nor Do now. The others stay
-  /// picked, but a Do now another device left on one of them is cleared too,
-  /// or it would show again the moment this one went.
-  void clearPick(TaskItem item) {
+  /// Take out of Up next: the dot goes, and the task stays where it is on
+  /// the list. A Do now another device left on it goes too, or it would come
+  /// back the moment the newer Do now was done.
+  void takeOutOfUpNext(TaskItem item) {
     final at = _stamp();
-    for (final other in read().open) {
-      if (other.entry.doNow.v && other.id != item.id) {
-        _change(other, (entry) => entry.copyWith(doNow: Stamped(false, at)));
-      }
-    }
     _change(
       item,
       (entry) => entry.copyWith(
@@ -324,7 +321,7 @@ class TasksController extends ChangeNotifier {
     );
   }
 
-  /// Pick again: every dot and Do now cleared, for a fresh pass.
+  /// Every dot and Do now cleared, for a fresh round.
   void clearPicks(Iterable<TaskItem> open) {
     final at = _stamp();
     for (final item in open) {
@@ -340,4 +337,121 @@ class TasksController extends ChangeNotifier {
   /// Still wanted: it stops asking for another [TaskBoard.staleAfter].
   void keep(TaskItem item) =>
       _change(item, (entry) => entry.copyWith(touchedAt: _stamp()));
+
+  // Where the pair has got to, held in memory like main's question position:
+  // nothing here is stored or synced. See [TaskChoice].
+  int? _seenUpTo;
+  int? _since;
+  String? _justDone;
+  DateTime? _keptGoing;
+
+  /// The task just finished, while the pair asks about tasks that joined
+  /// since you chose.
+  TaskItem? get justDone =>
+      _since == null || _justDone == null ? null : read().byId(_justDone!);
+
+  /// Today under [noteId] as Tasks shows it.
+  TaskChoice choiceIn(String? noteId) {
+    final board = read();
+    final at = now();
+    final today = DateTime(at.year, at.month, at.day);
+    return TaskChoice.read(
+      board.openIn(noteId),
+      seenUpTo: _seenUpTo,
+      since: _since,
+      evening:
+          at.hour >= 18 &&
+          _keptGoing != today &&
+          board.doneSince(today, noteId: noteId) > 0,
+    );
+  }
+
+  /// Forgets where the pair had got to, as when the filter changes.
+  void forgetPair() {
+    _seenUpTo = null;
+    _since = null;
+    _justDone = null;
+  }
+
+  /// ← or a click on the left card: your choice so far stays.
+  void keepChoice(PairStage pair) {
+    if (!pair.chosen) dot(pair.left);
+    _seenUpTo = pair.right.entry.position;
+    if (pair.pairsLeft == 0) return startWith(pair.left);
+    notifyListeners();
+  }
+
+  /// → or a click on the right card: it becomes your choice so far, and the
+  /// old choice waits at the top of Up next.
+  void takeNext(PairStage pair) {
+    if (!pair.chosen) dot(pair.left);
+    dot(pair.right);
+    _seenUpTo = pair.right.entry.position;
+    if (pair.pairsLeft == 0) return startWith(pair.right);
+    notifyListeners();
+  }
+
+  /// Start with your choice so far: it becomes Do now, earlier picks stay in
+  /// Up next, and the tasks not yet shown stay on the list.
+  void startWith(TaskItem item) {
+    forgetPair();
+    doNow(item);
+  }
+
+  /// Done on Do now. The pair comes back only for tasks that joined the list
+  /// since you chose; with none, the first task in Up next is Do now.
+  Future<void> finish(TaskItem item, {String? noteId}) async {
+    final since = item.entry.doNow.v ? item.entry.doNow.at : _stamp();
+    await setDone(item, done: true);
+    _seenUpTo = null;
+    _since = since;
+    _justDone = item.id;
+    _settle(noteId);
+  }
+
+  /// Not finished: Do now goes to the end of the list, and the first task in
+  /// Up next takes its place without asking.
+  void notFinished(TaskItem item, {String? noteId}) {
+    _seenUpTo = null;
+    _since = sendToEnd(item);
+    _justDone = null;
+    _settle(noteId);
+  }
+
+  /// Choose again: every choice cleared, from the first pair.
+  void chooseAgain({String? noteId}) {
+    forgetPair();
+    clearPicks(read().openIn(noteId));
+    notifyListeners();
+  }
+
+  /// Keep going, in the evening: the first pair comes back for today.
+  void keepGoing() {
+    final at = now();
+    _keptGoing = DateTime(at.year, at.month, at.day);
+    forgetPair();
+    notifyListeners();
+  }
+
+  /// Do now, from a row's menu. Whatever was Do now waits in Up next.
+  void makeDoNow(TaskItem item) => startWith(item);
+
+  /// Move to the end, from a row's menu.
+  void moveToEnd(TaskItem item) => sendToEnd(item);
+
+  /// With nothing chosen any more, a new round starts at the first pair;
+  /// with only your last pick left to do, it is Do now.
+  void _settle(String? noteId) {
+    final open = read().openIn(noteId);
+    if (!open.any((item) => item.dotted || item.doNow)) {
+      forgetPair();
+      notifyListeners();
+      return;
+    }
+    if (choiceIn(noteId).stage case DoNowStage(:final item) when !item.doNow) {
+      startWith(item);
+      return;
+    }
+    notifyListeners();
+  }
 }
