@@ -165,6 +165,25 @@ void main() {
       expect(sent, isEmpty);
       expect(ai.current!.messages.last.text, 'device answer');
     });
+
+    test(
+      'a device that cannot answer does not take Pro off the cloud',
+      () async {
+        final ai = await build(billing: await billingOn(pro: true));
+        ai.defaultModel = FakeDeviceModel.gemma;
+        device.set(
+          const DeviceModelState(
+            status: DeviceModelStatus.needsSystemFeature,
+            note: PlatformDeviceModel.appleOffNoRoom,
+          ),
+        );
+        expect(ai.defaultModel, KapyModel.cloud);
+        await ai.ask('Lisbon?');
+        expect(ai.pending, isA<KapyCloudConsent>());
+        await ai.proceed();
+        expect(ai.current!.messages.last.text, 'cloud answer');
+      },
+    );
   });
 
   group('pending states', () {

@@ -210,11 +210,11 @@ class KapyAiController extends KapyAi {
     final stored = _store.defaultModel;
     if (stored != null && _usable(stored)) return stored;
     // Someone who picked the device picked it for what it does not send, so a
-    // device model that can run still answers for them even on Pro. Only when
-    // no device model can run does this fall through to the cloud.
+    // device model that can answer still answers for them even on Pro. Only
+    // when no device model can run does this fall through to the cloud.
     if (stored?.kind == KapyModelKind.device) {
       final device = _deviceModel;
-      if (device != null) return device;
+      if (device != null && _usable(device)) return device;
     }
     return isPro ? KapyModel.cloud : _fallback;
   }
@@ -230,9 +230,12 @@ class KapyAiController extends KapyAi {
   /// rather than the chat quietly moving to another model. A signed-in tool
   /// that no longer lists the model, because its catalogue changed or the
   /// model now brings a tool of its own, does not count.
+  /// Whether [model] can answer for this person right now.
   bool _usable(KapyModel model) => switch (model.kind) {
     KapyModelKind.cloud => isPro,
-    KapyModelKind.device => model == _deviceModel,
+    // A device model counts only when it can actually answer: the device may
+    // be reporting that nothing here can run, in [DeviceModelState.note].
+    KapyModelKind.device => model == _deviceModel && _device.state.note == null,
     KapyModelKind.codex => _toolModelUsable(KapyAccountKind.codex, model),
     KapyModelKind.claudeCode => _toolModelUsable(
       KapyAccountKind.claudeCode,
