@@ -2030,10 +2030,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A note's name on a task's mark, with its space's name after it when
   /// that name exists. Shared by the Tasks list, the phone home, and ⌘K.
-  String _taskNoteLabel(Note note) => taskNoteLabel(
-    note,
-    widget.account?.sharing?.spaceById(note.spaceId),
-  );
+  String _taskNoteLabel(Note note) =>
+      taskNoteLabel(note, widget.account?.sharing?.spaceById(note.spaceId));
 
   /// Opens a task's note where it lives, leaving Tasks.
   void _openTaskNote(String id) {

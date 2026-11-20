@@ -26,6 +26,7 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/folders.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
@@ -137,6 +138,7 @@ Future<void> pumpApp(
   Account? account,
   TagStore? tags,
   FolderStore? folders,
+  NoteDayStore? days,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
   VoiceRecordingController? recording,
 }) async {
@@ -170,6 +172,7 @@ Future<void> pumpApp(
       account: account,
       tags: tags,
       folders: folders,
+      days: days,
       titleModel: titleModel,
       recording: recording,
     ),
@@ -8277,6 +8280,105 @@ void main() {
       expect(prefs.nightTheme.from, 23 * 60);
       expect(find.text('23:00'), findsOneWidget);
       expect((LayoutPrefs(store)..load()).nightTheme, prefs.nightTheme);
+    });
+  });
+
+  group('a day of its own', () {
+    Finder chip(DateTime day) =>
+        find.byKey(ValueKey('day-strip-${day.year}-${day.month}-${day.day}'));
+
+    Future<(NoteDayStore, DateTime, Set<String>)> open(
+      WidgetTester tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      notes.create(body: 'Plan\nCall Ana');
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      final now = notes.now();
+      final later = DateTime(now.year, now.month, now.day + 2);
+      final before = {for (final note in notes.allNotes) note.id};
+      await tester.tap(chip(later));
+      await tester.pumpAndSettle();
+      return (days, later, before);
+    }
+
+    testWidgets('a tapped day left untouched writes no note and no day', (
+      tester,
+    ) async {
+      final (days, later, before) = await open(tester);
+      expect(days.noteIds, isEmpty, reason: 'nothing typed, so no day yet');
+      expect(days.owed, isEmpty);
+
+      // Let the day go, and open another note.
+      await tester.tap(chip(later));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(of: find.byType(Sidebar), matching: find.text('Plan')),
+      );
+      await tester.pumpAndSettle();
+
+      expect({for (final note in notes.allNotes) note.id}, before);
+      expect(days.noteIds, isEmpty);
+      expect(days.owed, isEmpty);
+    });
+
+    testWidgets('the first words make the note, on the day tapped', (
+      tester,
+    ) async {
+      final (days, later, before) = await open(tester);
+      final field = tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+      field.value = const TextEditingValue(
+        text: 'Renewal notes\n',
+        selection: TextSelection.collapsed(offset: 13),
+      );
+      await tester.pumpAndSettle();
+
+      final made = [
+        for (final note in notes.allNotes)
+          if (!before.contains(note.id)) note,
+      ];
+      expect(made.single.title, 'Renewal notes');
+      expect(days.dayOf(made.single.id), later);
+      expect(days.owed.single.payload!['day'], {
+        'v': dayKey(later),
+        'at': isA<int>(),
+      });
+    });
+
+    testWidgets('a note for a later day waits, folded, under Upcoming', (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+
+      final list = find.byType(Sidebar);
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(upcoming, findsOneWidget);
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsNothing,
+        reason: 'folded until it is opened',
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
+
+      await tester.tap(upcoming);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+      );
     });
   });
 }

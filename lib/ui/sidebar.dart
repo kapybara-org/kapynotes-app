@@ -1222,10 +1222,18 @@ extension on Sidebar {
         section(groups.byGroup[key]!);
       }
       final onGroupingChanged = this.onGroupingChanged;
+      final today = dayShown(now(), displayTime);
+      // A phone's list never shows a note waiting for a later day: those wait
+      // under Upcoming in Folders, and join Today on their day.
       final grouped = groupNotes(
-        groups.mine,
+        _besideRail
+            ? groups.mine
+            : [
+                for (final note in groups.mine)
+                  if (!(ownDay?.call(note)?.isAfter(today) ?? false)) note,
+              ],
         grouping,
-        today: dayShown(now(), displayTime),
+        today: today,
         displayTime: displayTime,
         firstTag: (note) => TagMarks.of(context, note.id).firstOrNull?.name,
         ownDay: ownDay,

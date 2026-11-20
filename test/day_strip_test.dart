@@ -99,6 +99,8 @@ void main() {
     expect(DayStrip.daysIn(259), 1);
     expect(DayStrip.daysIn(120), 1);
     expect(DayStrip.daysIn(119), 0);
+    // A finger's arrows take 48 each.
+    expect(DayStrip.daysIn(540, arrow: 48), 5);
   });
 
   testWidgets('seven days with today in the middle, a dot for each note up to '
@@ -176,8 +178,9 @@ void main() {
     expect(set.last, NotesWhen.today);
     await tap(tester, day(19));
     expect(set.last, NotesWhen.anyTime);
-    // None of these days holds a note, so each also asks for a page.
-    expect(asked, hasLength(4));
+    // None of these days holds a note, so picking each asks for a page, and
+    // letting it go asks for none.
+    expect(asked, [DateTime(2026, 11, 17), thursday]);
     semantics.dispose();
   });
 

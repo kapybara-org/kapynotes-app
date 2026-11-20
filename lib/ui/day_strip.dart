@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
@@ -95,25 +96,28 @@ class DayStrip extends StatefulWidget {
   final bool compact;
 
   /// The chip a day sits in, and the room the whole week needs at [days] of
-  /// them: the chips, 2 between them, and a 24 arrow with 2 clear at each end.
-  /// Seven days need 540, five 400, three 260, and today alone 120.
+  /// them: the chips, 2 between them, and an arrow with 2 clear at each end.
+  /// With the Mac's 24 arrows, seven days need 540, five 400, three 260, and
+  /// today alone 120; a touch screen's arrows keep their 48 to press.
   static const double _dayWidth = 68;
   static const double _dayGap = 2;
-  static const double _arrowWidth = 24;
   static const double _arrowGap = 2;
 
-  /// How many days [room] holds, on the widths Sanjay fixed: 7 days from 980
-  /// of header, then 5 from 840, 3 from 700, and today alone below that.
-  static int daysIn(double room) => switch (room) {
-    _ when room >= _weekWidth(7) => 7,
-    _ when room >= _weekWidth(5) => 5,
-    _ when room >= _weekWidth(3) => 3,
-    _ when room >= _weekWidth(1) => 1,
-    _ => 0,
-  };
+  /// How wide an arrow is: 24 under a pointer, and the 48 a finger needs.
+  static double get _arrowWidth =>
+      AppPlatform.hasPointer ? 24 : kMinInteractiveDimension;
 
-  static double _weekWidth(int days) =>
-      days * _dayWidth + (days - 1) * _dayGap + 2 * (_arrowWidth + _arrowGap);
+  /// How many days [room] holds with arrows [arrow] wide, on the widths
+  /// Sanjay fixed: 7 days from 980 of header, then 5 from 840, 3 from 700,
+  /// and today alone below that.
+  static int daysIn(double room, {double arrow = 24}) {
+    double week(int days) =>
+        days * _dayWidth + (days - 1) * _dayGap + 2 * (arrow + _arrowGap);
+    for (final days in const [7, 5, 3, 1]) {
+      if (room >= week(days)) return days;
+    }
+    return 0;
+  }
 
   /// Whether the strip keyed [key] shows its days, rather than its one button
   /// or nothing.
@@ -202,7 +206,11 @@ class _DayStripState extends State<DayStrip> {
     }
     final today = widget.today;
     final when = day == today ? NotesWhen.today : WhenDay(day, today: today);
-    widget.onWhenChanged(when == widget.when ? NotesWhen.anyTime : when);
+    if (when == widget.when) {
+      widget.onWhenChanged(NotesWhen.anyTime);
+      return;
+    }
+    widget.onWhenChanged(when);
     if (notes == 0) widget.onWriteOn?.call(day);
   }
 
@@ -373,8 +381,11 @@ class _DayStripState extends State<DayStrip> {
       // The month sits at the strip's own left, so the week has what it
       // leaves: 8, the label, 4, a 12 chevron and 8, then 2 clear.
       final room =
-          constraints.maxWidth - (_labelWidth(context, _month) + 32 + DayStrip._arrowGap);
-      days = widget.compact ? 0 : DayStrip.daysIn(room);
+          constraints.maxWidth -
+          (_labelWidth(context, _month) + 32 + DayStrip._arrowGap);
+      days = widget.compact
+          ? 0
+          : DayStrip.daysIn(room, arrow: DayStrip._arrowWidth);
       if (days == 0) {
         final when = widget.when;
         final label = when is WhenDay ? when.label : 'Today';

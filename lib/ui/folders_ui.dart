@@ -278,7 +278,9 @@ class _UpcomingRow extends StatelessWidget {
         child: Row(
           children: [
             KapyIcon(
-              open ? KapyIcons.chevronDownRounded : KapyIcons.chevronRightRounded,
+              open
+                  ? KapyIcons.chevronDownRounded
+                  : KapyIcons.chevronRightRounded,
               size: 12,
               strokeWidth: 1.8,
               color: palette.textTertiary,
@@ -296,12 +298,7 @@ class _UpcomingRow extends StatelessWidget {
                 'Upcoming',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: _figtree(
-                  14,
-                  18,
-                  FontWeight.w500,
-                  palette.textPrimary,
-                ),
+                style: _figtree(14, 18, FontWeight.w500, palette.textPrimary),
               ),
             ),
             Text(
