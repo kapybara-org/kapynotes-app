@@ -1,15 +1,18 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/folders.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
-import 'notes_list.dart' show NotesGroupHeading;
+import 'notes_grouping.dart' show NoteGroup;
+import 'notes_list.dart' show NoteCardFace, NotesGroupHeading;
 import 'tag_ui.dart' show PopoverAtPoint, TagPopover, notesCount;
 
 TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
@@ -24,8 +27,17 @@ TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
 /// Where a tree row at [depth] starts: 8 in, and 16 more a level.
 double _indent(int depth) => 8 + (depth - 1) * 16.0;
 
+/// Whether the click under way asks for a tab behind the one in front:
+/// ⌘-click on a Mac and Ctrl-click elsewhere, as a browser opens a link.
+bool _clickOpensTabBehind() {
+  final keyboard = HardwareKeyboard.instance;
+  return AppPlatform.isMacOS
+      ? keyboard.isMetaPressed
+      : keyboard.isControlPressed;
+}
+
 /// What a refused folder action says.
-String _refusalText(FolderRefusal refusal) => switch (refusal) {
+String folderRefusalText(FolderRefusal refusal) => switch (refusal) {
   FolderRefusal.emptyName => 'Give the folder a name',
   FolderRefusal.longName => 'Use up to $folderNameMax characters',
   FolderRefusal.nameTaken => 'A folder here already has that name',
@@ -212,6 +224,8 @@ class FoldersTab extends StatefulWidget {
     required this.open,
     required this.onOpen,
     required this.noteRow,
+    this.inFront,
+    this.onTab,
   });
 
   final FolderStore store;
@@ -226,6 +240,13 @@ class FoldersTab extends StatefulWidget {
   /// A note's row: in an open folder, indented to [depth], or under Not in
   /// a folder with a null [depth].
   final Widget Function(Note note, int? depth) noteRow;
+
+  /// The folder the tab in front shows, which the tree marks.
+  final String? inFront;
+
+  /// Shows a folder in the tab in front, or with [behind] in a new tab behind
+  /// it. Null without tabs, where a click opens a folder in the tree.
+  final void Function(String folderId, {required bool behind})? onTab;
 
   @override
   State<FoldersTab> createState() => _FoldersTabState();
@@ -327,10 +348,7 @@ class _FoldersTabState extends State<FoldersTab> {
     final notes = tree.notesIn(widget.notes, folder.id).length;
     final folders = tree.childrenOf(folder.id).length;
     final into = _placeName(tree, folder.parentId);
-    final what = [
-      if (notes > 0) notesCount(notes),
-      if (folders > 0) folders == 1 ? '1 folder' : '$folders folders',
-    ];
+    final what = _contents(notes, folders);
     final content = switch ((notes, folders)) {
       (0, 0) => 'It’s empty.',
       (1, 0) => 'Its note moves to $into.',
@@ -399,7 +417,17 @@ class _FoldersTabState extends State<FoldersTab> {
                 : _FolderRow(
                     key: ValueKey('folder-${folder.id}'),
                     line: line,
+                    selected: folder.id == widget.inFront,
                     onToggle: () => widget.onOpen(folder.id, !line.open),
+                    onTab: switch (widget.onTab) {
+                      final onTab? => ({required behind}) {
+                        if (!behind && !line.open && !line.empty) {
+                          widget.onOpen(folder.id, true);
+                        }
+                        onTab(folder.id, behind: behind);
+                      },
+                      null => null,
+                    },
                     onMenu: (position) =>
                         unawaited(_showMenu(position, folder)),
                   ),
@@ -440,17 +468,25 @@ class _FoldersTabState extends State<FoldersTab> {
 
 /// A folder in the tree: the chevron that opens it, its icon and name, and
 /// how many notes are inside, which gives way to its actions under the
-/// pointer. Right-click opens the same actions.
+/// pointer. Right-click opens the same actions. With tabs, a click shows the
+/// folder in the tab in front, and ⌘-click (Ctrl-click off a Mac) or a
+/// middle click in a tab behind it; without them, a click opens it here.
 class _FolderRow extends StatefulWidget {
   const _FolderRow({
     super.key,
     required this.line,
+    required this.selected,
     required this.onToggle,
+    required this.onTab,
     required this.onMenu,
   });
 
   final FolderLine line;
+
+  /// Whether the tab in front shows it.
+  final bool selected;
   final VoidCallback onToggle;
+  final void Function({required bool behind})? onTab;
   final ValueChanged<Offset> onMenu;
 
   @override
@@ -465,16 +501,39 @@ class _FolderRowState extends State<_FolderRow> {
     final palette = context.palette;
     final line = widget.line;
     final folder = line.folder;
+    final onTab = widget.onTab;
+    final selected = widget.selected;
+    final chevron = SizedBox(
+      width: 12,
+      child: line.empty
+          ? null
+          : KapyIcon(
+              line.open
+                  ? KapyIcons.chevronDownRounded
+                  : KapyIcons.chevronRightRounded,
+              size: 12,
+              strokeWidth: 2,
+              color: palette.textTertiary,
+            ),
+    );
     return MouseRegion(
-      cursor: line.empty ? MouseCursor.defer : SystemMouseCursors.click,
+      cursor: line.empty && onTab == null
+          ? MouseCursor.defer
+          : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: Semantics(
-        button: !line.empty,
+        button: onTab != null || !line.empty,
+        selected: selected,
         expanded: line.empty ? null : line.open,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: line.empty ? null : widget.onToggle,
+          onTap: onTab != null
+              ? () => onTab(behind: _clickOpensTabBehind())
+              : line.empty
+              ? null
+              : widget.onToggle,
+          onTertiaryTapUp: onTab == null ? null : (_) => onTab(behind: true),
           onSecondaryTapUp: (details) => widget.onMenu(details.globalPosition),
           child: Container(
             height: AppControlMetrics.scaleBar(context, 32),
@@ -483,25 +542,38 @@ class _FolderRowState extends State<_FolderRow> {
               right: _hovering ? 4 : 8,
             ),
             decoration: BoxDecoration(
-              color: _hovering ? palette.hover : null,
+              color: selected
+                  ? palette.selectedBackground
+                  : _hovering
+                  ? palette.hover
+                  : null,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
-                SizedBox(
-                  width: 12,
-                  child: line.empty
-                      ? null
-                      : KapyIcon(
-                          line.open
-                              ? KapyIcons.chevronDownRounded
-                              : KapyIcons.chevronRightRounded,
-                          size: 12,
-                          strokeWidth: 2,
-                          color: palette.textTertiary,
+                if (onTab == null || line.empty) ...[
+                  chevron,
+                  const SizedBox(width: 8),
+                ] else
+                  Semantics(
+                    button: true,
+                    label: line.open
+                        ? 'Hide what is in ${folder.name}'
+                        : 'Show what is in ${folder.name}',
+                    child: GestureDetector(
+                      key: ValueKey('folder-chevron-${folder.id}'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: widget.onToggle,
+                      child: SizedBox(
+                        width: 20,
+                        height: double.infinity,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: chevron,
                         ),
-                ),
-                const SizedBox(width: 8),
+                      ),
+                    ),
+                  ),
                 KapyIcon(
                   KapyIcons.folderOutlined,
                   size: 16,
@@ -517,8 +589,8 @@ class _FolderRowState extends State<_FolderRow> {
                     style: _figtree(
                       13,
                       16,
-                      FontWeight.w400,
-                      palette.textSecondary,
+                      selected ? FontWeight.w500 : FontWeight.w400,
+                      selected ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),
                 ),
@@ -748,7 +820,7 @@ class _FolderNameFieldState extends State<_FolderNameField> {
                 Padding(
                   padding: EdgeInsets.fromLTRB(start, 4, 8, 2),
                   child: Text(
-                    _refusalText(refusal),
+                    folderRefusalText(refusal),
                     key: const ValueKey('folder-name-refused'),
                     style: _figtree(12, 16, FontWeight.w400, error),
                   ),
@@ -909,7 +981,7 @@ Future<void> moveNoteToFolder(
   final refusal = store.file([noteId], picked.folderId);
   if (!context.mounted) return;
   if (refusal != null) {
-    Toast.show(context, _refusalText(refusal), isError: true);
+    Toast.show(context, folderRefusalText(refusal), isError: true);
     return;
   }
   Toast.show(
@@ -941,7 +1013,7 @@ Future<void> _moveFolder(
   final refusal = store.move(folder.id, parentId: picked.folderId);
   if (!context.mounted) return;
   if (refusal != null) {
-    Toast.show(context, _refusalText(refusal), isError: true);
+    Toast.show(context, folderRefusalText(refusal), isError: true);
     return;
   }
   Toast.show(
@@ -1308,7 +1380,7 @@ class _FolderPickerState extends State<_FolderPicker> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                 child: Text(
-                  _refusalText(refusal),
+                  folderRefusalText(refusal),
                   key: const ValueKey('folder-picker-problem'),
                   style: _figtree(
                     12,
@@ -1323,4 +1395,305 @@ class _FolderPickerState extends State<_FolderPicker> {
       );
     },
   );
+}
+
+/// What a folder holds, as "6 notes" and "1 folder", leaving out a kind it
+/// has none of.
+List<String> _contents(int notes, int folders) => [
+  if (notes > 0) notesCount(notes),
+  if (folders > 0) folders == 1 ? '1 folder' : '$folders folders',
+];
+
+/// What a folder's page holds and where the folder sits: "6 notes and 1
+/// folder, in Work".
+String _holds(int notes, int folders, String place) {
+  final what = _contents(notes, folders);
+  return '${what.isEmpty ? 'No notes' : what.join(' and ')}, in $place';
+}
+
+/// A folder open in a tab: its name, what it holds and where it sits, the
+/// notes list's filter and view switch, the folders in it as cards, then its
+/// notes by day, those in its folders included.
+class FolderPage extends StatelessWidget {
+  const FolderPage({
+    super.key,
+    required this.tree,
+    required this.folderId,
+    required this.notes,
+    required this.controls,
+    required this.cards,
+    required this.group,
+    this.groupingMenu,
+    required this.noteTile,
+    required this.onTab,
+  });
+
+  final FolderTree tree;
+  final String folderId;
+
+  /// The notes a folder may hold, as the notes list's filter narrows them.
+  final List<Note> notes;
+
+  /// The notes list's filter and view switch.
+  final Widget controls;
+  final bool cards;
+
+  /// [notes] in the notes list's groups: by day, unless it is set otherwise.
+  final List<NoteGroup> Function(List<Note> notes) group;
+
+  /// How the groups are made, at the end of the first one's heading.
+  final Widget? groupingMenu;
+
+  /// A note's card, or its row in the list view.
+  final Widget Function(Note note) noteTile;
+
+  /// Shows a folder in this tab, or with [behind] in a new tab behind it.
+  final void Function(String folderId, {required bool behind}) onTab;
+
+  static const double _cardWidth = 224;
+  static const double _gap = 12;
+  static const double _edge = 40;
+
+  /// The most of the title's line the filter and the switch take.
+  static const double _controlsWidth = 320;
+
+  @override
+  Widget build(BuildContext context) {
+    final folder = tree.byId(folderId);
+    if (folder == null) return const SizedBox.shrink();
+    final palette = context.palette;
+    final folders = tree.childrenOf(folderId);
+    final held = tree.notesIn(notes, folderId, deep: true);
+    final inside = <String, int>{};
+    for (final note in held) {
+      for (
+        String? at = tree.folderOf(note.id);
+        at != null && at != folderId;
+        at = tree.byId(at)?.parentId
+      ) {
+        inside.update(at, (count) => count + 1, ifAbsent: () => 1);
+      }
+    }
+    final place = switch (folder.parentId) {
+      final parentId? => tree.byId(parentId)?.name,
+      null => null,
+    };
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth - 2 * _edge;
+        final across = math.max(
+          1,
+          ((width + _gap) / (_cardWidth + _gap)).floor(),
+        );
+        final rows = <WidgetBuilder>[];
+        void gap(double height) => rows.add((_) => SizedBox(height: height));
+
+        void grid(int count, double height, Widget Function(int index) tile) {
+          for (var start = 0; start < count; start += across) {
+            if (start > 0) gap(_gap);
+            final end = math.min(start + across, count);
+            rows.add(
+              (context) => SizedBox(
+                height: AppControlMetrics.scaleBar(context, height),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var index = start; index < end; index++) ...[
+                      if (index > start) const SizedBox(width: _gap),
+                      SizedBox(width: _cardWidth, child: tile(index)),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }
+        }
+
+        rows.add(
+          (_) => Row(
+            children: [
+              KapyIcon(
+                KapyIcons.folderOutlined,
+                size: 24,
+                strokeWidth: 1.8,
+                color: palette.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    folder.name,
+                    key: const ValueKey('folder-page-title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppFonts.title,
+                      fontSize: 30,
+                      height: 38 / 30,
+                      leadingDistribution: TextLeadingDistribution.even,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: (width / 2).clamp(0, _controlsWidth),
+                child: controls,
+              ),
+            ],
+          ),
+        );
+        gap(6);
+        rows.add(
+          (_) => Text(
+            _holds(held.length, folders.length, place ?? 'My notes'),
+            key: const ValueKey('folder-page-holds'),
+            style: _figtree(13, 18, FontWeight.w400, palette.textTertiary),
+          ),
+        );
+        if (folders.isNotEmpty) {
+          gap(22);
+          grid(folders.length, 52, (index) {
+            final inner = folders[index];
+            return _FolderCard(
+              key: ValueKey('folder-card-${inner.id}'),
+              folder: inner,
+              count: inside[inner.id] ?? 0,
+              onTab: ({required behind}) => onTab(inner.id, behind: behind),
+            );
+          });
+        }
+        for (final (index, each) in group(held).indexed) {
+          gap(24);
+          rows.add(
+            (_) => NotesGroupHeading(
+              key: ValueKey('folder-group-${each.label}'),
+              label: each.label,
+              detail: each.detail,
+              trailing: index == 0 ? groupingMenu : null,
+            ),
+          );
+          gap(8);
+          if (cards) {
+            grid(
+              each.notes.length,
+              NoteCardFace.height,
+              (at) => noteTile(each.notes[at]),
+            );
+            continue;
+          }
+          for (final (at, note) in each.notes.indexed) {
+            if (at > 0) gap(2);
+            rows.add(
+              (_) => Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  // As wide as three cards.
+                  constraints: const BoxConstraints(
+                    maxWidth: 3 * _cardWidth + 2 * _gap,
+                  ),
+                  child: noteTile(note),
+                ),
+              ),
+            );
+          }
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(_edge, 26, _edge, 40),
+          itemCount: rows.length,
+          itemBuilder: (context, index) => rows[index](context),
+        );
+      },
+    );
+  }
+}
+
+/// A folder inside the one on the page: its icon, its name and how many
+/// notes are inside it at any depth. A click shows it in this tab, and
+/// ⌘-click (Ctrl-click off a Mac) or a middle click in a tab behind.
+class _FolderCard extends StatefulWidget {
+  const _FolderCard({
+    super.key,
+    required this.folder,
+    required this.count,
+    required this.onTab,
+  });
+
+  final Folder folder;
+  final int count;
+  final void Function({required bool behind}) onTab;
+
+  @override
+  State<_FolderCard> createState() => _FolderCardState();
+}
+
+class _FolderCardState extends State<_FolderCard> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final count = widget.count;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Semantics(
+        button: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => widget.onTab(behind: _clickOpensTabBehind()),
+          onTertiaryTapUp: (_) => widget.onTab(behind: true),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: _hovering
+                  ? Color.alphaBlend(palette.hover, palette.controlBackground)
+                  : palette.controlBackground,
+              border: Border.all(color: palette.controlBorder),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                KapyIcon(
+                  KapyIcons.folderOutlined,
+                  size: 18,
+                  strokeWidth: 1.8,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    widget.folder.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _figtree(
+                      14,
+                      19,
+                      FontWeight.w600,
+                      palette.textPrimary,
+                    ),
+                  ),
+                ),
+                if (count > 0) ...[
+                  const SizedBox(width: 10),
+                  Text(
+                    notesCount(count),
+                    style: _figtree(
+                      12,
+                      16,
+                      FontWeight.w400,
+                      palette.textTertiary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

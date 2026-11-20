@@ -1477,6 +1477,7 @@ class NotesListControls extends StatelessWidget {
     this.when,
     this.onWhenChanged,
     required this.today,
+    this.alignEnd = false,
   });
 
   final NotesShow show;
@@ -1518,6 +1519,10 @@ class NotesListControls extends StatelessWidget {
 
   /// The day When's spans count back from, as the list shows days.
   final DateTime today;
+
+  /// Whether the filter sits at the row's end beside the switch, as it does
+  /// on a folder's page, rather than at its start.
+  final bool alignEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -1585,6 +1590,7 @@ class NotesListControls extends StatelessWidget {
           // A line of its own for the chip where the list is too narrow to
           // hold the filter and the span side by side.
           child: Wrap(
+            alignment: alignEnd ? WrapAlignment.end : WrapAlignment.start,
             spacing: 4,
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
