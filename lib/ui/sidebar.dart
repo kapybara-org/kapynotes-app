@@ -1885,6 +1885,8 @@ class SidebarWindowBar extends StatelessWidget {
     this.newNoteShortcut,
     this.hideShortcut,
     this.countLabel,
+    this.onAskKapy,
+    this.askKapyShortcut,
   });
 
   final String title;
@@ -1906,6 +1908,12 @@ class SidebarWindowBar extends StatelessWidget {
   final ShortcutBinding? newNoteShortcut;
   final ShortcutBinding? hideShortcut;
 
+  /// Opens Kapy AI's panel from the sparkle left of New note. Null leaves
+  /// the sparkle out, as in every list but My notes and while Kapy AI is
+  /// off or not in this build.
+  final VoidCallback? onAskKapy;
+  final ShortcutBinding? askKapyShortcut;
+
   static const double height = 52;
 
   @override
@@ -1914,6 +1922,8 @@ class SidebarWindowBar extends StatelessWidget {
     const handwritten = WritingFont.handwritten;
     final newNoteShortcut = this.newNoteShortcut;
     final hideShortcut = this.hideShortcut;
+    final onAskKapy = this.onAskKapy;
+    final askKapyShortcut = this.askKapyShortcut;
     final titleStyle = TextStyle(
       fontFamily: handwritten.fontFamily,
       fontFamilyFallback: handwritten.fontFamilyFallback,
@@ -1967,7 +1977,8 @@ class SidebarWindowBar extends StatelessWidget {
                       widthOf(title, titleStyle) -
                       8 -
                       8 -
-                      32;
+                      32 -
+                      (onAskKapy == null ? 0 : 32 + 8);
                   final chord = newNoteShortcut?.keycapLabel;
                   bool fits({String? shortcut}) =>
                       room - 8 - widthOf(countText, countStyle) >=
@@ -2024,6 +2035,23 @@ class SidebarWindowBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      if (onAskKapy != null) ...[
+                        CompactIconButton(
+                          key: const ValueKey('sidebar-ask-kapy'),
+                          tooltip: askKapyShortcut == null
+                              ? 'Ask Kapy'
+                              : 'Ask Kapy  ${askKapyShortcut.displayLabel}',
+                          extent: 32,
+                          radius: 8,
+                          onPressed: onAskKapy,
+                          icon: const KapyIcon(
+                            KapyIcons.sparklesOutlined,
+                            size: 16,
+                            strokeWidth: 1.5,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       TonalButton(
                         key: const ValueKey('sidebar-new-note'),
                         tall: true,
