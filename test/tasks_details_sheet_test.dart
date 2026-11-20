@@ -36,6 +36,7 @@ void main() {
   late NotesStore notes;
   late TaskLibrary library;
   late TasksController tasks;
+  late String errandsId;
   late FocusNode addFocus;
 
   DateTime tick() => clock = clock.add(const Duration(milliseconds: 1));
@@ -52,7 +53,7 @@ void main() {
     );
     await notes.load();
     await library.load();
-    notes.create(body: body);
+    errandsId = notes.create(body: body).id;
     tasks = TasksController(
       notes: notes,
       library: library,
@@ -60,6 +61,10 @@ void main() {
       now: tick,
     );
     await tasks.reconcileNow();
+    // Something else is Do now, so the tasks under test sit in the list.
+    notes.create(body: 'Elsewhere\n☐ Doing now');
+    await tasks.reconcileNow();
+    tasks.doNow(tasks.read().open.last);
     addFocus = FocusNode();
     addTearDown(() {
       addFocus.dispose();
@@ -81,6 +86,7 @@ void main() {
             addFocus: addFocus,
             labelOf: (note) => note.title,
             onOpenNote: (_) {},
+            onOpenDone: () {},
             newTaskShortcut: '⌘N',
           ),
         ),
@@ -89,7 +95,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  String noteBody() => notes.allNotes.first.body;
+  String noteBody() => notes.byId(errandsId)!.body;
 
   /// Lets the store's own writes land, so no timer outlives the test.
   Future<void> settle(WidgetTester tester) async {
@@ -135,26 +141,27 @@ void main() {
     await settle(tester);
   });
 
-  testWidgets('a task with details shows the lines mark, and one without shows none', (
-    tester,
-  ) async {
-    await setUpTasks(
-      tester,
-      'Errands\n☐ Hide the menu\n  It shrinks to a pill.\n☐ Book flights',
-    );
-    await pumpScreen(tester);
-    final open = tasks.read().open;
+  testWidgets(
+    'a task with details shows the lines mark, and one without shows none',
+    (tester) async {
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Hide the menu\n  It shrinks to a pill.\n☐ Book flights',
+      );
+      await pumpScreen(tester);
+      final open = tasks.read().open;
 
-    Finder markIn(String id) => find.descendant(
-      of: rowOf(id),
-      matching: find.byWidgetPredicate(
-        (widget) => widget is KapyIcon && widget.icon == KapyIcons.alignLeft,
-      ),
-    );
-    expect(markIn(open[0].id), findsOneWidget);
-    expect(markIn(open[1].id), findsNothing);
-    await settle(tester);
-  });
+      Finder markIn(String id) => find.descendant(
+        of: rowOf(id),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is KapyIcon && widget.icon == KapyIcons.alignLeft,
+        ),
+      );
+      expect(markIn(open[0].id), findsOneWidget);
+      expect(markIn(open[1].id), findsNothing);
+      await settle(tester);
+    },
+  );
 
   testWidgets('the arrows move the sheet, Space marks done, Esc closes it', (
     tester,
@@ -196,7 +203,7 @@ void main() {
   ) async {
     await setUpTasks(tester, 'Errands\n☐ Book flights');
     await pumpScreen(tester);
-    final task = tasks.read().open.single;
+    final task = tasks.read().open.first;
 
     await tester.tap(nameIn(task.id, 'Book flights'));
     await tester.pumpAndSettle();
@@ -225,7 +232,7 @@ void main() {
       tester,
       'Errands\n☐ One\n  First detail\n☐ Two\n  Second detail',
     );
-    final two = tasks.read().open.last;
+    final two = tasks.read().open[1];
     // The menu bar click that happens while the app is still showing Notes.
     tasks.requestSheet(two.id);
     await pumpScreen(tester);
@@ -273,7 +280,7 @@ void main() {
   ) async {
     await setUpTasks(tester, 'Errands\n☐ Pack\n  ☐ Socks\n  ☑ Charger');
     await pumpScreen(tester);
-    final pack = tasks.read().open.single;
+    final pack = tasks.read().open.first;
 
     expect(
       find.descendant(
