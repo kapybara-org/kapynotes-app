@@ -54,7 +54,7 @@ void main() {
     );
     expect(details.preview, startsWith('The menu stays up'));
     expect(blocks.last.details, isNull);
-    expect(taskIsNested(note, blocks.last.task), isFalse);
+    expect(details.children, isEmpty);
   });
 
   test(
@@ -100,27 +100,27 @@ void main() {
 ''';
     final blocks = taskBlocks(note);
     expect(blocks, hasLength(4));
-    expect(blocks.first.details!.children, hasLength(2));
-    expect(taskIsNested(note, blocks[1].task), isTrue);
-    expect(taskIsNested(note, blocks[2].task), isTrue);
-    expect(taskIsNested(note, blocks.last.task), isFalse);
-    final count = taskGroupCount(note, blocks.first.task);
-    expect(count.total, 3);
-    expect(count.done, 0);
+    expect(
+      blocks.first.details!.children.map((child) => child.start),
+      [blocks[1].task.start, blocks[2].task.start],
+    );
+    expect(blocks[1].details, isNull);
+    expect(blocks[2].details, isNull);
 
     const done = '''
 ☑ Parent
   ☐ Child
   ☑ Finished
 ''';
-    expect(taskGroupCount(done, taskLines(done).first), (done: 2, total: 3));
+    final children = taskBlocks(done).first.details!.children;
+    expect(children.map((child) => child.done), [false, true]);
   });
 
   test('a task indented under a bullet is still its own task', () {
     const note = '• A list\n  ☐ Not details of a task\n';
     final tasks = taskLines(note);
     expect(tasks, hasLength(1));
-    expect(taskIsNested(note, tasks.single), isFalse);
+    expect(taskBlocks(note).single.details, isNull);
   });
 
   test('a picture and a video under a task are marks, not words', () {
