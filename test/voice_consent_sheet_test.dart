@@ -36,7 +36,18 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.textContaining('never used to train AI.'), findsNWidgets(2));
+    expect(
+      find.textContaining(
+        'It is sent only for that, and Kapy does not keep it.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('The audio is not kept'), findsNothing);
+    expect(find.textContaining('never used to train AI.'), findsOneWidget);
+    expect(
+      find.textContaining('A cloud summary sends the transcript'),
+      findsOneWidget,
+    );
     expect(find.textContaining('OpenRouter'), findsNothing);
     expect(find.textContaining('MiniMax'), findsNothing);
     expect(find.textContaining('NVIDIA'), findsNothing);

@@ -36,17 +36,19 @@ class TonalButton extends StatelessWidget {
 
   final String? tooltip;
 
-  /// The page toolbar's Share: two points taller, with rounder corners and a
-  /// finer icon than the notes list's New note.
+  /// r3's 32-tall control, for the bars over the notes list and the page:
+  /// radius 8, 12 at either end and a 16 icon 4 from its label.
   final bool tall;
 
-  /// How wide a button with an icon, [label] and, if given, [shortcut]'s
-  /// keycap lays out at the reader's text size, for a bar that has to choose
-  /// what to show before it builds.
+  /// How wide a button with [label], an icon unless [icon] is false and, if
+  /// given, [shortcut]'s keycap lays out at the reader's text size, for a bar
+  /// that has to choose what to show before it builds.
   static double widthOf(
     BuildContext context,
     String label, {
+    bool icon = true,
     String? shortcut,
+    bool tall = false,
   }) {
     final painter = TextPainter(
       text: TextSpan(text: label, style: _labelStyle(context)),
@@ -56,9 +58,12 @@ class TonalButton extends StatelessWidget {
     )..layout();
     final text = painter.width;
     painter.dispose();
-    return 9 +
-        AppControlMetrics.iconControl +
-        6 +
+    final bar = tall && AppPlatform.hasPointer;
+    return (!icon
+            ? 12
+            : bar
+            ? 12 + 16 + 4
+            : 9 + AppControlMetrics.iconControl + 6) +
         text +
         (shortcut == null
             ? 12
@@ -81,22 +86,19 @@ class TonalButton extends StatelessWidget {
     final label = this.label;
     final shortcut = this.shortcut;
     final pointer = AppPlatform.hasPointer;
+    final bar = tall && pointer;
     final fine = pointer && (tall || label == null);
 
     final button = FilledButton(
       onPressed: onPressed,
       style: ButtonStyle(
         minimumSize: WidgetStatePropertyAll(
-          Size.square(
-            tall && pointer ? 32 : AppControlMetrics.tonalButtonHeight,
-          ),
+          Size.square(bar ? 32 : AppControlMetrics.tonalButtonHeight),
         ),
         shape: tall
             ? const WidgetStatePropertyAll(
                 RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(AppRadii.control),
-                  ),
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
                 ),
               )
             : null,
@@ -104,11 +106,7 @@ class TonalButton extends StatelessWidget {
           label == null
               ? EdgeInsets.zero
               : EdgeInsetsDirectional.only(
-                  start: icon == null
-                      ? 12
-                      : tall
-                      ? 10
-                      : 9,
+                  start: icon == null || tall ? 12 : 9,
                   end: shortcut == null ? 12 : 6,
                 ),
         ),
@@ -130,10 +128,14 @@ class TonalButton extends StatelessWidget {
           if (icon != null)
             KapyIcon(
               icon,
-              size: fine ? 15 : AppControlMetrics.iconControl,
+              size: bar
+                  ? 16
+                  : fine
+                  ? 15
+                  : AppControlMetrics.iconControl,
               strokeWidth: fine ? 2 : 2.2,
             ),
-          if (icon != null && label != null) const SizedBox(width: 6),
+          if (icon != null && label != null) SizedBox(width: bar ? 4 : 6),
           if (label != null) Text(label),
           if (shortcut != null) ...[
             const SizedBox(width: 6),

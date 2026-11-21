@@ -8,6 +8,10 @@ import '../../data/task_details.dart';
 import '../../sync/spaces.dart';
 import '../tag_colours.dart';
 
+/// How faint a task's box is drawn on a note shared to view only, where it
+/// takes no tap.
+const double lockedBoxOpacity = 0.4;
+
 /// What the Tasks sidebar narrows the page to: every open task, the Done
 /// view, or one note's tasks.
 @immutable
@@ -201,8 +205,8 @@ class NoteMark extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(AppRadii.compact),
-        child: SizedBox(
-          height: 24,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 24),
           child: Padding(
             padding: const EdgeInsets.only(left: 4, right: 2),
             child: Row(

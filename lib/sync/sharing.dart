@@ -154,6 +154,15 @@ class Sharing extends ChangeNotifier {
     return spaceOf(note)?.canEdit ?? false;
   }
 
+  /// Whether this account may take [note] out of its own notes: any note it
+  /// may change, and any note somebody else shares with it, view-only too,
+  /// since that only takes it out of this account's notes.
+  bool mayRemove(Note note) {
+    final space = spaceOf(note);
+    if (space != null && space.isTeam && !space.isOwner) return true;
+    return canEdit(note);
+  }
+
   /// Where an invitation link lands. The token is useless to anyone who
   /// cannot sign in as the invited address.
   Uri inviteLink(String token) =>
@@ -330,7 +339,19 @@ class Sharing extends ChangeNotifier {
     String noteId, {
     required String email,
     SpaceRole role = SpaceRole.member,
-  }) => _moveTo(noteId, {_address(email): _access(role)});
+  }) => shareNoteWithPeople(noteId, {email: role});
+
+  /// Shares a private note with [audience] at once: the space whose people
+  /// other than this account are exactly them, at those accesses, or a new
+  /// one they are all invited to. Nobody is let into a space that holds
+  /// notes meant for only some of them.
+  Future<Space> shareNoteWithPeople(
+    String noteId,
+    Map<String, SpaceRole> audience,
+  ) => _moveTo(noteId, {
+    for (final MapEntry(key: email, value: role) in audience.entries)
+      _address(email): _access(role),
+  });
 
   /// Moves a note to the space whose people other than this account are
   /// exactly [audience], at those accesses. One this account owns is reused;
@@ -371,13 +392,14 @@ class Sharing extends ChangeNotifier {
   Space? _spaceFor(Map<String, SpaceRole> audience) {
     for (final space in teams) {
       if (!space.isOwner || space.hasLink) continue;
-      if (mapEquals(_audienceOf(space), audience)) return space;
+      if (mapEquals(audienceOf(space), audience)) return space;
     }
     return null;
   }
 
-  /// Everyone but this account in [space], by address, at their access.
-  Map<String, SpaceRole> _audienceOf(Space space) => {
+  /// Everyone but this account in [space], invitations included, by
+  /// address, at their access.
+  Map<String, SpaceRole> audienceOf(Space space) => {
     for (final member in space.othersThan(userId))
       member.email.toLowerCase(): member.role,
     for (final invite in space.invites) invite.email.toLowerCase(): invite.role,
@@ -542,7 +564,7 @@ class Sharing extends ChangeNotifier {
     final address = _address(email);
     return [
       for (final space in teams)
-        if (space.isOwner && _audienceOf(space).containsKey(address))
+        if (space.isOwner && audienceOf(space).containsKey(address))
           ...notesIn(space.id),
     ];
   }
@@ -585,7 +607,7 @@ class Sharing extends ChangeNotifier {
     if (!space.isOwner) {
       throw const SyncRefusedException(403, 'owner-only', {});
     }
-    final audience = _audienceOf(space);
+    final audience = audienceOf(space);
     if (audience.containsKey(address)) {
       throw const SyncRefusedException(409, 'already a member', {});
     }
@@ -619,7 +641,7 @@ class Sharing extends ChangeNotifier {
       throw const SyncRefusedException(403, 'owner-only', {});
     }
     final address = _address(email);
-    final audience = _audienceOf(space);
+    final audience = audienceOf(space);
     if (!audience.containsKey(address)) {
       throw const SyncProtocolException('not on this note');
     }
@@ -645,10 +667,10 @@ class Sharing extends ChangeNotifier {
     final address = _address(email);
     final spaces = [
       for (final space in teams)
-        if (space.isOwner && _audienceOf(space).containsKey(address)) space,
+        if (space.isOwner && audienceOf(space).containsKey(address)) space,
     ];
     for (final space in spaces) {
-      if (_audienceOf(space).length == 1) {
+      if (audienceOf(space).length == 1) {
         await stopSharing(space.id);
       } else {
         await _removeFrom(space, address);

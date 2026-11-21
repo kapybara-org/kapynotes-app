@@ -679,6 +679,11 @@ class EditorMetrics {
   static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
+  /// While the page's days have the bar's top left, a filed note's folders
+  /// sit in a line of their own [pathGap] above its title.
+  static const double pathRow = 16;
+  static const double pathGap = 8;
+
   /// A heading against 16px writing: on the page 22, 19 and 17, each in a
   /// 28px line at the bottom of a row of 40 for the first level and 36 below
   /// it, and a step smaller on a phone. Set with proportional leading, nearly
@@ -1047,18 +1052,9 @@ class AppTypeScale {
       ? 12
       : 11;
 
-  /// The names under the spaces rail's tiles, and the streak's run of days.
-  /// A step under [caption], because each sits under its own icon rather
-  /// than being read on its own.
-  static double get railLabel => _touch
-      ? 13
-      : _windows
-      ? 12
-      : 11;
-
-  /// The figure in a count badge, such as the invitations on Shared. Smaller
-  /// than [micro], because it is bold, it sits in a coloured dot, and it is
-  /// never more than two digits.
+  /// The capitals over a group of an editor menu's rows, such as TURN INTO in
+  /// the selection bubble. Smaller than [micro], because spaced capitals
+  /// read larger than lower case at the same size.
   static double get badge => _touch
       ? 11
       : _windows
@@ -1120,8 +1116,8 @@ class AppTypeScale {
   static double get spaceTitle => _touch
       ? 20
       : _windows
-      ? 18
-      : 17;
+      ? 21
+      : 20;
 
   /// The brand lockup, which is set in its own face and carries its own
   /// optical size a half point off [title].

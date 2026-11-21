@@ -195,12 +195,13 @@ class TasksController extends ChangeNotifier {
 
   /// Adds a task at the end of [noteId]'s text, or of the note for tasks
   /// with no note, made on first use. Returns the new task's id once the
-  /// index holds it.
+  /// index holds it, and adds nothing to a note this person cannot change.
   Future<String?> add(String words, {String? noteId}) async {
     final text = words.trim();
     if (text.isEmpty) return null;
     final from = _stamp();
     final target = noteId == null ? read().home : notes.byId(noteId);
+    if (target != null && !canEdit(target)) return null;
     final String id;
     if (target == null) {
       id = notes

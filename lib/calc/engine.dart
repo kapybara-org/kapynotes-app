@@ -183,12 +183,20 @@ class CalcEngine {
 
   /// Evaluates every line of [body], returning results keyed by line index.
   /// Lines that are prose, blank, or unparseable are simply absent.
-  Map<int, LineResult> evaluateDocument(String body) =>
-      evaluateDocumentWithSummary(body).results;
+  Map<int, LineResult> evaluateDocument(String body, {bool titled = false}) =>
+      evaluateDocumentWithSummary(body, titled: titled).results;
 
   /// Evaluates a note once and exposes the same running total used by the
   /// `sum` and `total` aggregate names.
-  DocumentEvaluation evaluateDocumentWithSummary(String body) {
+  ///
+  /// With [titled], line 0 is the note's title. A title names the note, so a
+  /// daily note titled "Today" gets no date beside it: the line shows no
+  /// answer and adds nothing to a total. It is still read, so a variable it
+  /// sets, as `rent = 1200` does, works on the lines below.
+  DocumentEvaluation evaluateDocumentWithSummary(
+    String body, {
+    bool titled = false,
+  }) {
     final scope = CalcScope();
     final evaluator = Evaluator(
       registry: registry,
@@ -201,23 +209,22 @@ class CalcEngine {
 
     for (var i = 0; i < pass.lines.length; i++) {
       final evaluated = _evaluateLine(pass, i, evaluator, scope);
-      if (evaluated != null) {
-        results[i] = evaluated.result;
-        // Aggregate readouts, including conversions such as `total to usd`,
-        // report the total without becoming another entry in it.
-        if (!evaluated.isAggregateReadout) {
-          scope.record(
-            i,
+      if (evaluated == null || (titled && i == 0)) continue;
+      results[i] = evaluated.result;
+      // Aggregate readouts, including conversions such as `total to usd`,
+      // report the total without becoming another entry in it.
+      if (!evaluated.isAggregateReadout) {
+        scope.record(
+          i,
+          evaluated.result.value,
+          Contribution.of(
+            evaluated.node,
             evaluated.result.value,
-            Contribution.of(
-              evaluated.node,
-              evaluated.result.value,
-              readsAggregate: evaluated.readsAggregate,
-              owner: scope.liveOwner,
-              isVariable: scope.defines,
-            ),
-          );
-        }
+            readsAggregate: evaluated.readsAggregate,
+            owner: scope.liveOwner,
+            isVariable: scope.defines,
+          ),
+        );
       }
     }
     _memo.end(pass);

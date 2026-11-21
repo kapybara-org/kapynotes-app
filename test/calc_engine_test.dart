@@ -41,6 +41,42 @@ CalcEngine clockEngine() => CalcEngine(
 void main() {
   setUp(() => engine = CalcEngine(ratesPerUsd: _rates));
 
+  group('a titled note', () {
+    Map<int, String> titled(String body) => engine
+        .evaluateDocument(body, titled: true)
+        .map((key, value) => MapEntry(key, value.text));
+
+    test('a variable the title sets works below it, unanswered', () {
+      expect(titled('rent = 1200\nrent / 2'), {1: '600'});
+      expect(titled('rent = 1200\nrent * 12'), {1: '14,400'});
+    });
+
+    test('the title adds nothing to a total, even as a plain number', () {
+      expect(titled('100\n20\n30\ntotal'), {1: '20', 2: '30', 3: '50'});
+      final footer = engine.evaluateDocumentWithSummary(
+        '100\n20\n30',
+        titled: true,
+      );
+      expect(footer.totalText, '50');
+      final rent = engine.evaluateDocumentWithSummary(
+        'rent = 1200\nrent * 12',
+        titled: true,
+      );
+      expect(rent.totalText, '14,400');
+    });
+
+    test('"Today" as a title is not worked out into a date', () {
+      expect(clockEngine().evaluateDocument('Today', titled: true), isEmpty);
+      expect(titled('Today\n2 + 2'), {1: '4'});
+      expect(clockEngine().evaluateDocument('Today'), isNotEmpty);
+    });
+
+    test('nothing reads the title as the line before', () {
+      expect(titled('100\nprev + 1'), isNot(contains(0)));
+      expect(titled('100\nprev + 1')[1], isNot('101'));
+    });
+  });
+
   group('number system', () {
     test('understands attached thousand and million suffixes', () {
       expect(line('6k'), '6,000');
