@@ -618,8 +618,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('kapy-device-remove')), findsOneWidget);
-      expect(find.text('Found on this Mac · Codex'), findsOneWidget);
-      expect(find.text('Found on this Mac · Claude Code'), findsOneWidget);
+      expect(find.text('Found on this Mac'), findsNWidgets(2));
       expect(find.text('Key ending 4f2a, kept on this Mac'), findsOneWidget);
       expect(find.textContaining('ChatGPT sign'), findsNothing);
     });
@@ -660,16 +659,14 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('Install Codex and sign in there. Kapy finds it'),
-        findsOneWidget,
-      );
-      expect(
-        find.text('Install Claude Code and sign in there. Kapy finds it'),
-        findsOneWidget,
+        find.text(
+          'Not found on this Mac. Install it, sign in, then check again',
+        ),
+        findsNWidgets(2),
       );
       expect(
         find.text(
-          'Get a key, then add it here, for answers you already pay for',
+          'Get a key, then add it here, for answers from a plan you pay for',
         ),
         findsOneWidget,
       );
@@ -721,7 +718,7 @@ void main() {
 
         expect(
           find.text(
-            'Get a key, then add it here, for answers you already pay for',
+            'Get a key, then add it here, for answers from a plan you pay for',
           ),
           findsOneWidget,
         );
@@ -754,7 +751,7 @@ void main() {
       await _openSettings(tester, kapyAi: ai, reveal: 'kapy-account-codex');
 
       expect(
-        find.text('Signed out. Sign in inside Codex, then check again'),
+        find.text('Signed out. Sign in there, then check again'),
         findsOneWidget,
       );
       await tester.tap(find.text('Check again'));

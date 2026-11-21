@@ -65,7 +65,7 @@ class KapyAiPicker extends StatelessWidget {
             _ => 'Use ${kapyAccountName(kind)}',
           },
           subline: switch (kind) {
-            KapyAccountKind.openRouter => 'Get one, then paste it in Settings',
+            KapyAccountKind.openRouter => 'Get one, then add it in Settings',
             _ => 'Install it and sign in there first',
           },
           chevron: true,
