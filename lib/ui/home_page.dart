@@ -3877,6 +3877,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ];
             final taskBoard = _taskController?.read();
             final tasks = _tasksMode ? _taskController : null;
+            final createNoun = tasks != null && taskBoard != null
+                ? 'task'
+                : space == LibrarySpace.drawings
+                ? 'drawing'
+                : 'note';
+            final newNoteShortcut = widget.shortcuts.hintFor(
+              ShortcutAction.newNote,
+            );
+            final create = (
+              label: 'New $createNoun',
+              tooltip: SidebarWindowBar.newTooltip(createNoun, newNoteShortcut),
+              onPressed: _createInSpace,
+            );
             final assistant = _kapyAiButton(
               extent: AppPlatform.hasPointer
                   ? 32
@@ -3975,11 +3988,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               windowBar: SidebarWindowBar(
                 title: _listTitle,
                 count: _matchingCount,
-                noun: space == LibrarySpace.drawings ? 'drawing' : 'note',
+                noun: createNoun,
                 onCreate: _createInSpace,
-                newNoteShortcut: widget.shortcuts.hintFor(
-                  ShortcutAction.newNote,
-                ),
+                newNoteShortcut: newNoteShortcut,
                 onHide: () => _setListShown(false),
                 hideShortcut: widget.shortcuts.hintFor(
                   ShortcutAction.toggleSidebar,
@@ -4043,11 +4054,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               title: space.title,
                               count: taskBoard.open.length,
                               countLabel: 'open',
-                              noun: 'task',
+                              noun: createNoun,
                               onCreate: _createInSpace,
-                              newNoteShortcut: widget.shortcuts.hintFor(
-                                ShortcutAction.newNote,
-                              ),
+                              newNoteShortcut: newNoteShortcut,
                               onHide: () => _setListShown(false),
                               hideShortcut: widget.shortcuts.hintFor(
                                 ShortcutAction.toggleSidebar,
@@ -4093,6 +4102,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         tasks,
                                         listVisible: listFits && listShown,
                                         underList: !listFits && listShown,
+                                        create: create,
                                       )
                                     else ...[
                                       if (!cramped)
@@ -4108,6 +4118,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                           underList: !listFits && listShown,
                                           onShowList: _toggleList,
                                           showListShortcut: _sidebarShortcut,
+                                          create: create,
                                           noteOpen: selected != null,
                                           syncStatus:
                                               widget.account?.syncStatus,
@@ -4156,6 +4167,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                   page.maxWidth,
                                                   unloadedPictures:
                                                       unloaded.length,
+                                                  withNew: !listShown,
                                                 ),
                                                 child: switch ((
                                                   widget.folders,
@@ -4234,10 +4246,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Note? note,
     double pageWidth, {
     required int unloadedPictures,
+    required bool withNew,
   }) {
     if (note == null ||
         _folderInFront != null ||
-        PageToolbar.savedFits(pageWidth, unloadedPictures: unloadedPictures)) {
+        PageToolbar.savedFits(
+          pageWidth,
+          unloadedPictures: unloadedPictures,
+          withNew: withNew,
+        )) {
       return null;
     }
     final saved = savedState(widget.account?.syncStatus);
@@ -4398,6 +4415,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     TasksController tasks, {
     required bool listVisible,
     required bool underList,
+    required ({String label, String tooltip, VoidCallback onPressed}) create,
   }) {
     final filter = _taskFilter;
     final note = filter.noteId == null
@@ -4423,6 +4441,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         underList: underList,
         onShowList: _toggleList,
         showListShortcut: _sidebarShortcut,
+        create: create,
         updates: widget.updates,
         moreActions: [?_onTopAction],
         onMore: _pinToggle == null

@@ -139,6 +139,7 @@ Future<void> pumpApp(
   NoteDayStore? days,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
   VoiceRecordingController? recording,
+  TaskLibrary? tasks,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -173,6 +174,7 @@ Future<void> pumpApp(
       days: days,
       titleModel: titleModel,
       recording: recording,
+      tasks: tasks,
     ),
   );
   await tester.pumpAndSettle();
@@ -4916,6 +4918,214 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.title, 'Garden plan');
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
+    });
+  });
+
+  group('New beside the way back to the list', () {
+    final pageNew = find.byKey(const ValueKey('page-new'));
+    final showList = find.byKey(const ValueKey('page-show-list'));
+    final sidebarNew = find
+        .byKey(const ValueKey('sidebar-new-note'))
+        .hitTestable();
+
+    Future<void> pumpWithTasks(WidgetTester tester) async {
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(
+        tester,
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+    }
+
+    void expectBesideShowList(WidgetTester tester) {
+      expect(showList, findsOneWidget);
+      expect(pageNew, findsOneWidget);
+      expect(tester.getSize(pageNew), tester.getSize(showList));
+      expect(
+        tester.getTopLeft(pageNew).dx - tester.getTopRight(showList).dx,
+        4,
+      );
+      expect(tester.getCenter(pageNew).dy, tester.getCenter(showList).dy);
+    }
+
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      testWidgets('on ${platform.name}, every page that leads with the way '
+          'back to the list has New beside it, making what the space '
+          'holds', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithTasks(tester);
+        expect(sidebarNew, findsOneWidget);
+        expect(pageNew, findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+        await tester.pumpAndSettle();
+        expect(sidebarNew, findsNothing);
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New note');
+
+        final before = notes.notes.length;
+        await tester.tap(pageNew);
+        await tester.pumpAndSettle();
+        expect(notes.notes, hasLength(before + 1));
+        expect(notes.notes.first.isDrawing, isFalse);
+        expect(find.byType(NoteEditor), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+        await tester.pumpAndSettle();
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New drawing');
+        await tester.tap(pageNew);
+        await tester.pumpAndSettle();
+        expect(notes.notes.where((note) => note.isDrawing), hasLength(1));
+        expect(notes.notes.first.isDrawing, isTrue);
+        expect(find.byType(DrawingCanvas), findsOneWidget);
+
+        // Tasks draws a band of its own over its page.
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New task');
+        final beforeTask = notes.notes.length;
+        await tester.tap(pageNew);
+        await tester.pumpAndSettle();
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
+        expect(notes.notes, hasLength(beforeTask));
+
+        await tester.tap(showList);
+        await tester.pumpAndSettle();
+        expect(pageNew, findsNothing);
+        expect(find.byKey(const ValueKey('rail-new')), findsNothing);
+        expect(sidebarNew, findsOneWidget);
+      });
+    }
+
+    testWidgets('names what it makes and its chord, and a keyboard reaches it '
+        'with Tab and presses it with Enter or Space', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, sidebarVisible: false);
+      expect(
+        find.descendant(
+          of: pageNew,
+          matching: find.byTooltip(
+            SidebarWindowBar.newTooltip(
+              'note',
+              shortcuts.hintFor(ShortcutAction.newNote),
+            ),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(pageNew),
+        isSemantics(
+          label: 'New note',
+          tooltip:
+              'New note  ${shortcuts.hintFor(ShortcutAction.newNote)!.displayLabel}',
+          isButton: true,
+          hasTapAction: true,
+          isFocusable: true,
+          hasEnabledState: true,
+          isEnabled: true,
+        ),
+      );
+
+      final plus = find.descendant(
+        of: pageNew,
+        matching: findKapyIcon(KapyIcons.addRounded),
+      );
+      bool focused() => Focus.of(tester.element(plus)).hasPrimaryFocus;
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      var tabs = 0;
+      while (!focused() && tabs < 50) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        tabs++;
+      }
+      expect(focused(), isTrue);
+
+      final before = notes.notes.length;
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(before + 1));
+      expect(notes.notes.first.isDrawing, isFalse);
+
+      notes.updateBody(notes.notes.first.id, 'Written');
+      await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      tabs = 0;
+      while (!focused() && tabs < 50) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        tabs++;
+      }
+      expect(focused(), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(before + 2));
+    });
+
+    testWidgets('the rail stays put as the list hides and shows', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpWithTasks(tester);
+      final tiles = [
+        for (final name in ['notes', 'tasks', 'drawings'])
+          find.byKey(ValueKey('rail-$name')),
+      ];
+      final shown = [for (final tile in tiles) tester.getRect(tile)];
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(pageNew, findsOneWidget);
+      expect([for (final tile in tiles) tester.getRect(tile)], shown);
+
+      await tester.tap(showList);
+      await tester.pumpAndSettle();
+      expect([for (final tile in tiles) tester.getRect(tile)], shown);
+    });
+
+    testWidgets('Saved goes to the date line once the +\'s room leaves the '
+        'band under 560, and stays in the band above it', (tester) async {
+      final inBar = find.byKey(const ValueKey('page-saved'));
+      final onDateLine = find.byKey(const ValueKey('note-saved'));
+      final toolbar = find.byType(PageToolbar);
+      await notes.load();
+      notes.create(body: 'alpha');
+      await pumpApp(tester, size: const Size(700, 700), sidebarVisible: false);
+      expect(pageNew, findsOneWidget);
+
+      // The page's width is the window's less a fixed margin. The +'s button
+      // and its gap take 36 of the band, so Saved needs 596 of page.
+      final margin = 700 - tester.getSize(toolbar).width;
+      Future<void> pageWidth(double width) async {
+        tester.view.physicalSize = Size(width + margin, 700);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(toolbar).width, closeTo(width, 0.01));
+      }
+
+      await pageWidth(580);
+      expect(inBar, findsNothing);
+      expect(onDateLine, findsOneWidget);
+
+      await pageWidth(596);
+      expect(inBar, findsOneWidget);
+      expect(onDateLine, findsNothing);
     });
   });
 

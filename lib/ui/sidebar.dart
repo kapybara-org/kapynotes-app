@@ -33,6 +33,7 @@ import 'note_picks.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'safety_dialogs.dart';
+import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
@@ -1923,6 +1924,11 @@ class SidebarWindowBar extends StatelessWidget {
 
   static const double height = 52;
 
+  /// New's name and chord on hover, as the page's + names it while this bar
+  /// is hidden.
+  static String newTooltip(String noun, ShortcutBinding? shortcut) =>
+      ['New $noun', ?shortcut?.displayLabel].join('  ');
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -2071,10 +2077,7 @@ class SidebarWindowBar extends StatelessWidget {
                         // chord, on hover.
                         tooltip: keycap
                             ? null
-                            : [
-                                'New $noun',
-                                ?newNoteShortcut?.displayLabel,
-                              ].join('  '),
+                            : newTooltip(noun, newNoteShortcut),
                         onPressed: onCreate,
                       ),
                       const SizedBox(width: 8),
@@ -2197,6 +2200,17 @@ class _InvitationsState extends State<_Invitations> {
           ),
         );
       case 'block':
+        if (AppPlatform.isMobile) {
+          final ok = await askFirst(
+            context,
+            title: 'Block ${invite.inviterDisplayName}?',
+            body:
+                'They can’t invite you again, and this invitation goes away. '
+                'You can unblock them in Settings, under Blocked people.',
+            action: 'Block',
+          );
+          if (ok == null || !mounted) return;
+        }
         await _act(
           invite,
           () => sharing.blockPerson(invite.invitedBy),

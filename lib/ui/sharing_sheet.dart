@@ -97,22 +97,18 @@ Future<void> undoSharing(
 /// Asks before a sharing change: a sheet on a phone, the centred alert on a
 /// Mac or a PC. With [option], a box ticked to start with, whose answer comes
 /// back. Null means the person said no; without [option], yes is true.
-///
-/// [warning] is for the one ask whose action can't be taken back.
 Future<bool?> askFirst(
   BuildContext context, {
   required String title,
   required String body,
   required String action,
   String? option,
-  bool warning = false,
 }) {
   final ask = _AskFirst(
     title: title,
     body: body,
     action: action,
     option: option,
-    warning: warning,
   );
   if (!AppPlatform.isMobile) {
     return showDialog<bool>(context: context, builder: (context) => ask);
@@ -133,14 +129,12 @@ class _AskFirst extends StatefulWidget {
     required this.body,
     required this.action,
     required this.option,
-    required this.warning,
   });
 
   final String title;
   final String body;
   final String action;
   final String? option;
-  final bool warning;
 
   @override
   State<_AskFirst> createState() => _AskFirstState();
@@ -154,7 +148,6 @@ class _AskFirstState extends State<_AskFirst> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final error = Theme.of(context).colorScheme.error;
     final option = widget.option;
     if (!AppPlatform.isMobile) {
       final style = TextStyle(
@@ -193,9 +186,6 @@ class _AskFirstState extends State<_AskFirst> {
           TextButton(
             key: const ValueKey('sharing-ask-ok'),
             onPressed: _answer,
-            style: widget.warning
-                ? TextButton.styleFrom(foregroundColor: error)
-                : null,
             child: Text(widget.action),
           ),
         ],
@@ -206,7 +196,12 @@ class _AskFirstState extends State<_AskFirst> {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppRadii.control),
     );
-    const label = TextStyle(fontSize: 15, height: 20 / 15);
+    final label = chromeStyle(
+      size: 15,
+      line: 20,
+      weight: AppWeight.body,
+      color: palette.textPrimary,
+    );
     return SingleChildScrollView(
       key: const ValueKey('sharing-ask'),
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
@@ -237,7 +232,7 @@ class _AskFirstState extends State<_AskFirst> {
             _OptionRow(
               label: option,
               value: _option,
-              style: label.copyWith(color: palette.textPrimary),
+              style: label,
               onChanged: (value) => setState(() => _option = value),
             ),
           ],
@@ -252,7 +247,12 @@ class _AskFirstState extends State<_AskFirst> {
                     minimumSize: const Size.fromHeight(44),
                     backgroundColor: quiet,
                     foregroundColor: palette.textPrimary,
-                    textStyle: label.copyWith(fontWeight: FontWeight.w500),
+                    textStyle: chromeStyle(
+                      size: 15,
+                      line: 20,
+                      weight: AppWeight.button,
+                      color: palette.textPrimary,
+                    ),
                     shape: shape,
                   ),
                   child: const Text('Cancel'),
@@ -265,13 +265,14 @@ class _AskFirstState extends State<_AskFirst> {
                   onPressed: _answer,
                   style: TextButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),
-                    backgroundColor: widget.warning
-                        ? quiet
-                        : palette.tonalBackground,
-                    foregroundColor: widget.warning
-                        ? error
-                        : palette.tonalForeground,
-                    textStyle: label.copyWith(fontWeight: FontWeight.w600),
+                    backgroundColor: palette.tonalBackground,
+                    foregroundColor: palette.tonalForeground,
+                    textStyle: chromeStyle(
+                      size: 15,
+                      line: 20,
+                      weight: AppWeight.page,
+                      color: palette.tonalForeground,
+                    ),
                     shape: shape,
                   ),
                   child: Text(widget.action),
