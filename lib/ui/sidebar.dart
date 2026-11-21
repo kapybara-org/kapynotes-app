@@ -1287,7 +1287,7 @@ extension on Sidebar {
             padding: const EdgeInsets.fromLTRB(20, 6, 18, 0),
             child: Row(
               children: [
-                KapyIcon(hiddenIcon, size: 13, color: palette.textTertiary),
+                KapyIcon(hiddenIcon, size: 14, color: palette.textTertiary),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
@@ -1322,7 +1322,7 @@ extension on Sidebar {
                 onPressed: onPinnedOnlyChanged == null
                     ? null
                     : () => onPinnedOnlyChanged(false),
-                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 13),
+                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
               ),
               const SizedBox(width: 6),
               pin,
