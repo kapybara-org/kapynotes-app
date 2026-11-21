@@ -5,8 +5,8 @@
 # the branch's own copy, so a branch cut before this file landed merges main
 # first.
 #
-# Two jobs run integration_test/phone_v2_test.dart and
-# phone_format_bar_test.dart under flutter drive and upload every screenshot
+# Two jobs run integration_test/phone_v2_test.dart, phone_format_bar_test.dart
+# and phone_tasks_test.dart under flutter drive and upload every screenshot
 # they take: android on an Android 16 emulator, as the android-screenshots
 # artifact, and ios on an iOS 27.2 iPhone simulator, as ios-screenshots. Each
 # fails when a test fails, and the screenshots up to that point still upload.

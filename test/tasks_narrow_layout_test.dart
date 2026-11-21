@@ -127,6 +127,7 @@ void main() {
               addFocus: _focus,
               labelOf: (_) => label,
               onOpenNote: (_) {},
+              onOpenDone: () {},
               phone: phone,
             ),
           ),
@@ -136,16 +137,34 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// The first-on-the-list card's words, which must keep most of its row.
-  Finder readyWords(String words) => find.descendant(
-    of: find
-        .ancestor(
-          of: find.text('First on the list'),
-          matching: find.byType(Column),
-        )
-        .first,
+  /// The left pair card's words, which must keep the card's width.
+  Finder pairWords(String words) => find.descendant(
+    of: find.byKey(const ValueKey('tasks-pair-left')),
     matching: find.text(words),
   );
+
+  /// The note's name sits under [words] on its own line rather than sharing
+  /// theirs, and stays inside [card].
+  void expectNoteUnder(
+    WidgetTester tester,
+    Finder words,
+    Finder card,
+    String label,
+  ) {
+    final note = find.descendant(
+      of: card,
+      matching: find.textContaining(label),
+    );
+    expect(note, findsOneWidget);
+    expect(
+      tester.getRect(note).top,
+      greaterThanOrEqualTo(tester.getRect(words).bottom - 0.5),
+    );
+    expect(
+      tester.getRect(note).right,
+      lessThanOrEqualTo(tester.getRect(card).right + 0.5),
+    );
+  }
 
   /// One line of [finder]'s text at [scale]: no letter-per-line wrapping.
   void expectOneLine(WidgetTester tester, Finder finder, double scale) {
@@ -202,7 +221,10 @@ void main() {
               tester,
               'Errands\n☐ Hide the menu\n☐ Water the plants\n☐ Two',
             );
-            final item = tasks.read().open[1];
+            tasks.doNow(tasks.read().open.first);
+            final item = tasks.read().open.firstWhere(
+              (item) => item.words == 'Water the plants',
+            );
             if (state == 'picked') tasks.dot(item);
             clock = clock.add(const Duration(days: 15));
             await pumpTasks(
@@ -212,7 +234,10 @@ void main() {
               label: _shared,
               scale: scale,
             );
-            expect(tasks.read().open[1].dotted, state == 'picked');
+            expect(
+              tasks.read().open.firstWhere((i) => i.id == item.id).dotted,
+              state == 'picked',
+            );
             final row = find.byKey(ValueKey(item.id));
             if (state == 'hovered') {
               await tester.ensureVisible(row);
@@ -231,10 +256,8 @@ void main() {
               expect((box.decoration as BoxDecoration).color, isNotNull);
             }
             expect(tester.takeException(), isNull);
-            Finder button(String label) => find.ancestor(
-              of: find.descendant(of: row, matching: find.text(label)),
-              matching: find.byType(TextButton),
-            );
+            Finder button(String label) =>
+                find.descendant(of: row, matching: find.text(label));
             final words = find.descendant(
               of: row,
               matching: find.text('Water the plants'),
@@ -255,7 +278,7 @@ void main() {
               expect(tester.getRect(other).overlaps(wordsRect), isFalse);
             }
             if (scale == 1 && width >= 420) {
-              expect(tester.getSize(row).height, touch ? 44 : 38);
+              expect(tester.getSize(row).height, touch ? 44 : 36);
               var left = wordsRect.right;
               for (final other in others) {
                 final rect = tester.getRect(other);
@@ -284,9 +307,12 @@ void main() {
 
     for (final scale in [1.0, 3.1]) {
       testWidgets(
-        'at ${scale}x, a long shared note name leaves the first task its row',
+        'at ${scale}x, a long shared note name leaves the first task its card',
         (tester) async {
-          await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+          await setUpTasks(
+            tester,
+            'Errands\n☐ Water the plants\n☐ Two\n☐ Three',
+          );
           await pumpTasks(
             tester,
             size: const Size(390, 844),
@@ -294,20 +320,22 @@ void main() {
             label: _shared,
             scale: scale,
           );
-          final words = readyWords('Water the plants');
+          final words = pairWords('Water the plants');
           expect(words, findsOneWidget);
           if (scale == 1) expectOneLine(tester, words, scale);
-          expectMostOfRow(tester, words);
-          expectInside(
+          expectNoteUnder(
             tester,
-            find.byKey(const ValueKey('tasks-ready-yes')),
-            390,
+            words,
+            find.byKey(const ValueKey('tasks-pair-left')),
+            'Errands for Bob',
           );
-          expectInside(
-            tester,
-            find.byKey(const ValueKey('tasks-ready-not-yet')),
-            390,
-          );
+          for (final key in [
+            'tasks-pair-left',
+            'tasks-pair-right',
+            'tasks-start',
+          ]) {
+            expectInside(tester, find.byKey(ValueKey(key)), 390);
+          }
           await tester.pump(const Duration(seconds: 3));
         },
       );
@@ -328,7 +356,7 @@ void main() {
         final count = tester.getRect(
           find.byKey(const ValueKey('tasks-done-count')),
         );
-        expect(title.height, lessThan(36 * scale * 1.5));
+        expect(title.height, lessThan(24 * scale * 1.5));
         if (scale == 1) {
           expect(count.left, greaterThanOrEqualTo(title.right - 0.5));
           expect(count.top, lessThan(title.bottom));
@@ -339,8 +367,8 @@ void main() {
       });
     }
 
-    testWidgets('at 3.1x, the first task and its buttons fit', (tester) async {
-      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two');
+    testWidgets('at 3.1x, the first pair and Start with fit', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two\n☐ Three');
       await pumpTasks(
         tester,
         size: const Size(390, 844),
@@ -348,18 +376,25 @@ void main() {
         label: 'Errands',
         scale: 3.1,
       );
-      final words = readyWords('Hide the menu');
-      expectMostOfRow(tester, words);
+      final words = pairWords('Hide the menu');
       expect(
         tester.getSize(words).height,
         lessThan(22 * 3.1 * 2.5),
         reason: 'the task words went one word per line',
       );
-      expectInside(tester, find.byKey(const ValueKey('tasks-ready-yes')), 390);
-      expectInside(
+      for (final key in ['tasks-pair-left', 'tasks-pair-right']) {
+        expectInside(tester, find.byKey(ValueKey(key)), 390);
+      }
+      final start = find.byKey(const ValueKey('tasks-start'));
+      expectInside(tester, start, 390);
+      final label = find.descendant(
+        of: start,
+        matching: find.textContaining('Start with'),
+      );
+      expectWholeLine(
         tester,
-        find.byKey(const ValueKey('tasks-ready-not-yet')),
-        390,
+        label,
+        find.ancestor(of: label, matching: find.byType(Container)).first,
       );
       await tester.pump(const Duration(seconds: 3));
     });
@@ -502,10 +537,10 @@ void main() {
     );
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-    testWidgets('the first task keeps its words above a long note name', (
+    testWidgets('the first pair keeps its words above a long note name', (
       tester,
     ) async {
-      await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+      await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two\n☐ Three');
       await pumpTasks(
         tester,
         size: const Size(390, 844),
@@ -514,34 +549,25 @@ void main() {
         scaler: const _Android200(),
       );
       expect(tester.takeException(), isNull);
-      final words = readyWords('Water the plants');
+      final words = pairWords('Water the plants');
       expect(
         tester.getSize(words).width,
-        greaterThan(const _Android200().scale(15) * 3),
+        greaterThan(const _Android200().scale(16) * 3),
         reason: 'the task kept only its first letters',
       );
-      expect(
-        tester
-            .getRect(
-              find.descendant(
-                of: find
-                    .ancestor(
-                      of: find.text('First on the list'),
-                      matching: find.byType(Column),
-                    )
-                    .first,
-                matching: find.byType(NoteMark),
-              ),
-            )
-            .top,
-        greaterThanOrEqualTo(tester.getRect(words).bottom - 0.5),
-      );
-      expectInside(tester, find.byKey(const ValueKey('tasks-ready-yes')), 390);
-      expectInside(
+      expectNoteUnder(
         tester,
-        find.byKey(const ValueKey('tasks-ready-not-yet')),
-        390,
+        words,
+        find.byKey(const ValueKey('tasks-pair-left')),
+        'Errands for Bob',
       );
+      for (final key in [
+        'tasks-pair-left',
+        'tasks-pair-right',
+        'tasks-start',
+      ]) {
+        expectInside(tester, find.byKey(ValueKey(key)), 390);
+      }
       await tester.pump(const Duration(seconds: 3));
     });
 
@@ -591,7 +617,10 @@ void main() {
           tester,
           'Errands\n☐ Hide the menu\n☐ Water the plants\n☐ Two',
         );
-        final item = tasks.read().open[1];
+        tasks.doNow(tasks.read().open.first);
+        final item = tasks.read().open.firstWhere(
+          (item) => item.words == 'Water the plants',
+        );
         clock = clock.add(const Duration(days: 15));
         await pumpTasks(
           tester,
@@ -625,10 +654,11 @@ void main() {
     for (final label in ['Errands', _shared]) {
       testWidgets(
         'with a task\'s details open and ${label == _shared ? 'a long' : 'a short'} '
-        'note name, the first task keeps its row and its buttons stay clear '
-        'of the details',
+        'note name, Do now keeps its words and its buttons stay clear of the '
+        'details',
         (tester) async {
           await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two');
+          tasks.doNow(tasks.read().open.first);
           await pumpTasks(
             tester,
             size: const Size(560, 700),
@@ -637,33 +667,34 @@ void main() {
           );
           final second = tasks.read().open[1];
           await tester.tap(
-            find.descendant(
-              of: find.byKey(ValueKey(second.id)),
-              matching: find.text('Two'),
-            ),
+            find
+                .descendant(
+                  of: find.byKey(ValueKey(second.id)),
+                  matching: find.text('Two'),
+                )
+                .first,
           );
           await tester.pumpAndSettle();
           final sheet = tester.getRect(find.byType(TaskDetailsSheet));
-          final words = readyWords('Hide the menu');
+          final card = find.byKey(const ValueKey('tasks-do-now'));
+          final words = find.descendant(
+            of: card,
+            matching: find.text('Hide the menu'),
+          );
           expect(
             tester.getSize(words).height,
-            lessThan(22 * 2.5),
+            lessThan(20 * 2.5),
             reason: 'the task words broke into more than two lines',
           );
+          expect(tester.getRect(words).right, lessThanOrEqualTo(sheet.left));
+          expectNoteUnder(tester, words, card, label.split(' · ').first);
+          for (final key in ['tasks-done', 'tasks-not-finished']) {
+            expectInside(tester, find.byKey(ValueKey(key)), sheet.left);
+          }
           expect(
-            tester.getRect(find.text('Hide the menu').first).right,
-            lessThanOrEqualTo(sheet.left),
-          );
-          expectMostOfRow(tester, words);
-          expectInside(
-            tester,
-            find.byKey(const ValueKey('tasks-ready-yes')),
-            sheet.left,
-          );
-          expectInside(
-            tester,
-            find.byKey(const ValueKey('tasks-ready-not-yet')),
-            sheet.left,
+            tester.getRect(find.byKey(const ValueKey('tasks-done'))).top,
+            greaterThanOrEqualTo(tester.getRect(words).bottom),
+            reason: 'beside a narrow column the buttons go under the task',
           );
           await tester.pump(const Duration(seconds: 3));
         },
@@ -686,8 +717,21 @@ void main() {
           phone: false,
           label: _shared,
         );
-        expect(find.text('Send the weekly report'), findsWidgets);
+        final row = find.text('Send the weekly report');
+        expect(row, findsWidgets);
+        expect(find.text('Still want this?'), findsNothing);
+        expect(find.text('Keep'), findsWidgets);
+        final mark = find.descendant(
+          of: find.ancestor(of: row.last, matching: find.byType(Row)).first,
+          matching: find.byType(NoteMark),
+        );
+        expect(tester.getSize(mark).width, lessThanOrEqualTo(480 * 0.4));
+        expect(
+          tester.getSize(find.byKey(const ValueKey('tasks-note-picker'))).width,
+          lessThanOrEqualTo(480 * 0.4),
+        );
         expectInside(tester, find.byKey(const ValueKey('tasks-done')), 480);
+        await tasks.setDone(tasks.read().open.first, done: true);
         await pumpTasks(
           tester,
           size: const Size(480, 900),
@@ -695,6 +739,16 @@ void main() {
           label: _shared,
           filter: const TaskFilter.done(),
         );
+        final done = find.text('Water the plants');
+        expect(
+          tester.renderObject<RenderParagraph>(done).didExceedMaxLines,
+          isFalse,
+          reason: 'the done task lost its words to the note name',
+        );
+        for (final mark in find.byType(NoteMark).evaluate()) {
+          expect(mark.size!.width, lessThanOrEqualTo(220));
+        }
+        expectInside(tester, find.text('09:00'), 480);
         await tester.pump(const Duration(seconds: 3));
       },
     );
@@ -704,7 +758,8 @@ void main() {
         'in a Tasks pane ${width.round()} wide at ${scale}x, an open '
         'task ${scale == 1 ? 'keeps its note name beside its words' : 'puts its note name under its words'}',
         (tester) async {
-          await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+          await setUpTasks(tester, 'Errands\n☐ Two\n☐ Water the plants');
+          tasks.doNow(tasks.read().open.first);
           await pumpTasks(
             tester,
             size: Size(width, 900),
@@ -712,7 +767,10 @@ void main() {
             label: _shared,
             scale: scale,
           );
-          final row = find.byKey(ValueKey(tasks.read().open.first.id));
+          final water = tasks.read().open.firstWhere(
+            (item) => item.words == 'Water the plants',
+          );
+          final row = find.byKey(ValueKey(water.id));
           final words = find.descendant(
             of: row,
             matching: find.text('Water the plants'),
@@ -731,7 +789,7 @@ void main() {
             expect(markRect.top, greaterThanOrEqualTo(wordsRect.bottom - 0.5));
             expect(
               wordsRect.width,
-              greaterThan(tester.getSize(row).width * 0.6),
+              greaterThan(16 * 3.1 * 3),
               reason: 'the note name squeezed the task words',
             );
           }
@@ -742,7 +800,7 @@ void main() {
       );
     }
 
-    testWidgets('in a Tasks pane 420 wide at 3.1x, a task to pick puts its '
+    testWidgets('in a Tasks pane 420 wide at 3.1x, a pair card puts its '
         'note name under its words', (tester) async {
       await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Water the plants');
       await pumpTasks(
@@ -752,33 +810,128 @@ void main() {
         label: _shared,
         scale: 3.1,
       );
-      final notYet = find.byKey(const ValueKey('tasks-ready-not-yet'));
-      await tester.ensureVisible(notYet);
-      await tester.tap(notYet);
-      await tester.pumpAndSettle();
-      final row = find.byKey(
-        ValueKey('tasks-candidate-${tasks.read().open[1].id}'),
-      );
-      final words = find.descendant(
-        of: row,
-        matching: find.text('Water the plants'),
-      );
-      final mark = find.descendant(of: row, matching: find.byType(NoteMark));
-      expect(mark, findsOneWidget);
-      final wordsRect = tester.getRect(words);
+      final card = find.byKey(const ValueKey('tasks-pair-left'));
+      final words = pairWords('Hide the menu');
       expect(
-        tester.getRect(mark).top,
-        greaterThanOrEqualTo(wordsRect.bottom - 0.5),
-      );
-      expect(
-        wordsRect.width,
+        tester.getRect(words).width,
         greaterThan(16 * 3.1 * 3),
         reason: 'the task kept only its first letters',
       );
-      expectInside(tester, words, 420);
-      expectInside(tester, mark, 420);
+      expectNoteUnder(tester, words, card, 'Errands for Bob');
+      expectInside(tester, card, 420);
       await tester.pump(const Duration(seconds: 3));
     });
+
+    testWidgets('in a Tasks pane 320 wide at 3.1x, Done and Not finished wrap '
+        'their words instead of overflowing', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+      tasks.doNow(tasks.read().open.first);
+      await pumpTasks(
+        tester,
+        size: const Size(320, 844),
+        phone: false,
+        label: 'Errands',
+        scale: 3.1,
+      );
+      expect(tester.takeException(), isNull);
+      for (final (key, text) in [
+        ('tasks-done', 'Done'),
+        ('tasks-not-finished', 'Not finished'),
+      ]) {
+        final pill = find.byKey(ValueKey(key));
+        expectInside(tester, pill, 320);
+        expectInside(
+          tester,
+          find.descendant(of: pill, matching: find.text(text)),
+          320,
+        );
+      }
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('in a Tasks pane 640 wide with Android 14\'s 200% text, the '
+        'pair stacks its cards', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Water the plants');
+      await pumpTasks(
+        tester,
+        size: const Size(640, 1400),
+        phone: false,
+        label: 'Errands',
+        scaler: const _Android200(),
+      );
+      expect(tester.takeException(), isNull);
+      final left = tester.getRect(
+        find.byKey(const ValueKey('tasks-pair-left')),
+      );
+      final right = tester.getRect(
+        find.byKey(const ValueKey('tasks-pair-right')),
+      );
+      expect(right.top, greaterThanOrEqualTo(left.bottom - 0.5));
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('in a Tasks pane 640 wide with Android 14\'s 200% text, Do '
+        'now puts its buttons under the task', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two');
+      tasks.doNow(tasks.read().open.first);
+      await pumpTasks(
+        tester,
+        size: const Size(640, 1400),
+        phone: false,
+        label: 'Errands',
+        scaler: const _Android200(),
+      );
+      expect(tester.takeException(), isNull);
+      final words = find.descendant(
+        of: find.byKey(const ValueKey('tasks-do-now')),
+        matching: find.text('Hide the menu'),
+      );
+      for (final key in ['tasks-done', 'tasks-not-finished']) {
+        expect(
+          tester.getRect(find.byKey(ValueKey(key))).top,
+          greaterThanOrEqualTo(tester.getRect(words).bottom - 0.5),
+        );
+      }
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    for (final (width, scale, asks) in [
+      (768.0, 1.0, true),
+      (768.0, 2.0, false),
+    ]) {
+      testWidgets('in a Tasks pane ${width.round()} wide at ${scale}x, a stale '
+          'task ${asks ? 'asks' : 'doesn\'t ask'} "Still want this?"', (
+        tester,
+      ) async {
+        await setUpTasks(
+          tester,
+          'Errands\n☐ Hide the menu\n☐ Water the plants\n☐ Two',
+        );
+        tasks.doNow(tasks.read().open.first);
+        final item = tasks.read().open.firstWhere(
+          (item) => item.words == 'Water the plants',
+        );
+        clock = clock.add(const Duration(days: 15));
+        await pumpTasks(
+          tester,
+          size: Size(width, 1400),
+          phone: false,
+          label: 'Errands',
+          scale: scale,
+        );
+        expect(tester.takeException(), isNull);
+        final row = find.byKey(ValueKey(item.id));
+        expect(
+          find.descendant(of: row, matching: find.text('Still want this?')),
+          asks ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.descendant(of: row, matching: find.text('Keep')),
+          findsOneWidget,
+        );
+        await tester.pump(const Duration(seconds: 3));
+      });
+    }
   });
 
   group('on a touch screen', () {

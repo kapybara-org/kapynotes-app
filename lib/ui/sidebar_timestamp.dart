@@ -113,6 +113,10 @@ class SidebarTimestamp {
       '${_weekdayNames[shown.weekday - 1]}, ${shown.day} '
       '${_monthNames[shown.month - 1]}';
 
+  /// The weekday and the date, as beside Today on Tasks: "Wed 19".
+  static String dayAndDate(DateTime shown) =>
+      '${_weekdays[shown.weekday - 1]} ${shown.day}';
+
   /// A day in a few letters, as a task says when it was added: "Sat 14 Nov",
   /// with the year only when it is not this one.
   static String shortDay(DateTime shown, {required DateTime now}) {

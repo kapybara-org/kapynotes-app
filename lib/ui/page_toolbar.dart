@@ -91,6 +91,7 @@ class PageToolbar extends StatelessWidget {
   const PageToolbar({
     super.key,
     this.path,
+    this.crumb,
     this.days,
     required this.listVisible,
     required this.onShowList,
@@ -113,10 +114,14 @@ class PageToolbar extends StatelessWidget {
     this.updates,
     this.actions,
     this.back,
-  }) : assert(path != null || days != null || back != null);
+  }) : assert(path != null || crumb != null || days != null || back != null);
 
   /// Where a page with no days is, at the top left.
   final PagePath? path;
+
+  /// Drawn at the top left in place of the path, as Tasks' Today and its
+  /// date.
+  final Widget? crumb;
 
   /// The page's days, which put their month at the top left and their week
   /// in the middle through the place they are given. With compact, one
@@ -329,6 +334,8 @@ class PageToolbar extends StatelessWidget {
                 )
               else if (days != null)
                 days(room < _fullWidth, band)
+              else if (crumb case final crumb?)
+                band(crumb)
               else
                 band(
                   _Path(
