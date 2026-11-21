@@ -11,8 +11,9 @@ import 'task_choice.dart';
 import 'task_marks.dart';
 import 'task_details_sheet.dart';
 
-/// The Tasks boards' own colours (KAPY-62, row D). Dark is drawn; light
-/// takes the nearest of the palette's own.
+/// The Tasks boards' colours (KAPY-62, row D), each the nearest of the
+/// palette's own. In dark, the few the palette has no role for are steps off
+/// the card, worked out so Riverbank dark keeps the colours it was drawn in.
 class TaskInk {
   const TaskInk._({
     required this.card,
@@ -31,26 +32,32 @@ class TaskInk {
     required this.hairline,
   });
 
-  static const dark = TaskInk._(
-    card: Color(0xFF24221E),
-    raised: Color(0xFF2A2824),
-    lifted: Color(0xFF2F2D29),
-    rowHover: Color(0xFF282622),
-    button: Color(0xFF312F2A),
-    chip: Color(0xFF34312C),
-    text: Color(0xFFE2DCCF),
-    secondary: Color(0xFFA29A8A),
-    quiet: Color(0xFF968E7F),
-    sage: Color(0xFF9DB384),
-    doneFill: Color(0xFF37392E),
-    edge: Color(0x14E2DCCF),
-    keyEdge: Color(0x24E2DCCF),
-    hairline: Color(0x0FE2DCCF),
-  );
-
   factory TaskInk.of(BuildContext context) {
     final palette = context.palette;
-    if (palette.brightness == Brightness.dark) return dark;
+    if (palette.brightness == Brightness.dark) {
+      final card = palette.cardBackground;
+      final text = palette.textPrimary;
+      Color step(Color toward, double amount) => Color(
+        Color.alphaBlend(toward.withValues(alpha: amount), card).toARGB32(),
+      );
+      final contrast = palette.increasedContrast;
+      return TaskInk._(
+        card: card,
+        raised: palette.selectedBackground,
+        lifted: step(text, 0.06),
+        rowHover: palette.hover,
+        button: step(text, 0.07),
+        chip: step(text, 0.0817),
+        text: text,
+        secondary: palette.textSecondary,
+        quiet: palette.textTertiary,
+        sage: palette.accentText,
+        doneFill: step(palette.accentText, 0.16),
+        edge: contrast ? palette.controlBorder : text.withAlpha(0x14),
+        keyEdge: contrast ? palette.checkboxBorder : text.withAlpha(0x24),
+        hairline: palette.separator,
+      );
+    }
     return TaskInk._(
       card: palette.wellBackground,
       raised: palette.cardBackground,

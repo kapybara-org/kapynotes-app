@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -901,6 +902,29 @@ void main() {
       await golden(tester, 'd1_first_pair');
       await settle(tester);
     });
+
+    for (final increaseContrast in [false, true]) {
+      testWidgets('D1 on a phone in Midnight, increaseContrast: '
+          '$increaseContrast', (tester) async {
+        await canonical(tester);
+        await pumpScreen(
+          tester,
+          phone: true,
+          theme: KapyTheme.dark(
+            theme: AppTheme.midnight,
+            increaseContrast: increaseContrast,
+          ),
+        );
+        await settle(tester);
+        await expectLater(
+          find.byType(TasksScreen),
+          matchesGoldenFile(
+            'goldens/tasks_pair_midnight${increaseContrast ? '_contrast' : ''}.png',
+          ),
+        );
+        await settle(tester);
+      });
+    }
 
     testWidgets('D2 morning, mid-pair', (tester) async {
       await canonical(tester);
