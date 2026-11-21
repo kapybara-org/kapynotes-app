@@ -1,0 +1,7 @@
+A new Notes home and calmer sharing.
+
+- Notes shows a day at a time, with Pinned and Shared cards at the top and your streak by the title.
+- A shared note shows who it's shared with, and Sharing is in a note's menu.
+- Removing someone or stopping sharing asks first, and Undo works even after the sheet closes.
+- Clearer icons, calmer text, and tasks that stay readable at large text sizes.
+- An edit someone else made that your phone couldn't open yet is no longer lost.
