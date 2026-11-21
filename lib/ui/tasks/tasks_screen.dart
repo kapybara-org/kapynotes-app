@@ -1420,36 +1420,50 @@ class _DoneRow extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: LayoutBuilder(
-                builder: (context, constraints) => Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        item.words,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: uiStyle(
-                          16,
-                          28,
-                          FontWeight.w500,
-                          palette.textMuted,
+                builder: (context, constraints) {
+                  final words = Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          item.words,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: uiStyle(
+                            16,
+                            28,
+                            FontWeight.w500,
+                            palette.textMuted,
+                          ),
                         ),
                       ),
-                    ),
-                    if (label != null) ...[
+                    ],
+                  );
+                  if (label == null) return words;
+                  final mark = NoteMark(
+                    note: item.note,
+                    label: label,
+                    onPressed: onOpenNote,
+                  );
+                  if (constraints.maxWidth <
+                      MediaQuery.textScalerOf(context).scale(200)) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [words, mark],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Flexible(child: words),
                       const SizedBox(width: 12),
                       ConstrainedBox(
                         constraints: BoxConstraints(
                           maxWidth: taskMarkWidth(constraints.maxWidth),
                         ),
-                        child: NoteMark(
-                          note: item.note,
-                          label: label,
-                          onPressed: onOpenNote,
-                        ),
+                        child: mark,
                       ),
                     ],
-                  ],
-                ),
+                  );
+                },
               ),
             ),
             ConstrainedBox(

@@ -364,6 +364,46 @@ void main() {
       expectInside(tester, words, 390);
       await tester.pump(const Duration(seconds: 3));
     });
+
+    for (final scale in [1.0, 3.1]) {
+      testWidgets('at ${scale}x, a done task beside a long note name keeps '
+          'its words', (tester) async {
+        await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+        await tasks.setDone(tasks.read().open.first, done: true);
+        await pumpTasks(
+          tester,
+          size: const Size(390, 844),
+          phone: true,
+          label: _shared,
+          scale: scale,
+          filter: const TaskFilter.done(),
+        );
+        final words = find.text('Water the plants');
+        final mark = find.descendant(
+          of: find
+              .ancestor(of: words, matching: find.byType(LayoutBuilder))
+              .first,
+          matching: find.byType(NoteMark),
+        );
+        expect(mark, findsOneWidget);
+        final wordsRect = tester.getRect(words);
+        final markRect = tester.getRect(mark);
+        if (scale == 1) {
+          expect(markRect.center.dy, closeTo(wordsRect.center.dy, 4));
+          expect(markRect.left, greaterThan(wordsRect.right));
+        } else {
+          expect(markRect.top, greaterThanOrEqualTo(wordsRect.bottom - 0.5));
+          expect(
+            wordsRect.width,
+            greaterThan(16 * 3.1 * 3),
+            reason: 'the task kept only its first letter',
+          );
+        }
+        expectInside(tester, words, 390);
+        expectInside(tester, mark, 390);
+        await tester.pump(const Duration(seconds: 3));
+      });
+    }
   });
 
   group('on a desktop', () {
