@@ -213,7 +213,7 @@ class SpacesRail extends StatelessWidget {
                 ),
               ),
               if (streak != null && streak.days > 0) ...[
-                _RailStreak(key: const ValueKey('rail-streak'), streak: streak),
+                StreakMark(key: const ValueKey('rail-streak'), streak: streak),
                 const SizedBox(height: 7.5),
               ],
               _RailSettings(
@@ -391,7 +391,9 @@ class _Badge extends StatelessWidget {
           fontSize: AppTypeScale.micro,
           height: 12 / 11,
           fontWeight: FontWeight.w500,
-          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+          fontVariations: AppWeight.variations(
+            AppWeight.bold(AppWeight.rowTitle),
+          ),
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -400,13 +402,17 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// The writing streak: a flame over how many days in a row, lit in clay once
+/// The writing streak: a flame and how many days in a row, lit in clay once
 /// today has been written in, waiting in grey until then, flaring for a
-/// moment as it catches.
-class _RailStreak extends StatelessWidget {
-  const _RailStreak({super.key, required this.streak});
+/// moment as it catches. Over its count on the rail, beside it on a phone's
+/// Home.
+class StreakMark extends StatelessWidget {
+  const StreakMark({super.key, required this.streak, this.inline = false});
 
   final WritingStreak streak;
+
+  /// A phone's Home header: the flame before the count, at the header's size.
+  final bool inline;
 
   /// What the tooltip says, and so what a screen reader hears.
   static String describe(WritingStreak streak) => streak.wroteToday
@@ -430,32 +436,47 @@ class _RailStreak extends StatelessWidget {
             tween: Tween(begin: lit, end: lit),
             duration: still ? Duration.zero : const Duration(milliseconds: 600),
             curve: Curves.easeOutCubic,
-            builder: (context, t, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.scale(
-                  scale: streak.wroteToday
-                      ? 1 + 0.3 * math.sin(math.pi * t)
-                      : 1,
-                  alignment: Alignment.bottomCenter,
-                  child: KapyIcon(
-                    KapyIcons.fireOutlined,
-                    size: 16,
-                    color: Color.lerp(palette.textTertiary, palette.clay, t),
-                  ),
+            builder: (context, t, _) {
+              final ink = Color.lerp(
+                palette.textTertiary,
+                palette.textPrimary,
+                t,
+              )!;
+              final flame = Transform.scale(
+                scale: streak.wroteToday ? 1 + 0.3 * math.sin(math.pi * t) : 1,
+                alignment: Alignment.bottomCenter,
+                child: KapyIcon(
+                  KapyIcons.fireOutlined,
+                  size: 16,
+                  color: Color.lerp(palette.textTertiary, palette.clay, t),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  days == 1 ? '1 day' : '$days days',
-                  maxLines: 1,
-                  softWrap: false,
-                  style: _railLabel(
-                    Color.lerp(palette.textTertiary, palette.textPrimary, t)!,
-                    strong: true,
-                  ),
-                ),
-              ],
-            ),
+              );
+              final label = Text(
+                days == 1 ? '1 day' : '$days days',
+                maxLines: 1,
+                softWrap: false,
+                style: inline
+                    ? TextStyle(
+                        fontFamily: AppFonts.ui,
+                        fontSize: 13,
+                        height: 16 / 13,
+                        fontWeight: FontWeight.w500,
+                        color: ink,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      )
+                    : _railLabel(ink, strong: true),
+              );
+              return inline
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: 4,
+                      children: [flame, label],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [flame, const SizedBox(height: 4), label],
+                    );
+            },
           ),
         ),
       ),
@@ -597,7 +618,9 @@ class _RailAccount extends StatelessWidget {
                   fontSize: AppTypeScale.control,
                   height: 1,
                   fontWeight: FontWeight.w500,
-                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                  fontVariations: AppWeight.variations(
+                    AppWeight.bold(AppWeight.rowTitle),
+                  ),
                   color: palette.textPrimary,
                 ),
               ),

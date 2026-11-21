@@ -5839,6 +5839,8 @@ void main() {
     final gate = _HiddenGate();
     await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
     await showNotesList(tester);
+    final streak = find.byKey(const ValueKey('phone-streak'));
+    expect(streak, findsOneWidget);
     await openPhoneFilters(tester);
 
     expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
@@ -5852,6 +5854,17 @@ void main() {
 
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
+    expect(streak, findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('phone-list-title'))).data,
+      'Archive',
+    );
+    expect(streak, findsNothing);
   });
 
   testWidgets('a phone keeps its filter row out of the way until its button '
@@ -7431,6 +7444,43 @@ void main() {
       await tester.pumpAndSettle();
       expect(card, findsOneWidget);
       expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    });
+
+    testWidgets("Home's header carries the writing streak at its end, and "
+        'Drawings leaves it out', (tester) async {
+      notes.create(body: 'Written today');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final streak = find.byKey(const ValueKey('phone-streak'));
+      expect(
+        find.descendant(of: streak, matching: find.text('1 day')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: streak,
+          matching: findKapyIcon(KapyIcons.fireOutlined),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('1-day writing streak'), findsOneWidget);
+      expect(tester.getTopRight(streak).dx, 393 - 20);
+      expect(find.byKey(const ValueKey('rail-streak')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
+      await tester.pumpAndSettle();
+      expect(streak, findsNothing);
+    });
+
+    testWidgets('Home shows no streak before anything is written', (
+      tester,
+    ) async {
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+      expect(find.byKey(const ValueKey('phone-streak')), findsNothing);
     });
 
     testWidgets("Home's Pinned card counts the pinned notes a filter hides, "

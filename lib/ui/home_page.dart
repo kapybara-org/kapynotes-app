@@ -4806,6 +4806,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : _listTitle,
       count: _matchingCount,
       onBack: _sharedPage ? () => _showSpace(LibrarySpace.notes) : null,
+      streak: !_specialMode && _space == LibrarySpace.notes
+          ? widget.notes.streak
+          : null,
     ),
     notes: _visibleNotes,
     pinnedNoteIds: widget.notes.pinnedNoteIds,
