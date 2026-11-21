@@ -5099,6 +5099,34 @@ void main() {
       await tester.pumpAndSettle();
       expect([for (final tile in tiles) tester.getRect(tile)], shown);
     });
+
+    testWidgets('Saved goes to the date line once the +\'s room leaves the '
+        'band under 560, and stays in the band above it', (tester) async {
+      final inBar = find.byKey(const ValueKey('page-saved'));
+      final onDateLine = find.byKey(const ValueKey('note-saved'));
+      final toolbar = find.byType(PageToolbar);
+      await notes.load();
+      notes.create(body: 'alpha');
+      await pumpApp(tester, size: const Size(700, 700), sidebarVisible: false);
+      expect(pageNew, findsOneWidget);
+
+      // The page's width is the window's less a fixed margin. The +'s button
+      // and its gap take 36 of the band, so Saved needs 596 of page.
+      final margin = 700 - tester.getSize(toolbar).width;
+      Future<void> pageWidth(double width) async {
+        tester.view.physicalSize = Size(width + margin, 700);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(toolbar).width, closeTo(width, 0.01));
+      }
+
+      await pageWidth(580);
+      expect(inBar, findsNothing);
+      expect(onDateLine, findsOneWidget);
+
+      await pageWidth(596);
+      expect(inBar, findsOneWidget);
+      expect(onDateLine, findsNothing);
+    });
   });
 
   group('asking for a new note while already in one', () {
