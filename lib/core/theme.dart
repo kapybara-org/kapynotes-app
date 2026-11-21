@@ -653,9 +653,6 @@ extension CrispFills on CalcPalette {
   /// A selected row or tab.
   Color get fillSelected => textPrimary.withValues(alpha: 0.07);
 
-  /// The selected note card, one step lighter again so it reads on a list.
-  Color get fillSelectedCard => textPrimary.withValues(alpha: 0.10);
-
   /// The one sage-tinted control in a page.
   Color get fillSageTint => accentText.withValues(alpha: 0.16);
 

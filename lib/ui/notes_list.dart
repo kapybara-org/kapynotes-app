@@ -203,17 +203,18 @@ List<KapyIconData> _marksOf(
   if (shared) KapyIcons.groupOutlined,
 ];
 
-/// A card's fill: one step up while it is open or picked, and while the
-/// pointer is on it. It never takes an outline for being open.
+/// A card's one fill, opaque on the theme's own card colour so its shadow
+/// never shows through: a step up while the pointer is on it, and another
+/// while it is open or picked. It never takes an outline for being open.
 Color _cardFill(
   CalcPalette palette, {
   required bool selected,
   required bool hovering,
 }) => selected
-    ? palette.fillSelectedCard
+    ? Color.alphaBlend(palette.fillControl, palette.cardBackground)
     : hovering
-    ? palette.fillControl
-    : palette.fillRest;
+    ? Color.alphaBlend(palette.fillRest, palette.cardBackground)
+    : palette.cardBackground;
 
 /// The ring round a card open in another pane.
 Border? _ringOf(CalcPalette palette, {required bool ringed}) => ringed
@@ -401,7 +402,7 @@ class NoteCardFace extends StatelessWidget {
                 locked: locked,
                 shared: shared,
                 tags: tags,
-                ground: Color.alphaBlend(fill, palette.sidebarBackground),
+                ground: fill,
                 selected: marked,
               ),
             ],
@@ -915,7 +916,7 @@ class DrawingCardFace extends StatelessWidget {
                       locked: locked,
                       shared: shared,
                       tags: tags,
-                      ground: Color.alphaBlend(fill, palette.sidebarBackground),
+                      ground: fill,
                       selected: marked,
                     ),
                   ],
