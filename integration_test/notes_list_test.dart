@@ -1,5 +1,5 @@
 // The desktop Notes list on a real Mac: the whole app over notes kept in
-// memory, in a 1100 × 760 window.
+// memory, in a 1100 × 640 window, which fits the CI runner's screen.
 //
 //   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/notes_list_test.dart -d macos \
@@ -77,7 +77,7 @@ void main() {
   }) async {
     if (AppPlatform.isDesktop) {
       await windowManager.ensureInitialized();
-      await windowManager.setBounds(const Rect.fromLTWH(0, 0, 1100, 760));
+      await windowManager.setBounds(const Rect.fromLTWH(0, 0, 1100, 640));
     }
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
@@ -323,9 +323,16 @@ void main() {
     expect(picked(), ['Fifth', 'Fourth', 'Third', 'First']);
     expect(find.text('Delete 4 notes?'), findsOneWidget);
     await shot(tester, 'picked-delete');
-    await click(tester, find.byKey(const ValueKey('confirm-delete')));
+    await tester.tap(find.byKey(const ValueKey('confirm-delete')), kind: mouse);
+    // The toast goes after 1.8 s, so it is looked for as it arrives rather
+    // than once everything has settled.
+    final toast = find.text('4 notes deleted');
+    for (var tries = 0; toast.evaluate().isEmpty && tries < 40; tries++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    }
+    expect(toast, findsOneWidget);
     expect(notes.notes.map((note) => note.title), ['Second']);
-    expect(find.text('4 notes deleted'), findsOneWidget);
     semantics.dispose();
   });
 
