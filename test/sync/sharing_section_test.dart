@@ -136,7 +136,7 @@ void main() {
   }
 
   Future<void> confirm(WidgetTester tester) =>
-      act(tester, find.byKey(const ValueKey('sharing-confirm-ok')));
+      act(tester, find.byKey(const ValueKey('sharing-ask-ok')));
 
   ValueKey<String> person(Device device) => ValueKey('person-${device.email}');
 
@@ -464,7 +464,7 @@ void main() {
     await tester.pumpAndSettle();
     final keep = tester.widget<Checkbox>(
       find.descendant(
-        of: find.byKey(const ValueKey('sharing-confirm-option')),
+        of: find.byKey(const ValueKey('sharing-ask-option')),
         matching: find.byType(Checkbox),
       ),
     );
