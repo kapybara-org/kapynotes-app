@@ -140,6 +140,38 @@ void main() {
           reason: 'borders the switch raises',
         );
       });
+
+      for (final increase in [false, true]) {
+        for (final transparency in [false, true]) {
+          test('${theme.label} ${side.name}'
+              '${increase ? ' with Increase contrast on' : ''}'
+              '${transparency ? ' with transparency on' : ''}: faint text on '
+              'a selected row and a keycap read at AA', () {
+            final build = side == Brightness.dark
+                ? KapyTheme.dark
+                : KapyTheme.light;
+            final p = build(
+              theme: theme,
+              increaseContrast: increase,
+              transparency: transparency,
+            ).extension<CalcPalette>()!;
+            Color over(Color top, Color under) => Color.alphaBlend(top, under);
+            final menu = over(p.surfaceBackground, p.editorBackground);
+            final row = over(p.selectedBackground, menu);
+            final key = over(p.keycapBackground, row);
+            for (final (ink, ground, what) in [
+              (p.textTertiary, row, 'faint text on a selected row'),
+              (p.keycapText, key, 'keycap text on its key'),
+            ]) {
+              expect(
+                _contrast(over(ink, ground), ground),
+                greaterThanOrEqualTo(4.5),
+                reason: what,
+              );
+            }
+          });
+        }
+      }
     }
   });
 
@@ -360,7 +392,7 @@ const _spec =
           'muted': 0xFFBEBEBE,
           'sec': 0xFFA3A3A3,
           'icon': 0xFF929292,
-          'faint': 0xFF8E8E8E,
+          'faint': 0xFF979797,
           'dim': 0xFF5A5A5A,
           'dim2': 0xFF555555,
           'dim3': 0xFF434343,
@@ -416,7 +448,7 @@ const _spec =
           'muted': 0xFF434343,
           'sec': 0xFF5C5C5C,
           'icon': 0xFF676767,
-          'faint': 0xFF6A6A6A,
+          'faint': 0xFF686868,
           'dim': 0xFFADADAD,
           'dim2': 0xFFB5B5B5,
           'dim3': 0xFFCBCBCB,
@@ -472,7 +504,7 @@ const _spec =
           'muted': 0xFFC1BCB4,
           'sec': 0xFFA8A39A,
           'icon': 0xFF959087,
-          'faint': 0xFF908B82,
+          'faint': 0xFF9A958C,
           'dim': 0xFF4F4C48,
           'dim2': 0xFF484641,
           'dim3': 0xFF32312E,
@@ -528,7 +560,7 @@ const _spec =
           'muted': 0xFFACAABC,
           'sec': 0xFF9C9AAE,
           'icon': 0xFF8F8DA2,
-          'faint': 0xFF8C8A9F,
+          'faint': 0xFF9391A6,
           'dim': 0xFF595869,
           'dim2': 0xFF535263,
           'dim3': 0xFF424150,
@@ -640,7 +672,7 @@ const _spec =
           'muted': 0xFFD4B488,
           'sec': 0xFFC4A47A,
           'icon': 0xFFAF916A,
-          'faint': 0xFFAA8C66,
+          'faint': 0xFFAC8E68,
           'dim': 0xFF6C583F,
           'dim2': 0xFF65523B,
           'dim3': 0xFF50412D,
@@ -852,7 +884,7 @@ const _increased = <(AppTheme, Brightness), Map<String, int>>{
     'subhead': 0xFFEFEFEF,
     'sec': 0xFFCCCCCC,
     'muted': 0xFFD7D7D7,
-    'faint': 0xFFBCBCBC,
+    'faint': 0xFFC1C1C1,
     'border': 0xFF777777,
     'hair': 0xFF4B4B4B,
     'divider': 0xFF7D7D7D,
@@ -867,7 +899,7 @@ const _increased = <(AppTheme, Brightness), Map<String, int>>{
     'subhead': 0xFF121212,
     'sec': 0xFF343434,
     'muted': 0xFF2A2A2A,
-    'faint': 0xFF404040,
+    'faint': 0xFF3F3F3F,
     'border': 0xFF818181,
     'hair': 0xFFCACACA,
     'divider': 0xFF929292,
@@ -882,7 +914,7 @@ const _increased = <(AppTheme, Brightness), Map<String, int>>{
     'subhead': 0xFFEFEEEA,
     'sec': 0xFFCFCBC5,
     'muted': 0xFFD8D5CF,
-    'faint': 0xFFBDBAB4,
+    'faint': 0xFFC3BFB9,
     'border': 0xFF676665,
     'hair': 0xFF363535,
     'divider': 0xFF6E6D6C,
@@ -897,7 +929,7 @@ const _increased = <(AppTheme, Brightness), Map<String, int>>{
     'subhead': 0xFFE4E3EA,
     'sec': 0xFFC2C1CE,
     'muted': 0xFFC7C5D2,
-    'faint': 0xFFB5B4C2,
+    'faint': 0xFFB9B8C6,
     'border': 0xFF70707A,
     'hair': 0xFF474752,
     'divider': 0xFF767680,
@@ -927,7 +959,7 @@ const _increased = <(AppTheme, Brightness), Map<String, int>>{
     'subhead': 0xFFF3E7D5,
     'sec': 0xFFDEC7A9,
     'muted': 0xFFE4CCAC,
-    'faint': 0xFFCDB699,
+    'faint': 0xFFCEB79A,
     'border': 0xFF7A7063,
     'hair': 0xFF4F463B,
     'divider': 0xFF817769,
