@@ -129,7 +129,6 @@ class _HomeCard extends StatelessWidget {
                           child: KapyIcon(
                             icon,
                             size: 18,
-                            strokeWidth: 1.5,
                             color: palette.textPrimary,
                           ),
                         ),

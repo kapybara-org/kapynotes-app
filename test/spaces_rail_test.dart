@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -8,6 +9,7 @@ import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'kapy_icon_finder.dart';
 import 'test_fonts.dart';
 
 Widget harness(SpacesRail rail) => MaterialApp(
@@ -120,6 +122,43 @@ void main() {
       find.bySemanticsLabel('Shared with me, 2 invitations'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('icons and captions rest in T2, light to T1 under the pointer, '
+      'and take the tonal ink when open', (tester) async {
+    const palette = KapyTheme.darkPalette;
+    await tester.pumpWidget(harness(rail()));
+    final drawings = find.byKey(const ValueKey('rail-drawings'));
+    Color? icon(Finder item, KapyIconData data) => tester
+        .widget<KapyIcon>(
+          find.descendant(of: item, matching: findKapyIcon(data)),
+        )
+        .color;
+    Color? caption(Finder item) => tester
+        .widget<Text>(find.descendant(of: item, matching: find.byType(Text)))
+        .style
+        ?.color;
+
+    expect(icon(drawings, KapyIcons.penRounded), palette.textSecondary);
+    expect(caption(drawings), palette.textSecondary);
+    expect(
+      icon(find.byKey(const ValueKey('rail-notes')), KapyIcons.noteOutlined),
+      palette.tonalForeground,
+    );
+    expect(
+      icon(
+        find.byKey(const ValueKey('rail-settings')),
+        KapyIcons.settingsGearOutlined,
+      ),
+      palette.textSecondary,
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: tester.getCenter(drawings));
+    await tester.pumpAndSettle();
+    expect(icon(drawings, KapyIcons.penRounded), palette.textPrimary);
+    expect(caption(drawings), palette.textPrimary);
   });
 
   testWidgets('Hidden and the archive are filter choices, not places', (

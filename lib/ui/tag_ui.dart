@@ -381,7 +381,6 @@ class _TagPickerState extends State<TagPicker> {
                               ? KapyIcons.removeRounded
                               : KapyIcons.checkRounded,
                           size: 14,
-                          strokeWidth: 1.8,
                           color: Theme.of(context).colorScheme.primary,
                         ),
                 ),
@@ -409,7 +408,6 @@ class _TagPickerState extends State<TagPicker> {
             leading: KapyIcon(
               KapyIcons.addRounded,
               size: 12,
-              strokeWidth: 2,
               color: palette.textTertiary,
             ),
             label: 'Create “$query”',
@@ -460,7 +458,6 @@ class _TagPickerState extends State<TagPicker> {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: 14,
-                      strokeWidth: 1.8,
                       color: palette.textTertiary,
                     ),
                     const SizedBox(width: 8),
@@ -638,7 +635,6 @@ class _NoteTagChipsState extends State<NoteTagChips> {
                     KapyIcon(
                       KapyIcons.addRounded,
                       size: 12,
-                      strokeWidth: 2,
                       color: palette.textTertiary,
                     ),
                     const SizedBox(width: 4),
@@ -750,7 +746,6 @@ class _TagChipState extends State<_TagChip> {
               child: KapyIcon(
                 KapyIcons.closeRounded,
                 size: 11,
-                strokeWidth: 2,
                 color: palette.textSecondary,
               ),
             ),
@@ -948,7 +943,6 @@ Future<void> showTagActions(
                     KapyIcon(
                       KapyIcons.checkRounded,
                       size: 14,
-                      strokeWidth: 1.8,
                       color: palette.textSecondary,
                     ),
                 ],
@@ -1126,7 +1120,7 @@ class _TagSettingsState extends State<TagSettings> {
                         child: Padding(
                           padding: const EdgeInsets.all(4),
                           child: KapyIcon(
-                            KapyIcons.moreRounded,
+                            KapyIcons.moreVerticalRounded,
                             size: 16,
                             color: palette.textSecondary,
                           ),

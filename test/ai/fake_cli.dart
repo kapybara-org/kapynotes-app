@@ -25,7 +25,9 @@ CodexCli codexCli({
 ///
 /// Every run writes what it was given to its own folder under [log]: its
 /// arguments one per NUL, its stdin, the directory it ran in and what that
-/// held, and its environment. `login`, `auth`, `debug` and `features` answer
+/// held, and its environment. It fills the folder in beside [log] and moves it
+/// in only when it is complete, so [runs] never reads a run that a status
+/// check in the background is still writing. `login`, `auth`, `debug` and `features` answer
 /// like the real ones; anything else is an answer and prints the `reply`
 /// file. A first argument that is a `.js` file is a script run by node, and
 /// is skipped: the stand-in is then the `node.exe` of a Windows shim.
@@ -155,13 +157,14 @@ const String _catalogue =
 
 const String _script = r'''#!/bin/sh
 LOG="@LOG@"
-d="$LOG/run-$$"
-mkdir "$d"
+d="$LOG.partial/run-$$"
+mkdir -p "$d"
 printf '%s\0' "$@" > "$d/argv"
 pwd -P > "$d/cwd"
 ls -A > "$d/cwdlist"
 cat > "$d/stdin"
 env > "$d/env"
+mv "$d" "$LOG/"
 case "$1" in *.js) shift ;; esac
 case "$1" in
   login|auth) exit "$(cat "$LOG/signed_in_exit")" ;;

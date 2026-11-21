@@ -336,7 +336,6 @@ class _SearchField extends StatelessWidget {
           KapyIcon(
             KapyIcons.searchRounded,
             size: 14,
-            strokeWidth: 1.8,
             color: palette.textTertiary,
           ),
           const SizedBox(width: 8),

@@ -103,7 +103,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
     SettingsSection.account => KapyIcons.accountCircleOutlined,
-    SettingsSection.sharing => KapyIcons.peopleOutlined,
+    SettingsSection.sharing => KapyIcons.groupOutlined,
     SettingsSection.about => KapyIcons.infoOutlined,
   };
 
@@ -4345,7 +4345,6 @@ class _RailItem extends StatelessWidget {
                   KapyIcon(
                     icon,
                     size: 16,
-                    strokeWidth: 1.7,
                     color: selected
                         ? palette.tonalForeground
                         : palette.textTertiary,

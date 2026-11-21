@@ -472,8 +472,12 @@ class CodexCli extends _Cli {
     '.npm-global/bin',
   ];
 
-  /// The account's own catalogue, as Codex's model picker lists it, less the
-  /// models that bring a tool of their own.
+  /// Codex's own first pick from the account's catalogue, less the models
+  /// that bring a tool of their own.
+  ///
+  /// One model, because only a model's name tells two of them apart and a
+  /// person is never shown one: the pick is the listed model with the lowest
+  /// `priority`, Codex's own order, and the catalogue's order breaks a tie.
   ///
   /// Some tools come from the catalogue rather than from a feature: in 0.160
   /// a model's `experimental_supported_tools` (`send_user_message_async` and
@@ -489,7 +493,7 @@ class CodexCli extends _Cli {
     ], maxOutput: _Cli._maxCatalogue);
     if (run.exitCode != 0) throw AnswerAccountRejected(kind);
     final catalogue = jsonDecode(run.stdout);
-    final models = [
+    final offered = [
       for (final raw
           in (catalogue is Map ? catalogue['models'] : null) as List? ??
               const [])
@@ -498,15 +502,25 @@ class CodexCli extends _Cli {
             raw['slug'] is String &&
             raw['display_name'] is String &&
             _toolsReviewed(raw['experimental_supported_tools']))
-          KapyModel(
-            kind: KapyModelKind.codex,
-            id: raw['slug'] as String,
-            label: 'Codex',
-          ),
+          raw,
     ];
-    if (models.isEmpty) throw AnswerAccountRejected(kind);
-    return models;
+    if (offered.isEmpty) throw AnswerAccountRejected(kind);
+    final pick = offered.reduce(
+      (best, raw) => _priority(raw) < _priority(best) ? raw : best,
+    );
+    return [
+      KapyModel(
+        kind: KapyModelKind.codex,
+        id: pick['slug'] as String,
+        label: 'Codex',
+      ),
+    ];
   }
+
+  static int _priority(Map<dynamic, dynamic> raw) => switch (raw['priority']) {
+    final int priority => priority,
+    _ => 1 << 31,
+  };
 
   /// The tools a catalogue entry may bring and still be offered. Empty: none
   /// has been shown to be harmless, and one that reaches a person, a clock

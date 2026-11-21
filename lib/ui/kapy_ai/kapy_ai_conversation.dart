@@ -84,7 +84,6 @@ class KapyAiEmpty extends StatelessWidget {
                   KapyIcon(
                     KapyIcons.lockRounded,
                     size: 13,
-                    strokeWidth: 1.8,
                     color: palette.textTertiary,
                   ),
                   const SizedBox(width: 6),
@@ -131,7 +130,6 @@ class _Suggestion extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.sparklesOutlined,
                   size: 14,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 8),
@@ -425,7 +423,6 @@ class _NoteRow extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.noteOutlined,
                   size: 14,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 8),
@@ -679,12 +676,7 @@ class KapyAiNotice extends StatelessWidget {
           children: [
             Row(
               children: [
-                KapyIcon(
-                  icon,
-                  size: 15,
-                  strokeWidth: 1.8,
-                  color: palette.textSecondary,
-                ),
+                KapyIcon(icon, size: 15, color: palette.textSecondary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

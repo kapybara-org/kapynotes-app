@@ -2302,7 +2302,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Toast.show(
       context,
       pinned ? '$count pinned' : '$count unpinned',
-      icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
+      icon: KapyIcons.pinOutlined,
     );
   }
 
@@ -4253,7 +4253,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         KapyMenuAction(
           value: 'pin',
           label: pinned ? 'Unpin note' : 'Pin note',
-          icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
+          icon: KapyIcons.pinOutlined,
         ),
       if (note != null && _canMoveToFolder(note))
         const KapyMenuAction(
@@ -4411,7 +4411,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               icon: KapyIcon(
                 KapyIcons.refreshRounded,
                 size: 15,
-                strokeWidth: 1.8,
                 color: palette.textTertiary,
               ),
               label: const Text('Pick again'),

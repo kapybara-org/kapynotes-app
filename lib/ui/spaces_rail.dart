@@ -286,8 +286,8 @@ class _RailItemState extends State<_RailItem> {
     final ink = selected
         ? palette.tonalForeground
         : lit
-        ? palette.textSecondary
-        : palette.railInk;
+        ? palette.textPrimary
+        : palette.textSecondary;
     final touch = !AppPlatform.hasPointer;
 
     final tile = AnimatedContainer(
@@ -305,7 +305,7 @@ class _RailItemState extends State<_RailItem> {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          KapyIcon(widget.icon, size: 19, strokeWidth: 1.7, color: ink),
+          KapyIcon(widget.icon, size: 20, color: ink),
           if (widget.badge > 0)
             Positioned(
               top: 2,
@@ -347,11 +347,9 @@ class _RailItemState extends State<_RailItem> {
                   softWrap: false,
                   overflow: TextOverflow.fade,
                   style: _railLabel(
-                    selected
+                    selected || lit
                         ? palette.textPrimary
-                        : lit
-                        ? palette.textSecondary
-                        : palette.railInk,
+                        : palette.textSecondary,
                     strong: selected,
                   ),
                 ),
@@ -442,7 +440,6 @@ class _RailStreak extends StatelessWidget {
                   child: KapyIcon(
                     KapyIcons.fireOutlined,
                     size: 16,
-                    strokeWidth: 1.7,
                     color: Color.lerp(palette.textTertiary, palette.clay, t),
                   ),
                 ),
@@ -503,9 +500,8 @@ class _RailSettings extends StatelessWidget {
                 children: [
                   KapyIcon(
                     KapyIcons.settingsGearOutlined,
-                    size: 19,
-                    strokeWidth: 1.7,
-                    color: palette.textTertiary,
+                    size: 20,
+                    color: palette.textSecondary,
                   ),
                   if (updateWaiting)
                     Positioned(
@@ -763,11 +759,15 @@ class PhoneSpaces extends StatelessWidget {
             for (final item in items)
               NavigationDestination(
                 key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
-                icon: KapyIcon(item.icon, size: 22, color: palette.railInk),
+                icon: KapyIcon(
+                  item.icon,
+                  size: 20,
+                  color: palette.textTertiary,
+                ),
                 selectedIcon: KapyIcon(
                   item.icon,
-                  size: 22,
-                  color: palette.tonalForeground,
+                  size: 20,
+                  color: palette.textPrimary,
                 ),
                 label: item.label,
               ),
@@ -879,7 +879,7 @@ class _BarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final ink = selected ? palette.tonalForeground : palette.railInk;
+    final ink = selected ? palette.textPrimary : palette.textTertiary;
     return Semantics(
       container: true,
       button: true,
@@ -899,7 +899,7 @@ class _BarItem extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                KapyIcon(icon, size: 22, strokeWidth: 1.7, color: ink),
+                KapyIcon(icon, size: 20, color: ink),
                 const SizedBox(height: 3),
                 Text(
                   label,
@@ -963,8 +963,7 @@ class _PlusButton extends StatelessWidget {
             child: Center(
               child: KapyIcon(
                 KapyIcons.addRounded,
-                size: 26,
-                strokeWidth: 2.2,
+                size: 22,
                 color: scheme.onPrimary,
               ),
             ),

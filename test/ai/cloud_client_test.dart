@@ -9,12 +9,15 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/retrieval.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 
+import 'ai_fakes.dart';
+
 void main() {
-  const usage = {
+  final resetsAt = testNow.add(const Duration(days: 14));
+  final usage = {
     'used': 10,
     'limit': 500,
     'remaining': 490,
-    'resetsAt': '2026-12-01T00:00:00.000Z',
+    'resetsAt': resetsAt.toUtc().toIso8601String(),
   };
   final request = AnswerRequest(
     question: 'Lisbon?',
@@ -88,7 +91,7 @@ void main() {
     final read = await cloud.fetchUsage();
     expect(read.remaining, 490);
     expect(read.limit, 500);
-    expect(read.resetsAt, DateTime.utc(2026, 12).toLocal());
+    expect(read.resetsAt, resetsAt);
     expect(log.single.url.path, '/ai/usage');
   });
 
