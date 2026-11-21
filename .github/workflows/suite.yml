@@ -61,7 +61,7 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          flutter test --no-pub --concurrency=$(nproc) --reporter failures-only --file-reporter json:suite.json || true
+          flutter test --no-pub --concurrency="$(nproc)" --reporter failures-only --file-reporter json:suite.json || true
           python3 tool/ci/compare.py suite.json tool/ci/linux-baseline.tsv | tee -a "$GITHUB_STEP_SUMMARY"
 
       - if: ${{ !cancelled() }}

@@ -21,7 +21,7 @@ void main() {
     });
 
     test('reads rupees, paise, dollars and cents in English words', () {
-      expect(_line('chai twenty rupees and fifty paise'), '20.51 INR');
+      expect(_line('chai twenty rupees and fifty paise'), '20.50 INR');
       expect(_line('chai twenty rupees fifty paise'), '20.50 INR');
       expect(_line('lunch fifteen dollars and twenty cents'), '15.20 USD');
       expect(_line('tip twenty five cents'), '0.25 USD');
