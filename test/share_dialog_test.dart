@@ -1923,7 +1923,7 @@ void main() {
         await alice.sync.syncNow();
         await alice.sharing.shareNoteWith(shared.id, email: bob.email);
         await bob.sharing.acceptInvite(server.outbox.single.token);
-        await alice.sharing.shareNoteWith(shared.id, email: carol.email);
+        await alice.sharing.addPerson(shared.id, carol.email);
         await alice.sync.syncNow();
         await alice.sharing.refresh();
       });
@@ -1934,7 +1934,12 @@ void main() {
       await tester.pumpAndSettle();
       final row = find.widgetWithText(NoteRow, 'Ours');
       expect(
-        find.descendant(of: row, matching: find.bySemanticsLabel(group.title)),
+        find.descendant(
+          of: row,
+          matching: find.bySemanticsLabel(
+            RegExp('\n${RegExp.escape(group.title)}\$'),
+          ),
+        ),
         findsOneWidget,
       );
       final initial = group.people.first.name.trim()[0].toUpperCase();
@@ -1955,7 +1960,7 @@ void main() {
       expect(
         find.descendant(
           of: find.widgetWithText(NoteRow, 'Private'),
-          matching: find.bySemanticsLabel(RegExp('^With ')),
+          matching: find.bySemanticsLabel(RegExp('\nWith ')),
         ),
         findsNothing,
       );

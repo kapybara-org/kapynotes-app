@@ -145,17 +145,18 @@ void main() {
   }
 
   /// Beside a window the rail switches between My notes and Shared; on a
-  /// phone the bar along the bottom does.
+  /// phone the bar's Notes opens Home, and Home's Shared card opens Shared.
   Future<void> openTab(
     WidgetTester tester,
     SidebarTab tab, {
     required bool phone,
   }) async {
-    final key = phone
-        ? 'bar-${tab == SidebarTab.mine ? 'notes' : 'shared'}'
-        : tab == SidebarTab.mine
-        ? 'rail-notes'
-        : 'rail-shared';
+    final key = switch ((phone, tab)) {
+      (true, SidebarTab.mine) => 'bar-notes',
+      (true, SidebarTab.shared) => 'home-shared-card',
+      (false, SidebarTab.mine) => 'rail-notes',
+      (false, SidebarTab.shared) => 'rail-shared',
+    };
     await tester.tap(find.byKey(ValueKey(key)));
     await tester.pumpAndSettle();
   }
