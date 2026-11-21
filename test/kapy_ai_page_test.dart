@@ -318,6 +318,28 @@ void main() {
     expect(852 - 300 - box().bottom, 12);
   });
 
+  testWidgets('a tap anywhere on the search pill puts the cursor in it', (
+    tester,
+  ) async {
+    await _pump(tester, _ai());
+    final field = find.byKey(const ValueKey('kapy-ai-page-search'));
+    final pill = tester.getRect(
+      find.ancestor(of: field, matching: find.byType(Container)).first,
+    );
+    await tester.tapAt(pill.centerLeft + const Offset(6, 0));
+    await tester.pump();
+    expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('at twice the text size, chat rows keep space between them', (
+    tester,
+  ) async {
+    await _pump(tester, _ai(), textScale: 2);
+    final first = tester.getRect(find.text('What is left on Call with Arjun'));
+    final second = tester.getRect(find.text('What did I plan for this week?'));
+    expect(second.top - first.bottom, greaterThanOrEqualTo(12));
+  });
+
   testWidgets('with no chats yet, it says so', (tester) async {
     await _pump(tester, FakeKapyAi(pro: true)..set(model: KapyModel.cloud));
     expect(find.text('No chats yet'), findsOneWidget);

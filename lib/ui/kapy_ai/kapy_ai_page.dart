@@ -53,6 +53,7 @@ const _quiet = Color(0xFF968E7F);
 
 class _KapyAiPageState extends State<KapyAiPage> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode(debugLabel: 'kapy-ai-page-search');
   final _field = TextEditingController();
   bool _picking = false;
 
@@ -68,6 +69,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     _field.dispose();
     super.dispose();
   }
@@ -260,7 +262,14 @@ class _KapyAiPageState extends State<KapyAiPage> {
     );
   }
 
-  Widget _searchField(CalcPalette palette) => Container(
+  /// The whole pill takes a tap, not only its line of text.
+  Widget _searchField(CalcPalette palette) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: _searchFocus.requestFocus,
+    child: _searchPill(palette),
+  );
+
+  Widget _searchPill(CalcPalette palette) => Container(
     constraints: const BoxConstraints(minHeight: 36),
     padding: const EdgeInsets.symmetric(horizontal: 12),
     decoration: BoxDecoration(
@@ -275,6 +284,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
           child: TextField(
             key: const ValueKey('kapy-ai-page-search'),
             controller: _search,
+            focusNode: _searchFocus,
             maxLines: 1,
             textInputAction: TextInputAction.search,
             cursorColor: palette.selectedBorder,
@@ -327,7 +337,11 @@ class _KapyAiPageState extends State<KapyAiPage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 44),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  // Room between rows once larger text fills the 44.
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 6,
+                  ),
                   child: Row(
                     children: [
                       Expanded(
