@@ -167,11 +167,15 @@ class TaskBoard {
     return TaskBoard._(open, done, home);
   }
 
-  /// Where [a] sits against [b] in [open]: by place, and tasks that share a
-  /// place by their note, oldest first, then by line.
+  /// Where [a] sits against [b] in [open]: by place, then by [tieOrder].
   static int listOrder(TaskItem a, TaskItem b) {
     final byPosition = a.entry.position.compareTo(b.entry.position);
-    if (byPosition != 0) return byPosition;
+    return byPosition != 0 ? byPosition : tieOrder(a, b);
+  }
+
+  /// Where [a] sits against [b] when they share a place: by their note,
+  /// oldest first, then by line.
+  static int tieOrder(TaskItem a, TaskItem b) {
     final byNote = a.note.createdAt.compareTo(b.note.createdAt);
     if (byNote != 0) return byNote;
     final byNoteId = a.note.id.compareTo(b.note.id);

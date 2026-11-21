@@ -56,7 +56,10 @@ class EveningStage extends TaskStage {
 ///
 /// Where the pair has got to is not stored. [seenUpTo] is the last task shown
 /// on the right, and [since] is when the last Do now began, so after a Done
-/// only tasks that joined the list later are asked about.
+/// only tasks that joined the list later are asked about. [seenUpTo] keeps
+/// the place it was shown at, and among tasks sharing that place it is found
+/// on the list again by its id, or by its note and anchor once a rekey has
+/// changed the id, since an edit above it moves its line.
 class TaskChoice {
   const TaskChoice._(this.stage, this.upNext, this.rest);
 
@@ -87,13 +90,30 @@ class TaskChoice {
       return TaskChoice._(EveningStage(open), const [], const []);
     }
     final left = dots.lastOrNull ?? open.first;
-    bool after(TaskItem item, TaskItem? mark) =>
-        mark == null || TaskBoard.listOrder(item, mark) > 0;
+    final seen = seenUpTo == null
+        ? null
+        : open
+                  .where(
+                    (item) =>
+                        item.id == seenUpTo.id ||
+                        (item.note.id == seenUpTo.note.id &&
+                            item.entry.anchor == seenUpTo.entry.anchor),
+                  )
+                  .firstOrNull ??
+              seenUpTo;
+    bool afterSeen(TaskItem item) {
+      if (seenUpTo == null) return true;
+      final byPosition = item.entry.position.compareTo(seenUpTo.entry.position);
+      return byPosition != 0
+          ? byPosition > 0
+          : TaskBoard.tieOrder(item, seen!) > 0;
+    }
+
     final candidates = [
       for (final item in open)
         if (!item.dotted &&
-            after(item, left) &&
-            after(item, seenUpTo) &&
+            TaskBoard.listOrder(item, left) > 0 &&
+            afterSeen(item) &&
             (since == null || item.entry.position > since))
           item,
     ];

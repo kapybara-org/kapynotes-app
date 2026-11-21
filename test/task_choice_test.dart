@@ -211,6 +211,64 @@ void main() {
     expect(doNow().words, 'A1');
   });
 
+  /// [body]'s six tasks, sharing one place, asked about with an edit to
+  /// [edited] and [rekey] between the first pair and the rest.
+  Future<List<String>> askAcrossAnEdit(
+    String body,
+    String edited, {
+    bool rekey = false,
+  }) async {
+    final note = await start(body);
+    final tied = clock.millisecondsSinceEpoch;
+    for (final item in tasks.read().open) {
+      tasks.index.update(item.entry.copyWith(enteredAt: tied));
+    }
+    final asked = [pair().left.words, pair().right.words];
+    keep();
+    if (rekey) tasks.index.rekey((noteId, anchor) => 'rekeyed-$anchor');
+    notes.updateBody(note, edited);
+    await tasks.reconcileNow();
+    while (choice().stage is PairStage) {
+      asked.add(pair().right.words);
+      keep();
+    }
+    return asked;
+  }
+
+  const tasksOfSix = '☐ A\n☐ B\n☐ C\n☐ D\n☐ E\n☐ F';
+
+  test('tasks that share a place are each asked about once when the title '
+      'grows mid-pair', () async {
+    final asked = await askAcrossAnEdit(
+      'List\n$tasksOfSix',
+      'List for the whole week\n$tasksOfSix',
+    );
+    expect(asked, ['A', 'B', 'C', 'D', 'E', 'F']);
+    expect(doNow().words, 'A');
+  });
+
+  test('tasks that share a place are each asked about once when the title '
+      'shrinks mid-pair', () async {
+    final asked = await askAcrossAnEdit(
+      'List for the whole week\n$tasksOfSix',
+      'List\n$tasksOfSix',
+    );
+    expect(asked, ['A', 'B', 'C', 'D', 'E', 'F']);
+    expect(doNow().words, 'A');
+  });
+
+  test('tasks that share a place are each asked about once when their ids '
+      'change and the title shrinks mid-pair', () async {
+    final asked = await askAcrossAnEdit(
+      'List for the whole week\n$tasksOfSix',
+      'List\n$tasksOfSix',
+      rekey: true,
+    );
+    expect(tasks.read().open.first.id, startsWith('rekeyed-'));
+    expect(asked, ['A', 'B', 'C', 'D', 'E', 'F']);
+    expect(doNow().words, 'A');
+  });
+
   test('with one task on the list there is no pair: it is Do now', () async {
     await start('List\n☐ Only');
     expect(doNow().words, 'Only');
