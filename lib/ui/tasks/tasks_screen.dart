@@ -1198,8 +1198,7 @@ class _DoNowCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (taskBlockOf(item.note.body, item.line)?.details
-                      case final details?) ...[
+                  if (item.details case final details?) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [

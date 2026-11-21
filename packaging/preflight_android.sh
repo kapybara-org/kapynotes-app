@@ -65,7 +65,7 @@ if [[ "$MODE" == "--bundle" ]]; then
     fail "no bundle at $bundle"
     exit 1
   fi
-  pass "$(basename "$bundle") is $(( $(stat -f%z "$bundle") / 1024 / 1024 )) MB"
+  pass "$(basename "$bundle") is $(( $(wc -c < "$bundle") / 1024 / 1024 )) MB"
 
   if ! command -v jarsigner >/dev/null 2>&1; then
     warn "jarsigner not on PATH, cannot verify the signature"

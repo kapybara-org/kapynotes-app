@@ -71,7 +71,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final item = widget.item;
-    final details = taskBlockOf(item.note.body, item.line)?.details;
+    final details = item.details;
     final empty = !_adding && _words.text.trim().isEmpty && details == null;
     // A note shared to view only: its details are shown, never taken, since
     // the controller would drop every write without a word.
@@ -86,103 +86,123 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
     );
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        if (phone)
-          _PhoneTaskName(item: item, tasks: widget.tasks, editable: editable)
-        else ...[
-          Row(
-            children: [
-              Text(
-                'Details',
-                style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: widget.onClose,
-                child: Text(
-                  'Close',
-                  style: uiStyle(
-                    13,
-                    16,
-                    FontWeight.w500,
-                    palette.textSecondary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (phone)
+              _PhoneTaskName(
+                item: item,
+                tasks: widget.tasks,
+                editable: editable,
+              )
+            else ...[
+              Row(
+                children: [
+                  Text(
+                    'Details',
+                    style: uiStyle(
+                      12,
+                      16,
+                      FontWeight.w600,
+                      palette.textTertiary,
+                    ),
                   ),
-                ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: widget.onClose,
+                    child: Text(
+                      'Close',
+                      style: uiStyle(
+                        13,
+                        16,
+                        FontWeight.w500,
+                        palette.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                item.words,
+                style: uiStyle(15, 24, FontWeight.w500, palette.textPrimary),
               ),
             ],
-          ),
-          Text(
-            item.words,
-            style: uiStyle(15, 24, FontWeight.w500, palette.textPrimary),
-          ),
-        ],
-        const SizedBox(height: 8),
-        if (details != null)
-          TaskDetailPicture(
-            item: item,
-            details: details,
-            images: widget.images,
-          ),
-        if (empty && editable)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              style: link,
-              onPressed: () {
-                setState(() => _adding = true);
-                unawaited(widget.tasks.openDetails(widget.item));
-                _focus.requestFocus();
-              },
-              child: Text(
-                'Add details',
-                style: uiStyle(14, 22, FontWeight.w500, palette.accentText),
+            const SizedBox(height: 8),
+            if (details != null)
+              TaskDetailPicture(
+                item: item,
+                details: details,
+                images: widget.images,
+              ),
+            if (empty && editable)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  style: link,
+                  onPressed: () {
+                    setState(() => _adding = true);
+                    unawaited(widget.tasks.openDetails(widget.item));
+                    _focus.requestFocus();
+                  },
+                  child: Text(
+                    'Add details',
+                    style: uiStyle(14, 22, FontWeight.w500, palette.accentText),
+                  ),
+                ),
+              )
+            else if (!empty)
+              TextField(
+                controller: _words,
+                focusNode: _focus,
+                readOnly: !editable,
+                minLines: 3,
+                maxLines: 8,
+                style: uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  filled: false,
+                  isCollapsed: true,
+                  contentPadding: EdgeInsets.zero,
+                  hintText: editable ? 'Add details' : null,
+                ),
+                onChanged: (value) =>
+                    widget.tasks.setDetails(widget.item, value),
+              ),
+            if (empty || !editable)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  editable
+                      ? 'Writes under the task, in its note.'
+                      : 'You can view this note, not change it.',
+                  style: uiStyle(13, 18, FontWeight.w400, palette.textTertiary),
+                ),
+              ),
+          ],
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                style: link,
+                onPressed: widget.onOpenNote,
+                child: Text(
+                  'Open in note',
+                  style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
+                ),
               ),
             ),
-          )
-        else if (!empty)
-          TextField(
-            controller: _words,
-            focusNode: _focus,
-            readOnly: !editable,
-            minLines: 3,
-            maxLines: 8,
-            style: uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              filled: false,
-              isCollapsed: true,
-              contentPadding: EdgeInsets.zero,
-              hintText: editable ? 'Add details' : null,
+            Text(
+              item.note.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: uiStyle(12, 16, FontWeight.w400, palette.textTertiary),
             ),
-            onChanged: (value) => widget.tasks.setDetails(widget.item, value),
-          ),
-        if (empty || !editable)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              editable
-                  ? 'Writes under the task, in its note.'
-                  : 'You can view this note, not change it.',
-              style: uiStyle(13, 18, FontWeight.w400, palette.textTertiary),
-            ),
-          ),
-        const Spacer(),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton(
-            style: link,
-            onPressed: widget.onOpenNote,
-            child: Text(
-              'Open in note',
-              style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
-            ),
-          ),
-        ),
-        Text(
-          item.note.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: uiStyle(12, 16, FontWeight.w400, palette.textTertiary),
+          ],
         ),
       ],
     );
@@ -193,9 +213,14 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
         borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(color: palette.separator),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-        child: body,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - 26),
+            child: body,
+          ),
+        ),
       ),
     );
   }

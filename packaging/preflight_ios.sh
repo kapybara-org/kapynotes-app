@@ -212,7 +212,7 @@ for category in FileTimestamp DiskSpace UserDefaults; do
     fail "privacy manifest is missing $category required-reason coverage"
   fi
 done
-if rg -q 'PrivacyInfo\.xcprivacy in Resources' ios/Runner.xcodeproj/project.pbxproj; then
+if grep -q 'PrivacyInfo\.xcprivacy in Resources' ios/Runner.xcodeproj/project.pbxproj; then
   pass "Runner embeds its privacy manifest"
 else
   fail "Runner target does not embed PrivacyInfo.xcprivacy"
@@ -255,6 +255,8 @@ printf '\nSubmission dependencies\n'
 IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null || true)"
 if [[ "$IDENTITIES" == *"Apple Distribution:"*"(96V66447C6)"* ]]; then
   pass "Apple Distribution identity for Kapybara LLC is installed"
+elif [[ -n "${XCODE_AUTH_KEY_PATH:-}" && -f "$XCODE_AUTH_KEY_PATH" ]]; then
+  pass "Apple Distribution signing is cloud-managed through the App Store Connect API key"
 else
   require_for --archive "Apple Distribution identity for team 96V66447C6 is not installed"
 fi

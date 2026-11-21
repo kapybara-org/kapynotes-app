@@ -12,6 +12,8 @@
 #
 #   --track internal|alpha|beta|production   alpha is closed testing, beta open
 #   --rollout 0.2                            staged release, promote only
+#   --notes-file PATH                        promote only: release notes from
+#                                            this file instead of play_listing.json
 #   --text-only                              listing only: copy, not graphics
 #
 # Play refuses to accept a version code it has already seen, so a build cannot
@@ -73,6 +75,10 @@ SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://androidpublisher.googleapis.com/androidpublisher/v3"
 UPLOAD_API = "https://androidpublisher.googleapis.com/upload/androidpublisher/v3"
+# Without it a commit cancels whatever is in review and resubmits everything,
+# so a release still with reviewers would start its review over. Failing
+# leaves that review alone; run again once it is done.
+COMMIT_QUERY = "?changesInReviewBehavior=ERROR_IF_IN_REVIEW"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_BUNDLE = os.path.join(ROOT, "build", "release", "kapy-android.aab")
@@ -367,7 +373,25 @@ def data_safety(path, confirmed=False):
     print("\n  Data Safety declaration submitted. Google reviews it with the app.")
 
 
-def promote(version_code, track, rollout):
+def release_notes(notes_file):
+    if notes_file is None:
+        return listing_copy().get("releaseNotes")
+    try:
+        with open(notes_file, encoding="utf-8") as handle:
+            notes = handle.read().strip()
+    except OSError as error:
+        die(f"cannot read release notes: {error}")
+    if not notes:
+        die(f"{notes_file} is empty")
+    if len(notes) > RELEASE_NOTES_LIMIT:
+        die(
+            f"{notes_file} is {len(notes)} characters, over Play's limit of "
+            f"{RELEASE_NOTES_LIMIT}"
+        )
+    return notes
+
+
+def promote(version_code, track, rollout, notes_file=None):
     """Move an already-uploaded build to another track.
 
     Play refuses a second upload of a version code that already exists, so a
@@ -401,7 +425,7 @@ def promote(version_code, track, rollout):
                 f"Known: {', '.join(sorted(known)) or 'none'}. Upload it first."
             )
 
-        notes = listing_copy().get("releaseNotes")
+        notes = release_notes(notes_file)
 
         def build_release(status):
             release = {"versionCodes": [str(version_code)], "status": status}
@@ -428,7 +452,7 @@ def promote(version_code, track, rollout):
             )
             call(
                 "POST",
-                f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit",
+                f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit{COMMIT_QUERY}",
                 soft=True,
             )
 
@@ -571,7 +595,7 @@ def upload(bundle, track):
     )
     print(f"  assigned to the {track} track")
 
-    call("POST", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit")
+    call("POST", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit{COMMIT_QUERY}")
     print(f"""
   Delivered. Play processes the bundle in a few minutes, and the Console shows
   it under Release -> Testing -> {track}. Promote it from there once you have
@@ -582,6 +606,7 @@ def main():
     args = sys.argv[1:]
     mode, track, bundle = "all", "internal", DEFAULT_BUNDLE
     rollout, version_code, track_given = None, None, False
+    notes_file = None
     text_only, confirmed = False, False
     data_safety_csv = DATA_SAFETY_CSV
     index = 0
@@ -617,6 +642,9 @@ def main():
         elif argument == "--data-safety":
             index += 1
             data_safety_csv = args[index] if index < len(args) else ""
+        elif argument == "--notes-file":
+            index += 1
+            notes_file = args[index] if index < len(args) else ""
         elif argument == "--version-code":
             index += 1
             version_code = args[index] if index < len(args) else ""
@@ -644,7 +672,7 @@ def main():
     if mode == "data-safety":
         data_safety(data_safety_csv, confirmed)
     if mode == "promote":
-        promote(version_code, track, rollout)
+        promote(version_code, track, rollout, notes_file)
     if mode in ("validate", "upload", "all"):
         validate(bundle)
     if mode in ("upload", "all"):
