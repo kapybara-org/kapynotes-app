@@ -731,9 +731,31 @@ void main() {
     Future<bool> slowClick(WidgetTester tester) async {
       calls.clear();
       final clicked = panel.click();
-      await tester.pump(MenuBarPanelController.showTimeout);
+      await tester.pump(MenuBarPanelController.firstShowTimeout);
       return clicked;
     }
+
+    testWidgets('the first showing has longer to draw than the ones after', (
+      tester,
+    ) async {
+      answer(tester);
+      var answered = false;
+      unawaited(panel.click().then((_) => answered = true));
+      await tester.pump(MenuBarPanelController.showTimeout);
+      expect(answered, isFalse, reason: 'the first still has time');
+      await tester.pump(
+        MenuBarPanelController.firstShowTimeout -
+            MenuBarPanelController.showTimeout,
+      );
+      expect(answered, isTrue);
+      expect(panel.lastMiss, PanelMiss.noView);
+
+      answered = false;
+      unawaited(panel.click().then((_) => answered = true));
+      await tester.pump(MenuBarPanelController.showTimeout);
+      expect(answered, isTrue, reason: 'the next has the usual time');
+      expect(panel.lastMiss, PanelMiss.noView);
+    });
 
     testWidgets('gives that click the menu, and the next one the panel', (
       tester,

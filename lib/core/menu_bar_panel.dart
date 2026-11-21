@@ -103,6 +103,11 @@ class MenuBarPanelController extends ChangeNotifier
   /// A showing that takes longer gives that click the menu instead.
   static const Duration showTimeout = Duration(seconds: 2);
 
+  /// The same for the session's first showing, which also makes the panel's
+  /// view and builds everything in it, so it takes many times as long as the
+  /// showings after it.
+  static const Duration firstShowTimeout = Duration(seconds: 6);
+
   /// Showings that may fail in a row before the icon keeps its menu for the
   /// rest of the session. One slow showing on a busy Mac is not a broken
   /// engine, so the next click tries the panel again.
@@ -191,6 +196,7 @@ class MenuBarPanelController extends ChangeNotifier
     }
     _open = true;
     _openings++;
+    final first = _viewId == null;
     final id = await _ask<int>('show', {'height': _height, 'key': takesKey});
     if (id == null) {
       _open = false;
@@ -199,7 +205,7 @@ class MenuBarPanelController extends ChangeNotifier
     }
     _viewId = id;
     final shown = await _drawAndReveal().timeout(
-      showTimeout,
+      first ? firstShowTimeout : showTimeout,
       onTimeout: () => false,
     );
     if (shown) {
