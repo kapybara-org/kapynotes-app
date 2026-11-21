@@ -178,17 +178,33 @@ void main() {
 
     // From the icon's click to the panel shown with its first frame drawn.
     final times = <int>[];
-    for (var i = 0; i < 21; i++) {
+    final misses = <String>[];
+    final slow = <String>[];
+    String ms(int us) => (us / 1000).toStringAsFixed(1);
+    for (var i = 0; i < 200; i++) {
       final watch = Stopwatch()..start();
-      expect(await controller.click(), isTrue);
-      times.add(watch.elapsedMicroseconds);
+      final shown = await controller.click();
+      final us = watch.elapsedMicroseconds;
+      if (!shown) {
+        misses.add('#$i ${controller.lastMiss?.name} after ${ms(us)} ms');
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        continue;
+      }
+      times.add(us);
+      if (us > 300000) slow.add('#$i ${ms(us)}');
       expect(controller.isOpen, isTrue);
       await Future<void>.delayed(const Duration(milliseconds: 150));
       await controller.close();
       await Future<void>.delayed(const Duration(milliseconds: 150));
     }
     final warm = times.skip(1).toList()..sort();
-    String ms(int us) => (us / 1000).toStringAsFixed(1);
+    stdout.writeln(
+      'MENUBAR_DIAG misses=${misses.length} [${misses.join('; ')}] '
+      'over300ms=[${slow.join(', ')}] '
+      'p90=${ms(warm[warm.length * 9 ~/ 10])} '
+      'p99=${ms(warm[warm.length * 99 ~/ 100])}',
+    );
+    expect(misses, isEmpty);
     stdout.writeln(
       'MENUBAR_OPEN_MS cold=${ms(times.first)} '
       'median=${ms(warm[warm.length ~/ 2])} max=${ms(warm.last)} '
