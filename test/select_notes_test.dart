@@ -147,6 +147,42 @@ String _label(WidgetTester tester, Finder item) => tester
     .action
     .label;
 
+/// What the open menu offers, top to bottom.
+List<String> _menu(WidgetTester tester) => [
+  for (final row in tester.widgetList<KapyMenuActionRow>(
+    find.byType(KapyMenuActionRow),
+  ))
+    row.action.label,
+];
+
+/// [title]'s row, as VoiceOver and TalkBack see it.
+SemanticsNode _rowNode(WidgetTester tester, String title) =>
+    tester.getSemantics(
+      find
+          .descendant(of: _row(title), matching: find.byType(GestureDetector))
+          .first,
+    );
+
+/// The actions [title]'s row offers VoiceOver and TalkBack, by label.
+Map<String, int> _actions(WidgetTester tester, String title) => {
+  for (final id
+      in _rowNode(tester, title).getSemanticsData().customSemanticsActionIds ??
+          const <int>[])
+    CustomSemanticsAction.getAction(id)!.label!: id,
+};
+
+/// Does [label] on [title]'s row, as VoiceOver and TalkBack do from the
+/// row's actions.
+Future<void> _act(WidgetTester tester, String title, String label) async {
+  final row = _rowNode(tester, title);
+  row.owner!.performAction(
+    row.id,
+    SemanticsAction.customAction,
+    _actions(tester, title)[label],
+  );
+  await tester.pumpAndSettle();
+}
+
 Future<void> _show(WidgetTester tester, NotesShow show) async {
   await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
   await tester.pumpAndSettle();
@@ -487,6 +523,58 @@ void main() {
     await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
     await _rightClick(tester, 'Fourth');
     expect(_label(tester, _item('unpin', _note('Fourth'))), 'Unpin');
+  });
+
+  testWidgets('while picking, a row not picked offers VoiceOver what a right '
+      'click on it offers, and picks itself first as the click does', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await _click(tester, 'Fourth');
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
+
+    final offered = _actions(tester, 'First').keys.toList();
+    await _rightClick(tester, 'First');
+    expect(offered, unorderedEquals(_menu(tester)));
+    expect(offered, contains('Delete 3 notes…'));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    // The right click picked First; a click lets it go again.
+    await _click(tester, 'First');
+    expect(_picked(tester), ['Fourth', 'Third']);
+
+    await _act(tester, 'First', 'Delete 3 notes…');
+    expect(_picked(tester), ['Fourth', 'Third', 'First']);
+    expect(find.text('Delete 3 notes?'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+    await tester.pumpAndSettle();
+    expect(notes.notes.map((n) => n.title), ['Second']);
+    expect(find.text('3 notes deleted'), findsOneWidget);
+  });
+
+  testWidgets('on a picked row, VoiceOver gets what a right click on it '
+      'offers, and its action reaches every picked note', (tester) async {
+    await _pump(tester);
+    await _click(tester, 'Fourth');
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
+
+    final offered = _actions(tester, 'Third').keys.toList();
+    await _rightClick(tester, 'Third');
+    expect(offered, unorderedEquals(_menu(tester)));
+    expect(_picked(tester), ['Fourth', 'Third']);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(_picked(tester), ['Fourth', 'Third']);
+
+    await _act(tester, 'Third', 'Move to Hidden Notes');
+    expect(
+      notes.hiddenNotes.map((n) => n.title),
+      unorderedEquals(['Fourth', 'Third']),
+    );
+    expect(
+      find.textContaining('Moved 2 notes to Hidden Notes.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('every item of the menu for many notes fits it', (tester) async {
