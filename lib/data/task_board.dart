@@ -12,6 +12,7 @@ class TaskItem {
     required this.note,
     required this.words,
     required this.line,
+    this.details,
     this.demoted = false,
     this.groupDone = 0,
     this.groupTotal = 1,
@@ -23,6 +24,9 @@ class TaskItem {
 
   /// Its line in the note's text, as the board read it.
   final TaskLine line;
+
+  /// The lines indented under it, as the board read them.
+  final TaskDetails? details;
 
   String get id => entry.id;
   bool get dotted => entry.dot.v;
@@ -51,6 +55,7 @@ class TaskItem {
     note: note,
     words: words,
     line: line,
+    details: details,
     demoted: true,
     groupDone: groupDone,
     groupTotal: groupTotal,
@@ -105,22 +110,32 @@ class TaskBoard {
       final doc = docOf(note.id);
       if (doc == null) continue;
       final text = doc.text;
-      final lines = taskLines(text);
+      final blocks = taskBlocks(text);
+      final lines = [for (final block in blocks) block.task];
+      final nested = {
+        for (final block in blocks)
+          for (final child in block.details?.children ?? const <TaskLine>[])
+            child.start,
+      };
       final taken = <int>{};
       mine.sort((a, b) => a.addedAt.compareTo(b.addedAt));
       for (final entry in mine) {
         final index = taskLineIndex(doc, lines, entry.anchor);
         if (index < 0 || !taken.add(index)) continue;
         final line = lines[index];
-        if (taskIsNested(text, line)) continue;
-        final count = taskGroupCount(text, line);
+        if (nested.contains(line.start)) continue;
+        final details = blocks[index].details;
+        final children = details?.children ?? const <TaskLine>[];
         final item = TaskItem(
           entry: entry,
           note: note,
           words: text.substring(line.textStart, line.end).trim(),
           line: line,
-          groupDone: count.done,
-          groupTotal: count.total,
+          details: details,
+          groupDone:
+              (line.done ? 1 : 0) +
+              children.where((child) => child.done).length,
+          groupTotal: 1 + children.length,
         );
         if (!line.done) {
           open.add(item);

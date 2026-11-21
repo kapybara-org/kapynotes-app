@@ -707,6 +707,209 @@ void main() {
     bob.dispose();
   });
 
+  group('Block and Leave in the sheet', () {
+    /// [owner] shares a new note with [people] at once, and they are all in
+    /// and hold the key.
+    Future<Note> shareFrom(
+      Device owner,
+      String body,
+      List<Device> people,
+    ) async {
+      final note = owner.notes.create(body: body);
+      await owner.sync.syncNow();
+      await owner.sharing.shareNoteWithPeople(note.id, {
+        for (final person in people) person.email: SpaceRole.member,
+      });
+      for (final person in people) {
+        await person.sharing.acceptInvite(
+          server.outbox.lastWhere((sent) => sent.to == person.email).token,
+        );
+      }
+      await owner.sync.syncNow();
+      for (final person in people) {
+        await person.sync.syncNow();
+      }
+      return owner.notes.byId(note.id)!;
+    }
+
+    /// The sheet for [note], or with [whole] the sheet for its whole share,
+    /// the one a joined link opens.
+    Future<void> open(
+      WidgetTester tester,
+      Note note,
+      Device device, {
+      required bool whole,
+    }) async {
+      if (!whole) return openSheet(tester, note, device);
+      await tester.pumpWidget(
+        harness(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSpaceDialog(
+                context,
+                spaceId: note.spaceId!,
+                sharing: device.sharing,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    String from(bool whole) =>
+        whole ? "from the share's sheet" : "from the note's sheet";
+
+    /// The notes [device] holds of its own, by body.
+    List<String> ownNotes(Device device) => [
+      for (final note in device.notes.notes)
+        if (!note.isShared) note.body,
+    ]..sort();
+
+    for (final whole in [false, true]) {
+      testWidgets('Block ${from(whole)} asks first, then ends the shares '
+          'Alice owns with them and leaves the one Bob owns, keeping copies '
+          'of his notes', (tester) async {
+        late Note mine;
+        late Note withCarol;
+        late Note theirs;
+        await tester.runAsync(() async {
+          await alice.boot();
+          await bob.boot();
+          await carol.boot();
+          mine = await shareFrom(alice, 'Ours', [bob]);
+          withCarol = await shareFrom(alice, 'All three', [bob, carol]);
+          theirs = await shareFrom(bob, 'From Bob', [alice]);
+          await alice.sync.syncNow();
+        });
+        expect(alice.sharing.teams, hasLength(3));
+
+        await open(tester, alice.notes.byId(mine.id)!, alice, whole: whole);
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Block…'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining(
+            'loses access to everything you share, you leave what',
+          ),
+          findsOneWidget,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.widgetWithText(FilledButton, 'Block'));
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        });
+        await until(
+          tester,
+          () => alice.sharing.teams.every((space) => space.isOwner),
+        );
+        await tester.pumpAndSettle();
+
+        expect(alice.sharing.hasBlocked(bob.email), isTrue);
+        // Bob is in none of Alice's shares, and Carol keeps hers.
+        expect(alice.sharing.notesSharedWith(bob.email), isEmpty);
+        expect(alice.notes.byId(mine.id)!.isShared, isFalse);
+        final kept = alice.sharing.spaceOf(alice.notes.byId(withCarol.id)!)!;
+        expect(alice.sharing.audienceOf(kept).keys, [carol.email]);
+        // Alice is out of Bob's share, with a copy of its note.
+        expect(alice.sharing.notesSharedFrom(bob.email), isEmpty);
+        expect(alice.sharing.teams.map((space) => space.id), [kept.id]);
+        expect(
+          server.spaces[theirs.spaceId]!.members,
+          isNot(contains(alice.userId)),
+        );
+        expect(ownNotes(alice), ['From Bob', 'Ours']);
+        await tester.pump(const Duration(seconds: 6));
+      });
+    }
+
+    Future<Note> threeFromAlice(WidgetTester tester) async {
+      late Note first;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        first = alice.notes.create(body: 'Flights');
+        final others = [
+          alice.notes.create(body: 'Hotels'),
+          alice.notes.create(body: 'Packing'),
+        ];
+        await alice.sync.syncNow();
+        for (final note in [first, ...others]) {
+          await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        }
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+        await bob.sync.syncNow();
+      });
+      expect(bob.sharing.notesSharedFrom(alice.email), hasLength(3));
+      return bob.notes.byId(first.id)!;
+    }
+
+    Future<void> askToLeave(
+      WidgetTester tester,
+      Note note, {
+      required bool whole,
+    }) async {
+      await open(tester, note, bob, whole: whole);
+      await tester.tap(find.byKey(const ValueKey('leave-space')));
+      await tester.pumpAndSettle();
+      final question = find.byKey(const ValueKey('leave-confirm'));
+      Finder within(String text) =>
+          find.descendant(of: question, matching: find.textContaining(text));
+      expect(within('Leave 3 notes from '), findsOneWidget);
+      expect(
+        within('” together with 2 more, so you leave all of them.'),
+        findsOneWidget,
+      );
+      if (!whole) expect(within('“Flights” together with'), findsOneWidget);
+      expect(within('keeps the notes.'), findsOneWidget);
+      expect(within('Keep private copies'), findsOneWidget);
+      expect(within('Keep a private copy'), findsNothing);
+    }
+
+    Future<void> leave(WidgetTester tester) async {
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('leave-confirm-action')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      });
+      await tester.pumpAndSettle();
+      await tester.runAsync(bob.sync.syncNow);
+    }
+
+    for (final whole in [false, true]) {
+      testWidgets('Leave ${from(whole)} with three notes in the share says '
+          'so, and keeps copies of all three', (tester) async {
+        final note = await threeFromAlice(tester);
+        await askToLeave(tester, note, whole: whole);
+        await leave(tester);
+
+        expect(bob.sharing.teams, isEmpty);
+        expect(bob.notes.notes.where((n) => n.isShared), isEmpty);
+        expect(ownNotes(bob), ['Flights', 'Hotels', 'Packing']);
+        bob.dispose();
+      });
+
+      testWidgets('Leave ${from(whole)} with three notes in the share, '
+          'without copies, leaves all three', (tester) async {
+        final note = await threeFromAlice(tester);
+        await askToLeave(tester, note, whole: whole);
+        await tester.tap(find.byKey(const ValueKey('leave-keep-copy')));
+        await tester.pumpAndSettle();
+        await leave(tester);
+
+        expect(bob.sharing.teams, isEmpty);
+        expect(bob.notes.notes, isEmpty);
+        expect(alice.notes.notes.where((n) => n.isShared), hasLength(3));
+        bob.dispose();
+      });
+    }
+  });
+
   testWidgets('a member makes a private copy and the shared note stays put', (
     tester,
   ) async {

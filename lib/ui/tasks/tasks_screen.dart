@@ -1200,8 +1200,7 @@ class _DoNowCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (taskBlockOf(item.note.body, item.line)?.details
-                      case final details?) ...[
+                  if (item.details case final details?) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -1568,10 +1567,7 @@ class _ReadyCard extends StatelessWidget {
               // Too narrow to share a line, the note's name goes under the
               // words rather than squeezing them.
               if (label != null &&
-                  constraints.maxWidth <
-                      MediaQuery.textScalerOf(
-                        context,
-                      ).scale(_markBesideWidth)) {
+                  !_markFitsBeside(context, constraints.maxWidth)) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1942,9 +1938,10 @@ const double _markShare = 0.4;
 /// The widest a note's mark grows beside a task's words in a row [row] wide.
 double _markWidth(double row) => math.min(220, row * _markShare);
 
-/// How wide the first task's row must be for the note's name to sit beside
-/// the words; a narrower one puts it on its own line.
-const double _markBesideWidth = 200;
+/// Whether a row [width] wide has room for the note's name beside the task's
+/// words at the current text size; a narrower one puts it on its own line.
+bool _markFitsBeside(BuildContext context, double width) =>
+    width >= MediaQuery.textScalerOf(context).scale(200);
 
 /// How wide a list row must be to say "Still want this?" beside Keep and
 /// Remove; a narrower one keeps the room for the task's words.
@@ -2218,36 +2215,43 @@ class _DoneRow extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: LayoutBuilder(
-                builder: (context, constraints) => Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        item.words,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: uiStyle(
-                          16,
-                          28,
-                          FontWeight.w500,
-                          palette.textMuted,
-                        ),
-                      ),
-                    ),
-                    if (label != null) ...[
+                builder: (context, constraints) {
+                  final words = Text(
+                    item.words,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: uiStyle(16, 28, FontWeight.w500, palette.textMuted),
+                  );
+                  if (label == null) {
+                    return Row(children: [Flexible(child: words)]);
+                  }
+                  final mark = NoteMark(
+                    note: item.note,
+                    label: label,
+                    onPressed: onOpenNote,
+                  );
+                  if (!_markFitsBeside(context, constraints.maxWidth)) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [Flexible(child: words)]),
+                        mark,
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Flexible(child: words),
                       const SizedBox(width: 12),
                       ConstrainedBox(
                         constraints: BoxConstraints(
                           maxWidth: _markWidth(constraints.maxWidth),
                         ),
-                        child: NoteMark(
-                          note: item.note,
-                          label: label,
-                          onPressed: onOpenNote,
-                        ),
+                        child: mark,
                       ),
                     ],
-                  ],
-                ),
+                  );
+                },
               ),
             ),
             ConstrainedBox(

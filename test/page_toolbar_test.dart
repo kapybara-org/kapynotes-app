@@ -55,6 +55,7 @@ void main() {
   PageToolbar toolbar({
     PagePath path = clients,
     bool listVisible = true,
+    bool underList = false,
     bool noteOpen = true,
     SyncStatus? syncStatus,
     int unloadedPictures = 0,
@@ -66,11 +67,14 @@ void main() {
     Widget? assistant,
     List<Widget>? actions,
     Widget Function(bool compact, PlaceDays place)? days,
+    ({String to, VoidCallback onPressed})? back,
   }) => PageToolbar(
     path: path,
     days: days,
+    back: back,
     actions: actions,
     listVisible: listVisible,
+    underList: underList,
     onShowList: onShowList ?? () {},
     showListShortcut: 'Cmd + \\',
     onOpenFolder: onOpenFolder ?? (_, {required behind}) {},
@@ -120,6 +124,28 @@ void main() {
       style.foregroundColor!.resolve({WidgetState.disabled}),
       palette.textTertiary,
     );
+  });
+
+  testWidgets('the band has a hairline along its bottom, but none under the '
+      'list or on a phone', (tester) async {
+    BoxDecoration? hairline() =>
+        tester.widget<Container>(bar).foregroundDecoration as BoxDecoration?;
+
+    await tester.pumpWidget(harness(toolbar()));
+    expect(
+      hairline()?.border,
+      Border(bottom: BorderSide(color: KapyTheme.darkPalette.railBorder)),
+    );
+
+    await tester.pumpWidget(
+      harness(toolbar(listVisible: false, underList: true)),
+    );
+    expect(hairline(), isNull);
+
+    await tester.pumpWidget(
+      harness(toolbar(back: (to: 'Notes', onPressed: () {}))),
+    );
+    expect(hairline(), isNull);
   });
 
   testWidgets(
