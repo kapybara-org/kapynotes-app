@@ -30,7 +30,8 @@ void main() {
     expect(noteDay(note, shown), DateTime(2026, 11, 19));
   });
 
-  test('by date: a heading for each day, newest first', () {
+  test('by date: a heading for each day, newest first, with no date after '
+      'Today or Yesterday', () {
     final notes = [
       _note('call', 'Call with Arjun', DateTime(2026, 11, 19, 11, 40)),
       _note('pages', 'Morning pages', DateTime(2026, 11, 19, 9, 12)),
@@ -48,8 +49,8 @@ void main() {
         ),
       ),
       [
-        ('Today', 'Thu 19 Nov', 'call pages'),
-        ('Yesterday', 'Wed 18', 'standup'),
+        ('Today', null, 'call pages'),
+        ('Yesterday', null, 'standup'),
         ('Tue 17', null, 'ideas'),
       ],
     );
@@ -79,7 +80,7 @@ void main() {
       );
       expect(outline(groups), [
         ('Upcoming', '2', 'plan trip'),
-        ('Today', 'Thu 19 Nov', 'call'),
+        ('Today', null, 'call'),
         ('Tue 17', null, 'tax'),
       ]);
       expect(
@@ -102,7 +103,7 @@ void main() {
           ownDay: (_) => DateTime(2026, 11, 19),
         ),
       ),
-      [('Today', 'Thu 19 Nov', 'call')],
+      [('Today', null, 'call')],
     );
   });
 

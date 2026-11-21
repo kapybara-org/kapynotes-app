@@ -707,7 +707,7 @@ class _TagChipState extends State<_TagChip> {
     final palette = context.palette;
     final tag = widget.tag;
     final colour = tagColourOf(tag.colour.v);
-    final style = _text(12, FontWeight.w500, palette.textPrimary);
+    final style = _text(12, FontWeight.w400, palette.textSecondary);
     final painter = TextPainter(
       text: TextSpan(text: tag.name.v, style: style),
       textDirection: Directionality.of(context),
@@ -720,14 +720,10 @@ class _TagChipState extends State<_TagChip> {
     Widget chip({bool remove = false}) => Container(
       height: 22,
       padding: const EdgeInsets.only(left: 7, right: 8),
-      decoration: BoxDecoration(
-        color: colour?.card(palette) ?? palette.cardBackground,
-        borderRadius: BorderRadius.circular(AppRadii.control),
-      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TagDot(colour, size: 7),
+          TagDot(colour, size: 6),
           const SizedBox(width: 5),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: _nameMax),

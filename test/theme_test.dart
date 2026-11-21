@@ -12,21 +12,31 @@ void main() {
   test('dark theme keeps a restrained warm-neutral palette', () {
     const palette = KapyTheme.darkPalette;
 
-    expect(palette.editorBackground, const Color(0xFF23201C));
+    expect(palette.editorBackground, const Color(0xFF1C1A17));
     expect(palette.gutterBackground, palette.editorBackground);
     expect(palette.textPrimary, const Color(0xFFE2DCCF));
     expect(palette.paperFiber, Colors.transparent);
 
-    // Names and figures stay in the note's ink; only the operators and the
-    // units step back.
+    // Names and figures stay in the note's ink; only the operators, the
+    // units and comments step back, to T3.
     expect(
       {palette.number, palette.keyword, palette.function, palette.variable},
       {palette.textPrimary},
     );
+    expect(palette.textTertiary, const Color(0xFF968E7F));
     expect(
-      {palette.operator, palette.unit, palette.currency},
+      {palette.operator, palette.unit, palette.currency, palette.comment},
       {palette.textTertiary},
     );
+    // The rail is the crisp surface, and wells are the 4% step off it, opaque.
+    expect(palette.railBackground, palette.sidebarBackground);
+    expect(palette.wellBackground, const Color(0xFF24221E));
+    // D01's Notes · Folders track and account circle keep their own raised
+    // fill and line; other themes draw them on their own colours.
+    expect(palette.raisedBackground, const Color(0xFF2A2722));
+    expect(palette.raisedBorder, const Color(0xFF312D27));
+    expect(KapyTheme.lightPalette.raisedBackground, isNull);
+    expect(KapyTheme.lightPalette.raisedBorder, isNull);
     expect(
       {
         palette.chipNumber,
