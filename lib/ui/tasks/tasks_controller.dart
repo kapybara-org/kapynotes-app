@@ -124,10 +124,11 @@ class TasksController extends ChangeNotifier {
   }
 
   /// Ticks or unticks [item]'s box in its note. Unticked from Done, it goes
-  /// back in at the end of the list.
-  Future<void> setDone(TaskItem item, {required bool done}) async {
+  /// back in at the end of the list. False when the box can't be written: a
+  /// note shared to view only, or one whose text and document disagree.
+  Future<bool> setDone(TaskItem item, {required bool done}) async {
     final current = await _current(item);
-    if (current == null) return;
+    if (current == null) return false;
     final (note, line) = current;
     final head = note.body.substring(line.start, line.textStart);
     final glyph = head.indexOf(RegExp('[☐☑]'));
@@ -146,6 +147,7 @@ class TasksController extends ChangeNotifier {
       ),
     );
     await reconcileNow();
+    return true;
   }
 
   /// Opens an empty details line under [item], so Add details has somewhere
@@ -410,10 +412,11 @@ class TasksController extends ChangeNotifier {
   }
 
   /// Done on Do now. The pair comes back only for tasks that joined the list
-  /// since you chose; with none, the first task in Up next is Do now.
+  /// since you chose; with none, the first task in Up next is Do now. When
+  /// the tick can't be written, nothing moves on.
   Future<void> finish(TaskItem item, {String? noteId}) async {
     final since = item.entry.doNow.v ? item.entry.doNow.at : _stamp();
-    await setDone(item, done: true);
+    if (!await setDone(item, done: true)) return;
     _seenUpTo = null;
     _since = since;
     _justDone = item.id;

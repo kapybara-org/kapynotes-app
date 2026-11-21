@@ -88,6 +88,7 @@ void main() {
     WidgetTester tester,
     String body, {
     DateTime? at,
+    bool editable = true,
   }) async {
     clock = at ?? DateTime(2026, 11, 17, 9);
     final store = _MemoryStore();
@@ -104,7 +105,7 @@ void main() {
     tasks = TasksController(
       notes: notes,
       library: library,
-      canEdit: (_) => true,
+      canEdit: (_) => editable,
       now: tick,
     );
     await tasks.reconcileNow();
@@ -308,6 +309,26 @@ void main() {
       expect(notes.notes.single.body, 'Errands\n☐ One\n☑ Two\n☐ Three');
       expect(item('One').doNow, isTrue);
       expect(find.text('Three'), findsOneWidget);
+      await settle(tester);
+    });
+
+    testWidgets('on a note shared to view only, Do now shows no Done and ⌘↵ '
+        'leaves the task to do', (tester) async {
+      await setUpTasks(tester, errands, editable: false);
+      final first = tasks.read().open.first;
+      tasks.doNow(first);
+      await pumpScreen(tester);
+      expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-done')), findsNothing);
+      expect(find.text('⌘↵'), findsNothing);
+
+      tester.state<TasksScreenState>(find.byType(TasksScreen)).completeDoNow();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await settle(tester);
+      expect(notes.notes.single.body, errands);
+      expect(tasks.read().done, isEmpty);
+      expect(item('Send the report').doNow, isTrue);
+      expect(tasks.justDone, isNull);
       await settle(tester);
     });
 

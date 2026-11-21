@@ -5,6 +5,7 @@ import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/tasks/task_choice.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 
 class _MemoryStore extends LocalStore {
@@ -25,8 +26,10 @@ void main() {
   late NotesStore notes;
   late TaskLibrary library;
   late TasksController tasks;
+  var editable = true;
 
   setUp(() async {
+    editable = true;
     clock = DateTime(2026, 11, 17, 9);
     final store = _MemoryStore();
     notes = NotesStore(store);
@@ -41,7 +44,7 @@ void main() {
     tasks = TasksController(
       notes: notes,
       library: library,
-      canEdit: (_) => true,
+      canEdit: (_) => editable,
       now: () => clock,
     );
   });
@@ -96,6 +99,33 @@ void main() {
     expect(notes.byId(note.id)!.body, 'Car\n- [ ] Call the garage\n☐ Wash it');
     expect(open(), ['Wash it', 'Call the garage']);
   });
+
+  test(
+    'Done on a note that can\'t be edited leaves Do now as it was',
+    () async {
+      final note = notes.create(body: 'Trip\n☐ Book flights\n☐ Learn phrases');
+      await tasks.reconcileNow();
+      later();
+      final first = tasks.read().open.first;
+      tasks.doNow(first);
+      editable = false;
+      later();
+      await tasks.finish(tasks.read().open.first);
+
+      expect(
+        notes.byId(note.id)!.body,
+        'Trip\n☐ Book flights\n☐ Learn phrases',
+      );
+      expect(tasks.read().done, isEmpty);
+      expect(open(), ['Book flights', 'Learn phrases']);
+      expect(tasks.read().open.first.doNow, isTrue);
+      expect(tasks.justDone, isNull);
+      expect(
+        tasks.choiceIn(null).stage,
+        isA<DoNowStage>().having((s) => s.item.id, 'item', first.id),
+      );
+    },
+  );
 
   test('a tick in the note itself reaches Tasks', () async {
     final note = notes.create(body: 'Car\n☐ Call the garage');
