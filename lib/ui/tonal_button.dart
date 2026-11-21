@@ -7,10 +7,12 @@ import 'keycap.dart';
 /// The calm primary action: a sage label on its own quiet sage tint, flat,
 /// with an optional keycap naming its shortcut.
 ///
-/// New note, Share and Done are tonal buttons in the Riverbank design, and
-/// one that is only an icon is the + beside the notes search. It is the
-/// theme's filled button in other colours: its shape, elevation and timing
-/// come from the theme, and only its colours, size and weight are its own.
+/// New note and Done are tonal buttons in the Riverbank design, and one that
+/// is only an icon is the + beside the notes search. A [quiet] one, like the
+/// page's Share, keeps the same shape with no fill until the pointer is on
+/// it. It is the theme's filled button in other colours: its shape,
+/// elevation and timing come from the theme, and only its colours, size and
+/// weight are its own.
 class TonalButton extends StatelessWidget {
   const TonalButton({
     super.key,
@@ -20,9 +22,10 @@ class TonalButton extends StatelessWidget {
     this.shortcut,
     this.tooltip,
     this.tall = false,
-    this.ghost = false,
+    this.quiet = false,
     this.sageIcon = false,
   }) : assert(icon != null || label != null),
+       assert(!sageIcon || quiet, 'Only a quiet button carries a sage icon.'),
        assert(
          label != null || tooltip != null,
          'A button that is only an icon needs a tooltip to be named by.',
@@ -38,25 +41,27 @@ class TonalButton extends StatelessWidget {
 
   final String? tooltip;
 
-  /// The page toolbar's Share: two points taller, with rounder corners and a
-  /// finer icon than the notes list's New note.
+  /// r3's 32-tall control, for the bars over the notes list and the page:
+  /// radius 8, 12 at either end and a 16 icon 4 from its label.
   final bool tall;
 
-  /// A button with no fill until the pointer is over it: the crisp design's
-  /// way of leaving a page one main action instead of several.
-  final bool ghost;
+  /// Grey text on no fill, filled only under the pointer: an action that is
+  /// there when wanted without competing with the page's main one.
+  final bool quiet;
 
-  /// A ghost button whose icon carries the sage that marks the page's main
+  /// A quiet button whose icon carries the sage that marks the page's main
   /// action, as New note's plus does.
   final bool sageIcon;
 
-  /// How wide a button with an icon, [label] and, if given, [shortcut]'s
-  /// keycap lays out at the reader's text size, for a bar that has to choose
-  /// what to show before it builds.
+  /// How wide a button with [label], an icon unless [icon] is false and, if
+  /// given, [shortcut]'s keycap lays out at the reader's text size, for a bar
+  /// that has to choose what to show before it builds.
   static double widthOf(
     BuildContext context,
     String label, {
+    bool icon = true,
     String? shortcut,
+    bool tall = false,
   }) {
     final painter = TextPainter(
       text: TextSpan(text: label, style: _labelStyle(context)),
@@ -66,20 +71,25 @@ class TonalButton extends StatelessWidget {
     )..layout();
     final text = painter.width;
     painter.dispose();
-    return 9 +
-        AppControlMetrics.iconControl +
-        6 +
+    final bar = tall && AppPlatform.hasPointer;
+    return (!icon
+            ? 12
+            : bar
+            ? 12 + 16 + 4
+            : 9 + AppControlMetrics.iconControl + 6) +
         text +
         (shortcut == null
             ? 12
             : 6 + Keycap.widthOf(context, shortcut, tonal: true) + 6);
   }
 
-  static TextStyle? _labelStyle(BuildContext context) =>
-      Theme.of(context).textTheme.labelLarge?.copyWith(
+  static TextStyle? _labelStyle(BuildContext context) => Theme.of(context)
+      .textTheme
+      .labelLarge
+      ?.copyWith(
         fontSize: AppTypeScale.control,
         fontWeight: FontWeight.w500,
-        fontVariations: AppWeight.variations(AppWeight.rowTitle),
+        fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
       );
 
   @override
@@ -89,101 +99,79 @@ class TonalButton extends StatelessWidget {
     final label = this.label;
     final shortcut = this.shortcut;
     final pointer = AppPlatform.hasPointer;
+    final bar = tall && pointer;
     final fine = pointer && (tall || label == null);
 
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (icon != null)
-          KapyIcon(
-            icon,
-            size: fine ? 15 : AppControlMetrics.iconControl,
-            strokeWidth: fine ? 2 : 2.2,
-            color: ghost && sageIcon ? palette.accent : null,
-          ),
-        if (icon != null && label != null) const SizedBox(width: 6),
-        if (label != null) Text(label),
-        if (shortcut != null) ...[
-          const SizedBox(width: 6),
-          ExcludeSemantics(child: Keycap(shortcut, tonal: true)),
-        ],
-      ],
-    );
-
-    final shape = ButtonStyle(
-      minimumSize: WidgetStatePropertyAll(
-        Size.square(tall && pointer ? 32 : AppControlMetrics.tonalButtonHeight),
-      ),
-      shape: tall
-          ? const WidgetStatePropertyAll(
-              RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(
-                  Radius.circular(AppRadii.control),
-                ),
-              ),
-            )
-          : null,
-      padding: WidgetStatePropertyAll(
-        label == null
-            ? EdgeInsets.zero
-            : EdgeInsetsDirectional.only(
-                start: icon == null
-                    ? 12
-                    : tall
-                    ? 10
-                    : 9,
-                end: shortcut == null ? 12 : 6,
-              ),
-      ),
-      textStyle: WidgetStatePropertyAll(_labelStyle(context)),
-    );
-
-    final Widget button;
-    if (ghost) {
-      button = TextButton(
-        onPressed: onPressed,
-        style:
-            TextButton.styleFrom(
-              minimumSize: shape.minimumSize?.resolve({}),
-              shape: shape.shape?.resolve({}),
-              padding: shape.padding?.resolve({}),
-              textStyle: _labelStyle(context),
-              foregroundColor: palette.textSecondary,
-            ).merge(
-              ButtonStyle(
-                backgroundColor: KapyTheme.fillStates(
-                  Colors.transparent,
-                  ink: palette.textPrimary,
-                  disabled: Colors.transparent,
-                ),
-                foregroundColor: WidgetStateProperty.resolveWith(
-                  (states) => states.contains(WidgetState.disabled)
-                      ? palette.textTertiary
-                      : palette.textSecondary,
-                ),
-                overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-              ),
-            ),
-        child: content,
-      );
-    } else {
-      button = FilledButton(
-        onPressed: onPressed,
-        style: shape.copyWith(
-          backgroundColor: KapyTheme.fillStates(
-            palette.tonalBackground,
-            ink: palette.tonalForeground,
-            disabled: palette.controlBackground,
-          ),
-          foregroundColor: WidgetStateProperty.resolveWith(
-            (states) => states.contains(WidgetState.disabled)
-                ? palette.textTertiary
-                : palette.tonalForeground,
-          ),
+    final button = FilledButton(
+      onPressed: onPressed,
+      style: ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(
+          Size.square(bar ? 32 : AppControlMetrics.tonalButtonHeight),
         ),
-        child: content,
-      );
-    }
+        shape: tall
+            ? const WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                ),
+              )
+            : null,
+        padding: WidgetStatePropertyAll(
+          label == null
+              ? EdgeInsets.zero
+              : EdgeInsetsDirectional.only(
+                  start: icon == null || tall ? 12 : 9,
+                  end: shortcut == null ? 12 : 6,
+                ),
+        ),
+        backgroundColor: quiet
+            ? KapyTheme.fillStates(
+                Colors.transparent,
+                ink: palette.textPrimary,
+                disabled: Colors.transparent,
+              )
+            : KapyTheme.fillStates(
+                palette.tonalBackground,
+                ink: palette.tonalForeground,
+                disabled: palette.controlBackground,
+              ),
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.disabled)
+              ? palette.textTertiary
+              : quiet
+              ? palette.textSecondary
+              : palette.tonalForeground,
+        ),
+        side: quiet
+            ? WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.focused)
+                    ? BorderSide(color: palette.selectedBorder, width: 1)
+                    : BorderSide.none,
+              )
+            : null,
+        textStyle: WidgetStatePropertyAll(_labelStyle(context)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null)
+            KapyIcon(
+              icon,
+              size: bar
+                  ? 16
+                  : fine
+                  ? 15
+                  : AppControlMetrics.iconControl,
+              color: sageIcon ? palette.accent : null,
+            ),
+          if (icon != null && label != null) SizedBox(width: bar ? 4 : 6),
+          if (label != null) Text(label),
+          if (shortcut != null) ...[
+            const SizedBox(width: 6),
+            ExcludeSemantics(child: Keycap(shortcut, tonal: true)),
+          ],
+        ],
+      ),
+    );
 
     final tooltip = this.tooltip;
     if (tooltip == null) return button;

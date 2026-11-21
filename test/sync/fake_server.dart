@@ -458,6 +458,10 @@ class FakeServer {
   /// Set to refuse task pushes as an account at the row cap is refused.
   bool tasksFull = false;
 
+  /// Set to keep the task records it matches out of every push, as records
+  /// still on their way: neither taken nor returned as a conflict.
+  bool Function(String id)? withheld;
+
   /// Each account's task records by id, with the seq each was last written
   /// at. Mirrors `server/src/tasks.ts`: last writer wins on `updatedAt`,
   /// the pull pages by seq.
@@ -479,6 +483,7 @@ class FakeServer {
     final applied = <String>[];
     final conflicts = <WireTaskRecord>[];
     for (final record in records) {
+      if (withheld?.call(record.id) ?? false) continue;
       final stored = mine[record.id];
       if (stored != null &&
           !stored.record.updatedAt.isBefore(record.updatedAt)) {
@@ -496,7 +501,11 @@ class FakeServer {
         socket._send({'t': 'tasks'});
       }
     }
-    return TasksPushResult(applied: applied, conflicts: conflicts);
+    return TasksPushResult(
+      applied: applied,
+      conflicts: conflicts,
+      serverTime: now(),
+    );
   }
 
   TasksPage pullTasks(String userId, int after) {
@@ -2179,6 +2188,17 @@ class FakeApi implements SyncApi {
   /// This device's calls to let through before [failNext] is thrown.
   int failAfter = 0;
 
+  /// Spaces this device's pulls see nothing new in, until they are taken out:
+  /// what a device has not read yet, while its pushes still land.
+  final Set<String> heldPulls = {};
+
+  /// Set to fail this device's pushes, and nothing else, until it is cleared.
+  SyncException? failPushes;
+
+  /// Set to fail this device's note-key fetches, and nothing else, until it
+  /// is cleared.
+  SyncException? failNoteKeys;
+
   /// Set to fail every one of this device's HTTP calls until it is cleared:
   /// a network that is down, rather than one request that was lost.
   SyncException? failAll;
@@ -2220,6 +2240,8 @@ class FakeApi implements SyncApi {
   Future<OpsPushResult> pushOps(OpsPush push) async {
     _gate();
     _record('pushOps');
+    final failing = failPushes;
+    if (failing != null) throw failing;
     return server.pushOps(userId, device, push);
   }
 
@@ -2231,6 +2253,15 @@ class FakeApi implements SyncApi {
   }) async {
     _gate();
     _record('pullOps:$after');
+    if (heldPulls.contains(space)) {
+      return OpsBatch(
+        spaceId: space,
+        ops: const [],
+        snapshots: const [],
+        cursor: after,
+        hasMore: false,
+      );
+    }
     return server.pullOps(userId, space, after, limit);
   }
 
@@ -2583,6 +2614,8 @@ class FakeApi implements SyncApi {
   @override
   Future<List<WireNoteKey>> fetchNoteKeys(String spaceId) async {
     _gate();
+    final failing = failNoteKeys;
+    if (failing != null) throw failing;
     return server.noteKeys(userId, spaceId);
   }
 

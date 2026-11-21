@@ -159,10 +159,26 @@ class NotesStore extends ChangeNotifier {
     _loadPinnedNoteIds();
     _loadNameHere();
     _loadWritingDays();
+    _dropAbandonedBlanks();
     _refreshViews();
     _loaded = true;
     notifyListeners();
   }
+
+  /// Deletes the blank new notes a quit or a crash left behind, before
+  /// anything lists or opens them, as the page deletes one left behind while
+  /// the app runs: never written in, never pushed, and not filed away on
+  /// purpose. Sync confirms the deletion of a note it never sent without
+  /// sending it, so these leave nothing on the server.
+  void _dropAbandonedBlanks() => deleteAll([
+    for (final note in _notes)
+      if (note.isBlank &&
+          note.syncedAt == null &&
+          note.updatedAt == note.createdAt &&
+          !note.isShared &&
+          !note.isArchived)
+        note.id,
+  ]);
 
   List<Note> _sortedNotes(Object? raw) {
     if (raw is! List) return const [];

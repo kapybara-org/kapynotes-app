@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../billing/billing.dart';
-import '../core/platform.dart';
 import '../core/popup_keyboard.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -25,6 +24,7 @@ import 'join/space_link_panel.dart';
 import 'profile_avatar.dart';
 import 'safety_dialogs.dart';
 import 'settings_rows.dart' show SettingsSwitch;
+import 'sharing_sheet.dart';
 
 /// The share sheet for one note: who can see it, and what each of them may do.
 ///
@@ -43,7 +43,7 @@ Future<void> showShareDialog(
   Billing? billing,
 }) {
   keepMobilePopupKeyboardClosed();
-  return _showSheet(
+  return showSharingSheet(
     context,
     (asSheet) => _NoteShareSheet(
       note: note,
@@ -62,28 +62,10 @@ Future<void> showSpaceDialog(
   required Sharing sharing,
 }) {
   keepMobilePopupKeyboardClosed();
-  return _showSheet(
+  return showSharingSheet(
     context,
     (asSheet) =>
         _SpaceShareSheet(spaceId: spaceId, sharing: sharing, asSheet: asSheet),
-  );
-}
-
-/// A dialog on a Mac or a PC, a bottom sheet on a phone.
-Future<T?> _showSheet<T>(
-  BuildContext context,
-  Widget Function(bool asSheet) build,
-) {
-  if (!AppPlatform.isMobile) {
-    return showDialog<T>(context: context, builder: (context) => build(false));
-  }
-  return showModalBottomSheet<T>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    barrierColor: Theme.of(context).drawerTheme.scrimColor,
-    builder: (context) => build(true),
   );
 }
 
@@ -340,12 +322,33 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   String _peoplePhrase(Space space) =>
       space.peoplePhrase(_sharing.userId) ?? 'The people here';
 
+  /// Access is for everything shared with that person together, so a change
+  /// that reaches further than this note asks first, naming what else.
   Future<void> _changeAccess(String email, SpaceRole role) async {
+    final name = _nameOf(email);
+    final others = [
+      for (final note in _sharing.notesIn(_note.spaceId!))
+        if (!note.isHidden && note.id != _note.id) note,
+    ];
+    if (others.isNotEmpty) {
+      final ok = await askFirst(
+        context,
+        title: role.canEdit ? 'Let $name edit?' : 'Let $name only view?',
+        body: others.length == 1
+            ? '$name sees this note together with “${others.single.title}”, '
+                  'so the change is for both.'
+            : '$name sees ${others.length + 1} notes you share together, '
+                  'and the change is for all of them.',
+        action: 'Change access',
+      );
+      if (ok == null || !mounted) return;
+    }
     await _run(() async {
       await _sharing.changeAccessTo(_note.id, email, role);
-      setState(
-        () => _notice =
-            '${_nameOf(email)} can ${role.canEdit ? 'now edit' : 'now only view'} this note',
+      if (!mounted) return;
+      Toast.show(
+        context,
+        '$name ${role.canEdit ? 'can edit' : 'can view'} now',
       );
     });
   }
@@ -355,27 +358,32 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _removePerson(SpaceMember member) async {
     final name = member.firstName;
     final role = member.role;
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Remove $name from this note?',
       body:
           '$name stops seeing this note, and it leaves their devices. It '
           'stays in your notes, with everything $name wrote.',
       action: 'Remove',
-      destructive: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
       await _sharing.removeFromNote(_note.id, member.email);
       if (!mounted) return;
+      final sharing = _sharing;
+      final noteId = _note.id;
+      final overlay = Overlay.of(context, rootOverlay: true);
       Toast.show(
         context,
         'Removed $name from this note',
         action: 'Undo',
         onAction: () => unawaited(
-          _run(
-            () => _sharing.addPerson(_note.id, member.email, role: role),
-            notice: '$name can see this note again',
-          ),
+          undoSharing(overlay, () async {
+            await sharing.addPerson(noteId, member.email, role: role);
+            return sharing.memberOn(noteId, member.email) == null
+                ? 'Invitation sent to ${member.email}'
+                : '$name can see this note again';
+          }),
         ),
       );
     });
@@ -384,38 +392,33 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _stopSharing() async {
     final space = _space;
     if (space == null) return;
-    final audience = [
-      for (final member in space.othersThan(_sharing.userId))
-        (email: member.email, role: member.role),
-    ];
+    final audience = _sharing.audienceOf(space);
+    final people = space.othersThan(_sharing.userId).length;
     final who = _peoplePhrase(space);
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Stop sharing “${_note.title}”?',
       body:
-          '$who ${audience.length > 1 ? 'lose' : 'loses'} access. The note '
+          '$who ${people > 1 ? 'lose' : 'loses'} access. The note '
           'stays in your notes, with every change.',
       action: 'Stop sharing',
-      destructive: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
       await _sharing.unshareNote(_note.id);
       if (!mounted) return;
+      final sharing = _sharing;
+      final noteId = _note.id;
+      final overlay = Overlay.of(context, rootOverlay: true);
       Toast.show(
         context,
         'Stopped sharing “${_note.title}”',
         action: 'Undo',
         onAction: () => unawaited(
-          _run(() async {
-            for (final person in audience) {
-              await _sharing.addPerson(
-                _note.id,
-                person.email,
-                role: person.role,
-                allNotes: true,
-              );
-            }
-          }, notice: 'Shared again with $who'),
+          undoSharing(overlay, () async {
+            await sharing.shareNoteWithPeople(noteId, audience);
+            return 'Shared again with $who';
+          }),
         ),
       );
     });
@@ -424,52 +427,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _leave() async {
     final space = _space;
     if (space == null) return;
-    final owner = space.shortNameOf(space.ownerId);
-    var keep = true;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          key: const ValueKey('leave-confirm'),
-          title: Text('Leave “${_note.title}”?'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'You stop seeing $owner’s changes. $owner keeps the note.',
-                  style: _bodyStyle(context),
-                ),
-                const SizedBox(height: 10),
-                _CheckRow(
-                  key: const ValueKey('leave-keep-copy'),
-                  value: keep,
-                  label: 'Keep a private copy in my notes',
-                  onChanged: (value) => setLocal(() => keep = value),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              key: const ValueKey('leave-confirm-action'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-              ),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Leave'),
-            ),
-          ],
-        ),
-      ),
+    final keep = await _askToLeave(
+      context,
+      sharing: _sharing,
+      space: space,
+      title: _note.title,
     );
-    if (ok != true || !mounted) return;
+    if (keep == null || !mounted) return;
     final leave = Navigator.of(context);
     await _run(() async {
       await _sharing.leave(space.id, keepCopies: keep);
@@ -495,21 +459,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     ),
   );
 
-  Future<void> _block(Space space, SpaceMember member) async {
-    final name = member.firstName;
-    final ok = await _confirm(
-      title: 'Block $name?',
-      body:
-          '$name loses access to everything you share, you leave what $name '
-          'shares with you (keeping copies), and $name can’t invite you '
-          'again.',
-      action: 'Block',
-      destructive: true,
-    );
-    if (ok != true || !mounted) return;
+  Future<void> _block(SpaceMember member) async {
+    if (!await _askToBlock(context, member) || !mounted) return;
     final done = Navigator.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     await _run(() async {
-      await _sharing.blockPerson(member.email, inSpaceId: space.id);
+      await _sharing.blockEverywhere(member.email);
+      Toast.showOn(overlay, 'Blocked ${member.displayName}');
       done.pop();
     }, notice: null);
   }
@@ -531,12 +487,12 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   }
 
   Future<void> _cancelInvite(Space space, SpaceInvite invite) async {
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Cancel the invitation to ${invite.email}?',
       body:
           'The invitation and its link stop working. The note stays as it is.',
       action: 'Cancel invitation',
-      destructive: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
@@ -545,38 +501,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       setState(() => _notice = 'Invitation to ${invite.email} cancelled');
     });
   }
-
-  Future<bool?> _confirm({
-    required String title,
-    required String body,
-    required String action,
-    bool destructive = false,
-  }) => showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      key: ValueKey('share-confirm-${action.toLowerCase()}'),
-      title: Text(title),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
-        child: Text(body, style: _bodyStyle(context)),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: destructive
-              ? FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                )
-              : null,
-          child: Text(action),
-        ),
-      ],
-    ),
-  );
 
   // -------------------------------------------------------------------------
   // The link
@@ -703,7 +627,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           else if (_outOfPro)
             _StatePanel(
               key: const ValueKey('share-free'),
-              icon: KapyIcons.peopleOutlined,
+              icon: KapyIcons.groupOutlined,
               title: 'Sharing is part of Pro',
               body:
                   'Share notes with the people you choose and edit together. '
@@ -720,7 +644,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
             ..._ownerBody(context, space, joining, enabled),
         ],
       ),
-      footer: _footer(context, space: space, owner: owner, enabled: enabled),
+      actions: _actions(space: space, owner: owner, enabled: enabled),
     );
   }
 
@@ -812,14 +736,15 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         _Message(error, key: const ValueKey('share-error'), isError: true),
       ],
       if (space != null) ...[
-        const SizedBox(height: 18),
+        SizedBox(height: widget.asSheet ? 4 : 18),
         _PeopleWithAccess(
           sharing: _sharing,
           space: space,
           busy: !enabled,
           onAccess: _changeAccess,
+          removeLabel: 'Remove from this note',
           onRemove: _removePerson,
-          onBlock: (member) => _block(space, member),
+          onBlock: _block,
           onReport: (member) => showReportDialog(
             context,
             sharing: _sharing,
@@ -835,14 +760,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         ),
       ],
       if (joining != null) ...[
-        const SizedBox(height: 16),
         _LinkRow(
           joining: joining,
           spaceId: space?.id,
           enabled: enabled,
           opensMore: (space?.liveNotes ?? 0) > 1
-              ? 'The link opens all ${space!.liveNotes} notes here, not only '
-                    'this one.'
+              ? 'The link opens ${_notesPhrase(space!.liveNotes)} here, not '
+                    'only this one.'
               : null,
           onToggle: (on) => _toggleLink(joining, on),
           onCopy: _copyLinkOf,
@@ -919,66 +843,36 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     ];
   }
 
-  Widget _footer(
-    BuildContext context, {
+  List<_FooterAction> _actions({
     required Space? space,
     required bool owner,
     required bool enabled,
   }) {
-    final danger = Theme.of(context).colorScheme.error;
-    final done = TextButton(
-      key: const ValueKey('share-done'),
-      onPressed: () => Navigator.of(context).pop(),
-      child: const Text('Done'),
-    );
-    if (space == null || _note.isHidden || _outOfPro) {
-      return Align(alignment: Alignment.centerRight, child: done);
-    }
+    if (space == null || _note.isHidden || _outOfPro) return const [];
     if (!owner) {
-      return Wrap(
-        alignment: WrapAlignment.end,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 2,
-        runSpacing: 2,
-        children: [
-          TextButton.icon(
-            key: const ValueKey('copy-note'),
-            onPressed: enabled ? () => _copyPrivate(_note) : null,
-            icon: KapyIcon(
-              KapyIcons.copyRounded,
-              size: AppControlMetrics.iconControl,
-            ),
-            label: const Text('Make a private copy'),
-          ),
-          TextButton.icon(
-            key: const ValueKey('leave-space'),
-            onPressed: enabled ? _leave : null,
-            style: TextButton.styleFrom(foregroundColor: danger),
-            icon: KapyIcon(
-              KapyIcons.logoutRounded,
-              size: AppControlMetrics.iconControl,
-            ),
-            label: const Text('Leave'),
-          ),
-          done,
-        ],
-      );
-    }
-    return Wrap(
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 2,
-      runSpacing: 2,
-      children: [
-        TextButton(
-          key: const ValueKey('stop-sharing'),
-          onPressed: enabled ? _stopSharing : null,
-          style: TextButton.styleFrom(foregroundColor: danger),
-          child: const Text('Stop sharing'),
+      return [
+        (
+          key: const ValueKey('copy-note'),
+          label: 'Make a private copy',
+          icon: KapyIcons.copyRounded,
+          onPressed: enabled ? () => _copyPrivate(_note) : null,
         ),
-        done,
-      ],
-    );
+        (
+          key: const ValueKey('leave-space'),
+          label: 'Leave',
+          icon: KapyIcons.logoutRounded,
+          onPressed: enabled ? _leave : null,
+        ),
+      ];
+    }
+    return [
+      (
+        key: const ValueKey('stop-sharing'),
+        label: 'Stop sharing',
+        icon: null,
+        onPressed: enabled ? _stopSharing : null,
+      ),
+    ];
   }
 }
 
@@ -1069,6 +963,165 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
     }
   }
 
+  Future<void> _block(SpaceMember member) async {
+    if (!await _askToBlock(context, member) || !mounted) return;
+    final overlay = Overlay.of(context, rootOverlay: true);
+    await _run(() async {
+      await _sharing.blockEverywhere(member.email);
+      Toast.showOn(overlay, 'Blocked ${member.displayName}');
+    });
+  }
+
+  Future<void> _leave(Space space) async {
+    final keep = await _askToLeave(
+      context,
+      sharing: _sharing,
+      space: space,
+      title:
+          [
+            for (final note in _sharing.notesIn(space.id))
+              if (!note.isHidden) note.title,
+          ].firstOrNull ??
+          space.titleFor(_sharing.userId),
+    );
+    if (keep == null || !mounted) return;
+    final leave = Navigator.of(context);
+    await _run(() async {
+      await _sharing.leave(space.id, keepCopies: keep);
+      leave.pop();
+    });
+  }
+
+  /// The notes here that the people in it see, Hidden ones left out.
+  List<Note> _notesOf(Space space) => [
+    for (final note in _sharing.notesIn(space.id))
+      if (!note.isHidden) note,
+  ];
+
+  /// Someone taken off every note here, asked first as the note's sheet asks,
+  /// with one tap to invite them back.
+  Future<void> _removePerson(Space space, SpaceMember member) async {
+    final name = member.firstName;
+    final many = _notesOf(space).length > 1;
+    final where = many ? 'these notes' : 'this note';
+    final ok = await askFirst(
+      context,
+      title: 'Remove $name from $where?',
+      body: many
+          ? '$name stops seeing these notes, and they leave $name’s devices. '
+                'They stay in your notes, with everything $name wrote.'
+          : '$name stops seeing this note, and it leaves their devices. It '
+                'stays in your notes, with everything $name wrote.',
+      action: 'Remove',
+    );
+    if (ok != true || !mounted) return;
+    await _run(() async {
+      await _sharing.removeMember(space.id, member.userId);
+      if (!mounted) return;
+      final sharing = _sharing;
+      final overlay = Overlay.of(context, rootOverlay: true);
+      Toast.show(
+        context,
+        'Removed $name from $where',
+        action: 'Undo',
+        onAction: () => unawaited(
+          undoSharing(overlay, () async {
+            await sharing.invite(space.id, member.email, role: member.role);
+            return 'Invitation sent to ${member.email}';
+          }),
+        ),
+      );
+    });
+  }
+
+  /// Ends the share, asked first as the note's sheet asks, with one tap to
+  /// share the same notes with the same people again.
+  Future<void> _stopSharing(Space space) async {
+    final notes = _notesOf(space);
+    final audience = _sharing.audienceOf(space);
+    final people = space.othersThan(_sharing.userId).length;
+    final who = space.peoplePhrase(_sharing.userId) ?? 'The people here';
+    final what = switch (notes.length) {
+      0 => '',
+      1 => ' “${notes.single.title}”',
+      final count => ' $count notes',
+    };
+    final ok = await askFirst(
+      context,
+      title: 'Stop sharing$what?',
+      body:
+          '$who ${people > 1 ? 'lose' : 'loses'} access. '
+          '${switch (notes.length) {
+            0 => 'Everything here stays',
+            1 => 'The note stays',
+            _ => 'The notes stay',
+          }} in your notes, with every change.',
+      action: 'Stop sharing',
+    );
+    if (ok != true || !mounted) return;
+    final close = Navigator.of(context);
+    await _run(() async {
+      await _sharing.stopSharing(space.id);
+      if (!mounted) return;
+      final sharing = _sharing;
+      final overlay = Overlay.of(context, rootOverlay: true);
+      Toast.show(
+        context,
+        'Stopped sharing$what',
+        action: notes.isEmpty ? null : 'Undo',
+        onAction: () => unawaited(
+          undoSharing(overlay, () async {
+            final again = await sharing.shareNoteWithPeople(
+              notes.first.id,
+              audience,
+            );
+            for (final note in notes.skip(1)) {
+              await sharing.shareNote(note.id, spaceId: again.id);
+            }
+            if (notes.any(
+              (note) => audience.keys.any(
+                (email) => sharing.memberOn(note.id, email) != null,
+              ),
+            )) {
+              return 'Shared again with $who';
+            }
+            return audience.length == 1
+                ? 'Invitation sent to $who'
+                : 'Invitations sent to $who';
+          }),
+        ),
+      );
+      close.pop();
+    });
+  }
+
+  /// Access is for every note here, so a change that covers more than one
+  /// asks first, as the note's sheet and Settings do.
+  Future<void> _changeAccess(Space space, String email, SpaceRole role) async {
+    final member = space
+        .othersThan(_sharing.userId)
+        .where((member) => member.email.toLowerCase() == email.toLowerCase())
+        .firstOrNull;
+    if (member == null) return;
+    final name = member.firstName;
+    final together = _notesOf(space).length;
+    if (together > 1) {
+      final ok = await askFirst(
+        context,
+        title: role.canEdit ? 'Let $name edit?' : 'Let $name only view?',
+        body:
+            '$name sees $together notes you share together, and the change '
+            'is for all of them.',
+        action: 'Change access',
+      );
+      if (ok == null || !mounted) return;
+    }
+    await _run(
+      () => _sharing.changeAccess(space.id, member.userId, role),
+      notice: 'Access changed',
+    );
+  }
+
   /// The join panels share this sheet's one way of running an action.
   Future<void> _panelRun(
     Future<void> Function() action, {
@@ -1117,27 +1170,12 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                   sharing: _sharing,
                   space: space,
                   busy: !enabled,
-                  onAccess: (email, role) => _run(() async {
-                    for (final member in space.othersThan(_sharing.userId)) {
-                      if (member.email.toLowerCase() != email.toLowerCase()) {
-                        continue;
-                      }
-                      await _sharing.changeAccess(
-                        space.id,
-                        member.userId,
-                        role,
-                      );
-                    }
-                  }, notice: 'Access changed'),
-                  onRemove: (member) => _run(
-                    () => _sharing.removeMember(space.id, member.userId),
-                    notice: '${member.firstName} was removed',
-                  ),
-                  onBlock: (member) => _run(
-                    () =>
-                        _sharing.blockPerson(member.email, inSpaceId: space.id),
-                    notice: '${member.firstName} is blocked',
-                  ),
+                  onAccess: (email, role) => _changeAccess(space, email, role),
+                  removeLabel: _notesOf(space).length > 1
+                      ? 'Remove from these notes'
+                      : 'Remove from this note',
+                  onRemove: (member) => _removePerson(space, member),
+                  onBlock: _block,
                   onReport: (member) => showReportDialog(
                     context,
                     sharing: _sharing,
@@ -1171,7 +1209,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                   ),
                 ),
                 if (space.isOwner) ...[
-                  const SizedBox(height: 16),
+                  if (!widget.asSheet) const SizedBox(height: 16),
                   const _Label('Add someone by email'),
                   _AccessAndShare(
                     role: _role,
@@ -1198,7 +1236,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                       joining: joining,
                       run: _panelRun,
                       scope: space.liveNotes > 1
-                          ? 'It opens all ${space.liveNotes} notes shared '
+                          ? 'It opens ${_notesPhrase(space.liveNotes)} shared '
                                 'here, not only the one you are in.'
                           : null,
                       enabled: enabled,
@@ -1225,67 +1263,102 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                 ],
               ],
             ),
-      footer: _footer(context, space, enabled),
+      actions: _actions(space, enabled),
     );
   }
 
-  Widget _footer(BuildContext context, Space? space, bool enabled) {
-    final danger = Theme.of(context).colorScheme.error;
-    final done = TextButton(
-      key: const ValueKey('share-done'),
-      onPressed: () => Navigator.of(context).pop(),
-      child: const Text('Done'),
-    );
-    if (space == null) {
-      return Align(alignment: Alignment.centerRight, child: done);
-    }
-    return Wrap(
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 2,
-      runSpacing: 2,
-      children: [
-        if (space.isOwner)
-          TextButton.icon(
-            key: const ValueKey('stop-sharing'),
-            onPressed: enabled
-                ? () => _run(() async {
-                    await _sharing.stopSharing(space.id);
-                    if (context.mounted) Navigator.of(context).pop();
-                  })
-                : null,
-            style: TextButton.styleFrom(foregroundColor: danger),
-            icon: KapyIcon(
-              KapyIcons.stopRounded,
-              size: AppControlMetrics.iconControl,
-            ),
-            label: const Text('Stop sharing'),
-          )
-        else
-          TextButton.icon(
-            key: const ValueKey('leave-space'),
-            onPressed: enabled
-                ? () => _run(() async {
-                    await _sharing.leave(space.id);
-                    if (context.mounted) Navigator.of(context).pop();
-                  })
-                : null,
-            style: TextButton.styleFrom(foregroundColor: danger),
-            icon: KapyIcon(
-              KapyIcons.logoutRounded,
-              size: AppControlMetrics.iconControl,
-            ),
-            label: const Text('Leave'),
-          ),
-        done,
-      ],
-    );
+  List<_FooterAction> _actions(Space? space, bool enabled) {
+    if (space == null) return const [];
+    return [
+      if (space.isOwner)
+        (
+          key: const ValueKey('stop-sharing'),
+          label: 'Stop sharing',
+          icon: KapyIcons.stopRounded,
+          onPressed: enabled ? () => _stopSharing(space) : null,
+        )
+      else
+        (
+          key: const ValueKey('leave-space'),
+          label: 'Leave',
+          icon: KapyIcons.logoutRounded,
+          onPressed: enabled ? () => _leave(space) : null,
+        ),
+    ];
   }
 }
 
 // ---------------------------------------------------------------------------
 // Pieces both sheets use
 // ---------------------------------------------------------------------------
+
+/// Asks before blocking [member]. Blocking ends everything shared between
+/// this account and them, so the question says so.
+Future<bool> _askToBlock(BuildContext context, SpaceMember member) async {
+  final name = member.firstName;
+  return await askFirst(
+        context,
+        title: 'Block ${member.displayName}?',
+        body:
+            '$name loses access to everything you share, you leave what $name '
+            'shares with you (keeping copies), and $name can’t invite you '
+            'again.',
+        action: 'Block',
+      ) ==
+      true;
+}
+
+/// Asks before leaving [space], named by the note [title], and whether to
+/// keep copies; null means no. Leaving takes every note in the space, so
+/// with more than one the question counts them.
+Future<bool?> _askToLeave(
+  BuildContext context, {
+  required Sharing sharing,
+  required Space space,
+  required String title,
+}) {
+  final owner = space.shortNameOf(space.ownerId);
+  final together = [
+    for (final note in sharing.notesIn(space.id))
+      if (!note.isHidden) note,
+  ].length;
+  return askFirst(
+    context,
+    title: together > 1
+        ? 'Leave $together notes from $owner?'
+        : 'Leave “$title”?',
+    body: together > 1
+        ? '$owner shares “$title” together with ${together - 1} more, so '
+              'you leave all of them. You stop seeing $owner’s changes, and '
+              '$owner keeps the notes.'
+        : 'You stop seeing $owner’s changes. $owner keeps the note.',
+    action: 'Leave',
+    option: together > 1
+        ? 'Keep private copies'
+        : 'Keep a private copy in my notes',
+  );
+}
+
+/// Marks what sits on a phone sheet, so the pieces both sheets use take the
+/// phone's measurements there and the Mac dialog's everywhere else.
+class _OnPhone extends InheritedWidget {
+  const _OnPhone({required super.child});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_OnPhone>() != null;
+
+  @override
+  bool updateShouldNotify(_OnPhone oldWidget) => false;
+}
+
+/// A footer action beside Done. The Mac dialog shows its icon; a phone sheet
+/// shows only its words.
+typedef _FooterAction = ({
+  Key key,
+  String label,
+  KapyIconData? icon,
+  VoidCallback? onPressed,
+});
 
 /// A dialog on a desktop, a sheet with a grab handle on a phone: the same
 /// header, body and footer either way.
@@ -1296,7 +1369,7 @@ class _SheetScaffold extends StatelessWidget {
     required this.subtitle,
     required this.onClose,
     required this.body,
-    required this.footer,
+    this.actions = const [],
     this.more,
   });
 
@@ -1305,80 +1378,129 @@ class _SheetScaffold extends StatelessWidget {
   final String subtitle;
   final VoidCallback onClose;
   final Widget body;
-  final Widget footer;
+  final List<_FooterAction> actions;
 
   /// The quiet menu beside close, for what is rare enough not to earn a row.
   final Widget? more;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final header = _Header(
+      phone: asSheet,
       title: title,
       subtitle: subtitle,
       onClose: onClose,
       more: more,
     );
-    final content = ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 448),
-      child: SingleChildScrollView(child: body),
-    );
     if (!asSheet) {
+      final done = TextButton(
+        key: const ValueKey('share-done'),
+        onPressed: onClose,
+        child: const Text('Done'),
+      );
       return AlertDialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         titlePadding: const EdgeInsets.fromLTRB(22, 20, 14, 0),
         contentPadding: const EdgeInsets.fromLTRB(22, 18, 22, 10),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
         title: header,
-        content: content,
-        actions: [footer],
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 448),
+          child: SingleChildScrollView(child: body),
+        ),
+        actions: [
+          if (actions.isEmpty)
+            Align(alignment: Alignment.centerRight, child: done)
+          else
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 2,
+              runSpacing: 2,
+              children: [
+                for (final action in actions)
+                  if (action.icon case final icon?)
+                    TextButton.icon(
+                      key: action.key,
+                      onPressed: action.onPressed,
+                      icon: KapyIcon(icon, size: AppControlMetrics.iconControl),
+                      label: Text(action.label),
+                    )
+                  else
+                    TextButton(
+                      key: action.key,
+                      onPressed: action.onPressed,
+                      child: Text(action.label),
+                    ),
+                done,
+              ],
+            ),
+        ],
       );
     }
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
-        ),
-        decoration: BoxDecoration(
-          color: palette.cardBackground,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppRadii.dialog),
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 34,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: palette.separator,
-                  borderRadius: BorderRadius.circular(AppRadii.pill),
-                ),
+    final palette = context.palette;
+    ButtonStyle text(Color color) => TextButton.styleFrom(
+      foregroundColor: color,
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      textStyle: chromeStyle(
+        size: 15,
+        line: 20,
+        weight: AppWeight.button,
+        color: color,
+      ),
+    );
+    return SharingSheetFrame(
+      child: _OnPhone(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: body,
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 10, 0),
-                child: header,
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 448),
-                    child: body,
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: palette.textPrimary.withValues(alpha: 0.06),
+                    width: AppHairline.of(context),
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                child: footer,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final action in actions)
+                            TextButton(
+                              key: action.key,
+                              onPressed: action.onPressed,
+                              style: text(palette.textSecondary),
+                              child: Text(action.label),
+                            ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      key: const ValueKey('share-done'),
+                      onPressed: onClose,
+                      style: text(palette.textPrimary),
+                      child: const Text('Done'),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1387,12 +1509,14 @@ class _SheetScaffold extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   const _Header({
+    required this.phone,
     required this.title,
     required this.subtitle,
     required this.onClose,
     this.more,
   });
 
+  final bool phone;
   final String title;
   final String subtitle;
   final VoidCallback onClose;
@@ -1401,6 +1525,67 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (phone) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 52),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 8, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Semantics(
+                      header: true,
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 17,
+                          height: 22 / 17,
+                          fontWeight: FontWeight.w600,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 16 / 13,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              if (more != null) SizedBox.square(dimension: 44, child: more),
+              SizedBox.square(
+                dimension: 44,
+                child: IconButton(
+                  key: const ValueKey('share-dialog-close'),
+                  tooltip: 'Close',
+                  padding: EdgeInsets.zero,
+                  onPressed: onClose,
+                  icon: KapyIcon(
+                    KapyIcons.closeRounded,
+                    size: 20,
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1417,7 +1602,9 @@ class _Header extends StatelessWidget {
                   style: TextStyle(
                     fontSize: AppTypeScale.heading,
                     fontWeight: FontWeight.w500,
-                    fontVariations: AppWeight.variations(AppWeight.rowTitle),
+                    fontVariations: AppWeight.variations(
+                      AppWeight.bold(AppWeight.rowTitle),
+                    ),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -1517,6 +1704,7 @@ class _PeopleWithAccess extends StatelessWidget {
     required this.space,
     required this.busy,
     required this.onAccess,
+    required this.removeLabel,
     required this.onRemove,
     required this.onBlock,
     required this.onReport,
@@ -1529,6 +1717,10 @@ class _PeopleWithAccess extends StatelessWidget {
   final Space space;
   final bool busy;
   final void Function(String email, SpaceRole role) onAccess;
+
+  /// What taking someone off is called here: this note, or every note in
+  /// the share.
+  final String removeLabel;
   final ValueChanged<SpaceMember> onRemove;
   final ValueChanged<SpaceMember> onBlock;
   final ValueChanged<SpaceMember> onReport;
@@ -1587,6 +1779,7 @@ class _PeopleWithAccess extends StatelessWidget {
                 seed: member.userId.isEmpty ? member.email : member.userId,
                 name: member.userId == me ? 'You' : member.displayName,
                 detail: _detailFor(member, present[member.userId]),
+                live: present.containsKey(member.userId),
                 ring: present[member.userId] == null
                     ? null
                     : collaboratorColor(member.userId, on: palette.brightness),
@@ -1600,6 +1793,7 @@ class _PeopleWithAccess extends StatelessWidget {
                         enabled: !busy,
                         canManage: space.isOwner,
                         canRemove: space.isOwner,
+                        removeLabel: removeLabel,
                         onAccess: (role) => onAccess(member.email, role),
                         onReport: () => onReport(member),
                         onBlock: () => onBlock(member),
@@ -1640,6 +1834,10 @@ class _PeopleWithAccess extends StatelessWidget {
 
 String _accessLabel(SpaceRole role) => role.canEdit ? 'Can edit' : 'Can view';
 
+/// Two notes are both notes; more are counted.
+String _notesPhrase(int count) =>
+    count == 2 ? 'both notes' : 'all $count notes';
+
 class _PeopleCard extends StatelessWidget {
   const _PeopleCard({super.key, required this.rows});
 
@@ -1648,6 +1846,7 @@ class _PeopleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (_OnPhone.of(context)) return Column(children: rows);
     return KapyControlSurface(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Column(
@@ -1676,6 +1875,7 @@ class _PersonRow extends StatelessWidget {
     required this.detail,
     this.trailing,
     this.invited = false,
+    this.live = false,
     this.ring,
   });
 
@@ -1684,6 +1884,9 @@ class _PersonRow extends StatelessWidget {
   final String detail;
   final Widget? trailing;
   final bool invited;
+
+  /// [detail] says what they are doing right now: typing, or here.
+  final bool live;
   final Color? ring;
 
   static const double avatar = 30;
@@ -1691,6 +1894,94 @@ class _PersonRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (_OnPhone.of(context)) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (invited)
+                    Container(
+                      width: 32,
+                      height: 32,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: palette.textPrimary.withValues(alpha: 0.07),
+                      ),
+                      child: KapyIcon(
+                        KapyIcons.mailOutlined,
+                        size: 16,
+                        color: palette.textTertiary,
+                      ),
+                    )
+                  else
+                    ProfileAvatar(extent: 32, seed: seed, name: name),
+                  if (ring != null)
+                    Positioned(
+                      key: const ValueKey('presence-dot'),
+                      right: -1,
+                      bottom: -1,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: palette.accentText,
+                          border: Border.all(
+                            color: palette.cardBackground,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 20 / 15,
+                        fontWeight: FontWeight.w500,
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 16 / 13,
+                        color: live
+                            ? palette.textSecondary
+                            : palette.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing case final trailing?) ...[
+                const SizedBox(width: 12),
+                trailing,
+              ],
+            ],
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
@@ -1739,7 +2030,7 @@ class _PersonRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: AppTypeScale.caption,
-                    color: detail == 'Here now' || detail == 'Typing…'
+                    color: live
                         ? ring ?? palette.textSecondary
                         : palette.textSecondary,
                   ),
@@ -1765,10 +2056,10 @@ class _OverflowMenu extends StatelessWidget {
   Widget build(BuildContext context) => PopupMenuButton<String>(
     key: const ValueKey('share-more'),
     tooltip: 'More',
+    padding: _OnPhone.of(context) ? EdgeInsets.zero : const EdgeInsets.all(8),
     icon: KapyIcon(
-      KapyIcons.moreRounded,
-      size: AppControlMetrics.iconAction,
-      strokeWidth: 2.2,
+      KapyIcons.moreVerticalRounded,
+      size: _OnPhone.of(context) ? 20 : AppControlMetrics.iconAction,
       color: context.palette.textSecondary,
     ),
     onSelected: (_) => onReportNote(),
@@ -1789,10 +2080,16 @@ class _RoleText extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: TextStyle(
-      fontSize: AppTypeScale.caption,
-      color: context.palette.textTertiary,
-    ),
+    style: _OnPhone.of(context)
+        ? TextStyle(
+            fontSize: 15,
+            height: 20 / 15,
+            color: context.palette.textTertiary,
+          )
+        : TextStyle(
+            fontSize: AppTypeScale.caption,
+            color: context.palette.textTertiary,
+          ),
   );
 }
 
@@ -1804,6 +2101,7 @@ class _MemberMenu extends StatelessWidget {
     required this.enabled,
     required this.canManage,
     required this.canRemove,
+    required this.removeLabel,
     required this.onAccess,
     required this.onReport,
     required this.onBlock,
@@ -1814,6 +2112,7 @@ class _MemberMenu extends StatelessWidget {
   final bool enabled;
   final bool canManage;
   final bool canRemove;
+  final String removeLabel;
   final ValueChanged<SpaceRole> onAccess;
   final VoidCallback onReport;
   final VoidCallback onBlock;
@@ -1821,8 +2120,6 @@ class _MemberMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final error = Theme.of(context).colorScheme.error;
     return PopupMenuButton<String>(
       enabled: enabled,
       tooltip: _accessLabel(role),
@@ -1851,36 +2148,10 @@ class _MemberMenu extends StatelessWidget {
         const PopupMenuItem(value: 'block', child: Text('Block…')),
         if (canRemove) ...[
           const PopupMenuDivider(),
-          PopupMenuItem(
-            value: 'remove',
-            child: Text(
-              'Remove from this note',
-              style: TextStyle(color: error),
-            ),
-          ),
+          PopupMenuItem(value: 'remove', child: Text(removeLabel)),
         ],
       ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _accessLabel(role),
-              style: TextStyle(
-                fontSize: AppTypeScale.caption,
-                color: palette.textSecondary,
-              ),
-            ),
-            if (canManage)
-              KapyIcon(
-                KapyIcons.chevronDownRounded,
-                size: AppControlMetrics.iconInline,
-                color: palette.textTertiary,
-              ),
-          ],
-        ),
-      ),
+      child: _AccessButton(_accessLabel(role), chevron: canManage),
     );
   }
 }
@@ -1902,8 +2173,6 @@ class _InviteMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final error = Theme.of(context).colorScheme.error;
     return PopupMenuButton<String>(
       enabled: enabled,
       tooltip: 'Invitation',
@@ -1916,31 +2185,73 @@ class _InviteMenu extends StatelessWidget {
         const PopupMenuItem(value: 'copy', child: Text('Copy link')),
         const PopupMenuItem(value: 'resend', child: Text('Send again')),
         const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'cancel',
-          child: Text('Cancel', style: TextStyle(color: error)),
-        ),
+        const PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
       ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Invited',
-              style: TextStyle(
-                fontSize: AppTypeScale.caption,
-                color: palette.textSecondary,
+      child: _AccessButton('Invited', chevron: enabled),
+    );
+  }
+}
+
+/// What a person row's menu opens from: their access, or that they are
+/// invited, with a chevron while it can be changed.
+class _AccessButton extends StatelessWidget {
+  const _AccessButton(this.label, {required this.chevron});
+
+  final String label;
+  final bool chevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    if (_OnPhone.of(context)) {
+      return SizedBox(
+        height: 44,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 20 / 15,
+                  fontWeight: FontWeight.w500,
+                  color: palette.textSecondary,
+                ),
               ),
-            ),
-            if (enabled)
-              KapyIcon(
-                KapyIcons.chevronDownRounded,
-                size: AppControlMetrics.iconInline,
-                color: palette.textTertiary,
-              ),
-          ],
+              if (chevron) ...[
+                const SizedBox(width: 4),
+                KapyIcon(
+                  KapyIcons.chevronDownRounded,
+                  size: 14,
+                  color: palette.textSecondary,
+                ),
+              ],
+            ],
+          ),
         ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              color: palette.textSecondary,
+            ),
+          ),
+          if (chevron)
+            KapyIcon(
+              KapyIcons.chevronDownRounded,
+              size: AppControlMetrics.iconInline,
+              color: palette.textTertiary,
+            ),
+        ],
       ),
     );
   }
@@ -1968,6 +2279,18 @@ class _EmailField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final phone = _OnPhone.of(context);
+    final text = chromeStyle(
+      size: phone ? 15 : 13,
+      line: phone ? 20 : 18,
+      weight: AppWeight.body,
+      color: palette.textPrimary,
+    );
+    OutlineInputBorder border([BorderSide side = BorderSide.none]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(phone ? 9 : 6),
+          borderSide: side,
+        );
     return TextField(
       key: const ValueKey('share-email'),
       controller: controller,
@@ -1978,27 +2301,106 @@ class _EmailField extends StatelessWidget {
       enableSuggestions: false,
       onChanged: onChanged,
       onSubmitted: (_) => onSubmit?.call(),
-      style: TextStyle(
-        fontSize: AppTypeScale.control,
-        color: palette.textPrimary,
-      ),
-      decoration: kapyFieldDecoration(
-        context,
+      style: text,
+      cursorColor: palette.accentText,
+      cursorWidth: 1.5,
+      decoration: InputDecoration(
         hintText: hint,
-        fillColor: palette.surfaceBackground,
-        prefixIcon: Center(
-          widthFactor: 1,
-          heightFactor: 1,
+        hintStyle: text.copyWith(color: palette.textTertiary),
+        isDense: true,
+        filled: true,
+        fillColor: palette.textPrimary.withValues(alpha: 0.04),
+        constraints: BoxConstraints.tightFor(height: phone ? 44 : 32),
+        contentPadding: EdgeInsets.fromLTRB(
+          0,
+          phone ? 12 : 7,
+          phone ? 12 : 10,
+          phone ? 12 : 7,
+        ),
+        prefixIcon: Padding(
+          padding: EdgeInsets.only(left: phone ? 12 : 10, right: 8),
           child: KapyIcon(
             KapyIcons.mailOutlined,
-            size: AppControlMetrics.iconAdornment,
+            size: phone ? 16 : AppControlMetrics.iconAdornment,
             color: palette.textTertiary,
           ),
         ),
-        prefixIconConstraints: BoxConstraints(
-          minWidth: AppControlMetrics.fieldAdornmentSlot + 4,
-          minHeight: AppControlMetrics.fieldAdornmentSlot,
+        prefixIconConstraints: const BoxConstraints(),
+        border: border(),
+        enabledBorder: border(),
+        disabledBorder: border(),
+        focusedBorder: border(
+          BorderSide(
+            color: palette.selectedBorder,
+            width: palette.increasedContrast ? 2 : 1.25,
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// Who someone new may be: Can edit or Can view, side by side on one quiet
+/// track, the chosen side lifted a little.
+class _AccessSegments extends StatelessWidget {
+  const _AccessSegments({required this.role, required this.onRole});
+
+  final SpaceRole role;
+  final ValueChanged<SpaceRole>? onRole;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final phone = _OnPhone.of(context);
+    return Container(
+      key: const ValueKey('share-role'),
+      height: phone ? 36 : 28,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: palette.textPrimary.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(phone ? 9 : 6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 2,
+        children: [
+          for (final (value, label) in const [
+            (SpaceRole.member, 'Can edit'),
+            (SpaceRole.viewer, 'Can view'),
+          ])
+            Semantics(
+              selected: value == role,
+              inMutuallyExclusiveGroup: true,
+              child: TextButton(
+                key: ValueKey('share-role-${value.name}'),
+                onPressed: onRole == null ? null : () => onRole!(value),
+                style: TextButton.styleFrom(
+                  backgroundColor: value == role
+                      ? palette.textPrimary.withValues(alpha: 0.07)
+                      : null,
+                  disabledBackgroundColor: value == role
+                      ? palette.textPrimary.withValues(alpha: 0.07)
+                      : null,
+                  foregroundColor: value == role
+                      ? palette.textPrimary
+                      : palette.textSecondary,
+                  minimumSize: Size(0, phone ? 32 : 24),
+                  padding: EdgeInsets.symmetric(horizontal: phone ? 12 : 10),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(phone ? 7 : 5),
+                  ),
+                  textStyle: chromeStyle(
+                    size: phone ? 14 : 13,
+                    line: 18,
+                    weight: AppWeight.button,
+                    color: palette.textPrimary,
+                  ),
+                ),
+                child: Text(label),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -2249,52 +2651,6 @@ class _ChoiceRow extends StatelessWidget {
   }
 }
 
-class _CheckRow extends StatelessWidget {
-  const _CheckRow({
-    super.key,
-    required this.value,
-    required this.label,
-    required this.onChanged,
-  });
-
-  final bool value;
-  final String label;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return InkWell(
-      onTap: () => onChanged(!value),
-      borderRadius: BorderRadius.circular(AppRadii.control),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            KapyIcon(
-              value ? KapyIcons.checkCircleRounded : KapyIcons.circleOutlined,
-              size: AppControlMetrics.iconControl,
-              color: value
-                  ? Theme.of(context).colorScheme.primary
-                  : palette.textTertiary,
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: AppTypeScale.control,
-                  color: palette.textPrimary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Can edit or can view, and the one button that sends it.
 class _AccessAndShare extends StatelessWidget {
   const _AccessAndShare({
@@ -2317,37 +2673,37 @@ class _AccessAndShare extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final phone = _OnPhone.of(context);
     final buttons = Row(
       children: [
-        Expanded(
-          child: SegmentedButton<SpaceRole>(
-            key: const ValueKey('share-role'),
-            expandedInsets: EdgeInsets.zero,
-            showSelectedIcon: false,
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStatePropertyAll(
-                Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontSize: AppTypeScale.caption,
-                ),
-              ),
-            ),
-            segments: const [
-              ButtonSegment(value: SpaceRole.member, label: Text('Can edit')),
-              ButtonSegment(value: SpaceRole.viewer, label: Text('Can view')),
-            ],
-            selected: {role},
-            onSelectionChanged: enabled
-                ? (selection) {
-                    if (selection.isNotEmpty) onRole(selection.first);
-                  }
-                : null,
-          ),
-        ),
-        const SizedBox(width: 8),
+        _AccessSegments(role: role, onRole: enabled ? onRole : null),
+        const Spacer(),
         FilledButton(
           key: ValueKey('share-submit-$action'),
           onPressed: enabled ? onShare : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: palette.accentText.withValues(alpha: 0.16),
+            foregroundColor: palette.accentText,
+            disabledBackgroundColor: palette.textPrimary.withValues(
+              alpha: 0.04,
+            ),
+            disabledForegroundColor: palette.textTertiary,
+            minimumSize: Size(0, phone ? 36 : 28),
+            padding: EdgeInsets.symmetric(horizontal: phone ? 16 : 12),
+            tapTargetSize: phone
+                ? MaterialTapTargetSize.padded
+                : MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(phone ? 9 : 6),
+            ),
+            textStyle: chromeStyle(
+              size: phone ? 15 : 13,
+              line: phone ? 20 : 18,
+              weight: AppWeight.page,
+              color: palette.accentText,
+            ),
+          ),
           child: Text(busy ? 'Sharing…' : action),
         ),
       ],
@@ -2387,76 +2743,107 @@ class _LinkRow extends StatelessWidget {
     final link = spaceId == null ? null : joining.linkOf(spaceId);
     final on = link != null;
     final detail = switch (link) {
-      null => 'Turn on to invite people without their email',
+      null => 'Off · Turn on to invite people without their email',
       final link => '${_linkRoleLabel(link)} · they still need to sign in',
     };
+    final phone = _OnPhone.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _Label('Invite link'),
-        KapyControlSurface(
-          key: const ValueKey('share-link'),
-          padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      on ? 'Anyone with the link can join' : 'Off',
-                      style: TextStyle(
-                        fontSize: AppTypeScale.control,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      detail,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.caption,
-                        color: palette.textTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (on)
-                TextButton(
-                  key: const ValueKey('share-link-copy'),
-                  onPressed: enabled ? () => onCopy(link) : null,
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 30),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  child: const Text('Copy'),
-                ),
-              Semantics(
-                label: 'Invite link',
-                child: GestureDetector(
-                  key: const ValueKey('share-link-switch'),
-                  onTap: enabled ? () => onToggle(!on) : null,
-                  behavior: HitTestBehavior.opaque,
-                  child: SettingsSwitch(value: on, enabled: enabled),
-                ),
-              ),
-            ],
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Container(
+            height: AppHairline.of(context),
+            color: palette.textPrimary.withValues(alpha: 0.06),
           ),
         ),
-        if (opensMore != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            opensMore!,
-            key: const ValueKey('share-link-scope'),
-            style: TextStyle(
-              fontSize: AppTypeScale.caption,
-              color: palette.textSecondary,
-              height: 1.4,
+        ConstrainedBox(
+          key: const ValueKey('share-link'),
+          constraints: BoxConstraints(minHeight: phone ? 52 : 0),
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: phone ? 4 : 10,
+              bottom: phone ? 0 : 4,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Invite link',
+                        style: chromeStyle(
+                          size: phone ? 15 : 13,
+                          line: phone ? 20 : 18,
+                          weight: AppWeight.button,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        detail,
+                        key: const ValueKey('share-link-detail'),
+                        style: chromeStyle(
+                          size: phone ? 13 : 12,
+                          line: 16,
+                          weight: AppWeight.body,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                if (on)
+                  TextButton(
+                    key: const ValueKey('share-link-copy'),
+                    onPressed: enabled ? () => onCopy(link) : null,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 30),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    child: const Text('Copy link'),
+                  ),
+                Semantics(
+                  label: 'Invite link',
+                  child: GestureDetector(
+                    key: const ValueKey('share-link-switch'),
+                    onTap: enabled ? () => onToggle(!on) : null,
+                    behavior: HitTestBehavior.opaque,
+                    child: SettingsSwitch(value: on, enabled: enabled),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
+        if (opensMore != null)
+          Padding(
+            padding: EdgeInsets.only(top: phone ? 2 : 4),
+            child: Row(
+              children: [
+                KapyIcon(
+                  KapyIcons.infoOutlined,
+                  size: phone ? 16 : 14,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    opensMore!,
+                    key: const ValueKey('share-link-scope'),
+                    style: chromeStyle(
+                      size: phone ? 13 : 12,
+                      line: phone ? 18 : 16,
+                      weight: AppWeight.body,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -2595,16 +2982,32 @@ class _Label extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      text,
-      style: TextStyle(
-        fontSize: AppTypeScale.caption,
-        color: context.palette.textSecondary,
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => _OnPhone.of(context)
+      ? Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 4),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              height: 18 / 13,
+              fontWeight: AppWeight.named(AppWeight.bold(AppWeight.section)),
+              fontVariations: AppWeight.variations(
+                AppWeight.bold(AppWeight.section),
+              ),
+              color: context.palette.textTertiary,
+            ),
+          ),
+        )
+      : Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              color: context.palette.textSecondary,
+            ),
+          ),
+        );
 }
 
 class _Message extends StatelessWidget {
@@ -2619,33 +3022,38 @@ class _Message extends StatelessWidget {
     final color = isError
         ? Theme.of(context).colorScheme.error
         : Theme.of(context).colorScheme.primary;
-    return KapyControlSurface(
-      color: color.withValues(alpha: 0.07),
-      borderColor: color.withValues(alpha: 0.34),
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: KapyIcon(
-              isError ? KapyIcons.errorOutlined : KapyIcons.checkCircleRounded,
-              size: AppControlMetrics.iconAdornment,
-              color: color,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                color: isError ? color : palette.textSecondary,
-                height: 1.4,
+    return Semantics(
+      liveRegion: true,
+      child: KapyControlSurface(
+        color: color.withValues(alpha: 0.07),
+        borderColor: color.withValues(alpha: 0.34),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: KapyIcon(
+                isError
+                    ? KapyIcons.errorOutlined
+                    : KapyIcons.checkCircleRounded,
+                size: AppControlMetrics.iconAdornment,
+                color: color,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: AppTypeScale.small,
+                  color: isError ? color : palette.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

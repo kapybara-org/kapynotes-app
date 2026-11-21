@@ -154,6 +154,15 @@ class Sharing extends ChangeNotifier {
     return spaceOf(note)?.canEdit ?? false;
   }
 
+  /// Whether this account may take [note] out of its own notes: any note it
+  /// may change, and any note somebody else shares with it, view-only too,
+  /// since that only takes it out of this account's notes.
+  bool mayRemove(Note note) {
+    final space = spaceOf(note);
+    if (space != null && space.isTeam && !space.isOwner) return true;
+    return canEdit(note);
+  }
+
   /// Where an invitation link lands. The token is useless to anyone who
   /// cannot sign in as the invited address.
   Uri inviteLink(String token) =>
@@ -330,7 +339,19 @@ class Sharing extends ChangeNotifier {
     String noteId, {
     required String email,
     SpaceRole role = SpaceRole.member,
-  }) => _moveTo(noteId, {_address(email): _access(role)});
+  }) => shareNoteWithPeople(noteId, {email: role});
+
+  /// Shares a private note with [audience] at once: the space whose people
+  /// other than this account are exactly them, at those accesses, or a new
+  /// one they are all invited to. Nobody is let into a space that holds
+  /// notes meant for only some of them.
+  Future<Space> shareNoteWithPeople(
+    String noteId,
+    Map<String, SpaceRole> audience,
+  ) => _moveTo(noteId, {
+    for (final MapEntry(key: email, value: role) in audience.entries)
+      _address(email): _access(role),
+  });
 
   /// Moves a note to the space whose people other than this account are
   /// exactly [audience], at those accesses. One this account owns is reused;
@@ -371,13 +392,14 @@ class Sharing extends ChangeNotifier {
   Space? _spaceFor(Map<String, SpaceRole> audience) {
     for (final space in teams) {
       if (!space.isOwner || space.hasLink) continue;
-      if (mapEquals(_audienceOf(space), audience)) return space;
+      if (mapEquals(audienceOf(space), audience)) return space;
     }
     return null;
   }
 
-  /// Everyone but this account in [space], by address, at their access.
-  Map<String, SpaceRole> _audienceOf(Space space) => {
+  /// Everyone but this account in [space], invitations included, by
+  /// address, at their access.
+  Map<String, SpaceRole> audienceOf(Space space) => {
     for (final member in space.othersThan(userId))
       member.email.toLowerCase(): member.role,
     for (final invite in space.invites) invite.email.toLowerCase(): invite.role,
@@ -542,7 +564,7 @@ class Sharing extends ChangeNotifier {
     final address = _address(email);
     return [
       for (final space in teams)
-        if (space.isOwner && _audienceOf(space).containsKey(address))
+        if (space.isOwner && audienceOf(space).containsKey(address))
           ...notesIn(space.id),
     ];
   }
@@ -585,7 +607,7 @@ class Sharing extends ChangeNotifier {
     if (!space.isOwner) {
       throw const SyncRefusedException(403, 'owner-only', {});
     }
-    final audience = _audienceOf(space);
+    final audience = audienceOf(space);
     if (audience.containsKey(address)) {
       throw const SyncRefusedException(409, 'already a member', {});
     }
@@ -600,7 +622,7 @@ class Sharing extends ChangeNotifier {
   /// Changes what [email] may do with a note, Editor or View only. Access
   /// belongs to the note's space, so it changes for every note in it.
   Future<void> changeAccessTo(String noteId, String email, SpaceRole role) {
-    final member = _memberOn(noteId, email);
+    final member = memberOn(noteId, email);
     if (member == null) {
       throw const SyncProtocolException('not a member of this note');
     }
@@ -619,7 +641,7 @@ class Sharing extends ChangeNotifier {
       throw const SyncRefusedException(403, 'owner-only', {});
     }
     final address = _address(email);
-    final audience = _audienceOf(space);
+    final audience = audienceOf(space);
     if (!audience.containsKey(address)) {
       throw const SyncProtocolException('not on this note');
     }
@@ -645,10 +667,10 @@ class Sharing extends ChangeNotifier {
     final address = _address(email);
     final spaces = [
       for (final space in teams)
-        if (space.isOwner && _audienceOf(space).containsKey(address)) space,
+        if (space.isOwner && audienceOf(space).containsKey(address)) space,
     ];
     for (final space in spaces) {
-      if (_audienceOf(space).length == 1) {
+      if (audienceOf(space).length == 1) {
         await stopSharing(space.id);
       } else {
         await _removeFrom(space, address);
@@ -676,7 +698,8 @@ class Sharing extends ChangeNotifier {
     }
   }
 
-  SpaceMember? _memberOn(String noteId, String email) {
+  /// [email] among the people in [noteId]'s space, once they have joined.
+  SpaceMember? memberOn(String noteId, String email) {
     final note = _notes.byId(noteId);
     final space = note == null ? null : spaceOf(note);
     final address = _address(email);
@@ -848,33 +871,31 @@ class Sharing extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Blocks a person, and ends whatever relationship gave them a way in.
-  ///
-  /// Blocking on its own only stops future invitations, which is no use at
-  /// all if the problem is somebody already in a space with you. So when
-  /// [inSpaceId] is given, this also does the thing that actually removes
-  /// them: the owner removes them, and a member leaves.
-  Future<void> blockPerson(String email, {String? inSpaceId}) async {
-    final address = email.trim().toLowerCase();
-    await _api.block(address);
-
-    final space = inSpaceId == null ? null : _keyring.byId(inSpaceId);
-    if (space != null && space.isTeam) {
-      String? theirId;
-      for (final member in space.members) {
-        if (member.email.toLowerCase() == address) theirId = member.userId;
-      }
-      if (space.isOwner && theirId != null && theirId != userId) {
-        await _api.removeMember(space.id, theirId);
-      } else if (!space.isOwner && theirId != null) {
-        // Not ours to remove them from, so we go instead.
-        _leaving.add(space.id);
-        await _api.removeMember(space.id, userId);
-      }
-    }
-
+  /// Blocks a person: they can't invite this account again. It ends nothing
+  /// already shared; [blockEverywhere] does that too.
+  Future<void> blockPerson(String email) async {
+    await _api.block(_address(email));
     await refresh();
     _sync.requestSync();
+  }
+
+  /// Blocks [email] and ends everything shared between this account and
+  /// them: they lose access to every note this account shares with them,
+  /// and this account leaves every space they own, keeping copies of its
+  /// notes.
+  Future<void> blockEverywhere(String email) async {
+    final address = _address(email);
+    final theirs = [
+      for (final space in teams)
+        if (!space.isOwner &&
+            space.member(space.ownerId)?.email.toLowerCase() == address)
+          space.id,
+    ];
+    await blockPerson(address);
+    if (notesSharedWith(address).isNotEmpty) await stopSharingWith(address);
+    for (final spaceId in theirs) {
+      await leave(spaceId);
+    }
   }
 
   Future<void> unblockPerson(String email) async {

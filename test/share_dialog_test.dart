@@ -28,14 +28,18 @@ import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/control_surface.dart';
+import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
+import 'package:kapy_notes/ui/profile_avatar.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
-import 'package:kapy_notes/ui/notes_list.dart' show NotesListHeading;
+import 'package:kapy_notes/ui/sharing_sheet.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'billing/billing_fakes.dart';
+import 'kapy_icon_finder.dart';
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
@@ -551,7 +555,108 @@ void main() {
 
       final spaceId = alice.notes.byId(note.id)!.spaceId!;
       expect(server.spaces[spaceId]!.members[bob.userId], SpaceRole.viewer);
-      expect(find.textContaining('can now only view'), findsOneWidget);
+      expect(find.textContaining('can view now'), findsOneWidget);
+    });
+
+    testWidgets('changing access that reaches another note asks first, and '
+        'names it', (tester) async {
+      await sharedWithBob(tester);
+      final spaceId = alice.notes.byId(note.id)!.spaceId!;
+      await tester.runAsync(() async {
+        await alice.sharing.shareNote(
+          alice.notes.create(body: 'Renewal notes').id,
+          spaceId: spaceId,
+        );
+      });
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+
+      final bobName = server.user(bob.userId).name.split(' ').first;
+      for (final answer in ['sharing-ask-cancel', 'sharing-ask-ok']) {
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Can view'));
+        await tester.pumpAndSettle();
+        expect(find.text('Let $bobName only view?'), findsOneWidget);
+        expect(
+          find.text(
+            '$bobName sees this note together with “Renewal notes”, so the '
+            'change is for both.',
+          ),
+          findsOneWidget,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(ValueKey(answer)));
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        });
+        await tester.pumpAndSettle();
+        expect(
+          server.spaces[spaceId]!.members[bob.userId],
+          answer == 'sharing-ask-ok' ? SpaceRole.viewer : SpaceRole.member,
+        );
+      }
+    });
+
+    testWidgets('Undo after the sheet has closed still puts them back, and '
+        'says so', (tester) async {
+      await sharedWithBob(tester);
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+      expect(alice.notes.byId(note.id)!.isShared, isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('share-dialog-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('share-dialog-close')), findsNothing);
+
+      await tester.tap(find.text('Undo'));
+      await until(tester, () => alice.notes.byId(note.id)!.isShared);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(server.outbox.last.to, bob.email);
+      expect(find.text('Invitation sent to ${bob.email}'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets('Undo that has to invite them again says so, not that they '
+        'can see the note', (tester) async {
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        await carol.boot();
+        note = alice.notes.create(body: 'Ours');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+        await alice.sharing.addPerson(note.id, carol.email, allNotes: true);
+        await carol.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+      });
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Undo'));
+      final sent = find.text('Invitation sent to ${bob.email}');
+      await until(tester, () => sent.evaluate().isNotEmpty);
+      expect(sent, findsOneWidget);
+      expect(find.textContaining('can see this note again'), findsNothing);
+      expect(find.textContaining('waiting to join'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 8));
     });
 
     testWidgets('removing somebody says who loses what, and Undo brings them '
@@ -582,7 +687,7 @@ void main() {
       );
 
       await tester.runAsync(() async {
-        await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });
       await tester.pumpAndSettle();
@@ -645,13 +750,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Cancel'));
+        await tester.tap(find.text('Cancel invitation…'));
         await tester.pumpAndSettle();
         expect(find.textContaining('stop working'), findsOneWidget);
         await tester.runAsync(() async {
-          await tester.tap(
-            find.widgetWithText(FilledButton, 'Cancel invitation'),
-          );
+          await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
           await Future<void>.delayed(const Duration(milliseconds: 300));
         });
         await tester.pumpAndSettle();
@@ -698,13 +801,633 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Keep a private copy in my notes'), findsOneWidget);
     await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('leave-confirm-action')));
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
       await Future<void>.delayed(const Duration(milliseconds: 400));
     });
     await tester.pumpAndSettle();
     expect(bob.sharing.teams, isEmpty);
     expect(bob.notes.notes.where((n) => !n.isShared), hasLength(1));
     bob.dispose();
+  });
+
+  group('Block and Leave in the sheet', () {
+    /// [owner] shares a new note with [people] at once, and they are all in
+    /// and hold the key.
+    Future<Note> shareFrom(
+      Device owner,
+      String body,
+      List<Device> people,
+    ) async {
+      final note = owner.notes.create(body: body);
+      await owner.sync.syncNow();
+      await owner.sharing.shareNoteWithPeople(note.id, {
+        for (final person in people) person.email: SpaceRole.member,
+      });
+      for (final person in people) {
+        await person.sharing.acceptInvite(
+          server.outbox.lastWhere((sent) => sent.to == person.email).token,
+        );
+      }
+      await owner.sync.syncNow();
+      for (final person in people) {
+        await person.sync.syncNow();
+      }
+      return owner.notes.byId(note.id)!;
+    }
+
+    /// The sheet for [note], or with [whole] the sheet for its whole share,
+    /// the one a joined link opens.
+    Future<void> open(
+      WidgetTester tester,
+      Note note,
+      Device device, {
+      required bool whole,
+    }) async {
+      if (!whole) return openSheet(tester, note, device);
+      await tester.pumpWidget(
+        harness(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSpaceDialog(
+                context,
+                spaceId: note.spaceId!,
+                sharing: device.sharing,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    String from(bool whole) =>
+        whole ? "from the share's sheet" : "from the note's sheet";
+
+    /// The notes [device] holds of its own, by body.
+    List<String> ownNotes(Device device) => [
+      for (final note in device.notes.notes)
+        if (!note.isShared) note.body,
+    ]..sort();
+
+    testWidgets("an access change from the share's sheet asks first when it "
+        'covers more than one note, and its notice is announced', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+        await alice.sharing.shareNote(
+          alice.notes.create(body: 'Renewal notes').id,
+          spaceId: ours.spaceId!,
+        );
+      });
+      await open(tester, alice.notes.byId(ours.id)!, alice, whole: true);
+
+      final bobName = server.user(bob.userId).name.split(' ').first;
+      for (final answer in ['sharing-ask-cancel', 'sharing-ask-ok']) {
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Can view'));
+        await tester.pumpAndSettle();
+        expect(find.text('Let $bobName only view?'), findsOneWidget);
+        expect(
+          find.text(
+            '$bobName sees 2 notes you share together, and the change is for '
+            'all of them.',
+          ),
+          findsOneWidget,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(ValueKey(answer)));
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        });
+        await tester.pumpAndSettle();
+        expect(
+          server.spaces[ours.spaceId]!.members[bob.userId],
+          answer == 'sharing-ask-ok' ? SpaceRole.viewer : SpaceRole.member,
+        );
+      }
+      expect(
+        tester.getSemantics(find.text('Access changed')),
+        isSemantics(isLiveRegion: true),
+      );
+      semantics.dispose();
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    /// Alice shares two notes in one share with Bob, who can edit, and Carol,
+    /// who can only view, and both are in.
+    Future<Note> twoWithBobAndCarol(WidgetTester tester) async {
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        await carol.boot();
+        ours = alice.notes.create(body: 'Ours');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWithPeople(ours.id, {
+          bob.email: SpaceRole.member,
+          carol.email: SpaceRole.viewer,
+        });
+        for (final person in [bob, carol]) {
+          await person.sharing.acceptInvite(
+            server.outbox.lastWhere((sent) => sent.to == person.email).token,
+          );
+        }
+        await alice.sync.syncNow();
+        await alice.sharing.shareNote(
+          alice.notes.create(body: 'Renewal notes').id,
+          spaceId: alice.notes.byId(ours.id)!.spaceId!,
+        );
+      });
+      return alice.notes.byId(ours.id)!;
+    }
+
+    testWidgets("Remove from the share's sheet asks first and says these "
+        'notes, and Undo after the sheet has closed invites them again, '
+        'still only able to view', (tester) async {
+      final ours = await twoWithBobAndCarol(tester);
+      final spaceId = ours.spaceId!;
+      final name = alice.sharing
+          .spaceById(spaceId)!
+          .member(carol.userId)!
+          .firstName;
+      await open(tester, ours, alice, whole: true);
+      for (final answer in ['sharing-ask-cancel', 'sharing-ask-ok']) {
+        await tester.tap(find.byKey(ValueKey('member-menu-${carol.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Remove from these notes'));
+        await tester.pumpAndSettle();
+        expect(find.text('Remove $name from these notes?'), findsOneWidget);
+        expect(
+          find.text(
+            '$name stops seeing these notes, and they leave $name’s devices. '
+            'They stay in your notes, with everything $name wrote.',
+          ),
+          findsOneWidget,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(ValueKey(answer)));
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        });
+        await tester.pumpAndSettle();
+        expect(
+          server.spaces[spaceId]!.members.containsKey(carol.userId),
+          answer == 'sharing-ask-cancel',
+        );
+      }
+      expect(find.text('Removed $name from these notes'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('share-dialog-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('share-dialog-close')), findsNothing);
+      final sentBefore = server.outbox.length;
+      await tester.tap(find.text('Undo'));
+      final sent = find.text('Invitation sent to ${carol.email}');
+      await until(tester, () => sent.evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+      expect(sent, findsOneWidget);
+      expect(server.outbox, hasLength(sentBefore + 1));
+      expect(server.outbox.last.to, carol.email);
+      expect(
+        alice.sharing.spaceById(spaceId)!.invites.single.role,
+        SpaceRole.viewer,
+      );
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets("Stop sharing from the share's sheet asks first, and Undo "
+        'after the sheet has closed invites everyone again at their access', (
+      tester,
+    ) async {
+      final ours = await twoWithBobAndCarol(tester);
+      final other = alice.notes.notes.singleWhere(
+        (note) => note.body == 'Renewal notes',
+      );
+      await open(tester, ours, alice, whole: true);
+      for (final answer in ['sharing-ask-cancel', 'sharing-ask-ok']) {
+        await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+        await tester.pumpAndSettle();
+        expect(find.text('Stop sharing 2 notes?'), findsOneWidget);
+        expect(
+          find.textContaining(
+            'access. The notes stay in your notes, with every change.',
+          ),
+          findsOneWidget,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(ValueKey(answer)));
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        });
+        await tester.pumpAndSettle();
+        if (answer == 'sharing-ask-ok') {
+          await until(tester, () => !alice.notes.byId(ours.id)!.isShared);
+        }
+        expect(
+          alice.notes.byId(ours.id)!.isShared,
+          answer == 'sharing-ask-cancel',
+        );
+      }
+      expect(alice.notes.byId(other.id)!.isShared, isFalse);
+      final close = find.byKey(const ValueKey('share-dialog-close'));
+      await until(tester, () => close.evaluate().isEmpty);
+      await tester.pumpAndSettle();
+      expect(close, findsNothing);
+      expect(find.text('Stopped sharing 2 notes'), findsOneWidget);
+
+      final sentBefore = server.outbox.length;
+      await tester.tap(find.text('Undo'));
+      final again = find.textContaining('Invitations sent to');
+      await until(tester, () => again.evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+      expect(again, findsOneWidget);
+      expect(find.textContaining('Shared again'), findsNothing);
+      final spaceId = alice.notes.byId(ours.id)!.spaceId;
+      expect(spaceId, isNotNull);
+      expect(alice.notes.byId(other.id)!.spaceId, spaceId);
+      expect(
+        {for (final sent in server.outbox.skip(sentBefore)) sent.to},
+        {bob.email, carol.email},
+      );
+      expect(
+        {
+          for (final invite in alice.sharing.spaceById(spaceId!)!.invites)
+            invite.email: invite.role,
+        },
+        {bob.email: SpaceRole.member, carol.email: SpaceRole.viewer},
+      );
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets("Stop sharing from the share's sheet, when every note left "
+        'in it is Hidden, asks without a count and says so after', (
+      tester,
+    ) async {
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+      });
+      alice.notes.applyDoc(
+        alice.notes.byId(ours.id)!.copyWith(hiddenAt: DateTime.now()),
+      );
+      await open(tester, alice.notes.byId(ours.id)!, alice, whole: true);
+      await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+      await tester.pumpAndSettle();
+      expect(find.text('Stop sharing?'), findsOneWidget);
+      expect(find.textContaining('0 notes'), findsNothing);
+      expect(
+        find.textContaining(
+          'access. Everything here stays in your notes, with every change.',
+        ),
+        findsOneWidget,
+      );
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
+      await until(tester, () => !alice.notes.byId(ours.id)!.isShared);
+      final close = find.byKey(const ValueKey('share-dialog-close'));
+      await until(tester, () => close.evaluate().isEmpty);
+      await tester.pumpAndSettle();
+      expect(find.text('Stopped sharing'), findsOneWidget);
+      expect(find.text('Undo'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets("Undo after Stop sharing in the share's sheet says shared "
+        'again when the people are still in another share with Alice', (
+      tester,
+    ) async {
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+        final other = await alice.sharing.createSpace('Other');
+        await alice.sharing.invite(other.id, bob.email, role: SpaceRole.member);
+        await bob.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+        await alice.sharing.shareNote(
+          alice.notes.create(body: 'Elsewhere').id,
+          spaceId: other.id,
+        );
+      });
+      await open(tester, alice.notes.byId(ours.id)!, alice, whole: true);
+      await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
+      final close = find.byKey(const ValueKey('share-dialog-close'));
+      await until(tester, () => close.evaluate().isEmpty);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Undo'));
+      final again = find.textContaining('Shared again with');
+      await until(tester, () => again.evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+      expect(again, findsOneWidget);
+      expect(find.textContaining('sent to'), findsNothing);
+      expect(
+        alice.sharing.memberOn(ours.id, bob.email)?.role,
+        SpaceRole.member,
+      );
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets("Undo after Stop sharing in the share's sheet shares the "
+        'visible notes again and leaves a Hidden one private', (tester) async {
+      late Note ours;
+      late Note hidden;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+        hidden = alice.notes.create(body: 'Kept to myself');
+        await alice.sharing.shareNote(
+          hidden.id,
+          spaceId: alice.notes.byId(ours.id)!.spaceId!,
+        );
+      });
+      alice.notes.applyDoc(
+        alice.notes.byId(hidden.id)!.copyWith(hiddenAt: DateTime.now()),
+      );
+      await open(tester, alice.notes.byId(ours.id)!, alice, whole: true);
+      await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+      await tester.pumpAndSettle();
+      expect(find.text('Stop sharing “Ours”?'), findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
+      final close = find.byKey(const ValueKey('share-dialog-close'));
+      await until(tester, () => close.evaluate().isEmpty);
+      await tester.pumpAndSettle();
+      expect(alice.notes.byId(hidden.id)!.isShared, isFalse);
+
+      await tester.tap(find.text('Undo'));
+      final sent = find.textContaining('Invitation sent to');
+      await until(tester, () => sent.evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('Hidden'), findsNothing);
+      expect(alice.notes.byId(ours.id)!.isShared, isTrue);
+      expect(alice.notes.byId(hidden.id)!.isShared, isFalse);
+      expect(alice.notes.byId(hidden.id)!.isHidden, isTrue);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets('Block asks by the whole name, then says who is blocked', (
+      tester,
+    ) async {
+      server.user(bob.userId).name = 'Bob Stone';
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+      });
+      await open(tester, alice.notes.byId(ours.id)!, alice, whole: false);
+      await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Block…'));
+      await tester.pumpAndSettle();
+      expect(find.text('Block Bob Stone?'), findsOneWidget);
+      expect(
+        find.textContaining('Bob loses access to everything you share'),
+        findsOneWidget,
+      );
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      final blocked = find.text('Blocked Bob Stone');
+      await until(tester, () => blocked.evaluate().isNotEmpty);
+      expect(blocked, findsOneWidget);
+      expect(alice.sharing.hasBlocked(bob.email), isTrue);
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('no sharing action takes the warning colour', (tester) async {
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+      });
+      Color? colourOf(String key) => tester
+          .widget<TextButton>(find.byKey(ValueKey(key)))
+          .style
+          ?.foregroundColor
+          ?.resolve({});
+      Color warning() => Theme.of(
+        tester.element(find.byKey(const ValueKey('share-done'))),
+      ).colorScheme.error;
+
+      for (final whole in [false, true]) {
+        await open(tester, alice.notes.byId(ours.id)!, alice, whole: whole);
+        expect(colourOf('stop-sharing'), isNot(warning()), reason: from(whole));
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        final remove = find.descendant(
+          of: find.byType(PopupMenuItem<String>),
+          matching: find.textContaining('Remove from'),
+        );
+        expect(
+          tester.widget<Text>(remove).style?.color,
+          isNot(warning()),
+          reason: from(whole),
+        );
+        await tester.tapAt(const Offset(2, 2));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('share-done')));
+        await tester.pumpAndSettle();
+
+        await open(tester, bob.notes.byId(ours.id)!, bob, whole: whole);
+        expect(colourOf('leave-space'), isNot(warning()), reason: from(whole));
+        await tester.tap(find.byKey(const ValueKey('share-done')));
+        await tester.pumpAndSettle();
+      }
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    for (final whole in [false, true]) {
+      testWidgets('Block ${from(whole)} asks first, then ends the shares '
+          'Alice owns with them and leaves the one Bob owns, keeping copies '
+          'of his notes', (tester) async {
+        late Note mine;
+        late Note withCarol;
+        late Note theirs;
+        await tester.runAsync(() async {
+          await alice.boot();
+          await bob.boot();
+          await carol.boot();
+          mine = await shareFrom(alice, 'Ours', [bob]);
+          withCarol = await shareFrom(alice, 'All three', [bob, carol]);
+          theirs = await shareFrom(bob, 'From Bob', [alice]);
+          await alice.sync.syncNow();
+        });
+        expect(alice.sharing.teams, hasLength(3));
+
+        await open(tester, alice.notes.byId(mine.id)!, alice, whole: whole);
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Block…'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining(
+            'loses access to everything you share, you leave what',
+          ),
+          findsOneWidget,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        });
+        await until(
+          tester,
+          () => alice.sharing.teams.every((space) => space.isOwner),
+        );
+        await tester.pumpAndSettle();
+
+        expect(alice.sharing.hasBlocked(bob.email), isTrue);
+        // Bob is in none of Alice's shares, and Carol keeps hers.
+        expect(alice.sharing.notesSharedWith(bob.email), isEmpty);
+        expect(alice.notes.byId(mine.id)!.isShared, isFalse);
+        final kept = alice.sharing.spaceOf(alice.notes.byId(withCarol.id)!)!;
+        expect(alice.sharing.audienceOf(kept).keys, [carol.email]);
+        // Alice is out of Bob's share, with a copy of its note.
+        expect(alice.sharing.notesSharedFrom(bob.email), isEmpty);
+        expect(alice.sharing.teams.map((space) => space.id), [kept.id]);
+        expect(
+          server.spaces[theirs.spaceId]!.members,
+          isNot(contains(alice.userId)),
+        );
+        expect(ownNotes(alice), ['From Bob', 'Ours']);
+        await tester.pump(const Duration(seconds: 6));
+      });
+    }
+
+    testWidgets(
+      'the Block question keeps its button out of the warning colour',
+      (tester) async {
+        late Note mine;
+        await tester.runAsync(() async {
+          await alice.boot();
+          await bob.boot();
+          mine = await shareFrom(alice, 'Ours', [bob]);
+        });
+
+        await open(tester, alice.notes.byId(mine.id)!, alice, whole: false);
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Block…'));
+        await tester.pumpAndSettle();
+        final ok = find.byKey(const ValueKey('sharing-ask-ok'));
+        expect(
+          tester.widget<TextButton>(ok).style?.foregroundColor?.resolve({}),
+          isNot(Theme.of(tester.element(ok)).colorScheme.error),
+        );
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+        await tester.pumpAndSettle();
+        expect(alice.sharing.hasBlocked(bob.email), isFalse);
+      },
+    );
+
+    Future<Note> threeFromAlice(WidgetTester tester) async {
+      late Note first;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        first = alice.notes.create(body: 'Flights');
+        final others = [
+          alice.notes.create(body: 'Hotels'),
+          alice.notes.create(body: 'Packing'),
+        ];
+        await alice.sync.syncNow();
+        for (final note in [first, ...others]) {
+          await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        }
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+        await bob.sync.syncNow();
+      });
+      expect(bob.sharing.notesSharedFrom(alice.email), hasLength(3));
+      return bob.notes.byId(first.id)!;
+    }
+
+    Future<void> askToLeave(
+      WidgetTester tester,
+      Note note, {
+      required bool whole,
+    }) async {
+      await open(tester, note, bob, whole: whole);
+      await tester.tap(find.byKey(const ValueKey('leave-space')));
+      await tester.pumpAndSettle();
+      final question = find.byKey(const ValueKey('sharing-ask'));
+      Finder within(String text) =>
+          find.descendant(of: question, matching: find.textContaining(text));
+      expect(within('Leave 3 notes from '), findsOneWidget);
+      expect(
+        within('” together with 2 more, so you leave all of them.'),
+        findsOneWidget,
+      );
+      if (!whole) expect(within('“Flights” together with'), findsOneWidget);
+      expect(within('keeps the notes.'), findsOneWidget);
+      expect(within('Keep private copies'), findsOneWidget);
+      expect(within('Keep a private copy'), findsNothing);
+    }
+
+    Future<void> leave(WidgetTester tester) async {
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      });
+      await tester.pumpAndSettle();
+      await tester.runAsync(bob.sync.syncNow);
+    }
+
+    for (final whole in [false, true]) {
+      testWidgets('Leave ${from(whole)} with three notes in the share says '
+          'so, and keeps copies of all three', (tester) async {
+        final note = await threeFromAlice(tester);
+        await askToLeave(tester, note, whole: whole);
+        await leave(tester);
+
+        expect(bob.sharing.teams, isEmpty);
+        expect(bob.notes.notes.where((n) => n.isShared), isEmpty);
+        expect(ownNotes(bob), ['Flights', 'Hotels', 'Packing']);
+        bob.dispose();
+      });
+
+      testWidgets('Leave ${from(whole)} with three notes in the share, '
+          'without copies, leaves all three', (tester) async {
+        final note = await threeFromAlice(tester);
+        await askToLeave(tester, note, whole: whole);
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-option')));
+        await tester.pumpAndSettle();
+        await leave(tester);
+
+        expect(bob.sharing.teams, isEmpty);
+        expect(bob.notes.notes, isEmpty);
+        expect(alice.notes.notes.where((n) => n.isShared), hasLength(3));
+        bob.dispose();
+      });
+    }
   });
 
   testWidgets('a member makes a private copy and the shared note stays put', (
@@ -848,7 +1571,7 @@ void main() {
     );
 
     await tester.runAsync(() async {
-      await tester.tap(find.widgetWithText(FilledButton, 'Stop sharing'));
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
       await Future<void>.delayed(const Duration(milliseconds: 500));
     });
     await tester.pumpAndSettle();
@@ -867,6 +1590,124 @@ void main() {
       contains('Ours'),
     );
     expect(server.outbox.last.to, bob.email);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('Undo after the sheet has closed still shares the note again', (
+    tester,
+  ) async {
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      note = alice.notes.create(body: 'Ours');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
+    });
+
+    await openSheet(tester, alice.notes.byId(note.id)!, alice);
+    await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('share-dialog-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('share-dialog-close')), findsNothing);
+
+    await tester.tap(find.text('Undo'));
+    final again = find.textContaining('Shared again with');
+    await until(tester, () => again.evaluate().isNotEmpty);
+    expect(tester.takeException(), isNull);
+    expect(again, findsOneWidget);
+    expect(alice.notes.byId(note.id)!.isShared, isTrue);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('Undo after Stop sharing puts a note back with exactly its '
+      'people, and nobody gets notes meant for someone else', (tester) async {
+    const dana = 'dana@example.com';
+    Future<void> accept(Device device, String token) async {
+      try {
+        await device.sharing.acceptInvite(token);
+      } on SyncRefusedException {
+        return;
+      }
+    }
+
+    late Note forBob;
+    late Note forCarol;
+    late Note ours;
+    await tester.runAsync(() async {
+      for (final device in [alice, bob, carol]) {
+        await device.boot();
+      }
+      forBob = alice.notes.create(body: 'Only for Bob');
+      forCarol = alice.notes.create(body: 'Only for Carol');
+      ours = alice.notes.create(body: 'For all of us');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(forBob.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWith(forCarol.id, email: carol.email);
+      await carol.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.shareNoteWithPeople(ours.id, {
+        bob.email: SpaceRole.member,
+        carol.email: SpaceRole.viewer,
+        dana: SpaceRole.member,
+      });
+      for (final invite in [...server.outbox]) {
+        if (invite.to == bob.email) await accept(bob, invite.token);
+        if (invite.to == carol.email) await accept(carol, invite.token);
+      }
+      for (final device in [alice, bob, carol, alice]) {
+        await device.sharing.refresh();
+        await device.sync.syncNow();
+      }
+    });
+    final home = alice.notes.byId(ours.id)!.spaceId!;
+    final people = alice.sharing.audienceOf(alice.sharing.spaceById(home)!);
+    expect(people, {
+      bob.email: SpaceRole.member,
+      carol.email: SpaceRole.viewer,
+      dana: SpaceRole.member,
+    });
+
+    await openSheet(tester, alice.notes.byId(ours.id)!, alice);
+    await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(alice.notes.byId(ours.id)!.isShared, isFalse);
+
+    await tester.tap(find.text('Undo'));
+    final again = find.textContaining('Shared again with');
+    await until(tester, () => again.evaluate().isNotEmpty);
+    expect(again, findsOneWidget);
+    await tester.runAsync(() async {
+      for (final invite in [...server.outbox]) {
+        if (invite.to == bob.email) await accept(bob, invite.token);
+        if (invite.to == carol.email) await accept(carol, invite.token);
+      }
+      for (final device in [bob, carol, bob, carol]) {
+        await device.sharing.refresh();
+        await device.sync.syncNow();
+      }
+    });
+
+    expect(alice.notes.byId(ours.id)!.spaceId, home);
+    expect(alice.sharing.audienceOf(alice.sharing.spaceById(home)!), people);
+    expect(bob.notes.byId(ours.id)?.body, 'For all of us');
+    expect(carol.notes.byId(ours.id)?.body, 'For all of us');
+    expect(bob.notes.byId(forCarol.id), isNull);
+    expect(carol.notes.byId(forBob.id), isNull);
     await tester.pump(const Duration(seconds: 5));
   });
 
@@ -903,7 +1744,7 @@ void main() {
         joining: joining,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Off'), findsOneWidget);
+      expect(find.textContaining('Off · Turn on'), findsOneWidget);
 
       await tester.runAsync(() async {
         await tester.tap(find.byKey(const ValueKey('share-link-switch')));
@@ -946,10 +1787,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Before the switch is touched, since turning it on copies the link.
-      expect(find.text('Off'), findsOneWidget);
+      expect(find.textContaining('Off · Turn on'), findsOneWidget);
       expect(copied, isEmpty);
       expect(
-        find.textContaining('The link opens all 2 notes here'),
+        find.textContaining('The link opens both notes here'),
         findsOneWidget,
       );
 
@@ -960,7 +1801,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('The link opens all 2 notes here'),
+        find.textContaining('The link opens both notes here'),
         findsOneWidget,
       );
     });
@@ -1176,6 +2017,262 @@ void main() {
       expect(field.autofocus, isFalse);
       expect(tester.testTextInput.isVisible, isFalse);
     });
+
+    testWidgets('takes the phone sheet measurements: a 17 pt header, '
+        'people in 56 pt rows with no card, and a footer of words with Done '
+        'at the right', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWithPeople(note.id, {
+          bob.email: SpaceRole.member,
+        });
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+        await bob.sync.syncNow();
+      });
+
+      for (final (device, actions) in [
+        (alice, ['stop-sharing']),
+        (bob, ['copy-note', 'leave-space']),
+      ]) {
+        await openSheet(tester, device.notes.byId(note.id)!, device);
+        final palette = tester.element(find.byType(BottomSheet)).palette;
+        expect(
+          find.descendant(
+            of: find.byType(BottomSheet),
+            matching: find.byType(SharingSheetFrame),
+          ),
+          findsOneWidget,
+        );
+        final title = tester
+            .widgetList<Text>(
+              find.text(device == alice ? 'Share' : 'Shared with you'),
+            )
+            .first;
+        expect(title.style!.fontSize, 17);
+        expect(title.style!.fontWeight, FontWeight.w600);
+        expect(
+          tester.getSize(find.byKey(const ValueKey('share-dialog-close'))),
+          const Size(44, 44),
+        );
+
+        final label = tester.widget<Text>(find.text('People with access'));
+        expect(label.style!.fontSize, 13);
+        expect(label.style!.color, palette.textTertiary);
+        final row = find.byKey(ValueKey('member-row-${alice.userId}'));
+        expect(tester.getSize(row).height, greaterThanOrEqualTo(56));
+        expect(
+          tester
+              .widget<ProfileAvatar>(
+                find.descendant(of: row, matching: find.byType(ProfileAvatar)),
+              )
+              .extent,
+          32,
+        );
+        expect(
+          find.ancestor(of: row, matching: find.byType(KapyControlSurface)),
+          findsNothing,
+        );
+
+        final done = find.byKey(const ValueKey('share-done'));
+        // ignore: avoid_print
+        print(
+          'DBG done=${tester.getRect(done)} frame=${tester.getRect(find.byType(SharingSheetFrame))} sheet=${tester.getRect(find.byType(BottomSheet))} view=${tester.view.physicalSize}',
+        );
+        for (final key in actions) {
+          final action = find.byKey(ValueKey(key));
+          expect(
+            find.descendant(of: action, matching: find.byType(KapyIcon)),
+            findsNothing,
+          );
+          expect(
+            tester.getRect(action).right,
+            lessThanOrEqualTo(tester.getRect(done).left),
+          );
+          expect(
+            tester
+                .widget<TextButton>(action)
+                .style!
+                .foregroundColor!
+                .resolve({}),
+            palette.textSecondary,
+          );
+        }
+        expect(
+          tester.widget<TextButton>(done).style!.foregroundColor!.resolve({}),
+          palette.textPrimary,
+        );
+        for (final key in [...actions, 'share-done']) {
+          expect(
+            tester
+                .widget<TextButton>(find.byKey(ValueKey(key)))
+                .style!
+                .textStyle!
+                .resolve({})!
+                .fontFamily,
+            AppFonts.ui,
+            reason: '$key keeps the app’s face',
+          );
+        }
+        expect(
+          tester.getTopRight(done).dx,
+          tester.getTopRight(find.byType(SharingSheetFrame)).dx - 12,
+        );
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(done);
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('the ask that slides up keeps the app’s face on its buttons', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+      });
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+      await tester.pumpAndSettle();
+      for (final key in ['sharing-ask-cancel', 'sharing-ask-ok']) {
+        expect(
+          tester
+              .widget<TextButton>(find.byKey(ValueKey(key)))
+              .style!
+              .textStyle!
+              .resolve({})!
+              .fontFamily,
+          AppFonts.ui,
+          reason: '$key keeps the app’s face',
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+      await tester.pumpAndSettle();
+      expect(alice.notes.byId(note.id)!.isShared, isTrue);
+    });
+
+    testWidgets('P09’s controls: a quiet field, a quietly lifted access, a '
+        'sage-tinted Share, and an Invite link row under a hairline rather '
+        'than a card', (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+      });
+      await openSheet(tester, note, alice, joining: joiningOver(FakeSend()));
+      final palette = tester.element(find.byType(BottomSheet)).palette;
+
+      final field = find.byKey(const ValueKey('share-email'));
+      final decoration = tester.widget<TextField>(field).decoration!;
+      expect(tester.getSize(field).height, 44);
+      expect(decoration.fillColor, palette.textPrimary.withValues(alpha: 0.04));
+      expect(decoration.enabledBorder!.borderSide, BorderSide.none);
+
+      Color? fill(String key) => tester
+          .widget<TextButton>(find.byKey(ValueKey(key)))
+          .style!
+          .backgroundColor
+          ?.resolve({});
+      expect(
+        tester.getSize(find.byKey(const ValueKey('share-role'))).height,
+        36,
+      );
+      expect(
+        fill('share-role-member'),
+        palette.textPrimary.withValues(alpha: 0.07),
+      );
+      expect(fill('share-role-viewer'), isNull);
+      await tester.tap(segment('Can view'));
+      await tester.pumpAndSettle();
+      expect(
+        fill('share-role-viewer'),
+        palette.textPrimary.withValues(alpha: 0.07),
+      );
+      expect(fill('share-role-member'), isNull);
+
+      final share = tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('share-submit-Share')),
+          )
+          .style!;
+      expect(
+        share.backgroundColor!.resolve({}),
+        palette.accentText.withValues(alpha: 0.16),
+      );
+      expect(share.foregroundColor!.resolve({}), palette.accentText);
+
+      final link = find.byKey(const ValueKey('share-link'));
+      expect(
+        find.ancestor(of: link, matching: find.byType(KapyControlSurface)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: link, matching: find.byType(KapyControlSurface)),
+        findsNothing,
+      );
+      expect(tester.getSize(link).height, greaterThanOrEqualTo(52));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  testWidgets('on a Mac the same controls take S02’s sizes: a 32 field, a 28 '
+      'access track and Share in the sage tint, with the link as a row', (
+    tester,
+  ) async {
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      note = alice.notes.create(body: 'Holiday budget');
+      await alice.sync.syncNow();
+    });
+    await openSheet(tester, note, alice, joining: joiningOver(FakeSend()));
+    final palette = tester.element(find.byType(AlertDialog)).palette;
+    expect(
+      tester.getSize(find.byKey(const ValueKey('share-email'))).height,
+      32,
+    );
+    expect(tester.getSize(find.byKey(const ValueKey('share-role'))).height, 28);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('share-submit-Share')),
+          )
+          .style!
+          .backgroundColor!
+          .resolve({}),
+      palette.accentText.withValues(alpha: 0.16),
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('share-link')),
+        matching: find.byType(KapyControlSurface),
+      ),
+      findsNothing,
+    );
   });
 
   // The server lets only a team space's owner move a note out of it. 1.32.0
@@ -1261,34 +2358,29 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('My notes'), findsOneWidget);
+    final today = find.byKey(const ValueKey('sidebar-group-Today'));
+    expect(today, findsOneWidget);
     // Bob has not joined yet.
     expect(find.text('Waiting for user-2'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Shared'), findsOneWidget);
 
-    // Pinned, then the shared groups, then your own. Shared notes lead the two
-    // ordinary sections because they are the ones that change while you are
-    // not looking; your own are where you left them.
+    // Pinned, then the shared groups, then your own under their days. Shared
+    // notes lead because they are the ones that change while you are not
+    // looking; your own are where you left them.
     double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    final ownDay = tester.getTopLeft(today).dy;
     expect(top('Pinned'), lessThan(top('Waiting for user-2')));
-    expect(top('Waiting for user-2'), lessThan(top('My notes')));
+    expect(top('Waiting for user-2'), lessThan(ownDay));
 
     // And a pinned note is lifted out of the section it came from rather
     // than repeated in it.
     expect(find.text('Kept at hand'), findsOneWidget);
     expect(top('Kept at hand'), lessThan(top('Waiting for user-2')));
 
-    // The own-notes heading counts the rows under it, so the pinned one it
-    // has lifted out is not in this number, and no shared note ever is.
-    expect(
-      tester
-          .widget<NotesListHeading>(
-            find.byKey(const ValueKey('sidebar-notes-heading')),
-          )
-          .count,
-      1,
-    );
+    // Your own day holds your own note, and the shared one stays in its group.
+    expect(top('Shared'), lessThan(ownDay));
+    expect(top('Private'), greaterThan(ownDay));
   });
 
   testWidgets('a shared group is headed by its people and their faces, says '
@@ -1443,6 +2535,26 @@ void main() {
       await tester.tap(find.text('Shared'), buttons: kSecondaryButton);
       await tester.pumpAndSettle();
       expect(find.text('Manage sharing'), findsOneWidget);
+
+      // Share's one icon, as everywhere else, rather than the Shared mark.
+      final line = find.ancestor(
+        of: find.text('Manage sharing'),
+        matching: find.byType(KapyMenuActionRow),
+      );
+      expect(
+        find.descendant(
+          of: line,
+          matching: findKapyIcon(KapyIcons.shareRounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: line,
+          matching: findKapyIcon(KapyIcons.groupOutlined),
+        ),
+        findsNothing,
+      );
     },
   );
 
@@ -1528,8 +2640,9 @@ void main() {
     expect(bob.notes.byId(shared.id), isNotNull);
     expect(await deleteLabel(shared), 'Remove note…');
     expect(await deleteLabel(own), 'Delete note…');
-    // A viewer can't take it out of their notes, as before.
-    expect(await deleteLabel(viewed), isNull);
+    // A viewer takes it out of their own notes the same way. Before, Leave
+    // was their only way out, and it left the whole space.
+    expect(await deleteLabel(viewed), 'Remove note…');
 
     await pumpBob(asks: false);
     expect(await deleteLabel(shared), 'Remove note');
@@ -1615,19 +2728,20 @@ void main() {
     }
 
     // Pins are the reader's own, so every note takes one.
-    expect(await label('pin'), 'Pin 3 notes');
+    expect(await label('pin'), 'Pin');
     // Hidden Notes are only ever the reader's own notes.
-    expect(await label('hide'), 'Move to Hidden Notes');
-    // A viewer changes nothing: the note they may only read is left out.
+    expect(await label('hide'), 'Move 1 note to Hidden Notes');
+    // A viewer changes nothing, so the note they may only read is left out of
+    // Archive; but it leaves their notes with the rest, as its row's does.
     expect(await label('archive'), 'Archive 2 notes');
-    expect(await label('delete'), 'Delete 2 notes…');
+    expect(await label('delete'), 'Delete 3 notes…');
 
     await tester.tap(find.byKey(const ValueKey('picked-delete')));
     await tester.pumpAndSettle();
     expect(done.single.$1, PickedAction.delete);
-    expect(done.single.$2, unorderedEquals([shared.id, own.id]));
+    expect(done.single.$2, unorderedEquals([shared.id, viewed.id, own.id]));
 
-    // Of these two only the editor's leaves Bob's notes, as its row says.
+    // Both of these only leave Bob's notes, whatever he may do in them.
     picks
       ..clear()
       ..toggle(shared.id)
@@ -1646,8 +2760,154 @@ void main() {
           )
           .action
           .label,
-      'Remove note…',
+      'Remove 2 notes…',
     );
+  });
+
+  test('the toast after a mixed delete says which notes are gone for good', () {
+    expect(forgottenMessage(deleted: 1, removed: 0), 'Note deleted');
+    expect(forgottenMessage(deleted: 3, removed: 0), '3 notes deleted');
+    expect(forgottenMessage(deleted: 0, removed: 2), 'Removed from your notes');
+    expect(
+      forgottenMessage(deleted: 1, removed: 2),
+      'Note deleted, and 2 removed from your notes',
+    );
+    expect(
+      forgottenMessage(deleted: 2, removed: 1),
+      '2 notes deleted, and 1 removed from your notes',
+    );
+  });
+
+  group('a viewer removes a note from their own notes', () {
+    late Note viewed;
+
+    /// Alice shares a note with Bob, who may only read it, and with Carol,
+    /// who may edit it.
+    Future<void> sharedToRead(WidgetTester tester) => tester.runAsync(() async {
+      for (final device in [alice, bob, carol]) {
+        await device.boot();
+      }
+      viewed = alice.notes.create(body: 'Read only\nfor Bob');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(
+        viewed.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.last.token);
+      await alice.sharing.addPerson(viewed.id, carol.email);
+      await carol.sharing.acceptInvite(server.outbox.last.token);
+      for (final device in [alice, bob, carol]) {
+        await device.sync.syncNow();
+      }
+    });
+
+    /// Takes [ids] out of Bob's notes as the app does once he confirms, then
+    /// lets everyone sync.
+    Future<void> removeForBob(WidgetTester tester, List<String> ids) =>
+        tester.runAsync(() async {
+          bob.notes.deleteAll(ids);
+          for (final device in [bob, alice, carol, bob]) {
+            await device.sync.syncNow();
+          }
+        });
+
+    Widget bobsList({
+      required ValueChanged<String> onDelete,
+      NotePicks? picks,
+      void Function(PickedAction, List<String>)? onPicked,
+    }) => harness(
+      SizedBox(
+        width: 280,
+        child: Sidebar(
+          windowBar: const SizedBox(),
+          notes: bob.notes.notes,
+          selectedId: null,
+          query: '',
+          displayTime: (t) => t,
+          onSearch: () {},
+          onSelect: (_) {},
+          onArchive: (_) {},
+          onDelete: onDelete,
+          sharing: bob.sharing,
+          picks: picks,
+          onPicked: onPicked,
+        ),
+      ),
+    );
+
+    testWidgets('from its row, and the others keep it', (tester) async {
+      await sharedToRead(tester);
+      expect(bob.sharing.canEdit(bob.notes.byId(viewed.id)!), isFalse);
+      String? removed;
+      await tester.pumpWidget(bobsList(onDelete: (id) => removed = id));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(viewed.title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('archive-note-${viewed.id}')), findsNothing);
+      await tester.tap(find.byKey(ValueKey('delete-note-${viewed.id}')));
+      await tester.pumpAndSettle();
+      expect(removed, viewed.id);
+
+      await removeForBob(tester, [viewed.id]);
+      expect(bob.notes.byId(viewed.id), isNull);
+      expect(alice.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(carol.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(server.rows[viewed.id]!.isTombstone, isFalse);
+      expect(bob.notes.dirtyTombstones, isEmpty);
+    });
+
+    testWidgets('picked with an edited note and his own, and only his own is '
+        'gone for everyone', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await sharedToRead(tester);
+      late Note edited;
+      late Note own;
+      await tester.runAsync(() async {
+        edited = alice.notes.create(body: 'Edited together');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(edited.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.last.token);
+        own = bob.notes.create(body: 'Bob alone');
+        for (final device in [alice, bob]) {
+          await device.sync.syncNow();
+        }
+      });
+
+      final picks = NotePicks();
+      addTearDown(picks.dispose);
+      final done = <(PickedAction, List<String>)>[];
+      await tester.pumpWidget(
+        ListenableBuilder(
+          listenable: picks,
+          builder: (context, _) => bobsList(
+            onDelete: (_) {},
+            picks: picks,
+            onPicked: (action, ids) => done.add((action, ids)),
+          ),
+        ),
+      );
+      picks.all([viewed.id, edited.id, own.id]);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('picked-delete')));
+      await tester.pumpAndSettle();
+      expect(done.single.$1, PickedAction.delete);
+      expect(done.single.$2, unorderedEquals([viewed.id, edited.id, own.id]));
+
+      await removeForBob(tester, done.single.$2);
+      for (final id in [viewed.id, edited.id, own.id]) {
+        expect(bob.notes.byId(id), isNull);
+      }
+      expect(alice.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(carol.notes.byId(viewed.id)?.body, 'Read only\nfor Bob');
+      expect(alice.notes.byId(edited.id)?.body, 'Edited together');
+      expect(server.rows[own.id]!.isTombstone, isTrue);
+      expect(server.rows[viewed.id]!.isTombstone, isFalse);
+      expect(server.rows[edited.id]!.isTombstone, isFalse);
+      expect(bob.notes.dirtyTombstones, isEmpty);
+    });
   });
 
   group('sidebar tabs', () {
@@ -1655,14 +2915,16 @@ void main() {
       Device device, {
       required SidebarTab tab,
       ValueChanged<SidebarTab>? onTabChanged,
+      bool phone = false,
     }) => harness(
       // The app rebuilds the sidebar whenever the account changes, sharing
       // included; this stands in for that.
       ListenableBuilder(
         listenable: device.sharing,
         builder: (context, _) => SizedBox(
-          width: 280,
+          width: phone ? 393 : 280,
           child: Sidebar(
+            phone: phone,
             notes: [
               for (final note in device.notes.notes)
                 if (sidebarTabLists(tab, note, device.sharing)) note,
@@ -1681,6 +2943,77 @@ void main() {
         ),
       ),
     );
+
+    testWidgets("a phone's row shows who a note is open to, with an envelope "
+        'for an invitation still waiting, and Shared leaves them off', (
+      tester,
+    ) async {
+      late Note shared;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        alice.notes.create(body: 'Private');
+        shared = alice.notes.create(body: 'Ours');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sharing.addPerson(shared.id, carol.email);
+        await alice.sync.syncNow();
+        await alice.sharing.refresh();
+      });
+      final group = alice.sharing.groupOf(alice.notes.byId(shared.id)!)!;
+      expect(group.people.map((person) => person.isInvited), [false, true]);
+
+      await tester.pumpWidget(tabbed(alice, tab: SidebarTab.mine, phone: true));
+      await tester.pumpAndSettle();
+      final row = find.widgetWithText(NoteRow, 'Ours');
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.bySemanticsLabel(
+            RegExp('\n${RegExp.escape(group.title)}\$'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      final initial = group.people.first.name.trim()[0].toUpperCase();
+      expect(
+        find.descendant(of: row, matching: find.text(initial)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is KapyIcon && widget.icon == KapyIcons.mailOutlined,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.widgetWithText(NoteRow, 'Private'),
+          matching: find.bySemanticsLabel(RegExp('\nWith ')),
+        ),
+        findsNothing,
+      );
+
+      await tester.pumpWidget(
+        tabbed(alice, tab: SidebarTab.shared, phone: true),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.widgetWithText(NoteRow, 'Ours'),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is KapyIcon && widget.icon == KapyIcons.mailOutlined,
+          ),
+        ),
+        findsNothing,
+      );
+    });
 
     testWidgets('your own shared note stays in the notes list, and is in '
         'Shared under the person it is open to', (tester) async {
@@ -1754,7 +3087,7 @@ void main() {
       expect(find.text('Nothing shared yet'), findsOneWidget);
       expect(
         find.text(
-          'Open a note and press Share. Only the people you choose can see it.',
+          'Pick notes and someone to share them with. Only the people you add, or anyone with a link you turn on, can see them.',
         ),
         findsOneWidget,
       );
@@ -1788,6 +3121,56 @@ void main() {
       // so the row does not repeat them.
       expect(find.text('From Someone'), findsOneWidget);
       expect(find.byKey(const ValueKey('note-row-people')), findsNothing);
+    });
+
+    testWidgets('on a phone, Block on an invitation asks first by the whole '
+        'name; on a Mac it blocks at once', (tester) async {
+      server.user(alice.userId).name = 'Alice Moreau';
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        final note = alice.notes.create(body: 'Plans');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.refresh();
+      });
+      final token = server.outbox.single.token;
+      Future<void> block() async {
+        await tester.tap(find.byKey(ValueKey('sidebar-invite-more-$token')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('invite-block-$token')));
+        await tester.pumpAndSettle();
+      }
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.pumpWidget(tabbed(bob, tab: SidebarTab.shared));
+      await tester.pumpAndSettle();
+      await block();
+      expect(find.text('Block Alice Moreau?'), findsOneWidget);
+      expect(
+        find.text(
+          'They can’t invite you again, and this invitation goes away. You '
+          'can unblock them in Settings, under Blocked people.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+      await tester.pumpAndSettle();
+      expect(bob.sharing.hasBlocked(alice.email), isFalse);
+
+      AppPlatform.debugTargetPlatformOverride = null;
+      await tester.pumpWidget(tabbed(bob, tab: SidebarTab.shared));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await block();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sharing-ask')), findsNothing);
+      expect(bob.sharing.hasBlocked(alice.email), isTrue);
+      bob.dispose();
+      await tester.pump(const Duration(seconds: 3));
     });
 
     testWidgets('an invitation waits under the search field until answered', (

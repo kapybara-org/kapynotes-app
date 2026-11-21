@@ -68,6 +68,38 @@ const kapyMonths = [
   'December',
 ];
 
+/// [chats] whose title holds [query], newest first, under Today, Yesterday,
+/// Previous 7 days and then each month, with its year when it is not this
+/// one. The panel's chats and the phone's page group them the same way.
+Map<String, List<KapyChat>> kapyChatGroups(
+  List<KapyChat> chats, {
+  required String query,
+  required DateTime now,
+}) {
+  final words = query.trim().toLowerCase();
+  final today = DateTime(now.year, now.month, now.day);
+  String groupOf(DateTime when) {
+    final days = today
+        .difference(DateTime(when.year, when.month, when.day))
+        .inDays;
+    if (days <= 0) return 'Today';
+    if (days == 1) return 'Yesterday';
+    if (days <= 7) return 'Previous 7 days';
+    final month = kapyMonths[when.month - 1];
+    return when.year == now.year ? month : '$month ${when.year}';
+  }
+
+  final groups = <String, List<KapyChat>>{};
+  for (final chat
+      in chats
+          .where((chat) => chat.title.toLowerCase().contains(words))
+          .toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt))) {
+    (groups[groupOf(chat.updatedAt)] ??= []).add(chat);
+  }
+  return groups;
+}
+
 /// "9 Oct", with the year only when it is not this one.
 String kapyDay(DateTime day, DateTime now) => [
   '${day.day} ${kapyMonths[day.month - 1].substring(0, 3)}',
@@ -94,18 +126,6 @@ String kapyAccountName(KapyAccountKind kind) => switch (kind) {
   KapyAccountKind.claudeCode => 'Claude Code',
   KapyAccountKind.openRouter => 'Your key',
 };
-
-/// What a row calls [model]. Two choices with the same plain name are
-/// numbered, so a person can tell them apart without a model name.
-String kapyChoiceLabel(KapyModel model, List<KapyModel> siblings) {
-  final base = model.plainLabel;
-  final same = [
-    for (final other in siblings)
-      if (other.plainLabel == base) other,
-  ];
-  if (same.length < 2) return base;
-  return '$base · ${same.indexOf(model) + 1}';
-}
 
 /// The 28 px button of a notice, a confirmation and the key field: sage when
 /// it is the one thing to do, a red tint for Delete, an outline otherwise.
@@ -195,7 +215,7 @@ class KapyAiIconButton extends StatelessWidget {
       radius: radius,
       selectedBackground: selectedBackground ?? palette.kapyHighlight,
       foregroundColor: color ?? palette.textSecondary,
-      icon: KapyIcon(icon, size: iconSize, strokeWidth: 1.8),
+      icon: KapyIcon(icon, size: iconSize),
     );
   }
 }

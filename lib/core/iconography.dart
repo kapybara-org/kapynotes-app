@@ -5,8 +5,8 @@ import 'package:material_ui/material_ui.dart';
 ///
 /// Hugeicons ships its free stroke-rounded set as vector path data rather
 /// than as an icon font. Keeping those paths behind this small semantic layer
-/// gives the app one consistent 1.5 px stroke and keeps call sites independent
-/// from the package's generated names.
+/// gives the app one 1.5 px stroke, which a call site cannot change, and keeps
+/// call sites independent from the package's generated names.
 class KapyIconData {
   const KapyIconData(this.codePoint, this.paths);
 
@@ -24,7 +24,6 @@ class KapyIcon extends StatelessWidget {
     this.color,
     this.semanticLabel,
     this.textDirection,
-    this.strokeWidth = 1.5,
   });
 
   final KapyIconData icon;
@@ -32,7 +31,6 @@ class KapyIcon extends StatelessWidget {
   final Color? color;
   final String? semanticLabel;
   final TextDirection? textDirection;
-  final double strokeWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +38,7 @@ class KapyIcon extends StatelessWidget {
       icon: icon.paths,
       size: size,
       color: color,
-      strokeWidth: strokeWidth,
+      strokeWidth: 1.5,
     );
 
     final label = semanticLabel;
@@ -86,6 +84,10 @@ class KapyIcons {
   static const calendarOutlined = KapyIconData(
     0xE00C,
     HugeIcons.strokeRoundedCalendar03,
+  );
+  static const calendarRemoveOutlined = KapyIconData(
+    0xE0EA,
+    HugeIcons.strokeRoundedCalendarMinus02,
   );
   static const cameraOutlined = KapyIconData(
     0xE00D,
@@ -208,6 +210,18 @@ class KapyIcons {
     0xE025,
     HugeIcons.strokeRoundedFlag02,
   );
+  static const folderOutlined = KapyIconData(
+    0xE0E7,
+    HugeIcons.strokeRoundedFolder01,
+  );
+  static const folderAddOutlined = KapyIconData(
+    0xE0E8,
+    HugeIcons.strokeRoundedFolderAdd,
+  );
+  static const folderMoveOutlined = KapyIconData(
+    0xE0E9,
+    HugeIcons.strokeRoundedFolderMoveTo,
+  );
   static const flashAutoRounded = KapyIconData(
     0xE026,
     HugeIcons.strokeRoundedFlash,
@@ -280,18 +294,10 @@ class KapyIcons {
     0xE03B,
     HugeIcons.strokeRoundedSidebarLeft,
   );
-  static const menuRounded = KapyIconData(
-    0xE03C,
-    HugeIcons.strokeRoundedMenu01,
-  );
   static const micRounded = KapyIconData(0xE03D, HugeIcons.strokeRoundedMic01);
   static const mcpServer = KapyIconData(
     0xE0E3,
     HugeIcons.strokeRoundedMcpServer,
-  );
-  static const moreRounded = KapyIconData(
-    0xE03E,
-    HugeIcons.strokeRoundedMoreHorizontal,
   );
   static const moreVerticalRounded = KapyIconData(
     0xE069,
@@ -321,14 +327,6 @@ class KapyIcons {
     0xE047,
     HugeIcons.strokeRoundedPause,
   );
-  static const peopleOutlined = KapyIconData(
-    0xE048,
-    HugeIcons.strokeRoundedUserGroup,
-  );
-  static const personAddRounded = KapyIconData(
-    0xE0D4,
-    HugeIcons.strokeRoundedUserAdd01,
-  );
   static const groupOutlined = KapyIconData(
     0xE092,
     HugeIcons.strokeRoundedUserMultiple,
@@ -355,7 +353,6 @@ class KapyIcons {
   );
   static const playRounded = KapyIconData(0xE04A, HugeIcons.strokeRoundedPlay);
   static const pinOutlined = KapyIconData(0xE04C, HugeIcons.strokeRoundedPin);
-  static const pinRounded = KapyIconData(0xE04D, HugeIcons.strokeRoundedPin02);
   static const radioCheckedRounded = KapyIconData(
     0xE04E,
     HugeIcons.strokeRoundedRadioButton,
@@ -402,19 +399,6 @@ class KapyIcons {
     HugeIcons.strokeRoundedDownloadSquare01,
   );
   static const tagRounded = KapyIconData(0xE05D, HugeIcons.strokeRoundedTag01);
-  static const textFieldsRounded = KapyIconData(0xE05E, [
-    [
-      'path',
-      {
-        'key': '0',
-        'd': 'M5 7V5h14v2M12 5v14m-3 0h6',
-        'stroke': 'currentColor',
-        'strokeWidth': '1.5',
-        'strokeLinecap': 'round',
-        'strokeLinejoin': 'round',
-      },
-    ],
-  ]);
   static const textFormatRounded = KapyIconData(
     0xE05F,
     HugeIcons.strokeRoundedText,
@@ -531,46 +515,15 @@ class KapyIcons {
     HugeIcons.strokeRoundedCursor02,
   );
   static const penRounded = KapyIconData(0xE07E, HugeIcons.strokeRoundedPencil);
-  static const rectangleRounded = KapyIconData(0xE07F, [
-    [
-      'path',
-      {
-        'key': '0',
-        'd':
-            'M6.5 5.5h11A2.5 2.5 0 0 1 20 8v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16V8a2.5 2.5 0 0 1 2.5-2.5z',
-        'stroke': 'currentColor',
-        'strokeWidth': '1.5',
-        'strokeLinejoin': 'round',
-      },
-    ],
-  ]);
-  static const ellipseRounded = KapyIconData(0xE0DC, [
-    [
-      'path',
-      {
-        'key': '0',
-        'd': 'M4 12a8 7 0 1 0 16 0a8 7 0 1 0-16 0z',
-        'stroke': 'currentColor',
-        'strokeWidth': '1.5',
-      },
-    ],
-  ]);
+  static const rectangleRounded = KapyIconData(
+    0xE07F,
+    HugeIcons.strokeRoundedSquare,
+  );
   static const arrowRounded = KapyIconData(
     0xE080,
     HugeIcons.strokeRoundedArrowUpRight01,
   );
-  static const lineRounded = KapyIconData(0xE081, [
-    [
-      'path',
-      {
-        'key': '0',
-        'd': 'M5 19L19 5',
-        'stroke': 'currentColor',
-        'strokeWidth': '1.5',
-        'strokeLinecap': 'round',
-      },
-    ],
-  ]);
+  static const lineRounded = KapyIconData(0xE081, HugeIcons.strokeRoundedLiner);
   static const eraserRounded = KapyIconData(
     0xE082,
     HugeIcons.strokeRoundedEraser,

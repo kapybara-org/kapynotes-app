@@ -106,6 +106,7 @@ class KapyAiPanel extends StatefulWidget {
 class _KapyAiPanelState extends State<KapyAiPanel> {
   final _field = TextEditingController();
   final _fieldFocus = FocusNode(debugLabel: 'kapy-ai-composer');
+  final _menu = GlobalKey();
   bool _chats = false;
   bool _picking = false;
 
@@ -238,6 +239,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                       child: Align(
                         alignment: Alignment.bottomCenter,
                         child: KapyAiPicker(
+                          key: _menu,
                           kapyAi: _ai,
                           onPick: _pick,
                           onManageAccounts: () {
@@ -275,7 +277,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                   fontSize: 17,
                   height: 22 / 17,
                   fontWeight: FontWeight.w600,
-                  fontVariations: AppWeight.variations(AppWeight.section),
+                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                   color: palette.textPrimary,
                 ),
               ),
@@ -315,6 +317,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     if (chat == null || chat.messages.isEmpty) {
       final noteId = _noteId;
       return KapyAiEmpty(
+        menu: _picking ? _menu : null,
         suggestions: noteId == null
             ? const [
                 'What did I plan for this week?',
@@ -429,7 +432,6 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                                 child: KapyIcon(
                                   KapyIcons.sendRounded,
                                   size: 16,
-                                  strokeWidth: 1.8,
                                   color: canSend
                                       ? palette.totalPillText
                                       : palette.textTertiary,
@@ -484,7 +486,6 @@ class _NoteChip extends StatelessWidget {
           KapyIcon(
             KapyIcons.noteOutlined,
             size: 13,
-            strokeWidth: 1.8,
             color: palette.textSecondary,
           ),
           const SizedBox(width: 5),
@@ -513,7 +514,6 @@ class _NoteChip extends StatelessWidget {
                 child: KapyIcon(
                   KapyIcons.closeRounded,
                   size: 12,
-                  strokeWidth: 1.8,
                   color: palette.textTertiary,
                 ),
               ),
@@ -614,7 +614,10 @@ class KapyAiToolbarButton extends StatelessWidget {
     required this.onPressed,
     this.shortcut,
     this.extent = 32,
+    this.radius = 10,
+    this.iconSize = 17,
     this.trailingGap = 6,
+    this.divided = false,
   });
 
   final KapyAi kapyAi;
@@ -622,10 +625,16 @@ class KapyAiToolbarButton extends StatelessWidget {
   final VoidCallback onPressed;
   final String? shortcut;
   final double extent;
+  final double radius;
+  final double iconSize;
 
   /// The space before the next action, kept inside so a hidden button takes
   /// its gap with it.
   final double trailingGap;
+
+  /// Whether a hairline sets it apart from the actions before it, as at the
+  /// end of the page's bar. The hairline hides with the button.
+  final bool divided;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -634,21 +643,35 @@ class KapyAiToolbarButton extends StatelessWidget {
       if (!kapyAi.enabled) return const SizedBox.shrink();
       final palette = context.palette;
       final open = controller.isOpen;
+      final button = KapyAiIconButton(
+        key: const ValueKey('page-kapy-ai'),
+        icon: KapyIcons.sparklesOutlined,
+        tooltip: [open ? 'Close Kapy AI' : 'Ask Kapy AI', ?shortcut].join('  '),
+        extent: extent,
+        radius: radius,
+        iconSize: iconSize,
+        selected: open,
+        selectedBackground: palette.tonalBackground,
+        color: open ? palette.tonalForeground : null,
+        onPressed: onPressed,
+      );
       return Padding(
         padding: EdgeInsets.only(right: trailingGap),
-        child: KapyAiIconButton(
-          key: const ValueKey('page-kapy-ai'),
-          icon: KapyIcons.sparklesOutlined,
-          tooltip: [
-            open ? 'Close Kapy AI' : 'Ask Kapy AI',
-            ?shortcut,
-          ].join('  '),
-          extent: extent,
-          selected: open,
-          selectedBackground: palette.tonalBackground,
-          color: open ? palette.tonalForeground : null,
-          onPressed: onPressed,
-        ),
+        child: divided
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 1,
+                    height: 16,
+                    child: ColoredBox(color: palette.controlBorder),
+                  ),
+                  const SizedBox(width: 8),
+                  button,
+                ],
+              )
+            : button,
       );
     },
   );

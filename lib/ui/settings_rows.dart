@@ -844,7 +844,6 @@ class SettingsStepper extends StatelessWidget {
             child: KapyIcon(
               icon,
               size: 14,
-              strokeWidth: 1.8,
               color: onTap == null
                   ? palette.textTertiary.withValues(alpha: 0.5)
                   : palette.textSecondary,

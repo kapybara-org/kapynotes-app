@@ -4,6 +4,14 @@ import '../../core/theme.dart';
 import '../../sync/account.dart';
 import '../../sync/joining.dart';
 
+/// What follows a join everywhere: the notes come from a device that
+/// already holds their key, so they arrive once one of those is open.
+const notesArriveLine =
+    'The notes arrive when someone already sharing them next opens Kapy '
+    'Notes.';
+
+const joinedLine = 'Joined. $notesArriveLine';
+
 /// Makes the account's [Joining] reachable from anywhere under the app,
 /// dialogs included.
 ///
@@ -39,23 +47,40 @@ class JoiningScope extends InheritedNotifier<Listenable> {
 
 /// A small heading in a sharing sheet, as the share dialog draws its own.
 class JoinLabel extends StatelessWidget {
-  const JoinLabel(this.text, {super.key});
+  const JoinLabel(this.text, {super.key, this.count});
   final String text;
 
+  /// Shown beside the label, as every label with a count shows it.
+  final int? count;
+
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      text,
-      style: TextStyle(
-        fontSize: AppTypeScale.caption,
-        fontWeight: FontWeight.w600,
-        fontVariations: AppWeight.variations(AppWeight.section),
-        letterSpacing: 0.2,
-        color: context.palette.textSecondary,
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = TextStyle(
+      fontSize: AppTypeScale.caption,
+      fontWeight: FontWeight.w600,
+      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+      letterSpacing: 0.2,
+      color: palette.textSecondary,
+    );
+    final count = this.count;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text.rich(
+        TextSpan(
+          text: text,
+          children: [
+            if (count != null)
+              TextSpan(
+                text: '  $count',
+                style: TextStyle(color: palette.textTertiary),
+              ),
+          ],
+        ),
+        style: style,
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// A line of explanation, or of error, under a sharing control.

@@ -15,7 +15,6 @@ import '../sync/sync_service.dart';
 import 'context_menu.dart';
 import 'installed_version.dart';
 import 'profile_avatar.dart';
-import 'streak_badge.dart';
 import 'window_drag_area.dart';
 
 /// What the notes list beside the spaces rail can show.
@@ -161,14 +160,14 @@ class SpacesRail extends StatelessWidget {
                       SliverToBoxAdapter(
                         child: Column(
                           children: [
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 8),
                             destination(
                               LibrarySpace.notes,
                               icon: KapyIcons.noteOutlined,
                               label: 'Notes',
                             ),
                             if (openTasks != null) ...[
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 16),
                               destination(
                                 LibrarySpace.tasks,
                                 icon: KapyIcons.tasksOutlined,
@@ -181,14 +180,14 @@ class SpacesRail extends StatelessWidget {
                                 badge: openTasks,
                               ),
                             ],
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 16),
                             destination(
                               LibrarySpace.drawings,
                               icon: KapyIcons.penRounded,
                               label: 'Drawings',
                             ),
                             if (invitations != null) ...[
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 16),
                               destination(
                                 LibrarySpace.shared,
                                 icon: KapyIcons.groupOutlined,
@@ -214,7 +213,7 @@ class SpacesRail extends StatelessWidget {
                 ),
               ),
               if (streak != null && streak.days > 0) ...[
-                _RailStreak(key: const ValueKey('rail-streak'), streak: streak),
+                StreakMark(key: const ValueKey('rail-streak'), streak: streak),
                 const SizedBox(height: 7.5),
               ],
               _RailSettings(
@@ -242,8 +241,8 @@ class SpacesRail extends StatelessWidget {
 /// The words on the rail: a space's name under its tile, and the streak's
 /// run of days under its flame.
 TextStyle _railLabel(Color color, {required bool strong}) => TextStyle(
-  fontSize: AppTypeScale.railLabel,
-  height: 14 / 11,
+  fontSize: AppTypeScale.caption,
+  height: 16 / 12,
   fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
   color: color,
   fontFeatures: const [FontFeature.tabularFigures()],
@@ -287,8 +286,8 @@ class _RailItemState extends State<_RailItem> {
     final ink = selected
         ? palette.tonalForeground
         : lit
-        ? palette.textSecondary
-        : palette.railInk;
+        ? palette.textPrimary
+        : palette.textSecondary;
     final touch = !AppPlatform.hasPointer;
 
     final tile = AnimatedContainer(
@@ -306,7 +305,7 @@ class _RailItemState extends State<_RailItem> {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          KapyIcon(widget.icon, size: 19, strokeWidth: 1.7, color: ink),
+          KapyIcon(widget.icon, size: 20, color: ink),
           if (widget.badge > 0)
             Positioned(
               top: 2,
@@ -341,18 +340,16 @@ class _RailItemState extends State<_RailItem> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 tile,
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Text(
                   widget.label,
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.fade,
                   style: _railLabel(
-                    selected
+                    selected || lit
                         ? palette.textPrimary
-                        : lit
-                        ? palette.textSecondary
-                        : palette.railInk,
+                        : palette.textSecondary,
                     strong: selected,
                   ),
                 ),
@@ -376,8 +373,8 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      height: 17,
-      constraints: const BoxConstraints(minWidth: 17),
+      height: 16,
+      constraints: const BoxConstraints(minWidth: 16),
       // Inside the ring, which the decoration adds to it.
       padding: const EdgeInsets.symmetric(horizontal: 5),
       alignment: Alignment.center,
@@ -391,10 +388,12 @@ class _Badge extends StatelessWidget {
         count > 99 ? '99+' : '$count',
         textScaler: TextScaler.noScaling,
         style: TextStyle(
-          fontSize: AppTypeScale.badge,
-          height: 1,
+          fontSize: AppTypeScale.micro,
+          height: 12 / 11,
           fontWeight: FontWeight.w500,
-          fontVariations: AppWeight.variations(AppWeight.rowTitle),
+          fontVariations: AppWeight.variations(
+            AppWeight.bold(AppWeight.rowTitle),
+          ),
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -403,15 +402,22 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// The writing streak: a flame over how many days in a row.
-///
-/// The same run [StreakBadge] shows in a list's heading, and it behaves the
-/// same way: lit in clay once today has been written in, waiting in grey
-/// until then, flaring for a moment as it catches.
-class _RailStreak extends StatelessWidget {
-  const _RailStreak({super.key, required this.streak});
+/// The writing streak: a flame and how many days in a row, lit in clay once
+/// today has been written in, waiting in grey until then, flaring for a
+/// moment as it catches. Over its count on the rail, beside it on a phone's
+/// Home.
+class StreakMark extends StatelessWidget {
+  const StreakMark({super.key, required this.streak, this.inline = false});
 
   final WritingStreak streak;
+
+  /// A phone's Home header: the flame before the count, at the header's size.
+  final bool inline;
+
+  /// What the tooltip says, and so what a screen reader hears.
+  static String describe(WritingStreak streak) => streak.wroteToday
+      ? '${streak.days}-day writing streak'
+      : 'Write today to keep your ${streak.days}-day streak';
 
   @override
   Widget build(BuildContext context) {
@@ -423,40 +429,54 @@ class _RailStreak extends StatelessWidget {
     return Semantics(
       container: true,
       child: Tooltip(
-        message: StreakBadge.describe(streak),
+        message: describe(streak),
         triggerMode: TooltipTriggerMode.tap,
         child: ExcludeSemantics(
           child: TweenAnimationBuilder<double>(
             tween: Tween(begin: lit, end: lit),
             duration: still ? Duration.zero : const Duration(milliseconds: 600),
             curve: Curves.easeOutCubic,
-            builder: (context, t, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.scale(
-                  scale: streak.wroteToday
-                      ? 1 + 0.3 * math.sin(math.pi * t)
-                      : 1,
-                  alignment: Alignment.bottomCenter,
-                  child: KapyIcon(
-                    KapyIcons.fireOutlined,
-                    size: 18,
-                    strokeWidth: 1.7,
-                    color: Color.lerp(palette.textTertiary, palette.clay, t),
-                  ),
+            builder: (context, t, _) {
+              final ink = Color.lerp(
+                palette.textTertiary,
+                palette.textPrimary,
+                t,
+              )!;
+              final flame = Transform.scale(
+                scale: streak.wroteToday ? 1 + 0.3 * math.sin(math.pi * t) : 1,
+                alignment: Alignment.bottomCenter,
+                child: KapyIcon(
+                  KapyIcons.fireOutlined,
+                  size: 16,
+                  color: Color.lerp(palette.textTertiary, palette.clay, t),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  days == 1 ? '1 day' : '$days days',
-                  maxLines: 1,
-                  softWrap: false,
-                  style: _railLabel(
-                    Color.lerp(palette.textTertiary, palette.textPrimary, t)!,
-                    strong: true,
-                  ),
-                ),
-              ],
-            ),
+              );
+              final label = Text(
+                days == 1 ? '1 day' : '$days days',
+                maxLines: 1,
+                softWrap: false,
+                style: inline
+                    ? TextStyle(
+                        fontFamily: AppFonts.ui,
+                        fontSize: 13,
+                        height: 16 / 13,
+                        fontWeight: FontWeight.w500,
+                        color: ink,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      )
+                    : _railLabel(ink, strong: true),
+              );
+              return inline
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: 4,
+                      children: [flame, label],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [flame, const SizedBox(height: 4), label],
+                    );
+            },
           ),
         ),
       ),
@@ -502,9 +522,8 @@ class _RailSettings extends StatelessWidget {
                 children: [
                   KapyIcon(
                     KapyIcons.settingsGearOutlined,
-                    size: 19,
-                    strokeWidth: 1.7,
-                    color: palette.textTertiary,
+                    size: 20,
+                    color: palette.textSecondary,
                   ),
                   if (updateWaiting)
                     Positioned(
@@ -599,7 +618,9 @@ class _RailAccount extends StatelessWidget {
                   fontSize: AppTypeScale.control,
                   height: 1,
                   fontWeight: FontWeight.w500,
-                  fontVariations: AppWeight.variations(AppWeight.rowTitle),
+                  fontVariations: AppWeight.variations(
+                    AppWeight.bold(AppWeight.rowTitle),
+                  ),
                   color: palette.textPrimary,
                 ),
               ),
@@ -704,7 +725,6 @@ class PhoneSpaces extends StatelessWidget {
     required this.onCreateAction,
     required this.child,
     this.showTasks = true,
-    this.invitations,
   });
 
   final LibrarySpace space;
@@ -719,9 +739,6 @@ class PhoneSpaces extends StatelessWidget {
   final Widget child;
   final bool showTasks;
 
-  /// Invitations waiting under Shared, which is only there with sharing.
-  final int? invitations;
-
   static const double _barHeight = 60;
   static const double _barLift = 30;
   static const double _plusExtent = 56;
@@ -729,42 +746,17 @@ class PhoneSpaces extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final invitations = this.invitations;
-    final items =
-        <({LibrarySpace? to, KapyIconData icon, String label, int badge})>[
-          (
-            to: LibrarySpace.notes,
-            icon: KapyIcons.noteOutlined,
-            label: 'Notes',
-            badge: 0,
-          ),
-          if (showTasks)
-            (
-              to: LibrarySpace.tasks,
-              icon: KapyIcons.tasksOutlined,
-              label: 'Tasks',
-              badge: 0,
-            ),
-          (
-            to: LibrarySpace.drawings,
-            icon: KapyIcons.penRounded,
-            label: 'Drawings',
-            badge: 0,
-          ),
-          if (invitations != null)
-            (
-              to: LibrarySpace.shared,
-              icon: KapyIcons.groupOutlined,
-              label: 'Shared',
-              badge: invitations,
-            ),
-          (
-            to: null,
-            icon: KapyIcons.settingsGearOutlined,
-            label: 'Settings',
-            badge: 0,
-          ),
-        ];
+    final items = <({LibrarySpace? to, KapyIconData icon, String label})>[
+      (to: LibrarySpace.notes, icon: KapyIcons.noteOutlined, label: 'Notes'),
+      if (showTasks)
+        (to: LibrarySpace.tasks, icon: KapyIcons.tasksOutlined, label: 'Tasks'),
+      (
+        to: LibrarySpace.drawings,
+        icon: KapyIcons.penRounded,
+        label: 'Drawings',
+      ),
+      (to: null, icon: KapyIcons.settingsGearOutlined, label: 'Settings'),
+    ];
     void choose(LibrarySpace? to) =>
         to == null ? onSettingsPressed() : onSelected(to);
     final plus = Builder(
@@ -792,15 +784,15 @@ class PhoneSpaces extends StatelessWidget {
             for (final item in items)
               NavigationDestination(
                 key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
-                icon: Badge(
-                  isLabelVisible: item.badge > 0,
-                  label: Text('${item.badge}'),
-                  child: KapyIcon(item.icon, size: 22, color: palette.railInk),
+                icon: KapyIcon(
+                  item.icon,
+                  size: 20,
+                  color: palette.textTertiary,
                 ),
                 selectedIcon: KapyIcon(
                   item.icon,
-                  size: 22,
-                  color: palette.tonalForeground,
+                  size: 20,
+                  color: palette.textPrimary,
                 ),
                 label: item.label,
               ),
@@ -850,7 +842,6 @@ class PhoneSpaces extends StatelessWidget {
                                 icon: item.icon,
                                 label: item.label,
                                 selected: item.to == space,
-                                badge: item.badge,
                                 onPressed: () => choose(item.to),
                               ),
                             ),
@@ -902,20 +893,18 @@ class _BarItem extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.selected,
-    required this.badge,
     required this.onPressed,
   });
 
   final KapyIconData icon;
   final String label;
   final bool selected;
-  final int badge;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final ink = selected ? palette.tonalForeground : palette.railInk;
+    final ink = selected ? palette.textPrimary : palette.textTertiary;
     return Semantics(
       container: true,
       button: true,
@@ -931,42 +920,30 @@ class _BarItem extends StatelessWidget {
               color: selected ? palette.tonalBackground : null,
               borderRadius: BorderRadius.circular(26),
             ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    KapyIcon(icon, size: 22, strokeWidth: 1.7, color: ink),
-                    const SizedBox(height: 3),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.fade,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        height: 13 / 10.5,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: ink,
-                      ),
-                    ),
-                  ],
-                ),
-                if (badge > 0)
-                  Positioned(
-                    top: 4,
-                    right: 8,
-                    child: _Badge(
-                      key: ValueKey(
-                        '${(key! as ValueKey<String>).value}-badge',
-                      ),
-                      count: badge,
-                    ),
+                KapyIcon(icon, size: 20, color: ink),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.fade,
+                  // The pill is a fixed 52 pt, as iOS's tab bar is, and
+                  // keeps its labels near their size for the same
+                  // reason: past this they no longer fit under the icon.
+                  textScaler: MediaQuery.textScalerOf(
+                    context,
+                  ).clamp(maxScaleFactor: 1.3),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 13 / 10.5,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: ink,
                   ),
+                ),
               ],
             ),
           ),
@@ -1011,8 +988,7 @@ class _PlusButton extends StatelessWidget {
             child: Center(
               child: KapyIcon(
                 KapyIcons.addRounded,
-                size: 26,
-                strokeWidth: 2.2,
+                size: 22,
                 color: scheme.onPrimary,
               ),
             ),

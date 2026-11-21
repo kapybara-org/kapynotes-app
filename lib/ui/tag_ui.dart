@@ -127,7 +127,9 @@ class TagDot extends StatelessWidget {
 
 /// The popover surface the tag lists sit on.
 class TagPopover extends StatelessWidget {
-  const TagPopover({super.key, required this.child, this.width = 248});
+  const TagPopover({super.key, required this.child, this.width = defaultWidth});
+
+  static const double defaultWidth = 248;
 
   final Widget child;
   final double width;
@@ -160,31 +162,34 @@ class TagPopover extends StatelessWidget {
 }
 
 /// One field that finds or creates, over the tags with ticks for the ones on
-/// [noteId]. ↵ adds or takes off, ↑↓ move, esc closes.
+/// every note in [noteIds]. ↵ adds or takes off, ↑↓ move, esc closes.
 class TagPicker extends StatefulWidget {
   const TagPicker({
     super.key,
     required this.shelf,
-    required this.noteId,
+    required this.noteIds,
     required this.onClose,
   });
 
   final TagShelf shelf;
-  final String noteId;
+  final List<String> noteIds;
   final VoidCallback onClose;
 
   @override
   State<TagPicker> createState() => _TagPickerState();
 }
 
-/// What a tag list for one note does: the field's words find tags or name a
-/// new one, a row ticks or unticks, and a refused name or a full note says
-/// why. The popover and ⌘K's Tag note... both draw it.
+/// What a tag list for some notes does: the field's words find tags or name
+/// a new one, a row ticks or unticks, and a refused name or a full note says
+/// why. A tag is ticked when every one of the notes has it and dashed when
+/// only some do. Ticking puts it on the rest, and unticking takes it off them
+/// all, as does a dashed tag that the notes without it have no room for. The
+/// popover and ⌘K's Tag note... both draw it.
 class TagPickerController extends ChangeNotifier {
-  TagPickerController({required this.shelf, required this.noteId});
+  TagPickerController({required this.shelf, required this.noteIds});
 
   final TagShelf shelf;
-  final String noteId;
+  final List<String> noteIds;
   final query = TextEditingController();
   int _at = 0;
   String? _problem;
@@ -224,17 +229,48 @@ class TagPickerController extends ChangeNotifier {
     ];
   }
 
-  bool isOn(String tagId) =>
+  /// True when every one of the notes has [tagId], null when only some of
+  /// them do, and false when none does.
+  bool? isOn(String tagId) {
+    final holding = noteIds.where((noteId) => _has(noteId, tagId)).length;
+    return holding == noteIds.length ? true : (holding == 0 ? false : null);
+  }
+
+  bool _has(String noteId, String tagId) =>
       _store.tagsOf(noteId).any((tag) => tag.id == tagId);
 
   void toggle(String tagId) {
-    if (isOn(tagId)) {
-      _store.removeTag(noteId, tagId);
+    final without = [
+      for (final noteId in noteIds)
+        if (!_has(noteId, tagId)) noteId,
+    ];
+    final room = without.any(
+      (noteId) => _store.tagsOf(noteId).length < noteTagsMax,
+    );
+    if (without.length < noteIds.length && !room) {
+      for (final noteId in noteIds) {
+        _store.removeTag(noteId, tagId);
+      }
       _problem = null;
     } else {
-      _problem = _store.addTag(noteId, tagId) ? null : _tooMany;
+      _problem = _add(tagId, without);
     }
     notifyListeners();
+  }
+
+  /// Puts [tagId] on [ids], and says how far it went where some of them had
+  /// no room for it.
+  String? _add(String tagId, List<String> ids) {
+    var full = 0;
+    for (final noteId in ids) {
+      if (!_store.addTag(noteId, tagId)) full++;
+    }
+    if (full == 0) return null;
+    final holding = noteIds.where((noteId) => _has(noteId, tagId)).length;
+    if (holding == 0) return _tooMany;
+    return 'Added to $holding of ${noteIds.length} notes. '
+        '${full == 1 ? 'One already has' : '$full already have'} '
+        '$noteTagsMax tags.';
   }
 
   /// A name another tag has, in any case, picks that tag. One the lists
@@ -245,12 +281,13 @@ class TagPickerController extends ChangeNotifier {
     if (existing != null &&
         !shelf.listed().any((entry) => entry.tag.id == existing.id)) {
       _problem = chooseAnotherName;
-    } else if (_store.tagsOf(noteId).length >= noteTagsMax) {
+    } else if (noteIds.every(
+      (noteId) => _store.tagsOf(noteId).length >= noteTagsMax,
+    )) {
       _problem = _tooMany;
     } else if (_store.create(query.text) case final tag?) {
-      _store.addTag(noteId, tag.id);
       query.clear();
-      _problem = null;
+      _problem = _add(tag.id, noteIds);
       _at = 0;
     } else {
       _problem = 'A tag name is 1 to $tagNameMax characters.';
@@ -277,7 +314,7 @@ class TagPickerController extends ChangeNotifier {
 class _TagPickerState extends State<TagPicker> {
   late final _picker = TagPickerController(
     shelf: widget.shelf,
-    noteId: widget.noteId,
+    noteIds: widget.noteIds,
   );
 
   @override
@@ -299,7 +336,7 @@ class _TagPickerState extends State<TagPicker> {
         required Widget leading,
         required String label,
         String? count,
-        bool ticked = false,
+        bool? ticked = false,
         required VoidCallback onTap,
       }) => MouseRegion(
         cursor: SystemMouseCursors.click,
@@ -337,14 +374,15 @@ class _TagPickerState extends State<TagPicker> {
                 const SizedBox(width: 9),
                 SizedBox(
                   width: 14,
-                  child: ticked
-                      ? KapyIcon(
-                          KapyIcons.checkRounded,
+                  child: ticked == false
+                      ? null
+                      : KapyIcon(
+                          ticked == null
+                              ? KapyIcons.removeRounded
+                              : KapyIcons.checkRounded,
                           size: 14,
-                          strokeWidth: 1.8,
                           color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
+                        ),
                 ),
               ],
             ),
@@ -370,7 +408,6 @@ class _TagPickerState extends State<TagPicker> {
             leading: KapyIcon(
               KapyIcons.addRounded,
               size: 12,
-              strokeWidth: 2,
               color: palette.textTertiary,
             ),
             label: 'Create “$query”',
@@ -384,11 +421,15 @@ class _TagPickerState extends State<TagPicker> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.shelf.isShared(widget.noteId))
+            if (widget.noteIds.any(widget.shelf.isShared))
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
                 child: Text(
-                  'Shared note: your tags and their colours show only to you.',
+                  widget.noteIds.length == 1
+                      ? 'Shared note: your tags and their colours show only '
+                            'to you.'
+                      : 'Your tags and their colours show only to you, on '
+                            'shared notes too.',
                   style: _text(12, FontWeight.w400, palette.textTertiary),
                 ),
               ),
@@ -417,7 +458,6 @@ class _TagPickerState extends State<TagPicker> {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: 14,
-                      strokeWidth: 1.8,
                       color: palette.textTertiary,
                     ),
                     const SizedBox(width: 8),
@@ -473,11 +513,12 @@ class _TagPickerState extends State<TagPicker> {
   );
 }
 
-/// The tag list for [noteId] at [position], from the note's menu.
+/// The tag list for [noteIds] at [position], from a note's menu or the
+/// picked notes'.
 Future<void> showTagPickerAt(
   BuildContext context,
   Offset position,
-  String noteId,
+  List<String> noteIds,
 ) async {
   final shelf = TagShelf.maybeOf(context);
   if (shelf == null) return;
@@ -488,18 +529,19 @@ Future<void> showTagPickerAt(
     barrierColor: Colors.transparent,
     transitionDuration: Duration.zero,
     pageBuilder: (context, _, _) => CustomSingleChildLayout(
-      delegate: _AtPoint(position),
+      delegate: PopoverAtPoint(position),
       child: TagPicker(
         shelf: shelf,
-        noteId: noteId,
+        noteIds: noteIds,
         onClose: () => Navigator.of(context).pop(),
       ),
     ),
   );
 }
 
-class _AtPoint extends SingleChildLayoutDelegate {
-  _AtPoint(this.point);
+/// Lays a popover out with its corner at [point], kept inside the window.
+class PopoverAtPoint extends SingleChildLayoutDelegate {
+  PopoverAtPoint(this.point);
 
   final Offset point;
 
@@ -514,7 +556,7 @@ class _AtPoint extends SingleChildLayoutDelegate {
   );
 
   @override
-  bool shouldRelayout(_AtPoint oldDelegate) => oldDelegate.point != point;
+  bool shouldRelayout(PopoverAtPoint oldDelegate) => oldDelegate.point != point;
 }
 
 /// The chips at the end of a note's meta line, then + Tag. A chip's × takes
@@ -569,7 +611,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
                 groupId: _picker,
                 child: TagPicker(
                   shelf: shelf,
-                  noteId: widget.noteId,
+                  noteIds: [widget.noteId],
                   onClose: _close,
                 ),
               ),
@@ -593,7 +635,6 @@ class _NoteTagChipsState extends State<NoteTagChips> {
                     KapyIcon(
                       KapyIcons.addRounded,
                       size: 12,
-                      strokeWidth: 2,
                       color: palette.textTertiary,
                     ),
                     const SizedBox(width: 4),
@@ -705,7 +746,6 @@ class _TagChipState extends State<_TagChip> {
               child: KapyIcon(
                 KapyIcons.closeRounded,
                 size: 11,
-                strokeWidth: 2,
                 color: palette.textSecondary,
               ),
             ),
@@ -903,7 +943,6 @@ Future<void> showTagActions(
                     KapyIcon(
                       KapyIcons.checkRounded,
                       size: 14,
-                      strokeWidth: 1.8,
                       color: palette.textSecondary,
                     ),
                 ],
@@ -1081,7 +1120,7 @@ class _TagSettingsState extends State<TagSettings> {
                         child: Padding(
                           padding: const EdgeInsets.all(4),
                           child: KapyIcon(
-                            KapyIcons.moreRounded,
+                            KapyIcons.moreVerticalRounded,
                             size: 16,
                             color: palette.textSecondary,
                           ),

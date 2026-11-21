@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -23,10 +24,14 @@ class KapyAiEmpty extends StatelessWidget {
     super.key,
     required this.suggestions,
     required this.onAsk,
+    this.menu,
   });
 
   final List<String> suggestions;
   final ValueChanged<String> onAsk;
+
+  /// The picker's menu while it is open over this chat.
+  final GlobalKey? menu;
 
   @override
   Widget build(BuildContext context) {
@@ -47,14 +52,17 @@ class KapyAiEmpty extends StatelessWidget {
                   children: [
                     // The peeking Kapy, its head and paw only: the top of
                     // the 136 × 256 pose at 72 px wide.
-                    SizedBox(
-                      width: 72,
-                      height: 76,
-                      child: Image.asset(
-                        KapyCursorPeek.assetPath,
-                        fit: BoxFit.fitWidth,
-                        alignment: Alignment.topCenter,
-                        excludeFromSemantics: true,
+                    _ClearOfMenu(
+                      menu: menu,
+                      child: SizedBox(
+                        width: 72,
+                        height: 76,
+                        child: Image.asset(
+                          KapyCursorPeek.assetPath,
+                          fit: BoxFit.fitWidth,
+                          alignment: Alignment.topCenter,
+                          excludeFromSemantics: true,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -84,7 +92,6 @@ class KapyAiEmpty extends StatelessWidget {
                   KapyIcon(
                     KapyIcons.lockRounded,
                     size: 13,
-                    strokeWidth: 1.8,
                     color: palette.textTertiary,
                   ),
                   const SizedBox(width: 6),
@@ -99,6 +106,47 @@ class KapyAiEmpty extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// While the picker's [menu] is open, Kapy is painted only when the menu's
+/// top clears the whole head, so the menu never cuts it in two; the paw below
+/// the chin may go under the menu. Decided as it paints, when the menu has
+/// already been laid out beside it.
+class _ClearOfMenu extends SingleChildRenderObjectWidget {
+  const _ClearOfMenu({required this.menu, super.child});
+
+  final GlobalKey? menu;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderClearOfMenu()..menu = menu;
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderClearOfMenu renderObject,
+  ) => renderObject
+    ..menu = menu
+    ..markNeedsPaint();
+}
+
+class _RenderClearOfMenu extends RenderProxyBox {
+  /// Ears to chin: the top 56 px of the 76.
+  static const _head = 56.0;
+
+  GlobalKey? menu;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final box = menu?.currentContext?.findRenderObject();
+    if (box is RenderBox &&
+        box.hasSize &&
+        localToGlobal(const Offset(0, _head)).dy >
+            box.localToGlobal(Offset.zero).dy) {
+      return;
+    }
+    super.paint(context, offset);
   }
 }
 
@@ -131,7 +179,6 @@ class _Suggestion extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.sparklesOutlined,
                   size: 14,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 8),
@@ -425,7 +472,6 @@ class _NoteRow extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.noteOutlined,
                   size: 14,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 8),
@@ -679,12 +725,7 @@ class KapyAiNotice extends StatelessWidget {
           children: [
             Row(
               children: [
-                KapyIcon(
-                  icon,
-                  size: 15,
-                  strokeWidth: 1.8,
-                  color: palette.textSecondary,
-                ),
+                KapyIcon(icon, size: 15, color: palette.textSecondary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

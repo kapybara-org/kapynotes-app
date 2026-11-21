@@ -53,21 +53,6 @@ class _KapyAiChatsState extends State<KapyAiChats> {
     super.dispose();
   }
 
-  /// Today, Yesterday, Previous 7 days, then the month, with its year when it
-  /// is not this one.
-  String _groupOf(DateTime when) {
-    final now = widget.now;
-    final today = DateTime(now.year, now.month, now.day);
-    final days = today
-        .difference(DateTime(when.year, when.month, when.day))
-        .inDays;
-    if (days <= 0) return 'Today';
-    if (days == 1) return 'Yesterday';
-    if (days <= 7) return 'Previous 7 days';
-    final month = kapyMonths[when.month - 1];
-    return when.year == now.year ? month : '$month ${when.year}';
-  }
-
   void _startRename(KapyChat chat) {
     _rename.text = chat.title;
     _rename.selection = TextSelection(
@@ -96,16 +81,11 @@ class _KapyAiChatsState extends State<KapyAiChats> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final query = _search.text.trim().toLowerCase();
-    final chats =
-        widget.kapyAi.chats
-            .where((chat) => chat.title.toLowerCase().contains(query))
-            .toList()
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final groups = <String, List<KapyChat>>{};
-    for (final chat in chats) {
-      (groups[_groupOf(chat.updatedAt)] ??= []).add(chat);
-    }
+    final groups = kapyChatGroups(
+      widget.kapyAi.chats,
+      query: _search.text,
+      now: widget.now,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -356,7 +336,6 @@ class _SearchField extends StatelessWidget {
           KapyIcon(
             KapyIcons.searchRounded,
             size: 14,
-            strokeWidth: 1.8,
             color: palette.textTertiary,
           ),
           const SizedBox(width: 8),

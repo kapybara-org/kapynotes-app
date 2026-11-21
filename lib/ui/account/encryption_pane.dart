@@ -711,7 +711,7 @@ class _GeneratedPassphraseState extends State<GeneratedPassphrase> {
               fontFamilyFallback: AppPlatform.monoFontFallback,
               fontSize: AppTypeScale.control,
               fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.rowTitle),
+              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
               height: 1.6,
               letterSpacing: 0.45,
               color: palette.textPrimary,

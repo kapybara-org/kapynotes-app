@@ -48,6 +48,7 @@ NoteLayout _layout(NoteLines lines) => NoteLayout(
       folded: false,
       row: null,
       inset: 0,
+      hang: 0,
     );
   },
   style: _style,

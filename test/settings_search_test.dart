@@ -229,7 +229,7 @@ void main() {
               widget is KapyIcon && widget.icon == KapyIcons.searchRounded,
         ),
       );
-      expect(tester.getSize(icon), const Size.square(15));
+      expect(tester.getSize(icon), const Size.square(14));
     });
 
     testWidgets('is waiting in the field when settings opens, and Return '

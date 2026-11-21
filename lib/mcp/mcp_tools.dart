@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../data/folders.dart';
 import '../data/note.dart';
 import '../data/task_details.dart';
 import '../data/note_attachment.dart';
@@ -38,6 +39,8 @@ class McpTools {
     'update_note',
     'tag_note',
     'manage_tag',
+    'manage_folder',
+    'file_note',
     'add_task',
     'set_task_done',
     'edit_task',
@@ -338,6 +341,39 @@ class McpTools {
       'annotations': _readHints,
     },
     {
+      'name': 'list_folders',
+      'title': 'List folders',
+      'description':
+          'Lists the person’s folders, each under its parent, with the notes '
+          'filed in it. Folders are theirs alone and never enter a shared '
+          'space. A drawing, an archived or Hidden note, and a note shared '
+          'with them never appears.',
+      'inputSchema': _object({}),
+      'outputSchema': _object(
+        {
+          'folders': {
+            'type': 'array',
+            'items': _object(
+              {
+                'id': {'type': 'string'},
+                'name': {'type': 'string'},
+                'parent_id': {
+                  'type': ['string', 'null'],
+                },
+                'notes': {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                },
+              },
+              ['id', 'name', 'parent_id', 'notes'],
+            ),
+          },
+        },
+        ['folders'],
+      ),
+      'annotations': _readHints,
+    },
+    {
       'name': 'create_note',
       'title': 'Create a note',
       'description':
@@ -481,6 +517,76 @@ class McpTools {
       ),
       'outputSchema': _object({'tag': _tagSchema}, ['tag']),
       'annotations': {..._writeHints, 'destructiveHint': true},
+    },
+    {
+      'name': 'manage_folder',
+      'title': 'Create, rename, move, delete or restore a folder',
+      'description':
+          'Creates a folder, renames one, moves one with everything in it, '
+          'deletes one, or restores a deleted one. Deleting keeps every note '
+          'and shows what was in it in the folder above; restore is the Undo. '
+          'parent_id is a folder id from list_folders, or leave it out for '
+          'the top. Names are 1 to $folderNameMax characters and unique in '
+          'that place.',
+      'inputSchema': _object(
+        {
+          'action': {
+            'type': 'string',
+            'enum': ['create', 'rename', 'move', 'delete', 'restore'],
+          },
+          'name': {'type': 'string', 'maxLength': folderNameMax},
+          'new_name': {'type': 'string', 'maxLength': folderNameMax},
+          'folder_id': {'type': 'string'},
+          'parent_id': {
+            'type': ['string', 'null'],
+          },
+        },
+        ['action'],
+      ),
+      'outputSchema': _object(
+        {
+          'folder': _object(
+            {
+              'id': {'type': 'string'},
+              'name': {'type': 'string'},
+              'parent_id': {
+                'type': ['string', 'null'],
+              },
+            },
+            ['id', 'name', 'parent_id'],
+          ),
+        },
+        ['folder'],
+      ),
+      'annotations': {..._writeHints, 'destructiveHint': true},
+    },
+    {
+      'name': 'file_note',
+      'title': 'File a note in a folder',
+      'description':
+          'Files a note in a folder, or takes it out of every folder when '
+          'folder_id is left out. Folders hold notes only. A Hidden note '
+          'reads as missing. An archived note, a drawing, and a note shared '
+          'with the person can’t be filed.',
+      'inputSchema': _object(
+        {
+          'note_id': _id,
+          'folder_id': {
+            'type': ['string', 'null'],
+          },
+        },
+        ['note_id'],
+      ),
+      'outputSchema': _object(
+        {
+          'note_id': {'type': 'string'},
+          'folder_id': {
+            'type': ['string', 'null'],
+          },
+        },
+        ['note_id', 'folder_id'],
+      ),
+      'annotations': {..._writeHints, 'idempotentHint': true},
     },
     {
       'name': 'add_task',
@@ -656,12 +762,15 @@ class McpTools {
         'read_voice_note' => _readVoiceNote(args),
         'list_tasks' => _listTasks(args),
         'list_tags' => _listTags(),
+        'list_folders' => _listFolders(),
         'create_note' => _createNote(args),
         'append_to_note' => _append(args),
         'edit_note' => _editNote(args),
         'update_note' => _updateNote(args),
         'tag_note' => _tagNote(args),
         'manage_tag' => _manageTag(args),
+        'manage_folder' => _manageFolder(args),
+        'file_note' => _fileNote(args),
         'add_task' => _addTask(args),
         'set_task_done' => _setTaskDone(args),
         'edit_task' => _editTask(args),
@@ -684,12 +793,15 @@ class McpTools {
     'read_voice_note' => 'read a voice note',
     'list_tasks' => 'list tasks',
     'list_tags' => 'list tags',
+    'list_folders' => 'list folders',
     'create_note' => 'create a note',
     'append_to_note' => 'add to a note',
     'edit_note' => 'edit a note',
     'update_note' => 'change a note',
     'tag_note' => 'tag a note',
     'manage_tag' => 'change a tag',
+    'manage_folder' => 'change a folder',
+    'file_note' => 'file a note',
     'add_task' => 'add a task',
     'set_task_done' => 'tick off a task',
     'edit_task' => 'change a task',
@@ -1170,6 +1282,124 @@ class McpTools {
       default:
         throw const McpRefusal('action is create, rename, recolour or delete.');
     }
+  }
+
+  Map<String, Object?> _folderOf(Folder folder) => {
+    'id': folder.id,
+    'name': folder.name,
+    'parent_id': folder.parentId,
+  };
+
+  McpToolResult _listFolders() => (
+    output: {'folders': library.listFolders()},
+    error: null,
+    activity: 'Listed folders',
+    undo: null,
+  );
+
+  McpToolResult _manageFolder(Map<String, Object?> args) {
+    final action = _required(args, 'action');
+    final store = library.folders;
+    if (store == null) throw const McpRefusal('Folders aren’t available.');
+    switch (action) {
+      case 'create':
+        final name = _required(args, 'name');
+        final parentId = _string(args, 'parent_id');
+        final folder = library.createFolder(name, parentId: parentId);
+        return (
+          output: {'folder': _folderOf(folder)},
+          error: null,
+          undo: (
+            possible: () => store.tree.byId(folder.id) != null,
+            run: () => store.delete(folder.id),
+          ),
+          activity: 'Created folder “${folder.name}”',
+        );
+      case 'rename':
+        final id = _required(args, 'folder_id');
+        final before = store.tree.byId(id);
+        if (before == null) {
+          throw McpRefusal(McpLibrary.folderRefusal(FolderRefusal.gone));
+        }
+        final folder = library.renameFolder(id, _required(args, 'new_name'));
+        return (
+          output: {'folder': _folderOf(folder)},
+          error: null,
+          undo: (
+            possible: () => store.tree.byId(id)?.name == folder.name,
+            run: () => store.rename(id, before.name),
+          ),
+          activity: 'Renamed folder “${before.name}” to “${folder.name}”',
+        );
+      case 'move':
+        final id = _required(args, 'folder_id');
+        final before = store.tree.byId(id);
+        if (before == null) {
+          throw McpRefusal(McpLibrary.folderRefusal(FolderRefusal.gone));
+        }
+        final folder = library.moveFolder(
+          id,
+          parentId: _string(args, 'parent_id'),
+        );
+        return (
+          output: {'folder': _folderOf(folder)},
+          error: null,
+          undo: (
+            possible: () => store.tree.byId(id)?.parentId == folder.parentId,
+            run: () => store.move(id, parentId: before.parentId),
+          ),
+          activity: 'Moved folder “${folder.name}”',
+        );
+      case 'delete':
+        final id = _required(args, 'folder_id');
+        final folder = library.deleteFolder(id);
+        return (
+          output: {'folder': _folderOf(folder)},
+          error: null,
+          undo: (
+            possible: () => store.tree.byId(id) == null,
+            run: () => store.restore(id),
+          ),
+          activity: 'Deleted folder “${folder.name}”; its notes stay',
+        );
+      case 'restore':
+        final id = _required(args, 'folder_id');
+        final folder = library.restoreFolder(id);
+        return (
+          output: {'folder': _folderOf(folder)},
+          error: null,
+          undo: (
+            possible: () => store.tree.byId(id) != null,
+            run: () => store.delete(id),
+          ),
+          activity: 'Restored folder “${folder.name}”',
+        );
+      default:
+        throw const McpRefusal(
+          'action is create, rename, move, delete or restore.',
+        );
+    }
+  }
+
+  McpToolResult _fileNote(Map<String, Object?> args) {
+    final id = _required(args, 'note_id');
+    final folderId = _string(args, 'folder_id');
+    final from = library.fileNote(id, folderId);
+    final note = library.read(id);
+    final store = library.folders!;
+    return (
+      output: {'note_id': id, 'folder_id': store.tree.folderOf(id)},
+      error: null,
+      undo: from == folderId
+          ? null
+          : (
+              possible: () => store.tree.folderOf(id) == folderId,
+              run: () => store.file([id], from),
+            ),
+      activity: folderId == null
+          ? 'Took “${_clip(note.title, 40)}” out of its folder'
+          : 'Filed “${_clip(note.title, 40)}”',
+    );
   }
 
   McpToolResult _editTask(Map<String, Object?> args) {

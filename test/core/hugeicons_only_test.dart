@@ -20,4 +20,12 @@ void main() {
       expect(offenders, isEmpty, reason: offenders.join('\n'));
     },
   );
+
+  test('every KapyIcons glyph is a Hugeicons path, never a drawn one', () {
+    final source = File('lib/core/iconography.dart').readAsStringSync();
+    final custom = RegExp(
+      r"static const \w+ = KapyIconData\(\s*0x[0-9A-Fa-f]+,\s*\[",
+    );
+    expect(custom.allMatches(source).map((m) => m.group(0)), isEmpty);
+  });
 }

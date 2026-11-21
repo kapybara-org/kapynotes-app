@@ -19,10 +19,14 @@ class UpdateRestartButton extends StatelessWidget {
     super.key,
     required this.updates,
     required this.wide,
+    this.gap = 6,
   });
 
   final UpdateChecker updates;
   final bool wide;
+
+  /// The space before the next button, kept inside so it goes with this.
+  final double gap;
 
   Future<void> _install(BuildContext context) async {
     if (await updates.installAndRestart() || !context.mounted) return;
@@ -48,7 +52,7 @@ class UpdateRestartButton extends StatelessWidget {
           ? 'Update and restart'
           : 'Update';
       return Padding(
-        padding: const EdgeInsets.only(right: 6),
+        padding: EdgeInsets.only(right: gap),
         child: Tooltip(
           message: 'Install Kapy Notes ${staged.version} and restart',
           child: TextButton.icon(
@@ -65,7 +69,7 @@ class UpdateRestartButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 fontWeight: FontWeight.w500,
-                fontVariations: AppWeight.variations(AppWeight.rowTitle),
+                fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
               ),
             ),
             style: TextButton.styleFrom(

@@ -1,12 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/gestures.dart'
+    show
+        PointerDeviceKind,
+        kBackMouseButton,
+        kMiddleMouseButton,
+        kSecondaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -15,8 +22,11 @@ import 'package:kapy_notes/core/status_bar.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
+import 'package:kapy_notes/data/folders.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
@@ -28,6 +38,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/stamped.dart';
+import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
@@ -35,6 +46,8 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
@@ -48,17 +61,19 @@ import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
+import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
-import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
+import 'audio/voice_recording_controller_test.dart' show FakeVoiceRecorder;
 import 'kapy_icon_finder.dart';
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'support/note_driver.dart';
@@ -120,7 +135,11 @@ Future<void> pumpApp(
   ImageFileAcquirer? imageAcquirer,
   Account? account,
   TagStore? tags,
+  FolderStore? folders,
+  NoteDayStore? days,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
+  VoiceRecordingController? recording,
+  TaskLibrary? tasks,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -151,7 +170,11 @@ Future<void> pumpApp(
       imageAcquirer: imageAcquirer,
       account: account,
       tags: tags,
+      folders: folders,
+      days: days,
       titleModel: titleModel,
+      recording: recording,
+      tasks: tasks,
     ),
   );
   await tester.pumpAndSettle();
@@ -995,21 +1018,32 @@ void main() {
         ),
         findsOneWidget,
       );
+      final ticked = find.byKey(const ValueKey('notes-filter-tags-ticked'));
+      await tester.tap(find.byKey(const ValueKey('tag-filter-none')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('1'));
+      expect(
+        find.descendant(of: ticked, matching: find.text('No tag')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('tag-filter-none')));
+      await tester.pumpAndSettle();
+      expect(ticked, findsNothing);
       await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
       await tester.pumpAndSettle();
       expect(count(), contains('2'));
       expect(find.byKey(const ValueKey('tag-filter-any')), findsNothing);
+      expect(
+        find.descendant(of: ticked, matching: find.text('Work')),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(ValueKey('tag-filter-${home.id}')));
       await tester.pumpAndSettle();
       expect(count(), contains('2'));
       expect(find.byKey(const ValueKey('tag-filter-any')), findsOneWidget);
       expect(
-        tester
-            .widget<Text>(
-              find.byKey(const ValueKey('notes-filter-tags-ticked')),
-            )
-            .data,
-        '2',
+        find.descendant(of: ticked, matching: find.text('2')),
+        findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('tag-filter-all')));
       await tester.pumpAndSettle();
@@ -1561,13 +1595,6 @@ void main() {
     );
     await pickPageAction(tester, 'pin');
     expect(notes.isPinned(note.id), isTrue);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('page-breadcrumb')),
-        matching: find.text('Pinned'),
-      ),
-      findsOneWidget,
-    );
 
     await pickPageAction(tester, 'on-top');
     expect(prefs.alwaysOnTop, isTrue);
@@ -1575,6 +1602,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Unpin note'), findsOneWidget);
     expect(find.text('Stop keeping on top'), findsOneWidget);
+    expect(find.text('Unpin note'), findsOneWidget);
+  });
+
+  testWidgets('a page too narrow for Saved in its bar puts it on the note\'s '
+      'date line', (tester) async {
+    final inBar = find.byKey(const ValueKey('page-saved'));
+    final onDateLine = find.byKey(const ValueKey('note-saved'));
+    await pumpApp(
+      tester,
+      size: LayoutPrefs.minimumWindowSize,
+      sidebarVisible: false,
+    );
+    notes.create(body: 'alpha');
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(PageToolbar)).width, lessThan(560));
+    expect(inBar, findsNothing);
+    expect(tester.widget<Text>(onDateLine).data, 'Saved');
+
+    tester.view.physicalSize = const Size(1100, 760);
+    await tester.pumpAndSettle();
+    expect(inBar, findsOneWidget);
+    expect(onDateLine, findsNothing);
   });
 
   testWidgets('a first run opens on a page, with the notes list closed', (
@@ -1630,7 +1679,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Sidebar), findsNothing);
       expect(barrier, findsNothing);
-      for (final key in ['page-show-list', 'page-new-note', 'page-share']) {
+      for (final key in ['page-show-list', 'page-share', 'page-more']) {
         expect(find.byKey(ValueKey(key)), findsOneWidget);
       }
 
@@ -1638,6 +1687,44 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Sidebar), findsOneWidget);
       expect(barrier, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a list open over a narrow page draws the one hairline, and the page '
+    'behind it leaves its own out',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      Decoration? line(Finder bar) =>
+          tester.widget<Container>(bar).foregroundDecoration;
+      final band = find.byKey(const ValueKey('page-toolbar'));
+
+      await pumpApp(tester, size: const Size(620, 620), sidebarVisible: false);
+      expect(line(band), isNotNull);
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('sidebar-overlay-barrier')),
+        findsOneWidget,
+      );
+      expect(line(band), isNull);
+      expect(
+        line(
+          find
+              .descendant(
+                of: find.byType(SidebarWindowBar),
+                matching: find.byType(Container),
+              )
+              .first,
+        ),
+        isNotNull,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(line(band), isNotNull);
     },
   );
 
@@ -1670,7 +1757,6 @@ void main() {
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester, size: const Size(420, 800));
       expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
-      expect(findKapyIcon(KapyIcons.pinRounded), findsNothing);
     },
   );
 
@@ -1726,6 +1812,31 @@ void main() {
       }
     });
 
+    testWidgets('its pin line draws the one pin, to pin and to unpin', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      final note = notes.create(body: 'alpha');
+      await tester.pumpAndSettle();
+      final pin = find.descendant(
+        of: lineOf('pin'),
+        matching: findKapyIcon(KapyIcons.pinOutlined),
+      );
+
+      await openMore(tester);
+      expect(find.text('Pin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
+      await tester.tap(lineOf('pin'));
+      await tester.pumpAndSettle();
+      expect(notes.isPinned(note.id), isTrue);
+
+      await openMore(tester);
+      expect(find.text('Unpin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
+    });
+
     testWidgets('More pins the note and floats the window, side by side, each '
         'saying which', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
@@ -1738,13 +1849,13 @@ void main() {
       // As the app's keycaps print it, rather than spelled out.
       expect(
         shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!.keycapLabel,
-        '⇧⌘T',
+        '⌃⌘T',
       );
 
       await openMore(tester);
       expect(says('pin', 'Pin note'), findsOneWidget);
       expect(says('on-top', 'Keep on top'), findsOneWidget);
-      expect(says('on-top', '⇧⌘T'), findsOneWidget);
+      expect(says('on-top', '⌃⌘T'), findsOneWidget);
       expect(
         tester.getRect(lineOf('pin')).top,
         closeTo(tester.getRect(lineOf('on-top')).bottom, 0.01),
@@ -1859,7 +1970,7 @@ void main() {
       tester.getSize(pageButton('page-more', IconButton)),
       const Size.square(32),
     );
-    expect(tester.getSize(pageButton('page-share', TextButton)).height, 32);
+    expect(tester.getSize(pageButton('page-share', FilledButton)).height, 32);
     expect(
       tester.getSize(find.byType(NoteRow).first).height,
       NoteCardFace.height,
@@ -2116,7 +2227,7 @@ void main() {
     // Keep the fallback's required exact credit pinned as well.
     expect(
       RateProvider.exchangeRateApi.attributionLabel,
-      'Rates by Exchange Rate',
+      'Rates By Exchange Rate API',
     );
     expect(
       RateProvider.exchangeRateApi.attributionUrl.toString(),
@@ -2168,7 +2279,7 @@ void main() {
     await pumpApp(tester);
     await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
-    await tester.enterNote('rev = 7000000');
+    await tester.enterNote('Revenue\nrev = 7000000');
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ResultChip, '7,000,000'), findsOneWidget);
     expect(
@@ -2611,7 +2722,7 @@ void main() {
     const headings = [
       'From anywhere',
       'Notes and search',
-      'Panes',
+      'Tabs and panes',
       'Window',
       'Writing',
       'Formatting',
@@ -3146,7 +3257,7 @@ void main() {
       buttons: kSecondaryButton,
     );
     await tester.pumpAndSettle();
-    expect(find.text('Open in New Tab'), findsNothing);
+    expect(find.text('Open in new tab'), findsOneWidget);
     await tester.tap(find.text('Open to the side'));
     await tester.pumpAndSettle();
     expect(
@@ -3179,7 +3290,7 @@ void main() {
         pressShortcut(tester, shortcuts.bindingFor(action)!);
 
     // With one pane there is nothing for the close chord to close.
-    await press(ShortcutAction.closePane);
+    await press(ShortcutAction.closeTab);
     expect(find.byType(EditorPaneFrame), findsOneWidget);
 
     await press(ShortcutAction.splitEditor);
@@ -3231,7 +3342,9 @@ void main() {
     expect(bodyInPane(tester, 2), 'Right note');
 
     List<num> savedWeights() =>
-        ((store.data[EditorWorkspace.storeKey] as Map)['weights'] as List)
+        ((((store.data[EditorWorkspace.storeKey] as Map)['tabs'] as List).single
+                    as Map)['weights']
+                as List)
             .cast<num>();
 
     // A divider resizes the two panes either side of it, and is remembered.
@@ -3259,7 +3372,7 @@ void main() {
     // Closing the focused pane hands the focus to the pane beside it, and
     // leaves its note exactly as it was.
     await press(ShortcutAction.focusThirdPane);
-    await press(ShortcutAction.closePane);
+    await press(ShortcutAction.closeTab);
     expect(find.byType(EditorPaneFrame), findsNWidgets(2));
     expect(notes.byId(right.id)?.body, 'Right note');
     expect(fieldInPane(tester, 1).focusNode.hasFocus, isTrue);
@@ -3267,6 +3380,646 @@ void main() {
     // A pane that is not there cannot take the focus.
     await press(ShortcutAction.focusThirdPane);
     expect(fieldInPane(tester, 1).focusNode.hasFocus, isTrue);
+  });
+
+  group('tabs', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    Finder tabRow() => find.byType(NoteTabRow);
+    Finder tab(String title) =>
+        find.descendant(of: tabRow(), matching: find.text(title));
+    List<String> tabTitles(WidgetTester tester) => [
+      for (final tab in tester.widget<NoteTabRow>(tabRow()).tabs) tab.title,
+    ];
+
+    Future<void> clickWith(
+      WidgetTester tester,
+      LogicalKeyboardKey modifier,
+      String title,
+    ) async {
+      await tester.sendKeyDownEvent(modifier);
+      await tester.tap(find.widgetWithText(NoteRow, title));
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> press(WidgetTester tester, ShortcutAction action) =>
+        pressShortcut(tester, shortcuts.bindingFor(action)!);
+
+    Future<void> threeNotes(WidgetTester tester) async {
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'First note');
+      notes.create(body: 'Second note');
+      notes.create(body: 'Third note');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('⌘-click opens a note in a tab behind, and the row shows only '
+        'while there are two', (tester) async {
+      await threeNotes(tester);
+      expect(tabRow(), findsNothing, reason: 'one tab has no row');
+
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'Second note');
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(tester.getSize(tabRow()).height, NoteTabRow.height);
+
+      // A note with a tab already, in front or behind, gets no second one.
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'Second note');
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(openNoteBody(tester), 'First note');
+
+      await tester.tap(tab('Second note'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+
+      // ⌘W closes the tab in front, the tab used before comes forward, and
+      // the row goes with the second tab. The toast offers it back.
+      await press(tester, ShortcutAction.closeTab);
+      expect(openNoteBody(tester), 'First note');
+      expect(tabRow(), findsNothing);
+      expect(find.text('Closed "Second note"'), findsOneWidget);
+      await tester.tap(find.text('Reopen'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+
+      // The × closes a tab behind and leaves the one in front alone.
+      await tester.tap(find.byTooltip('Close tab'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabRow(), findsNothing);
+
+      // With one tab of one note, ⌘W has nothing to close.
+      await press(tester, ShortcutAction.closeTab);
+      expect(openNoteBody(tester), 'Second note');
+
+      // ⇧⌘T brings back the tab closed last, in front.
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['Second note', 'First note']);
+      expect(notes.notes, hasLength(3), reason: 'a tab closes no note');
+    });
+
+    testWidgets('a middle click and the menu open a tab behind too', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Second note'),
+        buttons: kMiddleMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['First note', 'Second note']);
+
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Third note'),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      // Hints are keycaps, and a modifier-click is its keycap and Click.
+      expect(find.text('⌘↵'), findsOneWidget);
+      expect(find.text('⌥ Click'), findsOneWidget);
+      await tester.tap(find.text('Open in new tab'));
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['First note', 'Second note', 'Third note']);
+      expect(openNoteBody(tester), 'First note');
+
+      // A note with a tab already is not offered another.
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Second note'),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Open in new tab'), findsNothing);
+      expect(find.text('Open to the side'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('off a Mac it is Ctrl-click', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      await threeNotes(tester);
+      await clickWith(tester, LogicalKeyboardKey.controlLeft, 'Second note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(openNoteBody(tester), 'First note');
+    });
+
+    testWidgets('Back and Forward walk the notes shown, mouse buttons too', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabRow(), findsNothing, reason: 'a plain click stays in the tab');
+
+      await press(tester, ShortcutAction.goBack);
+      expect(openNoteBody(tester), 'First note');
+      await press(tester, ShortcutAction.goForward);
+      expect(openNoteBody(tester), 'Second note');
+
+      await tester.tapAt(
+        tester.getCenter(find.byType(NoteEditor)),
+        buttons: kBackMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'First note');
+    });
+
+    testWidgets('⌘↵ in the list sends the note the arrows reached to a tab '
+        'behind', (tester) async {
+      await threeNotes(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note']);
+    });
+
+    testWidgets('Ctrl+Tab brings a note forward in the tab it is open in', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'Second note');
+      await tester.tap(tab('Second note'));
+      await tester.pumpAndSettle();
+
+      await press(tester, ShortcutAction.nextNote);
+      expect(openNoteBody(tester), 'First note');
+      final row = tester.widget<NoteTabRow>(tabRow());
+      expect(tabTitles(tester), ['First note', 'Second note']);
+      expect(row.activeId, row.tabs.first.id);
+    });
+
+    testWidgets('the row grows in under the toolbar, and at once with less '
+        'motion', (tester) async {
+      await threeNotes(tester);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final growing = tester.getSize(find.byType(TabRowReveal)).height;
+      expect(growing, greaterThan(0));
+      expect(growing, lessThan(NoteTabRow.height));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(TabRowReveal)).height,
+        NoteTabRow.height,
+      );
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pump();
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.closeTab)!,
+        settle: false,
+      );
+      expect(tester.getSize(find.byType(TabRowReveal)).height, 0);
+    });
+
+    testWidgets('a new day closes the tabs from before and starts on a blank '
+        'draft', (tester) async {
+      final first = notes.create(body: 'First note');
+      final second = notes.create(body: 'Second note');
+      store.data[EditorWorkspace.storeKey] = {
+        'tabs': [
+          {
+            'panes': [first.id],
+          },
+          {
+            'panes': [second.id],
+          },
+        ],
+        'tab': 1,
+        'day': WritingStreak.dayOf(DateTime.now()) - 1,
+      };
+      await pumpApp(tester, size: const Size(1400, 800));
+      final draft = notes.notes.singleWhere((note) => note.isEmpty);
+      expect(openNoteBody(tester), draft.body.trimRight());
+      expect(tabRow(), findsNothing);
+
+      // The tab used last comes back first.
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'Second note');
+      expect(tabTitles(tester), hasLength(2));
+
+      // The draft, closed without a word in it, was never a note.
+      await tester.tap(find.byTooltip('Close tab'));
+      await tester.pumpAndSettle();
+      expect(notes.notes.map((note) => note.id), [second.id, first.id]);
+    });
+
+    testWidgets('a new day starts on the note chosen to open on launch', (
+      tester,
+    ) async {
+      final first = notes.create(body: 'First note');
+      final second = notes.create(body: 'Second note');
+      prefs.defaultNoteId = first.id;
+      store.data[EditorWorkspace.storeKey] = {
+        'tabs': [
+          {
+            'panes': [second.id],
+          },
+        ],
+        'day': WritingStreak.dayOf(DateTime.now()) - 1,
+      };
+      await pumpApp(tester, size: const Size(1400, 800));
+      expect(openNoteBody(tester), 'First note');
+      expect(notes.notes, hasLength(2), reason: 'no draft beside it');
+    });
+
+    testWidgets('a new day delivers a recording before its tab closes', (
+      tester,
+    ) async {
+      var clock = DateTime(2026, 11, 18, 23, 40);
+      final temp = Directory.systemTemp.createTempSync('kapy-new-day');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      notes = NotesStore(
+        store,
+        now: () => clock,
+        blobs: BlobStore(directory: temp),
+      );
+      final first = notes.create(body: 'First note');
+      final recorder = FakeVoiceRecorder(writesFile: false);
+      final recording = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+      );
+      addTearDown(recording.dispose);
+      await pumpApp(tester, size: const Size(1400, 800), recording: recording);
+      expect(await recording.start(noteId: first.id), isTrue);
+      // Written here, because the recorder's own write is real file work that
+      // never finishes on the test's fake clock.
+      final tone = File('test/fixtures/tone_5s.m4a').readAsBytesSync();
+      File(recorder.startedAt!).writeAsBytesSync(tone);
+      await tester.pump();
+
+      // Away past midnight with the microphone on, and back. Delivering the
+      // recording is real file work too, so the return runs on the real
+      // clock, and the day starts once the note has its recording.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      clock = DateTime(2026, 11, 19, 8);
+      await tester.runAsync(() async {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        for (var wait = 0; wait < 100 && notes.notes.length == 1; wait++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pumpAndSettle();
+
+      expect(recording.isRecording, isFalse);
+      expect(
+        notes.byId(first.id)!.attachments.whereType<NoteVoiceRef>(),
+        hasLength(1),
+      );
+      final draft = notes.notes.singleWhere((note) => note.isEmpty);
+      expect(openNoteBody(tester), draft.body.trimRight());
+    });
+  });
+
+  group('notes list', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    // Thursday 19 November, at noon. Call with Arjun was started on the 2nd
+    // and last edited today.
+    Future<void> library(WidgetTester tester, {FolderStore? folders}) async {
+      int at(int month, int day, int hour) =>
+          DateTime(2026, month, day, hour).millisecondsSinceEpoch;
+      Map<String, Object?> note(String body, int created, int updated) => {
+        'id': body,
+        'body': body,
+        'createdAt': created,
+        'updatedAt': updated,
+      };
+      store.data['notes.v1'] = [
+        note('Call with Arjun', at(11, 2, 9), at(11, 19, 11)),
+        note('Standup notes', at(11, 18, 9), at(11, 18, 17)),
+        note('Pricing ideas', at(11, 17, 8), at(11, 17, 8)),
+        note('October plan', at(10, 20, 8), at(10, 20, 8)),
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(1400, 800), folders: folders);
+    }
+
+    List<String> headings(WidgetTester tester) => [
+      for (final heading in tester.widgetList<NotesGroupHeading>(
+        find.byType(NotesGroupHeading),
+      ))
+        [heading.label, ?heading.detail].join(' '),
+    ];
+
+    testWidgets('notes sit under the day they were last edited, or by letter', (
+      tester,
+    ) async {
+      await library(tester);
+      expect(headings(tester), [
+        'Today Thu 19 Nov',
+        'Yesterday Wed 18',
+        'Tue 17',
+        'Tue 20 Oct',
+      ]);
+      expect(find.text('By date'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-grouping-aToZ')));
+      await tester.pumpAndSettle();
+      expect(headings(tester), ['C', 'O', 'P', 'S']);
+      expect(find.text('A–Z'), findsOneWidget);
+      // Kept for the next launch.
+      expect(store.data['notesGrouping.v1'], 'aToZ');
+    });
+
+    testWidgets('When narrows the list, and its chip goes back to any time', (
+      tester,
+    ) async {
+      await library(tester);
+      Future<void> tap(Key key) async {
+        await tester.tap(find.byKey(key));
+        await tester.pumpAndSettle();
+      }
+
+      // The menu's When row says how far back the list reaches, and its
+      // submenu the days each span covers.
+      await tap(const ValueKey('sidebar-notes-filter'));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('notes-filter-when')),
+          matching: find.text('Any time'),
+        ),
+        findsOneWidget,
+      );
+      await tap(const ValueKey('notes-filter-when'));
+      final menu = find.byKey(const ValueKey('notes-when-menu'));
+      for (final detail in ['Thu 19', 'November']) {
+        expect(
+          find.descendant(of: menu, matching: find.text(detail)),
+          findsOneWidget,
+        );
+      }
+
+      await tap(const ValueKey('notes-filter-when-thisWeek'));
+      expect(headings(tester), [
+        'Today Thu 19 Nov',
+        'Yesterday Wed 18',
+        'Tue 17',
+      ]);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('notes-when-chip')),
+          matching: find.text('This week'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('notes-when-chip')));
+      await tester.pumpAndSettle();
+      expect(headings(tester), hasLength(4));
+      expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
+
+      // Nothing was written last week: the list says so, and offers the way
+      // back.
+      await tap(const ValueKey('sidebar-notes-filter'));
+      await tap(const ValueKey('notes-filter-when'));
+      await tap(const ValueKey('notes-filter-when-lastWeek'));
+      expect(find.text('No notes last week'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('sidebar-empty-action')));
+      await tester.pumpAndSettle();
+      expect(headings(tester), hasLength(4));
+    });
+
+    Finder day(int date) => find.byKey(ValueKey('day-strip-2026-11-$date'));
+    Finder dots(int date) => find.descendant(
+      of: day(date),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is Container &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration! as BoxDecoration).shape == BoxShape.circle,
+      ),
+    );
+    final whenChip = find.byKey(const ValueKey('notes-when-chip'));
+    Future<void> tap(WidgetTester tester, Finder target) async {
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a day in the week narrows the list, a second click or its '
+        'chip lets it go, and a day and a span replace each other', (
+      tester,
+    ) async {
+      await library(tester);
+      expect(find.byType(DayStrip), findsOneWidget);
+
+      await tap(tester, day(18));
+      expect(headings(tester), ['Yesterday Wed 18']);
+      expect(
+        find.descendant(of: whenChip, matching: find.text('Wed 18')),
+        findsOneWidget,
+      );
+      await tap(tester, day(18));
+      expect(headings(tester), hasLength(4));
+      expect(whenChip, findsNothing);
+
+      await tap(tester, day(17));
+      expect(headings(tester), ['Tue 17']);
+      await tap(tester, whenChip);
+      expect(headings(tester), hasLength(4));
+
+      // When's menu points to the week for one day, and a span picked there
+      // takes the day's place.
+      await tap(tester, day(17));
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
+      expect(
+        find.text('For one day, click it in the week at the top of the page'),
+        findsOneWidget,
+      );
+      await tap(
+        tester,
+        find.byKey(const ValueKey('notes-filter-when-thisWeek')),
+      );
+      expect(
+        find.descendant(of: whenChip, matching: find.text('This week')),
+        findsOneWidget,
+      );
+      expect(headings(tester), hasLength(3));
+
+      // Today in the week is When's Today.
+      await tap(tester, day(19));
+      expect(
+        find.descendant(of: whenChip, matching: find.text('Today')),
+        findsOneWidget,
+      );
+      expect(headings(tester), ['Today Thu 19 Nov']);
+    });
+
+    testWidgets('the week counts what the filter shows, and is only in My '
+        'notes', (tester) async {
+      await library(tester);
+      expect(dots(18), findsOneWidget);
+
+      // Shown only notes with a voice note, the list is empty, and so is
+      // every day.
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('media-filter-video')));
+      await tap(tester, find.byKey(const ValueKey('media-filter-image')));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(headings(tester), isEmpty);
+      for (final date in [17, 18, 19]) {
+        expect(dots(date), findsNothing, reason: '$date November');
+      }
+
+      for (final (space, shown) in [('drawings', false), ('notes', true)]) {
+        await tap(tester, find.byKey(ValueKey('rail-$space')));
+        expect(
+          find.byType(DayStrip),
+          shown ? findsOneWidget : findsNothing,
+          reason: space,
+        );
+      }
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-filter-archive')));
+      expect(find.byType(DayStrip), findsNothing);
+    });
+
+    testWidgets('with the list hidden, a day lists its notes, and a click '
+        'opens one', (tester) async {
+      await library(tester);
+      prefs.toggleSidebar();
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(18));
+      expect(find.text('Wednesday, 18 November'), findsOneWidget);
+      expect(find.text('1 note'), findsOneWidget);
+      await tap(tester, find.byKey(const ValueKey('day-list-Standup notes')));
+      expect(openNoteBody(tester), 'Standup notes');
+      // Nothing was narrowed: there was no list to narrow.
+      expect(whenChip, findsNothing);
+    });
+
+    testWidgets('on a folder in front the week counts and narrows that folder '
+        'alone, with the list shown or hidden', (tester) async {
+      final folders = FolderStore(store);
+      await folders.load();
+      await library(tester, folders: folders);
+      final work = folders.create('Work')!;
+      folders.file(['Standup notes', 'Pricing ideas'], work.id);
+      prefs.foldersShown = true;
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+      final page = find.byKey(ValueKey('folder-page-${work.id}'));
+      expect(page, findsOneWidget);
+      Finder onPage(String title) =>
+          find.descendant(of: page, matching: find.text(title));
+
+      // Today's note is in no folder.
+      expect(dots(19), findsNothing);
+      expect(dots(18), findsOneWidget);
+      await tap(tester, day(18));
+      expect(onPage('Standup notes'), findsOneWidget);
+      expect(onPage('Pricing ideas'), findsNothing);
+
+      prefs.toggleSidebar();
+      await tester.pumpAndSettle();
+      await tap(tester, day(17));
+      expect(find.text('Tuesday, 17 November'), findsNothing);
+      expect(onPage('Pricing ideas'), findsOneWidget);
+      expect(onPage('Standup notes'), findsNothing);
+    });
+
+    testWidgets("the page's 52 band lines up with the list's bar, with the "
+        'month in full at its top left and the week centred on the page', (
+      tester,
+    ) async {
+      await library(tester);
+      final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
+      final list = tester.getRect(find.byType(SidebarWindowBar));
+      expect(tester.getRect(find.byType(PageCard)).top, list.top);
+      expect(bar.bottom, list.bottom);
+      expect(list.height, 52);
+      final month = find.byKey(const ValueKey('day-strip-month'));
+      expect(
+        find.descendant(of: month, matching: find.text('November')),
+        findsOneWidget,
+      );
+      expect(tester.getTopLeft(month).dx, bar.left + 10);
+      expect(tester.getCenter(month).dy, bar.center.dy);
+      expect(find.byKey(const ValueKey('page-path')), findsNothing);
+      final week = tester.getRect(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('day-strip-back')),
+              matching: find.byType(Row),
+            )
+            .first,
+      );
+      expect(week.center.dx, closeTo(bar.center.dx, 0.01));
+      final more = tester.getRect(find.byKey(const ValueKey('page-more')));
+      expect(more.right, bar.right - 12);
+    });
+
+    testWidgets('on a narrow page the week is one button, and When no longer '
+        'points to it', (tester) async {
+      await library(tester);
+      tester.view.physicalSize = const Size(1040, 800);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('day-strip-date')), findsOneWidget);
+      expect(day(19), findsNothing);
+
+      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
+      expect(find.byKey(const ValueKey('notes-when-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('notes-when-footnote')), findsNothing);
+    });
+
+    testWidgets('the narrowest list keeps the grouping menu and the chip', (
+      tester,
+    ) async {
+      await library(tester);
+      prefs.sidebarWidth = LayoutPrefs.minSidebarWidth;
+      await tester.pumpAndSettle();
+      for (final key in [
+        'sidebar-notes-filter',
+        'notes-filter-when',
+        'notes-filter-when-thisMonth',
+      ]) {
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+      }
+
+      final list = tester.getRect(find.byType(Sidebar));
+      for (final key in ['notes-grouping', 'notes-when-chip']) {
+        expect(
+          tester.getRect(find.byKey(ValueKey(key))).right,
+          lessThanOrEqualTo(list.right),
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('notes-when-chip')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
+      expect(headings(tester), hasLength(4));
+    });
   });
 
   testWidgets('dragging a note opens it beside a pane, in place, or moves it', (
@@ -3379,7 +4132,7 @@ void main() {
 
   testWidgets('results have a shortcut like the notes list', (tester) async {
     await pumpApp(tester);
-    notes.create(body: '2 + 2');
+    notes.create(body: 'Sums\n2 + 2');
     await tester.pumpAndSettle();
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.sidebarVisible, isTrue);
@@ -3808,12 +4561,15 @@ void main() {
         AppPlatform.debugTargetPlatformOverride = platform;
         for (final listShown in [true, false]) {
           await pumpApp(tester, sidebarVisible: listShown);
-          await tester.tap(
-            find.byKey(
-              ValueKey(listShown ? 'sidebar-new-note' : 'page-new-note'),
-            ),
-          );
-          await tester.pumpAndSettle();
+          if (listShown) {
+            await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
+            await tester.pumpAndSettle();
+          } else {
+            await pressShortcut(
+              tester,
+              shortcuts.bindingFor(ShortcutAction.newNote)!,
+            );
+          }
           for (
             var width = LayoutPrefs.minimumWindowSize.width;
             width <= 1400;
@@ -4046,6 +4802,39 @@ void main() {
       expect(find.byType(DrawingCanvas), findsOneWidget);
     });
 
+    testWidgets('a drawing that a sync race left words beside counts under '
+        'its tag in Notes, which lists it', (tester) async {
+      final tags = TagStore(store);
+      await tags.load();
+      await notes.load();
+      final at = DateTime(2026, 11, 16, 9);
+      notes.importNotes([
+        Note(id: 'plain', body: 'Seeds\nbasil', createdAt: at, updatedAt: at),
+        Note(
+          id: 'both',
+          body: 'Garden\nTomatoes by the shed',
+          drawing: NoteDrawing.empty,
+          createdAt: at,
+          updatedAt: at,
+        ),
+      ]);
+      final garden = tags.create('Garden')!;
+      tags.addTag('both', garden.id);
+      await pumpApp(tester, tags: tags);
+      expect(spaceTitle(tester), 'My notes');
+      expect(titles(tester), unorderedEquals(['Seeds', 'Garden']));
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+      await tester.pumpAndSettle();
+      final count = find.descendant(
+        of: find.byKey(ValueKey('tag-filter-${garden.id}')),
+        matching: find.byType(Text),
+      );
+      expect(tester.widget<Text>(count.last).data, '1');
+    });
+
     testWidgets('a stroke across a drawing on a phone stays a stroke', (
       tester,
     ) async {
@@ -4132,6 +4921,214 @@ void main() {
     });
   });
 
+  group('New beside the way back to the list', () {
+    final pageNew = find.byKey(const ValueKey('page-new'));
+    final showList = find.byKey(const ValueKey('page-show-list'));
+    final sidebarNew = find
+        .byKey(const ValueKey('sidebar-new-note'))
+        .hitTestable();
+
+    Future<void> pumpWithTasks(WidgetTester tester) async {
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(
+        tester,
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+    }
+
+    void expectBesideShowList(WidgetTester tester) {
+      expect(showList, findsOneWidget);
+      expect(pageNew, findsOneWidget);
+      expect(tester.getSize(pageNew), tester.getSize(showList));
+      expect(
+        tester.getTopLeft(pageNew).dx - tester.getTopRight(showList).dx,
+        4,
+      );
+      expect(tester.getCenter(pageNew).dy, tester.getCenter(showList).dy);
+    }
+
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      testWidgets('on ${platform.name}, every page that leads with the way '
+          'back to the list has New beside it, making what the space '
+          'holds', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithTasks(tester);
+        expect(sidebarNew, findsOneWidget);
+        expect(pageNew, findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+        await tester.pumpAndSettle();
+        expect(sidebarNew, findsNothing);
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New note');
+
+        final before = notes.notes.length;
+        await tester.tap(pageNew);
+        await tester.pumpAndSettle();
+        expect(notes.notes, hasLength(before + 1));
+        expect(notes.notes.first.isDrawing, isFalse);
+        expect(find.byType(NoteEditor), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+        await tester.pumpAndSettle();
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New drawing');
+        await tester.tap(pageNew);
+        await tester.pumpAndSettle();
+        expect(notes.notes.where((note) => note.isDrawing), hasLength(1));
+        expect(notes.notes.first.isDrawing, isTrue);
+        expect(find.byType(DrawingCanvas), findsOneWidget);
+
+        // Tasks draws a band of its own over its page.
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New task');
+        final beforeTask = notes.notes.length;
+        await tester.tap(pageNew);
+        await tester.pumpAndSettle();
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
+        expect(notes.notes, hasLength(beforeTask));
+
+        await tester.tap(showList);
+        await tester.pumpAndSettle();
+        expect(pageNew, findsNothing);
+        expect(find.byKey(const ValueKey('rail-new')), findsNothing);
+        expect(sidebarNew, findsOneWidget);
+      });
+    }
+
+    testWidgets('names what it makes and its chord, and a keyboard reaches it '
+        'with Tab and presses it with Enter or Space', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, sidebarVisible: false);
+      expect(
+        find.descendant(
+          of: pageNew,
+          matching: find.byTooltip(
+            SidebarWindowBar.newTooltip(
+              'note',
+              shortcuts.hintFor(ShortcutAction.newNote),
+            ),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(pageNew),
+        isSemantics(
+          label: 'New note',
+          tooltip:
+              'New note  ${shortcuts.hintFor(ShortcutAction.newNote)!.displayLabel}',
+          isButton: true,
+          hasTapAction: true,
+          isFocusable: true,
+          hasEnabledState: true,
+          isEnabled: true,
+        ),
+      );
+
+      final plus = find.descendant(
+        of: pageNew,
+        matching: findKapyIcon(KapyIcons.addRounded),
+      );
+      bool focused() => Focus.of(tester.element(plus)).hasPrimaryFocus;
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      var tabs = 0;
+      while (!focused() && tabs < 50) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        tabs++;
+      }
+      expect(focused(), isTrue);
+
+      final before = notes.notes.length;
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(before + 1));
+      expect(notes.notes.first.isDrawing, isFalse);
+
+      notes.updateBody(notes.notes.first.id, 'Written');
+      await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      tabs = 0;
+      while (!focused() && tabs < 50) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        tabs++;
+      }
+      expect(focused(), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(before + 2));
+    });
+
+    testWidgets('the rail stays put as the list hides and shows', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpWithTasks(tester);
+      final tiles = [
+        for (final name in ['notes', 'tasks', 'drawings'])
+          find.byKey(ValueKey('rail-$name')),
+      ];
+      final shown = [for (final tile in tiles) tester.getRect(tile)];
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(pageNew, findsOneWidget);
+      expect([for (final tile in tiles) tester.getRect(tile)], shown);
+
+      await tester.tap(showList);
+      await tester.pumpAndSettle();
+      expect([for (final tile in tiles) tester.getRect(tile)], shown);
+    });
+
+    testWidgets('Saved goes to the date line once the +\'s room leaves the '
+        'band under 560, and stays in the band above it', (tester) async {
+      final inBar = find.byKey(const ValueKey('page-saved'));
+      final onDateLine = find.byKey(const ValueKey('note-saved'));
+      final toolbar = find.byType(PageToolbar);
+      await notes.load();
+      notes.create(body: 'alpha');
+      await pumpApp(tester, size: const Size(700, 700), sidebarVisible: false);
+      expect(pageNew, findsOneWidget);
+
+      // The page's width is the window's less a fixed margin. The +'s button
+      // and its gap take 36 of the band, so Saved needs 596 of page.
+      final margin = 700 - tester.getSize(toolbar).width;
+      Future<void> pageWidth(double width) async {
+        tester.view.physicalSize = Size(width + margin, 700);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(toolbar).width, closeTo(width, 0.01));
+      }
+
+      await pageWidth(580);
+      expect(inBar, findsNothing);
+      expect(onDateLine, findsOneWidget);
+
+      await pageWidth(596);
+      expect(inBar, findsOneWidget);
+      expect(onDateLine, findsNothing);
+    });
+  });
+
   group('asking for a new note while already in one', () {
     Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
 
@@ -4201,17 +5198,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.notes, hasLength(made + 1));
       expect(notes.notes.first.id, isNot(started.id));
-    });
-
-    testWidgets('the toolbar plus answers the same way', (tester) async {
-      await pumpApp(tester, sidebarVisible: false);
-      await tester.tap(find.byKey(const ValueKey('page-new-note')));
-      await tester.pumpAndSettle();
-      final made = notes.notes.length;
-
-      await tester.tap(find.byKey(const ValueKey('page-new-note')));
-      await tester.pumpAndSettle();
-      expect(notes.notes, hasLength(made));
     });
 
     testWidgets('a blank note holding a picture is not blank', (tester) async {
@@ -4352,8 +5338,8 @@ void main() {
         .map((row) => row.note.title)
         .toList();
     expect(rowTitles(), ['Latest', 'Older']);
-    expect(find.text('Yesterday'), findsOneWidget);
-    expect(find.text('Tue'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, 'Yesterday'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, 'Tue'), findsOneWidget);
     expect(find.widgetWithText(NoteRow, 'latest details'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NoteRow, 'Older'));
@@ -4397,10 +5383,7 @@ void main() {
       find.descendant(of: find.byType(Sidebar), matching: find.text('Pinned')),
       findsOneWidget,
     );
-    expect(
-      find.descendant(of: find.byType(Sidebar), matching: find.text('Notes')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('sidebar-group-Today')), findsOneWidget);
     expect(rowTitles(), ['Reference', 'Today']);
     expect(notes.isPinned(reference.id), isTrue);
 
@@ -4803,9 +5786,8 @@ void main() {
     expect(notes.isPinned(note.id), isTrue);
   });
 
-  testWidgets('puts hiding above a quiet Archive note at the bottom', (
-    tester,
-  ) async {
+  testWidgets('puts hiding above Archive note at the bottom, where only '
+      'Delete is in the warning colour', (tester) async {
     await pumpApp(tester);
     final note = notes.create(body: 'Menu order');
     await tester.pumpAndSettle();
@@ -4816,18 +5798,19 @@ void main() {
 
     final hide = find.byKey(ValueKey('hide-note-${note.id}'));
     final archive = find.byKey(ValueKey('archive-note-${note.id}'));
+    final delete = find.byKey(ValueKey('delete-note-${note.id}'));
     expect(tester.getCenter(hide).dy, lessThan(tester.getCenter(archive).dy));
+    expect(tester.getCenter(archive).dy, lessThan(tester.getCenter(delete).dy));
 
-    final archiveLabel = find.descendant(
-      of: archive,
-      matching: find.text('Archive note'),
-    );
-    final archiveText = tester.widget<Text>(archiveLabel);
-    // Only Delete takes the warning colour; archiving can be undone.
-    expect(
-      archiveText.style?.color,
-      tester.element(archiveLabel).palette.textPrimary,
-    );
+    Color? colour(Finder item) => tester
+        .widget<Text>(
+          find.descendant(of: item, matching: find.byType(Text)).first,
+        )
+        .style
+        ?.color;
+    final error = Theme.of(tester.element(archive)).colorScheme.error;
+    expect(colour(archive), isNot(error));
+    expect(colour(delete), error);
   });
 
   testWidgets('a failed unlock leaves Hidden Notes closed', (tester) async {
@@ -4856,6 +5839,8 @@ void main() {
     final gate = _HiddenGate();
     await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
     await showNotesList(tester);
+    final streak = find.byKey(const ValueKey('phone-streak'));
+    expect(streak, findsOneWidget);
     await openPhoneFilters(tester);
 
     expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
@@ -4869,6 +5854,17 @@ void main() {
 
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
+    expect(streak, findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('phone-list-title'))).data,
+      'Archive',
+    );
+    expect(streak, findsNothing);
   });
 
   testWidgets('a phone keeps its filter row out of the way until its button '
@@ -6407,7 +7403,8 @@ void main() {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-    testWidgets('pinned notes are cards over the recent rows', (tester) async {
+    testWidgets("pinned notes wait behind Home's Pinned card, which opens "
+        'them, and Back comes home', (tester) async {
       final trip = notes.create(body: 'Lisbon trip\nFour days in May');
       final reading = notes.create(body: 'Reading list\nThe Overstory');
       notes.create(body: 'Groceries\nOat milk, lemons');
@@ -6417,17 +7414,258 @@ void main() {
       await showNotesList(tester);
 
       expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
-      expect(find.text('Pinned'), findsOneWidget);
-      expect(find.text('Recent'), findsOneWidget);
-      final cards = find.descendant(
-        of: find.byKey(const ValueKey('phone-pinned')),
-        matching: find.byType(NoteCardFace),
+      expect(find.bySemanticsLabel(RegExp(r'^Today, ')), findsOneWidget);
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('2')),
+        findsOneWidget,
       );
-      expect(cards, findsNWidgets(2));
-      expect(tester.getSize(cards.first).width, (393 - 40 - 12) / 2);
+      for (final title in ['Lisbon trip', 'Reading list']) {
+        expect(
+          find.descendant(of: card, matching: find.textContaining(title)),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(NoteRow, title), findsNothing);
+      }
+      expect(
+        find.byKey(const ValueKey('home-shared-card')),
+        findsNothing,
+        reason: 'without an account there is nothing to share from',
+      );
       final row = find.widgetWithText(NoteListRowFace, 'Groceries');
-      expect(row, findsOneWidget);
       expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Lisbon trip'), findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(card, findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    });
+
+    testWidgets("Home's header carries the writing streak at its end, and "
+        'Drawings leaves it out', (tester) async {
+      notes.create(body: 'Written today');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final streak = find.byKey(const ValueKey('phone-streak'));
+      expect(
+        find.descendant(of: streak, matching: find.text('1 day')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: streak,
+          matching: findKapyIcon(KapyIcons.fireOutlined),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('1-day writing streak'), findsOneWidget);
+      expect(tester.getTopRight(streak).dx, 393 - 20);
+      expect(find.byKey(const ValueKey('rail-streak')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
+      await tester.pumpAndSettle();
+      expect(streak, findsNothing);
+    });
+
+    testWidgets('Home shows no streak before anything is written', (
+      tester,
+    ) async {
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+      expect(find.byKey(const ValueKey('phone-streak')), findsNothing);
+    });
+
+    testWidgets("Home's Pinned card counts the pinned notes a filter hides, "
+        'and opens them with the filter cleared', (tester) async {
+      final tags = TagStore(store);
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      final groceries = notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      final food = tags.create('Food')!;
+      tags.addTag(groceries.id, food.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+      await openPhoneFilters(tester);
+      await tester.tap(find.byKey(ValueKey('phone-tag-${food.id}')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-filters-dot')), findsOneWidget);
+
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('2')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('Nothing pinned yet')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: card, matching: find.textContaining('Lisbon trip')),
+        findsOneWidget,
+      );
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-filters-dot')), findsNothing);
+      for (final title in ['Lisbon trip', 'Reading list']) {
+        expect(find.widgetWithText(NoteRow, title), findsOneWidget);
+      }
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+    });
+
+    testWidgets("Back from Pinned ends where Pinned's own chevron does, "
+        'with the filter chosen there kept', (tester) async {
+      final tags = TagStore(store);
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      final travel = tags.create('Travel')!;
+      tags.addTag(trip.id, travel.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+
+      final ends = <List<Object>>[];
+      for (final chevron in [true, false]) {
+        await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+        await tester.pumpAndSettle();
+        await openPhoneFilters(tester);
+        await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+        await tester.pumpAndSettle();
+
+        if (chevron) {
+          await tester.tap(find.byKey(const ValueKey('sidebar-pinned-back')));
+        } else {
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsNothing);
+        expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
+        ends.add([
+          find.byKey(const ValueKey('phone-filters-dot')).evaluate().length,
+          for (final title in ['Lisbon trip', 'Reading list', 'Groceries'])
+            find.widgetWithText(NoteRow, title).evaluate().length,
+        ]);
+
+        await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+        await tester.pumpAndSettle();
+      }
+      expect(ends.first, [1, 0, 0, 0]);
+      expect(ends.last, ends.first);
+    });
+
+    testWidgets("Home's Pinned card says so while nothing is pinned", (
+      tester,
+    ) async {
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('Nothing pinned yet')),
+        findsOneWidget,
+      );
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    });
+
+    testWidgets('the rows come a day at a time, newest first, each in the '
+        'handwriting face with its time and then its tag dots', (tester) async {
+      int at(int day, int hour) =>
+          DateTime(2026, 11, day, hour).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        for (final (id, body, day, hour) in [
+          ('ahead', 'Stamped by a clock ahead', 20, 8),
+          ('today', 'Call with Arjun', 19, 9),
+          ('yesterday', 'Quote for the deck', 18, 17),
+          ('older', 'Renewal notes', 15, 11),
+        ])
+          {
+            'id': id,
+            'body': body,
+            'createdAt': at(day, hour),
+            'updatedAt': at(day, hour),
+          },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      final tags = TagStore(store);
+      await notes.load();
+      final trip = tags.create('Trip')!;
+      final money = tags.create('Money')!;
+      tags.addTag('today', trip.id);
+      tags.addTag('today', money.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+
+      final headings = find.byKey(const ValueKey('phone-day-heading'));
+      expect(headings, findsNWidgets(3));
+      double top(Finder finder) => tester.getTopLeft(finder).dy;
+      final today = find.bySemanticsLabel('Today, Thu 19');
+      final yesterday = find.bySemanticsLabel('Yesterday, Wed 18');
+      final older = find.bySemanticsLabel('Sun 15 Nov');
+      expect(today, findsOneWidget);
+      expect(yesterday, findsOneWidget);
+      expect(older, findsOneWidget);
+      Finder row(String title) => find.widgetWithText(NoteRow, title);
+      expect(
+        top(today),
+        lessThan(top(row('Stamped by a clock ahead'))),
+        reason: 'a note stamped later than now files under today',
+      );
+      expect(top(today), lessThan(top(row('Call with Arjun'))));
+      expect(top(row('Call with Arjun')), lessThan(top(yesterday)));
+      expect(top(yesterday), lessThan(top(row('Quote for the deck'))));
+      expect(top(row('Quote for the deck')), lessThan(top(older)));
+      expect(top(older), lessThan(top(row('Renewal notes'))));
+
+      final title = tester.widget<Text>(find.text('Call with Arjun'));
+      expect(title.style?.fontFamily, WritingFont.handwritten.fontFamily);
+      final dots = find.descendant(
+        of: row('Call with Arjun'),
+        matching: find.byType(TagDots),
+      );
+      expect(dots, findsOneWidget);
+      expect(tester.widget<TagDots>(dots).tags, hasLength(2));
+      final time = find.descendant(
+        of: row('Call with Arjun'),
+        matching: find.text('09:00'),
+      );
+      expect(
+        tester.getTopLeft(dots).dx,
+        greaterThan(tester.getTopRight(time).dx),
+        reason: 'the dots come after the time',
+      );
+      expect(
+        find.descendant(
+          of: row('Quote for the deck'),
+          matching: find.byType(TagDots),
+        ),
+        findsNothing,
+      );
+      for (final (title, clock) in [
+        ('Stamped by a clock ahead', '08:00'),
+        ('Quote for the deck', '17:00'),
+        ('Renewal notes', '11:00'),
+      ]) {
+        expect(
+          find.descendant(of: row(title), matching: find.text(clock)),
+          findsOneWidget,
+          reason: 'the heading names the day, so the row gives the time',
+        );
+      }
     });
 
     testWidgets('a row swipes left to Pin and Archive', (tester) async {
@@ -6447,13 +7685,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.pinnedNoteIds, contains(groceries.id));
 
+      final card = find.byKey(const ValueKey('home-pinned-card'));
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('phone-pinned')),
-          matching: find.text('Groceries'),
-        ),
+        find.descendant(of: card, matching: find.text('1')),
         findsOneWidget,
       );
+      expect(
+        find.descendant(of: card, matching: find.text('Groceries')),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
 
       await tester.drag(
         find.widgetWithText(NoteRow, 'Team offsite'),
@@ -6654,16 +7895,14 @@ void main() {
         ),
         findsOneWidget,
       );
-      // Drawn the way the design draws it: 30pt square, at the control radius.
-      expect(tester.getSize(hide), const Size.square(30));
+      // Drawn the way r3 draws it: 32pt square, at radius 8.
+      expect(tester.getSize(hide), const Size.square(32));
       final button = tester.widget<IconButton>(
         find.descendant(of: hide, matching: find.byType(IconButton)),
       );
       expect(
         button.style!.shape!.resolve({}),
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.control),
-        ),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       );
 
       await tester.tap(hide);
@@ -6756,8 +7995,10 @@ void main() {
 
       await tester.tap(notesToggleWithLabel('Hide notes'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('page-new-note')));
-      await tester.pumpAndSettle();
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.newNote)!,
+      );
       expectNewDrawing();
 
       await tester.tap(notesToggleWithLabel('Show notes'));
@@ -6825,6 +8066,39 @@ void main() {
 
       await openSpace(tester, 'notes');
       expect(openNoteBody(tester), 'Words');
+    });
+
+    testWidgets('Notes lists notes and Drawings drawings, and a drawing '
+        'opens in Drawings wherever it was found', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {'id': 'words', 'body': 'Words', 'createdAt': 2000, 'updatedAt': 2000},
+        {
+          'id': 'sketch',
+          'body': 'Sketch',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      prefs.lastOpenedNoteId = 'words';
+      await pumpApp(tester);
+      expect(rowTitles(tester), ['Words']);
+      expect(spaceCount(tester), '1');
+
+      await openSpace(tester, 'drawings');
+      expect(rowTitles(tester), ['Sketch']);
+
+      // Back in Notes on Words, Back goes to the drawing, and the list goes
+      // with it.
+      await openSpace(tester, 'notes');
+      expect(openNoteBody(tester), 'Words');
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.goBack)!);
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+      expect(spaceTitle(tester), 'Drawings');
+      expect(rowTitles(tester), ['Sketch']);
     });
 
     testWidgets('Drawings opens its own first drawing in place of the note, '
@@ -6999,11 +8273,11 @@ void main() {
         notes.importNotes([
           Note(id: 'plain', body: 'Groceries', createdAt: at, updatedAt: at),
           Note(
-            id: 'receipt',
-            body: 'Receipt\n${NoteAttachmentRef.placeholder}',
+            id: 'photo',
+            body: 'Floor plan\n${NoteAttachmentRef.placeholder}',
             attachments: [
               NoteImageRef(
-                offset: 8,
+                offset: 11,
                 hash: 'abc123',
                 key: Uint8List(32),
                 mime: 'image/png',
@@ -7031,7 +8305,7 @@ void main() {
         );
         await tick('voice');
         await tick('video');
-        expect(rowTitles(tester), ['Receipt']);
+        expect(rowTitles(tester), ['Floor plan']);
         expect(
           find.descendant(of: filter, matching: find.text('Image')),
           findsOneWidget,
@@ -7040,10 +8314,10 @@ void main() {
         // The last kind ticked stays ticked: nothing ticked would read as a
         // library that had lost its notes.
         await tick('image');
-        expect(rowTitles(tester), ['Receipt']);
+        expect(rowTitles(tester), ['Floor plan']);
 
         await tick('all');
-        expect(rowTitles(tester).toSet(), {'Groceries', 'Receipt'});
+        expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
         expect(
           find.descendant(of: filter, matching: find.text('All notes')),
           findsOneWidget,
@@ -7248,9 +8522,14 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('sidebar-search-field'))).top,
         greaterThanOrEqualTo(bar.bottom),
       );
-      // The page stands on the canvas, a margin in from the window's edges.
+      // The page stands on the canvas, a margin in from the window's right,
+      // and its band lines up with the list's bar.
       final page = tester.getRect(find.byType(PageCard));
-      expect(page.top, 12);
+      expect(page.top, bar.top);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('page-toolbar'))).bottom,
+        bar.bottom,
+      );
       expect(page.right, 1100 - 12);
     }, skip: !WindowChrome.overlaysContent);
 
@@ -7281,7 +8560,12 @@ void main() {
         tester.getRect(find.byType(SidebarWindowBar)).top,
         greaterThanOrEqualTo(safeTop),
       );
-      expect(tester.getTopLeft(find.byType(PageCard)).dy, safeTop + 12);
+      // The page is level with the bar over the list, so its band lines up
+      // with that bar.
+      expect(
+        tester.getTopLeft(find.byType(PageCard)).dy,
+        tester.getRect(find.byType(SidebarWindowBar)).top,
+      );
       expect(
         tester.getTopLeft(findKapyIcon(KapyIcons.addRounded).last).dy,
         greaterThanOrEqualTo(safeTop),
@@ -7749,6 +9033,283 @@ void main() {
       expect(prefs.nightTheme.from, 23 * 60);
       expect(find.text('23:00'), findsOneWidget);
       expect((LayoutPrefs(store)..load()).nightTheme, prefs.nightTheme);
+    });
+  });
+
+  group('a day of its own', () {
+    Finder chip(DateTime day) =>
+        find.byKey(ValueKey('day-strip-${day.year}-${day.month}-${day.day}'));
+    int dotsOn(DateTime day) => find
+        .descendant(
+          of: chip(day),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Container &&
+                widget.decoration is BoxDecoration &&
+                (widget.decoration! as BoxDecoration).shape == BoxShape.circle,
+          ),
+        )
+        .evaluate()
+        .length;
+    final blankRow = find.descendant(
+      of: find.byType(Sidebar),
+      matching: find.text(Note.untitled),
+    );
+
+    Future<(NoteDayStore, DateTime, Set<String>)> open(
+      WidgetTester tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      notes.create(body: 'Plan\nCall Ana');
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      final now = notes.now();
+      final later = DateTime(now.year, now.month, now.day + 2);
+      final before = {for (final note in notes.allNotes) note.id};
+      await tester.tap(chip(later));
+      await tester.pumpAndSettle();
+      return (days, later, before);
+    }
+
+    testWidgets('a tapped day left untouched writes no note and no day', (
+      tester,
+    ) async {
+      final (days, later, before) = await open(tester);
+      expect(days.noteIds, isEmpty, reason: 'nothing typed, so no day yet');
+      expect(days.owed, isEmpty);
+      final today = DateTime(later.year, later.month, later.day - 2);
+      final todayDots = dotsOn(today);
+
+      // Let the day go: the page is still no note, in the list or the week.
+      await tester.tap(chip(later));
+      await tester.pumpAndSettle();
+      expect(blankRow, findsNothing);
+      expect(dotsOn(today), todayDots);
+      await tester.tap(
+        find.descendant(of: find.byType(Sidebar), matching: find.text('Plan')),
+      );
+      await tester.pumpAndSettle();
+
+      expect({for (final note in notes.allNotes) note.id}, before);
+      expect(days.noteIds, isEmpty);
+      expect(days.owed, isEmpty);
+      expect(dotsOn(today), todayDots, reason: 'the page never had a dot');
+    });
+
+    testWidgets('the first words make the note, on the day tapped', (
+      tester,
+    ) async {
+      final (days, later, before) = await open(tester);
+      final field = tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+      field.value = const TextEditingValue(
+        text: 'Renewal notes\n',
+        selection: TextSelection.collapsed(offset: 13),
+      );
+      await tester.pumpAndSettle();
+
+      final made = [
+        for (final note in notes.allNotes)
+          if (!before.contains(note.id)) note,
+      ];
+      expect(made.single.title, 'Renewal notes');
+      expect(days.dayOf(made.single.id), later);
+      expect(days.owed.single.payload!['day'], {
+        'v': dayKey(later),
+        'at': isA<int>(),
+      });
+    });
+
+    testWidgets('a day tapped while recording leaves the recorded note alone', (
+      tester,
+    ) async {
+      final temp = Directory.systemTemp.createTempSync('kapy-days-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      notes = NotesStore(store, blobs: BlobStore(directory: temp));
+      final first = notes.create(body: 'First note');
+      final recorder = FakeVoiceRecorder(writesFile: false);
+      final recording = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+      );
+      addTearDown(recording.dispose);
+      final days = NoteDayStore(store);
+      await days.load();
+      await pumpApp(
+        tester,
+        size: const Size(1600, 900),
+        recording: recording,
+        days: days,
+      );
+      expect(await recording.start(noteId: first.id), isTrue);
+      final tone = File('test/fixtures/tone_5s.m4a').readAsBytesSync();
+      File(recorder.startedAt!).writeAsBytesSync(tone);
+      await tester.pump();
+
+      final now = notes.now();
+      final later = DateTime(now.year, now.month, now.day + 2);
+      // The recording lands in its note first, on the real clock, and only
+      // then does the new page open.
+      await tester.runAsync(() async {
+        await tester.tap(chip(later));
+        for (var wait = 0; wait < 100 && notes.notes.length == 1; wait++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pumpAndSettle();
+
+      expect(days.dayOf(first.id), isNull, reason: 'the recorded note');
+      expect(days.noteIds, isEmpty, reason: 'nothing typed on the new page');
+      final made = notes.notes.singleWhere((note) => note.isEmpty);
+
+      final field = tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+      field.value = const TextEditingValue(
+        text: 'Renewal notes\n',
+        selection: TextSelection.collapsed(offset: 13),
+      );
+      await tester.pumpAndSettle();
+      expect(days.dayOf(made.id), later);
+      expect(days.dayOf(first.id), isNull);
+    });
+
+    testWidgets('a phone still lists a note for a later day, until its '
+        'Folders tab has Upcoming (KAP-157)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final days = NoteDayStore(store);
+      await days.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(tester, size: const Size(390, 844), days: days);
+      await showNotesList(tester);
+
+      final list = find.byType(Sidebar);
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('⋮ gives the open note another day, and Remove day takes it '
+        'off', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final plan = notes.create(body: 'Plan\nCall Ana');
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      final now = notes.now();
+      final later = DateTime(now.year, now.month, now.day + 2);
+      Future<void> tap(Finder target) async {
+        await tester.tap(target);
+        await tester.pumpAndSettle();
+      }
+
+      await tap(find.byKey(const ValueKey('page-more')));
+      await tap(find.byKey(const ValueKey('page-more-day')));
+      expect(tester.takeException(), isNull);
+      if (later.month != now.month) {
+        await tap(find.byTooltip('Next month'));
+      }
+      await tap(
+        find.byKey(
+          ValueKey('day-month-${later.year}-${later.month}-${later.day}'),
+        ),
+      );
+      expect(days.dayOf(plan.id), later);
+      expect(find.byKey(const ValueKey('note-day-pill')), findsOneWidget);
+
+      await tap(find.byKey(const ValueKey('page-more')));
+      await tap(find.byKey(const ValueKey('page-more-undate')));
+      expect(days.dayOf(plan.id), isNull);
+      expect(find.byKey(const ValueKey('note-day-pill')), findsNothing);
+    });
+
+    testWidgets('a note for a later day waits, folded, under Upcoming', (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+
+      final list = find.byType(Sidebar);
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(upcoming, findsOneWidget);
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsNothing,
+        reason: 'folded until it is opened',
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
+
+      await tester.tap(upcoming);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('only the day grouping folds its Upcoming: a tag named '
+        'Upcoming starts open when the list groups by tag', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final tags = TagStore(store);
+      await tags.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      final standup = notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      tags.addTag(standup.id, tags.create('Upcoming')!.id);
+      await pumpApp(
+        tester,
+        size: const Size(1600, 900),
+        days: days,
+        tags: tags,
+      );
+
+      final list = find.byType(Sidebar);
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-grouping-byTag')));
+      await tester.pumpAndSettle();
+      // The heading is the tag's now, and folds nothing.
+      expect(tester.widget<NotesGroupHeading>(upcoming).label, 'Upcoming');
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isNull);
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+        reason: 'under No tag',
+      );
     });
   });
 }

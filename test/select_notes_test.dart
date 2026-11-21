@@ -111,6 +111,9 @@ List<String> _picked(WidgetTester tester) => [
 bool _open(WidgetTester tester, String title) =>
     tester.widget<NoteRow>(_row(title)).selected;
 
+bool _tabbed(WidgetTester tester, String title) =>
+    tester.widget<NoteRow>(_row(title)).tabbed;
+
 Future<void> _click(
   WidgetTester tester,
   String title, {
@@ -144,6 +147,42 @@ String _label(WidgetTester tester, Finder item) => tester
     .action
     .label;
 
+/// What the open menu offers, top to bottom.
+List<String> _menu(WidgetTester tester) => [
+  for (final row in tester.widgetList<KapyMenuActionRow>(
+    find.byType(KapyMenuActionRow),
+  ))
+    row.action.label,
+];
+
+/// [title]'s row, as VoiceOver and TalkBack see it.
+SemanticsNode _rowNode(WidgetTester tester, String title) =>
+    tester.getSemantics(
+      find
+          .descendant(of: _row(title), matching: find.byType(GestureDetector))
+          .first,
+    );
+
+/// The actions [title]'s row offers VoiceOver and TalkBack, by label.
+Map<String, int> _actions(WidgetTester tester, String title) => {
+  for (final id
+      in _rowNode(tester, title).getSemanticsData().customSemanticsActionIds ??
+          const <int>[])
+    CustomSemanticsAction.getAction(id)!.label!: id,
+};
+
+/// Does [label] on [title]'s row, as VoiceOver and TalkBack do from the
+/// row's actions.
+Future<void> _act(WidgetTester tester, String title, String label) async {
+  final row = _rowNode(tester, title);
+  row.owner!.performAction(
+    row.id,
+    SemanticsAction.customAction,
+    _actions(tester, title)[label],
+  );
+  await tester.pumpAndSettle();
+}
+
 Future<void> _show(WidgetTester tester, NotesShow show) async {
   await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
   await tester.pumpAndSettle();
@@ -160,33 +199,68 @@ void main() {
     prefs = LayoutPrefs(store);
   });
 
-  testWidgets('a click with Cmd picks the open note and the one clicked; '
-      'then a plain click picks too, and Esc lets them go', (tester) async {
+  testWidgets('with nothing picked, a click with Cmd opens the note in a tab '
+      'behind and picks nothing; a note with a tab stays where it is', (
+    tester,
+  ) async {
     await _pump(tester);
     await _click(tester, 'Second');
-    expect(find.text('Select notes'), findsNothing);
 
     await _click(tester, 'Fourth', holding: LogicalKeyboardKey.metaLeft);
-    expect(_picked(tester), ['Fourth', 'Second']);
-    expect(find.text('2 selected'), findsOneWidget);
+    expect(_picked(tester), isEmpty);
+    expect(find.textContaining('selected'), findsNothing);
+    expect(_tabbed(tester, 'Fourth'), isTrue);
+    expect(_open(tester, 'Second'), isTrue);
+    expect(_open(tester, 'Fourth'), isFalse);
+
+    await _click(tester, 'Second', holding: LogicalKeyboardKey.metaLeft);
+    expect(_picked(tester), isEmpty);
+    expect(_open(tester, 'Second'), isTrue);
+    expect(_open(tester, 'Fourth'), isFalse);
+  });
+
+  testWidgets('with nothing picked, a click with Shift picks from the open '
+      'note to the one clicked, and opens no tab', (tester) async {
+    await _pump(tester);
+    await _click(tester, 'Second');
+
+    await _click(tester, 'Fourth', holding: LogicalKeyboardKey.shiftLeft);
+    expect(_picked(tester), ['Fourth', 'Third', 'Second']);
+    expect(find.text('3 selected'), findsOneWidget);
+    expect(_tabbed(tester, 'Fourth'), isFalse);
+    expect(_open(tester, 'Second'), isTrue);
+  });
+
+  testWidgets('once notes are picked, a click with Cmd picks or lets go of '
+      'one and opens no tab; a plain click picks too, and Esc lets them go', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await _click(tester, 'Second');
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
+    expect(_picked(tester), ['Third', 'Second']);
+
+    await _click(tester, 'Fourth', holding: LogicalKeyboardKey.metaLeft);
+    expect(_picked(tester), ['Fourth', 'Third', 'Second']);
+    expect(_tabbed(tester, 'Fourth'), isFalse);
+
+    await _click(tester, 'Second', holding: LogicalKeyboardKey.metaLeft);
+    expect(_picked(tester), ['Fourth', 'Third']);
 
     await _click(tester, 'First');
-    expect(_picked(tester), ['Fourth', 'Second', 'First']);
+    expect(_picked(tester), ['Fourth', 'Third', 'First']);
     // Picking is not opening: the open note stays open.
     expect(_open(tester, 'Second'), isTrue);
     expect(_open(tester, 'First'), isFalse);
 
-    await _click(tester, 'Second', holding: LogicalKeyboardKey.metaLeft);
-    expect(_picked(tester), ['Fourth', 'First']);
-
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(_picked(tester), isEmpty);
-    expect(find.text('2 selected'), findsNothing);
+    expect(find.text('3 selected'), findsNothing);
     expect(_open(tester, 'Second'), isTrue);
   });
 
-  testWidgets('on Windows Ctrl picks as Cmd does on a Mac, and a click with '
+  testWidgets('on Windows Ctrl does what Cmd does on a Mac, and a click with '
       'the Windows key only opens the note', (tester) async {
     await _pump(tester, platform: TargetPlatform.windows);
     await _click(tester, 'Second');
@@ -196,8 +270,14 @@ void main() {
     expect(_open(tester, 'Fourth'), isTrue);
 
     await _click(tester, 'Second', holding: LogicalKeyboardKey.controlLeft);
-    expect(_picked(tester), ['Fourth', 'Second']);
-    expect(find.text('2 selected'), findsOneWidget);
+    expect(_picked(tester), isEmpty);
+    expect(_tabbed(tester, 'Second'), isTrue);
+    expect(_open(tester, 'Fourth'), isTrue);
+
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
+    await _click(tester, 'First', holding: LogicalKeyboardKey.controlLeft);
+    expect(_picked(tester), ['Fourth', 'Third', 'First']);
+    expect(find.text('3 selected'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
@@ -386,7 +466,7 @@ void main() {
   ) async {
     await _pump(tester);
     await _click(tester, 'Second');
-    await _click(tester, 'Fourth', holding: LogicalKeyboardKey.metaLeft);
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
     await _click(tester, 'Second');
 
     SemanticsNode row(String title) => tester.getSemantics(
@@ -394,8 +474,8 @@ void main() {
           .descendant(of: _row(title), matching: find.byType(GestureDetector))
           .first,
     );
-    expect(_picked(tester), ['Fourth']);
-    expect(row('Fourth'), isSemantics(isSelected: true));
+    expect(_picked(tester), ['Third']);
+    expect(row('Third'), isSemantics(isSelected: true));
     // Open but not picked: not one of what an action would act on.
     expect(row('Second'), isSemantics(isSelected: false));
   });
@@ -404,14 +484,21 @@ void main() {
       'note, with how many; an unpicked one joins them first', (tester) async {
     await _pump(tester);
     await _click(tester, 'Fourth');
-    await _click(tester, 'Third', holding: LogicalKeyboardKey.metaLeft);
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
 
     await _rightClick(tester, 'First');
     final first = _note('First');
     expect(_picked(tester), ['Fourth', 'Third', 'First']);
-    expect(_label(tester, _item('pin', first)), 'Pin 3 notes');
-    expect(_label(tester, _item('hide', first)), 'Hide 3 notes');
-    expect(_label(tester, _item('archive', first)), 'Archive 3 notes');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('kapy-context-menu')),
+        matching: find.text('3 notes'),
+      ),
+      findsOneWidget,
+    );
+    expect(_label(tester, _item('pin', first)), 'Pin');
+    expect(_label(tester, _item('hide', first)), 'Move to Hidden Notes');
+    expect(_label(tester, _item('archive', first)), 'Archive');
     expect(_label(tester, _item('delete', first)), 'Delete 3 notes…');
     // A note's own items are not on offer for many.
     expect(find.byKey(ValueKey('share-note-${first.id}')), findsNothing);
@@ -428,13 +515,66 @@ void main() {
     expect(find.text('3 notes pinned'), findsOneWidget);
     expect(_picked(tester), isEmpty);
 
-    // The open note alone is no selection to add to or take from.
+    // The open note has its tab already, so a click with Cmd on it changes
+    // nothing.
     await _click(tester, 'Fourth', holding: LogicalKeyboardKey.metaLeft);
     expect(_picked(tester), isEmpty);
     expect(find.text('Select notes'), findsNothing);
-    await _click(tester, 'Third', holding: LogicalKeyboardKey.metaLeft);
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
     await _rightClick(tester, 'Fourth');
-    expect(_label(tester, _item('unpin', _note('Fourth'))), 'Unpin 2 notes');
+    expect(_label(tester, _item('unpin', _note('Fourth'))), 'Unpin');
+  });
+
+  testWidgets('while picking, a row not picked offers VoiceOver what a right '
+      'click on it offers, and picks itself first as the click does', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await _click(tester, 'Fourth');
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
+
+    final offered = _actions(tester, 'First').keys.toList();
+    await _rightClick(tester, 'First');
+    expect(offered, unorderedEquals(_menu(tester)));
+    expect(offered, contains('Delete 3 notes…'));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    // The right click picked First; a click lets it go again.
+    await _click(tester, 'First');
+    expect(_picked(tester), ['Fourth', 'Third']);
+
+    await _act(tester, 'First', 'Delete 3 notes…');
+    expect(_picked(tester), ['Fourth', 'Third', 'First']);
+    expect(find.text('Delete 3 notes?'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+    await tester.pumpAndSettle();
+    expect(notes.notes.map((n) => n.title), ['Second']);
+    expect(find.text('3 notes deleted'), findsOneWidget);
+  });
+
+  testWidgets('on a picked row, VoiceOver gets what a right click on it '
+      'offers, and its action reaches every picked note', (tester) async {
+    await _pump(tester);
+    await _click(tester, 'Fourth');
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
+
+    final offered = _actions(tester, 'Third').keys.toList();
+    await _rightClick(tester, 'Third');
+    expect(offered, unorderedEquals(_menu(tester)));
+    expect(_picked(tester), ['Fourth', 'Third']);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(_picked(tester), ['Fourth', 'Third']);
+
+    await _act(tester, 'Third', 'Move to Hidden Notes');
+    expect(
+      notes.hiddenNotes.map((n) => n.title),
+      unorderedEquals(['Fourth', 'Third']),
+    );
+    expect(
+      find.textContaining('Moved 2 notes to Hidden Notes.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('every item of the menu for many notes fits it', (tester) async {
@@ -449,7 +589,13 @@ void main() {
     );
     expect(
       [for (final row in rows) row.action.label],
-      ['Pin 12 notes', 'Hide 12 notes', 'Archive 12 notes', 'Delete 12 notes…'],
+      [
+        'Open in tabs',
+        'Pin',
+        'Move to Hidden Notes',
+        'Archive',
+        'Delete 12 notes…',
+      ],
     );
     for (final row in rows) {
       final label = row.action.label;
@@ -489,13 +635,13 @@ void main() {
   ) async {
     await _pump(tester);
     await _click(tester, 'Fourth');
-    await _click(tester, 'First', holding: LogicalKeyboardKey.metaLeft);
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
 
     await _chord(tester, LogicalKeyboardKey.backspace);
 
     expect(
       notes.archivedNotes.map((n) => n.title),
-      unorderedEquals(['Fourth', 'First']),
+      unorderedEquals(['Fourth', 'Third']),
     );
     expect(find.text('Moved 2 notes to Archive'), findsOneWidget);
   });
@@ -507,7 +653,7 @@ void main() {
     await _pump(tester);
     prefs.askBeforeDeleting = false;
     await _click(tester, 'Fourth');
-    await _click(tester, 'Third', holding: LogicalKeyboardKey.metaLeft);
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
 
     await tester.tap(find.byKey(const ValueKey('picked-delete')));
     await tester.pumpAndSettle();
@@ -527,7 +673,7 @@ void main() {
     expect(find.text('2 notes deleted'), findsOneWidget);
     expect(_picked(tester), isEmpty);
 
-    await _click(tester, 'First', holding: LogicalKeyboardKey.metaLeft);
+    await _click(tester, 'First', holding: LogicalKeyboardKey.shiftLeft);
     await _click(tester, 'Second');
     expect(_picked(tester), ['First']);
     await tester.tap(find.byKey(const ValueKey('picked-delete')));
@@ -541,13 +687,13 @@ void main() {
   ) async {
     await _pump(tester);
     await _click(tester, 'Fourth');
-    await _click(tester, 'Second', holding: LogicalKeyboardKey.metaLeft);
-    await _rightClick(tester, 'Second');
-    await tester.tap(_item('hide', _note('Second')));
+    await _click(tester, 'Third', holding: LogicalKeyboardKey.shiftLeft);
+    await _rightClick(tester, 'Third');
+    await tester.tap(_item('hide', _note('Third')));
     await tester.pumpAndSettle();
     expect(
       notes.hiddenNotes.map((n) => n.title),
-      unorderedEquals(['Fourth', 'Second']),
+      unorderedEquals(['Fourth', 'Third']),
     );
     expect(
       find.textContaining('Moved 2 notes to Hidden Notes.'),
@@ -555,7 +701,7 @@ void main() {
     );
 
     await _show(tester, NotesShow.hidden);
-    await _click(tester, 'Second');
+    await _click(tester, 'Third');
     await _chord(tester, LogicalKeyboardKey.keyA);
     await tester.tap(find.byKey(const ValueKey('picked-unhide')));
     await tester.pumpAndSettle();

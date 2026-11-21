@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'local_store.dart';
 import 'notes_store.dart';
+import 'record_book.dart';
 import 'stamped.dart';
 
 /// The colours a tag can take, in palette order. A tag stores one of these
@@ -113,7 +114,7 @@ class Tag {
       colour: colour,
       order: order,
       createdAt: createdAt,
-      extra: _extraOf(raw, _known),
+      extra: extraOf(raw, _known),
     );
   }
 }
@@ -206,20 +207,10 @@ class NoteTags {
       noteId: noteId,
       tags: stamps,
       order: Stamped(List.unmodifiable(ids.cast<String>()), at),
-      extra: _extraOf(raw, _known),
+      extra: extraOf(raw, _known),
     );
   }
 }
-
-/// A record the server is owed: its kind, its key (a tag's id, or the note's
-/// id for a note's tags), the `updatedAt` to send, and the payload, null for
-/// a deletion.
-typedef OwedTagRecord = ({
-  String kind,
-  String key,
-  int updatedAt,
-  Map<String, Object?>? payload,
-});
 
 /// The person's tags and which notes carry them. Kept on this device signed
 /// in or not, and synced on the account's record stream beside the task
@@ -245,7 +236,7 @@ class TagStore extends ChangeNotifier {
   /// characters of ciphertext (`TASK_PAYLOAD_MAX_CHARS`) less the 16-byte tag.
   static const int _payloadMax = 4096 ~/ 4 * 3 - 16;
 
-  final _tags = _Book<Tag>(
+  final _tags = RecordBook<Tag>(
     keepDeleted: true,
     merge: (mine, theirs) => mine.merge(theirs),
     encode: (tag) => tag.toPayload(),
@@ -255,7 +246,7 @@ class TagStore extends ChangeNotifier {
   /// Keyed by note id. A note whose tags record was deleted keeps it,
   /// deleted, while that delete is ahead of this device's clock, so tagging
   /// it again is stamped past it (see [_letGo]).
-  final _notes = _Book<NoteTags>(
+  final _notes = RecordBook<NoteTags>(
     keepDeleted: true,
     merge: (mine, theirs) => mine.merge(theirs),
     encode: (note) => note.toPayload(),
@@ -559,6 +550,11 @@ class TagStore extends ChangeNotifier {
     }
   }
 
+  /// A note the server never had takes its tags record with it, unsent.
+  void dropNote(String noteId) {
+    if (_notes.slots.remove(noteId) != null) _save();
+  }
+
   /// Lets go of [noteId]'s tags record once it is a delete the server has and
   /// this device's clock has passed: a tag put on from then on outranks it
   /// by its own time.
@@ -681,13 +677,13 @@ class TagStore extends ChangeNotifier {
   bool get owes => _tags.owes || _notes.owes;
 
   /// What the server has not been told, live and deleted.
-  List<OwedTagRecord> get owed => [
+  List<OwedRecord> get owed => [
     ..._tags.owed(Tag.kind),
     ..._notes.owed(NoteTags.kind),
   ];
 
   /// The server took the record as sent. Anything changed since stays owed.
-  void acknowledge(OwedTagRecord record) {
+  void acknowledge(OwedRecord record) {
     if (record.kind == Tag.kind) {
       _tags.acknowledge(record.key, record.updatedAt);
     } else {
@@ -755,159 +751,3 @@ class TagStore extends ChangeNotifier {
     _save();
   }
 }
-
-/// One record on this device: its value, the `updatedAt` the server orders
-/// it by, whether it is deleted, and whether the server is owed it.
-class _Slot<T> {
-  _Slot(this.value, this.updatedAt, {this.deleted = false, this.dirty = false});
-
-  T value;
-  int updatedAt;
-  bool deleted;
-  bool dirty;
-}
-
-/// One kind of record, by key, with the bookkeeping `TaskIndex` keeps for
-/// tasks.
-class _Book<T> {
-  _Book({
-    required this.keepDeleted,
-    required this.merge,
-    required this.encode,
-    required this.decode,
-  });
-
-  /// Whether a deleted record stays once the server has it: a tag does, for
-  /// Undo and so a note can tell how long ago it went; a note's tags go with
-  /// the note.
-  final bool keepDeleted;
-  final T Function(T mine, T theirs) merge;
-  final Map<String, Object?> Function(T value) encode;
-  final T? Function(String key, Object? payload) decode;
-
-  final Map<String, _Slot<T>> slots = {};
-
-  T? live(String key) {
-    final slot = slots[key];
-    return slot == null || slot.deleted ? null : slot.value;
-  }
-
-  bool get owes => slots.values.any((slot) => slot.dirty);
-
-  /// The next `updatedAt` after [slot]'s: now, or one past it if the clock
-  /// has not moved on, so a local change always outranks what it replaces.
-  static int _after(_Slot<Object?>? slot, int now) {
-    final last = slot?.updatedAt ?? 0;
-    return now > last ? now : last + 1;
-  }
-
-  void write(String key, T value, int now) {
-    slots[key] = _Slot(value, _after(slots[key], now), dirty: true);
-  }
-
-  void delete(String key, int now) {
-    final slot = slots[key]!;
-    slot
-      ..updatedAt = _after(slot, now)
-      ..deleted = true
-      ..dirty = true;
-  }
-
-  List<OwedTagRecord> owed(String kind) => [
-    for (final entry in slots.entries)
-      if (entry.value.dirty)
-        (
-          kind: kind,
-          key: entry.key,
-          updatedAt: entry.value.updatedAt,
-          payload: entry.value.deleted ? null : encode(entry.value.value),
-        ),
-  ];
-
-  void acknowledge(String key, int updatedAt) {
-    final slot = slots[key];
-    if (slot == null || slot.updatedAt != updatedAt) return;
-    slot.dirty = false;
-    if (slot.deleted && !keepDeleted) slots.remove(key);
-  }
-
-  void applyRemote(String key, T remote, int updatedAt) {
-    final slot = slots[key];
-    if (slot == null) {
-      slots[key] = _Slot(remote, updatedAt);
-      return;
-    }
-    if (slot.deleted && slot.dirty && slot.updatedAt > updatedAt) return;
-    if (slot.deleted || !slot.dirty) {
-      final merged = merge(remote, slot.value);
-      final same = jsonEncode(encode(merged)) == jsonEncode(encode(remote));
-      slot
-        ..value = merged
-        ..deleted = false
-        ..updatedAt = same ? updatedAt : updatedAt + 1
-        ..dirty = !same;
-      return;
-    }
-    slot
-      ..value = merge(slot.value, remote)
-      ..updatedAt = slot.updatedAt > updatedAt ? slot.updatedAt : updatedAt + 1;
-  }
-
-  /// Whether it changed anything.
-  bool applyRemoteDelete(String key, int updatedAt) {
-    final slot = slots[key];
-    if (slot == null || (slot.deleted && !slot.dirty)) return false;
-    if (slot.dirty && slot.updatedAt > updatedAt) return false;
-    if (!keepDeleted) {
-      slots.remove(key);
-      return true;
-    }
-    slot
-      ..updatedAt = updatedAt
-      ..deleted = true
-      ..dirty = false;
-    return true;
-  }
-
-  void forgetAccount() {
-    slots.removeWhere((_, slot) => slot.deleted && !keepDeleted);
-    for (final slot in slots.values) {
-      if (!slot.deleted) slot.dirty = true;
-    }
-  }
-
-  List<Map<String, Object?>> toJson() => [
-    for (final entry in slots.entries)
-      {
-        'key': entry.key,
-        'updatedAt': entry.value.updatedAt,
-        if (entry.value.deleted) 'deleted': true,
-        if (entry.value.dirty) 'dirty': true,
-        'payload': encode(entry.value.value),
-      },
-  ];
-
-  void load(Object? raw) {
-    if (raw is! List) return;
-    for (final item in raw) {
-      if (item is! Map) continue;
-      final key = item['key'];
-      final updatedAt = item['updatedAt'];
-      if (key is! String || updatedAt is! int) continue;
-      final value = decode(key, item['payload']);
-      if (value == null) continue;
-      slots[key] = _Slot(
-        value,
-        updatedAt,
-        deleted: item['deleted'] == true,
-        dirty: item['dirty'] == true,
-      );
-    }
-  }
-}
-
-Map<String, Object?> _extraOf(Map<Object?, Object?> raw, Set<String> known) => {
-  for (final entry in raw.entries)
-    if (entry.key is String && !known.contains(entry.key))
-      entry.key as String: entry.value,
-};

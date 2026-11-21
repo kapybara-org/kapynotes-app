@@ -74,6 +74,7 @@ Future<void> _pump(
 
 Finder get _button => find.byKey(const ValueKey('page-kapy-ai'));
 Finder get _panel => find.byKey(const ValueKey('kapy-ai-panel'));
+Finder get _ask => find.byKey(const ValueKey('sidebar-ask-kapy'));
 
 Future<void> _chord(WidgetTester tester, LogicalKeyboardKey letter) async {
   final key = AppPlatform.isMacOS
@@ -161,6 +162,51 @@ void main() {
       expect(_panel, findsNothing);
     });
 
+    testWidgets('Ask Kapy, left of New note in the list, opens the panel', (
+      tester,
+    ) async {
+      notes.create(body: 'Trip budget');
+      await _pump(tester, sidebar: true);
+
+      expect(_ask, findsOneWidget);
+      final newNote = find.byKey(const ValueKey('sidebar-new-note'));
+      expect(tester.getRect(_ask).right + 8, tester.getRect(newNote).left);
+      expect(
+        tester.getCenter(_ask).dy,
+        closeTo(tester.getCenter(newNote).dy, 0.5),
+      );
+      final tip = tester.widget<Tooltip>(
+        find.descendant(of: _ask, matching: find.byType(Tooltip)),
+      );
+      expect(tip.message, startsWith('Ask Kapy  '));
+
+      await tester.tap(_ask);
+      await tester.pumpAndSettle();
+      expect(_panel, findsOneWidget);
+      expect(find.text('This note · Trip budget'), findsOneWidget);
+
+      // Asking again keeps the panel open, where the page's button would
+      // close it.
+      await tester.tap(_ask);
+      await tester.pumpAndSettle();
+      expect(_panel, findsOneWidget);
+    });
+
+    testWidgets('Ask Kapy stays in the Notes views, out of Drawings', (
+      tester,
+    ) async {
+      await _pump(tester, sidebar: true);
+      expect(_ask, findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(_ask, findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('rail-notes')));
+      await tester.pumpAndSettle();
+      expect(_ask, findsOneWidget);
+    });
+
     testWidgets('⌘J opens it, Esc and ✕ close it', (tester) async {
       notes.create(body: 'Trip budget');
       await _pump(tester);
@@ -239,6 +285,7 @@ void main() {
       await _pump(tester);
 
       expect(_button, findsNothing);
+      expect(_ask, findsNothing);
       await _toggleWithKeys(tester);
       expect(_panel, findsNothing);
     });
@@ -249,6 +296,7 @@ void main() {
       await _pump(tester);
 
       expect(_button, findsNothing);
+      expect(_ask, findsNothing);
       await _toggleWithKeys(tester);
       expect(_panel, findsNothing);
     });
@@ -533,7 +581,7 @@ void main() {
           KapyAccountState(
             kind: KapyAccountKind.codex,
             status: KapyAccountStatus.connected,
-            models: [FakeKapyAi.gpt, FakeKapyAi.gptMini],
+            models: [FakeKapyAi.gpt],
           ),
           KapyAccountState(
             kind: KapyAccountKind.claudeCode,
@@ -570,11 +618,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('kapy-device-remove')), findsOneWidget);
-      expect(
-        find.text('Found on this Mac · Codex · 1, Codex · 2'),
-        findsOneWidget,
-      );
-      expect(find.text('Found on this Mac · Claude Code'), findsOneWidget);
+      expect(find.text('Found on this Mac'), findsNWidgets(2));
       expect(find.text('Key ending 4f2a, kept on this Mac'), findsOneWidget);
       expect(find.textContaining('ChatGPT sign'), findsNothing);
     });
@@ -615,15 +659,15 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('Install Codex and sign in there. Kapy finds it'),
-        findsOneWidget,
+        find.text(
+          'Not found on this Mac. Install it, sign in, then check again',
+        ),
+        findsNWidgets(2),
       );
       expect(
-        find.text('Install Claude Code and sign in there. Kapy finds it'),
-        findsOneWidget,
-      );
-      expect(
-        find.text('Your own key, for answers you already pay for'),
+        find.text(
+          'Get a key, then add it here, for answers from a plan you pay for',
+        ),
         findsOneWidget,
       );
       final codex = tester.getTopLeft(
@@ -637,6 +681,61 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('kapy-device-download')));
       expect(ai.calls, ['downloadDeviceModel']);
     });
+
+    testWidgets(
+      'Get a key opens the page that makes one, or says it could not',
+      (tester) async {
+        ai = FakeKapyAi(
+          accountList: const [
+            KapyAccountState(
+              kind: KapyAccountKind.openRouter,
+              status: KapyAccountStatus.notConnected,
+            ),
+          ],
+        );
+        final launched = <String>[];
+        var opens = true;
+        const channel = MethodChannel('plugins.flutter.io/url_launcher');
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async {
+            final url = (call.arguments as Map?)?['url'];
+            if (url is String) launched.add(url);
+            return opens;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            channel,
+            null,
+          ),
+        );
+        await _openSettings(
+          tester,
+          kapyAi: ai,
+          reveal: 'kapy-account-openRouter',
+        );
+
+        expect(
+          find.text(
+            'Get a key, then add it here, for answers from a plan you pay for',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Add key'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('kapy-openrouter-get-key')));
+        await tester.pump();
+        expect(launched, ['https://openrouter.ai/keys']);
+        expect(find.text('Could not open the page for a key'), findsNothing);
+
+        opens = false;
+        await tester.tap(find.byKey(const ValueKey('kapy-openrouter-get-key')));
+        await tester.pump();
+        expect(launched, hasLength(2));
+        expect(find.text('Could not open the page for a key'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 10));
+      },
+    );
 
     testWidgets('a signed-out Codex says so, and Check again looks', (
       tester,
@@ -652,7 +751,7 @@ void main() {
       await _openSettings(tester, kapyAi: ai, reveal: 'kapy-account-codex');
 
       expect(
-        find.text('Signed out. Sign in inside Codex, then check again'),
+        find.text('Signed out. Sign in there, then check again'),
         findsOneWidget,
       );
       await tester.tap(find.text('Check again'));
@@ -903,6 +1002,12 @@ void main() {
       await tester.tap(_button);
       await settle(tester);
 
+      expect(find.byKey(const ValueKey('day-strip-forward')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('day-strip-date')),
+        findsOneWidget,
+        reason: 'the day keeps its one button beside the panel',
+      );
       await expectLater(
         find.byType(KapyNotesApp),
         matchesGoldenFile('goldens/kapy_ai_narrow_dark.png'),
@@ -952,7 +1057,7 @@ void main() {
           KapyAccountState(
             kind: KapyAccountKind.codex,
             status: KapyAccountStatus.connected,
-            models: [FakeKapyAi.gpt, FakeKapyAi.gptMini],
+            models: [FakeKapyAi.gpt],
           ),
           KapyAccountState(
             kind: KapyAccountKind.claudeCode,

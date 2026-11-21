@@ -755,7 +755,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final link = style.copyWith(
       color: palette.textSecondary,
       fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.rowTitle),
+      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
     );
     final notes = _tab == _Tab.notes;
     final Widget? line = switch (_notice) {
@@ -823,7 +823,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                   fontSize: 12,
                   height: 16 / 12,
                   fontWeight: FontWeight.w600,
-                  fontVariations: AppWeight.variations(AppWeight.section),
+                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                   color: palette.textSecondary,
                 ),
               ),
@@ -879,7 +879,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
       fontSize: 12,
       height: 16 / 12,
       fontWeight: FontWeight.w600,
-      fontVariations: AppWeight.variations(AppWeight.section),
+      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
       color: palette.textSecondary,
     );
     final children = <Widget>[];
@@ -909,7 +909,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                 heading == 'Pinned'
                     ? KapyIcons.pinOutlined
                     : note.isDrawing
-                    ? KapyIcons.paintBoardOutlined
+                    ? KapyIcons.penRounded
                     : KapyIcons.noteOutlined,
                 size: 15,
                 color: heading == 'Pinned' ? palette.clay : palette.textTertiary,
@@ -952,7 +952,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.rowTitle),
+              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
               color: palette.textPrimary,
             ),
           ),
@@ -1194,7 +1194,6 @@ class _TaskRow extends StatelessWidget {
                 ? const KapyIcon(
                     KapyIcons.checkRounded,
                     size: 11,
-                    strokeWidth: 2.2,
                     color: Colors.white,
                   )
                 : null,
@@ -1257,7 +1256,7 @@ class _TaskRow extends StatelessWidget {
                     fontSize: 10.5,
                     height: 13 / 10.5,
                     fontWeight: FontWeight.w600,
-                    fontVariations: AppWeight.variations(AppWeight.section),
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                     letterSpacing: 0.63,
                     color: palette.accentText,
                   ),
@@ -1401,7 +1400,7 @@ class _TextButton extends StatelessWidget {
         label,
         style: TextStyle(
           fontWeight: FontWeight.w500,
-          fontVariations: AppWeight.variations(AppWeight.rowTitle),
+          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
           color: context.palette.textPrimary,
         ),
       ),

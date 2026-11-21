@@ -55,6 +55,12 @@ enum SyncStatus {
 /// The merge engine this build writes. Matches `ENGINE_FUGUE`.
 const String fugueEngine = 'fugue1';
 
+/// Said while a shared note holds an edit this build can't open, with every
+/// key it can get.
+const String unopenableProblem =
+    "A shared note has an edit this device can't open. Updating the app may "
+    'help.';
+
 /// Keeps every device's copy of every note the same, as it is typed.
 ///
 /// A note is not a blob any more. Each keystroke becomes an op in a CRDT
@@ -120,6 +126,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     this.maxRetry = const Duration(minutes: 5),
     this.pollInterval = const Duration(seconds: 60),
     this.snapshotEvery = 150,
+    this.rereadPages = 100,
     this.presenceThrottle = const Duration(milliseconds: 90),
     this.typingIdle = const Duration(milliseconds: 1500),
     this.presenceLinger = const Duration(milliseconds: 1500),
@@ -176,6 +183,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// to write it also writes a snapshot, so a device that has been away can
   /// take one document instead of replaying a year of keystrokes.
   final int snapshotEvery;
+
+  /// How many pages one pass reads again for notes that missed an op. A
+  /// read cut short there goes on from where it stopped on the next pass.
+  final int rereadPages;
 
   /// Notes absorbed into an outbox that is not on disk yet. A flush that
   /// writes their records tells the notes store, unless a note was absorbed
@@ -678,6 +689,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _applyHidden();
       if (_live) {
         _subscribeAll();
+        for (final spaceId in _subscribed.toList()) {
+          try {
+            await _rereadUnread(spaceId);
+          } on SyncException catch (error) {
+            debugPrint('KapyNotes: could not read again: ${error.message}');
+          }
+        }
       } else if (_socket == null || _socketDown) {
         await _pullAllOverHttp();
       }
@@ -1140,6 +1158,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     if (personal == null) return;
 
     for (final note in _notes.dirtyNotes) {
+      if (_holdsBack(note)) continue;
       final spaceId = note.spaceId ?? personal.id;
       // Left dirty, not diffed: the diff is taken once, when it can go.
       if (_needsPro.contains(spaceId)) continue;
@@ -1219,7 +1238,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         continue;
       }
       if (!space.canEdit) continue;
-      if (record == null) {
+      if (record == null || record.isLocal) {
         // Deleted before it was ever seeded: the server never had it.
         _notes.markSynced(tombstones: [stone]);
         continue;
@@ -1232,6 +1251,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _tasks?.schedule();
     }
   }
+
+  /// A blank new note the server has never had waits on this device, left
+  /// dirty, until something is written in it: one opened and left sends
+  /// nothing, and its first letter sends it whole, with whatever it was
+  /// filed under meanwhile. A note the server has, emptied, still goes.
+  bool _holdsBack(Note note) => note.isBlank && _docs.neverSent(note.id);
 
   Future<void> _uploadThenReconcile(Note note) async {
     final images = _images;
@@ -1338,16 +1363,20 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     } else if (record.offline) {
       // What changed while nothing synced is in the document and in no op,
       // so the document goes whole.
-      record.outbox.add(
-        OutboxEntry(
-          id: _nextRequestId(),
-          spaceId: spaceId,
-          snapshot: record.doc.toSnapshot(),
-          covers: _state.cursorFor(spaceId),
-        ),
-      );
-      record.opsSinceSnapshot = 0;
-      record.ownOpsSinceSnapshot = 0;
+      if (_missesOpIn(record, spaceId)) {
+        _queueStateOps(record, spaceId);
+      } else {
+        record.outbox.add(
+          OutboxEntry(
+            id: _nextRequestId(),
+            spaceId: spaceId,
+            snapshot: record.doc.toSnapshot(),
+            covers: _state.cursorFor(spaceId),
+          ),
+        );
+        record.opsSinceSnapshot = 0;
+        record.ownOpsSinceSnapshot = 0;
+      }
     } else if (ops.isNotEmpty) {
       record.opsSinceSnapshot++;
       record.ownOpsSinceSnapshot++;
@@ -1530,6 +1559,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     // whole document under the new key; so must a seed; and every
     // `snapshotEvery` ops somebody writes one so nobody replays a year.
     final rotating = record.serverEpoch != 0 && epoch > record.serverEpoch;
+    // The server drops every op under the old key when a rotation lands, so
+    // a rotation from here waits until this device has read them all.
+    if (rotating && _missesOpIn(record, entry.spaceId)) return null;
     if (snap != null) {
       snapshot = WireSnapshot(
         covers: entry.covers,
@@ -1537,7 +1569,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         engine: fugueEngine,
         payload: await vault.sealRaw(_encode({'snap': snap}), contentKey),
       );
-    } else if (rotating || (_dueForSnapshot(record) && entry.ops != null)) {
+    } else if (rotating ||
+        (_dueForSnapshot(record) &&
+            entry.ops != null &&
+            !_missesOpIn(record, entry.spaceId))) {
       snapshot = WireSnapshot(
         covers: _state.cursorFor(entry.spaceId),
         epoch: epoch,
@@ -1705,11 +1740,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   }
 
   /// Something this build cannot answer. The entry is replaced by a
-  /// snapshot of the whole document, which carries every op it held, and
+  /// snapshot of the whole document, which carries every op it held, or by
+  /// the whole document as ops while it misses an op in that space, and
   /// [problem] is shown rather than the entry retried in a loop.
   void _stick(DocRecord record, OutboxEntry entry, String problem) {
     record.outbox.remove(entry);
-    if (entry.deleted == null) {
+    if (entry.deleted == null &&
+        entry.from == null &&
+        _missesOpIn(record, entry.spaceId)) {
+      _queueStateOps(record, entry.spaceId);
+    } else if (entry.deleted == null) {
       record.outbox.insert(
         0,
         OutboxEntry(
@@ -1778,6 +1818,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (space.isTeam && !_keyring.holdsKey(space.id)) continue;
       if (_needsPro.contains(space.id) && !asking) continue;
       try {
+        await _rereadUnread(space.id);
         for (var page = 0; page < 100; page++) {
           final batch = await _api.pullOps(
             space: space.id,
@@ -1846,16 +1887,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       final note = _notes.byId(record.noteId);
       if (note == null || (note.spaceId ?? personalId) != spaceId) continue;
       if (!rejoin && note.updatedAt.isBefore(_opLogLaunch)) continue;
-      for (final ops in record.doc.stateOps()) {
-        record.outbox.add(
-          OutboxEntry(
-            id: _nextRequestId(),
-            spaceId: spaceId,
-            ops: ops,
-            deviceSeq: ++record.deviceSeq,
-          ),
-        );
-      }
+      _queueStateOps(record, spaceId);
       _docs.markDirty(record.noteId);
     }
     _state.repairDone(spaceId);
@@ -1927,6 +1959,173 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   Future<void> _applyBatch(Vault vault, OpsBatch batch) =>
       _inLogOrder(() => _applyPage(vault, batch));
 
+  /// Opens [item] and merges it into [record]: whether that changed the
+  /// document, or null when it could not be read, as an op in an engine
+  /// this build does not know or one sealed under a key it cannot get.
+  /// [count] is false for an op read a second time, which a snapshot's turn
+  /// has already counted.
+  Future<bool?> _openInto(
+    Vault vault,
+    DocRecord record,
+    _LogItem item,
+    Space space,
+    Set<String> retried, {
+    bool count = true,
+  }) async {
+    final noteId = item.noteId;
+    if (item.engine != fugueEngine) {
+      debugPrint('KapyNotes: op in unknown engine ${item.engine}');
+      return null;
+    }
+    Uint8List? contentKey;
+    if (space.isTeam) {
+      contentKey = await _contentKeyFor(record, noteId, space, item.epoch);
+      if (contentKey == null) {
+        debugPrint('KapyNotes: no key for note $noteId at epoch ${item.epoch}');
+        return null;
+      }
+    }
+    var opened = await vault.openRaw(item.payload, contentKey);
+    if (opened == null && contentKey != null && retried.add(noteId)) {
+      // A note that left this space and came back gets its key minted
+      // again from epoch one, so the key held here for this epoch can be
+      // the one from before. Asked again, once per note per page.
+      final fresh = await _contentKeyFor(
+        record,
+        noteId,
+        space,
+        item.epoch,
+        stale: contentKey,
+      );
+      if (fresh != null) opened = await vault.openRaw(item.payload, fresh);
+    }
+    if (opened == null) {
+      debugPrint('KapyNotes: could not open op ${item.seq} of $noteId');
+      return null;
+    }
+    Object? decoded;
+    try {
+      decoded = jsonDecode(utf8.decode(opened));
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map) return null;
+    final ops = decoded['ops'];
+    final snap = decoded['snap'];
+    if (ops is List) {
+      if (count) record.opsSinceSnapshot++;
+      return record.doc.apply(ops);
+    }
+    if (snap is Map) {
+      if (count && item.isSnapshot) {
+        record.opsSinceSnapshot = 0;
+        record.ownOpsSinceSnapshot = 0;
+      }
+      return record.doc.mergeSnapshot(Map<String, Object?>.of(snap.cast()));
+    }
+    return false;
+  }
+
+  /// Notes being read again from where this device first failed to open
+  /// one of their ops, and the first of those ops that still failed.
+  Set<String> _rereading = const {};
+  final Map<String, int> _stillUnread = {};
+
+  /// The unread op each note was last read again from, so a note whose op
+  /// stays unreadable is read again once a launch, not on every pass.
+  final Map<String, int> _rereadFrom = {};
+
+  /// Set when a note-key fetch fails, so a read that may have failed only
+  /// for that is tried again on the next pass.
+  bool _noteKeysUnavailable = false;
+
+  /// Whether the last note-key fetch failed, so the next one that works
+  /// starts a pass, which reads again what may have failed for want of it.
+  bool _noteKeysFailed = false;
+
+  /// Notes with an edit read again with every key at hand that still did
+  /// not open, as one written by a newer app. Said until it opens.
+  final Set<String> _unopenable = {};
+
+  /// Reads [spaceId]'s log again from the first op of each note this device
+  /// could not open, once that may succeed: a key fetched since, a page
+  /// that failed half way. A note that skipped an op stays behind until it
+  /// does, since every later edit can build on what it lacks.
+  Future<void> _rereadUnread(String spaceId) async {
+    await _docs.load();
+    final cursor = _state.cursorFor(spaceId);
+    final unread = <String, int>{
+      for (final record in _docs.records)
+        if (record.unreadSeq case final seq?)
+          if (record.unreadSpaceId == spaceId &&
+              seq <= cursor &&
+              _rereadFrom[record.noteId] != seq &&
+              _notes.byId(record.noteId) != null)
+            record.noteId: seq,
+    };
+    if (unread.isEmpty) return;
+    _rereading = unread.keys.toSet();
+    _stillUnread.clear();
+    _noteKeysUnavailable = false;
+    try {
+      var after = unread.values.reduce(min) - 1;
+      var whole = false;
+      for (var page = 0; page < rereadPages; page++) {
+        final batch = await _api.pullOps(space: spaceId, after: after);
+        if (!batch.isEmpty) await _applyBatch(_vault!, batch);
+        if (!batch.isEmpty) after = batch.cursor;
+        if (!batch.hasMore || after >= cursor) {
+          whole = true;
+          break;
+        }
+      }
+      for (final MapEntry(key: id, value: seq) in unread.entries) {
+        final record = _docs.get(id);
+        if (record == null) continue;
+        final still = _stillUnread[id];
+        if (whole) {
+          if (!_noteKeysUnavailable) _rereadFrom[id] = seq;
+          record.unreadSeq = still;
+          if (still != null && !_noteKeysUnavailable) {
+            _unopenable.add(id);
+          } else if (still == null) {
+            _unopenable.remove(id);
+          }
+        } else {
+          // Read only as far as [after]: what lies past it is still unknown.
+          record.unreadSeq = min(still ?? after + 1, after + 1);
+        }
+        record.unreadSpaceId = record.unreadSeq == null ? null : spaceId;
+        _docs.markDirty(id);
+      }
+    } finally {
+      _rereading = const {};
+      _stillUnread.clear();
+    }
+  }
+
+  /// Whether [record] has an op in [spaceId] this device could not open.
+  /// A whole copy from here would lack it, and the server keeps one copy of
+  /// a note and drops what that copy covers, so nothing whole goes up into
+  /// that space as a snapshot until the op is read.
+  bool _missesOpIn(DocRecord record, String spaceId) =>
+      record.unreadSeq != null && record.unreadSpaceId == spaceId;
+
+  /// Queues the whole of [record] for [spaceId] as ordinary ops, which
+  /// replace and drop nothing on the server.
+  void _queueStateOps(DocRecord record, String spaceId) {
+    for (final ops in record.doc.stateOps()) {
+      record.outbox.add(
+        OutboxEntry(
+          id: _nextRequestId(),
+          spaceId: spaceId,
+          ops: ops,
+          deviceSeq: ++record.deviceSeq,
+        ),
+      );
+    }
+  }
+
   Future<void> _applyPage(Vault vault, OpsBatch batch) async {
     await _docs.load();
     // Anything typed and not yet absorbed goes into the documents first, so
@@ -1944,8 +2143,41 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     ]..sort((a, b) => a.seq.compareTo(b.seq));
 
     final touched = <String, _Touched>{};
+    final retried = <String>{};
     for (final item in items) {
-      if (item.seq <= _state.cursorFor(batch.spaceId)) continue;
+      if (item.seq <= _state.cursorFor(batch.spaceId)) {
+        final record = _docs.get(item.noteId);
+        final unread = record?.unreadSeq;
+        if (record == null ||
+            unread == null ||
+            item.seq < unread ||
+            item.isMarker ||
+            record.unreadSpaceId != batch.spaceId ||
+            !_rereading.contains(item.noteId)) {
+          continue;
+        }
+        final changed = await _openInto(
+          vault,
+          record,
+          item,
+          space,
+          retried,
+          count: false,
+        );
+        if (changed == null) {
+          if (item.deviceId != _state.deviceId) {
+            _stillUnread.putIfAbsent(item.noteId, () => item.seq);
+          }
+          continue;
+        }
+        if (changed) {
+          touched.putIfAbsent(item.noteId, () => _Touched())
+            ..changed = true
+            ..at = item.at;
+        }
+        _docs.markDirty(item.noteId);
+        continue;
+      }
       final noteId = item.noteId;
       final touch = touched.putIfAbsent(noteId, () => _Touched());
       touch.deleted = item.deleted;
@@ -2001,6 +2233,18 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
             !local!.isDirty) {
           record.spaceId = there;
         }
+        if (item.deleted &&
+            record.outbox.any(
+              (entry) =>
+                  entry.spaceId == batch.spaceId &&
+                  entry.from != null &&
+                  entry.from != batch.spaceId,
+            )) {
+          // The note left this space and is already on its way back into
+          // it, as after Undo on Stop sharing: the marker is older than its
+          // return, so it does not take the note away.
+          touch.deleted = false;
+        }
         _docs.markDirty(noteId);
         continue;
       }
@@ -2012,47 +2256,25 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         final deviceSeq = item.deviceSeq;
         if (deviceSeq != null) _claimDeviceSeq(record, deviceSeq);
       }
-      if (item.engine != fugueEngine) {
-        debugPrint('KapyNotes: op in unknown engine ${item.engine}');
-        continue;
-      }
-
-      Uint8List? contentKey;
-      if (space.isTeam) {
-        contentKey = await _contentKeyFor(record, noteId, space, item.epoch);
-        if (contentKey == null) {
-          debugPrint(
-            'KapyNotes: no key for note $noteId at epoch ${item.epoch}',
-          );
-          continue;
+      final changed = await _openInto(vault, record, item, space, retried);
+      if (changed == null) {
+        if (item.deviceId != _state.deviceId &&
+            record.spaceId == batch.spaceId) {
+          // Kept until it is read: every later edit can build on it, and no
+          // whole copy from here may say it has it.
+          if (record.unreadSpaceId != batch.spaceId ||
+              (record.unreadSeq ?? item.seq) >= item.seq) {
+            record.unreadSpaceId = batch.spaceId;
+            record.unreadSeq = item.seq;
+          }
+          // A read again of this note keeps what it finds still unread, and
+          // this is unread too.
+          if (_rereading.contains(noteId)) {
+            _stillUnread.putIfAbsent(noteId, () => item.seq);
+          }
         }
-      }
-      final opened = await vault.openRaw(item.payload, contentKey);
-      if (opened == null) {
-        debugPrint('KapyNotes: could not open op ${item.seq} of $noteId');
+        _docs.markDirty(noteId);
         continue;
-      }
-      Object? decoded;
-      try {
-        decoded = jsonDecode(utf8.decode(opened));
-      } on FormatException {
-        continue;
-      }
-      if (decoded is! Map) continue;
-      final ops = decoded['ops'];
-      final snap = decoded['snap'];
-      var changed = false;
-      if (ops is List) {
-        changed = record.doc.apply(ops);
-        record.opsSinceSnapshot++;
-      } else if (snap is Map) {
-        changed = record.doc.mergeSnapshot(
-          Map<String, Object?>.of(snap.cast()),
-        );
-        if (item.isSnapshot) {
-          record.opsSinceSnapshot = 0;
-          record.ownOpsSinceSnapshot = 0;
-        }
       }
       if (changed) touch.changed = true;
       _docs.markDirty(noteId);
@@ -2236,19 +2458,27 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     DocRecord record,
     String noteId,
     Space space,
-    int epoch,
-  ) async {
+    int epoch, {
+    Uint8List? stale,
+  }) async {
     final cached = record.keys[epoch];
-    if (cached != null) return cached;
+    if (cached != null && !listEquals(cached, stale)) return cached;
     final local = _notes.byId(noteId);
-    if (local?.contentKey != null && local!.contentKeyEpoch == epoch) {
+    if (local?.contentKey != null &&
+        local!.contentKeyEpoch == epoch &&
+        !listEquals(local.contentKey, stale)) {
       record.keys[epoch] = local.contentKey!;
       return local.contentKey;
     }
     final spaceKey = _keyring.keyFor(space.id);
     if (spaceKey == null) return null;
     try {
-      for (final wire in await _api.fetchNoteKeys(space.id)) {
+      final wires = await _api.fetchNoteKeys(space.id);
+      if (_noteKeysFailed) {
+        _noteKeysFailed = false;
+        unawaited(syncNow());
+      }
+      for (final wire in wires) {
         final id = wire.noteId;
         if (id == null) continue;
         final content = await unwrapKey(wire.wrapped, spaceKey);
@@ -2262,8 +2492,43 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
     } on SyncException catch (error) {
       debugPrint('KapyNotes: note keys unavailable: ${error.message}');
+      _noteKeysUnavailable = true;
+      _noteKeysFailed = true;
     }
-    return record.keys[epoch];
+    final fetched = record.keys[epoch];
+    if (fetched == null || listEquals(fetched, stale)) return null;
+    if (stale != null &&
+        local != null &&
+        local.spaceId == space.id &&
+        local.contentKeyEpoch == epoch) {
+      // The copy here still holds the key from before, and would seal its
+      // next edit under it where nobody else can read it. Whatever it already
+      // sealed under the old one goes up again whole, under the new one. It
+      // covers nothing: ops this device could not open are not in it, and
+      // the server would drop them for every other reader.
+      _notes.adoptKey(
+        noteId,
+        contentKey: fetched,
+        contentKeyEpoch: epoch,
+        contentKeyGeneration: record.keyGeneration ?? space.keyGeneration,
+      );
+      if (_missesOpIn(record, space.id)) {
+        _queueStateOps(record, space.id);
+      } else {
+        record.outbox.add(
+          OutboxEntry(
+            id: _nextRequestId(),
+            spaceId: space.id,
+            snapshot: record.doc.toSnapshot(),
+            covers: 0,
+          ),
+        );
+        record.opsSinceSnapshot = 0;
+        record.ownOpsSinceSnapshot = 0;
+      }
+      _scheduleSend();
+    }
+    return fetched;
   }
 
   // -------------------------------------------------------------------------
@@ -2593,14 +2858,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     await _docs.load();
     _reconcileDirty();
     final mine = _notes.notesIn(spaceId);
-    if (mine.any((note) => note.isDirty)) return false;
-    for (final note in mine) {
+    final going = mine.where((note) => !_holdsBack(note)).toList();
+    if (going.any((note) => note.isDirty)) return false;
+    for (final note in going) {
       final record = _docs.get(note.id);
       if (record == null || record.hasPending) return false;
     }
 
     final at = _now();
-    for (final note in mine) {
+    for (final note in going) {
       final record = _docs.get(note.id)!;
       final snapshot = WireSnapshot(
         covers: _state.cursorFor(personal.id),
@@ -2891,7 +3157,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// waiting: then failed, and saying which, rather than a pass reading as
   /// synced without them.
   void _settle() {
-    final problem = _stuck.isEmpty ? _tasks?.refusal : _stuckError;
+    final problem = _stuck.isNotEmpty
+        ? _stuckError
+        : _unopenable.isNotEmpty
+        ? unopenableProblem
+        : _tasks?.refusal;
     _lastError = problem;
     _setStatus(problem == null ? SyncStatus.idle : SyncStatus.failed);
   }
