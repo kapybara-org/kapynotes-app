@@ -821,6 +821,117 @@ void main() {
       expectInside(tester, card, 420);
       await tester.pump(const Duration(seconds: 3));
     });
+
+    testWidgets('in a Tasks pane 320 wide at 3.1x, Done and Not finished wrap '
+        'their words instead of overflowing', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+      tasks.doNow(tasks.read().open.first);
+      await pumpTasks(
+        tester,
+        size: const Size(320, 844),
+        phone: false,
+        label: 'Errands',
+        scale: 3.1,
+      );
+      expect(tester.takeException(), isNull);
+      for (final (key, text) in [
+        ('tasks-done', 'Done'),
+        ('tasks-not-finished', 'Not finished'),
+      ]) {
+        final pill = find.byKey(ValueKey(key));
+        expectInside(tester, pill, 320);
+        expectInside(
+          tester,
+          find.descendant(of: pill, matching: find.text(text)),
+          320,
+        );
+      }
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('in a Tasks pane 640 wide with Android 14\'s 200% text, the '
+        'pair stacks its cards', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Water the plants');
+      await pumpTasks(
+        tester,
+        size: const Size(640, 1400),
+        phone: false,
+        label: 'Errands',
+        scaler: const _Android200(),
+      );
+      expect(tester.takeException(), isNull);
+      final left = tester.getRect(
+        find.byKey(const ValueKey('tasks-pair-left')),
+      );
+      final right = tester.getRect(
+        find.byKey(const ValueKey('tasks-pair-right')),
+      );
+      expect(right.top, greaterThanOrEqualTo(left.bottom - 0.5));
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('in a Tasks pane 640 wide with Android 14\'s 200% text, Do '
+        'now puts its buttons under the task', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two');
+      tasks.doNow(tasks.read().open.first);
+      await pumpTasks(
+        tester,
+        size: const Size(640, 1400),
+        phone: false,
+        label: 'Errands',
+        scaler: const _Android200(),
+      );
+      expect(tester.takeException(), isNull);
+      final words = find.descendant(
+        of: find.byKey(const ValueKey('tasks-do-now')),
+        matching: find.text('Hide the menu'),
+      );
+      for (final key in ['tasks-done', 'tasks-not-finished']) {
+        expect(
+          tester.getRect(find.byKey(ValueKey(key))).top,
+          greaterThanOrEqualTo(tester.getRect(words).bottom - 0.5),
+        );
+      }
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    for (final (width, scale, asks) in [
+      (768.0, 1.0, true),
+      (768.0, 2.0, false),
+    ]) {
+      testWidgets('in a Tasks pane ${width.round()} wide at ${scale}x, a stale '
+          'task ${asks ? 'asks' : 'doesn\'t ask'} "Still want this?"', (
+        tester,
+      ) async {
+        await setUpTasks(
+          tester,
+          'Errands\n☐ Hide the menu\n☐ Water the plants\n☐ Two',
+        );
+        tasks.doNow(tasks.read().open.first);
+        final item = tasks.read().open.firstWhere(
+          (item) => item.words == 'Water the plants',
+        );
+        clock = clock.add(const Duration(days: 15));
+        await pumpTasks(
+          tester,
+          size: Size(width, 1400),
+          phone: false,
+          label: 'Errands',
+          scale: scale,
+        );
+        expect(tester.takeException(), isNull);
+        final row = find.byKey(ValueKey(item.id));
+        expect(
+          find.descendant(of: row, matching: find.text('Still want this?')),
+          asks ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.descendant(of: row, matching: find.text('Keep')),
+          findsOneWidget,
+        );
+        await tester.pump(const Duration(seconds: 3));
+      });
+    }
   });
 
   group('on a touch screen', () {

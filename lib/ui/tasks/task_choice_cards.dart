@@ -90,10 +90,7 @@ TextStyle taskText(
   double line,
   Color color, [
   double weight = 400,
-]) => uiStyle(size, line, FontWeight.w400, color).copyWith(
-  fontWeight: FontWeight.values[((weight / 100).round() - 1).clamp(0, 8)],
-  fontVariations: [FontVariation('wght', weight)],
-);
+]) => uiStyle(size, line, FontWeight.w400, color, axis: weight);
 
 TextStyle _mono(Color color) => TextStyle(
   fontFamily: AppFonts.mono,
