@@ -553,9 +553,14 @@ class AccountAvatar extends StatelessWidget {
     this.label = 'Account & sync',
     this.user,
     this.syncStatus,
+    this.target = _extent,
   });
 
   final VoidCallback onPressed;
+
+  /// The square a tap lands in, the circle at its centre: 44 on a phone,
+  /// where every target is.
+  final double target;
 
   /// What a tap opens, for a screen reader, and the tooltip while nobody is
   /// signed in.
@@ -652,22 +657,28 @@ class AccountAvatar extends StatelessWidget {
           splashFactory: NoSplash.splashFactory,
           child: ExcludeSemantics(
             child: SizedBox.square(
-              dimension: _extent,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  face,
-                  if (dot != null)
-                    Positioned(
-                      right: -1,
-                      bottom: -1,
-                      child: _Dot(
-                        key: const ValueKey('rail-sync-dot'),
-                        color: dot,
-                        diameter: 10,
-                      ),
-                    ),
-                ],
+              dimension: target,
+              child: Center(
+                child: SizedBox.square(
+                  key: const ValueKey('account-circle'),
+                  dimension: _extent,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      face,
+                      if (dot != null)
+                        Positioned(
+                          right: -1,
+                          bottom: -1,
+                          child: _Dot(
+                            key: const ValueKey('rail-sync-dot'),
+                            color: dot,
+                            diameter: 10,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

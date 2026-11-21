@@ -39,6 +39,10 @@ class PhoneHomeHeader extends StatelessWidget {
   final AccountUser? user;
   final VoidCallback onSettings;
 
+  /// How far S's 44 pt target reaches past its 32 pt circle on each side,
+  /// into the room around it, so the circle keeps its place.
+  static const double _reach = 6;
+
   @override
   Widget build(BuildContext context) {
     final onTasks = this.onTasks;
@@ -47,7 +51,7 @@ class PhoneHomeHeader extends StatelessWidget {
       maxScaleFactor: 1.3,
       child: Container(
         height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.only(left: 20, right: 20 - _reach),
         child: Row(
           spacing: 12,
           children: [
@@ -68,11 +72,13 @@ class PhoneHomeHeader extends StatelessWidget {
                 onPressed: onTasks,
               ),
             Expanded(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: streak == null || streak.days == 0
-                    ? null
-                    : FittedBox(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                spacing: 12 - _reach,
+                children: [
+                  if (streak != null && streak.days > 0)
+                    Flexible(
+                      child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: StreakMark(
                           key: const ValueKey('phone-streak'),
@@ -80,13 +86,16 @@ class PhoneHomeHeader extends StatelessWidget {
                           inline: true,
                         ),
                       ),
+                    ),
+                  AccountAvatar(
+                    key: const ValueKey('phone-account'),
+                    label: 'Settings',
+                    target: 32 + 2 * _reach,
+                    user: user,
+                    onPressed: onSettings,
+                  ),
+                ],
               ),
-            ),
-            AccountAvatar(
-              key: const ValueKey('phone-account'),
-              label: 'Settings',
-              user: user,
-              onPressed: onSettings,
             ),
           ],
         ),

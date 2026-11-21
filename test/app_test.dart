@@ -7503,8 +7503,13 @@ void main() {
         findsOneWidget,
       );
       expect(find.byTooltip('1-day writing streak'), findsOneWidget);
-      expect(tester.getTopRight(avatar).dx, 393 - 20);
-      expect(tester.getTopLeft(avatar).dx - tester.getTopRight(streak).dx, 12);
+      final circle = find.descendant(
+        of: avatar,
+        matching: find.byKey(const ValueKey('account-circle')),
+      );
+      expect(tester.getSize(avatar), const Size(44, 44));
+      expect(tester.getTopRight(circle).dx, 393 - 20);
+      expect(tester.getTopLeft(circle).dx - tester.getTopRight(streak).dx, 12);
       expect(find.byKey(const ValueKey('phone-list-title')), findsNothing);
       expect(find.byKey(const ValueKey('rail-streak')), findsNothing);
 

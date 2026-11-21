@@ -22,6 +22,10 @@ void main() {
   final tasksTitle = find.byKey(const ValueKey('home-title-tasks'));
   final streakMark = find.byKey(const ValueKey('phone-streak'));
   final avatar = find.byKey(const ValueKey('phone-account'));
+  final circle = find.descendant(
+    of: avatar,
+    matching: find.byKey(const ValueKey('account-circle')),
+  );
   CalcPalette palette() => KapyTheme.dark().extension<CalcPalette>()!;
 
   Future<List<String>> pumpHeader(
@@ -152,8 +156,8 @@ void main() {
       'streak sits 12 pt before it', (tester) async {
     final taps = await pumpHeader(tester);
 
-    expect(tester.getSize(avatar), const Size(32, 32));
-    expect(tester.getTopRight(avatar).dx, 393 - 20);
+    expect(tester.getSize(circle), const Size(32, 32));
+    expect(tester.getTopRight(circle).dx, 393 - 20);
     expect(find.descendant(of: avatar, matching: find.text('S')), findsOne);
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
 
@@ -167,13 +171,26 @@ void main() {
       findsOne,
     );
     expect(
-      tester.getTopLeft(avatar).dx - tester.getTopRight(streakMark).dx,
+      tester.getTopLeft(circle).dx - tester.getTopRight(streakMark).dx,
       12,
     );
-    expect(tester.getCenter(streakMark).dy, tester.getCenter(avatar).dy);
+    expect(tester.getCenter(streakMark).dy, tester.getCenter(circle).dy);
 
     await tester.tap(avatar);
     expect(taps, ['settings']);
+  });
+
+  testWidgets('S takes a tap anywhere in 44 pt round its 32 pt circle, '
+      'without moving it', (tester) async {
+    final taps = await pumpHeader(tester);
+    final target = tester.getRect(avatar);
+    expect(target.size, const Size(44, 44));
+    expect(target.center, tester.getCenter(circle));
+    expect(target.right, 393 - 14);
+
+    await tester.tapAt(target.topLeft + const Offset(1, 1));
+    await tester.tapAt(target.bottomRight - const Offset(1, 1));
+    expect(taps, ['settings', 'settings']);
   });
 
   testWidgets('signed out, S is the quiet account mark and still opens '
@@ -222,7 +239,7 @@ void main() {
       await pumpHeader(tester, streak: streak);
       expect(streakMark, findsNothing);
       expect(findKapyIcon(KapyIcons.fireOutlined), findsNothing);
-      expect(tester.getTopRight(avatar).dx, 393 - 20);
+      expect(tester.getTopRight(circle).dx, 393 - 20);
     });
   }
 
@@ -247,9 +264,9 @@ void main() {
         streak: const WritingStreak(days: 365, wroteToday: true),
       );
       expect(tester.takeException(), isNull);
-      expect(tester.getTopRight(avatar).dx, 375 - 20);
+      expect(tester.getTopRight(circle).dx, 375 - 20);
       expect(
-        tester.getTopLeft(avatar).dx - tester.getRect(streakMark).right,
+        tester.getTopLeft(circle).dx - tester.getRect(streakMark).right,
         greaterThanOrEqualTo(12),
       );
       expect(
