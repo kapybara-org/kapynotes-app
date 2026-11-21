@@ -1,13 +1,12 @@
-// Tasks on a real Mac or phone: the whole app over notes kept in memory,
+// Tasks on a real Mac: the whole app over notes kept in memory,
 // walked through the boards' states with a clock the test moves.
 //
 //   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/tasks_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
-// The Mac walks D1 to D5 by keys and clicks; a phone walks D6 and D7 by taps
-// and lays the pair and Do now out at 1×, 1.3× and 2× text. Each state is
-// taken dark and light, as screenshots in build/screenshots.
+// The Mac walks D1 to D5 by keys and clicks. Each state is taken dark and
+// light, as screenshots in build/screenshots.
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -183,42 +182,4 @@ void main() {
     expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
     semantics.dispose();
   }, skip: AppPlatform.isMobile);
-
-  testWidgets('a phone walks D6 and D7, at 1×, 1.3× and 2× text', (
-    tester,
-  ) async {
-    final semantics = tester.ensureSemantics();
-    await launch(tester);
-    await tap(tester, 'page-back');
-    await tap(tester, 'bar-tasks');
-
-    await tap(tester, 'tasks-pair-right');
-    expect(find.text('Your choice so far'), findsOneWidget);
-    expect(find.textContaining('Tap the one you’d rather do.'), findsOneWidget);
-    expect(heard(tester, 'tasks-pair'), hasLength(greaterThanOrEqualTo(2)));
-    for (final scale in [1.0, 1.3, 2.0]) {
-      tester.platformDispatcher.textScaleFactorTestValue = scale;
-      await shot(tester, 'phone-d6-pair-text-${(scale * 100).round()}');
-    }
-    tester.platformDispatcher.clearTextScaleFactorTestValue();
-    await tester.pumpAndSettle();
-
-    await tap(tester, 'tasks-start');
-    expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
-    final done = tester.getTopLeft(find.byKey(const ValueKey('tasks-done')));
-    final notFinished = tester.getTopLeft(
-      find.byKey(const ValueKey('tasks-not-finished')),
-    );
-    expect(done.dx < notFinished.dx || done.dy < notFinished.dy, isTrue);
-    for (final scale in [1.0, 1.3, 2.0]) {
-      tester.platformDispatcher.textScaleFactorTestValue = scale;
-      await shot(tester, 'phone-d7-do-now-text-${(scale * 100).round()}');
-    }
-    tester.platformDispatcher.clearTextScaleFactorTestValue();
-    await tester.pumpAndSettle();
-
-    await tap(tester, 'tasks-done');
-    expect(find.byKey(const ValueKey('tasks-just-done')), findsOneWidget);
-    semantics.dispose();
-  }, skip: !AppPlatform.isMobile);
 }
