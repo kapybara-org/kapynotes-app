@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -49,7 +50,21 @@ class KapyAiEmpty extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Column(
                   children: [
-                    _Peek(menu: menu),
+                    // The peeking Kapy, its head and paw only: the top of
+                    // the 136 × 256 pose at 72 px wide.
+                    _ClearOfMenu(
+                      menu: menu,
+                      child: SizedBox(
+                        width: 72,
+                        height: 76,
+                        child: Image.asset(
+                          KapyCursorPeek.assetPath,
+                          fit: BoxFit.fitWidth,
+                          alignment: Alignment.topCenter,
+                          excludeFromSemantics: true,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 14),
                     Text(
                       'Ask about anything in your notes',
@@ -94,63 +109,44 @@ class KapyAiEmpty extends StatelessWidget {
   }
 }
 
-/// The peeking Kapy, its head and paw only: the top of the 136 × 256 pose at
-/// 72 px wide. While the picker's [menu] is open, Kapy shows only when the
-/// menu's top clears the whole head, so the menu never cuts it in two; the
-/// paw below the chin may go under the menu.
-class _Peek extends StatefulWidget {
-  const _Peek({this.menu});
+/// While the picker's [menu] is open, Kapy is painted only when the menu's
+/// top clears the whole head, so the menu never cuts it in two; the paw below
+/// the chin may go under the menu. Decided as it paints, when the menu has
+/// already been laid out beside it.
+class _ClearOfMenu extends SingleChildRenderObjectWidget {
+  const _ClearOfMenu({required this.menu, super.child});
 
   final GlobalKey? menu;
 
   @override
-  State<_Peek> createState() => _PeekState();
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderClearOfMenu()..menu = menu;
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderClearOfMenu renderObject,
+  ) => renderObject
+    ..menu = menu
+    ..markNeedsPaint();
 }
 
-class _PeekState extends State<_Peek> {
+class _RenderClearOfMenu extends RenderProxyBox {
   /// Ears to chin: the top 56 px of the 76.
   static const _head = 56.0;
 
-  /// Whether the open menu clears the head, measured after each layout.
-  bool _clear = false;
+  GlobalKey? menu;
 
   @override
-  void didUpdateWidget(_Peek oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.menu != widget.menu) _clear = false;
-  }
-
-  void _measure(GlobalKey menu) {
-    if (!mounted || menu != widget.menu) return;
-    final peek = context.findRenderObject();
-    final box = menu.currentContext?.findRenderObject();
-    if (peek is! RenderBox || box is! RenderBox) return;
-    if (!peek.hasSize || !box.hasSize) return;
-    final clear =
-        peek.localToGlobal(const Offset(0, _head)).dy <=
-        box.localToGlobal(Offset.zero).dy;
-    if (clear != _clear) setState(() => _clear = clear);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final menu = widget.menu;
-    if (menu != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _measure(menu));
+  void paint(PaintingContext context, Offset offset) {
+    final box = menu?.currentContext?.findRenderObject();
+    if (box is RenderBox &&
+        box.hasSize &&
+        localToGlobal(const Offset(0, _head)).dy >
+            box.localToGlobal(Offset.zero).dy) {
+      return;
     }
-    return Visibility.maintain(
-      visible: menu == null || _clear,
-      child: SizedBox(
-        width: 72,
-        height: 76,
-        child: Image.asset(
-          KapyCursorPeek.assetPath,
-          fit: BoxFit.fitWidth,
-          alignment: Alignment.topCenter,
-          excludeFromSemantics: true,
-        ),
-      ),
-    );
+    super.paint(context, offset);
   }
 }
 
