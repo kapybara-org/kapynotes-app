@@ -357,9 +357,9 @@ void main() {
       expect(faint, findsOneWidget);
       expect(
         tester
-            .widget<InkResponse>(
+            .widget<GestureDetector>(
               find
-                  .ancestor(of: faint, matching: find.byType(InkResponse))
+                  .ancestor(of: faint, matching: find.byType(GestureDetector))
                   .first,
             )
             .onTap,
@@ -414,9 +414,8 @@ void main() {
     tester,
   ) async {
     await setUpTasks(tester, 'Errands\n☐ Hide the menu', editable: false);
-    final note = notes.allNotes.first;
-    expect(await tasks.add('Book flights', noteId: note.id), isNull);
-    expect(notes.allNotes.first.body, 'Errands\n☐ Hide the menu');
+    expect(await tasks.add('Book flights', noteId: errandsId), isNull);
+    expect(noteBody(), 'Errands\n☐ Hide the menu');
     await settle(tester);
   });
 
@@ -432,9 +431,10 @@ void main() {
         await pumpScreen(tester);
         await tester.tap(find.byKey(const ValueKey('tasks-note-picker')));
         await tester.pumpAndSettle();
+        // No note, then Errands and Elsewhere while they can be changed.
         expect(
           find.byType(PopupMenuItem<String>),
-          findsNWidgets(editable ? 2 : 1),
+          findsNWidgets(editable ? 3 : 1),
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await settle(tester);
@@ -449,7 +449,7 @@ void main() {
           'Errands\n☐ Hide the menu',
           editable: editable,
         );
-        await pumpScreen(tester, noteId: notes.allNotes.first.id);
+        await pumpScreen(tester, noteId: errandsId);
         expect(
           find.byKey(const ValueKey('tasks-add-row')),
           editable ? findsOneWidget : findsNothing,
@@ -492,7 +492,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Removed from your list'), findsOneWidget);
-      expect(notes.allNotes.first.body, 'Errands\n☐ Hide the menu\n☐ Book flights');
+      expect(noteBody(), 'Errands\n☐ Hide the menu\n☐ Book flights');
       await tester.pump(const Duration(seconds: 5));
       await settle(tester);
     },

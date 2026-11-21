@@ -46,7 +46,6 @@ class TasksScreen extends StatefulWidget {
     required this.onOpenDone,
     this.images,
     this.displayTime,
-    this.displayTime,
     this.newTaskShortcut,
     this.phone = false,
     this.sheet = false,

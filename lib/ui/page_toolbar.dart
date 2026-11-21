@@ -131,9 +131,6 @@ class PageToolbar extends StatelessWidget {
   /// behind it.
   final void Function(String folderId, {required bool behind})? onOpenFolder;
 
-  /// Drawn in place of the breadcrumb, as Tasks' Today and its date.
-  final Widget? crumb;
-
   final bool listVisible;
   final VoidCallback onShowList;
   final String? showListShortcut;
