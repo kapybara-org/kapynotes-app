@@ -230,14 +230,21 @@ class TaskSync {
     for (final noteId in _deletedNotes()) {
       if (_docs.neverSent(noteId)) {
         _tags.dropNote(noteId);
+        _folders?.dropNote(noteId);
+        _days?.dropNote(noteId);
       } else {
         _tags.forgetNote(noteId);
+        _folders?.forgetNote(noteId);
+        _days?.forgetNote(noteId);
       }
-      _folders?.forgetNote(noteId);
-      _days?.forgetNote(noteId);
     }
     await _push();
   }
+
+  /// A note on this device that the server has never had: its place in a
+  /// folder and its day wait for it. One this device doesn't hold was never
+  /// written here, so nothing of it is held back.
+  bool _waits(String noteId) => _noteIsLive(noteId) && _docs.neverSent(noteId);
 
   void _rekey() {
     if (_rekeyed) return;
@@ -258,7 +265,8 @@ class TaskSync {
   /// then what the chats owe, each in chunks of their own: a push over the
   /// account's limit is refused whole, and a chunk that held a task or a tag
   /// with the folders or the chats would take it down with them. A note's
-  /// tags wait for the note: none go up for one the server has never had. A
+  /// tags, its place in a folder and its day wait for the note: none go up
+  /// for one the server has never had. A
   /// record that loses comes back as the server holds it, is merged in with
   /// a later `updatedAt`, and goes up again: a few rounds at most, since
   /// only another device writing the same record in the same moment can make
@@ -286,25 +294,27 @@ class TaskSync {
       final owedFolders = [
         if (folders != null)
           for (final item in folders.owed)
-            (
-              id: item.kind == FolderRecord.kind
-                  ? item.key
-                  : _placementId(item.key),
-              updatedAt: item.updatedAt,
-              payload: item.payload,
-              acknowledge: () => folders.acknowledge(item),
-            ),
+            if (item.kind == FolderRecord.kind || !_waits(item.key))
+              (
+                id: item.kind == FolderRecord.kind
+                    ? item.key
+                    : _placementId(item.key),
+                updatedAt: item.updatedAt,
+                payload: item.payload,
+                acknowledge: () => folders.acknowledge(item),
+              ),
       ];
       final days = _days;
       final owedDays = [
         if (days != null)
           for (final item in days.owed)
-            (
-              id: _dayId(item.key),
-              updatedAt: item.updatedAt,
-              payload: item.payload,
-              acknowledge: () => days.acknowledge(item),
-            ),
+            if (!_waits(item.key))
+              (
+                id: _dayId(item.key),
+                updatedAt: item.updatedAt,
+                payload: item.payload,
+                acknowledge: () => days.acknowledge(item),
+              ),
       ];
       final owedChats = [
         if (_chatsSync)
