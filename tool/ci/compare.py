@@ -20,7 +20,7 @@ baseline = set()
 for line in open(baseline_path, encoding="utf-8"):
     if line.startswith("#") or not line.strip():
         continue
-    _, path, name = line.rstrip("\n").split("\t", 2)
+    path, name = line.rstrip("\n").split("\t", 1)
     baseline.add((path, name))
 
 suites, tests, done, errors, golden = {}, {}, {}, {}, set()
