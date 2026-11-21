@@ -54,7 +54,7 @@ class TaskInk {
     return TaskInk._(
       card: palette.wellBackground,
       raised: palette.cardBackground,
-      lifted: palette.controlBackground,
+      lifted: palette.surfaceBackground,
       rowHover: palette.hover,
       button: palette.controlBackground,
       chip: palette.selectedBackground,
