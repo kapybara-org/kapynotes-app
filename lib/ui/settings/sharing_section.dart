@@ -187,12 +187,13 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   bool get _idle => !_busy && !_sharing.isOffline;
 
   /// Runs one action. A failure is said once, under [at], and nowhere else;
-  /// [done] is said as a toast, with Undo when [undo] can take it back.
+  /// [done] is said as a toast, with Undo when [undo] can take it back; [undo]
+  /// answers with what to say once it has.
   Future<bool> _run(
     String at,
     Future<void> Function() action, {
     String? done,
-    Future<void> Function()? undo,
+    Future<String> Function()? undo,
   }) async {
     setState(() {
       _busy = true;
@@ -211,11 +212,14 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         await action();
       }
       if (mounted && done != null) {
+        final overlay = Overlay.of(context, rootOverlay: true);
         Toast.show(
           context,
           done,
           action: undo == null ? null : 'Undo',
-          onAction: undo == null ? null : () => unawaited(_run(at, undo)),
+          onAction: undo == null
+              ? null
+              : () => unawaited(undoSharing(overlay, undo)),
         );
       }
       return true;
@@ -460,6 +464,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     if (choice == null || !mounted) return;
     final first = _first(person.name);
     final title = _titleOf(note);
+    final sharing = _sharing;
     if (choice == SpaceRole.owner) {
       final ok = await askFirst(
         context,
@@ -474,8 +479,12 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         'mine',
         () => _sharing.removeFromNote(note.id, person.email),
         done: 'Stopped sharing “$title” with $first',
-        undo: () =>
-            _sharing.addPerson(note.id, person.email, role: access.role),
+        undo: () async {
+          await sharing.addPerson(note.id, person.email, role: access.role);
+          return sharing.memberOn(note.id, person.email) == null
+              ? 'Invitation sent to ${person.email}'
+              : '$first can see “$title” again';
+        },
       );
       return;
     }
@@ -567,14 +576,16 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         if (_accessOf(note, person.email) case final access?)
           note.id: access.role,
     };
+    final sharing = _sharing;
     await _run(
       'stop',
       () => _sharing.stopSharingWith(person.email),
       done: 'Stopped sharing with $first',
       undo: () async {
         for (final MapEntry(key: id, value: role) in before.entries) {
-          await _sharing.addPerson(id, person.email, role: role);
+          await sharing.addPerson(id, person.email, role: role);
         }
+        return 'Shared again with $first';
       },
     );
   }
@@ -676,13 +687,16 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     if (error == null || error.at != at) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
-      child: Text(
-        error.text,
-        key: const ValueKey('sharing-error'),
-        style: TextStyle(
-          fontSize: AppTypeScale.small,
-          height: 1.4,
-          color: Theme.of(context).colorScheme.error,
+      child: Semantics(
+        liveRegion: true,
+        child: Text(
+          error.text,
+          key: const ValueKey('sharing-error'),
+          style: TextStyle(
+            fontSize: AppTypeScale.small,
+            height: 1.4,
+            color: Theme.of(context).colorScheme.error,
+          ),
         ),
       ),
     );
@@ -898,9 +912,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         icon: KapyIcons.lockRounded,
       ),
       const SettingsNote(
-        'To be sure a note reaches the right person, compare safety codes '
-        "with them in person once. You'll be told if their code ever "
-        'changes.',
+        'If the safety code of someone you share with ever changes, you’ll '
+        'be told, so you can check it’s really them.',
       ),
       const SettingsNote(
         "Something wrong? Block and report from the person's menu. One person "

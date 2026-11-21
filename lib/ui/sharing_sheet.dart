@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
+import 'safety_dialogs.dart';
 
 /// Opens [build] as a bottom sheet on a phone, and as a centred dialog on a
 /// Mac or a PC. Every sharing surface opens through here, so a phone gets one
@@ -74,6 +76,21 @@ class SharingSheetFrame extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Runs the Undo on a sharing toast. It can be tapped after the sheet or page
+/// that offered it has closed, so it reports on [overlay], held from when the
+/// toast was shown, and never on that surface: [undo] answers with what to say
+/// once it has worked.
+Future<void> undoSharing(
+  OverlayState overlay,
+  Future<String> Function() undo,
+) async {
+  try {
+    Toast.showOn(overlay, await undo());
+  } catch (error) {
+    Toast.showOn(overlay, describeSharingError(error), isError: true);
   }
 }
 

@@ -211,9 +211,12 @@ void main() {
       // and the invitation: who it is from by name, with the address that
       // was verified, and never the space's placeholder, which names Sam.
       expect(
-        find.textContaining('compare safety codes with them in person'),
+        find.textContaining(
+          'you’ll be told, so you can check it’s really them',
+        ),
         findsOneWidget,
       );
+      expect(find.textContaining('compare safety codes'), findsNothing);
       expect(find.text('Waiting for you'), findsOneWidget);
       expect(
         find.text('Priya Nair invited you to share notes'),
@@ -432,6 +435,78 @@ void main() {
     await act(tester, find.text('Undo'));
     expect(sam.notes.byId(note.id)!.isShared, isTrue);
     expect(sam.sharing.notesSharedWith(priya.email).single.id, note.id);
+  });
+
+  testWidgets('Undo after Settings has closed still shares the notes again, '
+      'and says so', (tester) async {
+    late Note note;
+    await tester.runAsync(() async {
+      await sam.boot();
+      await priya.boot();
+      note = sam.notes.create(body: 'Car service checklist');
+      await sam.sync.syncNow();
+      await sam.sharing.shareNoteWith(note.id, email: priya.email);
+      await priya.sharing.acceptInvite(server.outbox.single.token);
+      await sam.sync.syncNow();
+      await sam.sharing.refresh();
+    });
+    tester.view.physicalSize = const Size(900, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final shown = ValueNotifier(true);
+    await tester.pumpWidget(
+      harness(
+        ValueListenableBuilder<bool>(
+          valueListenable: shown,
+          builder: (context, open, _) => open
+              ? SharingSectionBody(sharing: sam.sharing, notes: sam.notes)
+              : const SizedBox(),
+        ),
+      ),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(person(priya)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('stop-sharing-with')));
+    await tester.pumpAndSettle();
+    await confirm(tester);
+    expect(sam.notes.byId(note.id)!.isShared, isFalse);
+
+    shown.value = false;
+    await tester.pumpAndSettle();
+    expect(find.byType(SharingSectionBody), findsNothing);
+
+    await act(tester, find.text('Undo'));
+    expect(tester.takeException(), isNull);
+    expect(sam.notes.byId(note.id)!.isShared, isTrue);
+    expect(find.text('Shared again with Priya'), findsOneWidget);
+    await quiet(tester);
+  });
+
+  testWidgets('an error under a group is announced', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await tester.runAsync(() async {
+      await sam.boot();
+      final note = sam.notes.create(body: 'Notes from the call');
+      await sam.sync.syncNow();
+      await sam.sharing.shareNoteWith(note.id, email: 'tomas.lind@example.org');
+    });
+    await pump(tester, sam);
+    server.failNext = const SyncTransientException('offline');
+    await tester.tap(
+      find.byKey(ValueKey('cancel-${server.outbox.single.token}')),
+    );
+    await tester.pumpAndSettle();
+    await confirm(tester);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('sharing-error'))),
+      isSemantics(isLiveRegion: true),
+    );
+    semantics.dispose();
+    await quiet(tester);
   });
 
   testWidgets('a note shared with you opens, is copied, and is left with a '
