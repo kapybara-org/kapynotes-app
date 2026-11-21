@@ -718,7 +718,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           ),
         ),
       ],
-      const SizedBox(height: 10),
+      SizedBox(height: widget.asSheet ? 6 : 10),
       _AccessAndShare(
         role: _role,
         enabled: enabled,
@@ -1461,10 +1461,16 @@ class _SheetScaffold extends StatelessWidget {
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        key: const ValueKey('share-dialog'),
-        width: 480,
-        child: content,
+      child: Semantics(
+        scopesRoute: true,
+        namesRoute: true,
+        explicitChildNodes: true,
+        label: title,
+        child: SizedBox(
+          key: const ValueKey('share-dialog'),
+          width: 480,
+          child: content,
+        ),
       ),
     );
   }
@@ -2512,7 +2518,10 @@ class _AccessAndShare extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (field case final field?) ...[field, const SizedBox(height: 8)],
+        if (field case final field?) ...[
+          field,
+          SizedBox(height: phone ? 6 : 10),
+        ],
         buttons,
       ],
     );

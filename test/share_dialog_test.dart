@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show SystemChannels;
@@ -2192,6 +2194,11 @@ void main() {
       final field = find.byKey(const ValueKey('share-email'));
       final decoration = tester.widget<TextField>(field).decoration!;
       expect(tester.getSize(field).height, 44);
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('share-role'))).dy -
+            tester.getBottomLeft(field).dy,
+        12,
+      );
       expect(decoration.fillColor, palette.textPrimary.withValues(alpha: 0.04));
       expect(decoration.enabledBorder!.borderSide, BorderSide.none);
 
@@ -2280,6 +2287,51 @@ void main() {
     );
   });
 
+  testWidgets('on Windows the dialog names its route with its own title, '
+      'for the owner and for a viewer', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final semantics = tester.ensureSemantics();
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      note = alice.notes.create(body: 'Holiday budget');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(
+        note.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+    });
+    for (final (device, title) in [
+      (alice, 'Share'),
+      (bob, 'Shared with you'),
+    ]) {
+      await openSheet(tester, device.notes.byId(note.id)!, device);
+      final route = find.ancestor(
+        of: find.byKey(const ValueKey('share-dialog')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.namesRoute == true,
+        ),
+      );
+      expect(route, findsOneWidget);
+      expect(
+        tester.getSemantics(route),
+        isSemantics(label: title, scopesRoute: true, namesRoute: true),
+      );
+      await tester.tap(find.byKey(const ValueKey('share-done')));
+      await tester.pumpAndSettle();
+    }
+    debugDefaultTargetPlatformOverride = null;
+    semantics.dispose();
+  });
+
   testWidgets('the Mac dialog is S02’s: 480 wide, a clear ⋮ at 16 in a 28 box, '
       'plain rows, a quiet subtitle and label, and a footer of words with Done '
       'at the right', (tester) async {
@@ -2311,6 +2363,15 @@ void main() {
       final dialog = find.byKey(const ValueKey('share-dialog'));
       final palette = tester.element(dialog).palette;
       expect(tester.getSize(dialog).width, 480);
+      if (device == alice) {
+        expect(
+          tester.getTopLeft(find.byKey(const ValueKey('share-role'))).dy -
+              tester
+                  .getBottomLeft(find.byKey(const ValueKey('share-email')))
+                  .dy,
+          10,
+        );
+      }
 
       final more = find.byKey(const ValueKey('share-more'));
       expect(tester.getSize(more), const Size(28, 28));
