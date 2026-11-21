@@ -229,10 +229,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Block Someone…'));
       await tester.pumpAndSettle();
-      expect(find.textContaining("can't invite you again"), findsOneWidget);
+      expect(find.textContaining('can’t invite you again'), findsOneWidget);
 
       await tester.runAsync(() async {
-        await tester.tap(find.byKey(const ValueKey('sharing-confirm-ok')));
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });
       await tester.pumpAndSettle();
