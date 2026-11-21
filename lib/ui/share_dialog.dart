@@ -419,23 +419,11 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _leave() async {
     final space = _space;
     if (space == null) return;
-    final owner = space.shortNameOf(space.ownerId);
-    final together = [
-      for (final note in _sharing.notesIn(space.id))
-        if (!note.isHidden) note,
-    ].length;
-    final keep = await askFirst(
+    final keep = await _askToLeave(
       context,
-      title: together > 1
-          ? 'Leave $together notes from $owner?'
-          : 'Leave “${_note.title}”?',
-      body: together > 1
-          ? '$owner shares “${_note.title}” together with ${together - 1} '
-                'more, so you leave all of them. You stop seeing $owner’s '
-                'changes, and $owner keeps the notes.'
-          : 'You stop seeing $owner’s changes. $owner keeps the note.',
-      action: 'Leave',
-      option: together > 1 ? 'Keep private copies' : 'Keep a private copy',
+      sharing: _sharing,
+      space: space,
+      title: _note.title,
     );
     if (keep == null || !mounted) return;
     final leave = Navigator.of(context);
@@ -463,21 +451,11 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     ),
   );
 
-  Future<void> _block(Space space, SpaceMember member) async {
-    final name = member.firstName;
-    final ok = await askFirst(
-      context,
-      title: 'Block $name?',
-      body:
-          '$name loses access to everything you share, you leave what $name '
-          'shares with you (keeping copies), and $name can’t invite you '
-          'again.',
-      action: 'Block',
-    );
-    if (ok != true || !mounted) return;
+  Future<void> _block(SpaceMember member) async {
+    if (!await _askToBlock(context, member) || !mounted) return;
     final done = Navigator.of(context);
     await _run(() async {
-      await _sharing.blockPerson(member.email, inSpaceId: space.id);
+      await _sharing.blockEverywhere(member.email);
       done.pop();
     }, notice: null);
   }
@@ -755,7 +733,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           busy: !enabled,
           onAccess: _changeAccess,
           onRemove: _removePerson,
-          onBlock: (member) => _block(space, member),
+          onBlock: _block,
           onReport: (member) => showReportDialog(
             context,
             sharing: _sharing,
@@ -1005,6 +983,34 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
     }
   }
 
+  Future<void> _block(SpaceMember member) async {
+    if (!await _askToBlock(context, member) || !mounted) return;
+    await _run(
+      () => _sharing.blockEverywhere(member.email),
+      notice: '${member.firstName} is blocked',
+    );
+  }
+
+  Future<void> _leave(Space space) async {
+    final keep = await _askToLeave(
+      context,
+      sharing: _sharing,
+      space: space,
+      title:
+          [
+            for (final note in _sharing.notesIn(space.id))
+              if (!note.isHidden) note.title,
+          ].firstOrNull ??
+          space.titleFor(_sharing.userId),
+    );
+    if (keep == null || !mounted) return;
+    final leave = Navigator.of(context);
+    await _run(() async {
+      await _sharing.leave(space.id, keepCopies: keep);
+      leave.pop();
+    });
+  }
+
   /// The join panels share this sheet's one way of running an action.
   Future<void> _panelRun(
     Future<void> Function() action, {
@@ -1069,11 +1075,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                     () => _sharing.removeMember(space.id, member.userId),
                     notice: '${member.firstName} was removed',
                   ),
-                  onBlock: (member) => _run(
-                    () =>
-                        _sharing.blockPerson(member.email, inSpaceId: space.id),
-                    notice: '${member.firstName} is blocked',
-                  ),
+                  onBlock: _block,
                   onReport: (member) => showReportDialog(
                     context,
                     sharing: _sharing,
@@ -1200,12 +1202,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
         else
           TextButton.icon(
             key: const ValueKey('leave-space'),
-            onPressed: enabled
-                ? () => _run(() async {
-                    await _sharing.leave(space.id);
-                    if (context.mounted) Navigator.of(context).pop();
-                  })
-                : null,
+            onPressed: enabled ? () => _leave(space) : null,
             style: TextButton.styleFrom(foregroundColor: danger),
             icon: KapyIcon(
               KapyIcons.logoutRounded,
@@ -1222,6 +1219,51 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
 // ---------------------------------------------------------------------------
 // Pieces both sheets use
 // ---------------------------------------------------------------------------
+
+/// Asks before blocking [member]. Blocking ends everything shared between
+/// this account and them, so the question says so.
+Future<bool> _askToBlock(BuildContext context, SpaceMember member) async {
+  final name = member.firstName;
+  return await askFirst(
+        context,
+        title: 'Block $name?',
+        body:
+            '$name loses access to everything you share, you leave what $name '
+            'shares with you (keeping copies), and $name can’t invite you '
+            'again.',
+        action: 'Block',
+      ) ==
+      true;
+}
+
+/// Asks before leaving [space], named by the note [title], and whether to
+/// keep copies; null means no. Leaving takes every note in the space, so
+/// with more than one the question counts them.
+Future<bool?> _askToLeave(
+  BuildContext context, {
+  required Sharing sharing,
+  required Space space,
+  required String title,
+}) {
+  final owner = space.shortNameOf(space.ownerId);
+  final together = [
+    for (final note in sharing.notesIn(space.id))
+      if (!note.isHidden) note,
+  ].length;
+  return askFirst(
+    context,
+    title: together > 1
+        ? 'Leave $together notes from $owner?'
+        : 'Leave “$title”?',
+    body: together > 1
+        ? '$owner shares “$title” together with ${together - 1} more, so '
+              'you leave all of them. You stop seeing $owner’s changes, and '
+              '$owner keeps the notes.'
+        : 'You stop seeing $owner’s changes. $owner keeps the note.',
+    action: 'Leave',
+    option: together > 1 ? 'Keep private copies' : 'Keep a private copy',
+  );
+}
 
 /// A dialog on a desktop, a sheet with a grab handle on a phone: the same
 /// header, body and footer either way.
