@@ -1628,7 +1628,6 @@ class KapyTheme {
     cardTitle: Color(0xFFDDDDDD),
     muted: Color(0xFFBEBEBE),
     sec: Color(0xFFA3A3A3),
-    icon: Color(0xFF929292),
     faint: Color(0xFF8E8E8E),
     dim: Color(0xFF5A5A5A),
     dim2: Color(0xFF555555),
@@ -1686,7 +1685,6 @@ class KapyTheme {
     cardTitle: Color(0xFF272727),
     muted: Color(0xFF434343),
     sec: Color(0xFF5C5C5C),
-    icon: Color(0xFF676767),
     faint: Color(0xFF6A6A6A),
     dim: Color(0xFFADADAD),
     dim2: Color(0xFFB5B5B5),
@@ -1744,7 +1742,6 @@ class KapyTheme {
     cardTitle: Color(0xFFDDD9D1),
     muted: Color(0xFFC1BCB4),
     sec: Color(0xFFA8A39A),
-    icon: Color(0xFF959087),
     faint: Color(0xFF908B82),
     dim: Color(0xFF4F4C48),
     dim2: Color(0xFF484641),
@@ -1802,7 +1799,6 @@ class KapyTheme {
     cardTitle: Color(0xFFBEBCCD),
     muted: Color(0xFFACAABC),
     sec: Color(0xFF9C9AAE),
-    icon: Color(0xFF8F8DA2),
     faint: Color(0xFF8C8A9F),
     dim: Color(0xFF595869),
     dim2: Color(0xFF535263),
@@ -1860,7 +1856,6 @@ class KapyTheme {
     cardTitle: Color(0xFF3F3E4E),
     muted: Color(0xFF4C4B5B),
     sec: Color(0xFF585667),
-    icon: Color(0xFF605E70),
     faint: Color(0xFF626072),
     dim: Color(0xFFA4A2AE),
     dim2: Color(0xFFABAAB5),
@@ -1918,7 +1913,6 @@ class KapyTheme {
     cardTitle: Color(0xFFE6C699),
     muted: Color(0xFFD4B488),
     sec: Color(0xFFC4A47A),
-    icon: Color(0xFFAF916A),
     faint: Color(0xFFAA8C66),
     dim: Color(0xFF6C583F),
     dim2: Color(0xFF65523B),
@@ -1976,7 +1970,6 @@ class KapyTheme {
     cardTitle: Color(0xFF402F1D),
     muted: Color(0xFF533E28),
     sec: Color(0xFF634B32),
-    icon: Color(0xFF6C543D),
     faint: Color(0xFF6E5640),
     dim: Color(0xFFAC9A86),
     dim2: Color(0xFFB3A28E),
@@ -2034,7 +2027,6 @@ class KapyTheme {
     cardTitle: Color(0xFFD3E1DE),
     muted: Color(0xFFB6C8C6),
     sec: Color(0xFF9DB3B0),
-    icon: Color(0xFF8BA4A0),
     faint: Color(0xFF86A09C),
     dim: Color(0xFF526766),
     dim2: Color(0xFF4D6160),
@@ -2092,7 +2084,6 @@ class KapyTheme {
     cardTitle: Color(0xFF1E3734),
     muted: Color(0xFF314D4A),
     sec: Color(0xFF42605C),
-    icon: Color(0xFF4D6A66),
     faint: Color(0xFF506C68),
     dim: Color(0xFF9DADAB),
     dim2: Color(0xFFA5B5B2),
@@ -2593,7 +2584,6 @@ class _Tones {
     required this.cardTitle,
     required this.muted,
     required this.sec,
-    required this.icon,
     required this.faint,
     required this.dim,
     required this.dim2,
@@ -2632,7 +2622,6 @@ class _Tones {
   final Color cardTitle;
   final Color muted;
   final Color sec;
-  final Color icon;
   final Color faint;
   final Color dim;
   final Color dim2;
