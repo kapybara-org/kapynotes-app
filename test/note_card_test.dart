@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/tag_colours.dart';
+import 'package:kapy_notes/ui/tag_ui.dart' show TagDot;
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -172,6 +174,67 @@ void main() {
     expect(find.text('Money'), findsNothing);
     expect(styleOf(tester, 'Travel').color, palette.textTertiary);
     expect(tester.getSize(find.byType(TagDots)).width, TagDots.widthFor(2));
+  });
+
+  List<Rect> dotRects(WidgetTester tester) => [
+    for (final element
+        in find
+            .descendant(of: find.byType(TagDots), matching: find.byType(TagDot))
+            .evaluate())
+      tester.getRect(find.byWidget(element.widget)),
+  ];
+
+  testWidgets('on the Mac a card draws its tags as 6 px dots, 2 apart, with '
+      'no ring', (tester) async {
+    await pumpCard(
+      tester,
+      note('Trip budget\n₹28,000'),
+      tags: const [travel, money],
+    );
+
+    final dots = dotRects(tester);
+    expect(dots.map((dot) => dot.size), [const Size(6, 6), const Size(6, 6)]);
+    expect(dots[1].left - dots[0].right, 2);
+    expect(TagDots.widthFor(2), 14);
+    for (final box in tester.widgetList<Container>(
+      find.descendant(
+        of: find.byType(TagDots),
+        matching: find.byType(Container),
+      ),
+    )) {
+      final decoration = box.decoration! as BoxDecoration;
+      expect(decoration.boxShadow, isNull);
+      expect(decoration.border, isNull);
+    }
+  });
+
+  testWidgets('on a phone the dots stay 8 px and 4 apart', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: const Center(child: TagDots(tags: [travel, money])),
+      ),
+    );
+
+    final dots = dotRects(tester);
+    expect(dots.map((dot) => dot.size), [const Size(8, 8), const Size(8, 8)]);
+    expect(dots[1].left - dots[0].right, 4);
+    expect(TagDots.widthFor(2), 20);
+  });
+
+  testWidgets("a card's preview line is Figtree 12/16 at 400 in T2", (
+    tester,
+  ) async {
+    await pumpCard(tester, note('Reading list\nDeep Work, Dune'));
+
+    final preview = styleOf(tester, 'Deep Work, Dune');
+    expect(preview.fontFamily, AppFonts.ui);
+    expect(preview.fontSize, 12);
+    expect(preview.height, 16 / 12);
+    expect(preview.fontVariations, AppWeight.variations(AppWeight.body));
+    expect(preview.color, palette.textSecondary);
   });
 
   testWidgets('the selected card is a step lighter, with no tilt and no '

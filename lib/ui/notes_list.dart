@@ -379,9 +379,9 @@ class NoteCardFace extends StatelessWidget {
                                 )
                               : _figtree(
                                   12,
-                                  15,
+                                  16,
                                   FontWeight.w400,
-                                  palette.textMuted,
+                                  palette.textSecondary,
                                 ).copyWith(
                                   fontStyle: text == null
                                       ? FontStyle.italic
@@ -511,7 +511,7 @@ class _MetaRow extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TagDots(tags: tags, ground: ground),
+                TagDots(tags: tags),
                 if (named) ...[
                   const SizedBox(width: 4),
                   Text(first.name, maxLines: 1, style: style),
@@ -607,14 +607,6 @@ class NoteListRowFace extends StatelessWidget {
     final marked = selected || picking == true;
     final tagMarks = TagMarks.of(context, note.id);
     final first = tagMarks.firstOrNull;
-    final ground = marked
-        ? Color.alphaBlend(
-            palette.fillSelected,
-            touch ? palette.paperColor : palette.sidebarBackground,
-          )
-        : touch
-        ? palette.paperColor
-        : palette.sidebarBackground;
     // The border is always there, clear unless the row is ringed, so a ring
     // does not nudge its text. Open, a row takes a fill, never an outline.
     return Container(
@@ -655,9 +647,7 @@ class NoteListRowFace extends StatelessWidget {
                     if (!touch) ...[
                       SizedBox(
                         width: TagDots.size,
-                        child: first == null
-                            ? null
-                            : TagDots(tags: [first], ground: ground),
+                        child: first == null ? null : TagDots(tags: [first]),
                       ),
                       const SizedBox(width: 8),
                     ],
@@ -703,7 +693,7 @@ class NoteListRowFace extends StatelessWidget {
                             ),
                             if (tagMarks.isNotEmpty) ...[
                               const SizedBox(width: 6),
-                              TagDots(tags: tagMarks, ground: ground),
+                              TagDots(tags: tagMarks),
                             ],
                           ],
                         ),
@@ -724,7 +714,7 @@ class NoteListRowFace extends StatelessWidget {
                 SizedBox(height: touch ? 4 : 3),
                 Row(
                   children: [
-                    if (!touch) const SizedBox(width: TagDots.size + 8),
+                    if (!touch) SizedBox(width: TagDots.size + 8),
                     for (final mark in marks) ...[
                       KapyIcon(mark, size: 14, color: palette.textMuted),
                       const SizedBox(width: 5),
