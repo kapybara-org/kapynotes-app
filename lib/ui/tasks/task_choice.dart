@@ -54,15 +54,15 @@ class EveningStage extends TaskStage {
 /// is your choice so far, and the dots before it wait in Up next, newest
 /// first.
 ///
-/// Where the pair has got to is not stored. [seenUpTo] is the place of the
-/// last task shown on the right, and [since] is when the last Do now began,
-/// so after a Done only tasks that joined the list later are asked about.
+/// Where the pair has got to is not stored. [seenUpTo] is the last task shown
+/// on the right, and [since] is when the last Do now began, so after a Done
+/// only tasks that joined the list later are asked about.
 class TaskChoice {
   const TaskChoice._(this.stage, this.upNext, this.rest);
 
   factory TaskChoice.read(
     List<TaskItem> open, {
-    int? seenUpTo,
+    TaskItem? seenUpTo,
     int? since,
     bool evening = false,
   }) {
@@ -87,13 +87,14 @@ class TaskChoice {
       return TaskChoice._(EveningStage(open), const [], const []);
     }
     final left = dots.lastOrNull ?? open.first;
-    var floor = left.entry.position;
-    for (final mark in [?seenUpTo, ?since]) {
-      if (mark > floor) floor = mark;
-    }
+    bool after(TaskItem item, TaskItem? mark) =>
+        mark == null || TaskBoard.listOrder(item, mark) > 0;
     final candidates = [
       for (final item in open)
-        if (!item.dotted && item.id != left.id && item.entry.position > floor)
+        if (!item.dotted &&
+            after(item, left) &&
+            after(item, seenUpTo) &&
+            (since == null || item.entry.position > since))
           item,
     ];
     final upNext = [

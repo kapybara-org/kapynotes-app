@@ -343,7 +343,7 @@ class TasksController extends ChangeNotifier {
 
   // Where the pair has got to, held in memory like main's question position:
   // nothing here is stored or synced. See [TaskChoice].
-  int? _seenUpTo;
+  TaskItem? _seenUpTo;
   int? _since;
   String? _justDone;
   DateTime? _keptGoing;
@@ -389,7 +389,7 @@ class TasksController extends ChangeNotifier {
   /// ← or a click on the left card: your choice so far stays.
   void keepChoice(PairStage pair) {
     if (!pair.chosen) dot(pair.left);
-    _seenUpTo = pair.right.entry.position;
+    _seenUpTo = pair.right;
     if (pair.pairsLeft == 0) return startWith(pair.left);
     notifyListeners();
   }
@@ -399,7 +399,7 @@ class TasksController extends ChangeNotifier {
   void takeNext(PairStage pair) {
     if (!pair.chosen) dot(pair.left);
     dot(pair.right);
-    _seenUpTo = pair.right.entry.position;
+    _seenUpTo = pair.right;
     if (pair.pairsLeft == 0) return startWith(pair.right);
     notifyListeners();
   }

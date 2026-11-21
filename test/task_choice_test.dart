@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
@@ -20,16 +21,32 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
+/// A note of [body] whose random id [wanted] accepts, so a test can rely on
+/// note createdAt alone for an order the id would break.
+Note _createWith(
+  NotesStore notes,
+  String body,
+  bool Function(String id) wanted,
+) {
+  while (true) {
+    final note = notes.create(body: body);
+    if (wanted(note.id)) return note;
+    notes.delete(note.id);
+  }
+}
+
 void main() {
   late DateTime clock;
   late NotesStore notes;
   late TaskLibrary library;
   late TasksController tasks;
 
-  Future<String> start(String body, {DateTime? at}) async {
+  /// A list from [body], and from [then] too when given: a note made a
+  /// minute later whose id sorts first, both picked up in one reconcile.
+  Future<String> start(String body, {DateTime? at, String? then}) async {
     clock = at ?? DateTime(2026, 11, 19, 9);
     final store = _MemoryStore();
-    notes = NotesStore(store);
+    notes = NotesStore(store, now: () => clock);
     library = TaskLibrary(
       notes: notes,
       store: store,
@@ -50,6 +67,10 @@ void main() {
       heldLibrary.dispose();
     });
     final note = notes.create(body: body);
+    if (then != null) {
+      clock = clock.add(const Duration(minutes: 1));
+      _createWith(notes, then, (id) => id.compareTo(note.id) < 0);
+    }
     await tasks.reconcileNow();
     return note.id;
   }
@@ -83,6 +104,17 @@ void main() {
 
   const six = 'List\n☐ A\n☐ B\n☐ C\n☐ D\n☐ E\n☐ F';
   const three = 'List\n☐ A\n☐ B\n☐ C';
+  const trip = 'Trip\n☐ A1\n☐ A2';
+  const car = 'Car\n☐ B1\n☐ B2';
+
+  List<String> keepToTheEnd() {
+    final asked = [pair().left.words];
+    while (choice().stage is PairStage) {
+      asked.add(pair().right.words);
+      keep();
+    }
+    return asked;
+  }
 
   test('with nothing chosen, the first task on the list meets the next one, '
       'and the count says how many pairs follow', () async {
@@ -157,6 +189,26 @@ void main() {
     expect(doNow().words, 'C');
     expect(words(choice().upNext), ['A']);
     expect(words(choice().rest), ['B', 'D', 'E', 'F']);
+  });
+
+  test('tasks of notes picked up together are each asked about, a note\'s '
+      'tasks together, oldest note first', () async {
+    await start(trip, then: car);
+    expect(keepToTheEnd(), ['A1', 'A2', 'B1', 'B2']);
+    expect(doNow().words, 'A1');
+  });
+
+  test('tasks that share a place, as when two devices pick them up in the '
+      'same millisecond, are each asked about in list order', () async {
+    await start(trip, then: car);
+    final tied = clock.millisecondsSinceEpoch;
+    for (final item in tasks.read().open) {
+      tasks.index.update(item.entry.copyWith(enteredAt: tied));
+    }
+    expect({for (final i in tasks.read().open) i.entry.position}, {tied});
+    expect(words(tasks.read().open), ['A1', 'A2', 'B1', 'B2']);
+    expect(keepToTheEnd(), ['A1', 'A2', 'B1', 'B2']);
+    expect(doNow().words, 'A1');
   });
 
   test('with one task on the list there is no pair: it is Do now', () async {

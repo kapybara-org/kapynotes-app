@@ -144,16 +144,7 @@ class TaskBoard {
         }
       }
     }
-    open.sort((a, b) {
-      final byPosition = a.entry.position.compareTo(b.entry.position);
-      if (byPosition != 0) return byPosition;
-      final byNote = a.note.createdAt.compareTo(b.note.createdAt);
-      if (byNote != 0) return byNote;
-      final byNoteId = a.note.id.compareTo(b.note.id);
-      if (byNoteId != 0) return byNoteId;
-      final byLine = a.line.start.compareTo(b.line.start);
-      return byLine != 0 ? byLine : a.id.compareTo(b.id);
-    });
+    open.sort(listOrder);
     done.sort((a, b) => b.entry.doneAt.v!.compareTo(a.entry.doneAt.v!));
     TaskItem? newest;
     for (final item in open) {
@@ -174,6 +165,19 @@ class TaskBoard {
       }
     }
     return TaskBoard._(open, done, home);
+  }
+
+  /// Where [a] sits against [b] in [open]: by place, and tasks that share a
+  /// place by their note, oldest first, then by line.
+  static int listOrder(TaskItem a, TaskItem b) {
+    final byPosition = a.entry.position.compareTo(b.entry.position);
+    if (byPosition != 0) return byPosition;
+    final byNote = a.note.createdAt.compareTo(b.note.createdAt);
+    if (byNote != 0) return byNote;
+    final byNoteId = a.note.id.compareTo(b.note.id);
+    if (byNoteId != 0) return byNoteId;
+    final byLine = a.line.start.compareTo(b.line.start);
+    return byLine != 0 ? byLine : a.id.compareTo(b.id);
   }
 
   /// The one list, in the order tasks were added or went back in at the end.
