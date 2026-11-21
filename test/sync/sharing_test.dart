@@ -47,6 +47,7 @@ class Person {
     this.typingIdle = const Duration(milliseconds: 300),
     bool acceptOnTheirOwn = false,
     Duration minRetry = const Duration(seconds: 5),
+    int snapshotEvery = 150,
   }) {
     server.seedBundle(userId);
     store = MemoryStore();
@@ -74,6 +75,7 @@ class Person {
       typingIdle: typingIdle,
       presenceLinger: const Duration(milliseconds: 60),
       minRetry: minRetry,
+      snapshotEvery: snapshotEvery,
     );
     sharing = Sharing(
       api: api,
@@ -827,6 +829,63 @@ void main() {
         await laptop.boot();
         expect(laptop.bodyOf(note.id), 'Round trip, one, two');
         laptop.dispose();
+      });
+
+      test('a member who could not open an edit sends nothing whole over it, '
+          'and reads it once it can', () async {
+        note = await shareWithBob('Ledger');
+        spaceId = alice.notes.byId(note.id)!.spaceId!;
+        // Carol writes a whole copy with every edit of her own.
+        final carol = Person(
+          server,
+          userId: 'user-3',
+          device: 'carol-pad',
+          snapshotEvery: 1,
+        );
+        addTearDown(carol.dispose);
+        await carol.boot();
+        await alice.sharing.invite(spaceId, carol.email);
+        await carol.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), 'Ledger');
+
+        alice.tick();
+        await alice.sharing.unshareNote(note.id);
+        alice.tick();
+        await alice.sharing.shareNote(note.id, spaceId: spaceId);
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Ledger\nA1');
+        await alice.sync.syncNow();
+
+        // Carol can't fetch the note's new key, so she opens nothing of its
+        // return, and her own edit goes up all the same.
+        carol.api.failNoteKeys = const SyncTransientException('offline');
+        carol.tick(2);
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), 'Ledger');
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ledger\nC1');
+        await carol.sync.syncNow();
+
+        final laptop = Person(
+          server,
+          userId: alice.userId,
+          device: 'alice-laptop',
+        );
+        await laptop.boot();
+        expect(laptop.bodyOf(note.id), contains('A1'));
+        laptop.dispose();
+
+        carol.api.failNoteKeys = null;
+        carol.tick();
+        await carol.sync.syncNow();
+        carol.tick();
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), allOf(contains('A1'), contains('C1')));
+        alice.tick(2);
+        await alice.sync.syncNow();
+        expect(alice.bodyOf(note.id), allOf(contains('A1'), contains('C1')));
       });
 
       test('a member who held the note before reads what is written once it '
