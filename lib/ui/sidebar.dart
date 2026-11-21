@@ -1931,22 +1931,22 @@ class SidebarWindowBar extends StatelessWidget {
     final hideShortcut = this.hideShortcut;
     final onAskKapy = this.onAskKapy;
     final askKapyShortcut = this.askKapyShortcut;
-    final titleStyle = TextStyle(
-      fontFamily: handwritten.fontFamily,
-      fontFamilyFallback: handwritten.fontFamilyFallback,
-      fontVariations: handwritten.fontVariations,
-      fontSize: AppTypeScale.spaceTitle,
-      height: 24 / 20,
-      fontWeight: FontWeight.w500,
+    final titleStyle = chromeStyle(
+      size: AppTypeScale.spaceTitle,
+      line: AppTypeScale.spaceTitle * 1.3,
+      weight: AppWeight.button,
       color: palette.textPrimary,
+      family: handwritten.fontFamily,
+      fallback: handwritten.fontFamilyFallback,
+      extra: handwritten.faceVariations,
     );
     final countText = [count, ?countLabel].join(' ');
-    final countStyle = TextStyle(
-      fontSize: AppTypeScale.small,
-      height: 16 / 12,
-      fontWeight: FontWeight.w500,
+    final countStyle = chromeStyle(
+      size: AppTypeScale.small,
+      line: 16,
+      weight: AppWeight.body,
       color: palette.textTertiary,
-      fontFeatures: const [FontFeature.tabularFigures()],
+      tabular: true,
     );
     double widthOf(String text, TextStyle style) {
       final painter = TextPainter(
