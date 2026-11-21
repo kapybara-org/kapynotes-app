@@ -1764,63 +1764,72 @@ class _CandidateRowState extends State<_CandidateRow> {
         child: Padding(
           padding: const EdgeInsets.only(left: 10, right: 8),
           child: LayoutBuilder(
-            builder: (context, constraints) => Row(
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _hovered ? accent.withAlpha(0x40) : null,
-                    border: Border.all(
-                      color: _hovered ? accent : palette.checkboxBorder,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    widget.item.words,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: uiStyle(
-                      14.5,
-                      20,
-                      FontWeight.w500,
-                      palette.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                if (lit)
+            builder: (context, constraints) {
+              final words = Text(
+                widget.item.words,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: uiStyle(14.5, 20, FontWeight.w500, palette.textPrimary),
+              );
+              final under =
+                  label != null &&
+                  !_markFitsBeside(context, constraints.maxWidth);
+              return Row(
+                children: [
                   Container(
-                    height: 26,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    alignment: Alignment.center,
+                    width: 12,
+                    height: 12,
                     decoration: BoxDecoration(
-                      color: palette.tonalBackground,
-                      borderRadius: BorderRadius.circular(AppRadii.control),
-                    ),
-                    child: Text(
-                      'Pick',
-                      style: uiStyle(
-                        12.5,
-                        16,
-                        FontWeight.w700,
-                        palette.tonalForeground,
+                      shape: BoxShape.circle,
+                      color: _hovered ? accent.withAlpha(0x40) : null,
+                      border: Border.all(
+                        color: _hovered ? accent : palette.checkboxBorder,
+                        width: 1.5,
                       ),
                     ),
-                  )
-                else if (label != null)
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: _markWidth(constraints.maxWidth),
-                    ),
-                    child: NoteMark(note: widget.item.note, label: label),
                   ),
-              ],
-            ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: under
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              words,
+                              NoteMark(note: widget.item.note, label: label),
+                            ],
+                          )
+                        : words,
+                  ),
+                  const SizedBox(width: 10),
+                  if (lit)
+                    Container(
+                      height: 26,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: palette.tonalBackground,
+                        borderRadius: BorderRadius.circular(AppRadii.control),
+                      ),
+                      child: Text(
+                        'Pick',
+                        style: uiStyle(
+                          12.5,
+                          16,
+                          FontWeight.w700,
+                          palette.tonalForeground,
+                        ),
+                      ),
+                    )
+                  else if (label != null && !under)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: _markWidth(constraints.maxWidth),
+                      ),
+                      child: NoteMark(note: widget.item.note, label: label),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -2015,113 +2024,134 @@ class _TaskRowState extends State<_TaskRow> {
           );
     final rowHeight = touch ? 44.0 : 38.0;
     final reach = touch ? _markReach : 0.0;
-    final row = SizedBox(
-      height: rowHeight,
+    final row = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: rowHeight),
       child: Padding(
         padding: const EdgeInsets.only(right: 10),
         child: LayoutBuilder(
-          builder: (context, constraints) => Row(
-            children: [
-              Tooltip(
-                message: tip,
-                excludeFromSemantics: true,
-                child: Semantics(
-                  button: true,
-                  label: '$action: ${item.words}',
-                  onTap: widget.onMark,
-                  excludeSemantics: true,
-                  child: InkWell(
-                    key: ValueKey('task-mark-${item.id}'),
-                    onTap: widget.onMark,
-                    borderRadius: BorderRadius.circular(AppRadii.compact),
-                    hoverColor: Colors.transparent,
-                    splashColor: Colors.transparent,
-                    highlightColor: Colors.transparent,
-                    child: SizedBox(
-                      width: 20 + reach,
-                      height: rowHeight,
-                      child: Padding(
-                        padding: EdgeInsets.only(left: reach),
-                        child: Center(child: mark),
-                      ),
-                    ),
-                  ),
+          builder: (context, constraints) {
+            final words = GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onOpen,
+              child: Text(
+                item.hasGroup
+                    ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
+                    : item.words,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: uiStyle(
+                  16,
+                  28,
+                  FontWeight.w500,
+                  stale ? palette.textSecondary : palette.textPrimary,
                 ),
               ),
-              const SizedBox(width: 10),
-              _Box(done: false, onPressed: widget.onTick, label: item.words),
-              const SizedBox(width: 10),
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onOpen,
-                  child: Text(
-                    item.hasGroup
-                        ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
-                        : item.words,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: uiStyle(
-                      16,
-                      28,
-                      FontWeight.w500,
-                      stale ? palette.textSecondary : palette.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              TaskDetailsIcon(item: item),
-              if (stale) ...[
-                const SizedBox(width: 10),
-                if (constraints.maxWidth >= _stillWantWidth)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Text('Still want this?', style: quiet),
-                  ),
-                _RowButton(
-                  label: 'Keep',
-                  strong: true,
-                  onPressed: widget.onKeep,
-                ),
-                const SizedBox(width: 4),
-                _RowButton(label: 'Remove', onPressed: widget.onRemove),
-              ] else if (_hovered) ...[
-                const SizedBox(width: 10),
-                Text(
-                  'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
-                  style: quiet,
-                ),
-              ],
-              if (item.entry.enteredAt != 0 && !stale)
+            );
+            final under =
+                label != null &&
+                !_markFitsBeside(context, constraints.maxWidth);
+            return Row(
+              children: [
                 Tooltip(
-                  message: 'Not finished, moved to the end',
-                  child: SizedBox.square(
-                    dimension: 22,
-                    child: Center(
-                      child: KapyIcon(
-                        KapyIcons.undoRounded,
-                        size: 14,
-                        strokeWidth: 1.9,
-                        color: palette.textTertiary,
+                  message: tip,
+                  excludeFromSemantics: true,
+                  child: Semantics(
+                    button: true,
+                    label: '$action: ${item.words}',
+                    onTap: widget.onMark,
+                    excludeSemantics: true,
+                    child: InkWell(
+                      key: ValueKey('task-mark-${item.id}'),
+                      onTap: widget.onMark,
+                      borderRadius: BorderRadius.circular(AppRadii.compact),
+                      hoverColor: Colors.transparent,
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      child: SizedBox(
+                        width: 20 + reach,
+                        height: rowHeight,
+                        child: Padding(
+                          padding: EdgeInsets.only(left: reach),
+                          child: Center(child: mark),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              if (label != null) ...[
                 const SizedBox(width: 10),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: _markWidth(constraints.maxWidth),
-                  ),
-                  child: NoteMark(
-                    note: item.note,
-                    label: label,
-                    onPressed: widget.onOpenNote,
-                  ),
+                _Box(done: false, onPressed: widget.onTick, label: item.words),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: under
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            words,
+                            Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: NoteMark(
+                                note: item.note,
+                                label: label,
+                                onPressed: widget.onOpenNote,
+                              ),
+                            ),
+                          ],
+                        )
+                      : words,
                 ),
+                TaskDetailsIcon(item: item),
+                if (stale) ...[
+                  const SizedBox(width: 10),
+                  if (constraints.maxWidth >= _stillWantWidth)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Text('Still want this?', style: quiet),
+                    ),
+                  _RowButton(
+                    label: 'Keep',
+                    strong: true,
+                    onPressed: widget.onKeep,
+                  ),
+                  const SizedBox(width: 4),
+                  _RowButton(label: 'Remove', onPressed: widget.onRemove),
+                ] else if (_hovered) ...[
+                  const SizedBox(width: 10),
+                  Text(
+                    'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
+                    style: quiet,
+                  ),
+                ],
+                if (item.entry.enteredAt != 0 && !stale)
+                  Tooltip(
+                    message: 'Not finished, moved to the end',
+                    child: SizedBox.square(
+                      dimension: 22,
+                      child: Center(
+                        child: KapyIcon(
+                          KapyIcons.undoRounded,
+                          size: 14,
+                          strokeWidth: 1.9,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (label != null && !under) ...[
+                  const SizedBox(width: 10),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: _markWidth(constraints.maxWidth),
+                    ),
+                    child: NoteMark(
+                      note: item.note,
+                      label: label,
+                      onPressed: widget.onOpenNote,
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
