@@ -764,32 +764,43 @@ class TasksScreenState extends State<TasksScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    'Done',
-                    style: handStyle(
-                      32,
-                      40,
-                      FontWeight.w700,
-                      palette.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      '${board.done.length} completed',
-                      style: uiStyle(
-                        13,
-                        16,
-                        FontWeight.w600,
-                        palette.textTertiary,
-                      ),
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final titleStyle = handStyle(
+                    32,
+                    40,
+                    FontWeight.w700,
+                    palette.textPrimary,
+                  );
+                  final countStyle = uiStyle(
+                    13,
+                    16,
+                    FontWeight.w600,
+                    palette.textTertiary,
+                  );
+                  final countText = '${board.done.length} completed';
+                  final title = Text('Done', style: titleStyle);
+                  final count = Text(countText, style: countStyle);
+                  // At large text the count goes under the title rather
+                  // than breaking beside it.
+                  if (!_fitsOnOneLine(
+                    context,
+                    constraints.maxWidth,
+                    ('Done', titleStyle),
+                    (countText, countStyle),
+                    10,
+                  )) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [title, count],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [title, const SizedBox(width: 10), count],
+                  );
+                },
               ),
               const SizedBox(height: 6),
               Text(
@@ -908,7 +919,7 @@ class _AddRow extends StatelessWidget {
     final shortcut = this.shortcut;
     return Container(
       key: const ValueKey('tasks-add-row'),
-      height: phone ? 44 : 40,
+      constraints: BoxConstraints(minHeight: phone ? 44 : 40),
       padding: EdgeInsets.only(left: phone ? 14 : 10, right: 6),
       decoration: BoxDecoration(
         color: phone
@@ -1308,12 +1319,12 @@ class _DoNowCard extends StatelessWidget {
         key: key,
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
-        child: SizedBox(
-          height: 44,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
           child: Center(
             child: Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              constraints: const BoxConstraints(minHeight: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: tonal ? palette.tonalBackground : null,
@@ -1382,6 +1393,8 @@ class _DoNowCard extends StatelessWidget {
                     onTap: onOpenNote,
                     child: Text(
                       label ?? 'No note',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: uiStyle(
                         13.5,
                         18,
@@ -1554,7 +1567,11 @@ class _ReadyCard extends StatelessWidget {
               );
               // Too narrow to share a line, the note's name goes under the
               // words rather than squeezing them.
-              if (label != null && constraints.maxWidth < _markBesideWidth) {
+              if (label != null &&
+                  constraints.maxWidth <
+                      MediaQuery.textScalerOf(
+                        context,
+                      ).scale(_markBesideWidth)) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2248,6 +2265,31 @@ class _DoneRow extends StatelessWidget {
   }
 }
 
+/// Whether [title] and [count], [gap] apart, fit on one line of [maxWidth] at
+/// the current text size.
+bool _fitsOnOneLine(
+  BuildContext context,
+  double maxWidth,
+  (String, TextStyle) title,
+  (String, TextStyle) count,
+  double gap,
+) {
+  final scaler = MediaQuery.textScalerOf(context);
+  double width((String, TextStyle) part) {
+    final painter = TextPainter(
+      text: TextSpan(text: part.$1, style: part.$2),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  return width(title) + gap + width(count) <= maxWidth;
+}
+
 /// A phone's title over Tasks: "Today", large, with the clay underline, and
 /// how many of today's are done at the far end.
 class _PhoneTodayTitle extends StatelessWidget {
@@ -2284,25 +2326,15 @@ class _PhoneTodayTitle extends StatelessWidget {
         children: [
           LayoutBuilder(
             builder: (context, constraints) {
-              final scaler = MediaQuery.textScalerOf(context);
-              double width(String text, TextStyle style) {
-                final painter = TextPainter(
-                  text: TextSpan(text: text, style: style),
-                  textDirection: TextDirection.ltr,
-                  textScaler: scaler,
-                  maxLines: 1,
-                )..layout();
-                final width = painter.width;
-                painter.dispose();
-                return width;
-              }
-
               // At large text the count goes under the title, so "Today"
               // never breaks.
-              if (width('Today', titleStyle) +
-                      12 +
-                      width(countText, countStyle) >
-                  constraints.maxWidth) {
+              if (!_fitsOnOneLine(
+                context,
+                constraints.maxWidth,
+                ('Today', titleStyle),
+                (countText, countStyle),
+                12,
+              )) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [title, const SizedBox(height: 4), count],

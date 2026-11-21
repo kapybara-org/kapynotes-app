@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -136,6 +137,22 @@ void main() {
     );
   }
 
+  /// [text]'s line gets its whole height and sits inside [box], so no letter
+  /// is cut at the top or bottom.
+  void expectWholeLine(WidgetTester tester, Finder text, Finder box) {
+    final paragraph = tester.renderObject<RenderParagraph>(text);
+    expect(
+      paragraph.size.height,
+      greaterThanOrEqualTo(
+        paragraph.getMaxIntrinsicHeight(paragraph.size.width) - 0.5,
+      ),
+    );
+    final words = tester.getRect(text);
+    final bounds = tester.getRect(box);
+    expect(words.top, greaterThanOrEqualTo(bounds.top - 0.5));
+    expect(words.bottom, lessThanOrEqualTo(bounds.bottom + 0.5));
+  }
+
   void expectInside(WidgetTester tester, Finder finder, double right) {
     expect(tester.getRect(finder).right, lessThanOrEqualTo(right + 0.5));
   }
@@ -212,6 +229,11 @@ void main() {
       );
       final words = readyWords('Hide the menu');
       expectMostOfRow(tester, words);
+      expect(
+        tester.getSize(words).height,
+        lessThan(22 * 3.1 * 2.5),
+        reason: 'the task words went one word per line',
+      );
       expectInside(tester, find.byKey(const ValueKey('tasks-ready-yes')), 390);
       expectInside(
         tester,
@@ -232,11 +254,46 @@ void main() {
         label: _shared,
         scale: 3.1,
       );
-      expectInside(tester, find.byKey(const ValueKey('tasks-done')), 390);
-      expectInside(
+      for (final (key, text) in [
+        ('tasks-done', 'Done'),
+        ('tasks-not-finished', 'Not finished'),
+      ]) {
+        final pill = find.byKey(ValueKey(key));
+        expectInside(tester, pill, 390);
+        final words = find.descendant(of: pill, matching: find.text(text));
+        expectWholeLine(
+          tester,
+          words,
+          find.ancestor(of: words, matching: find.byType(Container)).first,
+        );
+      }
+      final label = find.descendant(
+        of: find.byKey(const ValueKey('tasks-do-now')),
+        matching: find.text(_shared),
+      );
+      expect(
+        tester.getSize(label).height,
+        lessThanOrEqualTo(18 * 3.1 * 2 + 0.5),
+        reason: 'the note name should keep to two lines',
+      );
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('at 3.1x, the add row gives "Add a task" its whole line', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ Water the plants');
+      await pumpTasks(
         tester,
-        find.byKey(const ValueKey('tasks-not-finished')),
-        390,
+        size: const Size(390, 844),
+        phone: true,
+        label: 'Errands',
+        scale: 3.1,
+      );
+      expectWholeLine(
+        tester,
+        find.text('Add a task'),
+        find.byKey(const ValueKey('tasks-add-row')),
       );
       await tester.pump(const Duration(seconds: 3));
     });
@@ -244,7 +301,8 @@ void main() {
     testWidgets('at 3.1x, the Done list with a long note name fits', (
       tester,
     ) async {
-      await setUpTasks(tester, 'Errands\n☑ Water the plants\n☐ Two');
+      await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+      await tasks.setDone(tasks.read().open.first, done: true);
       await pumpTasks(
         tester,
         size: const Size(390, 844),
@@ -253,6 +311,18 @@ void main() {
         scale: 3.1,
         filter: const TaskFilter.done(),
       );
+      final count = find.text('1 completed');
+      expect(count, findsOneWidget);
+      expect(
+        tester.getSize(count).height,
+        lessThan(16 * 3.1 * 1.5),
+        reason: 'the completed count broke apart',
+      );
+      final words = find.text('Water the plants');
+      expect(words, findsOneWidget);
+      expect(find.byType(NoteMark), findsWidgets);
+      expectMostOfRow(tester, words);
+      expectInside(tester, words, 390);
       await tester.pump(const Duration(seconds: 3));
     });
   });
