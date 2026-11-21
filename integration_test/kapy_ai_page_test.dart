@@ -12,6 +12,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
 import 'package:material_ui/material_ui.dart';
@@ -37,6 +38,15 @@ void main() {
       kapyAiAvailable = true;
       final ai = FakeKapyAi(
         pro: true,
+        deviceState: AppPlatform.isAndroid
+            ? const DeviceModelState(
+                status: DeviceModelStatus.ready,
+                model: FakeKapyAi.gemma,
+              )
+            : const DeviceModelState(
+                status: DeviceModelStatus.builtIn,
+                model: FakeKapyAi.appleIntelligence,
+              ),
         chatList: [
           chat(
             'a',
