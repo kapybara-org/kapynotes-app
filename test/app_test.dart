@@ -8857,5 +8857,49 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('only the day grouping folds its Upcoming: a tag named '
+        'Upcoming starts open when the list groups by tag', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final tags = TagStore(store);
+      await tags.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      final standup = notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      tags.addTag(standup.id, tags.create('Upcoming')!.id);
+      await pumpApp(
+        tester,
+        size: const Size(1600, 900),
+        days: days,
+        tags: tags,
+      );
+
+      final list = find.byType(Sidebar);
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-grouping-byTag')));
+      await tester.pumpAndSettle();
+      // The heading is the tag's now, and folds nothing.
+      expect(tester.widget<NotesGroupHeading>(upcoming).label, 'Upcoming');
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isNull);
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+        reason: 'under No tag',
+      );
+    });
   });
 }
