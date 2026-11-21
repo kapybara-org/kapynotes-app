@@ -2250,11 +2250,13 @@ class _DoneRow extends StatelessWidget {
                 ),
               ),
             ),
-            SizedBox(
-              width: 44,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 44),
               child: Text(
                 SidebarTimestamp.clock(item.doneAt!),
                 textAlign: TextAlign.right,
+                maxLines: 1,
+                softWrap: false,
                 style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
               ),
             ),

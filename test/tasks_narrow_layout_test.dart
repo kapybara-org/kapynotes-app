@@ -318,6 +318,14 @@ void main() {
         lessThan(16 * 3.1 * 1.5),
         reason: 'the completed count broke apart',
       );
+      final time = find.text('09:00');
+      expect(time, findsOneWidget);
+      expect(
+        tester.getSize(time).height,
+        lessThan(16 * 3.1 * 1.5),
+        reason: 'the time broke apart',
+      );
+      expectInside(tester, time, 390);
       final words = find.text('Water the plants');
       expect(words, findsOneWidget);
       expect(find.byType(NoteMark), findsWidgets);
