@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -155,6 +156,94 @@ void main() {
 
   void expectInside(WidgetTester tester, Finder finder, double right) {
     expect(tester.getRect(finder).right, lessThanOrEqualTo(right + 0.5));
+  }
+
+  /// A stale task with a long note name, plain, hovered and picked: nothing
+  /// overflows, its words keep real room, and Keep, Remove and the note name
+  /// stay in the pane. At 1× the row keeps its height and its one line.
+  void staleRowTests({required bool touch}) {
+    for (final state in ['plain', 'hovered', 'picked']) {
+      for (final width in [420.0, 768.0]) {
+        for (final scale in [1.0, 2.0, 3.1]) {
+          testWidgets('a $state stale task in a Tasks pane ${width.round()} '
+              'wide at ${scale}x keeps its words, Keep, Remove and its note '
+              'name on screen', (tester) async {
+            await setUpTasks(
+              tester,
+              'Errands\n☐ Hide the menu\n☐ Water the plants\n☐ Two',
+            );
+            final item = tasks.read().open[1];
+            if (state == 'picked') tasks.dot(item);
+            clock = clock.add(const Duration(days: 15));
+            await pumpTasks(
+              tester,
+              size: Size(width, 1400),
+              phone: false,
+              label: _shared,
+              scale: scale,
+            );
+            expect(tasks.read().open[1].dotted, state == 'picked');
+            final row = find.byKey(ValueKey(item.id));
+            if (state == 'hovered') {
+              final mouse = await tester.createGesture(
+                kind: PointerDeviceKind.mouse,
+              );
+              await mouse.addPointer(location: tester.getCenter(row));
+              addTearDown(mouse.removePointer);
+              await tester.pump();
+              final box = tester.widget<DecoratedBox>(
+                find
+                    .descendant(of: row, matching: find.byType(DecoratedBox))
+                    .first,
+              );
+              expect((box.decoration as BoxDecoration).color, isNotNull);
+            }
+            expect(tester.takeException(), isNull);
+            Finder button(String label) => find.ancestor(
+              of: find.descendant(of: row, matching: find.text(label)),
+              matching: find.byType(TextButton),
+            );
+            final words = find.descendant(
+              of: row,
+              matching: find.text('Water the plants'),
+            );
+            final others = [
+              button('Keep'),
+              button('Remove'),
+              find.descendant(of: row, matching: find.byType(NoteMark)),
+            ];
+            final wordsRect = tester.getRect(words);
+            expect(
+              wordsRect.width,
+              greaterThan(16 * scale * 3),
+              reason: 'the task kept only its first letters',
+            );
+            for (final other in others) {
+              expectInside(tester, other, width);
+              expect(tester.getRect(other).overlaps(wordsRect), isFalse);
+            }
+            if (scale == 1) {
+              expect(tester.getSize(row).height, touch ? 44 : 38);
+              var left = wordsRect.right;
+              for (final other in others) {
+                final rect = tester.getRect(other);
+                expect(rect.center.dy, closeTo(wordsRect.center.dy, 4));
+                expect(rect.left, greaterThan(left));
+                left = rect.right;
+              }
+              expect(
+                find.descendant(
+                  of: row,
+                  matching: find.text('Still want this?'),
+                ),
+                width >= 520 ? findsOneWidget : findsNothing,
+              );
+            }
+            await tester.pump(const Duration(seconds: 3));
+          });
+        }
+      }
+    }
   }
 
   group('on a phone 390 wide', () {
@@ -379,6 +468,8 @@ void main() {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
+    staleRowTests(touch: false);
+
     for (final label in ['Errands', _shared]) {
       testWidgets(
         'with a task\'s details open and ${label == _shared ? 'a long' : 'a short'} '
@@ -536,6 +627,13 @@ void main() {
       expectInside(tester, mark, 420);
       await tester.pump(const Duration(seconds: 3));
     });
+  });
+
+  group('on a touch screen', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    staleRowTests(touch: true);
   });
 }
 
