@@ -1093,7 +1093,7 @@ class _TableSizePicker extends StatelessWidget {
                       ),
                       padding: EdgeInsets.zero,
                       icon: KapyIcon(
-                        KapyIcons.chevronLeftRounded,
+                        KapyIcons.arrowBackRounded,
                         size: AppControlMetrics.iconAction,
                         color: palette.textSecondary,
                       ),

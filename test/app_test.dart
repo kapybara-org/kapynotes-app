@@ -1717,7 +1717,6 @@ void main() {
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester, size: const Size(420, 800));
       expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
-      expect(findKapyIcon(KapyIcons.pinRounded), findsNothing);
     },
   );
 

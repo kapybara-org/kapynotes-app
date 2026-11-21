@@ -113,7 +113,6 @@ class KapyDefaultModelButton extends StatelessWidget {
                 KapyIcon(
                   kapyModelIcon(model.kind),
                   size: 14,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 10),
@@ -127,7 +126,6 @@ class KapyDefaultModelButton extends StatelessWidget {
                   KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    strokeWidth: 1.8,
                     color: palette.accentText,
                   ),
               ],
@@ -304,7 +302,6 @@ class _KapyAccountRowState extends State<KapyAccountRow> {
                       child: KapyIcon(
                         KapyIcons.warningRounded,
                         size: 13,
-                        strokeWidth: 1.8,
                         color: palette.kapyRed,
                       ),
                     ),

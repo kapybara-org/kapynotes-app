@@ -77,12 +77,8 @@ class NoteTabRow extends StatelessWidget {
         color: color,
       );
 
-  static TextStyle _moreStyle(Color color) => chromeStyle(
-    size: 12,
-    line: 16,
-    weight: AppWeight.body,
-    color: color,
-  );
+  static TextStyle _moreStyle(Color color) =>
+      chromeStyle(size: 12, line: 16, weight: AppWeight.body, color: color);
 
   @override
   Widget build(BuildContext context) {
@@ -373,7 +369,6 @@ class _TabChipState extends State<_TabChip> {
                         KapyIcon(
                           widget.tab.icon,
                           size: 16,
-                          strokeWidth: 1.8,
                           color: active
                               ? palette.textPrimary
                               : palette.textTertiary,
@@ -413,7 +408,6 @@ class _TabChipState extends State<_TabChip> {
                                 child: KapyIcon(
                                   KapyIcons.closeRounded,
                                   size: 12,
-                                  strokeWidth: 1.8,
                                   color: active
                                       ? palette.textSecondary
                                       : palette.textTertiary,
@@ -546,7 +540,6 @@ class _MoreButton extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.chevronDownRounded,
                   size: 12,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
               ],
@@ -599,7 +592,6 @@ class _FoldedTabRow extends StatelessWidget {
                 child: KapyIcon(
                   KapyIcons.closeRounded,
                   size: 12,
-                  strokeWidth: 1.8,
                   color: palette.textTertiary,
                 ),
               ),

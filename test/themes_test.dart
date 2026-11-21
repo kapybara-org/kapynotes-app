@@ -32,7 +32,6 @@ void main() {
     'cardTitle': (p) => p.cardTitle,
     'muted': (p) => p.textMuted,
     'sec': (p) => p.textSecondary,
-    'icon': (p) => p.railInk,
     'faint': (p) => p.textTertiary,
     'dim': (p) => p.lineCommand,
     'dim2': (p) => p.checkboxBorder,

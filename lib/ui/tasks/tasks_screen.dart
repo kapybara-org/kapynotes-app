@@ -937,7 +937,6 @@ class _AddRow extends StatelessWidget {
             KapyIcon(
               KapyIcons.addRounded,
               size: 16,
-              strokeWidth: 1.8,
               color: focused ? palette.accentText : palette.textTertiary,
             ),
             const SizedBox(width: 10),
@@ -1077,7 +1076,6 @@ class _NotePicker extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.chevronDownRounded,
                   size: 11,
-                  strokeWidth: 2,
                   color: palette.textTertiary,
                 ),
               ],
@@ -1274,7 +1272,6 @@ class _DoNowCard extends StatelessWidget {
                                 icon: KapyIcon(
                                   KapyIcons.undoRounded,
                                   size: 14,
-                                  strokeWidth: 1.9,
                                   color: palette.textSecondary,
                                 ),
                                 label: const Text('Not finished'),
@@ -1513,7 +1510,7 @@ class _PickButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            KapyIcon(icon, size: 15, strokeWidth: 2, color: ink),
+            KapyIcon(icon, size: 15, color: ink),
             const SizedBox(width: 7),
           ],
           Flexible(
@@ -1924,7 +1921,6 @@ class _Box extends StatelessWidget {
                 ? KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    strokeWidth: 2.2,
                     color: palette.paperColor,
                   )
                 : null,
@@ -2103,7 +2099,6 @@ class _TaskRowState extends State<_TaskRow> {
                       child: KapyIcon(
                         KapyIcons.undoRounded,
                         size: 14,
-                        strokeWidth: 1.9,
                         color: palette.textTertiary,
                       ),
                     ),
@@ -2465,7 +2460,6 @@ class _PhoneTaskRow extends StatelessWidget {
                                 ? KapyIcon(
                                     KapyIcons.checkRounded,
                                     size: 15,
-                                    strokeWidth: 2.2,
                                     color: palette.paperColor,
                                   )
                                 : null,

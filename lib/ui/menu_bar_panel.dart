@@ -1183,7 +1183,6 @@ class _TaskRow extends StatelessWidget {
                 ? const KapyIcon(
                     KapyIcons.checkRounded,
                     size: 11,
-                    strokeWidth: 2.2,
                     color: Colors.white,
                   )
                 : null,

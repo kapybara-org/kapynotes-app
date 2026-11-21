@@ -128,7 +128,7 @@ enum PickedAction {
 KapyIconData _pickedIcon(PickedAction action) => switch (action) {
   PickedAction.openTabs => KapyIcons.openExternalRounded,
   PickedAction.pin => KapyIcons.pinOutlined,
-  PickedAction.unpin => KapyIcons.pinRounded,
+  PickedAction.unpin => KapyIcons.pinOutlined,
   PickedAction.hide => hiddenIcon,
   PickedAction.unhide => unhideIcon,
   PickedAction.archive => archiveIcon,
@@ -567,7 +567,7 @@ extension on Sidebar {
       action: nothingShared && onStartSharing != null
           ? TonalButton(
               key: const ValueKey('sidebar-empty-share'),
-              icon: KapyIcons.personAddRounded,
+              icon: KapyIcons.shareRounded,
               label: 'Share with someone',
               onPressed: onStartSharing,
             )
@@ -1292,12 +1292,7 @@ extension on Sidebar {
       }
     }
 
-    final pin = KapyIcon(
-      KapyIcons.pinOutlined,
-      size: 16,
-      strokeWidth: 1.9,
-      color: palette.clay,
-    );
+    final pin = KapyIcon(KapyIcons.pinOutlined, size: 16, color: palette.clay);
     if (_specialMode) {
       section(notes);
       if (hiddenMode) {
@@ -1308,12 +1303,7 @@ extension on Sidebar {
             padding: const EdgeInsets.fromLTRB(20, 6, 18, 0),
             child: Row(
               children: [
-                KapyIcon(
-                  hiddenIcon,
-                  size: 13,
-                  strokeWidth: 1.8,
-                  color: palette.textTertiary,
-                ),
+                KapyIcon(hiddenIcon, size: 13, color: palette.textTertiary),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
@@ -1348,11 +1338,7 @@ extension on Sidebar {
                 onPressed: onPinnedOnlyChanged == null
                     ? null
                     : () => onPinnedOnlyChanged(false),
-                icon: const KapyIcon(
-                  KapyIcons.chevronLeftRounded,
-                  size: 13,
-                  strokeWidth: 2,
-                ),
+                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 13),
               ),
               const SizedBox(width: 6),
               pin,
@@ -2082,7 +2068,6 @@ class SidebarWindowBar extends StatelessWidget {
                         icon: KapyIcon(
                           KapyIcons.menuOpenRounded,
                           size: AppControlMetrics.iconAction,
-                          strokeWidth: 1.7,
                         ),
                       ),
                     ],
@@ -2347,7 +2332,7 @@ class _InvitationCard extends StatelessWidget {
                             );
                           },
                     icon: KapyIcon(
-                      KapyIcons.moreRounded,
+                      KapyIcons.moreVerticalRounded,
                       size: AppControlMetrics.iconAdornment,
                     ),
                   ),
@@ -2518,7 +2503,6 @@ class SidebarSearchField extends StatelessWidget {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: 16,
-                      strokeWidth: 1.8,
                       color: palette.textSecondary,
                     ),
                     const SizedBox(width: 8),
@@ -2602,7 +2586,6 @@ class SidebarSearchField extends StatelessWidget {
                         KapyIcon(
                           KapyIcons.searchRounded,
                           size: 16,
-                          strokeWidth: 1.8,
                           color: palette.textSecondary,
                         ),
                         const SizedBox(width: 9),
@@ -2662,7 +2645,6 @@ class _FiltersButton extends StatelessWidget {
               icon: KapyIcon(
                 KapyIcons.filterRounded,
                 size: 20,
-                strokeWidth: active ? 2 : 1.8,
                 color: active ? palette.textPrimary : palette.textSecondary,
               ),
             ),
@@ -2919,9 +2901,7 @@ class _NoteRowState extends State<NoteRow> {
             KapyMenuAction(
               value: 'pin',
               label: widget.pinned ? 'Unpin note' : 'Pin note',
-              icon: widget.pinned
-                  ? KapyIcons.pinRounded
-                  : KapyIcons.pinOutlined,
+              icon: KapyIcons.pinOutlined,
             ),
           if (TagShelf.maybeOf(context) != null)
             const KapyMenuAction(
@@ -2940,7 +2920,7 @@ class _NoteRowState extends State<NoteRow> {
             KapyMenuAction(
               value: 'share',
               label: widget.shared ? 'Manage sharing' : 'Share note',
-              icon: KapyIcons.peopleOutlined,
+              icon: KapyIcons.groupOutlined,
             ),
           if (widget.onHide != null)
             const KapyMenuAction(
@@ -3446,7 +3426,7 @@ class _ShareGroupHeader extends StatelessWidget {
           const SizedBox(width: 5),
         ] else if (people.isEmpty) ...[
           KapyIcon(
-            KapyIcons.peopleOutlined,
+            KapyIcons.groupOutlined,
             size: AppControlMetrics.iconInline,
             color: palette.textTertiary,
           ),
@@ -3553,7 +3533,6 @@ class _DrawingsEmpty extends StatelessWidget {
               child: KapyIcon(
                 KapyIcons.penRounded,
                 size: 30,
-                strokeWidth: 1.5,
                 color: palette.textTertiary,
               ),
             ),
@@ -3954,7 +3933,6 @@ class _SwipeActionsState extends State<_SwipeActions>
                                 KapyIcon(
                                   action.icon,
                                   size: 20,
-                                  strokeWidth: 1.8,
                                   color: foreground,
                                 ),
                                 Text(

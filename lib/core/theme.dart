@@ -159,10 +159,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// The pill under inline code and a formula's TeX.
   final Color codeChip;
 
-  /// The rail's icons and labels at rest. Paper's dark rail is a step
-  /// lighter than the tertiary ink the rest of the app shares.
-  final Color railInk;
-
   /// A quote's bar, Paper's.
   final Color quoteBar;
 
@@ -378,7 +374,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.codeBuiltIn,
     required this.codePanel,
     required this.codeChip,
-    required this.railInk,
     required this.quoteBar,
     required this.tagCards,
     required this.tagDots,
@@ -460,7 +455,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? codeBuiltIn,
     Color? codePanel,
     Color? codeChip,
-    Color? railInk,
     Color? quoteBar,
     List<Color>? tagCards,
     List<Color>? tagDots,
@@ -539,7 +533,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     codeBuiltIn: codeBuiltIn ?? this.codeBuiltIn,
     codePanel: codePanel ?? this.codePanel,
     codeChip: codeChip ?? this.codeChip,
-    railInk: railInk ?? this.railInk,
     quoteBar: quoteBar ?? this.quoteBar,
     tagCards: tagCards ?? this.tagCards,
     tagDots: tagDots ?? this.tagDots,
@@ -627,7 +620,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       codeBuiltIn: mix(codeBuiltIn, other.codeBuiltIn),
       codePanel: mix(codePanel, other.codePanel),
       codeChip: mix(codeChip, other.codeChip),
-      railInk: mix(railInk, other.railInk),
       quoteBar: mix(quoteBar, other.quoteBar),
       tagCards: [
         for (var i = 0; i < tagCards.length; i++)
@@ -970,17 +962,17 @@ class AppControlMetrics {
   static double get iconSearch => _touch ? 16 : 14;
 
   /// A secondary icon that is itself the button.
-  static double get iconControl => _touch ? 22 : 16;
+  static double get iconControl => _touch ? 20 : 16;
 
   /// A primary icon that is itself the button. The workhorse of every bar.
-  static double get iconAction => _touch ? 22 : 16;
+  static double get iconAction => _touch ? 20 : 16;
 
   /// Primary and secondary glyphs inside the roomier footer controls.
   ///
   /// These sit one or two points above title-bar glyphs so the repeated strip
   /// reads at the same visual weight as the surrounding editor and sidebar.
-  static double get footerIconAction => _touch ? 22 : 18;
-  static double get footerIconControl => _touch ? 22 : 18;
+  static double get footerIconAction => _touch ? 20 : 18;
+  static double get footerIconControl => _touch ? 20 : 18;
 
   /// Feature icons that head a pane or an empty state.
   static double get iconFeature => _touch ? 26 : 20;
@@ -1202,8 +1194,8 @@ class AppWeight {
   /// 500 up reaches 700, so a section label and a page title read alike.
   /// Weight stops carrying their difference there; size and colour still do.
   static double bold(double axis) {
-    final features = WidgetsBinding.instance.platformDispatcher
-        .accessibilityFeatures;
+    final features =
+        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures;
     if (!features.boldText) return axis;
     return math.min(axis + 200, 700);
   }
@@ -1426,7 +1418,6 @@ class KapyTheme {
     codeBuiltIn: Color(0xFF8FB3B0),
     codePanel: Color(0xFF1E1C19),
     codeChip: Color(0xFF2E2A25),
-    railInk: Color(0xFF8F8778),
     quoteBar: Color(0xFF4A453D),
     tagCards: [
       Color(0xFF393425),
@@ -1531,7 +1522,6 @@ class KapyTheme {
     codeBuiltIn: Color(0xFF3F7470),
     codePanel: Color(0xFFF6F2E8),
     codeChip: Color(0xFFEFEADD),
-    railInk: Color(0xFF666054),
     quoteBar: Color(0xFFD0C8B5),
     tagCards: [
       Color(0xFFF4EBC8),
@@ -2746,7 +2736,6 @@ CalcPalette _fromTones(_Tones t) {
     codeBuiltIn: code(t.dots[3]),
     codePanel: panel,
     codeChip: t.codeBg,
-    railInk: t.icon,
     quoteBar: t.box,
     tagCards: t.tags,
     tagDots: t.dots,

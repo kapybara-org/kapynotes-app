@@ -162,7 +162,6 @@ class NotesFoldersSwitch extends StatelessWidget {
                           ? KapyIcons.folderOutlined
                           : KapyIcons.noteOutlined,
                       size: 16,
-                      strokeWidth: 1.8,
                       color: colour,
                     ),
                     const SizedBox(width: 8),
@@ -285,14 +284,12 @@ class _UpcomingRow extends StatelessWidget {
                     ? KapyIcons.chevronDownRounded
                     : KapyIcons.chevronRightRounded,
                 size: 12,
-                strokeWidth: 1.8,
                 color: palette.textTertiary,
               ),
               const SizedBox(width: 6),
               KapyIcon(
                 KapyIcons.calendarOutlined,
                 size: 16,
-                strokeWidth: 1.8,
                 color: palette.textSecondary,
               ),
               const SizedBox(width: 8),
@@ -523,7 +520,6 @@ class _FolderRowState extends State<_FolderRow> {
                   ? KapyIcons.chevronDownRounded
                   : KapyIcons.chevronRightRounded,
               size: 12,
-              strokeWidth: 2,
               color: palette.textTertiary,
             ),
     );
@@ -588,7 +584,6 @@ class _FolderRowState extends State<_FolderRow> {
                 KapyIcon(
                   KapyIcons.folderOutlined,
                   size: 16,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 8),
@@ -697,7 +692,6 @@ class _NewFolderRowState extends State<_NewFolderRow> {
                 KapyIcon(
                   KapyIcons.addRounded,
                   size: 16,
-                  strokeWidth: 1.8,
                   color: palette.textTertiary,
                 ),
                 const SizedBox(width: 8),
@@ -788,7 +782,6 @@ class _FolderNameFieldState extends State<_FolderNameField> {
                     KapyIcon(
                       KapyIcons.folderOutlined,
                       size: 16,
-                      strokeWidth: 1.8,
                       color: palette.textSecondary,
                     ),
                     const SizedBox(width: 8),
@@ -889,12 +882,7 @@ class TreeNoteFace extends StatelessWidget {
           : null,
       child: Row(
         children: [
-          KapyIcon(
-            KapyIcons.noteOutlined,
-            size: 16,
-            strokeWidth: 1.8,
-            color: colour,
-          ),
+          KapyIcon(KapyIcons.noteOutlined, size: 16, color: colour),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1418,7 +1406,6 @@ class _FolderPickerState extends State<_FolderPicker> {
                   KapyIcon(
                     icon,
                     size: 16,
-                    strokeWidth: 1.8,
                     color: on ? palette.textSecondary : palette.textMuted,
                   ),
                   const SizedBox(width: 8),
@@ -1451,7 +1438,6 @@ class _FolderPickerState extends State<_FolderPicker> {
                         ? KapyIcon(
                             KapyIcons.checkRounded,
                             size: 14,
-                            strokeWidth: 1.8,
                             color: Theme.of(context).colorScheme.primary,
                           )
                         : null,
@@ -1529,7 +1515,6 @@ class _FolderPickerState extends State<_FolderPicker> {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: 14,
-                      strokeWidth: 1.8,
                       color: palette.textTertiary,
                     ),
                     const SizedBox(width: 8),
@@ -1715,7 +1700,6 @@ class FolderPage extends StatelessWidget {
               KapyIcon(
                 KapyIcons.folderOutlined,
                 size: 24,
-                strokeWidth: 1.8,
                 color: palette.textSecondary,
               ),
               const SizedBox(width: 12),
@@ -1864,7 +1848,6 @@ class _FolderCardState extends State<_FolderCard> {
                 KapyIcon(
                   KapyIcons.folderOutlined,
                   size: 18,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 10),
