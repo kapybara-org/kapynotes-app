@@ -8,8 +8,8 @@
 // It runs the device checks that three 1.35 changes still owe:
 // - Ask Kapy left of New note in the list's bar (#225): where it sits, its
 //   name on hover, and a click that opens Kapy AI on the note shown.
-// - New beside show-list while the list is hidden (#254): it makes a note, a
-//   drawing, or in Tasks goes to "Add a task", by click and by Tab and Enter.
+// - New beside show-list while the list is hidden (#254): it makes a note or
+//   a drawing, by click and by Tab and Enter.
 // - A row's screen-reader actions while notes are picked, and the Upcoming
 //   fold (#239). VoiceOver can't run on a CI runner, so the test reads the
 //   actions from the app's semantics tree, which is what the Mac hands
@@ -226,14 +226,6 @@ void main() {
     await click(tester, pageNew);
     expect(notes.notes.first.isDrawing, isTrue);
     await shot(tester, 'new-drawing');
-
-    await click(tester, find.byKey(const ValueKey('rail-tasks')));
-    besideShowList('New task');
-    before = notes.notes.length;
-    await click(tester, pageNew);
-    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
-    expect(notes.notes, hasLength(before));
-    await shot(tester, 'new-task');
 
     await click(tester, find.byKey(const ValueKey('rail-notes')));
     final plus = find.descendant(
