@@ -450,6 +450,70 @@ void main() {
     });
   }
 
+  testWidgets('Block on a person asks by the whole name, and no sharing '
+      'action in the section takes the warning colour', (tester) async {
+    late Note mine;
+    await tester.runAsync(() async {
+      await sam.boot();
+      await priya.boot();
+    });
+    await shareWithSam(tester, 'From Priya');
+    await tester.runAsync(() async {
+      mine = sam.notes.create(body: 'Car service checklist');
+      await sam.sync.syncNow();
+      await sam.sharing.shareNoteWith(mine.id, email: priya.email);
+      await priya.sharing.acceptInvite(server.outbox.last.token);
+      await sam.sync.syncNow();
+      await sam.sharing.refresh();
+    });
+    await pump(tester, sam);
+    await tester.tap(find.byKey(person(priya)));
+    await tester.pumpAndSettle();
+    final warning = Theme.of(
+      tester.element(find.byKey(const ValueKey('stop-sharing-with'))),
+    ).colorScheme.error;
+    expect(
+      tester
+          .widget<TextButton>(
+            find.descendant(
+              of: find.byKey(const ValueKey('stop-sharing-with')),
+              matching: find.byType(TextButton),
+            ),
+          )
+          .style
+          ?.foregroundColor
+          ?.resolve({}),
+      isNot(warning),
+    );
+    Future<void> menuSays(Finder button, String item) async {
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.text(item)).style?.color, isNot(warning));
+    }
+
+    await menuSays(
+      find.byKey(ValueKey('access-${mine.id}')),
+      'Stop sharing this note',
+    );
+    await tester.tapAt(const Offset(2, 2));
+    await tester.pumpAndSettle();
+    final theirs = sam.sharing.notesSharedFrom(priya.email).single;
+    await menuSays(
+      find.byKey(ValueKey('received-${theirs.id}')),
+      'Leave this note',
+    );
+    await tester.tapAt(const Offset(2, 2));
+    await tester.pumpAndSettle();
+    await menuSays(find.byKey(const ValueKey('person-menu')), 'Block Priya…');
+    await tester.tap(find.text('Block Priya…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Block Priya Nair?'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+    await tester.pumpAndSettle();
+    expect(sam.sharing.hasBlocked(priya.email), isFalse);
+    await quiet(tester);
+  });
+
   testWidgets('stopping sharing with a person keeps the notes, with Undo', (
     tester,
   ) async {
@@ -531,7 +595,9 @@ void main() {
     await act(tester, find.text('Undo'));
     expect(tester.takeException(), isNull);
     expect(sam.notes.byId(note.id)!.isShared, isTrue);
-    expect(find.text('Shared again with Priya'), findsOneWidget);
+    expect(find.text('Invitation sent to Priya'), findsOneWidget);
+    expect(find.textContaining('Shared again'), findsNothing);
+    expect(sam.sharing.memberOn(note.id, priya.email), isNull);
     await quiet(tester);
   });
 

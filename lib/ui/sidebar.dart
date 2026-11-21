@@ -33,6 +33,7 @@ import 'note_picks.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'safety_dialogs.dart';
+import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
@@ -2197,6 +2198,17 @@ class _InvitationsState extends State<_Invitations> {
           ),
         );
       case 'block':
+        if (AppPlatform.isMobile) {
+          final ok = await askFirst(
+            context,
+            title: 'Block ${invite.inviterDisplayName}?',
+            body:
+                'They can’t invite you again, and this invitation goes away. '
+                'You can unblock them in Settings, under Blocked people.',
+            action: 'Block',
+          );
+          if (ok == null || !mounted) return;
+        }
         await _act(
           invite,
           () => sharing.blockPerson(invite.invitedBy),

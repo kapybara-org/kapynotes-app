@@ -333,11 +333,10 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
 
   Future<T?> _menu<T>(
     BuildContext button,
-    List<({T value, String label, bool danger})> items,
+    List<({T value, String label})> items,
   ) {
     final box = button.findRenderObject() as RenderBox?;
     if (box == null) return Future<T?>.value();
-    final danger = Theme.of(context).colorScheme.error;
     return showKapyContextMenu<T>(
       context: button,
       globalPosition: box.localToGlobal(
@@ -348,10 +347,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
           PopupMenuItem<T>(
             value: item.value,
             height: 36,
-            child: Text(
-              item.label,
-              style: TextStyle(color: item.danger ? danger : null),
-            ),
+            child: Text(item.label),
           ),
       ],
     );
@@ -363,8 +359,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   Future<void> _inviteMenu(BuildContext button, PendingInvite invite) async {
     final name = invite.inviterDisplayName;
     final choice = await _menu<String>(button, [
-      (value: 'report', label: 'Report…', danger: false),
-      (value: 'block', label: 'Block $name…', danger: true),
+      (value: 'report', label: 'Report…'),
+      (value: 'block', label: 'Block $name…'),
     ]);
     if (!mounted) return;
     if (choice == 'report') {
@@ -413,8 +409,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   Future<void> _personMenu(BuildContext button, SharePerson person) async {
     final first = _first(person.name);
     final choice = await _menu<String>(button, [
-      (value: 'report', label: 'Report…', danger: false),
-      (value: 'block', label: 'Block $first…', danger: true),
+      (value: 'report', label: 'Report…'),
+      (value: 'block', label: 'Block $first…'),
     ]);
     if (!mounted) return;
     final spaces = _spacesWith(person.email);
@@ -431,7 +427,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     } else if (choice == 'block') {
       final ok = await askFirst(
         context,
-        title: 'Block $first?',
+        title: 'Block ${person.name}?',
         body:
             '$first loses access to everything you share, you leave what '
             '$first shares with you (keeping copies), and $first can’t '
@@ -456,10 +452,10 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   ) async {
     final choice = await _menu<SpaceRole?>(button, [
       if (!access.invited) ...[
-        (value: SpaceRole.member, label: 'Can edit', danger: false),
-        (value: SpaceRole.viewer, label: 'Can view', danger: false),
+        (value: SpaceRole.member, label: 'Can edit'),
+        (value: SpaceRole.viewer, label: 'Can view'),
       ],
-      (value: SpaceRole.owner, label: 'Stop sharing this note', danger: true),
+      (value: SpaceRole.owner, label: 'Stop sharing this note'),
     ]);
     if (choice == null || !mounted) return;
     final first = _first(person.name);
@@ -515,9 +511,9 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   ) async {
     final open = widget.onOpenNote;
     final choice = await _menu<String>(button, [
-      if (open != null) (value: 'open', label: 'Open', danger: false),
-      (value: 'copy', label: 'Make a private copy', danger: false),
-      (value: 'leave', label: 'Leave this note', danger: true),
+      if (open != null) (value: 'open', label: 'Open'),
+      (value: 'copy', label: 'Make a private copy'),
+      (value: 'leave', label: 'Leave this note'),
     ]);
     if (!mounted) return;
     final first = _first(person.name);
@@ -585,7 +581,11 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         for (final MapEntry(key: id, value: role) in before.entries) {
           await sharing.addPerson(id, person.email, role: role);
         }
-        return 'Shared again with $first';
+        return before.keys.any(
+              (id) => sharing.memberOn(id, person.email) != null,
+            )
+            ? 'Shared again with $first'
+            : 'Invitation sent to $first';
       },
     );
   }
@@ -1072,7 +1072,6 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
               trailing: SettingsRowButton(
                 key: const ValueKey('stop-sharing-with'),
                 label: 'Stop sharing',
-                destructive: true,
                 onPressed: _idle ? () => _stopSharingWith(person) : null,
               ),
             ),
