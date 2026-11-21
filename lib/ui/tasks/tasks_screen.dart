@@ -895,9 +895,9 @@ class _AddRow extends StatelessWidget {
       padding: EdgeInsets.only(left: phone ? 14 : 12, right: phone ? 6 : 8),
       decoration: BoxDecoration(
         color: ink.card,
-        borderRadius: BorderRadius.circular(phone ? 10 : 9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
-      foregroundDecoration: taskContrastEdge(context, phone ? 10 : 9),
+      foregroundDecoration: taskContrastEdge(context, AppRadii.control),
       child: LayoutBuilder(
         builder: (context, constraints) => Row(
           children: [
@@ -1000,12 +1000,13 @@ class _NotePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
     final target = this.target;
+    final radius = phone ? AppRadii.control : AppRadii.compact;
     return Tooltip(
       message: 'Add to a note',
       child: InkWell(
         key: const ValueKey('tasks-note-picker'),
         canRequestFocus: false,
-        borderRadius: BorderRadius.circular(phone ? 8 : 6),
+        borderRadius: BorderRadius.circular(radius),
         onTap: () => _open(context),
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: phone ? 44 : 28),
@@ -1014,7 +1015,7 @@ class _NotePicker extends StatelessWidget {
             heightFactor: 1,
             child: Container(
               constraints: BoxConstraints(
-                minHeight: phone ? 30 : 28,
+                minHeight: phone ? 32 : 28,
                 maxWidth: maxWidth,
               ),
               padding: EdgeInsets.only(
@@ -1023,9 +1024,9 @@ class _NotePicker extends StatelessWidget {
               ),
               decoration: BoxDecoration(
                 color: ink.lifted,
-                borderRadius: BorderRadius.circular(phone ? 8 : 6),
+                borderRadius: BorderRadius.circular(radius),
               ),
-              foregroundDecoration: taskContrastEdge(context, phone ? 8 : 6),
+              foregroundDecoration: taskContrastEdge(context, radius),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

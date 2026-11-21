@@ -2537,8 +2537,8 @@ class SidebarSearchField extends StatelessWidget {
               cursor: SystemMouseCursors.text,
               child: Container(
                 key: const ValueKey('sidebar-search-box'),
-                height: 40,
-                padding: const EdgeInsets.only(left: 12, right: 8),
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   color: palette.fillRest,
                   borderRadius: BorderRadius.circular(AppRadii.control),
@@ -2548,7 +2548,7 @@ class SidebarSearchField extends StatelessWidget {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: 14,
-                      color: palette.textSecondary,
+                      color: palette.textTertiary,
                     ),
                     const SizedBox(width: 8),
                     Expanded(

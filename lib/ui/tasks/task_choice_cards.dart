@@ -312,7 +312,9 @@ class TaskPairCard extends StatelessWidget {
           );
     return Container(
       key: const ValueKey('tasks-pair'),
-      padding: const EdgeInsets.all(16),
+      padding: phone
+          ? const EdgeInsets.fromLTRB(16, 14, 16, 16)
+          : const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: ink.card,
         borderRadius: BorderRadius.circular(phone ? 12 : 10),

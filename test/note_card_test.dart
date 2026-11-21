@@ -208,6 +208,31 @@ void main() {
     }
   });
 
+  testWidgets("a phone's note row titles are 17/24", (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final row = note('Reading list\nDeep Work, Dune');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Material(
+          child: NoteListRowFace(
+            note: row,
+            glance: NoteGlance.of(row, null),
+            date: '11:15',
+            selected: false,
+            hovering: false,
+            touch: true,
+          ),
+        ),
+      ),
+    );
+
+    final title = styleOf(tester, 'Reading list');
+    expect(title.fontSize, 17);
+    expect(title.height, 24 / 17);
+  });
+
   testWidgets('on a phone the dots stay 8 px and 4 apart', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);

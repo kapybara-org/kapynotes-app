@@ -658,7 +658,7 @@ class NoteListRowFace extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: touch
                             ? _handwritten(
-                                18,
+                                17,
                                 24,
                                 FontWeight.w400,
                                 palette.textPrimary,

@@ -756,7 +756,7 @@ class PhoneSpaces extends StatelessWidget {
   final Widget child;
   final bool showTasks;
 
-  static const double _barHeight = 60;
+  static const double _barHeight = 56;
   static const double _barLift = 30;
   static const double _plusExtent = 56;
 
@@ -898,7 +898,7 @@ class PhoneSpaces extends StatelessWidget {
   }
 }
 
-/// One of the bar's destinations: its icon over its name in a 52 pt pill,
+/// One of the bar's destinations: its icon over its name in a 46 pt pill,
 /// lifted a step while it is the one on screen.
 class _BarItem extends StatelessWidget {
   const _BarItem({
@@ -928,10 +928,10 @@ class _BarItem extends StatelessWidget {
         onTap: onPressed,
         child: ExcludeSemantics(
           child: Container(
-            height: 52,
+            height: 46,
             decoration: BoxDecoration(
               color: selected ? palette.fillSelected : null,
-              borderRadius: BorderRadius.circular(26),
+              borderRadius: BorderRadius.circular(23),
             ),
             alignment: Alignment.center,
             child: Column(
@@ -944,7 +944,7 @@ class _BarItem extends StatelessWidget {
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.fade,
-                  // The pill is a fixed 52 pt, as iOS's tab bar is, and
+                  // The pill is a fixed 46 pt, as iOS's tab bar is, and
                   // keeps its labels near their size for the same
                   // reason: past this they no longer fit under the icon.
                   textScaler: MediaQuery.textScalerOf(

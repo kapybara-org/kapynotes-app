@@ -982,7 +982,7 @@ class _BackButton extends StatelessWidget {
         tooltip: 'Back',
         onPressed: onPressed,
         color: palette.textPrimary,
-        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 20),
+        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 18),
       );
     }
     return Semantics(
@@ -1004,7 +1004,7 @@ class _BackButton extends StatelessWidget {
           children: [
             KapyIcon(
               KapyIcons.arrowBackRounded,
-              size: 20,
+              size: 18,
               color: palette.textPrimary,
             ),
             Text(
