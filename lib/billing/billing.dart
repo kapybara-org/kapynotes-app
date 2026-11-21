@@ -554,19 +554,27 @@ class Billing extends ChangeNotifier {
     }
   }
 
+  /// Asks until the purchase shows, [within] is up, or the account changes.
+  /// [within] runs on a timer, like the waits between asks, so a test's
+  /// clock moves both.
   Future<bool> _waitFor(
     Sku sku,
     Entitlements? before,
     String id,
     Duration within,
   ) async {
-    final clock = Stopwatch()..start();
-    while (true) {
-      final now = await refresh();
-      if (_userId != id) return false;
-      if (now != null && _reflects(sku, before, now)) return true;
-      if (clock.elapsed >= within) return false;
-      await Future<void>.delayed(confirmEvery);
+    var timeUp = false;
+    final deadline = Timer(within, () => timeUp = true);
+    try {
+      while (true) {
+        final now = await refresh();
+        if (_userId != id) return false;
+        if (now != null && _reflects(sku, before, now)) return true;
+        if (timeUp) return false;
+        await Future<void>.delayed(confirmEvery);
+      }
+    } finally {
+      deadline.cancel();
     }
   }
 
