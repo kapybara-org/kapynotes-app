@@ -434,6 +434,7 @@ class PageToolbar extends StatelessWidget {
         TonalButton(
           key: const ValueKey('page-share'),
           tall: true,
+          quiet: true,
           label: 'Share',
           tooltip: noteShared ? 'Manage sharing' : null,
           onPressed: onShare,

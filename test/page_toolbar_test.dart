@@ -96,6 +96,32 @@ void main() {
   Finder onPath(String text) =>
       find.descendant(of: path, matching: find.text(text));
 
+  testWidgets('Share is quiet: grey words on no fill until the pointer is '
+      'on it, and greyer still when it cannot be used', (tester) async {
+    await tester.pumpWidget(harness(toolbar()));
+
+    final palette = tester.element(share).palette;
+    final style = tester
+        .widget<FilledButton>(
+          find.descendant(of: share, matching: find.byType(FilledButton)),
+        )
+        .style!;
+    expect(style.backgroundColor!.resolve({}), Colors.transparent);
+    expect(style.foregroundColor!.resolve({}), palette.textSecondary);
+    expect(
+      style.backgroundColor!.resolve({WidgetState.hovered}),
+      palette.textPrimary.withValues(alpha: 0.07),
+    );
+    expect(
+      style.backgroundColor!.resolve({WidgetState.disabled}),
+      Colors.transparent,
+    );
+    expect(
+      style.foregroundColor!.resolve({WidgetState.disabled}),
+      palette.textTertiary,
+    );
+  });
+
   testWidgets(
     'is a 52 band from the page\'s top, with the path 18 in, every '
     'control centred down it, and More last, after Kapy AI, 12 from the end',
