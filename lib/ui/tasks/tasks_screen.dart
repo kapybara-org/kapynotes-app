@@ -474,11 +474,17 @@ class TasksScreenState extends State<TasksScreen> {
                     children: [
                       const _TodayTitle(),
                       const SizedBox(height: 10),
-                      NoteMetaRow(
-                        edited: SidebarTimestamp.fullDay(now),
-                        done: doneToday,
-                        tasks: doneToday + open.length,
-                        today: true,
+                      // A column narrowed by a task's details shrinks the line
+                      // to fit rather than running under them.
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: NoteMetaRow(
+                          edited: SidebarTimestamp.fullDay(now),
+                          done: doneToday,
+                          tasks: doneToday + open.length,
+                          today: true,
+                        ),
                       ),
                     ],
                   ),
@@ -758,30 +764,43 @@ class TasksScreenState extends State<TasksScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    'Done',
-                    style: handStyle(
-                      32,
-                      40,
-                      FontWeight.w700,
-                      palette.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '${board.done.length} completed',
-                    style: uiStyle(
-                      13,
-                      16,
-                      FontWeight.w600,
-                      palette.textTertiary,
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final titleStyle = handStyle(
+                    32,
+                    40,
+                    FontWeight.w700,
+                    palette.textPrimary,
+                  );
+                  final countStyle = uiStyle(
+                    13,
+                    16,
+                    FontWeight.w600,
+                    palette.textTertiary,
+                  );
+                  final countText = '${board.done.length} completed';
+                  final title = Text('Done', style: titleStyle);
+                  final count = Text(countText, style: countStyle);
+                  // At large text the count goes under the title rather
+                  // than breaking beside it.
+                  if (!_fitsOnOneLine(
+                    context,
+                    constraints.maxWidth,
+                    ('Done', titleStyle),
+                    (countText, countStyle),
+                    10,
+                  )) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [title, count],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [title, const SizedBox(width: 10), count],
+                  );
+                },
               ),
               const SizedBox(height: 6),
               Text(
@@ -900,7 +919,7 @@ class _AddRow extends StatelessWidget {
     final shortcut = this.shortcut;
     return Container(
       key: const ValueKey('tasks-add-row'),
-      height: phone ? 44 : 40,
+      constraints: BoxConstraints(minHeight: phone ? 44 : 40),
       padding: EdgeInsets.only(left: phone ? 14 : 10, right: 6),
       decoration: BoxDecoration(
         color: phone
@@ -912,71 +931,77 @@ class _AddRow extends StatelessWidget {
               ),
         borderRadius: BorderRadius.circular(phone ? 12 : AppRadii.control),
       ),
-      child: Row(
-        children: [
-          KapyIcon(
-            KapyIcons.addRounded,
-            size: 16,
-            strokeWidth: 1.8,
-            color: focused ? palette.accentText : palette.textTertiary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: CallbackShortcuts(
-              bindings: {
-                const SingleActivator(LogicalKeyboardKey.escape): focus.unfocus,
-              },
-              child: TextField(
-                key: const ValueKey('tasks-add-field'),
-                controller: controller,
-                focusNode: focus,
-                onSubmitted: (_) => onSubmit(),
-                onEditingComplete: () {},
-                textInputAction: TextInputAction.done,
-                cursorColor: palette.accentText,
-                style: uiStyle(16, 28, FontWeight.w500, palette.textPrimary),
-                decoration: phone
-                    ? InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Add a task',
-                        hintStyle: uiStyle(
-                          16,
-                          28,
-                          FontWeight.w500,
-                          palette.textTertiary,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            KapyIcon(
+              KapyIcons.addRounded,
+              size: 16,
+              strokeWidth: 1.8,
+              color: focused ? palette.accentText : palette.textTertiary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: CallbackShortcuts(
+                bindings: {
+                  const SingleActivator(LogicalKeyboardKey.escape):
+                      focus.unfocus,
+                },
+                child: TextField(
+                  key: const ValueKey('tasks-add-field'),
+                  controller: controller,
+                  focusNode: focus,
+                  onSubmitted: (_) => onSubmit(),
+                  onEditingComplete: () {},
+                  textInputAction: TextInputAction.done,
+                  cursorColor: palette.accentText,
+                  style: uiStyle(16, 28, FontWeight.w500, palette.textPrimary),
+                  decoration: phone
+                      ? InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Add a task',
+                          hintStyle: uiStyle(
+                            16,
+                            28,
+                            FontWeight.w500,
+                            palette.textTertiary,
+                          ),
+                          // A phone's field is the whole 44 pt row.
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                          ),
+                        )
+                      : InputDecoration.collapsed(
+                          hintText: 'Add a task…',
+                          hintStyle: uiStyle(
+                            16,
+                            28,
+                            FontWeight.w500,
+                            palette.textTertiary,
+                          ),
                         ),
-                        // A phone's field is the whole 44 pt row.
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                      )
-                    : InputDecoration.collapsed(
-                        hintText: 'Add a task…',
-                        hintStyle: uiStyle(
-                          16,
-                          28,
-                          FontWeight.w500,
-                          palette.textTertiary,
-                        ),
-                      ),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          _NotePicker(
-            target: target,
-            labelOf: labelOf,
-            choices: choices,
-            onChoose: onChoose,
-            chevron: !focused,
-            phone: phone,
-          ),
-          if (!phone) ...[
             const SizedBox(width: 10),
-            if (focused)
-              const ExcludeSemantics(child: Keycap('↵'))
-            else if (shortcut != null)
-              ExcludeSemantics(child: Keycap(shortcut)),
+            _NotePicker(
+              target: target,
+              labelOf: labelOf,
+              choices: choices,
+              onChoose: onChoose,
+              chevron: !focused,
+              phone: phone,
+              maxWidth: math.min(200, constraints.maxWidth * _markShare),
+            ),
+            if (!phone) ...[
+              const SizedBox(width: 10),
+              if (focused)
+                const ExcludeSemantics(child: Keycap('↵'))
+              else if (shortcut != null)
+                ExcludeSemantics(child: Keycap(shortcut)),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -992,6 +1017,7 @@ class _NotePicker extends StatelessWidget {
     required this.onChoose,
     required this.chevron,
     required this.phone,
+    required this.maxWidth,
   });
 
   final Note? target;
@@ -1002,6 +1028,9 @@ class _NotePicker extends StatelessWidget {
 
   /// Whether this sits in a phone's row, where a target is 44 pt tall.
   final bool phone;
+
+  /// The widest the chip grows, so the field beside it keeps most of the row.
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1016,8 +1045,10 @@ class _NotePicker extends StatelessWidget {
         onTap: () => _open(context),
         child: Container(
           // A phone's target is 44 pt tall; a window's chip stays small.
-          height: phone ? 44 : 28,
-          constraints: const BoxConstraints(maxWidth: 200),
+          constraints: BoxConstraints(
+            minHeight: phone ? 44 : 28,
+            maxWidth: maxWidth,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
             border: Border.all(color: palette.controlBorder),
@@ -1197,62 +1228,71 @@ class _DoNowCard extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: label == null
-                            ? const SizedBox.shrink()
-                            : Align(
-                                alignment: Alignment.centerLeft,
-                                child: NoteMark(
-                                  note: item.note,
-                                  label: label,
-                                  onPressed: onOpenNote,
+                  SizedBox(
+                    width: double.infinity,
+                    child: Wrap(
+                      alignment: label == null
+                          ? WrapAlignment.end
+                          : WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      runSpacing: 8,
+                      children: [
+                        if (label != null)
+                          NoteMark(
+                            note: item.note,
+                            label: label,
+                            onPressed: onOpenNote,
+                          ),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Tooltip(
+                              message: 'Moves it to the end of the list',
+                              child: TextButton.icon(
+                                key: const ValueKey('tasks-not-finished'),
+                                onPressed: onNotFinished,
+                                style: TextButton.styleFrom(
+                                  minimumSize: const Size(0, 32),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 11,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      AppRadii.control,
+                                    ),
+                                  ),
+                                  foregroundColor: palette.textSecondary,
+                                  textStyle: uiStyle(
+                                    13,
+                                    16,
+                                    FontWeight.w600,
+                                    palette.textSecondary,
+                                  ),
                                 ),
-                              ),
-                      ),
-                      Tooltip(
-                        message: 'Moves it to the end of the list',
-                        child: TextButton.icon(
-                          key: const ValueKey('tasks-not-finished'),
-                          onPressed: onNotFinished,
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(0, 32),
-                            padding: const EdgeInsets.symmetric(horizontal: 11),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppRadii.control,
+                                icon: KapyIcon(
+                                  KapyIcons.undoRounded,
+                                  size: 14,
+                                  strokeWidth: 1.9,
+                                  color: palette.textSecondary,
+                                ),
+                                label: const Text('Not finished'),
                               ),
                             ),
-                            foregroundColor: palette.textSecondary,
-                            textStyle: uiStyle(
-                              13,
-                              16,
-                              FontWeight.w600,
-                              palette.textSecondary,
-                            ),
-                          ),
-                          icon: KapyIcon(
-                            KapyIcons.undoRounded,
-                            size: 14,
-                            strokeWidth: 1.9,
-                            color: palette.textSecondary,
-                          ),
-                          label: const Text('Not finished'),
-                        ),
-                      ),
-                      if (onDone != null) ...[
-                        const SizedBox(width: 6),
-                        TonalButton(
-                          key: const ValueKey('tasks-done'),
-                          tall: true,
-                          icon: KapyIcons.checkRounded,
-                          label: 'Done',
-                          shortcut: doneShortcutLabel,
-                          onPressed: onDone,
+                            if (onDone != null)
+                              TonalButton(
+                                key: const ValueKey('tasks-done'),
+                                tall: true,
+                                icon: KapyIcons.checkRounded,
+                                label: 'Done',
+                                shortcut: doneShortcutLabel,
+                                onPressed: onDone,
+                              ),
+                          ],
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -1279,12 +1319,12 @@ class _DoNowCard extends StatelessWidget {
         key: key,
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
-        child: SizedBox(
-          height: 44,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
           child: Center(
             child: Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              constraints: const BoxConstraints(minHeight: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: tonal ? palette.tonalBackground : null,
@@ -1353,6 +1393,8 @@ class _DoNowCard extends StatelessWidget {
                     onTap: onOpenNote,
                     child: Text(
                       label ?? 'No note',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: uiStyle(
                         13.5,
                         18,
@@ -1362,8 +1404,9 @@ class _DoNowCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Row(
+                  Wrap(
                     spacing: 8,
+                    runSpacing: 8,
                     children: [
                       if (onDone case final done?)
                         pill(
@@ -1516,28 +1559,63 @@ class _ReadyCard extends StatelessWidget {
             border: Border.all(color: palette.controlBorder),
             borderRadius: BorderRadius.circular(AppRadii.surface),
           ),
-          child: Row(
-            children: [
-              const _Dot(),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  item.words,
-                  style: uiStyle(15, 22, FontWeight.w600, palette.textPrimary),
-                ),
-              ),
-              if (label != null) ...[
-                const SizedBox(width: 10),
-                NoteMark(note: item.note, label: label),
-              ],
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final words = Text(
+                item.words,
+                style: uiStyle(15, 22, FontWeight.w600, palette.textPrimary),
+              );
+              // Too narrow to share a line, the note's name goes under the
+              // words rather than squeezing them.
+              if (label != null &&
+                  constraints.maxWidth <
+                      MediaQuery.textScalerOf(
+                        context,
+                      ).scale(_markBesideWidth)) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const _Dot(),
+                        const SizedBox(width: 10),
+                        Expanded(child: words),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 14),
+                      child: NoteMark(note: item.note, label: label),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  const _Dot(),
+                  const SizedBox(width: 10),
+                  Expanded(child: words),
+                  if (label != null) ...[
+                    const SizedBox(width: 10),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: _markWidth(constraints.maxWidth),
+                      ),
+                      child: NoteMark(note: item.note, label: label),
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
         ),
         Text(
           'Ready to do this now?',
           style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
         ),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             _PickButton(
               key: const ValueKey('tasks-ready-yes'),
@@ -1546,7 +1624,6 @@ class _ReadyCard extends StatelessWidget {
               tonal: true,
               onPressed: onYes,
             ),
-            const SizedBox(width: 8),
             _PickButton(
               key: const ValueKey('tasks-ready-not-yet'),
               label: phone ? 'Not yet' : 'Not yet, look further',
@@ -1685,64 +1762,68 @@ class _CandidateRowState extends State<_CandidateRow> {
       onHover: (value) => setState(() => _hovered = value),
       borderRadius: BorderRadius.circular(AppRadii.control),
       hoverColor: palette.controlBackground,
-      child: SizedBox(
-        height: 40,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40),
         child: Padding(
           padding: const EdgeInsets.only(left: 10, right: 8),
-          child: Row(
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _hovered ? accent.withAlpha(0x40) : null,
-                  border: Border.all(
-                    color: _hovered ? accent : palette.checkboxBorder,
-                    width: 1.5,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  widget.item.words,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: uiStyle(
-                    14.5,
-                    20,
-                    FontWeight.w500,
-                    palette.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              if (lit)
+          child: LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
                 Container(
-                  height: 26,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  alignment: Alignment.center,
+                  width: 12,
+                  height: 12,
                   decoration: BoxDecoration(
-                    color: palette.tonalBackground,
-                    borderRadius: BorderRadius.circular(AppRadii.control),
-                  ),
-                  child: Text(
-                    'Pick',
-                    style: uiStyle(
-                      12.5,
-                      16,
-                      FontWeight.w700,
-                      palette.tonalForeground,
+                    shape: BoxShape.circle,
+                    color: _hovered ? accent.withAlpha(0x40) : null,
+                    border: Border.all(
+                      color: _hovered ? accent : palette.checkboxBorder,
+                      width: 1.5,
                     ),
                   ),
-                )
-              else if (label != null)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 220),
-                  child: NoteMark(note: widget.item.note, label: label),
                 ),
-            ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    widget.item.words,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: uiStyle(
+                      14.5,
+                      20,
+                      FontWeight.w500,
+                      palette.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (lit)
+                  Container(
+                    height: 26,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: palette.tonalBackground,
+                      borderRadius: BorderRadius.circular(AppRadii.control),
+                    ),
+                    child: Text(
+                      'Pick',
+                      style: uiStyle(
+                        12.5,
+                        16,
+                        FontWeight.w700,
+                        palette.tonalForeground,
+                      ),
+                    ),
+                  )
+                else if (label != null)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: _markWidth(constraints.maxWidth),
+                    ),
+                    child: NoteMark(note: widget.item.note, label: label),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1854,6 +1935,21 @@ class _Box extends StatelessWidget {
   }
 }
 
+/// The share of a row a note's mark may take beside a task's words, so the
+/// words always keep most of it.
+const double _markShare = 0.4;
+
+/// The widest a note's mark grows beside a task's words in a row [row] wide.
+double _markWidth(double row) => math.min(220, row * _markShare);
+
+/// How wide the first task's row must be for the note's name to sit beside
+/// the words; a narrower one puts it on its own line.
+const double _markBesideWidth = 200;
+
+/// How wide a list row must be to say "Still want this?" beside Keep and
+/// Remove; a narrower one keeps the room for the task's words.
+const double _stillWantWidth = 520;
+
 /// How far a touch row's mark reaches into the page margin, so the target is
 /// 44 points wide while the dot and the words stay where the desktop has them.
 const double _markReach = 24;
@@ -1925,100 +2021,109 @@ class _TaskRowState extends State<_TaskRow> {
       height: rowHeight,
       child: Padding(
         padding: const EdgeInsets.only(right: 10),
-        child: Row(
-          children: [
-            Tooltip(
-              message: tip,
-              excludeFromSemantics: true,
-              child: Semantics(
-                button: true,
-                label: '$action: ${item.words}',
-                onTap: widget.onMark,
-                excludeSemantics: true,
-                child: InkWell(
-                  key: ValueKey('task-mark-${item.id}'),
-                  onTap: widget.onMark,
-                  borderRadius: BorderRadius.circular(AppRadii.compact),
-                  hoverColor: Colors.transparent,
-                  splashColor: Colors.transparent,
-                  highlightColor: Colors.transparent,
-                  child: SizedBox(
-                    width: 20 + reach,
-                    height: rowHeight,
-                    child: Padding(
-                      padding: EdgeInsets.only(left: reach),
-                      child: Center(child: mark),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            _Box(done: false, onPressed: widget.onTick, label: item.words),
-            const SizedBox(width: 10),
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.onOpen,
-                child: Text(
-                  item.hasGroup
-                      ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
-                      : item.words,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: uiStyle(
-                    16,
-                    28,
-                    FontWeight.w500,
-                    stale ? palette.textSecondary : palette.textPrimary,
-                  ),
-                ),
-              ),
-            ),
-            TaskDetailsIcon(item: item),
-            if (stale) ...[
-              const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text('Still want this?', style: quiet),
-              ),
-              _RowButton(label: 'Keep', strong: true, onPressed: widget.onKeep),
-              const SizedBox(width: 4),
-              _RowButton(label: 'Remove', onPressed: widget.onRemove),
-            ] else if (_hovered) ...[
-              const SizedBox(width: 10),
-              Text(
-                'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
-                style: quiet,
-              ),
-            ],
-            if (item.entry.enteredAt != 0 && !stale)
+        child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
               Tooltip(
-                message: 'Not finished, moved to the end',
-                child: SizedBox.square(
-                  dimension: 22,
-                  child: Center(
-                    child: KapyIcon(
-                      KapyIcons.undoRounded,
-                      size: 14,
-                      strokeWidth: 1.9,
-                      color: palette.textTertiary,
+                message: tip,
+                excludeFromSemantics: true,
+                child: Semantics(
+                  button: true,
+                  label: '$action: ${item.words}',
+                  onTap: widget.onMark,
+                  excludeSemantics: true,
+                  child: InkWell(
+                    key: ValueKey('task-mark-${item.id}'),
+                    onTap: widget.onMark,
+                    borderRadius: BorderRadius.circular(AppRadii.compact),
+                    hoverColor: Colors.transparent,
+                    splashColor: Colors.transparent,
+                    highlightColor: Colors.transparent,
+                    child: SizedBox(
+                      width: 20 + reach,
+                      height: rowHeight,
+                      child: Padding(
+                        padding: EdgeInsets.only(left: reach),
+                        child: Center(child: mark),
+                      ),
                     ),
                   ),
                 ),
               ),
-            if (label != null) ...[
               const SizedBox(width: 10),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: NoteMark(
-                  note: item.note,
-                  label: label,
-                  onPressed: widget.onOpenNote,
+              _Box(done: false, onPressed: widget.onTick, label: item.words),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onOpen,
+                  child: Text(
+                    item.hasGroup
+                        ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
+                        : item.words,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: uiStyle(
+                      16,
+                      28,
+                      FontWeight.w500,
+                      stale ? palette.textSecondary : palette.textPrimary,
+                    ),
+                  ),
                 ),
               ),
+              TaskDetailsIcon(item: item),
+              if (stale) ...[
+                const SizedBox(width: 10),
+                if (constraints.maxWidth >= _stillWantWidth)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text('Still want this?', style: quiet),
+                  ),
+                _RowButton(
+                  label: 'Keep',
+                  strong: true,
+                  onPressed: widget.onKeep,
+                ),
+                const SizedBox(width: 4),
+                _RowButton(label: 'Remove', onPressed: widget.onRemove),
+              ] else if (_hovered) ...[
+                const SizedBox(width: 10),
+                Text(
+                  'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
+                  style: quiet,
+                ),
+              ],
+              if (item.entry.enteredAt != 0 && !stale)
+                Tooltip(
+                  message: 'Not finished, moved to the end',
+                  child: SizedBox.square(
+                    dimension: 22,
+                    child: Center(
+                      child: KapyIcon(
+                        KapyIcons.undoRounded,
+                        size: 14,
+                        strokeWidth: 1.9,
+                        color: palette.textTertiary,
+                      ),
+                    ),
+                  ),
+                ),
+              if (label != null) ...[
+                const SizedBox(width: 10),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: _markWidth(constraints.maxWidth),
+                  ),
+                  child: NoteMark(
+                    note: item.note,
+                    label: label,
+                    onPressed: widget.onOpenNote,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -2103,8 +2208,8 @@ class _DoneRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final label = this.label;
-    return SizedBox(
-      height: 38,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 38),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
         child: Row(
@@ -2112,37 +2217,46 @@ class _DoneRow extends StatelessWidget {
             _Box(done: true, onPressed: onUntick, label: item.words),
             const SizedBox(width: 12),
             Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      item.words,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: uiStyle(
-                        16,
-                        28,
-                        FontWeight.w500,
-                        palette.textMuted,
+              child: LayoutBuilder(
+                builder: (context, constraints) => Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        item.words,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: uiStyle(
+                          16,
+                          28,
+                          FontWeight.w500,
+                          palette.textMuted,
+                        ),
                       ),
                     ),
-                  ),
-                  if (label != null) ...[
-                    const SizedBox(width: 12),
-                    NoteMark(
-                      note: item.note,
-                      label: label,
-                      onPressed: onOpenNote,
-                    ),
+                    if (label != null) ...[
+                      const SizedBox(width: 12),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: _markWidth(constraints.maxWidth),
+                        ),
+                        child: NoteMark(
+                          note: item.note,
+                          label: label,
+                          onPressed: onOpenNote,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-            SizedBox(
-              width: 44,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 44),
               child: Text(
                 SidebarTimestamp.clock(item.doneAt!),
                 textAlign: TextAlign.right,
+                maxLines: 1,
+                softWrap: false,
                 style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
               ),
             ),
@@ -2151,6 +2265,31 @@ class _DoneRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Whether [title] and [count], [gap] apart, fit on one line of [maxWidth] at
+/// the current text size.
+bool _fitsOnOneLine(
+  BuildContext context,
+  double maxWidth,
+  (String, TextStyle) title,
+  (String, TextStyle) count,
+  double gap,
+) {
+  final scaler = MediaQuery.textScalerOf(context);
+  double width((String, TextStyle) part) {
+    final painter = TextPainter(
+      text: TextSpan(text: part.$1, style: part.$2),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  return width(title) + gap + width(count) <= maxWidth;
 }
 
 /// A phone's title over Tasks: "Today", large, with the clay underline, and
@@ -2164,36 +2303,54 @@ class _PhoneTodayTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final titleStyle = TextStyle(
+      fontFamily: AppFonts.title,
+      fontFamilyFallback: AppFonts.uiFallback,
+      fontSize: 28,
+      height: 36 / 28,
+      color: palette.textPrimary,
+    );
+    final countStyle = uiStyle(15, 20, FontWeight.w400, palette.textTertiary);
+    final countText = '$done of $total done';
+    final title = Semantics(
+      header: true,
+      child: Text('Today', style: titleStyle),
+    );
+    final count = Text(
+      countText,
+      key: const ValueKey('tasks-done-count'),
+      style: countStyle,
+    );
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Expanded(
-                child: Semantics(
-                  header: true,
-                  child: Text(
-                    'Today',
-                    style: TextStyle(
-                      fontFamily: AppFonts.title,
-                      fontFamilyFallback: AppFonts.uiFallback,
-                      fontSize: 28,
-                      height: 36 / 28,
-                      color: palette.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              Text(
-                '$done of $total done',
-                key: const ValueKey('tasks-done-count'),
-                style: uiStyle(15, 20, FontWeight.w400, palette.textTertiary),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // At large text the count goes under the title, so "Today"
+              // never breaks.
+              if (!_fitsOnOneLine(
+                context,
+                constraints.maxWidth,
+                ('Today', titleStyle),
+                (countText, countStyle),
+                12,
+              )) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [title, const SizedBox(height: 4), count],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Expanded(child: title),
+                  count,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           Container(width: 44, height: 2, color: palette.clay),

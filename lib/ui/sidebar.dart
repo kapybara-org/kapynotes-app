@@ -1005,6 +1005,7 @@ extension on Sidebar {
     bool pinned = false,
     NoteRowStyle style = NoteRowStyle.row,
     int depth = 0,
+    bool clockOnly = false,
   }) => MetaData(
     metaData: NotePickTarget(note.id),
     child: _noteRow(
@@ -1013,6 +1014,7 @@ extension on Sidebar {
       pinned: pinned,
       style: style,
       depth: depth,
+      clockOnly: clockOnly,
     ),
   );
 
@@ -1022,11 +1024,13 @@ extension on Sidebar {
     required bool pinned,
     required NoteRowStyle style,
     required int depth,
+    bool clockOnly = false,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
     style: style,
     depth: depth,
+    clockOnly: clockOnly,
     folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
@@ -1182,16 +1186,27 @@ extension on Sidebar {
           child: heading,
         ),
       );
-      gap(phone ? 12 : cards ? 8 : 4);
+      gap(
+        phone
+            ? 12
+            : cards
+            ? 8
+            : 4,
+      );
     }
 
-    void section(Iterable<Note> notes, {bool pinned = false}) {
+    void section(
+      Iterable<Note> notes, {
+      bool pinned = false,
+      bool clockOnly = false,
+    }) {
       final list = notes.toList();
       Widget note(Note note) => _row(
         note,
         shared: sharing != null && note.isShared,
         pinned: pinned,
         style: style,
+        clockOnly: clockOnly,
       );
       if (phone && pinned && !drawings) {
         rows.add(
@@ -1226,8 +1241,8 @@ extension on Sidebar {
           if (index > 0) {
             rows.add(
               (context) => Divider(
-                height: 1,
-                thickness: 0.5,
+                height: AppHairline.of(context),
+                thickness: AppHairline.of(context),
                 indent: margin,
                 endIndent: margin,
                 color: context.palette.separator,
@@ -1355,13 +1370,28 @@ extension on Sidebar {
         heading(_groupHeading(groups, key));
         section(groups.byGroup[key]!);
       }
-      if (groups.mine.isNotEmpty) {
-        if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
-          heading(const _PhoneHeading('Recent'));
-        } else {
-          gap(8);
+      if (drawings) {
+        // Drawings stay one grid of thumbnails, two to a row, which a day
+        // heading would break into short rows.
+        if (groups.mine.isNotEmpty) {
+          if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
+            heading(const _PhoneHeading('Recent'));
+          } else {
+            gap(8);
+          }
+          section(groups.mine);
         }
-        section(groups.mine);
+      } else {
+        // A day at a time, newest first, under the day the note was last
+        // edited.
+        for (final day in _phoneDays(
+          groups.mine,
+          now: now(),
+          displayTime: displayTime,
+        )) {
+          heading(_PhoneDayHeading(lead: day.lead, date: day.date));
+          section(day.notes, clockOnly: true);
+        }
       }
     } else {
       if (pinned.isNotEmpty) {
@@ -2688,7 +2718,16 @@ class _FiltersButton extends StatelessWidget {
 /// How a [NoteRow] draws its note: the desktop list's row or sticky card
 /// beside the spaces rail, a phone's row and pinned card, or the Folders
 /// tab's note in an open folder ([filed]) or in none ([loose]).
-enum NoteRowStyle { row, card, drawingRow, drawingCard, touch, square, filed, loose }
+enum NoteRowStyle {
+  row,
+  card,
+  drawingRow,
+  drawingCard,
+  touch,
+  square,
+  filed,
+  loose,
+}
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -2725,6 +2764,7 @@ class NoteRow extends StatefulWidget {
     this.onPickedAction,
     this.style = NoteRowStyle.row,
     this.depth = 0,
+    this.clockOnly = false,
     this.engine,
     this.now = DateTime.now,
     this.folders,
@@ -2735,6 +2775,10 @@ class NoteRow extends StatefulWidget {
 
   /// How deep a [NoteRowStyle.filed] note sits in the folder tree.
   final int depth;
+
+  /// Whether the row sits under a heading that already names its day, so it
+  /// gives only the time it was last changed, even while others have it open.
+  final bool clockOnly;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -3136,7 +3180,9 @@ class _NoteRowState extends State<NoteRow> {
       clock: clock,
     );
     final day = card && people.isEmpty ? stamp(clock: false) : null;
-    final date = people.isEmpty
+    final date = widget.clockOnly
+        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
+        : people.isEmpty
         ? stamp()
         : typingStatusText([
                 for (final person in people)
@@ -3656,6 +3702,69 @@ class _IconButton extends StatelessWidget {
       foregroundColor: onPressed == null
           ? context.palette.textTertiary
           : context.palette.textSecondary,
+    );
+  }
+}
+
+/// A day's notes on a phone's list, under the heading
+/// [SidebarTimestamp.phoneDay] gives the day. Days are counted by calendar
+/// date, so a change of clocks never moves a note to another day, and a note
+/// stamped later than now joins today's.
+List<({String? lead, String date, List<Note> notes})> _phoneDays(
+  List<Note> notes, {
+  required DateTime now,
+  required DateTime Function(DateTime) displayTime,
+}) {
+  final today = dayShown(now, displayTime);
+  final days = <DateTime, List<Note>>{};
+  for (final note in notes) {
+    final day = dayShown(note.updatedAt, displayTime);
+    (days[day.isAfter(today) ? today : day] ??= []).add(note);
+  }
+  return [
+    for (final MapEntry(key: day, value: notes) in days.entries)
+      if (SidebarTimestamp.phoneDay(day, now: today) case (
+        :final lead,
+        :final date,
+      ))
+        (lead: lead, date: date, notes: notes),
+  ];
+}
+
+/// A day's heading on a phone's list, in the note title's face at 19/24, as
+/// Home and Tasks both draw it: "Today" with the date after it, muted.
+class _PhoneDayHeading extends StatelessWidget {
+  const _PhoneDayHeading({required this.lead, required this.date});
+
+  final String? lead;
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final lead = this.lead;
+    final style = TextStyle(
+      fontFamily: AppFonts.title,
+      fontFamilyFallback: AppFonts.uiFallback,
+      fontSize: 19,
+      height: 24 / 19,
+      color: palette.textPrimary,
+    );
+    final muted = style.copyWith(color: palette.textTertiary);
+    return Semantics(
+      header: true,
+      label: lead == null ? date : '$lead, $date',
+      excludeSemantics: true,
+      child: Text.rich(
+        key: const ValueKey('phone-day-heading'),
+        lead == null
+            ? TextSpan(text: date, style: muted)
+            : TextSpan(
+                text: lead,
+                style: style,
+                children: [TextSpan(text: ' $date', style: muted)],
+              ),
+      ),
     );
   }
 }
