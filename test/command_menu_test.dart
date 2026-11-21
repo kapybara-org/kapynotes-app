@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/popup_keyboard.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -854,5 +855,60 @@ void main() {
       expect(find.byKey(const ValueKey('command-menu-back')), findsOneWidget);
       expect(find.byKey(const ValueKey('command-menu-cancel')), findsNothing);
     });
+  });
+
+  group("under the phones' popup keyboard rule", () {
+    for (final (name, platform, phone) in [
+      ("an iPhone's sheet", TargetPlatform.iOS, true),
+      ("an Android phone's page", TargetPlatform.android, true),
+      ("a wide screen's dialog", TargetPlatform.iOS, false),
+    ]) {
+      testWidgets('Quick find in $name opens ready to type', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        await setUpNotes(tester);
+        await tester.binding.setSurfaceSize(
+          phone ? const Size(393, 852) : const Size(1000, 900),
+        );
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        late BuildContext context;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: KapyTheme.dark(),
+            navigatorObservers: [MobilePopupKeyboardObserver()],
+            home: Scaffold(
+              body: Builder(
+                builder: (inner) {
+                  context = inner;
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ),
+        );
+        unawaited(
+          showCommandMenu(
+            context,
+            notes: notes,
+            shortcuts: shortcuts,
+            space: LibrarySpace.notes,
+            destinations: const [LibrarySpace.notes],
+            recentIds: const [],
+            displayTime: (instant) => instant,
+            taskLabel: (note) => note.title,
+            phone: phone,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final field = tester.widget<EditableText>(
+          find.descendant(
+            of: find.byKey(const ValueKey('command-menu-field')),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(field.focusNode.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+      });
+    }
   });
 }
