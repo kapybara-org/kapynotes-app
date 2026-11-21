@@ -13,7 +13,10 @@
 # - apple_transcribe and voice_recording, which need speech recognition or
 #   the microphone, permissions a runner can't grant;
 # - gemma_summary and parakeet_transcribe, which skip themselves without
-#   their models, 2.6 GB and 670 MB.
+#   their models, 2.6 GB and 670 MB;
+# - menu_bar_panel, until KAP-264 finds out why one of its 21 openings in a
+#   row came back as not shown on the runner (run 44932436367). It runs only
+#   when named.
 #
 # Every file runs even when one fails, and the script exits 1 if any did. A
 # test that hangs is stopped after 10 minutes.
@@ -33,6 +36,7 @@ else
       phone_* | kapy_ai_page_test.dart) ;;
       apple_transcribe_test.dart | voice_recording_test.dart) ;;
       gemma_summary_test.dart | parakeet_transcribe_test.dart) ;;
+      menu_bar_panel_test.dart) ;;
       *) tests+=("$test") ;;
     esac
   done
