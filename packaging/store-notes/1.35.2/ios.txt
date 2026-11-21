@@ -5,7 +5,7 @@ Kapy Notes 1.35.2
 - Notes shows your notes a day at a time, with Pinned and Shared cards at the top and your streak by the title.
 - Share from one sheet: add someone by email and choose Can edit or Can view. Sharing is also in a note's menu, and a shared note shows who it's shared with.
 - Settings has a Sharing section with your invitations and everyone you share with.
-- Block and Leave do exactly what they say, and Leave says how many notes you're leaving. Removing someone or stopping sharing asks first, and Undo puts it back.
+- Block and Leave do exactly what they say, and when a note is shared together with other notes, Leave says how many notes you're leaving. Removing someone or stopping sharing asks first, and Undo puts it back.
 - If a note is shared with you to view only, you can remove it from your notes without leaving the share.
 - A task can hold details: indent lines under it for text, pictures or smaller tasks. Tap a task to open them.
 - Clearer icons, calmer text, and note titles and tasks that stay readable at any text size.
