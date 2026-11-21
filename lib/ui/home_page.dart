@@ -4606,6 +4606,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _phoneNavigator.currentState?.maybePop();
             } else if (_picks.on) {
               _picks.clear();
+            } else if (_showingPinnedOnly) {
+              setState(() => _pinnedOnly = false);
             } else {
               _showSpace(LibrarySpace.notes);
             }
@@ -4811,23 +4813,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onPinnedOnlyChanged: (value) => setState(() => _pinnedOnly = value),
     phoneCards: _space != LibrarySpace.notes || _specialMode
         ? null
-        : PhoneHomeCards(
-            pinned: [
-              for (final note in _visibleNotes)
-                if (widget.notes.pinnedNoteIds.contains(note.id)) note,
-            ],
-            onOpenPinned: widget.notes.pinnedNoteIds.isEmpty
-                ? null
-                : () => setState(() => _pinnedOnly = true),
-            shared: widget.account?.sharing == null
-                ? null
-                : [
-                    for (final note in widget.notes.search(''))
-                      if (note.isShared) note,
-                  ],
-            invitations: widget.account?.sharing?.invites.length ?? 0,
-            onOpenShared: () => _showSpace(LibrarySpace.shared),
-          ),
+        : switch ([
+            for (final note in _narrowed(widget.notes.search('')))
+              if (widget.notes.pinnedNoteIds.contains(note.id)) note,
+          ]) {
+            final pinned => PhoneHomeCards(
+              pinned: pinned,
+              onOpenPinned: pinned.isEmpty
+                  ? null
+                  : () {
+                      _clearFilter();
+                      setState(() => _pinnedOnly = true);
+                    },
+              shared: widget.account?.sharing == null
+                  ? null
+                  : [
+                      for (final note in widget.notes.search(''))
+                        if (note.isShared) note,
+                    ],
+              invitations: widget.account?.sharing?.invites.length ?? 0,
+              onOpenShared: () => _showSpace(LibrarySpace.shared),
+            ),
+          },
   );
 
   /// A note's page on a phone: back, then the note's own actions, over the

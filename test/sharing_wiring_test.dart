@@ -243,4 +243,24 @@ void main() {
       expect(find.byKey(const ValueKey('share-with-someone')), findsOneWidget);
     });
   }
+
+  testWidgets("Back from Shared comes home to Notes, with Home's cards and "
+      'Notes chosen in the bar, on a phone', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+    expect(find.byKey(const ValueKey('home-shared-card')), findsNothing);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-shared-card')), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('bar-notes'))),
+      isSemantics(isSelected: true),
+    );
+    expect(listed(tester, 'Bank details'), isTrue);
+  });
 }

@@ -3732,11 +3732,12 @@ class _SharePeople extends StatelessWidget {
                           )
                         : Text(
                             (person.name.trim().isEmpty
-                                    ? person.email
-                                    : person.name.trim())
-                                .characters
-                                .first
-                                .toUpperCase(),
+                                        ? person.email
+                                        : person.name.trim())
+                                    .characters
+                                    .firstOrNull
+                                    ?.toUpperCase() ??
+                                '?',
                             textScaler: TextScaler.noScaling,
                             style: chromeStyle(
                               size: 9,

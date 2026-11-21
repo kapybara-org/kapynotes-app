@@ -7157,6 +7157,88 @@ void main() {
       expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
     });
 
+    testWidgets("Home's Pinned card counts the pinned notes a filter hides, "
+        'and opens them with the filter cleared', (tester) async {
+      final tags = TagStore(store);
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      final groceries = notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      final food = tags.create('Food')!;
+      tags.addTag(groceries.id, food.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+      await openPhoneFilters(tester);
+      await tester.tap(find.byKey(ValueKey('phone-tag-${food.id}')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-filters-dot')), findsOneWidget);
+
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('2')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('Nothing pinned yet')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: card, matching: find.textContaining('Lisbon trip')),
+        findsOneWidget,
+      );
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-filters-dot')), findsNothing);
+      for (final title in ['Lisbon trip', 'Reading list']) {
+        expect(find.widgetWithText(NoteRow, title), findsOneWidget);
+      }
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+    });
+
+    testWidgets("Back from Pinned ends where Pinned's own chevron does, "
+        'with the filter chosen there kept', (tester) async {
+      final tags = TagStore(store);
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      final travel = tags.create('Travel')!;
+      tags.addTag(trip.id, travel.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+
+      final ends = <List<Object>>[];
+      for (final chevron in [true, false]) {
+        await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+        await tester.pumpAndSettle();
+        await openPhoneFilters(tester);
+        await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+        await tester.pumpAndSettle();
+
+        if (chevron) {
+          await tester.tap(find.byKey(const ValueKey('sidebar-pinned-back')));
+        } else {
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsNothing);
+        expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
+        ends.add([
+          find.byKey(const ValueKey('phone-filters-dot')).evaluate().length,
+          for (final title in ['Lisbon trip', 'Reading list', 'Groceries'])
+            find.widgetWithText(NoteRow, title).evaluate().length,
+        ]);
+
+        await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+        await tester.pumpAndSettle();
+      }
+      expect(ends.first, [1, 0, 0, 0]);
+      expect(ends.last, ends.first);
+    });
+
     testWidgets("Home's Pinned card says so while nothing is pinned", (
       tester,
     ) async {
