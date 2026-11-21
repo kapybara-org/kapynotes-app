@@ -119,10 +119,12 @@ class NoteGlance {
                 .replaceFirst(_marks, ''),
       result: at == null || engine == null
           ? null
-          : engine.evaluateDocument(
-              lines.take(at + 1).join('\n'),
-              titled: true,
-            )[at]?.text,
+          : engine
+                .evaluateDocument(
+                  lines.take(at + 1).join('\n'),
+                  titled: true,
+                )[at]
+                ?.text,
       done: done,
       boxes: boxes,
       media: NoteMedia.inNote(note),
@@ -502,8 +504,9 @@ class _MetaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final style = DefaultTextStyle.of(context).style
-        .merge(_figtree(12, 16, FontWeight.w500, palette.textMuted));
+    final style = DefaultTextStyle.of(
+      context,
+    ).style.merge(_figtree(12, 16, FontWeight.w500, palette.textMuted));
     final direction = Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     final first = tags.firstOrNull;
@@ -650,7 +653,7 @@ class NoteListRowFace extends StatelessWidget {
     final tint = first?.colour?.card(palette) ?? palette.surfaceBackground;
     // The border is always there, clear until the row is open or ringed, so
     // opening a note does not nudge its text.
-    final row = Container(
+    return Container(
       padding: touch
           ? const EdgeInsets.symmetric(horizontal: 20, vertical: 12)
           : const EdgeInsets.all(6.5),
@@ -723,11 +726,11 @@ class NoteListRowFace extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     if (touch)
-                      // Fixed, so the times line up down the list, and the
-                      // tag dots come after the time rather than leading the
-                      // title.
-                      SizedBox(
-                        width: 72,
+                      // At least as wide as the widest time, so the times line
+                      // up down the list, and the tag dots come after the
+                      // time rather than leading the title.
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 72),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
@@ -808,15 +811,6 @@ class NoteListRowFace extends StatelessWidget {
           ),
         ],
       ),
-    );
-    // A phone's rows are divided by a hairline rather than a box: the list
-    // reads as one column down the page.
-    if (!touch) return row;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: palette.separator)),
-      ),
-      child: row,
     );
   }
 }

@@ -1005,6 +1005,7 @@ extension on Sidebar {
     bool pinned = false,
     NoteRowStyle style = NoteRowStyle.row,
     int depth = 0,
+    bool clockOnly = false,
   }) => MetaData(
     metaData: NotePickTarget(note.id),
     child: _noteRow(
@@ -1013,6 +1014,7 @@ extension on Sidebar {
       pinned: pinned,
       style: style,
       depth: depth,
+      clockOnly: clockOnly,
     ),
   );
 
@@ -1022,11 +1024,13 @@ extension on Sidebar {
     required bool pinned,
     required NoteRowStyle style,
     required int depth,
+    bool clockOnly = false,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
     style: style,
     depth: depth,
+    clockOnly: clockOnly,
     folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
@@ -1182,16 +1186,27 @@ extension on Sidebar {
           child: heading,
         ),
       );
-      gap(phone ? 12 : cards ? 8 : 4);
+      gap(
+        phone
+            ? 12
+            : cards
+            ? 8
+            : 4,
+      );
     }
 
-    void section(Iterable<Note> notes, {bool pinned = false}) {
+    void section(
+      Iterable<Note> notes, {
+      bool pinned = false,
+      bool clockOnly = false,
+    }) {
       final list = notes.toList();
       Widget note(Note note) => _row(
         note,
         shared: sharing != null && note.isShared,
         pinned: pinned,
         style: style,
+        clockOnly: clockOnly,
       );
       if (phone && pinned && !drawings) {
         rows.add(
@@ -1226,8 +1241,8 @@ extension on Sidebar {
           if (index > 0) {
             rows.add(
               (context) => Divider(
-                height: 1,
-                thickness: 0.5,
+                height: AppHairline.of(context),
+                thickness: AppHairline.of(context),
                 indent: margin,
                 endIndent: margin,
                 color: context.palette.separator,
@@ -1375,7 +1390,7 @@ extension on Sidebar {
           displayTime: displayTime,
         )) {
           heading(_PhoneDayHeading(lead: day.lead, date: day.date));
-          section(day.notes);
+          section(day.notes, clockOnly: true);
         }
       }
     } else {
@@ -2675,7 +2690,16 @@ class _FiltersButton extends StatelessWidget {
 /// How a [NoteRow] draws its note: the desktop list's row or sticky card
 /// beside the spaces rail, a phone's row and pinned card, or the Folders
 /// tab's note in an open folder ([filed]) or in none ([loose]).
-enum NoteRowStyle { row, card, drawingRow, drawingCard, touch, square, filed, loose }
+enum NoteRowStyle {
+  row,
+  card,
+  drawingRow,
+  drawingCard,
+  touch,
+  square,
+  filed,
+  loose,
+}
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -2712,6 +2736,7 @@ class NoteRow extends StatefulWidget {
     this.onPickedAction,
     this.style = NoteRowStyle.row,
     this.depth = 0,
+    this.clockOnly = false,
     this.engine,
     this.now = DateTime.now,
     this.folders,
@@ -2722,6 +2747,10 @@ class NoteRow extends StatefulWidget {
 
   /// How deep a [NoteRowStyle.filed] note sits in the folder tree.
   final int depth;
+
+  /// Whether the row sits under a heading that already names its day, so it
+  /// gives only the time it was last changed, even while others have it open.
+  final bool clockOnly;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -3123,7 +3152,9 @@ class _NoteRowState extends State<NoteRow> {
       clock: clock,
     );
     final day = card && people.isEmpty ? stamp(clock: false) : null;
-    final date = people.isEmpty
+    final date = widget.clockOnly
+        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
+        : people.isEmpty
         ? stamp()
         : typingStatusText([
                 for (final person in people)
@@ -3647,59 +3678,29 @@ class _IconButton extends StatelessWidget {
   }
 }
 
-/// A heading over a phone's list: Pinned, Recent.
-/// A day's notes on a phone's list, named the way a person names the day:
-/// "Today" with "Wed 19" after it, "Yesterday" with "Tue 18", then just
-/// "Mon 17 Nov".
+/// A day's notes on a phone's list, under the heading
+/// [SidebarTimestamp.phoneDay] gives the day. Days are counted by calendar
+/// date, so a change of clocks never moves a note to another day, and a note
+/// stamped later than now joins today's.
 List<({String? lead, String date, List<Note> notes})> _phoneDays(
   List<Note> notes, {
   required DateTime now,
   required DateTime Function(DateTime) displayTime,
 }) {
+  final today = dayShown(now, displayTime);
   final days = <DateTime, List<Note>>{};
   for (final note in notes) {
-    final shown = displayTime(note.updatedAt);
-    (days[DateTime(shown.year, shown.month, shown.day)] ??= []).add(note);
+    final day = dayShown(note.updatedAt, displayTime);
+    (days[day.isAfter(today) ? today : day] ??= []).add(note);
   }
-  final today = displayTime(now);
-  final start = DateTime(today.year, today.month, today.day);
   return [
-    for (final day in days.entries)
-      (
-        lead: switch (start.difference(day.key).inDays) {
-          0 => 'Today',
-          1 => 'Yesterday',
-          _ => null,
-        },
-        date: _phoneDayDate(day.key, start),
-        notes: day.value,
-      ),
+    for (final MapEntry(key: day, value: notes) in days.entries)
+      if (SidebarTimestamp.phoneDay(day, now: today) case (
+        :final lead,
+        :final date,
+      ))
+        (lead: lead, date: date, notes: notes),
   ];
-}
-
-const _phoneWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const _phoneMonths = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-/// The weekday and the day of the month, and the month too once the day is
-/// more than a day ago, where "Wed 12" alone could be any month's.
-String _phoneDayDate(DateTime day, DateTime today) {
-  final date = '${_phoneWeekdays[day.weekday - 1]} ${day.day}';
-  return today.difference(day).inDays <= 1
-      ? date
-      : '$date ${_phoneMonths[day.month - 1]}';
 }
 
 /// A day's heading on a phone's list, in the note title's face at 19/24, as
@@ -3740,6 +3741,7 @@ class _PhoneDayHeading extends StatelessWidget {
   }
 }
 
+/// A heading over a phone's list: Pinned, Recent.
 class _PhoneHeading extends StatelessWidget {
   const _PhoneHeading(this.label);
 
