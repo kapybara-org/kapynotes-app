@@ -297,7 +297,11 @@ class PageToolbar extends StatelessWidget {
                           extent: extent,
                           radius: 8,
                           onPressed: create.onPressed,
-                          icon: const KapyIcon(KapyIcons.addRounded, size: 16),
+                          icon: KapyIcon(
+                            KapyIcons.addRounded,
+                            size: 16,
+                            color: palette.accentText,
+                          ),
                         ),
                       ],
                       const SizedBox(width: 8),

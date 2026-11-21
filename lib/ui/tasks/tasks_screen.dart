@@ -693,6 +693,7 @@ class TasksScreenState extends State<TasksScreen> {
       return const SizedBox.shrink();
     }
     return _MoreThanCard(
+      phone: widget.phone,
       benchmark: benchmark,
       candidates: candidates,
       labelOf: labelOf,
@@ -1389,8 +1390,10 @@ class _DoNowCard extends StatelessWidget {
 
 /// The card the picking questions are asked on.
 class _PickCard extends StatelessWidget {
-  const _PickCard({required this.children});
+  const _PickCard({required this.phone, required this.children});
 
+  /// A phone's card is one flat fill, with no outline and no shadow.
+  final bool phone;
   final List<Widget> children;
 
   @override
@@ -1399,19 +1402,24 @@ class _PickCard extends StatelessWidget {
     return Container(
       key: const ValueKey('tasks-picker'),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: palette.editorBackground,
-        border: Border.all(color: palette.pageBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(AppRadii.dialog),
-        boxShadow: [
-          BoxShadow(
-            color: palette.shadow.withAlpha(0x66),
-            offset: const Offset(0, 16),
-            blurRadius: 32,
-            spreadRadius: -20,
-          ),
-        ],
-      ),
+      decoration: phone
+          ? BoxDecoration(
+              color: palette.fillRest,
+              borderRadius: BorderRadius.circular(AppRadii.surface),
+            )
+          : BoxDecoration(
+              color: palette.editorBackground,
+              border: Border.all(color: palette.pageBorder, width: 1.5),
+              borderRadius: BorderRadius.circular(AppRadii.dialog),
+              boxShadow: [
+                BoxShadow(
+                  color: palette.shadow.withAlpha(0x66),
+                  offset: const Offset(0, 16),
+                  blurRadius: 32,
+                  spreadRadius: -20,
+                ),
+              ],
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1426,16 +1434,19 @@ class _PickCard extends StatelessWidget {
 }
 
 /// A full-width or fitted button on the picking card: tonal for the way
-/// forward, quiet for the other.
+/// forward, quiet for the other. On a phone the way forward is the page's
+/// one sage tint and the other a plain fill, neither outlined.
 class _PickButton extends StatelessWidget {
   const _PickButton({
     super.key,
+    required this.phone,
     required this.label,
     required this.onPressed,
     this.tonal = false,
     this.icon,
   });
 
+  final bool phone;
   final String label;
   final VoidCallback onPressed;
   final bool tonal;
@@ -1451,13 +1462,16 @@ class _PickButton extends StatelessWidget {
       style: TextButton.styleFrom(
         minimumSize: const Size(0, 36),
         padding: const EdgeInsets.symmetric(horizontal: 14),
-        backgroundColor: tonal
-            ? palette.tonalBackground
-            : palette.controlBackground,
+        backgroundColor: switch ((phone, tonal)) {
+          (true, true) => palette.fillSageTint,
+          (true, false) => palette.fillControl,
+          (false, true) => palette.tonalBackground,
+          (false, false) => palette.controlBackground,
+        },
         foregroundColor: ink,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.control),
-          side: tonal
+          side: tonal || phone
               ? BorderSide.none
               : BorderSide(color: palette.controlBorder),
         ),
@@ -1502,6 +1516,7 @@ class _ReadyCard extends StatelessWidget {
     final palette = context.palette;
     final label = this.label;
     return _PickCard(
+      phone: phone,
       children: [
         Text(
           'First on the list',
@@ -1509,10 +1524,13 @@ class _ReadyCard extends StatelessWidget {
         ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            border: Border.all(color: palette.controlBorder),
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
+          // A phone's card holds the task without a card inside it.
+          decoration: phone
+              ? null
+              : BoxDecoration(
+                  border: Border.all(color: palette.controlBorder),
+                  borderRadius: BorderRadius.circular(AppRadii.surface),
+                ),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final words = Text(
@@ -1562,7 +1580,9 @@ class _ReadyCard extends StatelessWidget {
         ),
         Text(
           'Ready to do this now?',
-          style: handStyle(18, 25, FontWeight.w600, palette.textPrimary),
+          style: phone
+              ? uiStyle(15, 20, FontWeight.w500, palette.textPrimary)
+              : handStyle(18, 25, FontWeight.w600, palette.textPrimary),
         ),
         Wrap(
           spacing: 8,
@@ -1570,6 +1590,7 @@ class _ReadyCard extends StatelessWidget {
           children: [
             _PickButton(
               key: const ValueKey('tasks-ready-yes'),
+              phone: phone,
               label: phone ? 'Do it now' : 'Yes, do it now',
               icon: KapyIcons.checkRounded,
               tonal: true,
@@ -1577,6 +1598,7 @@ class _ReadyCard extends StatelessWidget {
             ),
             _PickButton(
               key: const ValueKey('tasks-ready-not-yet'),
+              phone: phone,
               label: phone ? 'Not yet' : 'Not yet, look further',
               onPressed: onNotYet,
             ),
@@ -1591,6 +1613,7 @@ class _ReadyCard extends StatelessWidget {
 /// pick at a time.
 class _MoreThanCard extends StatelessWidget {
   const _MoreThanCard({
+    required this.phone,
     required this.benchmark,
     required this.candidates,
     required this.labelOf,
@@ -1602,6 +1625,7 @@ class _MoreThanCard extends StatelessWidget {
 
   static const int _shown = 5;
 
+  final bool phone;
   final TaskItem benchmark;
   final List<TaskItem> candidates;
   final String? Function(TaskItem item) labelOf;
@@ -1626,6 +1650,7 @@ class _MoreThanCard extends StatelessWidget {
     final shown = showAll ? candidates : candidates.take(_shown).toList();
     final more = candidates.length - shown.length;
     return _PickCard(
+      phone: phone,
       children: [
         Text.rich(
           TextSpan(
@@ -1674,6 +1699,7 @@ class _MoreThanCard extends StatelessWidget {
         Container(height: 1, color: palette.separator),
         _PickButton(
           key: const ValueKey('tasks-pick-none'),
+          phone: phone,
           label: 'None. Do “${benchmark.words}”',
           icon: KapyIcons.checkRounded,
           onPressed: onNone,
@@ -2435,11 +2461,6 @@ class _PhoneTaskRow extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(minHeight: 48),
             padding: const EdgeInsets.symmetric(vertical: 4),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: palette.separator, width: 0.5),
-              ),
-            ),
             child: Row(
               children: [
                 Semantics(
@@ -2505,8 +2526,8 @@ class _PhoneTaskRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: uiStyle(
-                          12.5,
-                          16,
+                          13,
+                          18,
                           FontWeight.w400,
                           palette.textTertiary,
                         ),

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -68,15 +66,26 @@ void main() {
               .decoration!
           as BoxDecoration;
 
-  testWidgets('an untagged note sits on the plain card', (tester) async {
+  TextStyle styleOf(WidgetTester tester, String text) =>
+      tester.widget<Text>(find.text(text)).style!;
+
+  testWidgets('a card at rest is the quiet 4% fill with no outline, its '
+      'title in Figtree 13/18 at 500', (tester) async {
     await pumpCard(tester, note('Reading list\nDeep Work, Dune'));
 
-    expect(card(tester).color, palette.surfaceBackground);
-    expect(card(tester).border, Border.all(color: palette.separator));
+    expect(card(tester).color, palette.fillRest);
+    expect(card(tester).border, isNull);
     expect(find.byType(TagDots), findsNothing);
+    final title = styleOf(tester, 'Reading list');
+    expect(title.fontFamily, AppFonts.ui);
+    expect(title.fontSize, 13);
+    expect(title.height, 18 / 13);
+    expect(title.fontVariations, AppWeight.variations(AppWeight.button));
+    expect(title.color, palette.textPrimary);
+    expect(styleOf(tester, 'Today, 11:15').color, palette.textTertiary);
   });
 
-  testWidgets('the first tag colours the card and alone gives its name', (
+  testWidgets('a tag gives a card its dot and its name, never its colour', (
     tester,
   ) async {
     await pumpCard(
@@ -85,28 +94,64 @@ void main() {
       tags: const [travel, money],
     );
 
-    expect(card(tester).color, TagColour.sage.card(palette));
+    expect(card(tester).color, palette.fillRest);
     expect(find.text('Travel'), findsOneWidget);
     expect(find.text('Money'), findsNothing);
+    expect(styleOf(tester, 'Travel').color, palette.textTertiary);
     expect(tester.getSize(find.byType(TagDots)).width, TagDots.widthFor(2));
   });
 
-  testWidgets('only the selected card leans', (tester) async {
-    Finder lean() => find.descendant(
-      of: find.byType(NoteCardFace),
-      matching: find.byType(Transform),
+  testWidgets('the selected card is the 10% fill, with no tilt and no '
+      'outline, and its meta steps up to T2', (tester) async {
+    await pumpCard(
+      tester,
+      note('Trip budget\n₹28,000'),
+      tags: const [travel],
+      selected: true,
     );
 
-    await pumpCard(tester, note('Trip budget\n₹28,000'));
-    expect(lean(), findsNothing);
-
-    await pumpCard(tester, note('Trip budget\n₹28,000'), selected: true);
-    final transform = tester.widget<Transform>(lean().first).transform;
     expect(
-      transform.storage,
-      Matrix4.rotationZ(
-        -math.pi / 180,
-      ).storage.map((value) => moreOrLessEquals(value)),
+      find.descendant(
+        of: find.byType(NoteCardFace),
+        matching: find.byType(Transform),
+      ),
+      findsNothing,
+    );
+    expect(card(tester).color, palette.fillSelectedCard);
+    expect(card(tester).border, isNull);
+    expect(styleOf(tester, 'Today, 11:15').color, palette.textSecondary);
+    expect(styleOf(tester, 'Travel').color, palette.textSecondary);
+  });
+
+  testWidgets('a section label is 12/16 at 520 in T3, its count at 400, '
+      'with no rule after it', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: const Material(
+          child: SizedBox(
+            width: 300,
+            child: NotesGroupHeading(label: 'Upcoming', detail: '2'),
+          ),
+        ),
+      ),
+    );
+
+    final label = styleOf(tester, 'Upcoming');
+    expect(label.fontSize, 12);
+    expect(label.height, 16 / 12);
+    expect(label.fontVariations, AppWeight.variations(AppWeight.section));
+    expect(label.color, palette.textTertiary);
+    final count = styleOf(tester, '2');
+    expect(count.fontSize, 12);
+    expect(count.fontVariations, AppWeight.variations(AppWeight.body));
+    expect(count.color, palette.textTertiary);
+    expect(
+      find.descendant(
+        of: find.byType(NotesGroupHeading),
+        matching: find.byType(ColoredBox),
+      ),
+      findsNothing,
     );
   });
 

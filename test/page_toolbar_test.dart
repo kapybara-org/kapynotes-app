@@ -317,6 +317,19 @@ void main() {
   });
 
   group('New beside the way back to the list', () {
+    testWidgets('its plus is the sage that marks the main action', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(toolbar(listVisible: false, onNew: () {})),
+      );
+
+      final plus = tester.widget<KapyIcon>(
+        find.descendant(of: newButton, matching: find.byType(KapyIcon)),
+      );
+      expect(plus.color, tester.element(newButton).palette.accentText);
+    });
+
     testWidgets('sits 4 after it, the same quiet button, and makes what the '
         'list\'s New makes', (tester) async {
       var made = 0;

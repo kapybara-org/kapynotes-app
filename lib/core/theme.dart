@@ -641,31 +641,26 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
 }
 
 /// The crisp system's fills, worked out from the palette instead of listed
-/// in it: each is the text colour at an alpha over the surface, so a theme
-/// only has to say what its surface and ink are.
+/// in it: each is the text colour at an alpha, laid over whatever is beneath
+/// it, so a fill on a fill comes out a step lighter on its own.
 extension CrispFills on CalcPalette {
-  /// 1 px line that splits panes and sits under a header band.
-  Color get hairline => textPrimary.withValues(alpha: 0.06);
-
-  /// A field, a card, the Do now block, the phone bar.
-  Color get fillRest =>
-      Color.alphaBlend(textPrimary.withValues(alpha: 0.04), editorBackground);
+  /// A field, a card, First on the list, the phone bar.
+  Color get fillRest => textPrimary.withValues(alpha: 0.04);
 
   /// A control sitting on a field, a secondary button, a hover.
-  Color get fillControl =>
-      Color.alphaBlend(textPrimary.withValues(alpha: 0.06), editorBackground);
+  Color get fillControl => textPrimary.withValues(alpha: 0.06);
 
-  /// A selected row or segment, today in a week strip.
-  Color get fillSelected =>
-      Color.alphaBlend(textPrimary.withValues(alpha: 0.07), editorBackground);
+  /// A selected row or tab.
+  Color get fillSelected => textPrimary.withValues(alpha: 0.07);
 
   /// The selected note card, one step lighter again so it reads on a list.
-  Color get fillSelectedCard =>
-      Color.alphaBlend(textPrimary.withValues(alpha: 0.10), editorBackground);
+  Color get fillSelectedCard => textPrimary.withValues(alpha: 0.10);
 
   /// The one sage-tinted control in a page.
-  Color get fillSageTint =>
-      Color.alphaBlend(accent.withValues(alpha: 0.16), editorBackground);
+  Color get fillSageTint => accentText.withValues(alpha: 0.16);
+
+  /// The 1 px edge round something that floats, as the phone's bar does.
+  Color get edge => textPrimary.withValues(alpha: 0.08);
 }
 
 /// Editor metrics shared by the text field, its measurer and the gutter.
@@ -1446,7 +1441,7 @@ class KapyTheme {
     controlBackground: Color(0xFF24221E),
     controlBorder: Color(0x0FE2DCCF),
     selectedBackground: Color(0xFF2A2824),
-    selectedBorder: Color(0xFF2A2824),
+    selectedBorder: Color(0xFF7D9468),
     selection: Color(0x4D7D9468),
     hover: Color(0xFF282622),
     paperFiber: Color(0x00000000),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -132,6 +134,71 @@ void main() {
     expect(find.byTooltip('New note'), findsOneWidget);
     expect(_surface(tester).color, KapyTheme.lightPalette.tonalBackground);
   });
+
+  testWidgets('a quiet button with a sage icon is the main action: the plus '
+      'in sage and its words in T1, where plain quiet words are T2', (
+    tester,
+  ) async {
+    const palette = KapyTheme.darkPalette;
+    FilledButton button() => tester.widget<FilledButton>(
+      find.descendant(
+        of: find.byType(TonalButton),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    KapyIcon icon() => tester.widget<KapyIcon>(
+      find.descendant(
+        of: find.byType(TonalButton),
+        matching: find.byType(KapyIcon),
+      ),
+    );
+
+    await _pump(
+      tester,
+      TonalButton(
+        icon: KapyIcons.addRounded,
+        label: 'New note',
+        quiet: true,
+        sageIcon: true,
+        onPressed: () {},
+      ),
+    );
+    expect(icon().color, palette.accentText);
+    expect(button().style!.foregroundColor!.resolve({}), palette.textPrimary);
+    expect(button().style!.backgroundColor!.resolve({}), Colors.transparent);
+
+    await _pump(
+      tester,
+      TonalButton(
+        icon: KapyIcons.addRounded,
+        label: 'Share',
+        quiet: true,
+        onPressed: () {},
+      ),
+    );
+    expect(icon().color, isNull);
+    expect(button().style!.foregroundColor!.resolve({}), palette.textSecondary);
+  });
+
+  test(
+    'the focus border stands out from the surface and the selected fill',
+    () {
+      const palette = KapyTheme.darkPalette;
+      double contrast(Color a, Color b) {
+        final (x, y) = (a.computeLuminance(), b.computeLuminance());
+        return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05);
+      }
+
+      expect(
+        contrast(palette.selectedBorder, palette.sidebarBackground),
+        greaterThanOrEqualTo(3),
+      );
+      expect(
+        contrast(palette.selectedBorder, palette.selectedBackground),
+        greaterThanOrEqualTo(3),
+      );
+    },
+  );
 
   testWidgets('a tonal button with nothing to do greys out', (tester) async {
     await _pump(tester, const TonalButton(label: 'Share', onPressed: null));

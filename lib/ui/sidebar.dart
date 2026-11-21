@@ -28,7 +28,6 @@ import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
 import 'join/joining_ui.dart' show joinedLine;
-import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
 import 'notes_grouping.dart';
@@ -1279,7 +1278,6 @@ extension on Sidebar {
       }
     }
 
-    final pin = KapyIcon(KapyIcons.pinOutlined, size: 16, color: palette.clay);
     if (_specialMode) {
       section(notes);
       if (hiddenMode) {
@@ -1314,22 +1312,15 @@ extension on Sidebar {
           count: groups.pinned.length,
           noun: noun,
           height: 22,
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CompactIconButton(
-                key: const ValueKey('sidebar-pinned-back'),
-                tooltip: 'Back to all notes',
-                extent: 22,
-                foregroundColor: palette.textSecondary,
-                onPressed: onPinnedOnlyChanged == null
-                    ? null
-                    : () => onPinnedOnlyChanged(false),
-                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
-              ),
-              const SizedBox(width: 6),
-              pin,
-            ],
+          leading: CompactIconButton(
+            key: const ValueKey('sidebar-pinned-back'),
+            tooltip: 'Back to all notes',
+            extent: 22,
+            foregroundColor: palette.textSecondary,
+            onPressed: onPinnedOnlyChanged == null
+                ? null
+                : () => onPinnedOnlyChanged(false),
+            icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
           ),
         ),
       );
@@ -1382,7 +1373,6 @@ extension on Sidebar {
             count: groups.pinned.length,
             noun: noun,
             height: 16,
-            leading: pin,
             trailing:
                 pinned.length < groups.pinned.length &&
                     onPinnedOnlyChanged != null
@@ -2514,7 +2504,18 @@ class SidebarSearchField extends StatelessWidget {
       child: Semantics(
         label: 'Search shortcut ${shortcut.displayLabel}',
         excludeSemantics: true,
-        child: Keycap(shortcut.keycapLabel),
+        child: Text(
+          shortcut.keycapLabel,
+          key: const ValueKey('sidebar-search-shortcut'),
+          style: TextStyle(
+            fontFamily: AppFonts.mono,
+            fontFamilyFallback: AppFonts.monoFallback,
+            fontSize: 11,
+            height: 14 / 11,
+            fontWeight: FontWeight.w400,
+            color: palette.textTertiary,
+          ),
+        ),
       ),
     );
   }
@@ -2541,16 +2542,8 @@ class SidebarSearchField extends StatelessWidget {
                 height: 40,
                 padding: const EdgeInsets.only(left: 12, right: 8),
                 decoration: BoxDecoration(
-                  color: palette.surfaceBackground,
-                  border: Border.all(color: palette.controlBorder),
-                  borderRadius: BorderRadius.circular(AppRadii.surface),
-                  boxShadow: [
-                    BoxShadow(
-                      color: palette.shadowAt(0x4D),
-                      offset: Offset(0, 1),
-                      blurRadius: 2,
-                    ),
-                  ],
+                  color: palette.fillRest,
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   children: [
@@ -2615,8 +2608,10 @@ class SidebarSearchField extends StatelessWidget {
                         : const EdgeInsets.only(left: 14, right: 10),
                     decoration: phone
                         ? BoxDecoration(
-                            color: palette.wellBackground,
-                            borderRadius: BorderRadius.circular(12),
+                            color: palette.fillRest,
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.control,
+                            ),
                           )
                         : BoxDecoration(
                             color: palette.surfaceBackground,

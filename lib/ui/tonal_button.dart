@@ -49,8 +49,8 @@ class TonalButton extends StatelessWidget {
   /// there when wanted without competing with the page's main one.
   final bool quiet;
 
-  /// A quiet button whose icon carries the sage that marks the page's main
-  /// action, as New note's plus does.
+  /// A quiet button that is the page's main action, as New note is: its
+  /// icon carries the sage and its words the text's own ink.
   final bool sageIcon;
 
   /// How wide a button with [label], an icon unless [icon] is false and, if
@@ -137,6 +137,8 @@ class TonalButton extends StatelessWidget {
         foregroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? palette.textTertiary
+              : sageIcon
+              ? palette.textPrimary
               : quiet
               ? palette.textSecondary
               : palette.tonalForeground,
@@ -161,7 +163,7 @@ class TonalButton extends StatelessWidget {
                   : fine
                   ? 15
                   : AppControlMetrics.iconControl,
-              color: sageIcon ? palette.accent : null,
+              color: sageIcon ? palette.accentText : null,
             ),
           if (icon != null && label != null) SizedBox(width: bar ? 4 : 6),
           if (label != null) Text(label),
