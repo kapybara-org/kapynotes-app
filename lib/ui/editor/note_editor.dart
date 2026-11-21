@@ -448,6 +448,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// which is what turns a metrics change into "the keyboard just went".
   bool _keyboardWasUp = false;
 
+  /// How long the keyboard must stay down before the editor takes it as
+  /// dismissed. Android can report a keyboard that is still coming up as gone
+  /// for a frame or two while it restarts the animation; a dismissal stays
+  /// gone.
+  static const _keyboardGoneAfter = Duration(milliseconds: 500);
+  Timer? _keyboardGoneTimer;
+
   final PlatformSpellCheckService _spellCheckService =
       PlatformSpellCheckService();
   Locale? _spellCheckLocale;
@@ -804,6 +811,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _spellCheckService.dispose();
     _correctionsArrived.dispose();
     _keyboardRetryTimer?.cancel();
+    _keyboardGoneTimer?.cancel();
     _selectionToolbarTimer?.cancel();
     _pasteOfferTimer?.cancel();
     _keywordHoverTimer?.cancel();
@@ -4508,6 +4516,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A cell opened with the keyboard down was scrolled into view before the
     // keyboard had a height; now that it has one, the cell may be under it.
     if (isUp && _editingCell != null) _ensureCellVisible();
+    if (isUp) _keyboardGoneTimer?.cancel();
     if (isUp || !wasUp) return;
     if (widget.readOnly || !_editingNote) return;
     // Backgrounding the app also takes the keyboard down, and focus should
@@ -4515,7 +4524,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
     _keyboardRetryTimer?.cancel();
-    FocusManager.instance.primaryFocus?.unfocus();
+    _keyboardGoneTimer?.cancel();
+    _keyboardGoneTimer = Timer(_keyboardGoneAfter, () {
+      if (!mounted || _keyboardInset > 0) return;
+      if (widget.readOnly || !_editingNote) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+    });
   }
 
   void _recordKapyPeekActivity() {
