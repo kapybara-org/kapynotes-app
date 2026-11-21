@@ -186,8 +186,8 @@ class NoteMark extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(AppRadii.compact),
-        child: SizedBox(
-          height: 24,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 24),
           child: Padding(
             padding: const EdgeInsets.only(left: 4, right: 2),
             child: Row(

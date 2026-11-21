@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 
 import 'fake_server.dart';
@@ -143,5 +144,53 @@ void main() {
     expect(older.days.noteIds, isEmpty);
     newer.dispose();
     older.dispose();
+  });
+
+  group('a blank new note', () {
+    Note blank(Device d) =>
+        d.notes.create(body: Note.blankBody, authored: false);
+    Iterable<String> pushed() => server.taskPushes.expand((ids) => ids);
+
+    test('given a day and deleted while blank, sends nothing of it', () async {
+      final (laptop, phone) = await pair();
+      final left = blank(laptop);
+      laptop.days.setDay(left.id, DateTime(2026, 11, 23));
+      await laptop.pass();
+      expect(pushed(), isNot(contains(dayRecordOf(left.id))));
+
+      laptop.notes.deleteAll([left.id]);
+      await passes([laptop, phone]);
+      expect(server.rows, isEmpty);
+      expect(stored(), isEmpty);
+      expect(pushed(), isNot(contains(dayRecordOf(left.id))));
+      expect(laptop.days.owed, isEmpty);
+      expect(laptop.days.noteIds, isEmpty);
+      laptop.dispose();
+      phone.dispose();
+    });
+
+    test(
+      'given a day while blank, the day goes with its first letter',
+      () async {
+        final (laptop, phone) = await pair();
+        final dated = blank(laptop);
+        laptop.days.setDay(dated.id, DateTime(2026, 11, 23));
+        await laptop.pass();
+        expect(server.rows, isEmpty);
+        expect(stored(), isEmpty);
+        expect(laptop.days.owed.map((item) => item.key), [dated.id]);
+
+        laptop.notes.updateBody(dated.id, '${Note.blankBody}Plan');
+        await laptop.pass();
+        expect(server.rows.keys.toSet(), {dated.id});
+        expect(stored().keys.toSet(), {dayRecordOf(dated.id)});
+        expect(laptop.days.owed, isEmpty);
+
+        await phone.pass();
+        expect(phone.days.dayOf(dated.id), DateTime(2026, 11, 23));
+        laptop.dispose();
+        phone.dispose();
+      },
+    );
   });
 }
