@@ -892,7 +892,11 @@ void main() {
 
       /// Carol, in the note's space beside Alice and Bob, holding a key to
       /// the note that its return under a new one makes stale.
-      Future<Person> carolIn({bool live = false, int rereadPages = 100}) async {
+      Future<Person> carolIn({
+        bool live = false,
+        int rereadPages = 100,
+        int snapshotEvery = 150,
+      }) async {
         note = await shareWithBob('Ledger');
         spaceId = alice.notes.byId(note.id)!.spaceId!;
         final carol = Person(
@@ -900,6 +904,7 @@ void main() {
           userId: 'user-3',
           device: 'carol-pad',
           rereadPages: rereadPages,
+          snapshotEvery: snapshotEvery,
         );
         addTearDown(carol.dispose);
         await carol.boot();
@@ -984,6 +989,87 @@ void main() {
         await carol.sync.syncNow();
         expect(carol.bodyOf(note.id), contains('A1'));
         expect(carol.docs.get(note.id)!.unreadSeq, newer);
+      });
+
+      test('a pass asked for as one ends never runs beside the follow-up the '
+          'note key asked for, and the mark of an edit that does not open '
+          'stays', () async {
+        final carol = await carolIn(snapshotEvery: 1);
+        await unreadBy(carol, 'Ledger\nA1');
+        carol.api.failNoteKeys = null;
+        final newer = newerAppEdit();
+        // The note key comes back during this pass, which asks for one more.
+        await carol.sync.syncNow();
+        expect(carol.docs.get(note.id)!.unreadSeq, newer);
+        final marks = <int?>[];
+        void mark() => marks.add(carol.docs.get(note.id)?.unreadSeq);
+        carol.sync.addListener(mark);
+        final from = server.log.length;
+        // Asked for the moment the pass ends, before the follow-up starts.
+        await carol.sync.syncNow();
+        mark();
+        await settle(server);
+        mark();
+        carol.sync.removeListener(mark);
+        final calls = [
+          for (final entry in server.log.skip(from))
+            if (entry.device == carol.api.device) entry.call,
+        ];
+        final reread = 'pullOps:${newer - 1}';
+        expect(calls, contains(reread));
+        expect(
+          calls.take(calls.indexOf(reread)).where((call) => call == 'spaces'),
+          hasLength(1),
+          reason: 'one pass at a time: $calls',
+        );
+        expect(calls.where((call) => call == reread), hasLength(1));
+        expect(marks, everyElement(newer));
+        // Due for a whole copy at her next edit, which may go up only with
+        // the edit she could not open in it.
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ledger\nA1\nC1');
+        await carol.syncAndSettle();
+        expect(
+          server.spaces[spaceId]!.ops.map((op) => op.seq),
+          contains(newer),
+          reason: 'no whole copy without the edit goes over it',
+        );
+      });
+
+      test('on a live socket, passes asked for mid-pass and as one ends keep '
+          'the mark of an edit that does not open', () async {
+        final carol = await carolIn(live: true, snapshotEvery: 1);
+        await unreadBy(carol, 'Ledger\nA1');
+        carol.api.failNoteKeys = null;
+        final newer = newerAppEdit();
+        await settle(server);
+        final marks = <int?>[];
+        void mark() => marks.add(carol.docs.get(note.id)?.unreadSeq);
+        carol.sync.addListener(mark);
+        final first = carol.sync.syncNow();
+        // A caller waiting on the pass asks again the moment it ends.
+        final after = first.then((_) {
+          mark();
+          return carol.sync.syncNow();
+        });
+        // The poll and the socket coming back, mid-pass.
+        final midway = [carol.sync.syncNow(), carol.sync.syncNow()];
+        await Future.wait([after, ...midway]);
+        mark();
+        await settle(server);
+        mark();
+        carol.sync.removeListener(mark);
+        expect(carol.bodyOf(note.id), contains('A1'));
+        expect(marks.skipWhile((seq) => seq != newer), everyElement(newer));
+        expect(carol.docs.get(note.id)!.unreadSeq, newer);
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ledger\nA1\nC1');
+        await carol.syncAndSettle();
+        expect(
+          server.spaces[spaceId]!.ops.map((op) => op.seq),
+          contains(newer),
+          reason: 'no whole copy without the edit goes over it',
+        );
       });
 
       test('a read again cut short goes on where it stopped', () async {
