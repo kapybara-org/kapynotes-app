@@ -3962,6 +3962,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 hideShortcut: widget.shortcuts.hintFor(
                   ShortcutAction.toggleSidebar,
                 ),
+                onAskKapy: _kapyAiOn && space != LibrarySpace.drawings
+                    ? _openKapyAi
+                    : null,
+                askKapyShortcut: widget.shortcuts.hintFor(
+                  ShortcutAction.toggleKapyAi,
+                ),
               ),
             );
             return Row(
