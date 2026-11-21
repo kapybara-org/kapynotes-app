@@ -757,6 +757,38 @@ void main() {
       expect(panel.lastMiss, PanelMiss.noView);
     });
 
+    testWidgets(
+      'a refused show leaves the next one the first showing\'s time',
+      (tester) async {
+        int? shows;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async {
+            return switch (call.method) {
+              'isSupported' => true,
+              'isControlPressed' => false,
+              'show' => shows,
+              _ => null,
+            };
+          },
+        );
+        expect(await panel.click(), isFalse);
+        expect(panel.lastMiss, PanelMiss.refused);
+
+        shows = 99;
+        var answered = false;
+        unawaited(panel.click().then((_) => answered = true));
+        await tester.pump(MenuBarPanelController.showTimeout);
+        expect(answered, isFalse, reason: 'the refused show made no view');
+        await tester.pump(
+          MenuBarPanelController.firstShowTimeout -
+              MenuBarPanelController.showTimeout,
+        );
+        expect(answered, isTrue);
+        expect(panel.lastMiss, PanelMiss.noView);
+      },
+    );
+
     testWidgets('gives that click the menu, and the next one the panel', (
       tester,
     ) async {
@@ -850,6 +882,11 @@ void main() {
       expect(await clicked, isFalse);
       expect(panel.lastMiss, PanelMiss.notRevealed);
       revealed.complete();
+
+      // The next one's view never arrives, whatever step the last reached.
+      shows = 99;
+      expect(await slowClick(tester), isFalse);
+      expect(panel.lastMiss, PanelMiss.noView);
     });
   });
 }
