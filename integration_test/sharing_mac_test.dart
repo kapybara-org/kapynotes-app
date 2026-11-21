@@ -199,6 +199,16 @@ void main() {
     return found;
   }
 
+  Future<void> tab(WidgetTester tester) async {
+    if (!await tester.sendKeyEvent(LogicalKeyboardKey.tab)) {
+      // Stands in for the Mac text input's insertTab:, which flutter drive doesn't send.
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorStateOfType<EditableTextState>()
+          ?.performSelector('insertTab:');
+    }
+    await tester.pumpAndSettle();
+  }
+
   group('#232', () {
     Future<void> blockPriya(WidgetTester tester, String dialogName) async {
       await tester.tap(memberMenu('user-2'));
@@ -433,8 +443,7 @@ void main() {
       ];
       final reached = <String?>[];
       for (var press = 0; press <= order.length; press++) {
-        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-        await tester.pumpAndSettle();
+        await tab(tester);
         reached.add(focused(order));
         if (press == 0) await screenshot('mac-sharing-first-tab');
       }
@@ -447,8 +456,7 @@ void main() {
       await shareAround(tester);
       await showSam(tester, tripId);
       await open(tester, 'note');
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pumpAndSettle();
+      await tab(tester);
       expect(focused(['share-more', 'share-dialog-close']), 'share-more');
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
