@@ -595,7 +595,9 @@ void main() {
     await act(tester, find.text('Undo'));
     expect(tester.takeException(), isNull);
     expect(sam.notes.byId(note.id)!.isShared, isTrue);
-    expect(find.text('Shared again with Priya'), findsOneWidget);
+    expect(find.text('Invitation sent to Priya'), findsOneWidget);
+    expect(find.textContaining('Shared again'), findsNothing);
+    expect(sam.sharing.memberOn(note.id, priya.email), isNull);
     await quiet(tester);
   });
 

@@ -1009,7 +1009,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
       context,
       title: 'Remove $name from $where?',
       body: many
-          ? '$name stops seeing these notes, and they leave their devices. '
+          ? '$name stops seeing these notes, and they leave $name’s devices. '
                 'They stay in your notes, with everything $name wrote.'
           : '$name stops seeing this note, and it leaves their devices. It '
                 'stays in your notes, with everything $name wrote.',
@@ -1042,16 +1042,21 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
     final audience = _sharing.audienceOf(space);
     final people = space.othersThan(_sharing.userId).length;
     final who = space.peoplePhrase(_sharing.userId) ?? 'The people here';
-    final what = notes.length == 1
-        ? '“${notes.single.title}”'
-        : '${notes.length} notes';
+    final what = switch (notes.length) {
+      0 => '',
+      1 => ' “${notes.single.title}”',
+      final count => ' $count notes',
+    };
     final ok = await askFirst(
       context,
-      title: 'Stop sharing $what?',
+      title: 'Stop sharing$what?',
       body:
           '$who ${people > 1 ? 'lose' : 'loses'} access. '
-          '${notes.length == 1 ? 'The note stays' : 'The notes stay'} in your '
-          'notes, with every change.',
+          '${switch (notes.length) {
+            0 => 'Everything here stays',
+            1 => 'The note stays',
+            _ => 'The notes stay',
+          }} in your notes, with every change.',
       action: 'Stop sharing',
     );
     if (ok != true || !mounted) return;
@@ -1063,7 +1068,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
       final overlay = Overlay.of(context, rootOverlay: true);
       Toast.show(
         context,
-        'Stopped sharing $what',
+        'Stopped sharing$what',
         action: notes.isEmpty ? null : 'Undo',
         onAction: () => unawaited(
           undoSharing(overlay, () async {
@@ -1074,7 +1079,16 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
             for (final note in notes.skip(1)) {
               await sharing.shareNote(note.id, spaceId: again.id);
             }
-            return 'Shared again with $who';
+            if (notes.any(
+              (note) => audience.keys.any(
+                (email) => sharing.memberOn(note.id, email) != null,
+              ),
+            )) {
+              return 'Shared again with $who';
+            }
+            return audience.length == 1
+                ? 'Invitation sent to $who'
+                : 'Invitations sent to $who';
           }),
         ),
       );
@@ -1326,8 +1340,6 @@ Future<bool?> _askToLeave(
   );
 }
 
-/// A dialog on a desktop, a sheet with a grab handle on a phone: the same
-/// header, body and footer either way.
 /// Marks what sits on a phone sheet, so the pieces both sheets use take the
 /// phone's measurements there and the Mac dialog's everywhere else.
 class _OnPhone extends InheritedWidget {
@@ -1349,6 +1361,8 @@ typedef _FooterAction = ({
   VoidCallback? onPressed,
 });
 
+/// A dialog on a desktop, a sheet with a grab handle on a phone: the same
+/// header, body and footer either way.
 class _SheetScaffold extends StatelessWidget {
   const _SheetScaffold({
     required this.asSheet,
@@ -1588,7 +1602,9 @@ class _Header extends StatelessWidget {
                   style: TextStyle(
                     fontSize: AppTypeScale.heading,
                     fontWeight: FontWeight.w500,
-                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                    fontVariations: AppWeight.variations(
+                      AppWeight.bold(AppWeight.rowTitle),
+                    ),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -1763,6 +1779,7 @@ class _PeopleWithAccess extends StatelessWidget {
                 seed: member.userId.isEmpty ? member.email : member.userId,
                 name: member.userId == me ? 'You' : member.displayName,
                 detail: _detailFor(member, present[member.userId]),
+                live: present.containsKey(member.userId),
                 ring: present[member.userId] == null
                     ? null
                     : collaboratorColor(member.userId, on: palette.brightness),
@@ -1858,6 +1875,7 @@ class _PersonRow extends StatelessWidget {
     required this.detail,
     this.trailing,
     this.invited = false,
+    this.live = false,
     this.ring,
   });
 
@@ -1866,6 +1884,9 @@ class _PersonRow extends StatelessWidget {
   final String detail;
   final Widget? trailing;
   final bool invited;
+
+  /// [detail] says what they are doing right now: typing, or here.
+  final bool live;
   final Color? ring;
 
   static const double avatar = 30;
@@ -1874,7 +1895,6 @@ class _PersonRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     if (_OnPhone.of(context)) {
-      final live = detail == 'Here now' || detail == 'Typing…';
       return ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 56),
         child: Padding(
@@ -2010,7 +2030,7 @@ class _PersonRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: AppTypeScale.caption,
-                    color: detail == 'Here now' || detail == 'Typing…'
+                    color: live
                         ? ring ?? palette.textSecondary
                         : palette.textSecondary,
                   ),
@@ -2845,8 +2865,10 @@ class _Label extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               height: 18 / 13,
-              fontWeight: FontWeight.w500,
-              fontVariations: const [FontVariation('wght', 520)],
+              fontWeight: AppWeight.named(AppWeight.bold(AppWeight.section)),
+              fontVariations: AppWeight.variations(
+                AppWeight.bold(AppWeight.section),
+              ),
               color: context.palette.textTertiary,
             ),
           ),

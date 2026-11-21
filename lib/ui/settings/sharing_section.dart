@@ -581,7 +581,11 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         for (final MapEntry(key: id, value: role) in before.entries) {
           await sharing.addPerson(id, person.email, role: role);
         }
-        return 'Shared again with $first';
+        return before.keys.any(
+              (id) => sharing.memberOn(id, person.email) != null,
+            )
+            ? 'Shared again with $first'
+            : 'Invitation sent to $first';
       },
     );
   }
