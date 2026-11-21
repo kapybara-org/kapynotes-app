@@ -47,18 +47,16 @@ jobs:
           sudo ln -sfn "$dv" "/System/Library/Fonts/Apple Symbols.ttf"
           sudo ln -sfn "$lib" /System/Library/Fonts/Supplemental/Arial.ttf
 
-      # test/audio/linux_voice_test.dart records and plays through ffmpeg and
-      # PulseAudio, and skips itself without them. A null sink stands in for
-      # the speakers and its monitor for the microphone, as on Capy machines.
-      - name: ffmpeg and a PulseAudio server
+      # test/audio/linux_voice_test.dart skips itself where nothing can
+      # capture, so this starts the headless sound server Desktop CI uses and
+      # fails if the tests' own probe can't record from it.
+      - name: A headless sound server for the voice tests
         run: |
-          type -P ffmpeg pulseaudio pactl >/dev/null || { sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends ffmpeg pulseaudio pulseaudio-utils; }
-          pulseaudio --daemonize --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=kapy >/dev/null
-          pactl set-default-sink kapy
-          pactl set-default-source kapy.monitor
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends pulseaudio pulseaudio-utils ffmpeg
+          bash test/audio/headless_pulse.sh
           bytes=$(ffmpeg -nostdin -loglevel error -f pulse -i default -t 0.2 -f s16le - | wc -c)
-          echo "captured $bytes bytes from the null sink's monitor"
+          echo "the voice tests' probe recorded $bytes bytes"
           [ "$bytes" -gt 0 ]
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
