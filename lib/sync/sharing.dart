@@ -622,7 +622,7 @@ class Sharing extends ChangeNotifier {
   /// Changes what [email] may do with a note, Editor or View only. Access
   /// belongs to the note's space, so it changes for every note in it.
   Future<void> changeAccessTo(String noteId, String email, SpaceRole role) {
-    final member = _memberOn(noteId, email);
+    final member = memberOn(noteId, email);
     if (member == null) {
       throw const SyncProtocolException('not a member of this note');
     }
@@ -698,7 +698,8 @@ class Sharing extends ChangeNotifier {
     }
   }
 
-  SpaceMember? _memberOn(String noteId, String email) {
+  /// [email] among the people in [noteId]'s space, once they have joined.
+  SpaceMember? memberOn(String noteId, String email) {
     final note = _notes.byId(noteId);
     final space = note == null ? null : spaceOf(note);
     final address = _address(email);

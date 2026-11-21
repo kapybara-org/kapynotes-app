@@ -37,7 +37,27 @@ class Toast {
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
+    showOn(
+      overlay,
+      message,
+      icon: icon,
+      isError: isError,
+      action: action,
+      onAction: onAction,
+    );
+  }
 
+  /// [show] on an overlay held from earlier, for a result that comes after
+  /// the sheet or page that started the work has closed.
+  static void showOn(
+    OverlayState overlay,
+    String message, {
+    KapyIconData? icon,
+    bool isError = false,
+    String? action,
+    VoidCallback? onAction,
+  }) {
+    if (!overlay.mounted) return;
     _showOn(
       overlay,
       message,
