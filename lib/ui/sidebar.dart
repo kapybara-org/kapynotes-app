@@ -2066,7 +2066,6 @@ class SidebarWindowBar extends StatelessWidget {
                           icon: const KapyIcon(
                             KapyIcons.sparklesOutlined,
                             size: 16,
-                            strokeWidth: 1.5,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -2533,7 +2532,7 @@ class SidebarSearchField extends StatelessWidget {
                   children: [
                     KapyIcon(
                       KapyIcons.searchRounded,
-                      size: 16,
+                      size: 14,
                       color: palette.textSecondary,
                     ),
                     const SizedBox(width: 8),
@@ -2675,7 +2674,7 @@ class _FiltersButton extends StatelessWidget {
               onPressed: onPressed,
               icon: KapyIcon(
                 KapyIcons.filterRounded,
-                size: 20,
+                size: 18,
                 color: active ? palette.textPrimary : palette.textSecondary,
               ),
             ),

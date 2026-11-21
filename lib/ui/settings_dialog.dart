@@ -3008,9 +3008,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                               bottomInset: bottomInset,
                               children: [
                                 if (!_searching)
-                                  SettingsWhatsNewRow(
-                                    prefs: widget.layoutPrefs,
-                                  ),
+                                  SettingsWhatsNewRow(prefs: widget.layoutPrefs),
                                 // No autofocus: a keyboard that rises the
                                 // moment settings opens would cover the very
                                 // list it is there to search.
@@ -3252,21 +3250,20 @@ class _SettingsDialogState extends State<SettingsDialog>
         onShowPlan: _showPlan,
       ),
     ],
-    SettingsSection.about =>
-      widget.updates == null
-          ? const [_QuietWhatsNewRow()]
-          : [
-              ..._fromGroups(_aboutGroups()),
-              SizedBox(height: SettingsMetrics.groupGap),
-              // Keyed here rather than on the group below it: a search result
-              // scrolls to what it lands on and lights it, and the group is
-              // taller than the window by a dozen releases.
-              SettingsLabel(
-                widget.updates!.hasUpdate ? "What's new" : 'Release notes',
-                key: const ValueKey('changelog'),
-              ),
-              _ChangelogGroup(updates: widget.updates!),
-            ],
+    SettingsSection.about => widget.updates == null
+        ? const [_QuietWhatsNewRow()]
+        : [
+            ..._fromGroups(_aboutGroups()),
+            SizedBox(height: SettingsMetrics.groupGap),
+            // Keyed here rather than on the group below it: a search result
+            // scrolls to what it lands on and lights it, and the group is
+            // taller than the window by a dozen releases.
+            SettingsLabel(
+              widget.updates!.hasUpdate ? "What's new" : 'Release notes',
+              key: const ValueKey('changelog'),
+            ),
+            _ChangelogGroup(updates: widget.updates!),
+          ],
     _ => _fromGroups(_groupsFor(section)),
   };
 

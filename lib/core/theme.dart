@@ -1197,8 +1197,8 @@ class AppWeight {
   /// 500 up reaches 700, so a section label and a page title read alike.
   /// Weight stops carrying their difference there; size and colour still do.
   static double bold(double axis) {
-    final features =
-        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures;
+    final features = WidgetsBinding.instance.platformDispatcher
+        .accessibilityFeatures;
     if (!features.boldText) return axis;
     return math.min(axis + 200, 700);
   }

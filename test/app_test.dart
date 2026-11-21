@@ -1810,6 +1810,31 @@ void main() {
       }
     });
 
+    testWidgets('its pin line draws the one pin, to pin and to unpin', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      final note = notes.create(body: 'alpha');
+      await tester.pumpAndSettle();
+      final pin = find.descendant(
+        of: lineOf('pin'),
+        matching: findKapyIcon(KapyIcons.pinOutlined),
+      );
+
+      await openMore(tester);
+      expect(find.text('Pin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
+      await tester.tap(lineOf('pin'));
+      await tester.pumpAndSettle();
+      expect(notes.isPinned(note.id), isTrue);
+
+      await openMore(tester);
+      expect(find.text('Unpin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
+    });
+
     testWidgets('More pins the note and floats the window, side by side, each '
         'saying which', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;

@@ -357,6 +357,10 @@ class KapyIcons {
   );
   static const playRounded = KapyIconData(0xE04A, HugeIcons.strokeRoundedPlay);
   static const pinOutlined = KapyIconData(0xE04C, HugeIcons.strokeRoundedPin);
+  static const radioCheckedRounded = KapyIconData(
+    0xE04E,
+    HugeIcons.strokeRoundedRadioButton,
+  );
   static const radioUncheckedRounded = KapyIconData(
     0xE04F,
     HugeIcons.strokeRoundedCircle,
@@ -399,6 +403,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedDownloadSquare01,
   );
   static const tagRounded = KapyIconData(0xE05D, HugeIcons.strokeRoundedTag01);
+  static const textFormatRounded = KapyIconData(
+    0xE05F,
+    HugeIcons.strokeRoundedText,
+  );
   static const viewColumnOutlined = KapyIconData(
     0xE064,
     HugeIcons.strokeRoundedLayout2Column,
@@ -514,6 +522,10 @@ class KapyIcons {
   static const rectangleRounded = KapyIconData(
     0xE07F,
     HugeIcons.strokeRoundedSquare,
+  );
+  static const arrowRounded = KapyIconData(
+    0xE080,
+    HugeIcons.strokeRoundedArrowUpRight01,
   );
   static const lineRounded = KapyIconData(0xE081, HugeIcons.strokeRoundedLiner);
   static const eraserRounded = KapyIconData(
