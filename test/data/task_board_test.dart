@@ -191,52 +191,62 @@ void main() {
     expect(found, greaterThan(100));
   });
 
-  test('reading one note of many tasks takes time in step with its size', () {
-    TaskBoard Function() reader(int tasks) {
-      final big = note(
-        'big$tasks',
-        [
-          'Big list',
-          for (var i = 0; i < tasks; i++) ...['☐ Task $i', '  A detail for $i'],
-        ].join('\n'),
-      );
-      final entries = [
-        for (final entry in index.entries)
-          if (entry.noteId == big.id) entry,
-      ];
-      return () => TaskBoard.read(
-        entries: entries,
-        notes: [big],
-        docOf: (id) => docs[id],
-      );
-    }
+  for (var run = 1; run <= 20; run++) {
+    test(
+      'reading one note of many tasks takes time in step with its size, run $run',
+      () {
+        TaskBoard Function() reader(int tasks) {
+          final big = note(
+            'big$tasks',
+            [
+              'Big list',
+              for (var i = 0; i < tasks; i++) ...[
+                '☐ Task $i',
+                '  A detail for $i',
+              ],
+            ].join('\n'),
+          );
+          final entries = [
+            for (final entry in index.entries)
+              if (entry.noteId == big.id) entry,
+          ];
+          return () => TaskBoard.read(
+            entries: entries,
+            notes: [big],
+            docOf: (id) => docs[id],
+          );
+        }
 
-    int took(TaskBoard Function() read) {
-      final watch = Stopwatch()..start();
-      read();
-      return watch.elapsedMicroseconds;
-    }
+        int took(TaskBoard Function() read) {
+          final watch = Stopwatch()..start();
+          read();
+          return watch.elapsedMicroseconds;
+        }
 
-    final small = reader(100);
-    final large = reader(800);
-    expect(small().open, hasLength(100));
-    expect(large().open, hasLength(800));
+        final small = reader(100);
+        final large = reader(800);
+        expect(small().open, hasLength(100));
+        expect(large().open, hasLength(800));
 
-    // The fastest of many reads of each, taken in turns: by the last rounds
-    // the compiler has optimised both, a busy machine slows both alike, and
-    // a read it interrupted doesn't count. Twice linear growth still passes;
-    // a board that scans the note for every task takes about 64 times as long.
-    var fastSmall = 1 << 40;
-    var fastLarge = 1 << 40;
-    for (var round = 0; round < 20; round++) {
-      fastSmall = math.min(fastSmall, took(small));
-      fastLarge = math.min(fastLarge, took(large));
-    }
-    expect(
-      fastLarge,
-      lessThan(fastSmall * 32),
-      reason:
-          'eight times the tasks took ${fastLarge / fastSmall} times as long',
+        // The fastest of many reads of each, taken in turns: by the last rounds
+        // the compiler has optimised both, a busy machine slows both alike, and
+        // a read it interrupted doesn't count. Twice linear growth still passes;
+        // a board that scans the note for every task takes about 64 times as long.
+        var fastSmall = 1 << 40;
+        var fastLarge = 1 << 40;
+        for (var round = 0; round < 20; round++) {
+          fastSmall = math.min(fastSmall, took(small));
+          fastLarge = math.min(fastLarge, took(large));
+        }
+        // ignore: avoid_print
+        print('BOARD_RATIO run $run ${fastLarge / fastSmall}');
+        expect(
+          fastLarge,
+          lessThan(fastSmall * 32),
+          reason:
+              'eight times the tasks took ${fastLarge / fastSmall} times as long',
+        );
+      },
     );
-  });
+  }
 }
