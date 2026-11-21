@@ -270,7 +270,10 @@ void main() {
                       'used': 1,
                       'limit': 50,
                       'remaining': 49,
-                      'resetsAt': '2026-12-01T00:00:00Z',
+                      'resetsAt': testNow
+                          .add(const Duration(days: 14))
+                          .toUtc()
+                          .toIso8601String(),
                     },
                   }),
                   200,
