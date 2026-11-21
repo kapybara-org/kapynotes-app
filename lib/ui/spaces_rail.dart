@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -608,12 +607,14 @@ class AccountAvatar extends StatelessWidget {
         image: photo,
       );
     } else {
+      final line = palette.raisedBorder;
       face = Container(
         width: _extent,
         height: _extent,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: palette.controlBackground,
+          color: palette.raisedBackground ?? palette.controlBackground,
+          border: line == null ? null : Border.all(color: line),
           shape: BoxShape.circle,
         ),
         child: user == null
@@ -721,7 +722,7 @@ class _Dot extends StatelessWidget {
 /// A phone's way around: the rail's destinations along the bottom, Settings
 /// at the end, and the + beside them. A tap on the + makes what [space] holds
 /// (on Tasks it adds a task); a long press offers [createActions], the rest of
-/// the desktop's New. iOS floats a glass bar over [child]; Android uses
+/// the desktop's New. iOS floats a quiet pill over [child]; Android uses
 /// Material's navigation bar and a floating action button.
 class PhoneSpaces extends StatelessWidget {
   const PhoneSpaces({
@@ -787,7 +788,7 @@ class PhoneSpaces extends StatelessWidget {
           key: const ValueKey('phone-bar'),
           selectedIndex: math.max(0, selected),
           backgroundColor: palette.railBackground,
-          indicatorColor: palette.tonalBackground,
+          indicatorColor: palette.fillSelected,
           surfaceTintColor: Colors.transparent,
           onDestinationSelected: (index) => choose(items[index].to),
           destinations: [
@@ -825,39 +826,35 @@ class PhoneSpaces extends StatelessWidget {
                 constraints: BoxConstraints(
                   maxWidth: items.length > 4 ? 360 : 300,
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(_barHeight / 2),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                    child: Container(
-                      key: const ValueKey('phone-bar'),
-                      height: _barHeight,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: palette.editorBackground.withValues(alpha: 0.86),
-                        borderRadius: BorderRadius.circular(_barHeight / 2),
-                        border: Border.all(
-                          color: palette.separator,
-                          width: AppHairline.of(context),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          for (final item in items)
-                            Expanded(
-                              child: _BarItem(
-                                key: ValueKey(
-                                  'bar-${item.to?.name ?? 'settings'}',
-                                ),
-                                icon: item.icon,
-                                label: item.label,
-                                selected: item.to == space,
-                                onPressed: () => choose(item.to),
-                              ),
-                            ),
-                        ],
-                      ),
+                // Opaque, because it floats over the list.
+                child: Container(
+                  key: const ValueKey('phone-bar'),
+                  height: _barHeight,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Color.alphaBlend(
+                      palette.fillRest,
+                      palette.sidebarBackground,
                     ),
+                    borderRadius: BorderRadius.circular(_barHeight / 2),
+                    border: Border.all(
+                      color: palette.edge,
+                      width: AppHairline.of(context),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      for (final item in items)
+                        Expanded(
+                          child: _BarItem(
+                            key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
+                            icon: item.icon,
+                            label: item.label,
+                            selected: item.to == space,
+                            onPressed: () => choose(item.to),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -896,7 +893,7 @@ class PhoneSpaces extends StatelessWidget {
 }
 
 /// One of the bar's destinations: its icon over its name in a 52 pt pill,
-/// tonal while it is the one on screen.
+/// lifted a step while it is the one on screen.
 class _BarItem extends StatelessWidget {
   const _BarItem({
     super.key,
@@ -927,7 +924,7 @@ class _BarItem extends StatelessWidget {
           child: Container(
             height: 52,
             decoration: BoxDecoration(
-              color: selected ? palette.tonalBackground : null,
+              color: selected ? palette.fillSelected : null,
               borderRadius: BorderRadius.circular(26),
             ),
             alignment: Alignment.center,

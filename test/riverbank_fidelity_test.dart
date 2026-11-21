@@ -56,11 +56,19 @@ void main() {
     expect(pie.top - heading.bottom, greaterThanOrEqualTo(6));
   });
 
-  testWidgets('an amount on a card is set in Geist Mono', (tester) async {
+  testWidgets('an amount on a card is a result: Figtree 12/16 at 600 in the '
+      'result green, with tabular figures', (tester) async {
     await pumpWindow(tester, ['land\n₹75,60,000']);
 
-    final amount = tester.widget<Text>(onCard('land', find.text('₹75,60,000')));
-    expect(amount.style?.fontFamily, AppFonts.mono);
+    final style = tester
+        .widget<Text>(onCard('land', find.text('₹75,60,000')))
+        .style!;
+    expect(style.fontFamily, AppFonts.ui);
+    expect(style.fontSize, 12);
+    expect(style.height, 16 / 12);
+    expect(style.fontVariations, AppWeight.variations(AppWeight.page));
+    expect(style.color, KapyTheme.darkPalette.resultPillText);
+    expect(style.fontFeatures, const [FontFeature.tabularFigures()]);
   });
 
   testWidgets('See all sits at the end of the Pinned heading', (tester) async {

@@ -27,7 +27,6 @@ import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
 import 'join/joining_ui.dart' show joinedLine;
-import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
 import 'notes_grouping.dart';
@@ -1277,7 +1276,6 @@ extension on Sidebar {
       }
     }
 
-    final pin = KapyIcon(KapyIcons.pinOutlined, size: 16, color: palette.clay);
     if (_specialMode) {
       section(notes);
       if (hiddenMode) {
@@ -1312,22 +1310,15 @@ extension on Sidebar {
           count: groups.pinned.length,
           noun: noun,
           height: 22,
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CompactIconButton(
-                key: const ValueKey('sidebar-pinned-back'),
-                tooltip: 'Back to all notes',
-                extent: 22,
-                foregroundColor: palette.textSecondary,
-                onPressed: onPinnedOnlyChanged == null
-                    ? null
-                    : () => onPinnedOnlyChanged(false),
-                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
-              ),
-              const SizedBox(width: 6),
-              pin,
-            ],
+          leading: CompactIconButton(
+            key: const ValueKey('sidebar-pinned-back'),
+            tooltip: 'Back to all notes',
+            extent: 22,
+            foregroundColor: palette.textSecondary,
+            onPressed: onPinnedOnlyChanged == null
+                ? null
+                : () => onPinnedOnlyChanged(false),
+            icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
           ),
         ),
       );
@@ -1380,7 +1371,6 @@ extension on Sidebar {
             count: groups.pinned.length,
             noun: noun,
             height: 16,
-            leading: pin,
             trailing:
                 pinned.length < groups.pinned.length &&
                     onPinnedOnlyChanged != null
@@ -2072,6 +2062,8 @@ class SidebarWindowBar extends StatelessWidget {
                         tall: true,
                         icon: KapyIcons.addRounded,
                         label: label ? 'New $noun' : null,
+                        quiet: true,
+                        sageIcon: true,
                         shortcut: keycap ? newNoteShortcut?.keycapLabel : null,
                         // Without its keycap the button still teaches the
                         // chord, on hover.
@@ -2510,7 +2502,18 @@ class SidebarSearchField extends StatelessWidget {
       child: Semantics(
         label: 'Search shortcut ${shortcut.displayLabel}',
         excludeSemantics: true,
-        child: Keycap(shortcut.keycapLabel),
+        child: Text(
+          shortcut.keycapLabel,
+          key: const ValueKey('sidebar-search-shortcut'),
+          style: TextStyle(
+            fontFamily: AppFonts.mono,
+            fontFamilyFallback: AppFonts.monoFallback,
+            fontSize: 11,
+            height: 14 / 11,
+            fontWeight: FontWeight.w400,
+            color: palette.textTertiary,
+          ),
+        ),
       ),
     );
   }
@@ -2537,16 +2540,8 @@ class SidebarSearchField extends StatelessWidget {
                 height: 40,
                 padding: const EdgeInsets.only(left: 12, right: 8),
                 decoration: BoxDecoration(
-                  color: palette.surfaceBackground,
-                  border: Border.all(color: palette.controlBorder),
-                  borderRadius: BorderRadius.circular(AppRadii.surface),
-                  boxShadow: [
-                    BoxShadow(
-                      color: palette.shadowAt(0x4D),
-                      offset: Offset(0, 1),
-                      blurRadius: 2,
-                    ),
-                  ],
+                  color: palette.fillRest,
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
                   children: [
@@ -2582,9 +2577,7 @@ class SidebarSearchField extends StatelessWidget {
 
     final trailing = this.trailing;
     return Padding(
-      padding: phone
-          ? EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6)
-          : const EdgeInsets.fromLTRB(18, 0, 18, 12),
+      padding: EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6),
       child: Row(
         children: [
           Expanded(
@@ -2602,35 +2595,12 @@ class SidebarSearchField extends StatelessWidget {
                     // A phone's well is a 44 pt target, as every touch target
                     // is, and grows with the text size rather than cutting
                     // the placeholder's letters off.
-                    height: phone ? null : 40,
-                    constraints: phone
-                        ? const BoxConstraints(minHeight: 44)
-                        : null,
-                    padding: phone
-                        ? const EdgeInsets.fromLTRB(14, 6, 10, 6)
-                        : const EdgeInsets.only(left: 14, right: 10),
-                    decoration: phone
-                        ? BoxDecoration(
-                            color: palette.wellBackground,
-                            borderRadius: BorderRadius.circular(12),
-                          )
-                        : BoxDecoration(
-                            color: palette.surfaceBackground,
-                            border: Border.all(
-                              color: palette.controlBorder,
-                              width: 1.5,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              AppRadii.surface,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: palette.shadowAt(0x4D),
-                                offset: Offset(0, 1),
-                                blurRadius: 2,
-                              ),
-                            ],
-                          ),
+                    constraints: const BoxConstraints(minHeight: 44),
+                    padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
+                    decoration: BoxDecoration(
+                      color: palette.fillRest,
+                      borderRadius: BorderRadius.circular(AppRadii.control),
+                    ),
                     child: Row(
                       children: [
                         KapyIcon(
@@ -2645,7 +2615,7 @@ class SidebarSearchField extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: phone ? 16 : 14,
+                              fontSize: 16,
                               color: searching
                                   ? palette.textPrimary
                                   : palette.textTertiary,

@@ -1,0 +1,87 @@
+# The Mac's integration tests on GitHub's macOS runner, with the screenshots
+# they take for a reviewer to look at. Add the `mac` label to a pull request,
+# or run `gh workflow run mac.yml --ref <branch>`, adding
+# `-f tests='integration_test/a_test.dart integration_test/b_test.dart'` to
+# pick the files. A label run uses the pull request's merge commit and runs
+# the default files. A dispatch runs the branch's own copy, so a branch cut
+# before this file landed merges main first. GitHub starts no pull_request run
+# while a pull request has a merge conflict, so until it's resolved the label
+# does nothing.
+#
+# tool/ci/mac_tests.sh runs each file under flutter drive as a debug build,
+# signed ad-hoc because the runner has no account for the project's team. By
+# default that's every integration test the runner can run, and the script
+# lists the ones it leaves out and why. Every screenshot the tests take with
+# integration_test/screenshot.dart uploads as the mac-screenshots artifact.
+# The job fails when a test fails, and the screenshots up to that point still
+# upload. It holds one of the five macOS jobs the organization can run at
+# once, so nothing here runs on a push.
+name: Mac
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Test files to run, separated by spaces (empty runs the default files)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Adding any label starts this workflow, so the group names the label: a run
+# for another label, which skips its job, never cancels a mac run.
+concurrency:
+  group: mac-${{ github.ref }}-${{ github.event.label.name }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  integration:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'mac'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get --enforce-lockfile
+
+      - name: Integration tests on the Mac
+        env:
+          TESTS: ${{ inputs.tests }}
+          FLUTTER_XCODE_CODE_SIGN_IDENTITY: '-'
+          FLUTTER_XCODE_CODE_SIGN_STYLE: Manual
+          FLUTTER_XCODE_DEVELOPMENT_TEAM: ''
+        run: |
+          read -ra tests <<< "$TESTS"
+          bash tool/ci/mac_tests.sh "${tests[@]}"
+
+      - name: List the screenshots
+        if: ${{ !cancelled() }}
+        run: |
+          shopt -s nullglob
+          shots=(build/screenshots/*.png)
+          {
+            echo "### ${#shots[@]} Mac screenshots"
+            for shot in "${shots[@]}"; do echo "- $(basename "$shot" .png)"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Some tests take no screenshots, so an empty folder only warns.
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-screenshots
+          path: build/screenshots/
+          if-no-files-found: warn

@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart'
-    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show SystemChannels;
@@ -875,6 +873,36 @@ void main() {
       for (final note in device.notes.notes)
         if (!note.isShared) note.body,
     ]..sort();
+
+    testWidgets("the share's sheet keeps the owner body's gap under its email "
+        'field: 12 on phones and 10 on the Mac', (tester) async {
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+      });
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      for (final (platform, size, gap) in [
+        (TargetPlatform.iOS, const Size(393, 852), 12.0),
+        (TargetPlatform.macOS, const Size(1100, 720), 10.0),
+      ]) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await open(tester, alice.notes.byId(ours.id)!, alice, whole: true);
+        expect(
+          tester.getTopLeft(find.byKey(const ValueKey('share-role'))).dy -
+              tester
+                  .getBottomLeft(find.byKey(const ValueKey('share-email')))
+                  .dy,
+          gap,
+          reason: '$platform',
+        );
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
 
     testWidgets("an access change from the share's sheet asks first when it "
         'covers more than one note, and its notice is announced', (
@@ -2290,7 +2318,6 @@ void main() {
   testWidgets('on Windows the dialog names its route with its own title, '
       'for the owner and for a viewer', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     final semantics = tester.ensureSemantics();
     late Note note;
@@ -2328,9 +2355,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('share-done')));
       await tester.pumpAndSettle();
     }
-    debugDefaultTargetPlatformOverride = null;
     semantics.dispose();
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('the Mac dialog is S02’s: 480 wide, a clear ⋮ at 16 in a 28 box, '
       'plain rows, a quiet subtitle and label, and a footer of words with Done '

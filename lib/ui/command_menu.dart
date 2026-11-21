@@ -1265,12 +1265,7 @@ class _CommandMenuState extends State<CommandMenu> {
                               widget.taskLabel(task),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: handStyle(
-                                12,
-                                16,
-                                FontWeight.w400,
-                                palette.textSecondary,
-                              ),
+                              style: metaStyle(12.5, 16, palette.textSecondary),
                             ),
                           ),
                         ],
