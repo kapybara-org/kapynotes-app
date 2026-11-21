@@ -750,7 +750,7 @@ void main() {
   });
 
   for (final scale in [1.0, 2.0, 3.1]) {
-    testWidgets('a phone pinned card holds its second line whole at '
+    testWidgets("Home's Pinned card holds its two lines whole at "
         '$scale× text', (tester) async {
       tester.platformDispatcher.textScaleFactorTestValue = scale;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
@@ -764,22 +764,18 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('page-back')));
       await tester.pumpAndSettle();
 
-      final pinned = find.byKey(const ValueKey('phone-pinned'));
-      if (scale == 1) expect(tester.getSize(pinned).height, 142);
-      final room = tester.getRect(
-        find.descendant(of: pinned, matching: find.byType(ClipRect)).first,
+      final card = tester.getRect(
+        find.byKey(const ValueKey('home-pinned-card')),
       );
-      final snippet = tester.getRect(
-        find
-            .descendant(
-              of: pinned,
-              matching: find.byWidgetPredicate(
-                (widget) => widget is Text && widget.maxLines == 2,
-              ),
-            )
-            .first,
+      final lines = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey('home-pinned-card')),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Text && widget.maxLines == 2,
+          ),
+        ),
       );
-      expect(snippet.bottom, lessThanOrEqualTo(room.bottom + 0.5));
+      expect(lines.bottom, lessThanOrEqualTo(card.bottom - 14 + 0.5));
       expect(tester.takeException(), isNull);
     });
   }

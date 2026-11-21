@@ -706,6 +706,7 @@ class _CommandList extends StatelessWidget {
                               color: palette.textTertiary,
                               fontSize: AppTypeScale.badge,
                               fontWeight: FontWeight.w500,
+                              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                               letterSpacing: 0.44,
                             ),
                           ),
@@ -793,7 +794,7 @@ class _SearchField extends StatelessWidget {
         children: [
           KapyIcon(
             KapyIcons.searchRounded,
-            size: 15,
+            size: AppControlMetrics.iconSearch,
             color: palette.textTertiary,
           ),
           const SizedBox(width: 10),
@@ -1106,6 +1107,7 @@ class _TableSizePicker extends StatelessWidget {
                           color: palette.textPrimary,
                           fontSize: AppTypeScale.control,
                           fontWeight: FontWeight.w500,
+                          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                         ),
                       ),
                     ),

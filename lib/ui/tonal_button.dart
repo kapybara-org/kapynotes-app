@@ -7,10 +7,12 @@ import 'keycap.dart';
 /// The calm primary action: a sage label on its own quiet sage tint, flat,
 /// with an optional keycap naming its shortcut.
 ///
-/// New note, Share and Done are tonal buttons in the Riverbank design, and
-/// one that is only an icon is the + beside the notes search. It is the
-/// theme's filled button in other colours: its shape, elevation and timing
-/// come from the theme, and only its colours, size and weight are its own.
+/// New note and Done are tonal buttons in the Riverbank design, and one that
+/// is only an icon is the + beside the notes search. A [quiet] one, like the
+/// page's Share, keeps the same shape with no fill until the pointer is on
+/// it. It is the theme's filled button in other colours: its shape,
+/// elevation and timing come from the theme, and only its colours, size and
+/// weight are its own.
 class TonalButton extends StatelessWidget {
   const TonalButton({
     super.key,
@@ -20,6 +22,7 @@ class TonalButton extends StatelessWidget {
     this.shortcut,
     this.tooltip,
     this.tall = false,
+    this.quiet = false,
   }) : assert(icon != null || label != null),
        assert(
          label != null || tooltip != null,
@@ -39,6 +42,10 @@ class TonalButton extends StatelessWidget {
   /// r3's 32-tall control, for the bars over the notes list and the page:
   /// radius 8, 12 at either end and a 16 icon 4 from its label.
   final bool tall;
+
+  /// Grey text on no fill, filled only under the pointer: an action that is
+  /// there when wanted without competing with the page's main one.
+  final bool quiet;
 
   /// How wide a button with [label], an icon unless [icon] is false and, if
   /// given, [shortcut]'s keycap lays out at the reader's text size, for a bar
@@ -73,7 +80,11 @@ class TonalButton extends StatelessWidget {
   static TextStyle? _labelStyle(BuildContext context) => Theme.of(context)
       .textTheme
       .labelLarge
-      ?.copyWith(fontSize: AppTypeScale.control, fontWeight: FontWeight.w500);
+      ?.copyWith(
+        fontSize: AppTypeScale.control,
+        fontWeight: FontWeight.w500,
+        fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -106,16 +117,31 @@ class TonalButton extends StatelessWidget {
                   end: shortcut == null ? 12 : 6,
                 ),
         ),
-        backgroundColor: KapyTheme.fillStates(
-          palette.tonalBackground,
-          ink: palette.tonalForeground,
-          disabled: palette.controlBackground,
-        ),
+        backgroundColor: quiet
+            ? KapyTheme.fillStates(
+                Colors.transparent,
+                ink: palette.textPrimary,
+                disabled: Colors.transparent,
+              )
+            : KapyTheme.fillStates(
+                palette.tonalBackground,
+                ink: palette.tonalForeground,
+                disabled: palette.controlBackground,
+              ),
         foregroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? palette.textTertiary
+              : quiet
+              ? palette.textSecondary
               : palette.tonalForeground,
         ),
+        side: quiet
+            ? WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.focused)
+                    ? BorderSide(color: palette.selectedBorder, width: 1)
+                    : BorderSide.none,
+              )
+            : null,
         textStyle: WidgetStatePropertyAll(_labelStyle(context)),
       ),
       child: Row(

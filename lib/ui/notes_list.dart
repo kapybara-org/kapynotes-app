@@ -272,26 +272,9 @@ class NoteCardFace extends StatelessWidget {
     this.locked = false,
     this.shared = false,
     this.picking,
-    this.square = false,
   });
 
   static const double height = 84;
-
-  /// A phone's pinned card: taller, with the pin over a two-line snippet.
-  static const double squareHeight = 142;
-
-  /// [squareHeight] at [scaler]'s text size: the card's padding, pin and
-  /// gaps stay put while its title, two lines and meta row grow, so a large
-  /// text size never cuts the second line in half.
-  static double squareHeightFor(TextScaler scaler) {
-    double line(double size, double height) =>
-        scaler.scale(size) * height / size;
-    return squareHeight -
-        (24 + 2 * 18 + 16) +
-        line(19, 24) +
-        2 * line(13.5, 18) +
-        line(12, 16);
-  }
 
   final Note note;
   final NoteGlance glance;
@@ -314,9 +297,6 @@ class NoteCardFace extends StatelessWidget {
 
   /// Ticked or not while notes are being picked; null otherwise.
   final bool? picking;
-
-  /// Drawn as a phone's pinned card, [squareHeight] tall.
-  final bool square;
 
   /// What a card with no line of text says instead, by what the note holds.
   String get _noText {
@@ -345,9 +325,7 @@ class NoteCardFace extends StatelessWidget {
     ].take(2).toList();
 
     final card = Container(
-      padding: square
-          ? const EdgeInsets.fromLTRB(14, 13, 14, 12)
-          : const EdgeInsets.fromLTRB(12, 11, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
       decoration: BoxDecoration(
         color: hovering
             ? Color.alphaBlend(
@@ -355,7 +333,7 @@ class NoteCardFace extends StatelessWidget {
                 tint,
               )
             : tint,
-        borderRadius: square ? BorderRadius.circular(14) : _cardRadius,
+        borderRadius: _cardRadius,
         border: _cardBorder(
           palette,
           selected: selected || picking == true,
@@ -379,14 +357,6 @@ class NoteCardFace extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (square) ...[
-                          KapyIcon(
-                            KapyIcons.pinOutlined,
-                            size: 15,
-                            color: palette.clay,
-                          ),
-                          const SizedBox(height: 8),
-                        ],
                         Padding(
                           padding: EdgeInsets.only(
                             right: picking == null ? 0 : _PickBox.size + 6,
@@ -395,25 +365,18 @@ class NoteCardFace extends StatelessWidget {
                             note.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: square
-                                ? _handwritten(
-                                    19,
-                                    24,
-                                    FontWeight.w400,
-                                    palette.cardTitle,
-                                  )
-                                : _handwritten(
-                                    14,
-                                    18,
-                                    FontWeight.w500,
-                                    palette.cardTitle,
-                                  ),
+                            style: _handwritten(
+                              14,
+                              18,
+                              FontWeight.w500,
+                              palette.cardTitle,
+                            ),
                           ),
                         ),
-                        SizedBox(height: square ? 6 : 3),
+                        const SizedBox(height: 3),
                         Text(
                           result ?? text ?? _noText,
-                          maxLines: square && result == null ? 2 : 1,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: result != null
                               ? TextStyle(
@@ -427,8 +390,8 @@ class NoteCardFace extends StatelessWidget {
                                   color: palette.resultPillText,
                                 )
                               : _figtree(
-                                  square ? 13.5 : 12,
-                                  square ? 18 : 15,
+                                  12,
+                                  15,
                                   FontWeight.w400,
                                   palette.textMuted,
                                 ).copyWith(
@@ -497,7 +460,7 @@ class _MetaRow extends StatelessWidget {
   final List<TagMark> tags;
   final Color ground;
 
-  static const double _glyph = 13;
+  static const double _glyph = 14;
 
   @override
   Widget build(BuildContext context) {
@@ -609,6 +572,7 @@ class NoteListRowFace extends StatelessWidget {
     required this.hovering,
     this.snippet,
     this.place,
+    this.people,
     this.ringed = false,
     this.locked = false,
     this.shared = false,
@@ -624,6 +588,10 @@ class NoteListRowFace extends StatelessWidget {
   /// The folders the note is in, as "Work › Clients", which start the second
   /// line in the date's quieter ink. Null for a note in no folder.
   final String? place;
+
+  /// Who a shared note is open to, at the end of a phone's last line, in
+  /// place of the shared mark.
+  final Widget? people;
   final bool selected;
   final bool hovering;
   final bool ringed;
@@ -637,7 +605,11 @@ class NoteListRowFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final marks = _marksOf(glance.media, locked: locked, shared: shared);
+    final marks = _marksOf(
+      glance.media,
+      locked: locked,
+      shared: shared && people == null,
+    );
     final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
@@ -765,7 +737,7 @@ class NoteListRowFace extends StatelessWidget {
                   children: [
                     if (!touch) const SizedBox(width: TagDots.size + 8),
                     for (final mark in marks) ...[
-                      KapyIcon(mark, size: 13, color: palette.textMuted),
+                      KapyIcon(mark, size: 14, color: palette.textMuted),
                       const SizedBox(width: 5),
                     ],
                     Expanded(
@@ -792,6 +764,10 @@ class NoteListRowFace extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (people case final people?) ...[
+                      const SizedBox(width: 8),
+                      people,
+                    ],
                   ],
                 ),
               ],
@@ -1061,7 +1037,7 @@ class DrawingListRowFace extends StatelessWidget {
                 Row(
                   children: [
                     for (final mark in marks) ...[
-                      KapyIcon(mark, size: 13, color: palette.textMuted),
+                      KapyIcon(mark, size: 14, color: palette.textMuted),
                       const SizedBox(width: 5),
                     ],
                     Flexible(
@@ -1201,7 +1177,7 @@ class SeeAllLink extends StatelessWidget {
               const SizedBox(width: 1),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
-                size: 13,
+                size: 12,
                 color: palette.accentText,
               ),
             ],
@@ -2519,7 +2495,7 @@ class _FilterMenu extends StatelessWidget {
         if (value != null) ...[value, const SizedBox(width: 6)],
         KapyIcon(
           KapyIcons.chevronRightRounded,
-          size: 13,
+          size: 12,
           color: palette.textTertiary,
         ),
       ],

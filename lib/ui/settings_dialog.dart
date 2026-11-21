@@ -2862,6 +2862,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                     fontFamily: 'Shantell Sans',
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                     height: 26 / 20,
                     color: palette.textPrimary,
                   ),
@@ -3102,6 +3103,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                     fontFamily: 'Shantell Sans',
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                     height: 22 / 18,
                     color: palette.textPrimary,
                   ),
@@ -3921,7 +3923,7 @@ class _ShortcutFilter extends StatelessWidget {
                     padding: const EdgeInsets.only(left: 10, right: 8),
                     child: KapyIcon(
                       KapyIcons.searchRounded,
-                      size: 15,
+                      size: AppControlMetrics.iconSearch,
                       color: palette.textSecondary,
                     ),
                   ),
@@ -4441,7 +4443,7 @@ class _SheetPage extends StatelessWidget {
                     onPressed: back,
                     tooltip: 'Back',
                     color: palette.textSecondary,
-                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 17),
+                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 20),
                   ),
                 Expanded(
                   child: Text(
