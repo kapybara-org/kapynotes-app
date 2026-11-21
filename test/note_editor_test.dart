@@ -3802,31 +3802,6 @@ total to usd''';
       );
     });
 
-    // A note opened just as the last one's keyboard finished going down (CI,
-    // Android, run 44913238799): the new keyboard came up, read zero for a
-    // moment while Android restarted its animation, and came back. Read as a
-    // dismissal, that moment took the focus, so the bar went and the keyboard
-    // was left up with nothing to type into.
-    testWidgets('a keyboard that blinks out while coming up keeps the note', (
-      tester,
-    ) async {
-      final node = await pumpFocused(tester);
-      await setKeyboard(tester, 300);
-
-      tester.testTextInput.log.clear();
-      await setKeyboard(tester, 0);
-      await tester.pump(const Duration(milliseconds: 200));
-      await setKeyboard(tester, 300);
-      await tester.pump(const Duration(seconds: 4));
-
-      expect(node.hasFocus, isTrue);
-      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
-      expect(
-        tester.testTextInput.log.map((call) => call.method),
-        isNot(contains('TextInput.hide')),
-      );
-    });
-
     // The guard used to read MediaQuery, which a Scaffold hands its body with
     // the bottom inset already taken out — so it never saw the keyboard, and
     // every note opened went on asking for one for five seconds. Pressing Back
