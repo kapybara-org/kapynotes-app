@@ -279,10 +279,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('page-back')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('shared-page')), findsNothing);
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('phone-list-title'))).data,
-      'Notes',
-    );
+    expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-shared-card')), findsOneWidget);
   });
 }
