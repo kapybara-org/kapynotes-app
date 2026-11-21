@@ -170,6 +170,13 @@ void main() {
     await tap(tester, 'tasks-done');
     expect(find.byKey(const ValueKey('tasks-just-done')), findsOneWidget);
     expect(find.text('New since you chose'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tasks-pair-right')),
+        matching: find.text('Split the Acme invoice in two'),
+      ),
+      findsOneWidget,
+    );
     await shot(tester, 'window-d4-after-done');
 
     clock = DateTime(2026, 11, 19, 18, 30);
