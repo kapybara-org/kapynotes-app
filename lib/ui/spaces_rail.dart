@@ -160,14 +160,14 @@ class SpacesRail extends StatelessWidget {
                       SliverToBoxAdapter(
                         child: Column(
                           children: [
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 8),
                             destination(
                               LibrarySpace.notes,
                               icon: KapyIcons.noteOutlined,
                               label: 'Notes',
                             ),
                             if (openTasks != null) ...[
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 16),
                               destination(
                                 LibrarySpace.tasks,
                                 icon: KapyIcons.tasksOutlined,
@@ -180,14 +180,14 @@ class SpacesRail extends StatelessWidget {
                                 badge: openTasks,
                               ),
                             ],
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 16),
                             destination(
                               LibrarySpace.drawings,
                               icon: KapyIcons.penRounded,
                               label: 'Drawings',
                             ),
                             if (invitations != null) ...[
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 16),
                               destination(
                                 LibrarySpace.shared,
                                 icon: KapyIcons.groupOutlined,
@@ -241,8 +241,8 @@ class SpacesRail extends StatelessWidget {
 /// The words on the rail: a space's name under its tile, and the streak's
 /// run of days under its flame.
 TextStyle _railLabel(Color color, {required bool strong}) => TextStyle(
-  fontSize: AppTypeScale.railLabel,
-  height: 14 / 11,
+  fontSize: AppTypeScale.caption,
+  height: 16 / 12,
   fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
   color: color,
   fontFeatures: const [FontFeature.tabularFigures()],
@@ -340,7 +340,7 @@ class _RailItemState extends State<_RailItem> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 tile,
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Text(
                   widget.label,
                   maxLines: 1,
@@ -375,8 +375,8 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      height: 17,
-      constraints: const BoxConstraints(minWidth: 17),
+      height: 16,
+      constraints: const BoxConstraints(minWidth: 16),
       // Inside the ring, which the decoration adds to it.
       padding: const EdgeInsets.symmetric(horizontal: 5),
       alignment: Alignment.center,
@@ -390,8 +390,8 @@ class _Badge extends StatelessWidget {
         count > 99 ? '99+' : '$count',
         textScaler: TextScaler.noScaling,
         style: TextStyle(
-          fontSize: AppTypeScale.badge,
-          height: 1,
+          fontSize: AppTypeScale.micro,
+          height: 12 / 11,
           fontWeight: FontWeight.w500,
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
@@ -441,12 +441,12 @@ class _RailStreak extends StatelessWidget {
                   alignment: Alignment.bottomCenter,
                   child: KapyIcon(
                     KapyIcons.fireOutlined,
-                    size: 18,
+                    size: 16,
                     strokeWidth: 1.7,
                     color: Color.lerp(palette.textTertiary, palette.clay, t),
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   days == 1 ? '1 day' : '$days days',
                   maxLines: 1,

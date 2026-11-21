@@ -8,6 +8,7 @@ import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/sync/aead.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
@@ -1592,6 +1593,7 @@ void main() {
         final workspace = EditorWorkspace(device.store)
           ..load(
             availableNoteIds: device.notes.notes.map((note) => note.id),
+            today: WritingStreak.dayOf(device.notes.now()),
             openingNoteId: device.notes.lastEditedNote?.id,
           );
         expect(workspace.openNoteIds, {written.id});

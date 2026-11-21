@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import '../ai/kapy_chat_book.dart';
 import '../ai/kapy_chat_records.dart';
+import '../data/folders.dart';
+import '../data/note_days.dart';
 import '../data/tags.dart';
 import '../data/task_index.dart';
 import 'doc_store.dart';
@@ -12,11 +14,15 @@ import 'sync_api.dart';
 import 'vault.dart';
 
 /// Keeps the account's record stream in step with this device: the task
-/// index, read from changed notes' checklist lines, the tags and, for an
-/// account with Pro, the Kapy AI chats. One pass sends what they owe and
-/// takes in what the server has, under one cursor. A payload with a `kind`
-/// is a tag's, a note's tags, a chat or a chat's message, one without is a
-/// task. See `tasks.ts`, `tags.ts` and `chats.ts` in packages/contract.
+/// index, read from changed notes' checklist lines, the tags, the folders
+/// and, for an account with Pro, the Kapy AI chats. One pass sends what they
+/// owe and takes in what the server has, under one cursor. A payload with a
+/// `kind` is a tag's, a note's tags, a folder's, a note's place in one, a
+/// chat or a chat's message, one without is a task. See `tasks.ts`,
+/// `tags.ts`, `folders.ts` and `chats.ts` in packages/contract.
+///
+/// Without [folders], a build from before them, folder records are kept by
+/// id alone, as any kind this build does not know.
 ///
 /// Chats ride it only while [chatsOn] says so, the plan's answer. Until then
 /// nothing of a chat is sent or taken in, and when it turns on the stream is
@@ -31,6 +37,8 @@ class TaskSync {
     required Vault vault,
     required TaskIndex index,
     required TagStore tags,
+    FolderStore? folders,
+    NoteDayStore? days,
     required DocStore docs,
     required bool Function(String noteId) noteIsLive,
     required Iterable<String> Function() deletedNotes,
@@ -41,12 +49,16 @@ class TaskSync {
        _vault = vault,
        _index = index,
        _tags = tags,
+       _folders = folders,
+       _days = days,
        _docs = docs,
        _noteIsLive = noteIsLive,
        _deletedNotes = deletedNotes,
        _chats = chats,
        _chatsOn = chatsOn ?? (() => true) {
     _tags.addListener(_onTags);
+    _folders?.addListener(_onFolders);
+    _days?.addListener(_onDays);
     _chats
       ?..attach(() => !_disposed && _chatsOn(), run, _chatRecordId)
       ..addListener(_onChats);
@@ -56,6 +68,8 @@ class TaskSync {
   final Vault _vault;
   final TaskIndex _index;
   final TagStore _tags;
+  final FolderStore? _folders;
+  final NoteDayStore? _days;
   final DocStore _docs;
   final bool Function(String noteId) _noteIsLive;
   final KapyChatBook? _chats;
@@ -67,6 +81,22 @@ class TaskSync {
   /// Each tagged note's record id under this account's key, both ways.
   final Map<String, String> _noteTagsIds = {};
   final Map<String, String> _noteOfRecord = {};
+
+  /// Each filed note's placement record id under this account's key, both
+  /// ways, and whether every note the folders hold has one yet this pass.
+  final Map<String, String> _placementIds = {};
+  final Map<String, String> _noteOfPlacement = {};
+  bool _placementsNamed = false;
+
+  /// Each dated note's day record id under this account's key, both ways, and
+  /// whether every note the days hold has one yet this pass.
+  final Map<String, String> _dayIds = {};
+  final Map<String, String> _noteOfDay = {};
+  bool _daysNamed = false;
+
+  /// The server's clock as of the last push it answered, which a clock that
+  /// runs ahead here can't move on (see `FolderStore.prune`).
+  int? _serverNow;
 
   /// How long [schedule] waits, so a burst of typing is one pass.
   final Duration delay;
@@ -80,6 +110,14 @@ class TaskSync {
 
   void _onTags() {
     if (_tags.owes) schedule();
+  }
+
+  void _onFolders() {
+    if (_folders?.owes ?? false) schedule();
+  }
+
+  void _onDays() {
+    if (_days?.owes ?? false) schedule();
   }
 
   void _onChats() {
@@ -132,8 +170,8 @@ class TaskSync {
   }
 
   /// Why the server last refused what this sent, until a pass goes through.
-  /// Tasks, tags and chats travel here, so the sync status says so rather
-  /// than reading as synced without them.
+  /// Tasks, tags, folders and chats travel here, so the sync status says so
+  /// rather than reading as synced without them.
   String? get refusal => _refusal;
   String? _refusal;
 
@@ -158,7 +196,7 @@ class TaskSync {
         _refused(
           error.code == 'too many tasks'
               ? 'Too many tasks to sync. Delete some to sync again.'
-              : 'Tasks and tags could not sync (${error.code}).',
+              : 'Tasks, tags and folders could not sync (${error.code}).',
         );
         return;
       } on SyncException catch (error) {
@@ -175,6 +213,8 @@ class TaskSync {
   /// task it is about under the same id.
   Future<void> _pass() async {
     _rekey();
+    _placementsNamed = false;
+    _daysNamed = false;
     final rewind = (_chats?.skipped ?? false) && _chatsSync;
     if (rewind && _index.cursor > 0) {
       _index.recordCursor(0);
@@ -193,6 +233,8 @@ class TaskSync {
       } else {
         _tags.forgetNote(noteId);
       }
+      _folders?.forgetNote(noteId);
+      _days?.forgetNote(noteId);
     }
     await _push();
   }
@@ -212,14 +254,15 @@ class TaskSync {
     );
   }
 
-  /// Sends what the task index and the tags owe, then what the chats owe, in
-  /// chunks of their own: a push over the account's limit is refused whole,
-  /// and a chunk that held a task or a tag with the chats would take it down
-  /// with them. A note's tags wait for the note: none go up for one the
-  /// server has never had. A record that loses comes back as the server
-  /// holds it, is merged in with a later `updatedAt`, and goes up again: a
-  /// few rounds at most, since only another device writing the same record
-  /// in the same moment can make one lose twice.
+  /// Sends what the task index and the tags owe, then what the folders owe,
+  /// then what the chats owe, each in chunks of their own: a push over the
+  /// account's limit is refused whole, and a chunk that held a task or a tag
+  /// with the folders or the chats would take it down with them. A note's
+  /// tags wait for the note: none go up for one the server has never had. A
+  /// record that loses comes back as the server holds it, is merged in with
+  /// a later `updatedAt`, and goes up again: a few rounds at most, since
+  /// only another device writing the same record in the same moment can make
+  /// one lose twice.
   Future<void> _push() async {
     for (var round = 0; round < 3 && !_disposed; round++) {
       final owed = [
@@ -239,6 +282,30 @@ class TaskSync {
               acknowledge: () => _tags.acknowledge(item),
             ),
       ];
+      final folders = _folders;
+      final owedFolders = [
+        if (folders != null)
+          for (final item in folders.owed)
+            (
+              id: item.kind == FolderRecord.kind
+                  ? item.key
+                  : _placementId(item.key),
+              updatedAt: item.updatedAt,
+              payload: item.payload,
+              acknowledge: () => folders.acknowledge(item),
+            ),
+      ];
+      final days = _days;
+      final owedDays = [
+        if (days != null)
+          for (final item in days.owed)
+            (
+              id: _dayId(item.key),
+              updatedAt: item.updatedAt,
+              payload: item.payload,
+              acknowledge: () => days.acknowledge(item),
+            ),
+      ];
       final owedChats = [
         if (_chatsSync)
           for (final item in _chats!.owed())
@@ -249,9 +316,14 @@ class TaskSync {
               acknowledge: () => _chats.acknowledge(item),
             ),
       ];
-      if (owed.isEmpty && owedChats.isEmpty) return;
+      if (owed.isEmpty &&
+          owedFolders.isEmpty &&
+          owedDays.isEmpty &&
+          owedChats.isEmpty) {
+        return;
+      }
       final chunks = [
-        for (final list in [owed, owedChats])
+        for (final list in [owed, owedFolders, owedDays, owedChats])
           for (var i = 0; i < list.length; i += tasksPushMax)
             list.sublist(
               i,
@@ -281,8 +353,11 @@ class TaskSync {
           );
         }
         final result = await _api.pushTasks(records);
+        _serverNow = result.serverTime?.millisecondsSinceEpoch ?? _serverNow;
         _index.hold();
         _tags.hold();
+        _folders?.hold();
+        _days?.hold();
         _chats?.hold();
         try {
           for (final item in chunk) {
@@ -291,6 +366,8 @@ class TaskSync {
         } finally {
           _index.release();
           _tags.release();
+          _folders?.release();
+          _days?.release();
           _chats?.release();
         }
         for (final conflict in result.conflicts) {
@@ -307,6 +384,8 @@ class TaskSync {
       if (!_chatsSync && page.records.isNotEmpty) _chats?.markSkipped();
       _index.hold();
       _tags.hold();
+      _folders?.hold();
+      _days?.hold();
       _chats?.hold();
       try {
         for (final record in page.records) {
@@ -316,20 +395,26 @@ class TaskSync {
       } finally {
         _index.release();
         _tags.release();
+        _folders?.release();
+        _days?.release();
         _chats?.release();
       }
       if (!page.hasMore) break;
     }
     _tags.settle();
+    final serverNow = _serverNow;
+    if (serverNow != null) _folders?.prune(serverNow);
   }
 
-  /// One record as the server holds it, to the task index or the tags by
-  /// its `kind`. Skipped if it cannot be opened, or if a task or a note's
-  /// tags does not derive its own id: a payload moved onto another record's
-  /// id is not taken for that record.
+  /// One record as the server holds it, to the task index, the tags or the
+  /// folders by its `kind`. Skipped if it cannot be opened, or if a task, a
+  /// note's tags or a placement does not derive its own id, or a folder does
+  /// not name it: a payload moved onto another record's id is not taken for
+  /// that record.
   Future<void> _take(WireTaskRecord record) async {
     final updatedAt = record.updatedAt.millisecondsSinceEpoch;
     final payload = record.payload;
+    final folders = _folders;
     if (payload == null) {
       _index.applyRemoteDelete(record.id, updatedAt);
       _tags.applyRemoteDelete(
@@ -337,6 +422,13 @@ class TaskSync {
         updatedAt,
         noteId: _noteOfRecord[record.id] ?? _findNoteOf(record.id),
       );
+      folders?.applyRemoteDelete(
+        record.id,
+        updatedAt,
+        noteId: _placementNote(record.id),
+      );
+      final dayNote = _dayNote(record.id);
+      if (dayNote != null) _days?.applyRemoteDelete(dayNote, updatedAt);
       if (_chatsSync) {
         final key = _chats!.keyOfRecord(record.id);
         if (key != null) _chats.applyRemoteDelete(key, updatedAt);
@@ -402,6 +494,32 @@ class TaskSync {
           return;
         }
         _chats!.applyRemotePart(part, updatedAt);
+      case FolderRecord.kind when folders != null:
+        _tags.dropUnknown(record.id);
+        final folder = FolderRecord.fromPayload(record.id, decoded);
+        if (folder == null) {
+          debugPrint('KapyNotes: folder record ${record.id} could not be read');
+          return;
+        }
+        folders.applyRemoteFolder(folder, updatedAt);
+      case NoteFolder.kind when folders != null:
+        _tags.dropUnknown(record.id);
+        final note = NoteFolder.fromPayload(decoded);
+        if (note == null || _placementId(note.noteId) != record.id) {
+          debugPrint(
+            'KapyNotes: folder record ${record.id} is not one of ours',
+          );
+          return;
+        }
+        folders.applyRemoteNote(note, updatedAt);
+      case NoteDay.kind when _days != null:
+        _tags.dropUnknown(record.id);
+        final day = NoteDay.fromPayload(decoded);
+        if (day == null || _dayId(day.noteId) != record.id) {
+          debugPrint('KapyNotes: day record ${record.id} is not one of ours');
+          return;
+        }
+        _days.applyRemote(day, updatedAt);
       default:
         _tags.keepUnknown(record.id, updatedAt);
     }
@@ -421,6 +539,42 @@ class TaskSync {
     return id;
   }();
 
+  String _placementId(String noteId) => _placementIds[noteId] ??= () {
+    final id = _vault.noteFolderRecordId(noteId);
+    _noteOfPlacement[id] = noteId;
+    return id;
+  }();
+
+  String _dayId(String noteId) => _dayIds[noteId] ??= () {
+    final id = _vault.noteDayRecordId(noteId);
+    _noteOfDay[id] = noteId;
+    return id;
+  }();
+
+  /// The note a deleted record gave a day to, if this device holds its day.
+  String? _dayNote(String recordId) {
+    final days = _days;
+    if (days == null) return null;
+    if (!_daysNamed) {
+      days.noteIds.forEach(_dayId);
+      _daysNamed = true;
+    }
+    return _noteOfDay[recordId];
+  }
+
+  /// The note a deleted record placed in a folder, if this device holds its
+  /// placement. Every placement is named once a pass, so a pull full of
+  /// other kinds' deletions costs one lookup each.
+  String? _placementNote(String recordId) {
+    final folders = _folders;
+    if (folders == null) return null;
+    if (!_placementsNamed) {
+      folders.noteIds.forEach(_placementId);
+      _placementsNamed = true;
+    }
+    return _noteOfPlacement[recordId];
+  }
+
   /// The note a deleted record held the tags of, if this device has a tags
   /// record for it that has not been named under this account yet.
   String? _findNoteOf(String recordId) {
@@ -432,6 +586,8 @@ class TaskSync {
 
   void dispose() {
     _tags.removeListener(_onTags);
+    _folders?.removeListener(_onFolders);
+    _days?.removeListener(_onDays);
     _chats
       ?..removeListener(_onChats)
       ..detach();

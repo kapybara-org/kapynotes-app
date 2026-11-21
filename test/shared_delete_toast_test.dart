@@ -141,11 +141,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Opens the first, ⇧-clicks it to start picking, then picks the rest
+  /// with plain clicks, as a click picks while notes are picked.
   Future<void> deletePicked(WidgetTester tester, List<String> titles) async {
-    for (final (i, title) in titles.indexed) {
-      if (i > 0) await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    final first = find.widgetWithText(NoteRow, titles.first);
+    await tester.tap(first);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tap(first);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    for (final title in titles.skip(1)) {
       await tester.tap(find.widgetWithText(NoteRow, title));
-      if (i > 0) await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
       await tester.pumpAndSettle();
     }
     await tester.tap(find.byKey(const ValueKey('picked-delete')));
