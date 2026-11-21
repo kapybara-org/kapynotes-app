@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/folders.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
@@ -672,6 +673,55 @@ void main() {
       expect(d.folders.tree.folderOf(note.id), work.id);
       expect(d.folders.owed.map((r) => r.key).toSet(), {work.id, note.id});
       d.dispose();
+    });
+  });
+
+  group('a blank new note', () {
+    Note blank(Device d) =>
+        d.notes.create(body: Note.blankBody, authored: false);
+    Iterable<String> pushed() => server.taskPushes.expand((ids) => ids);
+
+    test('filed and deleted while blank, sends nothing of its place', () async {
+      final (laptop, phone) = await pair();
+      final left = blank(laptop);
+      final work = laptop.folders.create('Work')!;
+      laptop.folders.file([left.id], work.id);
+      await laptop.pass();
+      expect(pushed(), isNot(contains(placementOf(left.id))));
+
+      laptop.notes.deleteAll([left.id]);
+      await passes([laptop, phone]);
+      expect(server.rows, isEmpty);
+      expect(stored().keys.toSet(), {work.id});
+      expect(pushed(), isNot(contains(placementOf(left.id))));
+      expect(laptop.folders.owed, isEmpty);
+      expect(laptop.folders.tree.pathOfNote(left.id), isEmpty);
+      laptop.dispose();
+      phone.dispose();
+    });
+
+    test('filed while blank, its place goes with its first letter', () async {
+      final (laptop, phone) = await pair();
+      final filed = blank(laptop);
+      final work = laptop.folders.create('Work')!;
+      laptop.folders.file([filed.id], work.id);
+      await laptop.pass();
+      expect(server.rows, isEmpty);
+      expect(stored().keys.toSet(), {work.id});
+      expect(laptop.folders.owed.map((item) => item.key), [filed.id]);
+
+      laptop.notes.updateBody(filed.id, '${Note.blankBody}Plan');
+      await laptop.pass();
+      expect(server.rows.keys.toSet(), {filed.id});
+      expect(stored().keys.toSet(), {work.id, placementOf(filed.id)});
+      expect(laptop.folders.owed, isEmpty);
+
+      await phone.pass();
+      expect(phone.folders.tree.pathOfNote(filed.id).map((f) => f.name), [
+        'Work',
+      ]);
+      laptop.dispose();
+      phone.dispose();
     });
   });
 }

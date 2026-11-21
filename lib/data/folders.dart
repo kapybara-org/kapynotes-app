@@ -826,6 +826,11 @@ class FolderStore extends ChangeNotifier {
     }
   }
 
+  /// A note the server never had takes its placement with it, unsent.
+  void dropNote(String noteId) {
+    if (_notes.slots.remove(noteId) != null) _changed();
+  }
+
   /// Lets go of [noteId]'s placement once it is a delete the server has and
   /// this device's clock has passed: a filing made from then on outranks it
   /// by its own time.
