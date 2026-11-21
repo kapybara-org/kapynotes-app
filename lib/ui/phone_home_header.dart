@@ -182,15 +182,11 @@ class _Title extends StatelessWidget {
 /// Home on a phone, which a sideways swipe turns between Notes and Tasks.
 /// A row's own swipe, deeper in the tree, wins the gesture first.
 class PhoneHomeSwipe extends StatefulWidget {
-  const PhoneHomeSwipe({
-    super.key,
-    required this.onNotes,
-    required this.onTasks,
-    required this.child,
-  });
+  const PhoneHomeSwipe({super.key, required this.onTurn, required this.child});
 
-  final VoidCallback onNotes;
-  final VoidCallback onTasks;
+  /// Called with true for a swipe left, to Tasks, and false for a swipe
+  /// right, to Notes. Null away from Home, where a swipe does nothing.
+  final ValueChanged<bool>? onTurn;
   final Widget child;
 
   /// How far, or how fast, a swipe has to go to turn the page.
@@ -208,14 +204,19 @@ class _PhoneHomeSwipeState extends State<PhoneHomeSwipe> {
     final velocity = details.primaryVelocity ?? 0;
     final dx = velocity.abs() >= PhoneHomeSwipe.speed ? velocity : _dx;
     if (dx.abs() < PhoneHomeSwipe.distance) return;
-    dx < 0 ? widget.onTasks() : widget.onNotes();
+    widget.onTurn?.call(dx < 0);
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onHorizontalDragStart: (_) => _dx = 0,
-    onHorizontalDragUpdate: (details) => _dx += details.primaryDelta ?? 0,
-    onHorizontalDragEnd: _end,
-    child: widget.child,
-  );
+  Widget build(BuildContext context) {
+    final on = widget.onTurn != null;
+    return GestureDetector(
+      onHorizontalDragStart: on ? (_) => _dx = 0 : null,
+      onHorizontalDragUpdate: on
+          ? (details) => _dx += details.primaryDelta ?? 0
+          : null,
+      onHorizontalDragEnd: on ? _end : null,
+      child: widget.child,
+    );
+  }
 }

@@ -3629,6 +3629,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _pinnedOnly = false;
     _clearFilter();
     _picks.clear();
+    _openSpace(space);
+  }
+
+  /// Turns a phone's Home between Notes and Tasks. Unlike [_showSpace] it
+  /// leaves the Notes list as it was, its filter, Pinned and picks waiting
+  /// for the way back; the bar is how the list goes back to All notes.
+  void _showHome({required bool tasks}) {
+    if (tasks == _tasksMode) return;
+    _openSpace(tasks ? LibrarySpace.tasks : LibrarySpace.notes);
+  }
+
+  /// What opening [space] sets up, whether or not the list was reset.
+  void _openSpace(LibrarySpace space) {
     setState(() {
       _phonePageOpen = false;
       _tasksMode = space == LibrarySpace.tasks;
@@ -4645,6 +4658,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (didPop) return;
             if (pageOpen) {
               _phoneNavigator.currentState?.maybePop();
+            } else if (_tasksMode) {
+              _showHome(tasks: false);
             } else if (_picks.on) {
               _picks.clear();
             } else if (_showingPinnedOnly) {
@@ -4719,9 +4734,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         listenable: _toolbarSources,
         builder: (context, _) {
           final tasks = _tasksMode ? _taskController : null;
-          final page = tasks == null
-              ? _phoneNotes()
-              : Column(
+          // The Notes list stays built under Tasks, out of sight, so it comes
+          // back scrolled and narrowed as it was left.
+          final page = Stack(
+            fit: StackFit.expand,
+            children: [
+              Visibility(
+                visible: tasks == null,
+                maintainState: true,
+                child: _phoneNotes(),
+              ),
+              if (tasks != null)
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _phoneHomeHeader(),
@@ -4737,7 +4761,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                     ),
                   ],
-                );
+                ),
+            ],
+          );
           return PhoneSpaces(
             space: _space,
             onSelected: _showSpace,
@@ -4776,13 +4802,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onCreateAction: _createFromPhone,
             child: SafeArea(
               bottom: false,
-              child: _taskController != null && _phoneHome
-                  ? PhoneHomeSwipe(
-                      onNotes: () => _showSpace(LibrarySpace.notes),
-                      onTasks: () => _showSpace(LibrarySpace.tasks),
-                      child: page,
-                    )
-                  : page,
+              child: PhoneHomeSwipe(
+                onTurn: _taskController != null && _phoneHome
+                    ? (tasks) => _showHome(tasks: tasks)
+                    : null,
+                child: page,
+              ),
             ),
           );
         },
@@ -4822,10 +4847,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     count: _tasksMode
         ? _taskController?.read().open.length ?? 0
         : _matchingCount,
-    onNotes: () => _showSpace(LibrarySpace.notes),
-    onTasks: _taskController == null
-        ? null
-        : () => _showSpace(LibrarySpace.tasks),
+    onNotes: () => _showHome(tasks: false),
+    onTasks: _taskController == null ? null : () => _showHome(tasks: true),
     streak: widget.notes.streak,
     user: widget.account?.user,
     onSettings: _showSettings,

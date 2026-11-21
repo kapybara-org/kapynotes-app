@@ -129,6 +129,12 @@ void main() {
     expect(tester.getRect(notesTitle).width, 100, reason: 'Tasks stays put');
   });
 
+  testWidgets('each title is at least 44 pt tall to tap', (tester) async {
+    await pumpHeader(tester);
+    expect(tester.getSize(notesTitle).height, greaterThanOrEqualTo(44));
+    expect(tester.getSize(tasksTitle).height, greaterThanOrEqualTo(44));
+  });
+
   testWidgets('a tap on either title asks for it', (tester) async {
     final taps = await pumpHeader(tester);
     await tester.tap(tasksTitle);
