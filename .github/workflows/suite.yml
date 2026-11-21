@@ -1,0 +1,72 @@
+# The whole test suite on Linux, dispatched on a branch: pick the branch under
+# "Use workflow from" in the Actions tab, or run
+# `gh workflow run suite.yml --ref <branch>`. A branch with no pull request
+# starts no other workflow, so a try branch costs no macOS job, and nothing
+# needs a machine of its own to run the suite. The branch needs this file, so a
+# branch cut before it landed merges main first.
+#
+# It runs flutter analyze, then the whole suite, and tool/ci/compare.py checks
+# the result against tool/ci/linux-baseline.tsv: the tests that fail on Linux
+# because they assume a macOS host. Golden mismatches are left to the Goldens
+# workflow, which renders on macOS. The job fails on an analyzer issue, on a
+# failure the baseline doesn't list, or on a run that didn't finish. When a
+# baseline test starts passing, compare.py says so; delete its line.
+name: Suite
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: suite-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # test/test_fonts.dart and table_controls_test.dart read macOS font paths.
+      # Liberation Sans has Arial's metrics, and DejaVu Sans has the keycap
+      # glyphs Apple Symbols supplies.
+      - name: Font stand-ins at the macOS paths
+        run: |
+          dv=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+          lib=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf
+          [ -f "$dv" ] && [ -f "$lib" ] || { sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq fonts-dejavu-core fonts-liberation; }
+          sudo mkdir -p /System/Library/Fonts/Supplemental
+          sudo ln -sfn "$dv" "/System/Library/Fonts/Apple Symbols.ttf"
+          sudo ln -sfn "$lib" /System/Library/Fonts/Supplemental/Arial.ttf
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get --enforce-lockfile
+
+      - run: flutter analyze --no-pub
+
+      - name: Suite against the baseline
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          flutter test --no-pub --concurrency="$(nproc)" --reporter failures-only --file-reporter json:suite.json || true
+          python3 tool/ci/compare.py suite.json tool/ci/linux-baseline.tsv | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-report
+          path: suite.json
+          if-no-files-found: ignore
