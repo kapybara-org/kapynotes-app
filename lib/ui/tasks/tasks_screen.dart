@@ -722,30 +722,41 @@ class TasksScreenState extends State<TasksScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    'Done',
-                    style: handStyle(
-                      32,
-                      40,
-                      FontWeight.w700,
-                      palette.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '${board.done.length} completed',
-                    style: uiStyle(
-                      13,
-                      16,
-                      FontWeight.w600,
-                      palette.textTertiary,
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final titleStyle = handStyle(
+                    32,
+                    40,
+                    FontWeight.w700,
+                    palette.textPrimary,
+                  );
+                  final countStyle = uiStyle(
+                    13,
+                    16,
+                    FontWeight.w600,
+                    palette.textTertiary,
+                  );
+                  final countText = '${board.done.length} completed';
+                  final title = Text('Done', style: titleStyle);
+                  final count = Text(countText, style: countStyle);
+                  if (!_fitsOnOneLine(
+                    context,
+                    constraints.maxWidth,
+                    ('Done', titleStyle),
+                    (countText, countStyle),
+                    10,
+                  )) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [title, count],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [title, const SizedBox(width: 10), count],
+                  );
+                },
               ),
               const SizedBox(height: 6),
               Text(
@@ -867,71 +878,75 @@ class _AddRow extends StatelessWidget {
         color: ink.card,
         borderRadius: BorderRadius.circular(phone ? 10 : 9),
       ),
-      child: Row(
-        children: [
-          KapyIcon(
-            KapyIcons.addRounded,
-            size: 16,
-            color: focused ? ink.sage : ink.quiet,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: CallbackShortcuts(
-              bindings: {
-                const SingleActivator(LogicalKeyboardKey.escape): focus.unfocus,
-              },
-              child: TextField(
-                key: const ValueKey('tasks-add-field'),
-                controller: controller,
-                focusNode: focus,
-                onSubmitted: (_) => onSubmit(),
-                onEditingComplete: () {},
-                textInputAction: TextInputAction.done,
-                cursorColor: ink.sage,
-                style: words,
-                decoration: InputDecoration(
-                  isDense: true,
-                  filled: false,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  hintText: phone ? 'Add a task' : 'Add a task…',
-                  hintStyle: words.copyWith(color: ink.quiet),
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: phone ? 12 : 11,
-                  ),
-                ),
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            KapyIcon(
+              KapyIcons.addRounded,
+              size: 16,
+              color: focused ? ink.sage : ink.quiet,
             ),
-          ),
-          const SizedBox(width: 8),
-          _NotePicker(
-            target: target,
-            labelOf: labelOf,
-            choices: choices,
-            onChoose: onChoose,
-            chevron: !focused,
-            phone: phone,
-          ),
-          if (!phone) ...[
             const SizedBox(width: 10),
-            ExcludeSemantics(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Text(
-                  focused ? '↵' : shortcut ?? '',
-                  style: TextStyle(
-                    fontFamily: AppFonts.mono,
-                    fontFamilyFallback: AppFonts.monoFallback,
-                    fontSize: 11,
-                    height: 14 / 11,
-                    color: ink.quiet,
+            Expanded(
+              child: CallbackShortcuts(
+                bindings: {
+                  const SingleActivator(LogicalKeyboardKey.escape):
+                      focus.unfocus,
+                },
+                child: TextField(
+                  key: const ValueKey('tasks-add-field'),
+                  controller: controller,
+                  focusNode: focus,
+                  onSubmitted: (_) => onSubmit(),
+                  onEditingComplete: () {},
+                  textInputAction: TextInputAction.done,
+                  cursorColor: ink.sage,
+                  style: words,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    hintText: phone ? 'Add a task' : 'Add a task…',
+                    hintStyle: words.copyWith(color: ink.quiet),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: phone ? 12 : 11,
+                    ),
                   ),
                 ),
               ),
             ),
+            const SizedBox(width: 8),
+            _NotePicker(
+              target: target,
+              labelOf: labelOf,
+              choices: choices,
+              onChoose: onChoose,
+              chevron: !focused,
+              phone: phone,
+              maxWidth: math.min(200, constraints.maxWidth * taskMarkShare),
+            ),
+            if (!phone) ...[
+              const SizedBox(width: 10),
+              ExcludeSemantics(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    focused ? '↵' : shortcut ?? '',
+                    style: TextStyle(
+                      fontFamily: AppFonts.mono,
+                      fontFamilyFallback: AppFonts.monoFallback,
+                      fontSize: 11,
+                      height: 14 / 11,
+                      color: ink.quiet,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -947,6 +962,7 @@ class _NotePicker extends StatelessWidget {
     required this.onChoose,
     required this.chevron,
     required this.phone,
+    required this.maxWidth,
   });
 
   final Note? target;
@@ -957,6 +973,9 @@ class _NotePicker extends StatelessWidget {
 
   /// Whether this sits in a phone's row, where a target is 44 pt tall.
   final bool phone;
+
+  /// The widest the chip grows, so the field beside it keeps most of the row.
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -969,13 +988,16 @@ class _NotePicker extends StatelessWidget {
         canRequestFocus: false,
         borderRadius: BorderRadius.circular(phone ? 8 : 6),
         onTap: () => _open(context),
-        child: SizedBox(
-          height: phone ? 44 : 28,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: phone ? 44 : 28),
           child: Center(
             widthFactor: 1,
+            heightFactor: 1,
             child: Container(
-              height: phone ? 30 : 28,
-              constraints: const BoxConstraints(maxWidth: 200),
+              constraints: BoxConstraints(
+                minHeight: phone ? 30 : 28,
+                maxWidth: maxWidth,
+              ),
               padding: EdgeInsets.only(
                 left: phone ? 10 : 9,
                 right: phone ? 10 : 8,
@@ -1142,99 +1164,107 @@ class _TaskRowState extends State<_TaskRow> {
       constraints: BoxConstraints(minHeight: touch ? 44 : 36),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Row(
-          children: [
-            _RowBox(onPressed: widget.onTick, label: item.words),
-            const SizedBox(width: 10),
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.onOpen,
-                child: Text(
-                  item.hasGroup
-                      ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
-                      : item.words,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: taskText(13, 18, stale ? ink.quiet : ink.text),
-                ),
-              ),
-            ),
-            if (stale) ...[
+        child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              _RowBox(onPressed: widget.onTick, label: item.words),
               const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text('Still want this?', style: quiet),
-              ),
-              _RowButton(label: 'Keep', strong: true, onPressed: widget.onKeep),
-              const SizedBox(width: 4),
-              _RowButton(label: 'Remove', onPressed: widget.onRemove),
-            ] else if (_hovered) ...[
-              const SizedBox(width: 10),
-              Text(
-                'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
-                style: quiet,
-              ),
-            ],
-            if (_hovered && !stale) ...[
-              const SizedBox(width: 8),
-              Tooltip(
-                message: 'More',
-                child: InkWell(
-                  key: _more,
-                  onTap: () {
-                    final box =
-                        _more.currentContext!.findRenderObject()! as RenderBox;
-                    _openMenu(
-                      box.localToGlobal(Offset(0, box.size.height + 4)),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(4),
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: ink.chip,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: KapyIcon(
-                      KapyIcons.moreVerticalRounded,
-                      size: 14,
-                      color: ink.secondary,
-                    ),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onOpen,
+                  child: Text(
+                    item.hasGroup
+                        ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
+                        : item.words,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: taskText(13, 18, stale ? ink.quiet : ink.text),
                   ),
                 ),
               ),
-            ],
-            if (item.entry.enteredAt != 0 && !stale && !_hovered)
-              Tooltip(
-                message: 'Not finished, moved to the end',
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: KapyIcon(
-                    KapyIcons.undoRounded,
-                    size: 14,
-                    color: ink.quiet,
+              if (stale) ...[
+                const SizedBox(width: 10),
+                if (constraints.maxWidth >= _stillWantWidth)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text('Still want this?', style: quiet),
                   ),
+                _RowButton(
+                  label: 'Keep',
+                  strong: true,
+                  onPressed: widget.onKeep,
                 ),
-              ),
-            if (!_hovered && !stale) TaskDetailsIcon(item: item),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: 150,
-              child: label == null
-                  ? null
-                  : Align(
-                      alignment: Alignment.centerLeft,
-                      child: NoteMark(
-                        note: item.note,
-                        label: label,
-                        onPressed: widget.onOpenNote,
+                const SizedBox(width: 4),
+                _RowButton(label: 'Remove', onPressed: widget.onRemove),
+              ] else if (_hovered) ...[
+                const SizedBox(width: 10),
+                Text(
+                  'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
+                  style: quiet,
+                ),
+              ],
+              if (_hovered && !stale) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'More',
+                  child: InkWell(
+                    key: _more,
+                    onTap: () {
+                      final box =
+                          _more.currentContext!.findRenderObject()!
+                              as RenderBox;
+                      _openMenu(
+                        box.localToGlobal(Offset(0, box.size.height + 4)),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: ink.chip,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: KapyIcon(
+                        KapyIcons.moreVerticalRounded,
+                        size: 14,
+                        color: ink.secondary,
                       ),
                     ),
-            ),
-          ],
+                  ),
+                ),
+              ],
+              if (item.entry.enteredAt != 0 && !stale && !_hovered)
+                Tooltip(
+                  message: 'Not finished, moved to the end',
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: KapyIcon(
+                      KapyIcons.undoRounded,
+                      size: 14,
+                      color: ink.quiet,
+                    ),
+                  ),
+                ),
+              if (!_hovered && !stale) TaskDetailsIcon(item: item),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: math.min(150, taskMarkWidth(constraints.maxWidth)),
+                child: label == null
+                    ? null
+                    : Align(
+                        alignment: Alignment.centerLeft,
+                        child: NoteMark(
+                          note: item.note,
+                          label: label,
+                          onPressed: widget.onOpenNote,
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1380,8 +1410,8 @@ class _DoneRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final label = this.label;
-    return SizedBox(
-      height: 38,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 38),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
         child: Row(
@@ -1389,37 +1419,46 @@ class _DoneRow extends StatelessWidget {
             _Box(done: true, onPressed: onUntick, label: item.words),
             const SizedBox(width: 12),
             Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      item.words,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: uiStyle(
-                        16,
-                        28,
-                        FontWeight.w500,
-                        palette.textMuted,
+              child: LayoutBuilder(
+                builder: (context, constraints) => Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        item.words,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: uiStyle(
+                          16,
+                          28,
+                          FontWeight.w500,
+                          palette.textMuted,
+                        ),
                       ),
                     ),
-                  ),
-                  if (label != null) ...[
-                    const SizedBox(width: 12),
-                    NoteMark(
-                      note: item.note,
-                      label: label,
-                      onPressed: onOpenNote,
-                    ),
+                    if (label != null) ...[
+                      const SizedBox(width: 12),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: taskMarkWidth(constraints.maxWidth),
+                        ),
+                        child: NoteMark(
+                          note: item.note,
+                          label: label,
+                          onPressed: onOpenNote,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-            SizedBox(
-              width: 44,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 44),
               child: Text(
                 SidebarTimestamp.clock(item.doneAt!),
                 textAlign: TextAlign.right,
+                maxLines: 1,
+                softWrap: false,
                 style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
               ),
             ),
@@ -1503,44 +1542,61 @@ class _PhoneTodayTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
+    final titleStyle = TextStyle(
+      fontFamily: AppFonts.title,
+      fontFamilyFallback: AppFonts.uiFallback,
+      fontSize: 19,
+      height: 24 / 19,
+      color: ink.text,
+    );
+    final quiet = taskText(13, 16, ink.quiet);
+    final dayText = SidebarTimestamp.dayAndDate(now);
+    final countText = '$done of $total done';
+    final title = Semantics(
+      header: true,
+      child: Text('Today', style: titleStyle),
+    );
+    final day = Expanded(
+      child: Text(
+        dayText,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: quiet,
+      ),
+    );
+    final count = Text(
+      countText,
+      key: const ValueKey('tasks-done-count'),
+      style: quiet.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+    );
     return Padding(
       padding: EdgeInsets.only(top: sheet ? 0 : 22, bottom: sheet ? 0 : 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Semantics(
-            header: true,
-            child: Text(
-              'Today',
-              style: TextStyle(
-                fontFamily: AppFonts.title,
-                fontFamilyFallback: AppFonts.uiFallback,
-                fontSize: 19,
-                height: 24 / 19,
-                color: ink.text,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              SidebarTimestamp.dayAndDate(now),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: taskText(13, 16, ink.quiet),
-            ),
-          ),
-          Text(
-            '$done of $total done',
-            key: const ValueKey('tasks-done-count'),
-            style: taskText(
-              13,
-              16,
-              ink.quiet,
-            ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final oneLine = _fitsOnOneLine(
+            context,
+            constraints.maxWidth,
+            ('Today', titleStyle),
+            ('$dayText  $countText', quiet),
+            8,
+          );
+          final heading = Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              title,
+              const SizedBox(width: 8),
+              day,
+              if (oneLine) count,
+            ],
+          );
+          if (oneLine) return heading;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 2,
+            children: [heading, count],
+          );
+        },
       ),
     );
   }
@@ -1754,9 +1810,13 @@ class TasksTodayCrumb extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 9),
-        Text(
-          SidebarTimestamp.dayAndDate(now),
-          style: taskText(13, 18, ink.quiet),
+        Flexible(
+          child: Text(
+            SidebarTimestamp.dayAndDate(now),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: taskText(13, 18, ink.quiet),
+          ),
         ),
       ],
     );
@@ -1838,4 +1898,33 @@ class TasksBandActions extends StatelessWidget {
       );
     },
   );
+}
+
+/// How wide a list row must be to say "Still want this?" beside Keep and
+/// Remove; a narrower one keeps the room for the task's words.
+const double _stillWantWidth = 520;
+
+/// Whether [title] and [count], [gap] apart, fit on one line of [maxWidth] at
+/// the current text size.
+bool _fitsOnOneLine(
+  BuildContext context,
+  double maxWidth,
+  (String, TextStyle) title,
+  (String, TextStyle) count,
+  double gap,
+) {
+  final scaler = MediaQuery.textScalerOf(context);
+  double width((String, TextStyle) part) {
+    final painter = TextPainter(
+      text: TextSpan(text: part.$1, style: part.$2),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  return width(title) + gap + width(count) <= maxWidth;
 }

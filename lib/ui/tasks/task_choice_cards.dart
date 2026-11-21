@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
@@ -183,6 +185,17 @@ class TaskCardMeta extends StatelessWidget {
     );
   }
 }
+
+/// The share of a row a note's name may take beside a task's words, so the
+/// words always keep most of it.
+const double taskMarkShare = 0.4;
+
+/// The widest a note's name grows beside a task's words in a row [row] wide.
+double taskMarkWidth(double row) => math.min(220, row * taskMarkShare);
+
+/// How wide Do now must be for Not finished and Done to sit beside the task;
+/// a narrower card puts them under it.
+const double _doNowBesideWidth = 420;
 
 /// "What do you want to work on next?": your choice so far against the next
 /// task on the list. ← or a click keeps the left, → or a click takes the
@@ -589,13 +602,14 @@ class TaskButton extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
-        child: SizedBox(
-          height: height,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: height),
           child: Center(
             widthFactor: 1,
+            heightFactor: 1,
             child: Container(
-              height: innerHeight,
-              padding: EdgeInsets.symmetric(horizontal: padding),
+              constraints: BoxConstraints(minHeight: innerHeight),
+              padding: EdgeInsets.symmetric(horizontal: padding, vertical: 2),
               decoration: BoxDecoration(
                 color: fill,
                 borderRadius: BorderRadius.circular(radius),
@@ -788,17 +802,40 @@ class TaskDoNowCard extends StatelessWidget {
               children: [
                 body,
                 const SizedBox(height: 6),
-                Wrap(spacing: 8, children: [?done, notFinished]),
+                Wrap(spacing: 8, runSpacing: 8, children: [?done, notFinished]),
               ],
             )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(child: body),
-                const SizedBox(width: 16),
-                notFinished,
-                if (done != null) ...[const SizedBox(width: 6), done],
-              ],
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth >=
+                    MediaQuery.textScalerOf(context).scale(_doNowBesideWidth)) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(child: body),
+                      const SizedBox(width: 16),
+                      notFinished,
+                      if (done != null) ...[const SizedBox(width: 6), done],
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 10,
+                  children: [
+                    body,
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.end,
+                        children: [notFinished, ?done],
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
     );
   }
