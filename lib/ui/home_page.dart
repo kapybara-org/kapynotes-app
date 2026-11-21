@@ -3856,6 +3856,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ];
             final taskBoard = _taskController?.read();
             final tasks = _tasksMode ? _taskController : null;
+            final createNoun = tasks != null && taskBoard != null
+                ? 'task'
+                : space == LibrarySpace.drawings
+                ? 'drawing'
+                : 'note';
+            final newNoteShortcut = widget.shortcuts.hintFor(
+              ShortcutAction.newNote,
+            );
             final assistant = _kapyAiButton(
               extent: AppPlatform.hasPointer
                   ? 32
@@ -3954,11 +3962,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               windowBar: SidebarWindowBar(
                 title: _listTitle,
                 count: _matchingCount,
-                noun: space == LibrarySpace.drawings ? 'drawing' : 'note',
+                noun: createNoun,
                 onCreate: _createInSpace,
-                newNoteShortcut: widget.shortcuts.hintFor(
-                  ShortcutAction.newNote,
-                ),
+                newNoteShortcut: newNoteShortcut,
                 onHide: () => _setListShown(false),
                 hideShortcut: widget.shortcuts.hintFor(
                   ShortcutAction.toggleSidebar,
@@ -3977,6 +3983,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 SpacesRail(
                   space: space,
                   onSelected: _showSpace,
+                  onCreate: listShown ? null : _createInSpace,
+                  createNoun: createNoun,
+                  createShortcut: newNoteShortcut,
                   invitations: widget.account?.sharing?.invites.length,
                   openTasks: taskBoard?.open.length,
                   streak: widget.notes.streak,
@@ -4017,11 +4026,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               title: space.title,
                               count: taskBoard.open.length,
                               countLabel: 'open',
-                              noun: 'task',
+                              noun: createNoun,
                               onCreate: _createInSpace,
-                              newNoteShortcut: widget.shortcuts.hintFor(
-                                ShortcutAction.newNote,
-                              ),
+                              newNoteShortcut: newNoteShortcut,
                               onHide: () => _setListShown(false),
                               hideShortcut: widget.shortcuts.hintFor(
                                 ShortcutAction.toggleSidebar,

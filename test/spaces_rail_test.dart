@@ -1,8 +1,10 @@
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
+import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
@@ -25,6 +27,9 @@ Widget harness(SpacesRail rail) => MaterialApp(
 SpacesRail rail({
   LibrarySpace space = LibrarySpace.notes,
   ValueChanged<LibrarySpace>? onSelected,
+  VoidCallback? onCreate,
+  String createNoun = 'note',
+  ShortcutBinding? createShortcut,
   int? invitations,
   int? openTasks,
   WritingStreak? streak,
@@ -35,6 +40,9 @@ SpacesRail rail({
   space: space,
   onSelected: onSelected ?? (_) {},
   onSettingsPressed: () {},
+  onCreate: onCreate,
+  createNoun: createNoun,
+  createShortcut: createShortcut,
   invitations: invitations,
   openTasks: openTasks,
   streak: streak,
@@ -97,6 +105,101 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('rail-notes')));
     expect(asked, LibrarySpace.notes);
+  });
+
+  group('New', () {
+    final railNew = find.byKey(const ValueKey('rail-new'));
+    const cmdN = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyN,
+      physicalKey: PhysicalKeyboardKey.keyN,
+      meta: true,
+    );
+
+    testWidgets('is a + over the spaces only while it has something to do', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness(rail()));
+      expect(railNew, findsNothing);
+
+      var made = 0;
+      await tester.pumpWidget(harness(rail(onCreate: () => made++)));
+      expect(
+        find.descendant(
+          of: railNew,
+          matching: findKapyIcon(KapyIcons.addRounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getRect(railNew).bottom,
+        lessThan(
+          tester.getTopLeft(find.byKey(const ValueKey('rail-notes'))).dy,
+        ),
+      );
+      await tester.tap(railNew);
+      expect(made, 1);
+    });
+
+    testWidgets('names what it makes and its chord, on hover and to a screen '
+        'reader', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        harness(
+          rail(onCreate: () {}, createNoun: 'drawing', createShortcut: cmdN),
+        ),
+      );
+      expect(
+        tester
+            .widget<Tooltip>(
+              find.ancestor(of: railNew, matching: find.byType(Tooltip)),
+            )
+            .message,
+        'New drawing  Cmd + N',
+      );
+      expect(
+        tester.getSemantics(railNew),
+        isSemantics(
+          label: 'New drawing',
+          isButton: true,
+          hasTapAction: true,
+          isFocusable: true,
+        ),
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('takes the first Tab, and Enter or Space presses it', (
+      tester,
+    ) async {
+      var made = 0;
+      await tester.pumpWidget(harness(rail(onCreate: () => made++)));
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(
+        Focus.of(
+          tester.element(
+            find.descendant(
+              of: railNew,
+              matching: findKapyIcon(KapyIcons.addRounded),
+            ),
+          ),
+        ).hasPrimaryFocus,
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(made, 1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(made, 2);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(
+        Focus.of(tester.element(find.text('Notes'))).hasPrimaryFocus,
+        isTrue,
+      );
+    });
   });
 
   testWidgets('Shared waits for an account, then counts its invitations', (

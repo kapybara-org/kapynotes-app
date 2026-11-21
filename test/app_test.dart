@@ -139,6 +139,7 @@ Future<void> pumpApp(
   NoteDayStore? days,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
   VoiceRecordingController? recording,
+  TaskLibrary? tasks,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -173,6 +174,7 @@ Future<void> pumpApp(
       days: days,
       titleModel: titleModel,
       recording: recording,
+      tasks: tasks,
     ),
   );
   await tester.pumpAndSettle();
@@ -4916,6 +4918,110 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.byId(id)!.title, 'Garden plan');
       expect(notes.byId(id)!.drawing!.elements, hasLength(1));
+    });
+  });
+
+  group('New on the rail while the list is hidden', () {
+    final railNew = find.byKey(const ValueKey('rail-new'));
+    final sidebarNew = find
+        .byKey(const ValueKey('sidebar-new-note'))
+        .hitTestable();
+
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      testWidgets('on ${platform.name}, takes over from the list\'s New and '
+          'makes what the space holds', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await notes.load();
+        notes.create(body: 'Groceries');
+        await pumpApp(
+          tester,
+          tasks: TaskLibrary(
+            notes: notes,
+            store: store,
+            storage: MemoryDocStorage(),
+          ),
+        );
+        expect(sidebarNew, findsOneWidget);
+        expect(railNew, findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+        await tester.pumpAndSettle();
+        expect(sidebarNew, findsNothing);
+        expect(railNew, findsOneWidget);
+        expect(
+          tester
+              .widget<Tooltip>(
+                find.ancestor(of: railNew, matching: find.byType(Tooltip)),
+              )
+              .message,
+          'New note  ${shortcuts.hintFor(ShortcutAction.newNote)!.displayLabel}',
+        );
+        expect(tester.getSemantics(railNew).label, 'New note');
+
+        final before = notes.notes.length;
+        await tester.tap(railNew);
+        await tester.pumpAndSettle();
+        expect(notes.notes, hasLength(before + 1));
+        expect(notes.notes.first.isDrawing, isFalse);
+        expect(find.byType(NoteEditor), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+        await tester.pumpAndSettle();
+        expect(tester.getSemantics(railNew).label, 'New drawing');
+        await tester.tap(railNew);
+        await tester.pumpAndSettle();
+        expect(notes.notes.where((note) => note.isDrawing), hasLength(1));
+        expect(notes.notes.first.isDrawing, isTrue);
+        expect(find.byType(DrawingCanvas), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        expect(tester.getSemantics(railNew).label, 'New task');
+        final beforeTask = notes.notes.length;
+        await tester.tap(railNew);
+        await tester.pumpAndSettle();
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
+        expect(notes.notes, hasLength(beforeTask));
+
+        await tester.tap(notesToggleWithLabel('Show notes'));
+        await tester.pumpAndSettle();
+        expect(railNew, findsNothing);
+        expect(sidebarNew, findsOneWidget);
+      });
+    }
+
+    testWidgets('a keyboard reaches it with Tab, and Enter makes a note', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, sidebarVisible: false);
+      final plus = find.descendant(
+        of: railNew,
+        matching: findKapyIcon(KapyIcons.addRounded),
+      );
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      var tabs = 0;
+      while (!Focus.of(tester.element(plus)).hasPrimaryFocus && tabs < 50) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        tabs++;
+      }
+      expect(Focus.of(tester.element(plus)).hasPrimaryFocus, isTrue);
+
+      final before = notes.notes.length;
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(before + 1));
+      expect(notes.notes.first.isDrawing, isFalse);
     });
   });
 
