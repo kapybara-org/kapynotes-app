@@ -463,6 +463,7 @@ class TasksScreenState extends State<TasksScreen> {
             children: [
               if (widget.phone)
                 _PhoneTodayTitle(
+                  date: SidebarTimestamp.weekdayAndDay(now),
                   done: doneToday,
                   total: doneToday + open.length,
                 )
@@ -2341,11 +2342,17 @@ bool _fitsOnOneLine(
   return width(title) + gap + width(count) <= maxWidth;
 }
 
-/// A phone's title over Tasks: "Today", large, with the clay underline, and
-/// how many of today's are done at the far end.
+/// A phone's label over Tasks, as the list's day headings read: "Today" in
+/// the title face at 19/24, the date muted beside it, and how many of today's
+/// are done at the far end.
 class _PhoneTodayTitle extends StatelessWidget {
-  const _PhoneTodayTitle({required this.done, required this.total});
+  const _PhoneTodayTitle({
+    required this.date,
+    required this.done,
+    required this.total,
+  });
 
+  final String date;
   final int done;
   final int total;
 
@@ -2355,55 +2362,69 @@ class _PhoneTodayTitle extends StatelessWidget {
     final titleStyle = TextStyle(
       fontFamily: AppFonts.title,
       fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: 28,
-      height: 36 / 28,
+      fontSize: 19,
+      height: 24 / 19,
       color: palette.textPrimary,
     );
-    final countStyle = uiStyle(15, 20, FontWeight.w400, palette.textTertiary);
+    final mutedStyle = uiStyle(13, 16, FontWeight.w400, palette.textTertiary);
     final countText = '$done of $total done';
     final title = Semantics(
       header: true,
       child: Text('Today', style: titleStyle),
     );
-    final count = Text(
-      countText,
-      key: const ValueKey('tasks-done-count'),
-      style: countStyle,
+    final day = Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Text(date, style: mutedStyle),
+    );
+    final count = Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Text(
+        countText,
+        key: const ValueKey('tasks-done-count'),
+        style: mutedStyle.copyWith(
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
     );
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // At large text the count goes under the title, so "Today"
-              // never breaks.
-              if (!_fitsOnOneLine(
-                context,
-                constraints.maxWidth,
-                ('Today', titleStyle),
-                (countText, countStyle),
-                12,
-              )) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [title, const SizedBox(height: 4), count],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Expanded(child: title),
-                  count,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-          Container(width: 44, height: 2, color: palette.clay),
-        ],
+      padding: const EdgeInsets.only(top: 12, bottom: 10),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // At large text the count goes under the title, so "Today" never
+          // breaks.
+          if (!_fitsOnOneLine(
+            context,
+            constraints.maxWidth,
+            ('Today', titleStyle),
+            ('$date$countText', mutedStyle),
+            16,
+          )) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  spacing: 8,
+                  children: [
+                    title,
+                    Flexible(child: day),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                count,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            spacing: 8,
+            children: [
+              title,
+              Expanded(child: day),
+              count,
+            ],
+          );
+        },
       ),
     );
   }

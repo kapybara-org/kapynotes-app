@@ -7558,6 +7558,38 @@ void main() {
         expect(underlineOf(notesTitle), findsOneWidget);
       });
 
+      testWidgets("Tasks carries one clay underline, the header's, over "
+          'Today as a plain label', (tester) async {
+        await pumpHome(tester);
+        await tester.tap(tasksTitle);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(NoteTitleUnderline), findsOneWidget);
+        expect(underlineOf(tasksTitle), findsOneWidget);
+        final clay = tester.element(tasksPage).palette.clay;
+        expect(
+          find.descendant(
+            of: tasksPage,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Container && widget.color == clay,
+            ),
+          ),
+          findsNothing,
+        );
+        final today = find.descendant(
+          of: tasksPage,
+          matching: find.text('Today'),
+        );
+        expect(tester.widget<Text>(today).style?.fontSize, 19);
+        expect(
+          find.descendant(
+            of: tasksPage,
+            matching: find.byKey(const ValueKey('tasks-done-count')),
+          ),
+          findsOneWidget,
+        );
+      });
+
       testWidgets('a swipe left turns Home to Tasks and a swipe right turns '
           'it back', (tester) async {
         await pumpHome(tester);
