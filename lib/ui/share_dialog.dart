@@ -96,6 +96,7 @@ class _NoteShareSheet extends StatefulWidget {
 class _NoteShareSheetState extends State<_NoteShareSheet> {
   final _email = TextEditingController();
   final _focus = FocusNode();
+  final _rows = FocusNode(canRequestFocus: false, skipTraversal: true);
   final _chips = <String>[];
   SpaceRole _role = SpaceRole.member;
   _Audience _audience = _Audience.thisNote;
@@ -123,6 +124,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     _sharing.addListener(_changed);
     _sharing.presenceChanges.addListener(_changed);
     _focus.addListener(_changed);
+    _rows.addListener(_changed);
     unawaited(_refreshQuietly());
   }
 
@@ -131,7 +133,9 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     _sharing.removeListener(_changed);
     _sharing.presenceChanges.removeListener(_changed);
     _focus.removeListener(_changed);
+    _rows.removeListener(_changed);
     _focus.dispose();
+    _rows.dispose();
     _email.dispose();
     super.dispose();
   }
@@ -688,13 +692,21 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         onChanged: _typed,
         onSubmit: enabled ? () => unawaited(_share()) : null,
       ),
-      if (_focus.hasFocus || _email.text.isNotEmpty)
-        for (final person in _suggestions)
-          _SuggestionRow(
-            key: ValueKey('share-suggest-${person.email}'),
-            person: person,
-            onTap: enabled ? () => _addChip(person.email) : null,
+      if (_focus.hasFocus || _rows.hasFocus || _email.text.isNotEmpty)
+        Focus(
+          focusNode: _rows,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final person in _suggestions)
+                _SuggestionRow(
+                  key: ValueKey('share-suggest-${person.email}'),
+                  person: person,
+                  onTap: enabled ? () => _addChip(person.email) : null,
+                ),
+            ],
           ),
+        ),
       if (questionsScope && (_chips.isNotEmpty || _email.text.isNotEmpty)) ...[
         const SizedBox(height: 14),
         _ScopeChoice(
