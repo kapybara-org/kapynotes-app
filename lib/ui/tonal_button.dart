@@ -133,7 +133,6 @@ class TonalButton extends StatelessWidget {
                   : fine
                   ? 15
                   : AppControlMetrics.iconControl,
-              strokeWidth: fine ? 2 : 2.2,
             ),
           if (icon != null && label != null) SizedBox(width: bar ? 4 : 6),
           if (label != null) Text(label),

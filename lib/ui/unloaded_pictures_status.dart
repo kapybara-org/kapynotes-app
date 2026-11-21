@@ -53,12 +53,7 @@ class UnloadedPicturesStatus extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          KapyIcon(
-            KapyIcons.errorOutlined,
-            size: 15,
-            strokeWidth: 1.9,
-            color: palette.clay,
-          ),
+          KapyIcon(KapyIcons.errorOutlined, size: 15, color: palette.clay),
           const SizedBox(width: 6),
           Text(
             count == 1

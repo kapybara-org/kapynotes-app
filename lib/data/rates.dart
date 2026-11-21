@@ -34,7 +34,7 @@ enum RateProvider {
   ),
   exchangeRateApi(
     cacheValue: 'exchange-rate-api',
-    attributionLabel: 'Rates by Exchange Rate',
+    attributionLabel: 'Rates By Exchange Rate API',
     attributionUrlValue: 'https://www.exchangerate-api.com',
   );
 

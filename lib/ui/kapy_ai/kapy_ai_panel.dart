@@ -429,7 +429,6 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                                 child: KapyIcon(
                                   KapyIcons.sendRounded,
                                   size: 16,
-                                  strokeWidth: 1.8,
                                   color: canSend
                                       ? palette.totalPillText
                                       : palette.textTertiary,
@@ -484,7 +483,6 @@ class _NoteChip extends StatelessWidget {
           KapyIcon(
             KapyIcons.noteOutlined,
             size: 13,
-            strokeWidth: 1.8,
             color: palette.textSecondary,
           ),
           const SizedBox(width: 5),
@@ -513,7 +511,6 @@ class _NoteChip extends StatelessWidget {
                 child: KapyIcon(
                   KapyIcons.closeRounded,
                   size: 12,
-                  strokeWidth: 1.8,
                   color: palette.textTertiary,
                 ),
               ),

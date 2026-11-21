@@ -162,10 +162,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// The pill under inline code and a formula's TeX.
   final Color codeChip;
 
-  /// The rail's icons and labels at rest. Paper's dark rail is a step
-  /// lighter than the tertiary ink the rest of the app shares.
-  final Color railInk;
-
   /// A quote's bar, Paper's.
   final Color quoteBar;
 
@@ -381,7 +377,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.codeBuiltIn,
     required this.codePanel,
     required this.codeChip,
-    required this.railInk,
     required this.quoteBar,
     required this.tagCards,
     required this.tagDots,
@@ -463,7 +458,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? codeBuiltIn,
     Color? codePanel,
     Color? codeChip,
-    Color? railInk,
     Color? quoteBar,
     List<Color>? tagCards,
     List<Color>? tagDots,
@@ -542,7 +536,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     codeBuiltIn: codeBuiltIn ?? this.codeBuiltIn,
     codePanel: codePanel ?? this.codePanel,
     codeChip: codeChip ?? this.codeChip,
-    railInk: railInk ?? this.railInk,
     quoteBar: quoteBar ?? this.quoteBar,
     tagCards: tagCards ?? this.tagCards,
     tagDots: tagDots ?? this.tagDots,
@@ -630,7 +623,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       codeBuiltIn: mix(codeBuiltIn, other.codeBuiltIn),
       codePanel: mix(codePanel, other.codePanel),
       codeChip: mix(codeChip, other.codeChip),
-      railInk: mix(railInk, other.railInk),
       quoteBar: mix(quoteBar, other.quoteBar),
       tagCards: [
         for (var i = 0; i < tagCards.length; i++)
@@ -973,17 +965,17 @@ class AppControlMetrics {
   static double get iconSearch => _touch ? 16 : 14;
 
   /// A secondary icon that is itself the button.
-  static double get iconControl => _touch ? 22 : 16;
+  static double get iconControl => _touch ? 20 : 16;
 
   /// A primary icon that is itself the button. The workhorse of every bar.
-  static double get iconAction => _touch ? 22 : 16;
+  static double get iconAction => _touch ? 20 : 16;
 
   /// Primary and secondary glyphs inside the roomier footer controls.
   ///
   /// These sit one or two points above title-bar glyphs so the repeated strip
   /// reads at the same visual weight as the surrounding editor and sidebar.
-  static double get footerIconAction => _touch ? 22 : 18;
-  static double get footerIconControl => _touch ? 22 : 18;
+  static double get footerIconAction => _touch ? 20 : 18;
+  static double get footerIconControl => _touch ? 20 : 18;
 
   /// Feature icons that head a pane or an empty state.
   static double get iconFeature => _touch ? 26 : 20;
@@ -1473,7 +1465,6 @@ class KapyTheme {
     codeBuiltIn: Color(0xFF8FB3B0),
     codePanel: Color(0xFF1E1C19),
     codeChip: Color(0xFF2E2A25),
-    railInk: Color(0xFF8F8778),
     quoteBar: Color(0xFF4A453D),
     tagCards: [
       Color(0xFF393425),
@@ -1578,7 +1569,6 @@ class KapyTheme {
     codeBuiltIn: Color(0xFF3F7470),
     codePanel: Color(0xFFF6F2E8),
     codeChip: Color(0xFFEFEADD),
-    railInk: Color(0xFF666054),
     quoteBar: Color(0xFFD0C8B5),
     tagCards: [
       Color(0xFFF4EBC8),
@@ -1682,8 +1672,7 @@ class KapyTheme {
     cardTitle: Color(0xFFDDDDDD),
     muted: Color(0xFFBEBEBE),
     sec: Color(0xFFA3A3A3),
-    icon: Color(0xFF929292),
-    faint: Color(0xFF8E8E8E),
+    faint: Color(0xFF979797),
     dim: Color(0xFF5A5A5A),
     dim2: Color(0xFF555555),
     dim3: Color(0xFF434343),
@@ -1740,8 +1729,7 @@ class KapyTheme {
     cardTitle: Color(0xFF272727),
     muted: Color(0xFF434343),
     sec: Color(0xFF5C5C5C),
-    icon: Color(0xFF676767),
-    faint: Color(0xFF6A6A6A),
+    faint: Color(0xFF686868),
     dim: Color(0xFFADADAD),
     dim2: Color(0xFFB5B5B5),
     dim3: Color(0xFFCBCBCB),
@@ -1798,8 +1786,7 @@ class KapyTheme {
     cardTitle: Color(0xFFDDD9D1),
     muted: Color(0xFFC1BCB4),
     sec: Color(0xFFA8A39A),
-    icon: Color(0xFF959087),
-    faint: Color(0xFF908B82),
+    faint: Color(0xFF9A958C),
     dim: Color(0xFF4F4C48),
     dim2: Color(0xFF484641),
     dim3: Color(0xFF32312E),
@@ -1856,8 +1843,7 @@ class KapyTheme {
     cardTitle: Color(0xFFBEBCCD),
     muted: Color(0xFFACAABC),
     sec: Color(0xFF9C9AAE),
-    icon: Color(0xFF8F8DA2),
-    faint: Color(0xFF8C8A9F),
+    faint: Color(0xFF9391A6),
     dim: Color(0xFF595869),
     dim2: Color(0xFF535263),
     dim3: Color(0xFF424150),
@@ -1914,7 +1900,6 @@ class KapyTheme {
     cardTitle: Color(0xFF3F3E4E),
     muted: Color(0xFF4C4B5B),
     sec: Color(0xFF585667),
-    icon: Color(0xFF605E70),
     faint: Color(0xFF626072),
     dim: Color(0xFFA4A2AE),
     dim2: Color(0xFFABAAB5),
@@ -1972,8 +1957,7 @@ class KapyTheme {
     cardTitle: Color(0xFFE6C699),
     muted: Color(0xFFD4B488),
     sec: Color(0xFFC4A47A),
-    icon: Color(0xFFAF916A),
-    faint: Color(0xFFAA8C66),
+    faint: Color(0xFFAC8E68),
     dim: Color(0xFF6C583F),
     dim2: Color(0xFF65523B),
     dim3: Color(0xFF50412D),
@@ -2030,7 +2014,6 @@ class KapyTheme {
     cardTitle: Color(0xFF402F1D),
     muted: Color(0xFF533E28),
     sec: Color(0xFF634B32),
-    icon: Color(0xFF6C543D),
     faint: Color(0xFF6E5640),
     dim: Color(0xFFAC9A86),
     dim2: Color(0xFFB3A28E),
@@ -2088,7 +2071,6 @@ class KapyTheme {
     cardTitle: Color(0xFFD3E1DE),
     muted: Color(0xFFB6C8C6),
     sec: Color(0xFF9DB3B0),
-    icon: Color(0xFF8BA4A0),
     faint: Color(0xFF86A09C),
     dim: Color(0xFF526766),
     dim2: Color(0xFF4D6160),
@@ -2146,7 +2128,6 @@ class KapyTheme {
     cardTitle: Color(0xFF1E3734),
     muted: Color(0xFF314D4A),
     sec: Color(0xFF42605C),
-    icon: Color(0xFF4D6A66),
     faint: Color(0xFF506C68),
     dim: Color(0xFF9DADAB),
     dim2: Color(0xFFA5B5B2),
@@ -2659,7 +2640,6 @@ class _Tones {
     required this.cardTitle,
     required this.muted,
     required this.sec,
-    required this.icon,
     required this.faint,
     required this.dim,
     required this.dim2,
@@ -2698,7 +2678,6 @@ class _Tones {
   final Color cardTitle;
   final Color muted;
   final Color sec;
-  final Color icon;
   final Color faint;
   final Color dim;
   final Color dim2;
@@ -2805,7 +2784,6 @@ CalcPalette _fromTones(_Tones t) {
     codeBuiltIn: code(t.dots[3]),
     codePanel: panel,
     codeChip: t.codeBg,
-    railInk: t.icon,
     quoteBar: t.box,
     tagCards: t.tags,
     tagDots: t.dots,

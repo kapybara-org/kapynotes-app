@@ -909,7 +909,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                 heading == 'Pinned'
                     ? KapyIcons.pinOutlined
                     : note.isDrawing
-                    ? KapyIcons.paintBoardOutlined
+                    ? KapyIcons.penRounded
                     : KapyIcons.noteOutlined,
                 size: 15,
                 color: heading == 'Pinned' ? palette.clay : palette.textTertiary,
@@ -1194,7 +1194,6 @@ class _TaskRow extends StatelessWidget {
                 ? const KapyIcon(
                     KapyIcons.checkRounded,
                     size: 11,
-                    strokeWidth: 2.2,
                     color: Colors.white,
                   )
                 : null,

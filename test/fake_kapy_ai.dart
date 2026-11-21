@@ -35,11 +35,6 @@ class FakeKapyAi extends KapyAi {
     id: 'gpt-5.5',
     label: 'GPT-5.5',
   );
-  static const gptMini = KapyModel(
-    kind: KapyModelKind.codex,
-    id: 'gpt-5.4-mini',
-    label: 'GPT-5.4 mini',
-  );
   static const sonnet = KapyModel(
     kind: KapyModelKind.claudeCode,
     id: 'sonnet',

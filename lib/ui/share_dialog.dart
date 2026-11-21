@@ -617,7 +617,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           else if (_outOfPro)
             _StatePanel(
               key: const ValueKey('share-free'),
-              icon: KapyIcons.peopleOutlined,
+              icon: KapyIcons.groupOutlined,
               title: 'Sharing is part of Pro',
               body:
                   'Share notes with the people you choose and edit together. '
@@ -1822,9 +1822,8 @@ class _OverflowMenu extends StatelessWidget {
     key: const ValueKey('share-more'),
     tooltip: 'More',
     icon: KapyIcon(
-      KapyIcons.moreRounded,
+      KapyIcons.moreVerticalRounded,
       size: AppControlMetrics.iconAction,
-      strokeWidth: 2.2,
       color: context.palette.textSecondary,
     ),
     onSelected: (_) => onReportNote(),

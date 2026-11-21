@@ -674,7 +674,6 @@ class _RemoteImage extends StatelessWidget {
                       KapyIcon(
                         KapyIcons.imageOutlined,
                         size: compact ? 18 : 22,
-                        strokeWidth: 1.7,
                         color: palette.textTertiary,
                       ),
                       if (!compact) ...[

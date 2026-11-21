@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -13,17 +12,21 @@ import 'package:kapy_notes/ai/local_tools.dart';
 import 'package:kapy_notes/ai/tool_helper.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'ai_fakes.dart';
 import 'fake_cli.dart';
 
-const _usage = {
+final _resetsAt = testNow.add(const Duration(days: 14));
+final _usage = {
   'used': 3,
   'limit': 500,
   'remaining': 497,
-  'resetsAt': '2026-12-01T00:00:00.000Z',
+  'resetsAt': _resetsAt.toUtc().toIso8601String(),
 };
 
 void main() {
@@ -128,10 +131,7 @@ void main() {
       ai.openChat('c');
       expect(ai.model, KapyModel.cloud);
       await ai.ask('Lisbon?');
-      expect(
-        (ai.pending! as KapyFailed).fallbacks,
-        [FakeDeviceModel.apple],
-      );
+      expect((ai.pending! as KapyFailed).fallbacks, [FakeDeviceModel.apple]);
     });
 
     test('own accounts and the device answer on Free', () async {
@@ -398,7 +398,7 @@ void main() {
       await ai.ask('Lisbon?');
       await ai.proceed();
       final limit = ai.pending! as KapyLimitReached;
-      expect(limit.resetsAt, DateTime.utc(2026, 12).toLocal());
+      expect(limit.resetsAt, _resetsAt);
       expect(limit.fallback, FakeDeviceModel.apple);
       expect(ai.cloudUsage!.remaining, 0);
       await ai.proceed();
@@ -538,13 +538,14 @@ void main() {
   });
 
   group('a model Codex no longer offers', () {
-    test('is kept, in a stored chat and as the default', () async {
-      const gone = KapyModel(
-        kind: KapyModelKind.codex,
-        id: 'gpt-6-luna',
-        label: 'GPT-6 Luna',
-      );
-      store.data['kapyAi.v1'] = {'defaultModel': gone.toJson()};
+    const gone = KapyModel(
+      kind: KapyModelKind.codex,
+      id: 'gpt-6-luna',
+      label: 'GPT-6 Luna',
+    );
+
+    void storeChatOn(KapyModel model) {
+      store.data['kapyAi.v1'] = {'defaultModel': model.toJson()};
       store.data['kapyAi.chats.v1'] = {
         'chats': [
           {
@@ -552,11 +553,16 @@ void main() {
             'title': 't',
             'createdAt': 0,
             'updatedAt': 0,
-            'model': gone.toJson(),
+            'model': model.toJson(),
             'messages': [],
           },
         ],
       };
+    }
+
+    test('is Codex\'s one offered model, in a stored chat and as the '
+        'default', () async {
+      storeChatOn(gone);
       final ai = await build(environment: const {'HOME': '/Users/someone'});
       ai.accounts;
       await settle();
@@ -564,15 +570,77 @@ void main() {
         ai.accounts.firstWhere((a) => a.kind == KapyAccountKind.codex).models,
         [codex.model],
       );
+      expect(ai.defaultModel, codex.model);
+      ai.openChat('c');
+      expect(ai.model, codex.model);
+      await ai.ask('Lisbon?');
+      expect(ai.pending, isA<KapyAccountConsent>());
+      await ai.proceed();
+      await settle();
+      expect(ai.pending, isNull);
+      expect(codex.asked, hasLength(1));
+      expect(ai.current!.messages.last.text, 'tool answer');
+    });
+
+    test('is kept while Codex offers nothing', () async {
+      storeChatOn(gone);
+      codex.status = KapyAccountStatus.error;
+      final ai = await build(environment: const {'HOME': '/Users/someone'});
+      ai.accounts;
+      await settle();
       expect(ai.defaultModel, gone);
       ai.openChat('c');
       expect(ai.model, gone);
-      await ai.ask('Lisbon?');
-      expect(
-        (ai.pending! as KapyAccountError).fallbacks,
-        contains(FakeDeviceModel.apple),
+    });
+
+    testWidgets('reopened, shows Codex and its answer, and nothing technical', (
+      tester,
+    ) async {
+      storeChatOn(gone);
+      final ai = (await tester.runAsync(() async {
+        final ai = await build(environment: const {'HOME': '/Users/someone'});
+        ai.accounts;
+        await settle();
+        ai.openChat('c');
+        await ai.ask('Lisbon?');
+        await ai.proceed();
+        await settle();
+        return ai;
+      }))!;
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: KapyAiPanel(
+              kapyAi: ai,
+              controller: KapyAiPanelController()..open(),
+              noteTitle: (_) => 'Lisbon trip',
+              onOpenNote: (_) {},
+              onManageAccounts: () {},
+              onClose: () {},
+              now: () => testNow,
+            ),
+          ),
+        ),
       );
-      expect(codex.asked, isEmpty);
+      await tester.pump();
+
+      expect(find.text('tool answer'), findsOneWidget);
+      expect(find.text('Codex'), findsWidgets);
+      expect(find.text(codex.model.label), findsNothing);
+      for (final technical in [
+        gone.id,
+        gone.label,
+        'signed out',
+        'Couldn’t answer',
+        'Exception',
+        'Error',
+      ]) {
+        expect(find.textContaining(technical), findsNothing, reason: technical);
+      }
     });
   });
 

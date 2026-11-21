@@ -618,9 +618,15 @@ future_feature under development false
     });
 
     group('the catalogue', () {
-      String model(String slug, {String? tools, String visibility = 'list'}) =>
+      String model(
+        String slug, {
+        String? tools,
+        String visibility = 'list',
+        int? priority,
+      }) =>
           '{"slug":"$slug","display_name":"$slug","visibility":"$visibility"'
-          '${tools == null ? '' : ',"experimental_supported_tools":$tools'}}';
+          '${tools == null ? '' : ',"experimental_supported_tools":$tools'}'
+          '${priority == null ? '' : ',"priority":$priority'}}';
 
       Future<LocalToolCheck> check(List<String> models) async {
         final cli = await fake(models: '{"models":[${models.join(',')}]}');
@@ -629,11 +635,23 @@ future_feature under development false
 
       test('offers models with no tools of their own', () async {
         final result = await check([
+          model('hidden', visibility: 'hide'),
           model('plain', tools: '[]'),
           model('unlisted'),
-          model('hidden', visibility: 'hide'),
         ]);
-        expect(result.models.map((m) => m.id), ['plain', 'unlisted']);
+        expect(result.models.map((m) => m.id), ['plain']);
+      });
+
+      test('offers one choice: Codex\'s own first pick, named Codex', () async {
+        final result = await check([
+          model('later', priority: 9),
+          model('unranked'),
+          model('first', priority: 2),
+          model('tied', priority: 2),
+          model('talks', tools: '["clock"]', priority: 1),
+        ]);
+        expect(result.models.map((m) => m.id), ['first']);
+        expect(result.models.single.plainLabel, 'Codex');
       });
 
       test('leaves out a model that brings a tool', () async {

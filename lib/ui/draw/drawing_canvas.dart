@@ -20,10 +20,10 @@ enum DrawTool {
   pan('Hand', 'H', KapyIcons.panRounded),
   pen('Pen', 'P', KapyIcons.penRounded),
   rect('Rectangle', 'R', KapyIcons.rectangleRounded),
-  ellipse('Ellipse', 'O', KapyIcons.ellipseRounded),
+  ellipse('Ellipse', 'O', KapyIcons.circleOutlined),
   arrow('Arrow', 'A', KapyIcons.arrowRounded),
   line('Line', 'L', KapyIcons.lineRounded),
-  text('Text', 'T', KapyIcons.textFieldsRounded),
+  text('Text', 'T', KapyIcons.textFormatRounded),
   eraser('Eraser', 'E', KapyIcons.eraserRounded);
 
   const DrawTool(this.label, this.key, this.icon);
@@ -1036,11 +1036,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       bool selected = false,
     }) => CompactIconButton(
       key: ValueKey(key),
-      icon: KapyIcon(
-        icon,
-        size: touch ? null : 17,
-        strokeWidth: touch ? 1.5 : 1.8,
-      ),
+      icon: KapyIcon(icon, size: touch ? null : 17),
       tooltip: tooltip,
       selected: selected,
       onPressed: onPressed,
@@ -1106,7 +1102,6 @@ class DrawingCanvasState extends State<DrawingCanvas> {
                     KapyIcon(
                       KapyIcons.chevronDownRounded,
                       size: 12,
-                      strokeWidth: 2,
                       color: palette.textSecondary,
                     ),
                   ],
