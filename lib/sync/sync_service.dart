@@ -2035,6 +2035,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// stays unreadable is read again once a launch, not on every pass.
   final Map<String, int> _rereadFrom = {};
 
+  /// Where a read again cut short stopped, for a note whose first unread op
+  /// [seq] still did not open with every key at hand: the next read goes on
+  /// from [after] rather than from that op again, and keeps it unread.
+  final Map<String, ({int seq, int after})> _rereadResume = {};
+
   /// Set when a note-key fetch fails, so a read that may have failed only
   /// for that is tried again on the next pass.
   bool _noteKeysUnavailable = false;
@@ -2068,7 +2073,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _stillUnread.clear();
     _noteKeysUnavailable = false;
     try {
-      var after = unread.values.reduce(min) - 1;
+      final start = [
+        for (final MapEntry(key: id, value: seq) in unread.entries)
+          if (_rereadResume[id] case (
+            seq: final from,
+            :final after,
+          ) when from == seq)
+            after
+          else
+            seq - 1,
+      ].reduce(min);
+      var after = start;
       var whole = false;
       for (var page = 0; page < rereadPages; page++) {
         final batch = await _api.pullOps(space: spaceId, after: after);
@@ -2082,7 +2097,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       for (final MapEntry(key: id, value: seq) in unread.entries) {
         final record = _docs.get(id);
         if (record == null) continue;
-        final still = _stillUnread[id];
+        // An op this pass started past was read before, and did not open.
+        final still = start < seq ? _stillUnread[id] : seq;
+        _rereadResume.remove(id);
         if (whole) {
           if (!_noteKeysUnavailable) _rereadFrom[id] = seq;
           record.unreadSeq = still;
@@ -2094,6 +2111,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         } else {
           // Read only as far as [after]: what lies past it is still unknown.
           record.unreadSeq = min(still ?? after + 1, after + 1);
+          if (still == seq && !_noteKeysUnavailable) {
+            _rereadResume[id] = (seq: seq, after: after);
+          }
         }
         record.unreadSpaceId = record.unreadSeq == null ? null : spaceId;
         _docs.markDirty(id);
@@ -3157,6 +3177,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// waiting: then failed, and saying which, rather than a pass reading as
   /// synced without them.
   void _settle() {
+    // A note deleted, or gone with a space this account left or was taken
+    // out of, has nothing left to open.
+    _unopenable.removeWhere(
+      (id) => _notes.byId(id) == null || _docs.get(id)?.unreadSeq == null,
+    );
     final problem = _stuck.isNotEmpty
         ? _stuckError
         : _unopenable.isNotEmpty
