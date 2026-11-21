@@ -760,7 +760,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         ),
       ],
       if (joining != null) ...[
-        const SizedBox(height: 16),
         _LinkRow(
           joining: joining,
           spaceId: space?.id,
@@ -2280,6 +2279,18 @@ class _EmailField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final phone = _OnPhone.of(context);
+    final text = chromeStyle(
+      size: phone ? 15 : 13,
+      line: phone ? 20 : 18,
+      weight: AppWeight.body,
+      color: palette.textPrimary,
+    );
+    OutlineInputBorder border([BorderSide side = BorderSide.none]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(phone ? 9 : 6),
+          borderSide: side,
+        );
     return TextField(
       key: const ValueKey('share-email'),
       controller: controller,
@@ -2290,27 +2301,106 @@ class _EmailField extends StatelessWidget {
       enableSuggestions: false,
       onChanged: onChanged,
       onSubmitted: (_) => onSubmit?.call(),
-      style: TextStyle(
-        fontSize: AppTypeScale.control,
-        color: palette.textPrimary,
-      ),
-      decoration: kapyFieldDecoration(
-        context,
+      style: text,
+      cursorColor: palette.accentText,
+      cursorWidth: 1.5,
+      decoration: InputDecoration(
         hintText: hint,
-        fillColor: palette.surfaceBackground,
-        prefixIcon: Center(
-          widthFactor: 1,
-          heightFactor: 1,
+        hintStyle: text.copyWith(color: palette.textTertiary),
+        isDense: true,
+        filled: true,
+        fillColor: palette.textPrimary.withValues(alpha: 0.04),
+        constraints: BoxConstraints.tightFor(height: phone ? 44 : 32),
+        contentPadding: EdgeInsets.fromLTRB(
+          0,
+          phone ? 12 : 7,
+          phone ? 12 : 10,
+          phone ? 12 : 7,
+        ),
+        prefixIcon: Padding(
+          padding: EdgeInsets.only(left: phone ? 12 : 10, right: 8),
           child: KapyIcon(
             KapyIcons.mailOutlined,
-            size: AppControlMetrics.iconAdornment,
+            size: phone ? 16 : AppControlMetrics.iconAdornment,
             color: palette.textTertiary,
           ),
         ),
-        prefixIconConstraints: BoxConstraints(
-          minWidth: AppControlMetrics.fieldAdornmentSlot + 4,
-          minHeight: AppControlMetrics.fieldAdornmentSlot,
+        prefixIconConstraints: const BoxConstraints(),
+        border: border(),
+        enabledBorder: border(),
+        disabledBorder: border(),
+        focusedBorder: border(
+          BorderSide(
+            color: palette.selectedBorder,
+            width: palette.increasedContrast ? 2 : 1.25,
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// Who someone new may be: Can edit or Can view, side by side on one quiet
+/// track, the chosen side lifted a little.
+class _AccessSegments extends StatelessWidget {
+  const _AccessSegments({required this.role, required this.onRole});
+
+  final SpaceRole role;
+  final ValueChanged<SpaceRole>? onRole;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final phone = _OnPhone.of(context);
+    return Container(
+      key: const ValueKey('share-role'),
+      height: phone ? 36 : 28,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: palette.textPrimary.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(phone ? 9 : 6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 2,
+        children: [
+          for (final (value, label) in const [
+            (SpaceRole.member, 'Can edit'),
+            (SpaceRole.viewer, 'Can view'),
+          ])
+            Semantics(
+              selected: value == role,
+              inMutuallyExclusiveGroup: true,
+              child: TextButton(
+                key: ValueKey('share-role-${value.name}'),
+                onPressed: onRole == null ? null : () => onRole!(value),
+                style: TextButton.styleFrom(
+                  backgroundColor: value == role
+                      ? palette.textPrimary.withValues(alpha: 0.07)
+                      : null,
+                  disabledBackgroundColor: value == role
+                      ? palette.textPrimary.withValues(alpha: 0.07)
+                      : null,
+                  foregroundColor: value == role
+                      ? palette.textPrimary
+                      : palette.textSecondary,
+                  minimumSize: Size(0, phone ? 32 : 24),
+                  padding: EdgeInsets.symmetric(horizontal: phone ? 12 : 10),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(phone ? 7 : 5),
+                  ),
+                  textStyle: chromeStyle(
+                    size: phone ? 14 : 13,
+                    line: 18,
+                    weight: AppWeight.button,
+                    color: palette.textPrimary,
+                  ),
+                ),
+                child: Text(label),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -2583,37 +2673,37 @@ class _AccessAndShare extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final phone = _OnPhone.of(context);
     final buttons = Row(
       children: [
-        Expanded(
-          child: SegmentedButton<SpaceRole>(
-            key: const ValueKey('share-role'),
-            expandedInsets: EdgeInsets.zero,
-            showSelectedIcon: false,
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStatePropertyAll(
-                Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontSize: AppTypeScale.caption,
-                ),
-              ),
-            ),
-            segments: const [
-              ButtonSegment(value: SpaceRole.member, label: Text('Can edit')),
-              ButtonSegment(value: SpaceRole.viewer, label: Text('Can view')),
-            ],
-            selected: {role},
-            onSelectionChanged: enabled
-                ? (selection) {
-                    if (selection.isNotEmpty) onRole(selection.first);
-                  }
-                : null,
-          ),
-        ),
-        const SizedBox(width: 8),
+        _AccessSegments(role: role, onRole: enabled ? onRole : null),
+        const Spacer(),
         FilledButton(
           key: ValueKey('share-submit-$action'),
           onPressed: enabled ? onShare : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: palette.accentText.withValues(alpha: 0.16),
+            foregroundColor: palette.accentText,
+            disabledBackgroundColor: palette.textPrimary.withValues(
+              alpha: 0.04,
+            ),
+            disabledForegroundColor: palette.textTertiary,
+            minimumSize: Size(0, phone ? 36 : 28),
+            padding: EdgeInsets.symmetric(horizontal: phone ? 16 : 12),
+            tapTargetSize: phone
+                ? MaterialTapTargetSize.padded
+                : MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(phone ? 9 : 6),
+            ),
+            textStyle: chromeStyle(
+              size: phone ? 15 : 13,
+              line: phone ? 20 : 18,
+              weight: AppWeight.page,
+              color: palette.accentText,
+            ),
+          ),
           child: Text(busy ? 'Sharing…' : action),
         ),
       ],
@@ -2656,70 +2746,104 @@ class _LinkRow extends StatelessWidget {
       null => 'Off · Turn on to invite people without their email',
       final link => '${_linkRoleLabel(link)} · they still need to sign in',
     };
+    final phone = _OnPhone.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        KapyControlSurface(
-          key: const ValueKey('share-link'),
-          padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Invite link',
-                      style: TextStyle(
-                        fontSize: AppTypeScale.control,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      detail,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.caption,
-                        color: palette.textTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (on)
-                TextButton(
-                  key: const ValueKey('share-link-copy'),
-                  onPressed: enabled ? () => onCopy(link) : null,
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 30),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  child: const Text('Copy link'),
-                ),
-              Semantics(
-                label: 'Invite link',
-                child: GestureDetector(
-                  key: const ValueKey('share-link-switch'),
-                  onTap: enabled ? () => onToggle(!on) : null,
-                  behavior: HitTestBehavior.opaque,
-                  child: SettingsSwitch(value: on, enabled: enabled),
-                ),
-              ),
-            ],
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Container(
+            height: AppHairline.of(context),
+            color: palette.textPrimary.withValues(alpha: 0.06),
           ),
         ),
-        if (opensMore != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            opensMore!,
-            key: const ValueKey('share-link-scope'),
-            style: TextStyle(
-              fontSize: AppTypeScale.caption,
-              color: palette.textSecondary,
-              height: 1.4,
+        ConstrainedBox(
+          key: const ValueKey('share-link'),
+          constraints: BoxConstraints(minHeight: phone ? 52 : 0),
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: phone ? 4 : 10,
+              bottom: phone ? 0 : 4,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Invite link',
+                        style: chromeStyle(
+                          size: phone ? 15 : 13,
+                          line: phone ? 20 : 18,
+                          weight: AppWeight.button,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        detail,
+                        key: const ValueKey('share-link-detail'),
+                        style: chromeStyle(
+                          size: phone ? 13 : 12,
+                          line: 16,
+                          weight: AppWeight.body,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                if (on)
+                  TextButton(
+                    key: const ValueKey('share-link-copy'),
+                    onPressed: enabled ? () => onCopy(link) : null,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 30),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    child: const Text('Copy link'),
+                  ),
+                Semantics(
+                  label: 'Invite link',
+                  child: GestureDetector(
+                    key: const ValueKey('share-link-switch'),
+                    onTap: enabled ? () => onToggle(!on) : null,
+                    behavior: HitTestBehavior.opaque,
+                    child: SettingsSwitch(value: on, enabled: enabled),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
+        if (opensMore != null)
+          Padding(
+            padding: EdgeInsets.only(top: phone ? 2 : 4),
+            child: Row(
+              children: [
+                KapyIcon(
+                  KapyIcons.infoOutlined,
+                  size: phone ? 16 : 14,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    opensMore!,
+                    key: const ValueKey('share-link-scope'),
+                    style: chromeStyle(
+                      size: phone ? 13 : 12,
+                      line: phone ? 18 : 16,
+                      weight: AppWeight.body,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
