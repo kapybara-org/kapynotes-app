@@ -173,7 +173,7 @@ void main() {
       expect(repository.rates['INR'], 83);
       expect(repository.snapshot?.date, '02 Sep 2026');
       expect(repository.provider, RateProvider.exchangeRateApi);
-      expect(repository.attributionLabel, 'Rates by Exchange Rate');
+      expect(repository.attributionLabel, 'Rates By Exchange Rate API');
       expect(
         repository.attributionUrl.toString(),
         'https://www.exchangerate-api.com',
@@ -233,7 +233,7 @@ void main() {
     repository.loadCache();
 
     expect(repository.provider, RateProvider.exchangeRateApi);
-    expect(repository.attributionLabel, 'Rates by Exchange Rate');
+    expect(repository.attributionLabel, 'Rates By Exchange Rate API');
   });
 
   testWidgets('does not reschedule after disposal during a refresh', (

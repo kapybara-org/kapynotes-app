@@ -210,15 +210,8 @@ class KapyAiController extends KapyAi {
     final stored = _store.defaultModel;
     if (stored != null && _usable(stored)) return stored;
     // Whatever someone picked stays their pick. Kapy AI says why it cannot
-    // answer and offers what else could, rather than switching for them. A
-    // device model that can answer is the same choice, not a different one.
-    if (stored != null) {
-      if (stored.kind == KapyModelKind.device) {
-        final device = _deviceModel;
-        if (device != null && _usable(device)) return device;
-      }
-      return stored;
-    }
+    // answer and offers what else could, rather than switching for them.
+    if (stored != null) return _sameChoice(stored) ?? stored;
     return isPro ? KapyModel.cloud : _fallback;
   }
 
@@ -275,14 +268,21 @@ class KapyAiController extends KapyAi {
     final chosen = current?.model ?? _next ?? defaultModel;
     if (_usable(chosen)) return chosen;
     // A chat's own model is the person's choice too, so it is never swapped for
-    // another one: the pending state says why it cannot answer instead. A
-    // device model is the exception, because another one here is the same
-    // choice rather than a different model.
-    if (chosen.kind == KapyModelKind.device) {
-      final device = _deviceModel;
-      if (device != null && _usable(device)) return device;
-    }
-    return chosen;
+    // another one: the pending state says why it cannot answer instead.
+    return _sameChoice(chosen) ?? chosen;
+  }
+
+  /// What answers for [chosen] when it can no longer be picked, if that is
+  /// the same choice to a person rather than a different model: the device's
+  /// model in place of another device model, and Codex's one offered model in
+  /// place of one Codex no longer lists, since a person only ever sees Codex.
+  KapyModel? _sameChoice(KapyModel chosen) {
+    final same = switch (chosen.kind) {
+      KapyModelKind.device => _deviceModel,
+      KapyModelKind.codex => _checks[KapyAccountKind.codex]?.models.firstOrNull,
+      _ => null,
+    };
+    return same != null && _usable(same) ? same : null;
   }
 
   @override

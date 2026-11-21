@@ -581,7 +581,7 @@ void main() {
           KapyAccountState(
             kind: KapyAccountKind.codex,
             status: KapyAccountStatus.connected,
-            models: [FakeKapyAi.gpt, FakeKapyAi.gptMini],
+            models: [FakeKapyAi.gpt],
           ),
           KapyAccountState(
             kind: KapyAccountKind.claudeCode,
@@ -618,10 +618,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('kapy-device-remove')), findsOneWidget);
-      expect(
-        find.text('Found on this Mac · Codex · 1, Codex · 2'),
-        findsOneWidget,
-      );
+      expect(find.text('Found on this Mac · Codex'), findsOneWidget);
       expect(find.text('Found on this Mac · Claude Code'), findsOneWidget);
       expect(find.text('Key ending 4f2a, kept on this Mac'), findsOneWidget);
       expect(find.textContaining('ChatGPT sign'), findsNothing);
@@ -671,7 +668,9 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('Your own key, for answers you already pay for'),
+        find.text(
+          'Get a key, then add it here, for answers you already pay for',
+        ),
         findsOneWidget,
       );
       final codex = tester.getTopLeft(
@@ -685,6 +684,61 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('kapy-device-download')));
       expect(ai.calls, ['downloadDeviceModel']);
     });
+
+    testWidgets(
+      'Get a key opens the page that makes one, or says it could not',
+      (tester) async {
+        ai = FakeKapyAi(
+          accountList: const [
+            KapyAccountState(
+              kind: KapyAccountKind.openRouter,
+              status: KapyAccountStatus.notConnected,
+            ),
+          ],
+        );
+        final launched = <String>[];
+        var opens = true;
+        const channel = MethodChannel('plugins.flutter.io/url_launcher');
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async {
+            final url = (call.arguments as Map?)?['url'];
+            if (url is String) launched.add(url);
+            return opens;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            channel,
+            null,
+          ),
+        );
+        await _openSettings(
+          tester,
+          kapyAi: ai,
+          reveal: 'kapy-account-openRouter',
+        );
+
+        expect(
+          find.text(
+            'Get a key, then add it here, for answers you already pay for',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Add key'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('kapy-openrouter-get-key')));
+        await tester.pump();
+        expect(launched, ['https://openrouter.ai/keys']);
+        expect(find.text('Could not open the page for a key'), findsNothing);
+
+        opens = false;
+        await tester.tap(find.byKey(const ValueKey('kapy-openrouter-get-key')));
+        await tester.pump();
+        expect(launched, hasLength(2));
+        expect(find.text('Could not open the page for a key'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 10));
+      },
+    );
 
     testWidgets('a signed-out Codex says so, and Check again looks', (
       tester,
@@ -1006,7 +1060,7 @@ void main() {
           KapyAccountState(
             kind: KapyAccountKind.codex,
             status: KapyAccountStatus.connected,
-            models: [FakeKapyAi.gpt, FakeKapyAi.gptMini],
+            models: [FakeKapyAi.gpt],
           ),
           KapyAccountState(
             kind: KapyAccountKind.claudeCode,

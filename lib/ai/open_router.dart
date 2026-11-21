@@ -22,6 +22,9 @@ class OpenRouterAccount implements AnswerEngine {
   static const String keyEntry = 'kapynotes.openRouterKey';
   static final Uri _api = Uri.parse('https://openrouter.ai/api/v1/');
 
+  /// Where a person makes the key this account takes.
+  static final Uri keysPage = Uri.parse('https://openrouter.ai/keys');
+
   /// What the picker offers, by name: a short list rather than OpenRouter's
   /// hundreds, cut to the ones OpenRouter still lists once a key is saved.
   static const List<KapyModel> curated = [
