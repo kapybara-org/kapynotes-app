@@ -193,8 +193,10 @@ class NotesFoldersSwitch extends StatelessWidget {
             height: AppControlMetrics.scaleBar(context, 40),
             padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
-              color: palette.cardBackground,
-              border: Border.all(color: palette.controlBorder),
+              color: palette.raisedBackground ?? palette.cardBackground,
+              border: Border.all(
+                color: palette.raisedBorder ?? palette.controlBorder,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(

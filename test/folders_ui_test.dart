@@ -1038,6 +1038,10 @@ void main() {
 
       final bar = find.byKey(const ValueKey('notes-folders-switch'));
       expect(tester.getSize(bar).height, 40);
+      // D01's track: #2A2722 with a 1 px #312D27 line, in Riverbank dark.
+      final track = tester.widget<Container>(bar).decoration! as BoxDecoration;
+      expect(track.color, const Color(0xFF2A2722));
+      expect(track.border, Border.all(color: const Color(0xFF312D27)));
       expect(
         tester
             .getSize(find.byKey(const ValueKey('notes-switch-folders')))

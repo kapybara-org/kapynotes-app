@@ -147,9 +147,6 @@ class NoteGlance {
   }
 }
 
-/// How far the open note's card leans; every other card sits straight.
-const _selectedTilt = -math.pi / 180;
-
 const _cardRadius = BorderRadius.only(
   topLeft: Radius.circular(AppRadii.compact),
   topRight: Radius.circular(6),
@@ -206,21 +203,26 @@ List<KapyIconData> _marksOf(
   if (shared) KapyIcons.groupOutlined,
 ];
 
-Border? _cardBorder(
+/// A card's one fill, opaque on the theme's own card colour so its shadow
+/// never shows through: a step up while the pointer is on it, and another
+/// while it is open or picked. It never takes an outline for being open.
+Color _cardFill(
   CalcPalette palette, {
   required bool selected,
-  required bool ringed,
-  Color? resting,
+  required bool hovering,
 }) => selected
-    ? Border.all(color: palette.selectedBorder, width: 1.5)
-    : ringed
+    ? Color.alphaBlend(palette.fillControl, palette.cardBackground)
+    : hovering
+    ? Color.alphaBlend(palette.fillRest, palette.cardBackground)
+    : palette.cardBackground;
+
+/// The ring round a card open in another pane.
+Border? _ringOf(CalcPalette palette, {required bool ringed}) => ringed
     ? Border.all(
         color: palette.selectedBorder.withValues(alpha: 0.5),
         width: 1.5,
       )
-    : resting == null
-    ? null
-    : Border.all(color: resting);
+    : null;
 
 /// A tick box: the media menu's, and a note's while notes are being picked.
 class _PickBox extends StatelessWidget {
@@ -255,9 +257,8 @@ class _PickBox extends StatelessWidget {
   }
 }
 
-/// A note as a card of three fixed lines: its title in the handwriting face,
-/// a line of it, and the meta row. It sits on its first tag's colour, or on
-/// the plain card when it has none.
+/// A note as a card of three fixed lines: its title, a line of it, and the
+/// meta row, on the list's quiet card fill.
 class NoteCardFace extends StatelessWidget {
   const NoteCardFace({
     super.key,
@@ -313,8 +314,8 @@ class NoteCardFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final tags = TagMarks.of(context, note.id);
-    final colour = tags.firstOrNull?.colour;
-    final tint = colour?.card(palette) ?? palette.surfaceBackground;
+    final marked = selected || this.picking == true;
+    final fill = _cardFill(palette, selected: marked, hovering: hovering);
     final glance = this.glance;
     final result = snippet == null ? glance.amount ?? glance.result : null;
     final text = snippet ?? glance.line;
@@ -324,22 +325,12 @@ class NoteCardFace extends StatelessWidget {
         if (glance.media.contains(kind)) kind.icon,
     ].take(2).toList();
 
-    final card = Container(
+    return Container(
       padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
       decoration: BoxDecoration(
-        color: hovering
-            ? Color.alphaBlend(
-                palette.textPrimary.withValues(alpha: 0.04),
-                tint,
-              )
-            : tint,
+        color: fill,
         borderRadius: _cardRadius,
-        border: _cardBorder(
-          palette,
-          selected: selected || picking == true,
-          ringed: ringed,
-          resting: colour == null ? palette.separator : null,
-        ),
+        border: _ringOf(palette, ringed: ringed),
         boxShadow: _cardShadow(palette),
       ),
       child: Stack(
@@ -365,11 +356,11 @@ class NoteCardFace extends StatelessWidget {
                             note.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: _handwritten(
-                              14,
+                            style: _figtree(
+                              13,
                               18,
                               FontWeight.w500,
-                              palette.cardTitle,
+                              palette.textPrimary,
                             ),
                           ),
                         ),
@@ -379,15 +370,12 @@ class NoteCardFace extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: result != null
-                              ? TextStyle(
-                                  fontFamily: AppFonts.mono,
-                                  fontFamilyFallback: AppFonts.monoFallback,
-                                  fontSize: 12,
-                                  height: 15 / 12,
-                                  leadingDistribution:
-                                      TextLeadingDistribution.even,
-                                  fontWeight: FontWeight.w500,
+                              ? chromeStyle(
+                                  size: 12,
+                                  line: 16,
+                                  weight: AppWeight.page,
                                   color: palette.resultPillText,
+                                  tabular: true,
                                 )
                               : _figtree(
                                   12,
@@ -414,7 +402,8 @@ class NoteCardFace extends StatelessWidget {
                 locked: locked,
                 shared: shared,
                 tags: tags,
-                ground: tint,
+                ground: fill,
+                selected: marked,
               ),
             ],
           ),
@@ -423,9 +412,6 @@ class NoteCardFace extends StatelessWidget {
         ],
       ),
     );
-    return selected
-        ? Transform.rotate(angle: _selectedTilt, child: card)
-        : card;
   }
 }
 
@@ -444,6 +430,7 @@ class _MetaRow extends StatelessWidget {
     required this.shared,
     required this.tags,
     required this.ground,
+    required this.selected,
     this.done = 0,
     this.boxes = 0,
   });
@@ -460,14 +447,19 @@ class _MetaRow extends StatelessWidget {
   final List<TagMark> tags;
   final Color ground;
 
+  /// On the open card the quiet words step up a grey, to stay legible on its
+  /// lighter fill.
+  final bool selected;
+
   static const double _glyph = 14;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final ink = selected ? palette.textSecondary : palette.textTertiary;
     final style = DefaultTextStyle.of(
       context,
-    ).style.merge(_figtree(12, 16, FontWeight.w500, palette.textMuted));
+    ).style.merge(_figtree(12, 16, FontWeight.w400, ink));
     final direction = Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     final first = tags.firstOrNull;
@@ -514,7 +506,7 @@ class _MetaRow extends StatelessWidget {
 
         final right = [
           for (final glyph in [...shown, ...flags])
-            KapyIcon(glyph, size: _glyph, color: palette.textMuted),
+            KapyIcon(glyph, size: _glyph, color: ink),
           if (first != null)
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -533,7 +525,7 @@ class _MetaRow extends StatelessWidget {
               ChecklistPie(
                 done: done,
                 total: boxes,
-                fill: palette.textMuted,
+                fill: ink,
                 check: ground,
                 size: 12,
               ),
@@ -615,26 +607,31 @@ class NoteListRowFace extends StatelessWidget {
     final marked = selected || picking == true;
     final tagMarks = TagMarks.of(context, note.id);
     final first = tagMarks.firstOrNull;
-    final tint = first?.colour?.card(palette) ?? palette.surfaceBackground;
-    // The border is always there, clear until the row is open or ringed, so
-    // opening a note does not nudge its text.
+    final ground = marked
+        ? Color.alphaBlend(
+            palette.fillSelected,
+            touch ? palette.paperColor : palette.sidebarBackground,
+          )
+        : touch
+        ? palette.paperColor
+        : palette.sidebarBackground;
+    // The border is always there, clear unless the row is ringed, so a ring
+    // does not nudge its text. Open, a row takes a fill, never an outline.
     return Container(
       padding: touch
           ? const EdgeInsets.symmetric(horizontal: 20, vertical: 12)
           : const EdgeInsets.all(6.5),
       decoration: BoxDecoration(
         color: marked
-            ? tint
+            ? palette.fillSelected
             : hovering
-            ? palette.hover
+            ? palette.fillControl
             : null,
         borderRadius: touch ? null : BorderRadius.circular(AppRadii.surface),
         border: touch
             ? null
             : Border.all(
-                color: marked
-                    ? palette.selectedBorder
-                    : ringed
+                color: ringed
                     ? palette.selectedBorder.withValues(alpha: 0.5)
                     : Colors.transparent,
                 width: 1.5,
@@ -660,12 +657,7 @@ class NoteListRowFace extends StatelessWidget {
                         width: TagDots.size,
                         child: first == null
                             ? null
-                            : TagDots(
-                                tags: [first],
-                                ground: marked
-                                    ? tint
-                                    : palette.sidebarBackground,
-                              ),
+                            : TagDots(tags: [first], ground: ground),
                       ),
                       const SizedBox(width: 8),
                     ],
@@ -711,10 +703,7 @@ class NoteListRowFace extends StatelessWidget {
                             ),
                             if (tagMarks.isNotEmpty) ...[
                               const SizedBox(width: 6),
-                              TagDots(
-                                tags: tagMarks,
-                                ground: marked ? tint : palette.paperColor,
-                              ),
+                              TagDots(tags: tagMarks, ground: ground),
                             ],
                           ],
                         ),
@@ -843,9 +832,8 @@ class _ThumbnailPainter extends CustomPainter {
       old.textStyle != textStyle;
 }
 
-/// A drawing as a card in the Drawings space: a thumbnail of it, its title in
-/// the handwriting face, and the meta row with no type glyph, on its first
-/// tag's colour or the plain card.
+/// A drawing as a card in the Drawings space: a thumbnail of it, its title,
+/// and the meta row with no type glyph, on the list's quiet card fill.
 class DrawingCardFace extends StatelessWidget {
   const DrawingCardFace({
     super.key,
@@ -879,24 +867,14 @@ class DrawingCardFace extends StatelessWidget {
     final palette = context.palette;
     final picking = this.picking;
     final tags = TagMarks.of(context, note.id);
-    final colour = tags.firstOrNull?.colour;
-    final tint = colour?.card(palette) ?? palette.editorBackground;
-    final card = Container(
+    final marked = selected || picking == true;
+    final fill = _cardFill(palette, selected: marked, hovering: hovering);
+    return Container(
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
       decoration: BoxDecoration(
-        color: hovering
-            ? Color.alphaBlend(
-                palette.textPrimary.withValues(alpha: 0.04),
-                tint,
-              )
-            : tint,
+        color: fill,
         borderRadius: _cardRadius,
-        border: _cardBorder(
-          palette,
-          selected: selected || picking == true,
-          ringed: ringed,
-          resting: colour == null ? palette.separator : null,
-        ),
+        border: _ringOf(palette, ringed: ringed),
         boxShadow: _cardShadow(palette),
       ),
       child: Stack(
@@ -923,11 +901,11 @@ class DrawingCardFace extends StatelessWidget {
                       note.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _handwritten(
-                        14,
+                      style: _figtree(
+                        13,
                         18,
                         FontWeight.w500,
-                        palette.cardTitle,
+                        palette.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -938,7 +916,8 @@ class DrawingCardFace extends StatelessWidget {
                       locked: locked,
                       shared: shared,
                       tags: tags,
-                      ground: tint,
+                      ground: fill,
+                      selected: marked,
                     ),
                   ],
                 ),
@@ -950,9 +929,6 @@ class DrawingCardFace extends StatelessWidget {
         ],
       ),
     );
-    return selected
-        ? Transform.rotate(angle: _selectedTilt, child: card)
-        : card;
   }
 }
 
@@ -990,15 +966,13 @@ class DrawingListRowFace extends StatelessWidget {
       padding: const EdgeInsets.all(6.5),
       decoration: BoxDecoration(
         color: marked
-            ? palette.editorBackground
+            ? palette.fillSelected
             : hovering
-            ? palette.hover
+            ? palette.fillControl
             : null,
         borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(
-          color: marked
-              ? palette.selectedBorder
-              : ringed
+          color: ringed
               ? palette.selectedBorder.withValues(alpha: 0.5)
               : Colors.transparent,
           width: 1.5,
@@ -1107,30 +1081,14 @@ class NotesListHeading extends StatelessWidget {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _figtree(
-                        AppTypeScale.body,
-                        16,
-                        FontWeight.w600,
-                        palette.textPrimary,
-                      ),
+                      style: _sectionLabel(palette),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Tooltip(
                   message: count == 1 ? '1 $noun' : '$count ${noun}s',
-                  child: Text(
-                    '$count',
-                    style:
-                        _figtree(
-                          AppTypeScale.small,
-                          16,
-                          FontWeight.w500,
-                          palette.textTertiary,
-                        ).copyWith(
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                  ),
+                  child: Text('$count', style: _sectionDetail(palette)),
                 ),
               ],
             ),
@@ -1188,8 +1146,26 @@ class SeeAllLink extends StatelessWidget {
   }
 }
 
-/// The heading over one group of the notes list: a day with its date beside
-/// it, a tag or a letter, then a hairline to the edge.
+/// A section label over the notes list: small, quiet and in sentence case,
+/// set apart by the space round it rather than by size or a rule.
+TextStyle _sectionLabel(CalcPalette palette) => chromeStyle(
+  size: 12,
+  line: 16,
+  weight: AppWeight.section,
+  color: palette.textTertiary,
+);
+
+/// A count or a date after a section label: the label's size, at rest.
+TextStyle _sectionDetail(CalcPalette palette) => chromeStyle(
+  size: 12,
+  line: 16,
+  weight: AppWeight.body,
+  color: palette.textTertiary,
+  tabular: true,
+);
+
+/// The heading over one group of the notes list: a day, Upcoming with how
+/// many wait there, a tag or a letter.
 class NotesGroupHeading extends StatelessWidget {
   const NotesGroupHeading({
     super.key,
@@ -1240,12 +1216,7 @@ class NotesGroupHeading extends StatelessWidget {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _figtree(
-                        AppTypeScale.body,
-                        16,
-                        FontWeight.w600,
-                        palette.textPrimary,
-                      ),
+                      style: _sectionLabel(palette),
                     ),
                   ),
                 ],
@@ -1259,18 +1230,9 @@ class NotesGroupHeading extends StatelessWidget {
                 detail,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: _figtree(
-                  AppTypeScale.body,
-                  16,
-                  FontWeight.w400,
-                  palette.textTertiary,
-                ),
+                style: _sectionDetail(palette),
               ),
             ),
-          LayoutId(
-            id: _GroupHeadingPart.rule,
-            child: ColoredBox(color: palette.separator),
-          ),
         ],
       ),
     );
@@ -1284,11 +1246,10 @@ class NotesGroupHeading extends StatelessWidget {
   }
 }
 
-enum _GroupHeadingPart { label, detail, rule }
+enum _GroupHeadingPart { label, detail }
 
-/// Lays a group heading out: the label takes up to 200, the date what the
-/// label leaves and the hairline the rest, so a narrow list shortens the
-/// words.
+/// Lays a group heading out: the label takes up to 200 and the count what
+/// the label leaves, so a narrow list shortens the words.
 class _GroupHeadingLayout extends MultiChildLayoutDelegate {
   @override
   void performLayout(Size size) {
@@ -1302,17 +1263,11 @@ class _GroupHeadingLayout extends MultiChildLayoutDelegate {
       upTo(math.min(end, 200)),
     );
     positionChild(_GroupHeadingPart.label, centred(label, 0));
-    var start = label.width + 8;
+    final start = label.width + 8;
     if (hasChild(_GroupHeadingPart.detail)) {
       final detail = layoutChild(_GroupHeadingPart.detail, upTo(end - start));
       positionChild(_GroupHeadingPart.detail, centred(detail, start));
-      start += detail.width + 8;
     }
-    layoutChild(
-      _GroupHeadingPart.rule,
-      BoxConstraints.tightFor(width: math.max(0, end - start), height: 1),
-    );
-    positionChild(_GroupHeadingPart.rule, Offset(start, (size.height - 1) / 2));
   }
 
   @override

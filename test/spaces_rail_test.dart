@@ -238,6 +238,43 @@ void main() {
       expect(opened, 1);
     });
 
+    testWidgets("is D01's #2A2722 circle with a 1 px #312D27 line in "
+        'Riverbank dark, and plain in light', (tester) async {
+      BoxDecoration face() =>
+          tester
+                  .widget<Container>(
+                    find
+                        .ancestor(
+                          of: find.text('S'),
+                          matching: find.byType(Container),
+                        )
+                        .first,
+                  )
+                  .decoration!
+              as BoxDecoration;
+
+      await tester.pumpWidget(
+        harness(rail(onAccountPressed: () {}, user: user)),
+      );
+      expect(face().color, const Color(0xFF2A2722));
+      expect(face().border, Border.all(color: const Color(0xFF312D27)));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.light(),
+          home: Material(
+            child: SizedBox(
+              height: 760,
+              child: rail(onAccountPressed: () {}, user: user),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(face().color, KapyTheme.lightPalette.controlBackground);
+      expect(face().border, isNull);
+    });
+
     testWidgets('its dot says how sync is doing', (tester) async {
       Future<void> pumpWith(SyncStatus? status) => tester.pumpWidget(
         harness(rail(onAccountPressed: () {}, user: user, syncStatus: status)),

@@ -154,10 +154,10 @@ List<NoteGroup> groupNotes(
   DateTime? Function(Note note)? ownDay,
 }) {
   final groups = <Object?, NoteGroup>{};
-  void add(Object? key, String label, String? detail, Note note) => groups
+  void add(Object? key, String label, Note note) => groups
       .putIfAbsent(
         key,
-        () => (label: label, detail: detail, notes: <Note>[], upcoming: false),
+        () => (label: label, detail: null, notes: <Note>[], upcoming: false),
       )
       .notes
       .add(note);
@@ -173,8 +173,9 @@ List<NoteGroup> groupNotes(
           continue;
         }
         final day = noteDay(note, displayTime, ownDay: own);
-        final (label, detail) = SidebarTimestamp.dayHeading(day, today: today);
-        add(day, label, detail, note);
+        // The page's week already says which day Today and Yesterday are.
+        final (label, _) = SidebarTimestamp.dayHeading(day, today: today);
+        add(day, label, note);
       }
       final days = groups.keys.cast<DateTime>().toList()
         ..sort((a, b) => b.compareTo(a));
@@ -191,7 +192,7 @@ List<NoteGroup> groupNotes(
     case NotesGrouping.byTag:
       for (final note in notes) {
         final tag = firstTag(note);
-        add(tag?.toLowerCase(), tag ?? 'No tag', null, note);
+        add(tag?.toLowerCase(), tag ?? 'No tag', note);
       }
       final names = groups.keys.whereType<String>().toList()..sort();
       return [for (final name in names) groups[name]!, ?groups[null]];
@@ -205,7 +206,7 @@ List<NoteGroup> groupNotes(
             ? null
             : String.fromCharCode(first).toUpperCase();
         final key = letter != null && _letter.hasMatch(letter) ? letter : null;
-        add(key, key ?? '#', null, note);
+        add(key, key ?? '#', note);
       }
       return [
         for (final entry in groups.entries)

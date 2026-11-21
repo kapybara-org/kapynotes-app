@@ -434,7 +434,7 @@ void main() {
       tasks.dot(row('One'));
       Finder dotOf(String words) =>
           find.descendant(of: markOf(row(words)), matching: shape());
-      double heading() => tester.getTopLeft(find.text('The list')).dx;
+      double heading() => tester.getTopLeft(find.text('One')).dx;
       (double, double, double) offsets() => (
         tester.getTopLeft(dotOf('One')).dx - heading(),
         tester.getTopLeft(box('One')).dx - heading(),
@@ -612,6 +612,92 @@ void main() {
         tester.widget<Text>(words(open('One'))).style?.decoration,
         isNot(TextDecoration.lineThrough),
       );
+    });
+
+    testWidgets('First on the list is one flat 4% card with no card inside '
+        'it, and the rows lose their lines', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      await pumpScreen(tester, phone: true);
+      final picker = find.byKey(const ValueKey('tasks-picker'));
+      final palette = tester.element(picker).palette;
+
+      final card =
+          tester.widget<Container>(picker).decoration! as BoxDecoration;
+      expect(card.color, palette.fillRest);
+      expect(card.border, isNull);
+      expect(card.boxShadow, isNull);
+      expect(card.borderRadius, BorderRadius.circular(AppRadii.surface));
+      Iterable<BoxDecoration> boxesIn(Finder finder) => [
+        for (final box in tester.widgetList<Container>(
+          find.descendant(of: finder, matching: find.byType(Container)),
+        ))
+          if (box.decoration case final BoxDecoration decoration) decoration,
+      ];
+      // The note's own small mark keeps its edge; no card sits round the
+      // task.
+      expect(
+        boxesIn(picker).where(
+          (box) =>
+              box.border != null &&
+              box.borderRadius == BorderRadius.circular(AppRadii.surface),
+        ),
+        isEmpty,
+      );
+
+      final question = tester
+          .widget<Text>(find.text('Ready to do this now?'))
+          .style!;
+      expect(question.fontFamily, AppFonts.ui);
+      expect(question.fontSize, 15);
+      expect(question.height, 20 / 15);
+      expect(question.fontVariations, AppWeight.variations(AppWeight.button));
+
+      ButtonStyle style(String key) => tester
+          .widget<TextButton>(
+            find.descendant(
+              of: find.byKey(ValueKey(key)),
+              matching: find.byType(TextButton),
+            ),
+          )
+          .style!;
+      expect(
+        style('tasks-ready-yes').backgroundColor!.resolve({}),
+        palette.fillSageTint,
+      );
+      expect(
+        style('tasks-ready-not-yet').backgroundColor!.resolve({}),
+        palette.fillControl,
+      );
+      expect(
+        (style('tasks-ready-not-yet').shape!.resolve({})!
+                as RoundedRectangleBorder)
+            .side,
+        BorderSide.none,
+      );
+
+      final row = find.byKey(ValueKey('phone-task-${open('One').id}'));
+      // The checkbox keeps its edge; no line runs under the row.
+      expect(
+        boxesIn(row).where(
+          (box) => switch (box.border) {
+            Border(:final top, :final bottom) =>
+              top == BorderSide.none && bottom != BorderSide.none,
+            _ => false,
+          },
+        ),
+        isEmpty,
+      );
+      final note = tester
+          .widgetList<Text>(
+            find.descendant(of: row, matching: find.byType(Text)),
+          )
+          .firstWhere((text) => text.data != 'One')
+          .style!;
+      expect(note.fontFamily, AppFonts.ui);
+      expect(note.fontSize, 13);
+      expect(note.height, 18 / 13);
+      expect(note.color, palette.textTertiary);
+      await settle(tester);
     });
 
     testWidgets('a checked row leaves once the screen is left', (tester) async {
