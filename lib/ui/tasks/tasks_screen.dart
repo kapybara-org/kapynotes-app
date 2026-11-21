@@ -1950,7 +1950,7 @@ double _markWidth(double row) => math.min(220, row * _markShare);
 /// Whether a row [width] wide has room for the note's name beside the task's
 /// words at the current text size; a narrower one puts it on its own line.
 bool _markFitsBeside(BuildContext context, double width) =>
-    width >= MediaQuery.textScalerOf(context).scale(200);
+    width >= 200 * MediaQuery.textScalerOf(context).scale(16) / 16;
 
 /// How wide a list row must be at 1× to say "Still want this?" beside Keep
 /// and Remove; a narrower one keeps the room for the task's words.
@@ -2053,31 +2053,34 @@ class _TaskRowState extends State<_TaskRow> {
                 ),
               ),
             );
-            final scaler = MediaQuery.textScalerOf(context);
-            final ask = constraints.maxWidth >= scaler.scale(_stillWantWidth);
+            final grow = MediaQuery.textScalerOf(context).scale(12) / 12;
+            final ask = constraints.maxWidth >= _stillWantWidth * grow;
             final controls = stale
                 ? 50 +
-                      scaler.scale(
-                        ask
-                            ? _keepRemoveWords + _stillWantWords
-                            : _keepRemoveWords,
-                      )
+                      grow *
+                          (ask
+                              ? _keepRemoveWords + _stillWantWords
+                              : _keepRemoveWords)
                 : 0.0;
             final below = constraints.maxWidth < controls * 2;
             final room = below
                 ? constraints.maxWidth
                 : constraints.maxWidth - controls;
             final under = label != null && !_markFitsBeside(context, room);
-            final keep = [
-              if (ask)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Text('Still want this?', style: quiet),
+            final keep = Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (ask) Text('Still want this?', style: quiet),
+                _RowButton(
+                  label: 'Keep',
+                  strong: true,
+                  onPressed: widget.onKeep,
                 ),
-              _RowButton(label: 'Keep', strong: true, onPressed: widget.onKeep),
-              const SizedBox(width: 4),
-              _RowButton(label: 'Remove', onPressed: widget.onRemove),
-            ];
+                _RowButton(label: 'Remove', onPressed: widget.onRemove),
+              ],
+            );
             return Row(
               children: [
                 Tooltip(
@@ -2124,14 +2127,14 @@ class _TaskRowState extends State<_TaskRow> {
                                   onPressed: widget.onOpenNote,
                                 ),
                               ),
-                            if (below) Row(children: keep),
+                            if (below) keep,
                           ],
                         )
                       : words,
                 ),
                 TaskDetailsIcon(item: item),
                 if (stale) ...[
-                  if (!below) ...[const SizedBox(width: 10), ...keep],
+                  if (!below) ...[const SizedBox(width: 10), keep],
                 ] else if (_hovered) ...[
                   const SizedBox(width: 10),
                   Text(

@@ -30,6 +30,35 @@ class _MemoryStore extends LocalStore {
 
 const _shared = 'Errands for Bob · With kapy16p-bob-1795219088@example.com';
 
+/// Android 14's 200% text: 12 px doubles, and 100 px and up stays.
+class _Android200 extends TextScaler {
+  const _Android200();
+
+  static const _from = [0.0, 8, 10, 12, 14, 18, 20, 24, 30, 100];
+  static const _to = [0.0, 16, 20, 24, 26, 30, 34, 36, 38, 100];
+
+  @override
+  double scale(double fontSize) {
+    if (fontSize >= 100) return fontSize;
+    for (var i = 0; i < _from.length - 1; i++) {
+      if (fontSize <= _from[i + 1]) {
+        final t = (fontSize - _from[i]) / (_from[i + 1] - _from[i]);
+        return _to[i] + t * (_to[i + 1] - _to[i]);
+      }
+    }
+    return fontSize;
+  }
+
+  @override
+  double get textScaleFactor => 2;
+
+  @override
+  bool operator ==(Object other) => other is _Android200;
+
+  @override
+  int get hashCode => 7;
+}
+
 void main() {
   setUpAll(loadTestFonts);
 
@@ -76,6 +105,7 @@ void main() {
     required bool phone,
     required String label,
     double scale = 1,
+    TextScaler? scaler,
     TaskFilter filter = const TaskFilter.all(),
   }) async {
     await tester.binding.setSurfaceSize(size);
@@ -86,7 +116,7 @@ void main() {
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
-          ).copyWith(textScaler: TextScaler.linear(scale)),
+          ).copyWith(textScaler: scaler ?? TextScaler.linear(scale)),
           child: child!,
         ),
         home: Scaffold(
@@ -163,7 +193,7 @@ void main() {
   /// stay in the pane. At 1× the row keeps its height and its one line.
   void staleRowTests({required bool touch}) {
     for (final state in ['plain', 'hovered', 'picked']) {
-      for (final width in [420.0, 768.0]) {
+      for (final width in [320.0, 420.0, 768.0]) {
         for (final scale in [1.0, 2.0, 3.1]) {
           testWidgets('a $state stale task in a Tasks pane ${width.round()} '
               'wide at ${scale}x keeps its words, Keep, Remove and its note '
@@ -185,6 +215,8 @@ void main() {
             expect(tasks.read().open[1].dotted, state == 'picked');
             final row = find.byKey(ValueKey(item.id));
             if (state == 'hovered') {
+              await tester.ensureVisible(row);
+              await tester.pumpAndSettle();
               final mouse = await tester.createGesture(
                 kind: PointerDeviceKind.mouse,
               );
@@ -222,7 +254,7 @@ void main() {
               expectInside(tester, other, width);
               expect(tester.getRect(other).overlaps(wordsRect), isFalse);
             }
-            if (scale == 1) {
+            if (scale == 1 && width >= 420) {
               expect(tester.getSize(row).height, touch ? 44 : 38);
               var left = wordsRect.right;
               for (final other in others) {
@@ -464,11 +496,131 @@ void main() {
     }
   });
 
+  group('on a phone 390 wide with Android 14\'s 200% text', () {
+    setUp(
+      () => AppPlatform.debugTargetPlatformOverride = TargetPlatform.android,
+    );
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    testWidgets('the first task keeps its words above a long note name', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+      await pumpTasks(
+        tester,
+        size: const Size(390, 844),
+        phone: true,
+        label: _shared,
+        scaler: const _Android200(),
+      );
+      expect(tester.takeException(), isNull);
+      final words = readyWords('Water the plants');
+      expect(
+        tester.getSize(words).width,
+        greaterThan(const _Android200().scale(15) * 3),
+        reason: 'the task kept only its first letters',
+      );
+      expect(
+        tester
+            .getRect(
+              find.descendant(
+                of: find
+                    .ancestor(
+                      of: find.text('First on the list'),
+                      matching: find.byType(Column),
+                    )
+                    .first,
+                matching: find.byType(NoteMark),
+              ),
+            )
+            .top,
+        greaterThanOrEqualTo(tester.getRect(words).bottom - 0.5),
+      );
+      expectInside(tester, find.byKey(const ValueKey('tasks-ready-yes')), 390);
+      expectInside(
+        tester,
+        find.byKey(const ValueKey('tasks-ready-not-yet')),
+        390,
+      );
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('a done task keeps its words above a long note name', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+      await tasks.setDone(tasks.read().open.first, done: true);
+      await pumpTasks(
+        tester,
+        size: const Size(390, 844),
+        phone: true,
+        label: _shared,
+        scaler: const _Android200(),
+        filter: const TaskFilter.done(),
+      );
+      expect(tester.takeException(), isNull);
+      final words = find.text('Water the plants');
+      expect(
+        tester.getSize(words).width,
+        greaterThan(const _Android200().scale(16) * 3),
+        reason: 'the task kept only its first letters',
+      );
+      final mark = find.byType(NoteMark).first;
+      expect(
+        tester.getRect(mark).top,
+        greaterThanOrEqualTo(tester.getRect(words).bottom - 0.5),
+      );
+      expectInside(tester, words, 390);
+      expectInside(tester, mark, 390);
+      expectInside(tester, find.text('09:00'), 390);
+      await tester.pump(const Duration(seconds: 3));
+    });
+  });
+
   group('on a desktop', () {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
     staleRowTests(touch: false);
+
+    for (final width in [420.0, 560.0, 640.0, 768.0, 1024.0]) {
+      testWidgets('in a Tasks pane ${width.round()} wide with Android 14\'s '
+          '200% text, a stale task keeps its words, Keep, Remove and its note '
+          'name on screen', (tester) async {
+        await setUpTasks(
+          tester,
+          'Errands\n☐ Hide the menu\n☐ Water the plants\n☐ Two',
+        );
+        final item = tasks.read().open[1];
+        clock = clock.add(const Duration(days: 15));
+        await pumpTasks(
+          tester,
+          size: Size(width, 1400),
+          phone: false,
+          label: _shared,
+          scaler: const _Android200(),
+        );
+        expect(tester.takeException(), isNull);
+        final row = find.byKey(ValueKey(item.id));
+        final words = tester.getRect(
+          find.descendant(of: row, matching: find.text('Water the plants')),
+        );
+        expect(
+          words.width,
+          greaterThan(const _Android200().scale(16) * 3),
+          reason: 'the task kept only its first letters',
+        );
+        for (final other in [
+          find.descendant(of: row, matching: find.text('Keep')),
+          find.descendant(of: row, matching: find.text('Remove')),
+          find.descendant(of: row, matching: find.byType(NoteMark)),
+        ]) {
+          expectInside(tester, other, width);
+          expect(tester.getRect(other).overlaps(words), isFalse);
+        }
+        await tester.pump(const Duration(seconds: 3));
+      });
+    }
 
     for (final label in ['Errands', _shared]) {
       testWidgets(
