@@ -446,8 +446,8 @@ void main() {
 
       expect(find.text('ON THIS DEVICE'), findsOneWidget);
       expect(find.text('Apple Intelligence'), findsWidgets);
-      expect(find.text('Codex on this Mac'), findsOneWidget);
-      expect(find.text('Claude Code on this Mac'), findsOneWidget);
+      expect(find.text('On this Mac'), findsNWidgets(2));
+      expect(find.text('Codex on this Mac'), findsNothing);
       expect(find.text('Quick answers and short notes'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsOneWidget);
     });
@@ -486,7 +486,7 @@ void main() {
       expect(find.text('Use Codex'), findsOneWidget);
       expect(find.text('Use Claude Code'), findsOneWidget);
       expect(find.text('Add your key'), findsOneWidget);
-      expect(find.text('Get one, then paste it in Settings'), findsOneWidget);
+      expect(find.text('Get one, then add it in Settings'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('kapy-ai-connect-codex')));
@@ -554,6 +554,131 @@ void main() {
       );
 
       expect(find.text('Codex'), findsNothing);
+    });
+
+    const keyMissing = KapyAccountState(
+      kind: KapyAccountKind.openRouter,
+      status: KapyAccountStatus.notConnected,
+    );
+    const threeModels = [_codexConnected, _claudeConnected, _routerConnected];
+    const manyModels = KapyAccountState(
+      kind: KapyAccountKind.openRouter,
+      status: KapyAccountStatus.connected,
+      models: [
+        FakeKapyAi.gemini,
+        KapyModel(kind: KapyModelKind.openRouter, id: 'a', label: 'A'),
+        KapyModel(kind: KapyModelKind.openRouter, id: 'b', label: 'B'),
+        KapyModel(kind: KapyModelKind.openRouter, id: 'c', label: 'C'),
+        KapyModel(kind: KapyModelKind.openRouter, id: 'd', label: 'D'),
+      ],
+      detail: '4f2a',
+    );
+    final head = find.descendant(
+      of: find.byType(KapyAiEmpty),
+      matching: find.byType(Image),
+    );
+    final menu = find.byKey(const ValueKey('kapy-ai-picker'));
+
+    Future<FakeKapyAi> start(
+      WidgetTester tester,
+      List<KapyAccountState> accounts, {
+      double height = 700,
+    }) async {
+      tester.view.physicalSize = Size(400, height);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final ai = FakeKapyAi(pro: true, accountList: accounts);
+      final controller = KapyAiPanelController()..open();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(body: _panel(ai, controller)),
+        ),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+      return ai;
+    }
+
+    Future<void> toggle(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-model-button')));
+      await tester.pump();
+    }
+
+    void expectHead(WidgetTester tester, {required bool drawn}) {
+      final image = paints..drawImageRect();
+      expect(
+        tester.renderObject(find.byType(KapyAiEmpty)),
+        drawn ? image : isNot(image),
+      );
+      if (menu.evaluate().isEmpty) return;
+      final chin = tester.getRect(head).top + 56;
+      expect(chin <= tester.getRect(menu).top, drawn);
+    }
+
+    for (final (name, accounts, drawn) in [
+      ('a short menu', [keyMissing], true),
+      ('three models', threeModels, false),
+      ('a tall menu', [_codexConnected, _claudeConnected, manyModels], false),
+    ]) {
+      testWidgets('Kapy’s head is whole above $name from its first frame, '
+          'or wholly under it', (tester) async {
+        await start(tester, accounts);
+        expectHead(tester, drawn: true);
+
+        await toggle(tester);
+        expectHead(tester, drawn: drawn);
+      });
+    }
+
+    testWidgets('a resize with the menu open hides the head, then shows it', (
+      tester,
+    ) async {
+      await start(tester, threeModels, height: 1100);
+      await toggle(tester);
+      expectHead(tester, drawn: true);
+
+      tester.view.physicalSize = const Size(400, 600);
+      await tester.pump();
+      expectHead(tester, drawn: false);
+
+      tester.view.physicalSize = const Size(400, 1100);
+      await tester.pump();
+      expectHead(tester, drawn: true);
+    });
+
+    testWidgets('a menu that grows and shrinks while open covers the head, '
+        'then clears it', (tester) async {
+      final ai = await start(tester, const [keyMissing]);
+      await toggle(tester);
+      expectHead(tester, drawn: true);
+
+      ai.set(accounts: threeModels);
+      await tester.pump();
+      expectHead(tester, drawn: false);
+
+      ai.set(accounts: const [keyMissing]);
+      await tester.pump();
+      expectHead(tester, drawn: true);
+    });
+
+    testWidgets('reopening over a taller menu never draws the head under it', (
+      tester,
+    ) async {
+      final ai = await start(tester, const [keyMissing]);
+      await toggle(tester);
+      expectHead(tester, drawn: true);
+      await toggle(tester);
+      expect(menu, findsNothing);
+      expectHead(tester, drawn: true);
+
+      ai.set(accounts: threeModels);
+      await tester.pump();
+      await toggle(tester);
+      expectHead(tester, drawn: false);
     });
   });
 

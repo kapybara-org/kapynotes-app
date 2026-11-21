@@ -477,7 +477,7 @@ class _PaneHeaderState extends State<_PaneHeader> {
                     if (widget.shared) ...[
                       KapyIcon(
                         KapyIcons.groupOutlined,
-                        size: 13,
+                        size: 14,
                         color: palette.textTertiary,
                       ),
                       const SizedBox(width: 5),
@@ -646,7 +646,7 @@ class _EmptyPaneState extends State<EmptyPane> {
                       TextButton.icon(
                         onPressed: onShowNotes,
                         icon: KapyIcon(
-                          KapyIcons.menuRounded,
+                          KapyIcons.menuOpenRounded,
                           size: AppControlMetrics.iconControl,
                         ),
                         label: const Text('Show notes'),

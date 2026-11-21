@@ -794,7 +794,7 @@ class _SearchField extends StatelessWidget {
         children: [
           KapyIcon(
             KapyIcons.searchRounded,
-            size: 15,
+            size: AppControlMetrics.iconSearch,
             color: palette.textTertiary,
           ),
           const SizedBox(width: 10),

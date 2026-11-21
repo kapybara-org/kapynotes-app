@@ -1053,7 +1053,7 @@ class _CommandMenuState extends State<CommandMenu> {
         children: [
           KapyIcon(
             KapyIcons.searchRounded,
-            size: 18,
+            size: AppControlMetrics.iconSearch,
             color: palette.textSecondary,
           ),
           if (picker != null)
