@@ -17,6 +17,27 @@ typedef MenuBarWindowActions = ({
   VoidCallback explainNoteLimit,
 });
 
+/// Why a click on the icon left the panel shut and gave the icon its menu.
+enum PanelMiss {
+  /// This engine can't host the panel, or showings kept failing.
+  unsupported,
+
+  /// ⌃ was held, which asks for the menu.
+  controlHeld,
+
+  /// The native side showed nothing: there was no screen to show it on.
+  refused,
+
+  /// The panel's view hadn't reached the engine when the time was up.
+  noView,
+
+  /// The engine hadn't drawn the panel when the time was up.
+  noFrame,
+
+  /// The panel was drawn but hadn't been revealed when the time was up.
+  notRevealed,
+}
+
 /// The menu bar panel's native half, and what it holds between openings.
 ///
 /// The panel is a second view on this engine (macos/Runner/MenuBarPanel.swift),
@@ -110,8 +131,14 @@ class MenuBarPanelController extends ChangeNotifier
   int _openings = 0;
   int _failedShows = 0;
   Completer<void>? _arrival;
+  PanelMiss? _lastMiss;
+  PanelMiss _stalled = PanelMiss.noView;
 
   bool get isOpen => _open;
+
+  /// Why the last [click] or [open] left the panel shut, or null when it
+  /// showed.
+  PanelMiss? get lastMiss => _lastMiss;
 
   /// Counts openings, so that what lasts only while the panel is open, such
   /// as a task checked in place, starts over each time.
@@ -137,8 +164,14 @@ class MenuBarPanelController extends ChangeNotifier
   /// answers true; or answers false when the menu should open instead,
   /// because there is no panel here, ⌃ is held, or the panel never showed.
   Future<bool> click() async {
-    if (!await isSupported) return false;
-    if (await _ask<bool>('isControlPressed') ?? false) return false;
+    if (!await isSupported) {
+      _lastMiss = PanelMiss.unsupported;
+      return false;
+    }
+    if (await _ask<bool>('isControlPressed') ?? false) {
+      _lastMiss = PanelMiss.controlHeld;
+      return false;
+    }
     if (!_open) return open();
     await close();
     return true;
@@ -152,12 +185,16 @@ class MenuBarPanelController extends ChangeNotifier
   /// Opens the panel, and answers whether it is showing.
   Future<bool> open() async {
     if (_open) return true;
-    if (!await isSupported) return false;
+    if (!await isSupported) {
+      _lastMiss = PanelMiss.unsupported;
+      return false;
+    }
     _open = true;
     _openings++;
     final id = await _ask<int>('show', {'height': _height, 'key': takesKey});
     if (id == null) {
       _open = false;
+      _lastMiss = PanelMiss.refused;
       return false;
     }
     _viewId = id;
@@ -166,9 +203,11 @@ class MenuBarPanelController extends ChangeNotifier
       onTimeout: () => false,
     );
     if (shown) {
+      _lastMiss = null;
       _failedShows = 0;
       return true;
     }
+    _lastMiss = _stalled;
     _open = false;
     if (++_failedShows >= maxFailedShows) _supported = Future.value(false);
     notifyListeners();
@@ -177,16 +216,19 @@ class MenuBarPanelController extends ChangeNotifier
   }
 
   Future<bool> _drawAndReveal() async {
+    _stalled = PanelMiss.noView;
     if (view == null) {
       _arrival = Completer<void>();
       await _arrival!.future;
     }
+    _stalled = PanelMiss.noFrame;
     _resized = false;
     notifyListeners();
     await WidgetsBinding.instance.endOfFrame;
     // A first frame that found the panel the wrong height has asked for the
     // right one; the frame after it is the one to show.
     if (_resized) await WidgetsBinding.instance.endOfFrame;
+    _stalled = PanelMiss.notRevealed;
     if (_open) await _ask<void>('reveal');
     return true;
   }
