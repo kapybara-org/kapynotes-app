@@ -154,4 +154,30 @@ void main() {
       Border(bottom: BorderSide(color: KapyTheme.lightPalette.railBorder)),
     );
   });
+
+  testWidgets("the search field's keycap is T3, which Riverbank dark keeps "
+      'apart from T2', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    const palette = KapyTheme.darkPalette;
+    expect(palette.textTertiary, isNot(palette.textSecondary));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Material(
+          child: SidebarSearchField(
+            onSearch: () {},
+            shortcut: const ShortcutBinding(
+              logicalKey: LogicalKeyboardKey.keyK,
+              physicalKey: PhysicalKeyboardKey.keyK,
+              meta: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    final keycap = tester.widget<Text>(
+      find.byKey(const ValueKey('sidebar-search-shortcut')),
+    );
+    expect(keycap.style!.color, palette.textTertiary);
+  });
 }

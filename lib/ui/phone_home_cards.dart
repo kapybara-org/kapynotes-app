@@ -106,7 +106,7 @@ class _HomeCard extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: palette.wellBackground,
+              color: palette.fillRest,
               borderRadius: BorderRadius.circular(9),
             ),
             child: Column(

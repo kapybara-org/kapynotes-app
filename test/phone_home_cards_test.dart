@@ -53,6 +53,22 @@ void main() {
     return opened;
   }
 
+  testWidgets('a card is the quiet 4% fill with no border', (tester) async {
+    await pumpCards(tester, pinned: [note('a', 'Reading list')]);
+    final pinned = find.byKey(const ValueKey('home-pinned-card'));
+    final decoration =
+        tester
+                .widget<Container>(
+                  find
+                      .descendant(of: pinned, matching: find.byType(Container))
+                      .first,
+                )
+                .decoration!
+            as BoxDecoration;
+    expect(decoration.color, KapyTheme.darkPalette.fillRest);
+    expect(decoration.border, isNull);
+  });
+
   testWidgets('Pinned and Shared are two equal cards that count their notes, '
       'name them, and open their lists', (tester) async {
     final opened = await pumpCards(
