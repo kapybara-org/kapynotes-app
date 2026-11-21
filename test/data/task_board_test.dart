@@ -166,13 +166,13 @@ void main() {
       return best;
     }
 
-    fastest(50);
-    final small = fastest(50);
-    final large = fastest(200);
+    fastest(100);
+    final small = fastest(100);
+    final large = fastest(800);
     expect(
       large,
-      lessThan(small * 8),
-      reason: 'four times the tasks took ${large / small} times as long',
+      lessThan(small * 16),
+      reason: 'eight times the tasks took ${large / small} times as long',
     );
   });
 }
