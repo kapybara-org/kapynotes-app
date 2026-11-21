@@ -9,6 +9,15 @@
 # release goes to all users once approved, on both stores. There is no phased
 # release on iOS and no staged rollout on Play.
 #
+# If an earlier iOS version is still waiting for review, the submission
+# cancels that review and sends this version in its place (see
+# packaging/asc_submit.py). If the earlier version is already in review or
+# later, nothing is changed in App Store Connect: the run ends with a
+# "Submission deferred" warning and summary, and the build stays uploaded. Once
+# the earlier version is released, run this workflow again with stores ios and
+# ios_submit_only, which skips the build and upload (a build number can be
+# uploaded only once) and prepares and submits the build already there.
+#
 # The notes files hold the text users see: What's New for the App Store (up to
 # 4000 characters) and the Play release notes (up to 500). Both are paths
 # inside this repository, for example under metadata/.
@@ -61,6 +70,11 @@ on:
         description: Play release notes file, repo-relative (needed for android and both)
         required: false
         type: string
+      ios_submit_only:
+        description: iOS only. Skip the build and upload, and submit the build already in App Store Connect (after a deferred submission)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -91,8 +105,13 @@ jobs:
       - name: Inputs must match pubspec.yaml and name real notes files
         env:
           STORES: ${{ inputs.stores }}
+          SUBMIT_ONLY: ${{ inputs.ios_submit_only }}
         run: |
           set -euo pipefail
+          if [ "$SUBMIT_ONLY" = true ] && [ "$STORES" != ios ]; then
+            echo "::error::ios_submit_only needs stores set to ios"
+            exit 1
+          fi
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$BUILD" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::version must look like 1.35.1 and build_number like 43"
             exit 1
@@ -145,6 +164,7 @@ jobs:
       # The newest Xcode on the image, not its default, so the build uses the
       # same SDK as the Mac it replaces (Xcode 27.2, iOS 27.2 SDK).
       - name: Select the newest Xcode
+        if: ${{ !inputs.ios_submit_only }}
         run: |
           set -euo pipefail
           xcode="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -type d | sort -V | tail -1)"
@@ -153,12 +173,14 @@ jobs:
           DEVELOPER_DIR="$xcode/Contents/Developer" xcrun --sdk iphoneos --show-sdk-version
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        if: ${{ !inputs.ios_submit_only }}
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: false
 
       - run: flutter pub get --enforce-lockfile
+        if: ${{ !inputs.ios_submit_only }}
 
       # Where altool looks for AuthKey_<id>.p8, and the file xcodebuild and
       # asc_submit.py are pointed at.
@@ -191,6 +213,7 @@ jobs:
           }
 
       - name: Build the IPA
+        if: ${{ !inputs.ios_submit_only }}
         env:
           XCODE_AUTH_KEY_ID: ${{ secrets.ASC_APPSTORE_KEY_ID }}
           XCODE_AUTH_ISSUER_ID: ${{ secrets.ASC_APPSTORE_ISSUER_ID }}
@@ -203,12 +226,14 @@ jobs:
           packaging/release.sh ios
 
       - name: Bundle the Dart symbols and dSYMs
+        if: ${{ !inputs.ios_submit_only }}
         run: |
           set -euo pipefail
           (cd "build/release/symbols/$VERSION" && zip -qr "../../kapy-ios-$VERSION-symbols.zip" ios)
           ditto -c -k --keepParent build/ios/archive/Runner.xcarchive/dSYMs "build/release/kapy-ios-$VERSION-dSYMs.zip"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !inputs.ios_submit_only }}
         with:
           name: ios-${{ inputs.version }}-symbols
           path: |
@@ -218,6 +243,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to App Store Connect
+        if: ${{ !inputs.ios_submit_only }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_APPSTORE_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_APPSTORE_ISSUER_ID }}
@@ -231,7 +257,9 @@ jobs:
           "$RUNNER_TEMP/asc/bin/pip" install --quiet --require-hashes --only-binary=:all: \
             -r packaging/asc-requirements.txt
 
+      # On ios_submit_only, prepare's own check that the build is VALID stands in.
       - name: Wait for the build to process
+        if: ${{ !inputs.ios_submit_only }}
         env: &asc
           ASC_KEY_ID: ${{ secrets.ASC_APPSTORE_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_APPSTORE_ISSUER_ID }}
@@ -239,15 +267,35 @@ jobs:
           NOTES_FILE: ${{ inputs.ios_notes_file }}
         run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py build
 
+      # Exit 3 means an earlier version is in review or later, so nothing was
+      # changed and the submission waits; the steps after it are skipped.
       - name: Prepare the version, with no phased release
+        id: prepare
         env: *asc
-        run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py prepare
+        run: |
+          set +e
+          ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py prepare
+          code=$?
+          set -e
+          if [ "$code" -eq 3 ]; then
+            echo "deferred=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Submission deferred::Build $BUILD of $VER is uploaded, but an earlier version is in review or later, so nothing was submitted. Once it is released, run Store release again with stores ios and ios_submit_only."
+            {
+              echo "### App Store submission deferred"
+              echo
+              echo "Build $BUILD of $VER is uploaded and processed. An earlier version is in review or later, so nothing was changed in App Store Connect. Once that version is released, run Store release again from this branch with stores \`ios\` and \`ios_submit_only\` checked."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          exit "$code"
 
       - name: Submit for review
+        if: steps.prepare.outputs.deferred != 'true'
         env: *asc
         run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py submit
 
       - name: Confirm what was submitted
+        if: steps.prepare.outputs.deferred != 'true'
         env: *asc
         run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py status
 
