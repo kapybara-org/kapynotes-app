@@ -55,6 +55,20 @@ void main() {
       tester.widget<NoteField>(find.byType(NoteField));
 
   Future<void> open(WidgetTester tester, String body) async {
+    for (
+      var i = 0;
+      i < 300 && tester.binding.lifecycleState != AppLifecycleState.resumed;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(
+      tester.binding.lifecycleState,
+      AppLifecycleState.resumed,
+      reason:
+          'the app\'s window never took focus, and Android raises no keyboard '
+          'for a window without it',
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     for (var i = 0; i < 150 && tester.view.viewInsets.bottom > 0; i++) {
       await tester.pump(const Duration(milliseconds: 100));
