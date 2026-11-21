@@ -251,8 +251,7 @@ class SettingsSearchField extends StatelessWidget {
                   heightFactor: 1,
                   child: KapyIcon(
                     KapyIcons.searchRounded,
-                    size: pointer ? 15 : AppControlMetrics.iconSearch,
-                    strokeWidth: pointer ? 1.8 : 1.5,
+                    size: AppControlMetrics.iconSearch,
                     color: pointer
                         ? palette.textSecondary
                         : palette.textTertiary,

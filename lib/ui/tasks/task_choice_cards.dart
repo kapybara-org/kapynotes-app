@@ -131,7 +131,8 @@ String shortTaskName(String words) {
   while (kept.length > 1 && _connectors.contains(kept.last.toLowerCase())) {
     kept.removeLast();
   }
-  return kept.join(' ');
+  final short = kept.join(' ');
+  return kept.length < parts.length ? '$short…' : short;
 }
 
 /// Whether [item] has sat untouched long enough to ask if it's still wanted.
@@ -352,9 +353,9 @@ class TaskPairCard extends StatelessWidget {
             builder: (context, constraints) {
               if (phone ||
                   constraints.maxWidth <
-                      MediaQuery.textScalerOf(
-                        context,
-                      ).scale(_pairBesideWidth)) {
+                      _pairBesideWidth *
+                          MediaQuery.textScalerOf(context).scale(16) /
+                          16) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   spacing: 8,
@@ -681,11 +682,13 @@ class TaskDoNowCard extends StatelessWidget {
           color: phone ? ink.text : ink.secondary,
         ),
         const SizedBox(width: 6),
-        Text(
-          'Not finished',
-          style: phone
-              ? taskText(15, 20, ink.text, 500)
-              : taskText(13, 18, ink.secondary, 500),
+        Flexible(
+          child: Text(
+            'Not finished',
+            style: phone
+                ? taskText(15, 20, ink.text, 500)
+                : taskText(13, 18, ink.secondary, 500),
+          ),
         ),
       ],
     );
@@ -708,11 +711,13 @@ class TaskDoNowCard extends StatelessWidget {
                 color: phone ? ink.sage : ink.text,
               ),
               const SizedBox(width: 6),
-              Text(
-                'Done',
-                style: phone
-                    ? taskText(15, 20, ink.sage, 500)
-                    : taskText(13, 18, ink.text, 500),
+              Flexible(
+                child: Text(
+                  'Done',
+                  style: phone
+                      ? taskText(15, 20, ink.sage, 500)
+                      : taskText(13, 18, ink.text, 500),
+                ),
               ),
               if (!phone && doneShortcut != null) ...[
                 const SizedBox(width: 6),
@@ -819,7 +824,9 @@ class TaskDoNowCard extends StatelessWidget {
           : LayoutBuilder(
               builder: (context, constraints) {
                 if (constraints.maxWidth >=
-                    MediaQuery.textScalerOf(context).scale(_doNowBesideWidth)) {
+                    _doNowBesideWidth *
+                        MediaQuery.textScalerOf(context).scale(16) /
+                        16) {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [

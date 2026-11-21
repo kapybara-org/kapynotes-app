@@ -20,6 +20,7 @@ import '../join/joining_ui.dart';
 import '../profile_avatar.dart';
 import '../safety_dialogs.dart';
 import '../settings_rows.dart';
+import '../sharing_sheet.dart';
 import '../sidebar_timestamp.dart';
 
 /// Settings → Sharing: the people this account shares notes with, and what
@@ -186,12 +187,13 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   bool get _idle => !_busy && !_sharing.isOffline;
 
   /// Runs one action. A failure is said once, under [at], and nowhere else;
-  /// [done] is said as a toast, with Undo when [undo] can take it back.
+  /// [done] is said as a toast, with Undo when [undo] can take it back; [undo]
+  /// answers with what to say once it has.
   Future<bool> _run(
     String at,
     Future<void> Function() action, {
     String? done,
-    Future<void> Function()? undo,
+    Future<String> Function()? undo,
   }) async {
     setState(() {
       _busy = true;
@@ -210,11 +212,14 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         await action();
       }
       if (mounted && done != null) {
+        final overlay = Overlay.of(context, rootOverlay: true);
         Toast.show(
           context,
           done,
           action: undo == null ? null : 'Undo',
-          onAction: undo == null ? null : () => unawaited(_run(at, undo)),
+          onAction: undo == null
+              ? null
+              : () => unawaited(undoSharing(overlay, undo)),
         );
       }
       return true;
@@ -326,19 +331,6 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   // ---------------------------------------------------------------------------
   // Asking first
 
-  /// A confirmation. With [option], a box ticked by default whose answer is
-  /// returned; null means the person said no.
-  Future<bool?> _confirm({
-    required String title,
-    required String body,
-    required String action,
-    String? option,
-  }) => showDialog<bool>(
-    context: context,
-    builder: (context) =>
-        _Confirm(title: title, body: body, action: action, option: option),
-  );
-
   Future<T?> _menu<T>(
     BuildContext button,
     List<({T value, String label, bool danger})> items,
@@ -385,10 +377,11 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         ),
       );
     } else if (choice == 'block') {
-      final ok = await _confirm(
+      final ok = await askFirst(
+        context,
         title: 'Block $name?',
         body:
-            "They can't invite you again, and this invitation goes away. "
+            'They can’t invite you again, and this invitation goes away. '
             'You can unblock them here, under Blocked people.',
         action: 'Block',
       );
@@ -436,11 +429,12 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         ),
       );
     } else if (choice == 'block') {
-      final ok = await _confirm(
-        title: 'Block ${person.name}?',
+      final ok = await askFirst(
+        context,
+        title: 'Block $first?',
         body:
             '$first loses access to everything you share, you leave what '
-            "$first shares with you (keeping copies), and $first can't "
+            '$first shares with you (keeping copies), and $first can’t '
             'invite you again.',
         action: 'Block',
       );
@@ -470,8 +464,10 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     if (choice == null || !mounted) return;
     final first = _first(person.name);
     final title = _titleOf(note);
+    final sharing = _sharing;
     if (choice == SpaceRole.owner) {
-      final ok = await _confirm(
+      final ok = await askFirst(
+        context,
         title: 'Stop sharing “$title” with $first?',
         body:
             '$first stops seeing this note. It stays in your notes, with '
@@ -483,15 +479,20 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         'mine',
         () => _sharing.removeFromNote(note.id, person.email),
         done: 'Stopped sharing “$title” with $first',
-        undo: () =>
-            _sharing.addPerson(note.id, person.email, role: access.role),
+        undo: () async {
+          await sharing.addPerson(note.id, person.email, role: access.role);
+          return sharing.memberOn(note.id, person.email) == null
+              ? 'Invitation sent to ${person.email}'
+              : '$first can see “$title” again';
+        },
       );
       return;
     }
     if (choice.canEdit == access.role.canEdit) return;
     final together = _visible(_sharing.notesIn(note.spaceId!)).length;
     if (together > 1) {
-      final ok = await _confirm(
+      final ok = await askFirst(
+        context,
         title: choice.canEdit ? 'Let $first edit?' : 'Let $first only view?',
         body:
             '$first sees $together notes you share together, and the change '
@@ -533,17 +534,20 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
       case 'leave':
         final spaceId = note.spaceId!;
         final together = _visible(_sharing.notesIn(spaceId)).length;
-        final keep = await _confirm(
+        final keep = await askFirst(
+          context,
           title: together > 1
               ? 'Leave $together notes from $first?'
               : 'Leave “$title”?',
           body: together > 1
               ? '$first shares “$title” together with ${together - 1} more, '
-                    "so you leave all of them. You stop seeing $first's "
+                    'so you leave all of them. You stop seeing $first’s '
                     'changes, and $first keeps the notes.'
-              : "You stop seeing $first's changes. $first keeps the note.",
+              : 'You stop seeing $first’s changes. $first keeps the note.',
           action: 'Leave',
-          option: together > 1 ? 'Keep private copies' : 'Keep a private copy',
+          option: together > 1
+              ? 'Keep private copies'
+              : 'Keep a private copy in my notes',
         );
         if (keep == null || !mounted) return;
         await _run(
@@ -557,7 +561,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   Future<void> _stopSharingWith(SharePerson person) async {
     final first = _first(person.name);
     final mine = _visible(_sharing.notesSharedWith(person.email));
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Stop sharing with $first?',
       body:
           '$first loses access to the ${_count(mine.length)} you share. They '
@@ -571,14 +576,16 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         if (_accessOf(note, person.email) case final access?)
           note.id: access.role,
     };
+    final sharing = _sharing;
     await _run(
       'stop',
       () => _sharing.stopSharingWith(person.email),
       done: 'Stopped sharing with $first',
       undo: () async {
         for (final MapEntry(key: id, value: role) in before.entries) {
-          await _sharing.addPerson(id, person.email, role: role);
+          await sharing.addPerson(id, person.email, role: role);
         }
+        return 'Shared again with $first';
       },
     );
   }
@@ -594,7 +601,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
   }
 
   Future<void> _cancel(Space space, SpaceInvite invite) async {
-    final ok = await _confirm(
+    final ok = await askFirst(
+      context,
       title: 'Cancel the invitation to ${invite.email}?',
       body:
           'The invitation and its link stop working. The notes stay as '
@@ -659,7 +667,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     });
     if (joined != null && mounted) {
       setState(() => _joinOpen = false);
-      Toast.show(context, 'Joined $joined. The notes arrive in a moment');
+      Toast.show(context, joinedLine);
     }
   }
 
@@ -679,13 +687,16 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     if (error == null || error.at != at) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
-      child: Text(
-        error.text,
-        key: const ValueKey('sharing-error'),
-        style: TextStyle(
-          fontSize: AppTypeScale.small,
-          height: 1.4,
-          color: Theme.of(context).colorScheme.error,
+      child: Semantics(
+        liveRegion: true,
+        child: Text(
+          error.text,
+          key: const ValueKey('sharing-error'),
+          style: TextStyle(
+            fontSize: AppTypeScale.small,
+            height: 1.4,
+            color: Theme.of(context).colorScheme.error,
+          ),
         ),
       ),
     );
@@ -763,10 +774,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
                 onAccept: () => _run(
                   'invites',
                   () => _sharing.acceptInvite(invite.token),
-                  done:
-                      'Joined. The notes arrive when '
-                      '${_first(invite.inviterDisplayName)} next opens Kapy '
-                      'Notes',
+                  done: joinedLine,
                 ),
               ),
           ],
@@ -904,9 +912,8 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         icon: KapyIcons.lockRounded,
       ),
       const SettingsNote(
-        'To be sure a note reaches the right person, compare safety codes '
-        "with them in person once. You'll be told if their code ever "
-        'changes.',
+        'If the safety code of someone you share with ever changes, you’ll '
+        'be told, so you can check it’s really them.',
       ),
       const SettingsNote(
         "Something wrong? Block and report from the person's menu. One person "
@@ -946,7 +953,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
             _person = null;
             _error = null;
           }),
-          icon: const KapyIcon(KapyIcons.chevronLeftRounded, size: 14),
+          icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 14),
           label: const Text('All people'),
         ),
       ),
@@ -966,7 +973,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         trailing: Builder(
           builder: (button) => _IconAction(
             key: const ValueKey('person-menu'),
-            icon: KapyIcons.moreRounded,
+            icon: KapyIcons.moreVerticalRounded,
             tooltip: 'More for ${person.name}',
             onPressed: _idle ? () => _personMenu(button, person) : null,
           ),
@@ -1040,7 +1047,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
                 trailing: Builder(
                   builder: (button) => _IconAction(
                     key: ValueKey('received-${note.id}'),
-                    icon: KapyIcons.moreRounded,
+                    icon: KapyIcons.moreVerticalRounded,
                     tooltip: 'More for ${_titleOf(note)}',
                     onPressed: _idle
                         ? () => _receivedMenu(button, note, person)
@@ -1550,7 +1557,7 @@ class _InviteRow extends StatelessWidget {
         Builder(
           builder: (button) => _IconAction(
             key: ValueKey('invite-menu-${invite.token}'),
-            icon: KapyIcons.moreRounded,
+            icon: KapyIcons.moreVerticalRounded,
             tooltip: 'More',
             onPressed: enabled ? () => onMenu(button) : null,
           ),
@@ -1924,81 +1931,3 @@ class _PickRow extends StatelessWidget {
 
 /// A question before something that changes who sees what. With [option],
 /// a box, ticked to begin with, whose answer comes back; null is no.
-class _Confirm extends StatefulWidget {
-  const _Confirm({
-    required this.title,
-    required this.body,
-    required this.action,
-    this.option,
-  });
-
-  final String title;
-  final String body;
-  final String action;
-  final String? option;
-
-  @override
-  State<_Confirm> createState() => _ConfirmState();
-}
-
-class _ConfirmState extends State<_Confirm> {
-  bool _option = true;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final option = widget.option;
-    final style = TextStyle(
-      fontSize: AppTypeScale.control,
-      height: 1.4,
-      color: palette.textPrimary,
-    );
-    return AlertDialog(
-      key: const ValueKey('sharing-confirm'),
-      title: Text(widget.title),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.body, style: style),
-            if (option != null) ...[
-              const SizedBox(height: 10),
-              InkWell(
-                key: const ValueKey('sharing-confirm-option'),
-                onTap: () => setState(() => _option = !_option),
-                child: Row(
-                  children: [
-                    Checkbox(
-                      value: _option,
-                      onChanged: (value) =>
-                          setState(() => _option = value ?? false),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(child: Text(option, style: style)),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          key: const ValueKey('sharing-confirm-ok'),
-          onPressed: () => Navigator.of(context).pop(_option),
-          style: TextButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
-          ),
-          child: Text(widget.action),
-        ),
-      ],
-    );
-  }
-}

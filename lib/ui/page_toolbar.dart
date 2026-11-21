@@ -271,7 +271,6 @@ class PageToolbar extends StatelessWidget {
                         icon: const KapyIcon(
                           KapyIcons.menuOpenRounded,
                           size: 16,
-                          strokeWidth: 1.8,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -390,7 +389,7 @@ class PageToolbar extends StatelessWidget {
         onPressed: moreActions.isEmpty
             ? null
             : () => _showMore(buttonContext, onMore),
-        icon: KapyIcon(icon, size: size, strokeWidth: 2.2),
+        icon: KapyIcon(icon, size: size),
       ),
     );
     if (back != null) {
@@ -398,7 +397,7 @@ class PageToolbar extends StatelessWidget {
         TonalButton(
           key: const ValueKey('page-share'),
           tall: true,
-          icon: KapyIcons.personAddRounded,
+          icon: KapyIcons.shareRounded,
           tooltip: noteShared ? 'Manage sharing' : 'Share',
           onPressed: onShare,
         ),
@@ -409,7 +408,7 @@ class PageToolbar extends StatelessWidget {
             onMore,
             radius: 10,
             size: AppControlMetrics.iconAction,
-            icon: KapyIcons.moreRounded,
+            icon: KapyIcons.moreVerticalRounded,
           ),
       ];
     }
@@ -452,6 +451,7 @@ class PageToolbar extends StatelessWidget {
         TonalButton(
           key: const ValueKey('page-share'),
           tall: true,
+          quiet: true,
           label: 'Share',
           tooltip: noteShared ? 'Manage sharing' : null,
           onPressed: onShare,
@@ -633,12 +633,8 @@ class _PathState extends State<_Path> {
     var fixed = 24.0;
     var line = 0.0;
 
-    Widget icon(KapyIconData data) => KapyIcon(
-      data,
-      size: 16,
-      strokeWidth: 1.8,
-      color: palette.textSecondary,
-    );
+    Widget icon(KapyIconData data) =>
+        KapyIcon(data, size: 16, color: palette.textSecondary);
     Widget chevron() {
       fixed += light ? 24 : 20;
       return Padding(
@@ -646,7 +642,6 @@ class _PathState extends State<_Path> {
         child: KapyIcon(
           KapyIcons.chevronRightRounded,
           size: 12,
-          strokeWidth: 1.8,
           color: palette.textTertiary,
         ),
       );
@@ -826,7 +821,6 @@ class _PathState extends State<_Path> {
                     KapyIcon(
                       KapyIcons.folderOutlined,
                       size: 16,
-                      strokeWidth: 1.8,
                       color: palette.textSecondary,
                     ),
                     const SizedBox(width: 8),
@@ -919,12 +913,7 @@ class _Saved extends StatelessWidget {
       key: const ValueKey('page-saved'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        KapyIcon(
-          saved.icon,
-          size: 16,
-          strokeWidth: 1.8,
-          color: palette.textTertiary,
-        ),
+        KapyIcon(saved.icon, size: 16, color: palette.textTertiary),
         const SizedBox(width: 4),
         Text(
           saved.label,
@@ -957,7 +946,7 @@ class _BackButton extends StatelessWidget {
         tooltip: 'Back',
         onPressed: onPressed,
         color: palette.textPrimary,
-        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22, strokeWidth: 1.9),
+        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 20),
       );
     }
     return Semantics(
@@ -978,9 +967,8 @@ class _BackButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             KapyIcon(
-              KapyIcons.chevronLeftRounded,
-              size: 24,
-              strokeWidth: 2,
+              KapyIcons.arrowBackRounded,
+              size: 20,
               color: palette.accentText,
             ),
             Text(

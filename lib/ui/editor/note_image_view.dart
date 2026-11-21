@@ -517,6 +517,7 @@ class _ImageTransferCover extends StatelessWidget {
                     color: Colors.white,
                     fontSize: AppTypeScale.caption,
                     fontWeight: FontWeight.w500,
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                   ),
                 ),
               ],
@@ -655,6 +656,7 @@ class _RemoteImage extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: AppTypeScale.body,
                                 fontWeight: FontWeight.w500,
+                                fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                                 color: palette.textSubheading,
                               ),
                             ),
@@ -672,7 +674,6 @@ class _RemoteImage extends StatelessWidget {
                       KapyIcon(
                         KapyIcons.imageOutlined,
                         size: compact ? 18 : 22,
-                        strokeWidth: 1.7,
                         color: palette.textTertiary,
                       ),
                       if (!compact) ...[
@@ -685,6 +686,7 @@ class _RemoteImage extends StatelessWidget {
                           style: TextStyle(
                             fontSize: AppTypeScale.control,
                             fontWeight: FontWeight.w500,
+                            fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                             color: palette.textSubheading,
                           ),
                         ),

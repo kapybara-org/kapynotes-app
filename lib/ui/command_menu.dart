@@ -901,11 +901,7 @@ class _CommandMenuState extends State<CommandMenu> {
               extent: AppControlMetrics.iconButtonExtent,
               foregroundColor: palette.textPrimary,
               onPressed: close,
-              icon: const KapyIcon(
-                KapyIcons.arrowBackRounded,
-                size: 22,
-                strokeWidth: 1.8,
-              ),
+              icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 22),
             ),
           Expanded(
             child: Container(
@@ -922,7 +918,6 @@ class _CommandMenuState extends State<CommandMenu> {
                   KapyIcon(
                     KapyIcons.searchRounded,
                     size: 16,
-                    strokeWidth: 1.8,
                     color: palette.textSecondary,
                   ),
                   Expanded(
@@ -1058,8 +1053,7 @@ class _CommandMenuState extends State<CommandMenu> {
         children: [
           KapyIcon(
             KapyIcons.searchRounded,
-            size: 18,
-            strokeWidth: 1.8,
+            size: AppControlMetrics.iconSearch,
             color: palette.textSecondary,
           ),
           if (picker != null)
@@ -1212,7 +1206,6 @@ class _CommandMenuState extends State<CommandMenu> {
                               ? KapyIcon(
                                   KapyIcons.checkRounded,
                                   size: 14,
-                                  strokeWidth: 2.2,
                                   color: palette.paperColor,
                                 )
                               : null,
@@ -1226,7 +1219,6 @@ class _CommandMenuState extends State<CommandMenu> {
                     KapyIcon(
                       line.icon!,
                       size: 16,
-                      strokeWidth: 1.7,
                       color: lit ? palette.textPrimary : palette.textSecondary,
                     ),
               Expanded(
@@ -1426,7 +1418,6 @@ class _CommandMenuState extends State<CommandMenu> {
                           ? KapyIcon(
                               KapyIcons.checkRounded,
                               size: 14,
-                              strokeWidth: 1.8,
                               color: palette.textPrimary,
                             )
                           : null,
@@ -1470,7 +1461,6 @@ class _CommandMenuState extends State<CommandMenu> {
                     leading: KapyIcon(
                       KapyIcons.addRounded,
                       size: 14,
-                      strokeWidth: 2,
                       color: palette.textTertiary,
                     ),
                     label: 'Create “$name”',

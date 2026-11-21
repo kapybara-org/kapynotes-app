@@ -15,6 +15,7 @@ import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'kapy_icon_finder.dart';
 import 'test_fonts.dart';
 
 void main() {
@@ -99,6 +100,37 @@ void main() {
   const ai = ValueKey('ai');
   Finder onPath(String text) =>
       find.descendant(of: path, matching: find.text(text));
+
+  testWidgets('Share is quiet: grey words on no fill until the pointer is '
+      'on it, and greyer still when it cannot be used', (tester) async {
+    await tester.pumpWidget(harness(toolbar()));
+
+    final palette = tester.element(share).palette;
+    final style = tester
+        .widget<FilledButton>(
+          find.descendant(of: share, matching: find.byType(FilledButton)),
+        )
+        .style!;
+    expect(style.backgroundColor!.resolve({}), Colors.transparent);
+    expect(style.foregroundColor!.resolve({}), palette.textSecondary);
+    expect(
+      style.backgroundColor!.resolve({WidgetState.hovered}),
+      palette.textPrimary.withValues(alpha: 0.07),
+    );
+    expect(
+      style.backgroundColor!.resolve({WidgetState.disabled}),
+      Colors.transparent,
+    );
+    expect(
+      style.foregroundColor!.resolve({WidgetState.disabled}),
+      palette.textTertiary,
+    );
+    expect(style.side!.resolve({}), BorderSide.none);
+    expect(
+      style.side!.resolve({WidgetState.focused}),
+      BorderSide(color: palette.selectedBorder, width: 1),
+    );
+  });
 
   testWidgets('the band has a hairline along its bottom, but none under the '
       'list or on a phone', (tester) async {
@@ -530,6 +562,45 @@ void main() {
     expect(find.byKey(ai), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('a ${platform.name} note header draws Back as an arrow and '
+        'More as ⋮, both at 20', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      await tester.pumpWidget(
+        harness(
+          toolbar(
+            listVisible: false,
+            back: (to: 'Notes', onPressed: () {}),
+            moreActions: const [
+              KapyMenuAction(
+                value: 'pin',
+                label: 'Pin note',
+                icon: KapyIcons.pinOutlined,
+              ),
+            ],
+          ),
+          width: 393,
+        ),
+      );
+
+      final back = find.byKey(const ValueKey('page-back'));
+      final arrow = find.descendant(
+        of: back,
+        matching: findKapyIcon(KapyIcons.arrowBackRounded),
+      );
+      expect(arrow, findsOneWidget);
+      expect(tester.widget<KapyIcon>(arrow).size, 20);
+      expect(findKapyIcon(KapyIcons.chevronLeftRounded), findsNothing);
+
+      final dots = find.descendant(
+        of: more,
+        matching: findKapyIcon(KapyIcons.moreVerticalRounded),
+      );
+      expect(dots, findsOneWidget);
+      expect(tester.widget<KapyIcon>(dots).size, 20);
+    });
+  }
 
   testWidgets("the count of pictures that didn't load gives way sooner", (
     tester,

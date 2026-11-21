@@ -1755,7 +1755,6 @@ void main() {
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester, size: const Size(420, 800));
       expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
-      expect(findKapyIcon(KapyIcons.pinRounded), findsNothing);
     },
   );
 
@@ -1809,6 +1808,31 @@ void main() {
           }
         }
       }
+    });
+
+    testWidgets('its pin line draws the one pin, to pin and to unpin', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      final note = notes.create(body: 'alpha');
+      await tester.pumpAndSettle();
+      final pin = find.descendant(
+        of: lineOf('pin'),
+        matching: findKapyIcon(KapyIcons.pinOutlined),
+      );
+
+      await openMore(tester);
+      expect(find.text('Pin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
+      await tester.tap(lineOf('pin'));
+      await tester.pumpAndSettle();
+      expect(notes.isPinned(note.id), isTrue);
+
+      await openMore(tester);
+      expect(find.text('Unpin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
     });
 
     testWidgets('More pins the note and floats the window, side by side, each '
@@ -2095,7 +2119,7 @@ void main() {
     );
   });
 
-  testWidgets('settings heads its groups in Shantell and its rows in Figtree', (
+  testWidgets('settings heads its groups in Figtree at the section weight', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -2111,7 +2135,11 @@ void main() {
       ).style.merge(tester.widget<Text>(finder.first).style);
     }
 
-    expect(styleOf('Opening').fontFamily, 'Shantell Sans');
+    expect(styleOf('Opening').fontFamily, isNot('Shantell Sans'));
+    expect(
+      styleOf('Opening').fontVariations,
+      AppWeight.variations(AppWeight.section),
+    );
     expect(styleOf('Daily separators').fontFamily, isNot('Shantell Sans'));
     expect(
       styleOf('Add a dated line when a new day begins').fontWeight ??
@@ -2197,7 +2225,7 @@ void main() {
     // Keep the fallback's required exact credit pinned as well.
     expect(
       RateProvider.exchangeRateApi.attributionLabel,
-      'Rates by Exchange Rate',
+      'Rates By Exchange Rate API',
     );
     expect(
       RateProvider.exchangeRateApi.attributionUrl.toString(),
@@ -7152,7 +7180,8 @@ void main() {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-    testWidgets('pinned notes are cards over the recent rows', (tester) async {
+    testWidgets("pinned notes wait behind Home's Pinned card, which opens "
+        'them, and Back comes home', (tester) async {
       final trip = notes.create(body: 'Lisbon trip\nFour days in May');
       final reading = notes.create(body: 'Reading list\nThe Overstory');
       notes.create(body: 'Groceries\nOat milk, lemons');
@@ -7162,17 +7191,135 @@ void main() {
       await showNotesList(tester);
 
       expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
-      expect(find.text('Pinned'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp(r'^Today, ')), findsOneWidget);
-      final cards = find.descendant(
-        of: find.byKey(const ValueKey('phone-pinned')),
-        matching: find.byType(NoteCardFace),
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('2')),
+        findsOneWidget,
       );
-      expect(cards, findsNWidgets(2));
-      expect(tester.getSize(cards.first).width, (393 - 40 - 12) / 2);
+      for (final title in ['Lisbon trip', 'Reading list']) {
+        expect(
+          find.descendant(of: card, matching: find.textContaining(title)),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(NoteRow, title), findsNothing);
+      }
+      expect(
+        find.byKey(const ValueKey('home-shared-card')),
+        findsNothing,
+        reason: 'without an account there is nothing to share from',
+      );
       final row = find.widgetWithText(NoteListRowFace, 'Groceries');
-      expect(row, findsOneWidget);
       expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Lisbon trip'), findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(card, findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    });
+
+    testWidgets("Home's Pinned card counts the pinned notes a filter hides, "
+        'and opens them with the filter cleared', (tester) async {
+      final tags = TagStore(store);
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      final groceries = notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      final food = tags.create('Food')!;
+      tags.addTag(groceries.id, food.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+      await openPhoneFilters(tester);
+      await tester.tap(find.byKey(ValueKey('phone-tag-${food.id}')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-filters-dot')), findsOneWidget);
+
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('2')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('Nothing pinned yet')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: card, matching: find.textContaining('Lisbon trip')),
+        findsOneWidget,
+      );
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-filters-dot')), findsNothing);
+      for (final title in ['Lisbon trip', 'Reading list']) {
+        expect(find.widgetWithText(NoteRow, title), findsOneWidget);
+      }
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+    });
+
+    testWidgets("Back from Pinned ends where Pinned's own chevron does, "
+        'with the filter chosen there kept', (tester) async {
+      final tags = TagStore(store);
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      final travel = tags.create('Travel')!;
+      tags.addTag(trip.id, travel.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+
+      final ends = <List<Object>>[];
+      for (final chevron in [true, false]) {
+        await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+        await tester.pumpAndSettle();
+        await openPhoneFilters(tester);
+        await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+        await tester.pumpAndSettle();
+
+        if (chevron) {
+          await tester.tap(find.byKey(const ValueKey('sidebar-pinned-back')));
+        } else {
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsNothing);
+        expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
+        ends.add([
+          find.byKey(const ValueKey('phone-filters-dot')).evaluate().length,
+          for (final title in ['Lisbon trip', 'Reading list', 'Groceries'])
+            find.widgetWithText(NoteRow, title).evaluate().length,
+        ]);
+
+        await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+        await tester.pumpAndSettle();
+      }
+      expect(ends.first, [1, 0, 0, 0]);
+      expect(ends.last, ends.first);
+    });
+
+    testWidgets("Home's Pinned card says so while nothing is pinned", (
+      tester,
+    ) async {
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('Nothing pinned yet')),
+        findsOneWidget,
+      );
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
     });
 
     testWidgets('the rows come a day at a time, newest first, each in the '
@@ -7278,13 +7425,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.pinnedNoteIds, contains(groceries.id));
 
+      final card = find.byKey(const ValueKey('home-pinned-card'));
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('phone-pinned')),
-          matching: find.text('Groceries'),
-        ),
+        find.descendant(of: card, matching: find.text('1')),
         findsOneWidget,
       );
+      expect(
+        find.descendant(of: card, matching: find.text('Groceries')),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
 
       await tester.drag(
         find.widgetWithText(NoteRow, 'Team offsite'),
@@ -8855,6 +9005,50 @@ void main() {
       expect(
         find.descendant(of: list, matching: find.text('Renewal notes')),
         findsOneWidget,
+      );
+    });
+
+    testWidgets('only the day grouping folds its Upcoming: a tag named '
+        'Upcoming starts open when the list groups by tag', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final tags = TagStore(store);
+      await tags.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      final standup = notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      tags.addTag(standup.id, tags.create('Upcoming')!.id);
+      await pumpApp(
+        tester,
+        size: const Size(1600, 900),
+        days: days,
+        tags: tags,
+      );
+
+      final list = find.byType(Sidebar);
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-grouping-byTag')));
+      await tester.pumpAndSettle();
+      // The heading is the tag's now, and folds nothing.
+      expect(tester.widget<NotesGroupHeading>(upcoming).label, 'Upcoming');
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isNull);
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+        reason: 'under No tag',
       );
     });
   });

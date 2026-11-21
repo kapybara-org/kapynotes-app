@@ -1178,46 +1178,61 @@ class _TaskRowState extends State<_TaskRow> {
                 style: taskText(13, 18, stale ? ink.quiet : ink.text),
               ),
             );
-            final under =
-                label != null &&
-                constraints.maxWidth <
-                    MediaQuery.textScalerOf(context).scale(200);
+            final scaler = MediaQuery.textScalerOf(context);
+            final grow = scaler.scale(12) / 12;
+            final ask = constraints.maxWidth >= _stillWantWidth * grow;
+            final controls = stale
+                ? 50 +
+                      grow *
+                          (ask
+                              ? _keepRemoveWords + _stillWantWords
+                              : _keepRemoveWords)
+                : 0.0;
+            final below = constraints.maxWidth < controls * 2;
+            final room = below
+                ? constraints.maxWidth
+                : constraints.maxWidth - controls;
+            final under = label != null && room < 200 * scaler.scale(16) / 16;
+            final keep = Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (ask) Text('Still want this?', style: quiet),
+                _RowButton(
+                  label: 'Keep',
+                  strong: true,
+                  onPressed: widget.onKeep,
+                ),
+                _RowButton(label: 'Remove', onPressed: widget.onRemove),
+              ],
+            );
             return Row(
               children: [
                 _RowBox(onPressed: widget.onTick, label: item.words),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: under
+                  child: under || below
                       ? Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             words,
-                            Align(
-                              alignment: AlignmentDirectional.centerStart,
-                              child: NoteMark(
-                                note: item.note,
-                                label: label,
-                                onPressed: widget.onOpenNote,
+                            if (under)
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: NoteMark(
+                                  note: item.note,
+                                  label: label,
+                                  onPressed: widget.onOpenNote,
+                                ),
                               ),
-                            ),
+                            if (below) keep,
                           ],
                         )
                       : words,
                 ),
                 if (stale) ...[
-                  const SizedBox(width: 10),
-                  if (constraints.maxWidth >= _stillWantWidth)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Text('Still want this?', style: quiet),
-                    ),
-                  _RowButton(
-                    label: 'Keep',
-                    strong: true,
-                    onPressed: widget.onKeep,
-                  ),
-                  const SizedBox(width: 4),
-                  _RowButton(label: 'Remove', onPressed: widget.onRemove),
+                  if (!below) ...[const SizedBox(width: 10), keep],
                 ] else if (_hovered) ...[
                   const SizedBox(width: 10),
                   Text(
@@ -1273,7 +1288,7 @@ class _TaskRowState extends State<_TaskRow> {
                 const SizedBox(width: 16),
                 if (!under)
                   SizedBox(
-                    width: math.min(150, taskMarkWidth(constraints.maxWidth)),
+                    width: math.min(150, taskMarkWidth(room)),
                     child: label == null
                         ? null
                         : Align(
@@ -1468,7 +1483,7 @@ class _DoneRow extends StatelessWidget {
                     onPressed: onOpenNote,
                   );
                   if (constraints.maxWidth <
-                      MediaQuery.textScalerOf(context).scale(200)) {
+                      200 * MediaQuery.textScalerOf(context).scale(16) / 16) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [words, mark],
@@ -1548,7 +1563,6 @@ class _Box extends StatelessWidget {
                 ? KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    strokeWidth: 2.2,
                     color: palette.paperColor,
                   )
                 : null,
@@ -1750,7 +1764,6 @@ class _PhoneTaskRow extends StatelessWidget {
                               child: KapyIcon(
                                 KapyIcons.checkRounded,
                                 size: 14,
-                                strokeWidth: 2.2,
                                 color: palette.paperColor,
                               ),
                             ),
@@ -1792,10 +1805,13 @@ class _PhoneTaskRow extends StatelessWidget {
                           children: [
                             Text(label ?? 'No note', style: meta),
                             if (item.entry.enteredAt != 0 && !done)
-                              KapyIcon(
-                                KapyIcons.undoRounded,
-                                size: 14,
-                                color: ink.quiet,
+                              Tooltip(
+                                message: 'Not finished, moved to the end',
+                                child: KapyIcon(
+                                  KapyIcons.undoRounded,
+                                  size: 14,
+                                  color: ink.quiet,
+                                ),
                               ),
                             if (stale) ...[
                               Text('·  Still want this?', style: meta),
@@ -1937,9 +1953,16 @@ class TasksBandActions extends StatelessWidget {
   );
 }
 
-/// How wide a list row must be to say "Still want this?" beside Keep and
-/// Remove; a narrower one keeps the room for the task's words.
+/// How wide a list row must be at 1× to say "Still want this?" beside Keep
+/// and Remove; a narrower one keeps the room for the task's words.
 const double _stillWantWidth = 520;
+
+/// The words on Keep and Remove at 1×, which grow with the text size; their
+/// padding and the gaps around them take 50 more that doesn't.
+const double _keepRemoveWords = 73;
+
+/// "Still want this?" and its gap at 1×.
+const double _stillWantWords = 90;
 
 /// Whether [title] and [count], [gap] apart, fit on one line of [maxWidth] at
 /// the current text size.

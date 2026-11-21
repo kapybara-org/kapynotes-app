@@ -286,8 +286,8 @@ class _RailItemState extends State<_RailItem> {
     final ink = selected
         ? palette.tonalForeground
         : lit
-        ? palette.textSecondary
-        : palette.railInk;
+        ? palette.textPrimary
+        : palette.textSecondary;
     final touch = !AppPlatform.hasPointer;
 
     final tile = AnimatedContainer(
@@ -305,7 +305,7 @@ class _RailItemState extends State<_RailItem> {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          KapyIcon(widget.icon, size: 19, strokeWidth: 1.7, color: ink),
+          KapyIcon(widget.icon, size: 20, color: ink),
           if (widget.badge > 0)
             Positioned(
               top: 2,
@@ -347,11 +347,9 @@ class _RailItemState extends State<_RailItem> {
                   softWrap: false,
                   overflow: TextOverflow.fade,
                   style: _railLabel(
-                    selected
+                    selected || lit
                         ? palette.textPrimary
-                        : lit
-                        ? palette.textSecondary
-                        : palette.railInk,
+                        : palette.textSecondary,
                     strong: selected,
                   ),
                 ),
@@ -393,6 +391,7 @@ class _Badge extends StatelessWidget {
           fontSize: AppTypeScale.micro,
           height: 12 / 11,
           fontWeight: FontWeight.w500,
+          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -442,7 +441,6 @@ class _RailStreak extends StatelessWidget {
                   child: KapyIcon(
                     KapyIcons.fireOutlined,
                     size: 16,
-                    strokeWidth: 1.7,
                     color: Color.lerp(palette.textTertiary, palette.clay, t),
                   ),
                 ),
@@ -503,9 +501,8 @@ class _RailSettings extends StatelessWidget {
                 children: [
                   KapyIcon(
                     KapyIcons.settingsGearOutlined,
-                    size: 19,
-                    strokeWidth: 1.7,
-                    color: palette.textTertiary,
+                    size: 20,
+                    color: palette.textSecondary,
                   ),
                   if (updateWaiting)
                     Positioned(
@@ -600,6 +597,7 @@ class _RailAccount extends StatelessWidget {
                   fontSize: AppTypeScale.control,
                   height: 1,
                   fontWeight: FontWeight.w500,
+                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                   color: palette.textPrimary,
                 ),
               ),
@@ -704,7 +702,6 @@ class PhoneSpaces extends StatelessWidget {
     required this.onCreateAction,
     required this.child,
     this.showTasks = true,
-    this.invitations,
   });
 
   final LibrarySpace space;
@@ -719,9 +716,6 @@ class PhoneSpaces extends StatelessWidget {
   final Widget child;
   final bool showTasks;
 
-  /// Invitations waiting under Shared, which is only there with sharing.
-  final int? invitations;
-
   static const double _barHeight = 60;
   static const double _barLift = 30;
   static const double _plusExtent = 56;
@@ -729,60 +723,17 @@ class PhoneSpaces extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final invitations = this.invitations;
-    final items =
-        <
-          ({
-            LibrarySpace? to,
-            KapyIconData icon,
-            String label,
-            String spoken,
-            int badge,
-          })
-        >[
-          (
-            to: LibrarySpace.notes,
-            icon: KapyIcons.noteOutlined,
-            label: 'Notes',
-            spoken: 'Notes',
-            badge: 0,
-          ),
-          if (showTasks)
-            (
-              to: LibrarySpace.tasks,
-              icon: KapyIcons.tasksOutlined,
-              label: 'Tasks',
-              spoken: 'Tasks',
-              badge: 0,
-            ),
-          (
-            to: LibrarySpace.drawings,
-            icon: KapyIcons.penRounded,
-            label: 'Drawings',
-            spoken: 'Drawings',
-            badge: 0,
-          ),
-          if (invitations != null)
-            (
-              to: LibrarySpace.shared,
-              icon: KapyIcons.groupOutlined,
-              label: 'Shared',
-              // The badge is drawn only, so the count goes in what is read.
-              spoken: switch (invitations) {
-                0 => 'Shared',
-                1 => 'Shared, 1 invitation',
-                _ => 'Shared, $invitations invitations',
-              },
-              badge: invitations,
-            ),
-          (
-            to: null,
-            icon: KapyIcons.settingsGearOutlined,
-            label: 'Settings',
-            spoken: 'Settings',
-            badge: 0,
-          ),
-        ];
+    final items = <({LibrarySpace? to, KapyIconData icon, String label})>[
+      (to: LibrarySpace.notes, icon: KapyIcons.noteOutlined, label: 'Notes'),
+      if (showTasks)
+        (to: LibrarySpace.tasks, icon: KapyIcons.tasksOutlined, label: 'Tasks'),
+      (
+        to: LibrarySpace.drawings,
+        icon: KapyIcons.penRounded,
+        label: 'Drawings',
+      ),
+      (to: null, icon: KapyIcons.settingsGearOutlined, label: 'Settings'),
+    ];
     void choose(LibrarySpace? to) =>
         to == null ? onSettingsPressed() : onSelected(to);
     final plus = Builder(
@@ -810,20 +761,15 @@ class PhoneSpaces extends StatelessWidget {
             for (final item in items)
               NavigationDestination(
                 key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
-                icon: Badge(
-                  isLabelVisible: item.badge > 0,
-                  label: Text(
-                    '${item.badge}',
-                    semanticsLabel: item.badge == 1
-                        ? '1 invitation'
-                        : '${item.badge} invitations',
-                  ),
-                  child: KapyIcon(item.icon, size: 22, color: palette.railInk),
+                icon: KapyIcon(
+                  item.icon,
+                  size: 20,
+                  color: palette.textTertiary,
                 ),
                 selectedIcon: KapyIcon(
                   item.icon,
-                  size: 22,
-                  color: palette.tonalForeground,
+                  size: 20,
+                  color: palette.textPrimary,
                 ),
                 label: item.label,
               ),
@@ -872,9 +818,7 @@ class PhoneSpaces extends StatelessWidget {
                                 ),
                                 icon: item.icon,
                                 label: item.label,
-                                spoken: item.spoken,
                                 selected: item.to == space,
-                                badge: item.badge,
                                 onPressed: () => choose(item.to),
                               ),
                             ),
@@ -925,30 +869,24 @@ class _BarItem extends StatelessWidget {
     super.key,
     required this.icon,
     required this.label,
-    required this.spoken,
     required this.selected,
-    required this.badge,
     required this.onPressed,
   });
 
   final KapyIconData icon;
   final String label;
-
-  /// What a screen reader says: the label, with the badge's count in words.
-  final String spoken;
   final bool selected;
-  final int badge;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final ink = selected ? palette.tonalForeground : palette.railInk;
+    final ink = selected ? palette.textPrimary : palette.textTertiary;
     return Semantics(
       container: true,
       button: true,
       selected: selected,
-      label: spoken,
+      label: label,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
@@ -959,48 +897,30 @@ class _BarItem extends StatelessWidget {
               color: selected ? palette.tonalBackground : null,
               borderRadius: BorderRadius.circular(26),
             ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    KapyIcon(icon, size: 22, strokeWidth: 1.7, color: ink),
-                    const SizedBox(height: 3),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.fade,
-                      // The pill is a fixed 52 pt, as iOS's tab bar is, and
-                      // keeps its labels near their size for the same
-                      // reason: past this they no longer fit under the icon.
-                      textScaler: MediaQuery.textScalerOf(
-                        context,
-                      ).clamp(maxScaleFactor: 1.3),
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        height: 13 / 10.5,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: ink,
-                      ),
-                    ),
-                  ],
-                ),
-                if (badge > 0)
-                  Positioned(
-                    top: 4,
-                    right: 8,
-                    child: _Badge(
-                      key: ValueKey(
-                        '${(key! as ValueKey<String>).value}-badge',
-                      ),
-                      count: badge,
-                    ),
+                KapyIcon(icon, size: 20, color: ink),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.fade,
+                  // The pill is a fixed 52 pt, as iOS's tab bar is, and
+                  // keeps its labels near their size for the same
+                  // reason: past this they no longer fit under the icon.
+                  textScaler: MediaQuery.textScalerOf(
+                    context,
+                  ).clamp(maxScaleFactor: 1.3),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 13 / 10.5,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: ink,
                   ),
+                ),
               ],
             ),
           ),
@@ -1045,8 +965,7 @@ class _PlusButton extends StatelessWidget {
             child: Center(
               child: KapyIcon(
                 KapyIcons.addRounded,
-                size: 26,
-                strokeWidth: 2.2,
+                size: 22,
                 color: scheme.onPrimary,
               ),
             ),

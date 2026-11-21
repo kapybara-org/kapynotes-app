@@ -1,9 +1,10 @@
-import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
+
+import 'kapy_icon_finder.dart';
 
 void main() {
   Future<void> pumpBar(
@@ -27,7 +28,6 @@ void main() {
           onCreate: () {},
           createActions: const [],
           onCreateAction: (_) {},
-          invitations: 2,
           child: const SizedBox.expand(),
         ),
       ),
@@ -50,7 +50,7 @@ void main() {
         expect(tester.takeException(), isNull);
         // Android's bar is the platform's own and sizes its labels itself.
         if (platform != TargetPlatform.iOS) return;
-        for (final label in ['Notes', 'Tasks', 'Drawings', 'Shared']) {
+        for (final label in ['Notes', 'Tasks', 'Drawings', 'Settings']) {
           final text = find.text(label);
           if (text.evaluate().isEmpty) continue;
           expect(
@@ -63,45 +63,30 @@ void main() {
     }
   }
 
-  testWidgets('a screen reader hears how many invitations wait under Shared', (
-    tester,
-  ) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    final semantics = tester.ensureSemantics();
-    await pumpBar(tester, scale: 1, size: const Size(393, 852));
-    expect(find.bySemanticsLabel('Shared, 2 invitations'), findsOneWidget);
-    semantics.dispose();
-  });
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on ${platform.name} the tabs rest in T3 and the open one is '
+        'T1, at 20', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpBar(tester, scale: 1, size: const Size(393, 852));
+      const palette = KapyTheme.darkPalette;
+      KapyIcon icon(String tab, KapyIconData data) => tester.widget<KapyIcon>(
+        find.descendant(
+          of: find.byKey(ValueKey('bar-$tab')),
+          matching: findKapyIcon(data),
+        ),
+      );
 
-  testWidgets('TalkBack hears how many invitations wait under Shared', (
-    tester,
-  ) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    final semantics = tester.ensureSemantics();
-    await pumpBar(tester, scale: 1, size: const Size(412, 915));
-    final labels = <String>[];
-    void walk(SemanticsNode node) {
-      labels.add(node.getSemanticsData().label);
-      node.visitChildren((child) {
-        walk(child);
-        return true;
-      });
-    }
-
-    walk(
-      tester
-          .binding
-          .renderViews
-          .first
-          .owner!
-          .semanticsOwner!
-          .rootSemanticsNode!,
-    );
-    final shared = labels.where((l) => l.contains('Shared'));
-    expect(shared, isNotEmpty);
-    expect(shared, everyElement(startsWith('2 invitations\nShared')));
-    semantics.dispose();
-  });
+      expect(icon('notes', KapyIcons.noteOutlined).color, palette.textPrimary);
+      expect(icon('notes', KapyIcons.noteOutlined).size, 20);
+      expect(
+        icon('drawings', KapyIcons.penRounded).color,
+        palette.textTertiary,
+      );
+      expect(
+        icon('settings', KapyIcons.settingsGearOutlined).color,
+        palette.textTertiary,
+      );
+    });
+  }
 }

@@ -19,8 +19,8 @@ extension SpaceRoleAccess on SpaceRole {
 
   String get accessLabel => switch (this) {
     SpaceRole.owner => 'Owner',
-    SpaceRole.member => 'Editor',
-    SpaceRole.viewer => 'View only',
+    SpaceRole.member => 'Can edit',
+    SpaceRole.viewer => 'Can view',
   };
 }
 

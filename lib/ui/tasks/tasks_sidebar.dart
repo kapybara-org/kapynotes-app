@@ -88,12 +88,8 @@ class TasksSidebar extends StatelessWidget {
                 children: [
                   _FilterRow(
                     key: const ValueKey('tasks-filter-all'),
-                    leading: (ink) => KapyIcon(
-                      KapyIcons.checklistRounded,
-                      size: 15,
-                      strokeWidth: 1.8,
-                      color: ink,
-                    ),
+                    leading: (ink) =>
+                        KapyIcon(KapyIcons.tasksOutlined, size: 15, color: ink),
                     label: 'All tasks',
                     count: board.open.length,
                     selected: filter == const TaskFilter.all(),
@@ -102,12 +98,8 @@ class TasksSidebar extends StatelessWidget {
                   const SizedBox(height: 2),
                   _FilterRow(
                     key: const ValueKey('tasks-filter-done'),
-                    leading: (ink) => KapyIcon(
-                      KapyIcons.checkRounded,
-                      size: 15,
-                      strokeWidth: 1.8,
-                      color: ink,
-                    ),
+                    leading: (ink) =>
+                        KapyIcon(KapyIcons.checkRounded, size: 15, color: ink),
                     label: 'Done',
                     count: board.done.length,
                     selected: filter.done,
@@ -118,7 +110,7 @@ class TasksSidebar extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
                       child: Text(
                         'From notes',
-                        style: handStyle(
+                        style: uiStyle(
                           14,
                           20,
                           FontWeight.w600,
@@ -188,7 +180,7 @@ class _FilterRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final ink = selected ? palette.textPrimary : palette.textSubheading;
-    final weight = selected ? FontWeight.w700 : FontWeight.w500;
+    final weight = selected ? FontWeight.w500 : FontWeight.w400;
     return Semantics(
       selected: selected,
       button: true,
@@ -219,18 +211,22 @@ class _FilterRow extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: hand
-                      ? handStyle(13.5, 18, weight, ink)
-                      : uiStyle(13.5, 18, weight, ink),
+                  style: uiStyle(
+                    13.5,
+                    18,
+                    weight,
+                    ink,
+                    axis: selected ? AppWeight.selected : AppWeight.body,
+                  ),
                 ),
               ),
               Text(
                 '$count',
-                style: uiStyle(
+                style: metaStyle(
                   12,
                   16,
-                  FontWeight.w600,
                   selected ? palette.tonalForeground : palette.textTertiary,
+                  tabular: true,
                 ),
               ),
             ],
@@ -342,7 +338,6 @@ class _MethodLineState extends State<_MethodLine> {
                   KapyIcon(
                     KapyIcons.infoOutlined,
                     size: 14,
-                    strokeWidth: 1.8,
                     color: open ? palette.textSubheading : palette.textTertiary,
                   ),
                 ],

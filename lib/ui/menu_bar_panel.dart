@@ -752,7 +752,11 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
   Widget _hintRow(BuildContext context) {
     final palette = context.palette;
     final style = TextStyle(fontSize: 11.5, height: 14 / 11.5, color: palette.textTertiary);
-    final link = style.copyWith(color: palette.textSecondary, fontWeight: FontWeight.w500);
+    final link = style.copyWith(
+      color: palette.textSecondary,
+      fontWeight: FontWeight.w500,
+      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+    );
     final notes = _tab == _Tab.notes;
     final Widget? line = switch (_notice) {
       _Saved(:final noteId) => _Hint(children: [
@@ -819,6 +823,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                   fontSize: 12,
                   height: 16 / 12,
                   fontWeight: FontWeight.w600,
+                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                   color: palette.textSecondary,
                 ),
               ),
@@ -874,6 +879,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
       fontSize: 12,
       height: 16 / 12,
       fontWeight: FontWeight.w600,
+      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
       color: palette.textSecondary,
     );
     final children = <Widget>[];
@@ -903,7 +909,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                 heading == 'Pinned'
                     ? KapyIcons.pinOutlined
                     : note.isDrawing
-                    ? KapyIcons.paintBoardOutlined
+                    ? KapyIcons.penRounded
                     : KapyIcons.noteOutlined,
                 size: 15,
                 color: heading == 'Pinned' ? palette.clay : palette.textTertiary,
@@ -943,7 +949,12 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
         children: [
           Text(
             'No notes yet',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.textPrimary),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+              color: palette.textPrimary,
+            ),
           ),
           const SizedBox(height: 4),
           Text('Write one above and press Return.', style: soft),
@@ -1053,7 +1064,7 @@ class _Tabs extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       height: 16 / 13,
-                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                       color: selected ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),
@@ -1183,7 +1194,6 @@ class _TaskRow extends StatelessWidget {
                 ? const KapyIcon(
                     KapyIcons.checkRounded,
                     size: 11,
-                    strokeWidth: 2.2,
                     color: Colors.white,
                   )
                 : null,
@@ -1246,6 +1256,7 @@ class _TaskRow extends StatelessWidget {
                     fontSize: 10.5,
                     height: 13 / 10.5,
                     fontWeight: FontWeight.w600,
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                     letterSpacing: 0.63,
                     color: palette.accentText,
                   ),
@@ -1385,7 +1396,14 @@ class _TextButton extends StatelessWidget {
     onTap: onPressed,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: context.palette.textPrimary)),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+          color: context.palette.textPrimary,
+        ),
+      ),
     ),
   );
 }

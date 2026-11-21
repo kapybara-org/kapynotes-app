@@ -253,7 +253,7 @@ void main() {
         'Errands\n☐ Ask Ana which Sintra palace to skip\n☐ B\n☐ C',
       );
       await pumpScreen(tester);
-      expect(find.text('Start with Ask Ana'), findsOneWidget);
+      expect(find.text('Start with Ask Ana…'), findsOneWidget);
       expect(
         find.bySemanticsLabel('Start with Ask Ana which Sintra palace to skip'),
         findsOneWidget,
@@ -627,6 +627,25 @@ void main() {
       of: find.byKey(ValueKey('phone-task-${item.id}')),
       matching: find.text(item.words),
     );
+
+    testWidgets('a task sent to the end shows ↺ with what it means', (
+      tester,
+    ) async {
+      await setUpTasks(tester, errands);
+      final item = tasks.read().open.first;
+      tasks.doNow(item);
+      tasks.notFinished(item);
+      tasks.doNow(tasks.read().open.firstWhere((other) => other.id != item.id));
+      await pumpScreen(tester, phone: true);
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('phone-task-${item.id}')),
+          matching: find.byTooltip('Not finished, moved to the end'),
+        ),
+        findsOneWidget,
+      );
+      await settle(tester);
+    });
 
     testWidgets('Today with its date and count, the pair as two stacked cards '
         'you tap, and Start with under them; no keys', (tester) async {
