@@ -1688,6 +1688,44 @@ void main() {
   );
 
   testWidgets(
+    'a list open over a narrow page draws the one hairline, and the page '
+    'behind it leaves its own out',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      Decoration? line(Finder bar) =>
+          tester.widget<Container>(bar).foregroundDecoration;
+      final band = find.byKey(const ValueKey('page-toolbar'));
+
+      await pumpApp(tester, size: const Size(620, 620), sidebarVisible: false);
+      expect(line(band), isNotNull);
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('sidebar-overlay-barrier')),
+        findsOneWidget,
+      );
+      expect(line(band), isNull);
+      expect(
+        line(
+          find
+              .descendant(
+                of: find.byType(SidebarWindowBar),
+                matching: find.byType(Container),
+              )
+              .first,
+        ),
+        isNotNull,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(line(band), isNotNull);
+    },
+  );
+
+  testWidgets(
     'Keep on top survives every desktop width, and never reaches a phone',
     (tester) async {
       // The bug this replaces: the compact toolbar is a second call site, and

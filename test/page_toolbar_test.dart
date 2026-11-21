@@ -55,6 +55,7 @@ void main() {
   PageToolbar toolbar({
     PagePath path = clients,
     bool listVisible = true,
+    bool underList = false,
     bool noteOpen = true,
     SyncStatus? syncStatus,
     int unloadedPictures = 0,
@@ -73,6 +74,7 @@ void main() {
     back: back,
     actions: actions,
     listVisible: listVisible,
+    underList: underList,
     onShowList: onShowList ?? () {},
     showListShortcut: 'Cmd + \\',
     onOpenFolder: onOpenFolder ?? (_, {required behind}) {},
@@ -98,9 +100,8 @@ void main() {
   Finder onPath(String text) =>
       find.descendant(of: path, matching: find.text(text));
 
-  testWidgets('the band has a hairline along its bottom, a phone\'s bar none', (
-    tester,
-  ) async {
+  testWidgets('the band has a hairline along its bottom, but none under the '
+      'list or on a phone', (tester) async {
     BoxDecoration? hairline() =>
         tester.widget<Container>(bar).foregroundDecoration as BoxDecoration?;
 
@@ -109,6 +110,11 @@ void main() {
       hairline()?.border,
       Border(bottom: BorderSide(color: KapyTheme.darkPalette.railBorder)),
     );
+
+    await tester.pumpWidget(
+      harness(toolbar(listVisible: false, underList: true)),
+    );
+    expect(hairline(), isNull);
 
     await tester.pumpWidget(
       harness(toolbar(back: (to: 'Notes', onPressed: () {}))),
