@@ -493,7 +493,6 @@ class _PhoneTaskName extends StatelessWidget {
                         ? KapyIcon(
                             KapyIcons.checkRounded,
                             size: 15,
-                            strokeWidth: 2.2,
                             color: palette.paperColor,
                           )
                         : null,

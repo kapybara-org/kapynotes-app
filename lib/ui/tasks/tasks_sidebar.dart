@@ -85,7 +85,6 @@ class TasksSidebar extends StatelessWidget {
                     leading: (ink) => KapyIcon(
                       KapyIcons.checklistRounded,
                       size: 15,
-                      strokeWidth: 1.8,
                       color: ink,
                     ),
                     label: 'All tasks',
@@ -96,12 +95,8 @@ class TasksSidebar extends StatelessWidget {
                   const SizedBox(height: 2),
                   _FilterRow(
                     key: const ValueKey('tasks-filter-done'),
-                    leading: (ink) => KapyIcon(
-                      KapyIcons.checkRounded,
-                      size: 15,
-                      strokeWidth: 1.8,
-                      color: ink,
-                    ),
+                    leading: (ink) =>
+                        KapyIcon(KapyIcons.checkRounded, size: 15, color: ink),
                     label: 'Done',
                     count: board.done.length,
                     selected: filter.done,
@@ -332,7 +327,6 @@ class _MethodLineState extends State<_MethodLine> {
                   KapyIcon(
                     KapyIcons.infoOutlined,
                     size: 14,
-                    strokeWidth: 1.8,
                     color: open ? palette.textSubheading : palette.textTertiary,
                   ),
                 ],
@@ -444,7 +438,6 @@ class _MethodCard extends StatelessWidget {
                       KapyIcon(
                         KapyIcons.openExternalRounded,
                         size: 13,
-                        strokeWidth: 1.9,
                         color: palette.accentText,
                       ),
                     ],

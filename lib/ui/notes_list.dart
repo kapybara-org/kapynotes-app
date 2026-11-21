@@ -203,7 +203,7 @@ List<KapyIconData> _marksOf(
   for (final kind in NoteMedia.values.reversed)
     if (media.contains(kind)) kind.icon,
   if (locked) KapyIcons.lockRounded,
-  if (shared) KapyIcons.peopleOutlined,
+  if (shared) KapyIcons.groupOutlined,
 ];
 
 Border? _cardBorder(
@@ -248,7 +248,6 @@ class _PickBox extends StatelessWidget {
           ? KapyIcon(
               KapyIcons.checkRounded,
               size: 11,
-              strokeWidth: 2.6,
               color: palette.sidebarBackground,
             )
           : null,
@@ -384,7 +383,6 @@ class NoteCardFace extends StatelessWidget {
                           KapyIcon(
                             KapyIcons.pinOutlined,
                             size: 15,
-                            strokeWidth: 1.9,
                             color: palette.clay,
                           ),
                           const SizedBox(height: 8),
@@ -512,7 +510,7 @@ class _MetaRow extends StatelessWidget {
     final first = tags.firstOrNull;
     final flags = [
       if (locked) KapyIcons.lockRounded,
-      if (shared) KapyIcons.peopleOutlined,
+      if (shared) KapyIcons.groupOutlined,
     ];
 
     return LayoutBuilder(
@@ -553,12 +551,7 @@ class _MetaRow extends StatelessWidget {
 
         final right = [
           for (final glyph in [...shown, ...flags])
-            KapyIcon(
-              glyph,
-              size: _glyph,
-              strokeWidth: 1.8,
-              color: palette.textMuted,
-            ),
+            KapyIcon(glyph, size: _glyph, color: palette.textMuted),
           if (first != null)
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -772,12 +765,7 @@ class NoteListRowFace extends StatelessWidget {
                   children: [
                     if (!touch) const SizedBox(width: TagDots.size + 8),
                     for (final mark in marks) ...[
-                      KapyIcon(
-                        mark,
-                        size: 13,
-                        strokeWidth: 1.8,
-                        color: palette.textMuted,
-                      ),
+                      KapyIcon(mark, size: 13, color: palette.textMuted),
                       const SizedBox(width: 5),
                     ],
                     Expanded(
@@ -1073,12 +1061,7 @@ class DrawingListRowFace extends StatelessWidget {
                 Row(
                   children: [
                     for (final mark in marks) ...[
-                      KapyIcon(
-                        mark,
-                        size: 13,
-                        strokeWidth: 1.8,
-                        color: palette.textMuted,
-                      ),
+                      KapyIcon(mark, size: 13, color: palette.textMuted),
                       const SizedBox(width: 5),
                     ],
                     Flexible(
@@ -1219,7 +1202,6 @@ class SeeAllLink extends StatelessWidget {
               KapyIcon(
                 KapyIcons.chevronRightRounded,
                 size: 13,
-                strokeWidth: 2,
                 color: palette.accentText,
               ),
             ],
@@ -1274,7 +1256,6 @@ class NotesGroupHeading extends StatelessWidget {
                           ? KapyIcons.chevronRightRounded
                           : KapyIcons.chevronDownRounded,
                       size: 12,
-                      strokeWidth: 1.8,
                       color: palette.textTertiary,
                     ),
                   if (folded != null) const SizedBox(width: 4),
@@ -1497,7 +1478,6 @@ class _NotesGroupingMenuState extends State<NotesGroupingMenu> {
                       KapyIcon(
                         KapyIcons.chevronDownRounded,
                         size: 12,
-                        strokeWidth: 2,
                         color: color,
                       ),
                     ],
@@ -1565,7 +1545,6 @@ class _WhenChip extends StatelessWidget {
                   KapyIcon(
                     KapyIcons.calendarOutlined,
                     size: 16,
-                    strokeWidth: 1.8,
                     color: palette.tonalForeground,
                   ),
                   const SizedBox(width: 4),
@@ -1586,7 +1565,6 @@ class _WhenChip extends StatelessWidget {
                   KapyIcon(
                     KapyIcons.closeRounded,
                     size: 12,
-                    strokeWidth: 2,
                     color: palette.tonalKeyText,
                   ),
                 ],
@@ -1762,7 +1740,6 @@ class NotesListControls extends StatelessWidget {
                       ? KapyIcons.gridViewRounded
                       : KapyIcons.listViewRounded,
                   size: 16,
-                  strokeWidth: 1.8,
                   color: on ? palette.textPrimary : palette.textTertiary,
                 ),
               ),
@@ -1856,11 +1833,7 @@ class NotesListControls extends StatelessWidget {
                       extent: 28,
                       foregroundColor: palette.textSecondary,
                       onPressed: onClear,
-                      icon: const KapyIcon(
-                        KapyIcons.closeRounded,
-                        size: 14,
-                        strokeWidth: 1.8,
-                      ),
+                      icon: const KapyIcon(KapyIcons.closeRounded, size: 14),
                     ),
                   if (when case final span?
                       when span != NotesWhen.anyTime && onWhenChanged != null)
@@ -2217,7 +2190,6 @@ class _NotesFilterState extends State<_NotesFilter> {
                     KapyIcon(
                       KapyIcons.chevronDownRounded,
                       size: 13,
-                      strokeWidth: 2,
                       color: palette.paperColor,
                     ),
                   ],
@@ -2281,7 +2253,6 @@ class _NotesFilterState extends State<_NotesFilter> {
                     KapyIcon(
                       KapyIcons.filterRounded,
                       size: bar ? 16 : 14,
-                      strokeWidth: 1.8,
                       color: narrowed ? style.color : palette.textSecondary,
                     ),
                     if (roomy) ...[
@@ -2302,7 +2273,6 @@ class _NotesFilterState extends State<_NotesFilter> {
                       KapyIcon(
                         KapyIcons.chevronDownRounded,
                         size: bar ? 12 : 13,
-                        strokeWidth: 2,
                         color: narrowed
                             ? palette.tonalKeyText
                             : palette.textTertiary,
@@ -2550,7 +2520,6 @@ class _FilterMenu extends StatelessWidget {
         KapyIcon(
           KapyIcons.chevronRightRounded,
           size: 13,
-          strokeWidth: 2,
           color: palette.textTertiary,
         ),
       ],
@@ -2738,12 +2707,7 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
     final palette = context.palette;
     final chosen = widget.chosen;
     final trailing = chosen
-        ? KapyIcon(
-            KapyIcons.checkRounded,
-            size: 14,
-            strokeWidth: 1.8,
-            color: palette.accentText,
-          )
+        ? KapyIcon(KapyIcons.checkRounded, size: 14, color: palette.accentText)
         : widget.trailing;
     return Semantics(
       selected: chosen,
@@ -2775,7 +2739,6 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
                   KapyIcon(
                     icon,
                     size: 15,
-                    strokeWidth: 1.8,
                     color: chosen ? palette.textPrimary : palette.textSecondary,
                   ),
                   const SizedBox(width: 9),
@@ -2851,12 +2814,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
                 _PickBox(checked: widget.ticked),
                 const SizedBox(width: 9),
                 if (icon != null) ...[
-                  KapyIcon(
-                    icon,
-                    size: 15,
-                    strokeWidth: 1.8,
-                    color: palette.textSecondary,
-                  ),
+                  KapyIcon(icon, size: 15, color: palette.textSecondary),
                   const SizedBox(width: 9),
                 ],
                 Text(
@@ -3093,7 +3051,6 @@ class _TagsMenuState extends State<_TagsMenu> {
                   KapyIcon(
                     KapyIcons.searchRounded,
                     size: 14,
-                    strokeWidth: 1.8,
                     color: palette.textTertiary,
                   ),
                   const SizedBox(width: 8),
@@ -3265,7 +3222,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                       onRename: () => onRename(true),
                     ),
                     child: KapyIcon(
-                      KapyIcons.moreRounded,
+                      KapyIcons.moreVerticalRounded,
                       size: 15,
                       color: palette.textSecondary,
                     ),
@@ -3432,7 +3389,6 @@ class _FilterPopoverState extends State<_FilterPopover> {
       leading: KapyIcon(
         icon,
         size: 18,
-        strokeWidth: 1.8,
         color: chosen ? palette.textPrimary : palette.textSecondary,
       ),
       label: show == NotesShow.all ? widget.everything : show.label,
@@ -3441,7 +3397,6 @@ class _FilterPopoverState extends State<_FilterPopover> {
           ? KapyIcon(
               KapyIcons.checkRounded,
               size: 16,
-              strokeWidth: 1.8,
               color: palette.accentText,
             )
           : trailing,
@@ -3536,7 +3491,6 @@ class _FilterPopoverState extends State<_FilterPopover> {
             leading: KapyIcon(
               KapyIcons.tagRounded,
               size: 18,
-              strokeWidth: 1.8,
               color: palette.textSecondary,
             ),
             label: 'Tags',
@@ -3552,7 +3506,6 @@ class _FilterPopoverState extends State<_FilterPopover> {
                 KapyIcon(
                   KapyIcons.chevronRightRounded,
                   size: 14,
-                  strokeWidth: 2,
                   color: palette.textTertiary,
                 ),
               ],
@@ -3738,9 +3691,8 @@ class _FilterPopoverState extends State<_FilterPopover> {
                           spacing: 4,
                           children: [
                             KapyIcon(
-                              KapyIcons.chevronLeftRounded,
+                              KapyIcons.arrowBackRounded,
                               size: 14,
-                              strokeWidth: 2,
                               color: palette.textSecondary,
                             ),
                             Text(

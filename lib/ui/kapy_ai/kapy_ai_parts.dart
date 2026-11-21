@@ -215,7 +215,7 @@ class KapyAiIconButton extends StatelessWidget {
       radius: radius,
       selectedBackground: selectedBackground ?? palette.kapyHighlight,
       foregroundColor: color ?? palette.textSecondary,
-      icon: KapyIcon(icon, size: iconSize, strokeWidth: 1.8),
+      icon: KapyIcon(icon, size: iconSize),
     );
   }
 }

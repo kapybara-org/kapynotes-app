@@ -246,7 +246,6 @@ class _Row extends StatelessWidget {
                   KapyIcon(
                     icon,
                     size: 15,
-                    strokeWidth: 1.8,
                     color: enabled
                         ? palette.textSecondary
                         : palette.textTertiary,
@@ -295,14 +294,12 @@ class _Row extends StatelessWidget {
                   KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    strokeWidth: 1.8,
                     color: palette.accentText,
                   ),
                 if (chevron)
                   KapyIcon(
                     KapyIcons.chevronRightRounded,
                     size: 13,
-                    strokeWidth: 1.8,
                     color: palette.textTertiary,
                   ),
               ],
@@ -358,7 +355,6 @@ class KapyAiModelButton extends StatelessWidget {
                 KapyIcon(
                   kapyModelIcon(model.kind),
                   size: 14,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 5),
@@ -379,7 +375,6 @@ class KapyAiModelButton extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.chevronDownRounded,
                   size: 12,
-                  strokeWidth: 1.8,
                   color: palette.textTertiary,
                 ),
               ],
