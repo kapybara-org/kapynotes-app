@@ -5,7 +5,7 @@ Kapy Notes 1.35.1
 - Share from one sheet: add someone by email and choose Can edit or Can view. When a note is shared together with other notes, you choose whether the new person gets only this note or all of them.
 - Settings has a Sharing section with your invitations and everyone you share with, and the Shared list groups notes by person.
 - If a note is shared with you to view only, you can remove it from your notes without leaving the share.
-- Block and Leave in a note's share sheet do exactly what they say. Block works as it does in Settings → Sharing, and when a note is shared together with other notes, Leave says how many notes you're leaving and can keep a copy of each.
+- Block in a note's share sheet works as it does in Settings → Sharing, and when a note is shared together with other notes, Leave says how many notes you're leaving and can keep a copy of each.
 - A task can hold details: indent lines under it for text, pictures or smaller tasks. Tap a task in Tasks to open its details in a sheet, and pull it up for more room.
 - A note's title stays whole at any text size, and the line under it wraps instead of running off the screen.
 - A note shared again with the same people keeps updating for them.
