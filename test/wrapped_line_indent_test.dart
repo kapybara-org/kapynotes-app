@@ -175,6 +175,55 @@ void main() {
           await tester.pump(const Duration(seconds: 3));
         },
       );
+      testWidgets(
+        'a selection across a wrapped details row break gives a box on each '
+        'row, the second under its words',
+        (tester) async {
+          final driver = await pumpNote(tester);
+          final line = _rowsOf(driver, _details, words: 2);
+          final second = line.rows[1];
+          final boxes = driver.boxesFor(
+            TextSelection(
+              baseOffset: second.start - 4,
+              extentOffset: second.start + 4,
+            ),
+          );
+          final above = [
+            for (final box in boxes)
+              if (box.bottom <= second.top + 0.5) box,
+          ];
+          final below = [
+            for (final box in boxes)
+              if (box.top >= second.top - 0.5) box,
+          ];
+          expect(above, isNotEmpty);
+          expect(below, isNotEmpty);
+          expect(above.length + below.length, boxes.length);
+          expect(
+            below.map((box) => box.left).reduce((a, b) => a < b ? a : b),
+            closeTo(line.words, 0.5),
+          );
+          await tester.pump(const Duration(seconds: 3));
+        },
+      );
+
+      testWidgets(
+        'a tap in the gutter left of a wrapped details row puts the caret at '
+        'the row\'s start',
+        (tester) async {
+          final driver = await pumpNote(tester);
+          final line = _rowsOf(driver, _details, words: 2);
+          final second = line.rows[1];
+          expect(line.words, greaterThan(6));
+          final at = driver.state.positionAt(
+            driver.toGlobal(
+              Offset(line.words - 6, (second.top + second.bottom) / 2),
+            ),
+          );
+          expect(at.offset, second.start);
+          await tester.pump(const Duration(seconds: 3));
+        },
+      );
     });
   }
 }

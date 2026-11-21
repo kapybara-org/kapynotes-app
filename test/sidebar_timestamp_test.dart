@@ -56,4 +56,41 @@ void main() {
     // Edited on a device whose clock runs ahead: dated, never "Today".
     expect(heading(DateTime(2026, 11, 20)), ('Fri 20 Nov', null));
   });
+
+  test("heads a phone's day of notes, counting days by the calendar", () {
+    ({String? lead, String date}) heading(DateTime day, DateTime now) =>
+        SidebarTimestamp.phoneDay(day, now: now);
+    final today = DateTime(2026, 11, 19, 12);
+
+    expect(heading(DateTime(2026, 11, 19), today), (
+      lead: 'Today',
+      date: 'Thu 19',
+    ));
+    expect(heading(DateTime(2026, 11, 18), today), (
+      lead: 'Yesterday',
+      date: 'Wed 18',
+    ));
+    expect(heading(DateTime(2026, 11, 17), today), (
+      lead: null,
+      date: 'Tue 17 Nov',
+    ));
+    // A day still to come, from a device whose clock runs ahead.
+    expect(heading(DateTime(2026, 11, 20), today), (
+      lead: 'Today',
+      date: 'Fri 20',
+    ));
+    // Across the night the clocks change, where a day is 23 or 25 hours.
+    expect(heading(DateTime(2026, 3, 28), DateTime(2026, 3, 29, 0, 30)), (
+      lead: 'Yesterday',
+      date: 'Sat 28',
+    ));
+    expect(heading(DateTime(2026, 10, 24), DateTime(2026, 10, 25, 23, 30)), (
+      lead: 'Yesterday',
+      date: 'Sat 24',
+    ));
+    expect(heading(DateTime(2026, 10, 23), DateTime(2026, 10, 25, 0, 30)), (
+      lead: null,
+      date: 'Fri 23 Oct',
+    ));
+  });
 }
