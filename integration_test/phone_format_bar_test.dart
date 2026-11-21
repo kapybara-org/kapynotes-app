@@ -78,14 +78,17 @@ void main() {
             highlighter: Highlighter(engine.registry),
             resultsVisible: true,
             markdownEnabled: true,
-            // As the app opens a note: both NoteEditor call sites in
-            // lib/ui/home_page.dart pass autofocus, startAtEnd and
-            // ensureKeyboardVisible together. startAtEnd is what starts the
-            // editor's keyboard retry, and the first case needs it: just after
-            // launch, Android refuses the first request while FlutterView is
-            // still becoming the served input view.
+            // Opened the way the app reopens a note within the day: both
+            // NoteEditor call sites in lib/ui/home_page.dart pass startAtEnd
+            // and initialCaret along with autofocus and ensureKeyboardVisible.
+            // startAtEnd is what starts the editor's keyboard retry, and the
+            // first case needs it: just after launch, Android refuses the
+            // first request while FlutterView is still becoming the served
+            // input view. initialCaret keeps the body as written, where a
+            // fresh open would add a blank line to start the day's writing.
             autofocus: true,
             startAtEnd: true,
+            initialCaret: body.length,
             ensureKeyboardVisible: true,
             onDocumentChanged: (_, _, _, _) {},
             onSettingsPressed: () {},
