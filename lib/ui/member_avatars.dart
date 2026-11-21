@@ -10,7 +10,6 @@ import 'profile_avatar.dart';
 class StackedAvatar {
   const StackedAvatar({
     required this.id,
-    required this.seed,
     required this.name,
     this.image,
     this.tooltip,
@@ -20,9 +19,6 @@ class StackedAvatar {
 
   /// Stable across rebuilds; the circle's key is built from it.
   final String id;
-
-  /// What a default avatar is drawn from.
-  final String seed;
 
   /// What an initial is taken from when there is no picture.
   final String name;
@@ -192,7 +188,6 @@ class MemberAvatars extends StatelessWidget {
         for (final member in ordered)
           StackedAvatar(
             id: member.userId,
-            seed: member.userId.isEmpty ? member.email : member.userId,
             name: member.displayName,
             image: member.image,
             highlight: here.containsKey(member.userId)
@@ -303,7 +298,6 @@ class SpacePeopleAvatars extends StatelessWidget {
         for (final person in people)
           StackedAvatar(
             id: person.id,
-            seed: person.seed,
             name: person.fullName,
             image: person.image,
             pending: person.isInvited,
@@ -343,7 +337,6 @@ class _Face extends StatelessWidget {
     final highlight = avatar.highlight;
     Widget face = ProfileAvatar(
       extent: extent,
-      seed: avatar.seed,
       name: avatar.name,
       image: avatar.image,
       // The ring is the surface behind the bar, which is what separates one
