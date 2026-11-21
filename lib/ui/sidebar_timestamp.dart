@@ -165,6 +165,22 @@ class SidebarTimestamp {
     return days == 1 ? 'Yesterday · $day' : day;
   }
 
+  /// A day's heading on a phone's list: "Today" or "Yesterday" leading
+  /// "Wed 19", then "Mon 17 Nov" alone, where the day alone could be any
+  /// month's. A day still to come is Today: a note edited on another device
+  /// with its clock ahead files under today rather than above it.
+  static ({String? lead, String date}) phoneDay(
+    DateTime shown, {
+    required DateTime now,
+  }) {
+    final date = weekdayAndDay(shown);
+    return switch (_daysBetween(shown, now)) {
+      <= 0 => (lead: 'Today', date: date),
+      1 => (lead: 'Yesterday', date: date),
+      _ => (lead: null, date: '$date ${_months[shown.month - 1]}'),
+    };
+  }
+
   /// The time of day on a 24-hour clock: "16:05".
   static String clock(DateTime shown) => _clock(shown);
 
