@@ -5,6 +5,7 @@ import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/tasks/task_choice.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 
 class _MemoryStore extends LocalStore {
@@ -25,8 +26,10 @@ void main() {
   late NotesStore notes;
   late TaskLibrary library;
   late TasksController tasks;
+  var editable = true;
 
   setUp(() async {
+    editable = true;
     clock = DateTime(2026, 11, 17, 9);
     final store = _MemoryStore();
     notes = NotesStore(store);
@@ -41,7 +44,7 @@ void main() {
     tasks = TasksController(
       notes: notes,
       library: library,
-      canEdit: (_) => true,
+      canEdit: (_) => editable,
       now: () => clock,
     );
   });
@@ -97,6 +100,33 @@ void main() {
     expect(open(), ['Wash it', 'Call the garage']);
   });
 
+  test(
+    'Done on a note that can\'t be edited leaves Do now as it was',
+    () async {
+      final note = notes.create(body: 'Trip\n☐ Book flights\n☐ Learn phrases');
+      await tasks.reconcileNow();
+      later();
+      final first = tasks.read().open.first;
+      tasks.doNow(first);
+      editable = false;
+      later();
+      await tasks.finish(tasks.read().open.first);
+
+      expect(
+        notes.byId(note.id)!.body,
+        'Trip\n☐ Book flights\n☐ Learn phrases',
+      );
+      expect(tasks.read().done, isEmpty);
+      expect(open(), ['Book flights', 'Learn phrases']);
+      expect(tasks.read().open.first.doNow, isTrue);
+      expect(tasks.justDone, isNull);
+      expect(
+        tasks.choiceIn(null).stage,
+        isA<DoNowStage>().having((s) => s.item.id, 'item', first.id),
+      );
+    },
+  );
+
   test('a tick in the note itself reaches Tasks', () async {
     final note = notes.create(body: 'Car\n☐ Call the garage');
     await tasks.reconcileNow();
@@ -137,7 +167,7 @@ void main() {
   });
 
   test(
-    'one task is Do now at a time, and Pick again clears every dot',
+    'one task is Do now at a time, and clearing the picks clears every dot',
     () async {
       notes.create(body: 'List\n☐ One\n☐ Two\n☐ Three');
       await tasks.reconcileNow();
@@ -175,25 +205,29 @@ void main() {
     expect([for (final i in now.open) i.doNow], [true, false, false]);
     expect([for (final i in now.open) i.dotted], [true, false, true]);
 
-    tasks.clearPick(now.open[0]);
+    tasks.takeOutOfUpNext(now.open[2]);
+    expect(tasks.index.byId(now.open[2].id)!.doNow.v, isFalse);
+    await tasks.setDone(tasks.read().open[0], done: true);
     now = tasks.read();
-    expect([for (final i in now.open) i.doNow], [false, false, false]);
-    expect([for (final i in now.open) i.dotted], [false, false, true]);
+    expect([for (final i in now.open) i.doNow], [false, false]);
+    expect([for (final i in now.open) i.dotted], [false, false]);
   });
 
-  test('clearing one pick leaves every other pick as it is', () async {
+  test('taking one task out of Up next leaves Do now and every other pick '
+      'as they are', () async {
     notes.create(body: 'List\n☐ One\n☐ Two\n☐ Three');
     await tasks.reconcileNow();
     var board = tasks.read();
     tasks.dot(board.open[0]);
+    tasks.dot(board.open[2]);
     later();
     tasks.doNow(board.open[1]);
     later();
-    tasks.clearPick(tasks.read().open[1]);
+    tasks.takeOutOfUpNext(tasks.read().open[0]);
 
     board = tasks.read();
-    expect([for (final i in board.open) i.doNow], [false, false, false]);
-    expect([for (final i in board.open) i.dotted], [true, false, false]);
+    expect([for (final i in board.open) i.doNow], [false, true, false]);
+    expect([for (final i in board.open) i.dotted], [false, true, true]);
   });
 
   test('Remove takes the line out, and undo puts it back in its place in '

@@ -3,6 +3,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
@@ -57,7 +58,9 @@ void main() {
     await notes.load();
     await library.load();
     final note = notes.create(
-      body: 'Errands\n☐ Hide the menu\n  It shrinks to a pill.\n☐ Book flights',
+      body:
+          'Errands\n☐ Pay the rent\n☐ Call the bank\n☐ Hide the menu\n'
+          '  It shrinks to a pill.\n☐ Book flights',
     );
     tasks = TasksController(
       notes: notes,
@@ -87,6 +90,7 @@ void main() {
             addFocus: addFocus,
             labelOf: (note) => note.title,
             onOpenNote: opened.add,
+            onOpenDone: () {},
             phone: true,
           ),
         ),
@@ -95,12 +99,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // The first two open tasks sit on the pair's cards, so the rows start at
+  // the third.
+  TaskItem listed() =>
+      tasks.read().open.firstWhere((item) => item.words == 'Hide the menu');
+
   double sheetHeight(WidgetTester tester) =>
       tester.getSize(find.byKey(const ValueKey('phone-details-body'))).height;
 
   testWidgets('a phone row opens the details at half height', (tester) async {
     await pumpPhone(tester);
-    final hide = tasks.read().open.first;
+    final hide = listed();
 
     expect(find.byType(PhoneTaskDetailsSheet), findsNothing);
     await tester.tap(find.byKey(ValueKey('phone-task-${hide.id}')));
@@ -124,9 +133,7 @@ void main() {
     'the grabber pulls the sheet to nearly the whole screen, and back down',
     (tester) async {
       await pumpPhone(tester);
-      await tester.tap(
-        find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-      );
+      await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
       await tester.pumpAndSettle();
       final grabber = find.byKey(const ValueKey('phone-details-grabber'));
 
@@ -147,9 +154,7 @@ void main() {
     await pumpPhone(tester);
     tester.view.padding = const FakeViewPadding(bottom: 102);
     addTearDown(tester.view.resetPadding);
-    await tester.tap(
-      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-    );
+    await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
     await tester.pumpAndSettle();
     final body = find.byKey(const ValueKey('phone-details-body'));
     final ratio = tester.view.devicePixelRatio;
@@ -174,9 +179,7 @@ void main() {
 
   testWidgets('a short pull down closes the sheet', (tester) async {
     await pumpPhone(tester);
-    await tester.tap(
-      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-    );
+    await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
     await tester.pumpAndSettle();
 
     await tester.drag(
@@ -192,9 +195,7 @@ void main() {
     tester,
   ) async {
     await pumpPhone(tester);
-    await tester.tap(
-      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-    );
+    await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
     await tester.pumpAndSettle();
 
     await tester.tapAt(const Offset(195, 120));
@@ -207,9 +208,7 @@ void main() {
     tester,
   ) async {
     await pumpPhone(tester);
-    await tester.tap(
-      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-    );
+    await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
     await tester.pumpAndSettle();
 
     await tester.drag(
@@ -226,9 +225,7 @@ void main() {
 
   testWidgets('the sheet closes when its task leaves the note', (tester) async {
     await pumpPhone(tester);
-    await tester.tap(
-      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-    );
+    await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
     await tester.pumpAndSettle();
     expect(find.byType(PhoneTaskDetailsSheet), findsOneWidget);
 
@@ -245,9 +242,7 @@ void main() {
     tester,
   ) async {
     await pumpPhone(tester);
-    await tester.tap(
-      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-    );
+    await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -274,9 +269,7 @@ void main() {
     tester,
   ) async {
     await pumpPhone(tester);
-    await tester.tap(
-      find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-    );
+    await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('phone-details-box')));
@@ -291,9 +284,7 @@ void main() {
     (tester) async {
       await pumpPhone(tester, editable: false);
       final before = notes.allNotes.first.body;
-      await tester.tap(
-        find.byKey(ValueKey('phone-task-${tasks.read().open.first.id}')),
-      );
+      await tester.tap(find.byKey(ValueKey('phone-task-${listed().id}')));
       await tester.pumpAndSettle();
 
       final field = tester.widget<TextField>(
@@ -341,9 +332,7 @@ void main() {
     'on a note shared to view only, a phone row\'s box is faint and takes no tap',
     (tester) async {
       await pumpPhone(tester, editable: false);
-      final box = find.byKey(
-        ValueKey('phone-task-box-${tasks.read().open.first.id}'),
-      );
+      final box = find.byKey(ValueKey('phone-task-box-${listed().id}'));
       expect(tester.widget<GestureDetector>(box).onTap, isNull);
       expect(
         tester
@@ -402,14 +391,13 @@ void main() {
     tester,
   ) async {
     await pumpPhone(tester);
-    final open = tasks.read().open;
     Finder markIn(String id) => find.descendant(
       of: find.byKey(ValueKey('phone-task-$id')),
       matching: find.byWidgetPredicate(
         (widget) => widget is KapyIcon && widget.icon == KapyIcons.alignLeft,
       ),
     );
-    expect(markIn(open[0].id), findsOneWidget);
+    expect(markIn(listed().id), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 }

@@ -5,11 +5,11 @@
 # the branch's own copy, so a branch cut before this file landed merges main
 # first.
 #
-# Two jobs run integration_test/phone_v2_test.dart, phone_format_bar_test.dart
-# and phone_sharing_test.dart under flutter drive and upload every screenshot
-# they take: android on an Android 16 emulator, as the android-screenshots
-# artifact, and ios on an iOS 27.2 iPhone simulator, as ios-screenshots. Each
-# fails when a test fails, and the screenshots up to that point still upload.
+# Two jobs run the phone integration tests that tool/ci/phone_screenshots.sh
+# lists under flutter drive and upload every screenshot they take: android on
+# an Android 16 emulator, as the android-screenshots artifact, and ios on an
+# iOS 27.2 iPhone simulator, as ios-screenshots. Each fails when a test fails,
+# and the screenshots up to that point still upload.
 # The ios job holds one of the five macOS jobs the organization can run at
 # once, so nothing here runs on a push.
 name: Phones
@@ -72,7 +72,11 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
-          script: bash tool/ci/phone_screenshots.sh emulator-5554
+          # No touch crosshair or tap dots in the screenshots.
+          script: |
+            adb -s emulator-5554 shell settings put system pointer_location 0
+            adb -s emulator-5554 shell settings put system show_touches 0
+            bash tool/ci/phone_screenshots.sh emulator-5554
 
       - name: List the screenshots
         if: ${{ !cancelled() }}

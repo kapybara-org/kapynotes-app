@@ -86,9 +86,7 @@ class TaskDetailsIcon extends StatelessWidget {
             ? 'Has a picture'
             : 'Has details',
         child: KapyIcon(
-          details.hasMedia
-              ? KapyIcons.imageOutlined
-              : KapyIcons.alignLeft,
+          details.hasMedia ? KapyIcons.imageOutlined : KapyIcons.alignLeft,
           size: 14,
           color: context.palette.textTertiary,
         ),
@@ -114,8 +112,12 @@ TextStyle uiStyle(
 );
 
 /// A source mark, a date, a count: interface face, regular weight, quiet.
-TextStyle metaStyle(double size, double line, Color color, {bool tabular = false}) =>
-    uiStyle(size, line, FontWeight.w400, color, tabular: tabular);
+TextStyle metaStyle(
+  double size,
+  double line,
+  Color color, {
+  bool tabular = false,
+}) => uiStyle(size, line, FontWeight.w400, color, tabular: tabular);
 
 /// A note's quiet mark: its first tag's dot colour, as a small square, or a
 /// plain one when it has no coloured tag. A dashed one stands for no note.
@@ -129,7 +131,11 @@ class NoteSwatch extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final note = this.note;
-    final radius = size >= 14 ? 4.0 : 3.0;
+    final radius = size >= 14
+        ? 4.0
+        : size <= 8
+        ? 2.0
+        : 3.0;
     if (note == null) {
       return CustomPaint(
         size: Size.square(size),
@@ -145,7 +151,9 @@ class NoteSwatch extends StatelessWidget {
             (palette.brightness == Brightness.dark
                 ? const Color(0xFF3A3530)
                 : const Color(0xFFD9D2C1)),
-        border: Border.all(color: palette.textPrimary.withAlpha(0x24)),
+        border: size <= 8
+            ? null
+            : Border.all(color: palette.textPrimary.withAlpha(0x24)),
         borderRadius: BorderRadius.circular(radius),
       ),
     );
@@ -207,11 +215,11 @@ class NoteMark extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 24),
           child: Padding(
-            padding: const EdgeInsets.only(left: 4, right: 2),
+            padding: const EdgeInsets.only(right: 2),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                NoteSwatch(note: note),
+                NoteSwatch(note: note, size: 8),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(

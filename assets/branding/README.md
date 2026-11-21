@@ -28,8 +28,6 @@ and `windows/runner/resources/app_icon.ico`. The iOS Any icon is flattened
 to drop its alpha channel (`tool/flatten_png.swift`), which the App Store
 rejects.
 
-The header animation, the disk image and the Windows installer carry the mark
-too; redraw them after a brand change with
-`tool/generate_kapy_header_atlases.swift`,
-`tool/generate_dmg_background.swift` and
+The disk image and the Windows installer carry the mark too; redraw them
+after a brand change with `tool/generate_dmg_background.swift` and
 `tool/generate_windows_installer_art.swift`.
