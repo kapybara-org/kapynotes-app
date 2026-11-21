@@ -49,6 +49,20 @@ jobs:
           sudo ln -sfn "$dv" "/System/Library/Fonts/Apple Symbols.ttf"
           sudo ln -sfn "$lib" /System/Library/Fonts/Supplemental/Arial.ttf
 
+      # test/audio/linux_voice_test.dart records and plays through ffmpeg and
+      # PulseAudio, and skips itself without them. A null sink stands in for
+      # the speakers and its monitor for the microphone, as on Capy machines.
+      - name: ffmpeg and a PulseAudio server
+        run: |
+          type -P ffmpeg pulseaudio pactl >/dev/null || { sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends ffmpeg pulseaudio pulseaudio-utils; }
+          pulseaudio --daemonize --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=kapy >/dev/null
+          pactl set-default-sink kapy
+          pactl set-default-source kapy.monitor
+          bytes=$(ffmpeg -nostdin -loglevel error -f pulse -i default -t 0.2 -f s16le - | wc -c)
+          echo "captured $bytes bytes from the null sink's monitor"
+          [ "$bytes" -gt 0 ]
+
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
