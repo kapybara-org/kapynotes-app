@@ -243,7 +243,6 @@ class SpacePerson {
     required this.id,
     required this.name,
     required this.fullName,
-    required this.seed,
     this.image,
     this.member,
     this.invite,
@@ -258,8 +257,6 @@ class SpacePerson {
   /// What to call them in a list.
   final String fullName;
 
-  /// What a default avatar is drawn from.
-  final String seed;
   final String? image;
   final SpaceMember? member;
   final SpaceInvite? invite;
@@ -402,7 +399,6 @@ class Space {
           id: member.userId,
           name: shortNameOf(member.userId),
           fullName: member.displayName,
-          seed: member.userId.isEmpty ? member.email : member.userId,
           image: member.image,
           member: member,
         ),
@@ -411,7 +407,6 @@ class Space {
           id: invite.email,
           name: invite.displayName,
           fullName: invite.email,
-          seed: invite.email,
           invite: invite,
         ),
     ];

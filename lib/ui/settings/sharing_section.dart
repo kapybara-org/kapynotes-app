@@ -1644,7 +1644,6 @@ class _Face extends StatelessWidget {
   Widget build(BuildContext context) {
     final person = this.person;
     final face = ProfileAvatar(
-      seed: person?.userId ?? person?.email ?? email!,
       name: person?.name ?? name ?? email!,
       image: person?.image,
       extent: extent,

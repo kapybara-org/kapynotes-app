@@ -589,12 +589,7 @@ class _RailAccount extends StatelessWidget {
 
     final Widget face;
     if (user != null && photo != null && photo.startsWith('data:image/')) {
-      face = ProfileAvatar(
-        seed: user.id,
-        name: name,
-        extent: _extent,
-        image: photo,
-      );
+      face = ProfileAvatar(name: name, extent: _extent, image: photo);
     } else {
       final line = palette.raisedBorder;
       face = Container(
@@ -613,7 +608,7 @@ class _RailAccount extends StatelessWidget {
                 color: palette.textTertiary,
               )
             : Text(
-                avatarInitial(name),
+                avatarInitials(name),
                 textScaler: TextScaler.noScaling,
                 style: TextStyle(
                   fontSize: AppTypeScale.control,

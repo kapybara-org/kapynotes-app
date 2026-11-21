@@ -810,7 +810,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           if (owner != null)
             _PersonRow(
               key: ValueKey('member-row-${owner.userId}'),
-              seed: owner.userId.isEmpty ? owner.email : owner.userId,
               name: owner.displayName,
               detail: owner.email,
               trailing: const _RoleText('Owner'),
@@ -818,7 +817,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           if (me != null)
             _PersonRow(
               key: ValueKey('member-row-${me.userId}'),
-              seed: me.userId.isEmpty ? me.email : me.userId,
               name: 'You',
               detail: me.role.canEdit
                   ? 'You can edit this note'
@@ -828,7 +826,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           for (final member in others)
             _PersonRow(
               key: ValueKey('member-row-${member.userId}'),
-              seed: member.userId.isEmpty ? member.email : member.userId,
               name: member.displayName,
               detail: member.email,
               trailing: _RoleText(
@@ -1707,7 +1704,6 @@ class _PeopleWithAccess extends StatelessWidget {
             for (final member in here)
               _PersonRow(
                 key: ValueKey('member-row-${member.userId}'),
-                seed: member.userId.isEmpty ? member.email : member.userId,
                 name: member.userId == me ? 'You' : member.displayName,
                 detail: _detailFor(member, present[member.userId]),
                 live: present.containsKey(member.userId),
@@ -1731,7 +1727,6 @@ class _PeopleWithAccess extends StatelessWidget {
             for (final invite in space.invites)
               _PersonRow(
                 key: ValueKey('invite-row-${invite.token}'),
-                seed: invite.email,
                 invited: true,
                 name: invite.email,
                 detail: '${_accessLabel(invite.role)} · waiting to join',
@@ -1770,7 +1765,6 @@ String _notesPhrase(int count) =>
 class _PersonRow extends StatelessWidget {
   const _PersonRow({
     super.key,
-    required this.seed,
     required this.name,
     required this.detail,
     this.trailing,
@@ -1778,7 +1772,6 @@ class _PersonRow extends StatelessWidget {
     this.live = false,
   });
 
-  final String seed;
   final String name;
   final String detail;
   final Widget? trailing;
@@ -1820,7 +1813,7 @@ class _PersonRow extends StatelessWidget {
                     ),
                   )
                 else
-                  ProfileAvatar(extent: avatar, seed: seed, name: name),
+                  ProfileAvatar(extent: avatar, name: name),
                 if (live)
                   Positioned(
                     key: const ValueKey('presence-dot'),
@@ -2241,12 +2234,7 @@ class _SuggestionRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
         child: Row(
           children: [
-            ProfileAvatar(
-              extent: 24,
-              seed: person.userId ?? person.email,
-              name: person.name,
-              image: person.image,
-            ),
+            ProfileAvatar(extent: 24, name: person.name, image: person.image),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
