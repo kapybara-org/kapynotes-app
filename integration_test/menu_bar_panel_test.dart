@@ -178,17 +178,24 @@ void main() {
 
     // From the icon's click to the panel shown with its first frame drawn.
     final times = <int>[];
+    String ms(int us) => (us / 1000).toStringAsFixed(1);
     for (var i = 0; i < 21; i++) {
       final watch = Stopwatch()..start();
-      expect(await controller.click(), isTrue);
+      final shown = await controller.click();
       times.add(watch.elapsedMicroseconds);
+      expect(
+        shown,
+        isTrue,
+        reason:
+            'opening $i: ${controller.lastMiss?.name} after '
+            '${ms(times.last)} ms',
+      );
       expect(controller.isOpen, isTrue);
       await Future<void>.delayed(const Duration(milliseconds: 150));
       await controller.close();
       await Future<void>.delayed(const Duration(milliseconds: 150));
     }
     final warm = times.skip(1).toList()..sort();
-    String ms(int us) => (us / 1000).toStringAsFixed(1);
     stdout.writeln(
       'MENUBAR_OPEN_MS cold=${ms(times.first)} '
       'median=${ms(warm[warm.length ~/ 2])} max=${ms(warm.last)} '
