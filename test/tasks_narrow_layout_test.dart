@@ -455,6 +455,87 @@ void main() {
         await tester.pump(const Duration(seconds: 3));
       },
     );
+
+    for (final (width, scale) in [(420.0, 3.1), (900.0, 1.0)]) {
+      testWidgets(
+        'in a Tasks pane ${width.round()} wide at ${scale}x, an open '
+        'task ${scale == 1 ? 'keeps its note name beside its words' : 'puts its note name under its words'}',
+        (tester) async {
+          await setUpTasks(tester, 'Errands\n☐ Water the plants\n☐ Two');
+          await pumpTasks(
+            tester,
+            size: Size(width, 900),
+            phone: false,
+            label: _shared,
+            scale: scale,
+          );
+          final row = find.byKey(ValueKey(tasks.read().open.first.id));
+          final words = find.descendant(
+            of: row,
+            matching: find.text('Water the plants'),
+          );
+          final mark = find.descendant(
+            of: row,
+            matching: find.byType(NoteMark),
+          );
+          expect(mark, findsOneWidget);
+          final wordsRect = tester.getRect(words);
+          final markRect = tester.getRect(mark);
+          if (scale == 1) {
+            expect(markRect.center.dy, closeTo(wordsRect.center.dy, 4));
+            expect(markRect.left, greaterThan(wordsRect.right));
+          } else {
+            expect(markRect.top, greaterThanOrEqualTo(wordsRect.bottom - 0.5));
+            expect(
+              wordsRect.width,
+              greaterThan(tester.getSize(row).width * 0.6),
+              reason: 'the note name squeezed the task words',
+            );
+          }
+          expectInside(tester, words, width);
+          expectInside(tester, mark, width);
+          await tester.pump(const Duration(seconds: 3));
+        },
+      );
+    }
+
+    testWidgets('in a Tasks pane 420 wide at 3.1x, a task to pick puts its '
+        'note name under its words', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Water the plants');
+      await pumpTasks(
+        tester,
+        size: const Size(420, 900),
+        phone: false,
+        label: _shared,
+        scale: 3.1,
+      );
+      final notYet = find.byKey(const ValueKey('tasks-ready-not-yet'));
+      await tester.ensureVisible(notYet);
+      await tester.tap(notYet);
+      await tester.pumpAndSettle();
+      final row = find.byKey(
+        ValueKey('tasks-candidate-${tasks.read().open[1].id}'),
+      );
+      final words = find.descendant(
+        of: row,
+        matching: find.text('Water the plants'),
+      );
+      final mark = find.descendant(of: row, matching: find.byType(NoteMark));
+      expect(mark, findsOneWidget);
+      final wordsRect = tester.getRect(words);
+      expect(
+        tester.getRect(mark).top,
+        greaterThanOrEqualTo(wordsRect.bottom - 0.5),
+      );
+      expect(
+        wordsRect.width,
+        greaterThan(16 * 3.1 * 3),
+        reason: 'the task kept only its first letters',
+      );
+      expectInside(tester, words, 420);
+      expectInside(tester, mark, 420);
+      await tester.pump(const Duration(seconds: 3));
+    });
   });
 }
 
