@@ -78,7 +78,14 @@ void main() {
             highlighter: Highlighter(engine.registry),
             resultsVisible: true,
             markdownEnabled: true,
+            // As the app opens a note: both NoteEditor call sites in
+            // lib/ui/home_page.dart pass autofocus, startAtEnd and
+            // ensureKeyboardVisible together. startAtEnd is what starts the
+            // editor's keyboard retry, and the first case needs it: just after
+            // launch, Android refuses the first request while FlutterView is
+            // still becoming the served input view.
             autofocus: true,
+            startAtEnd: true,
             ensureKeyboardVisible: true,
             onDocumentChanged: (_, _, _, _) {},
             onSettingsPressed: () {},
