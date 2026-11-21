@@ -1842,7 +1842,6 @@ class _InviteMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final error = Theme.of(context).colorScheme.error;
     return PopupMenuButton<String>(
       enabled: enabled,
       tooltip: 'Invitation',
