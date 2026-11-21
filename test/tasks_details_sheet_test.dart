@@ -39,6 +39,7 @@ void main() {
   late NotesStore notes;
   late TaskLibrary library;
   late TasksController tasks;
+  late String errandsId;
   late FocusNode addFocus;
 
   DateTime tick() => clock = clock.add(const Duration(milliseconds: 1));
@@ -59,7 +60,7 @@ void main() {
     );
     await notes.load();
     await library.load();
-    notes.create(body: body);
+    errandsId = notes.create(body: body).id;
     tasks = TasksController(
       notes: notes,
       library: library,
@@ -67,6 +68,10 @@ void main() {
       now: tick,
     );
     await tasks.reconcileNow();
+    // Something else is Do now, so the tasks under test sit in the list.
+    notes.create(body: 'Elsewhere\n☐ Doing now');
+    await tasks.reconcileNow();
+    tasks.doNow(tasks.read().open.last);
     addFocus = FocusNode();
     addTearDown(() {
       addFocus.dispose();
@@ -94,6 +99,7 @@ void main() {
             addFocus: addFocus,
             labelOf: (note) => note.title,
             onOpenNote: onOpenNote ?? (_) {},
+            onOpenDone: () {},
             newTaskShortcut: '⌘N',
           ),
         ),
@@ -102,7 +108,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  String noteBody() => notes.allNotes.first.body;
+  String noteBody() => notes.byId(errandsId)!.body;
 
   /// Lets the store's own writes land, so no timer outlives the test.
   Future<void> settle(WidgetTester tester) async {
@@ -253,7 +259,7 @@ void main() {
   ) async {
     await setUpTasks(tester, 'Errands\n☐ Book flights');
     await pumpScreen(tester);
-    final task = tasks.read().open.single;
+    final task = tasks.read().open.first;
 
     await tester.tap(nameIn(task.id, 'Book flights'));
     await tester.pumpAndSettle();
@@ -282,7 +288,7 @@ void main() {
       tester,
       'Errands\n☐ One\n  First detail\n☐ Two\n  Second detail',
     );
-    final two = tasks.read().open.last;
+    final two = tasks.read().open[1];
     // The menu bar click that happens while the app is still showing Notes.
     tasks.requestSheet(two.id);
     await pumpScreen(tester);
@@ -301,7 +307,7 @@ void main() {
     'typing in the sheet leaves a dropped picture exactly as it was',
     (tester) async {
       await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Book flights');
-      final note = notes.allNotes.first;
+      final note = notes.byId(errandsId)!;
       final caret = note.body.indexOf('\n☐ Book');
       final dropped = attachMediaUnderTask(
         bodyBefore: note.body,
@@ -361,7 +367,7 @@ void main() {
         'Errands\n☐ Hide the menu\n  The menu stays up, then shrinks.\n  ￼\n\n'
         '☐ Book flights',
       );
-      final picture = notes.allNotes.first.attachments.single as NoteImageRef;
+      final picture = notes.byId(errandsId)!.attachments.single as NoteImageRef;
       expect(picture.hash, 'menu-picture');
       expect(picture.offset, body.indexOf('￼'));
       await settle(tester);
@@ -409,10 +415,14 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(noteBody(), after);
-        expect(tasks.read().open.map((item) => item.words), [
-          'Pack',
-          'Book flights',
-        ]);
+        expect(
+          tasks
+              .read()
+              .open
+              .where((item) => item.note.id == errandsId)
+              .map((item) => item.words),
+          ['Pack', 'Book flights'],
+        );
         expect(tasks.read().open.first.groupTotal, 3);
         await settle(tester);
       });
@@ -435,7 +445,9 @@ void main() {
       );
       final opened = <String>[];
       await pumpScreen(tester, onOpenNote: opened.add);
-      final item = tasks.read().open.single;
+      final item = tasks.read().open.firstWhere(
+        (item) => item.note.id == errandsId,
+      );
       await tester.tap(
         find
             .descendant(
@@ -468,7 +480,7 @@ void main() {
   ) async {
     await setUpTasks(tester, 'Errands\n☐ Pack\n  ☐ Socks\n  ☑ Charger');
     await pumpScreen(tester);
-    final pack = tasks.read().open.single;
+    final pack = tasks.read().open.first;
 
     expect(
       find.descendant(
@@ -496,9 +508,9 @@ void main() {
       expect(faint, findsOneWidget);
       expect(
         tester
-            .widget<InkResponse>(
+            .widget<GestureDetector>(
               find
-                  .ancestor(of: faint, matching: find.byType(InkResponse))
+                  .ancestor(of: faint, matching: find.byType(GestureDetector))
                   .first,
             )
             .onTap,
@@ -553,9 +565,8 @@ void main() {
     tester,
   ) async {
     await setUpTasks(tester, 'Errands\n☐ Hide the menu', editable: false);
-    final note = notes.allNotes.first;
-    expect(await tasks.add('Book flights', noteId: note.id), isNull);
-    expect(notes.allNotes.first.body, 'Errands\n☐ Hide the menu');
+    expect(await tasks.add('Book flights', noteId: errandsId), isNull);
+    expect(noteBody(), 'Errands\n☐ Hide the menu');
     await settle(tester);
   });
 
@@ -571,9 +582,10 @@ void main() {
         await pumpScreen(tester);
         await tester.tap(find.byKey(const ValueKey('tasks-note-picker')));
         await tester.pumpAndSettle();
+        // No note, then Errands and Elsewhere while they can be changed.
         expect(
           find.byType(PopupMenuItem<String>),
-          findsNWidgets(editable ? 2 : 1),
+          findsNWidgets(editable ? 3 : 1),
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await settle(tester);
@@ -588,7 +600,7 @@ void main() {
           'Errands\n☐ Hide the menu',
           editable: editable,
         );
-        await pumpScreen(tester, noteId: notes.allNotes.first.id);
+        await pumpScreen(tester, noteId: errandsId);
         expect(
           find.byKey(const ValueKey('tasks-add-row')),
           editable ? findsOneWidget : findsNothing,
@@ -631,10 +643,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Removed from your list'), findsOneWidget);
-      expect(
-        notes.allNotes.first.body,
-        'Errands\n☐ Hide the menu\n☐ Book flights',
-      );
+      expect(noteBody(), 'Errands\n☐ Hide the menu\n☐ Book flights');
       await tester.pump(const Duration(seconds: 5));
       await settle(tester);
     },

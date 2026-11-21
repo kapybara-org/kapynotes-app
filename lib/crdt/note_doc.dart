@@ -165,6 +165,8 @@ class NoteDoc {
   /// Highest counter seen per replica.
   Map<String, int> get clock => Map.unmodifiable(_clock);
 
+  DateTime? get createdAt => _createdAt();
+
   DocView get view => DocView(
     body: text,
     formats: _renderFormats(),
