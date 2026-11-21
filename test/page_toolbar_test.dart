@@ -799,6 +799,37 @@ void main() {
     });
   }
 
+  testWidgets('Home is a quiet button: its arrow and words in T1 on no fill, '
+      "as the header's other ghosts", (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    await tester.pumpWidget(
+      harness(
+        toolbar(listVisible: false, back: (to: 'Notes', onPressed: () {})),
+        width: 393,
+      ),
+    );
+
+    final back = find.byKey(const ValueKey('page-back'));
+    final palette = tester.element(back).palette;
+    final arrow = find.descendant(
+      of: back,
+      matching: findKapyIcon(KapyIcons.arrowBackRounded),
+    );
+    expect(tester.widget<KapyIcon>(arrow).color, palette.textPrimary);
+    expect(
+      tester
+          .widget<Text>(find.descendant(of: back, matching: find.text('Notes')))
+          .style
+          ?.color,
+      palette.textPrimary,
+    );
+    final style = tester.widget<TextButton>(back).style!;
+    expect(
+      style.backgroundColor?.resolve({}),
+      anyOf(isNull, Colors.transparent),
+    );
+  });
+
   testWidgets("the count of pictures that didn't load gives way sooner", (
     tester,
   ) async {

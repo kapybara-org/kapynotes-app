@@ -988,7 +988,7 @@ class _BackButton extends StatelessWidget {
         style: TextButton.styleFrom(
           minimumSize: const Size(44, 44),
           padding: const EdgeInsets.only(right: 8),
-          foregroundColor: palette.accentText,
+          foregroundColor: palette.textPrimary,
           splashFactory: NoSplash.splashFactory,
           overlayColor: Colors.transparent,
         ),
@@ -998,7 +998,7 @@ class _BackButton extends StatelessWidget {
             KapyIcon(
               KapyIcons.arrowBackRounded,
               size: 20,
-              color: palette.accentText,
+              color: palette.textPrimary,
             ),
             Text(
               to,
@@ -1007,7 +1007,7 @@ class _BackButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.body,
                 fontWeight: FontWeight.w500,
-                color: palette.accentText,
+                color: palette.textPrimary,
               ),
             ),
           ],
