@@ -58,6 +58,9 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// The spaces rail down the window's left edge: a step behind the canvas,
   /// with a hairline where it meets the notes list.
   final Color railBackground;
+
+  /// That hairline, also along the bottom of the list's bar and the page's
+  /// band, so one line runs under both at 52.
   final Color railBorder;
 
   /// The tonal button: the calm primary action, a sage label on its own

@@ -356,6 +356,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     final name = member.firstName;
     final role = member.role;
     final ok = await _confirm(
+      context,
       title: 'Remove $name from this note?',
       body:
           '$name stops seeing this note, and it leaves their devices. It '
@@ -388,6 +389,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     final people = space.othersThan(_sharing.userId).length;
     final who = _peoplePhrase(space);
     final ok = await _confirm(
+      context,
       title: 'Stop sharing “${_note.title}”?',
       body:
           '$who ${people > 1 ? 'lose' : 'loses'} access. The note '
@@ -416,52 +418,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _leave() async {
     final space = _space;
     if (space == null) return;
-    final owner = space.shortNameOf(space.ownerId);
-    var keep = true;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          key: const ValueKey('leave-confirm'),
-          title: Text('Leave “${_note.title}”?'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'You stop seeing $owner’s changes. $owner keeps the note.',
-                  style: _bodyStyle(context),
-                ),
-                const SizedBox(height: 10),
-                _CheckRow(
-                  key: const ValueKey('leave-keep-copy'),
-                  value: keep,
-                  label: 'Keep a private copy in my notes',
-                  onChanged: (value) => setLocal(() => keep = value),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              key: const ValueKey('leave-confirm-action'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-              ),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Leave'),
-            ),
-          ],
-        ),
-      ),
+    final keep = await _askToLeave(
+      context,
+      sharing: _sharing,
+      space: space,
+      title: _note.title,
     );
-    if (ok != true || !mounted) return;
+    if (keep == null || !mounted) return;
     final leave = Navigator.of(context);
     await _run(() async {
       await _sharing.leave(space.id, keepCopies: keep);
@@ -487,21 +450,11 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     ),
   );
 
-  Future<void> _block(Space space, SpaceMember member) async {
-    final name = member.firstName;
-    final ok = await _confirm(
-      title: 'Block $name?',
-      body:
-          '$name loses access to everything you share, you leave what $name '
-          'shares with you (keeping copies), and $name can’t invite you '
-          'again.',
-      action: 'Block',
-      destructive: true,
-    );
-    if (ok != true || !mounted) return;
+  Future<void> _block(SpaceMember member) async {
+    if (!await _askToBlock(context, member) || !mounted) return;
     final done = Navigator.of(context);
     await _run(() async {
-      await _sharing.blockPerson(member.email, inSpaceId: space.id);
+      await _sharing.blockEverywhere(member.email);
       done.pop();
     }, notice: null);
   }
@@ -524,6 +477,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
 
   Future<void> _cancelInvite(Space space, SpaceInvite invite) async {
     final ok = await _confirm(
+      context,
       title: 'Cancel the invitation to ${invite.email}?',
       body:
           'The invitation and its link stop working. The note stays as it is.',
@@ -537,38 +491,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       setState(() => _notice = 'Invitation to ${invite.email} cancelled');
     });
   }
-
-  Future<bool?> _confirm({
-    required String title,
-    required String body,
-    required String action,
-    bool destructive = false,
-  }) => showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      key: ValueKey('share-confirm-${action.toLowerCase()}'),
-      title: Text(title),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
-        child: Text(body, style: _bodyStyle(context)),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: destructive
-              ? FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                )
-              : null,
-          child: Text(action),
-        ),
-      ],
-    ),
-  );
 
   // -------------------------------------------------------------------------
   // The link
@@ -811,7 +733,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           busy: !enabled,
           onAccess: _changeAccess,
           onRemove: _removePerson,
-          onBlock: (member) => _block(space, member),
+          onBlock: _block,
           onReport: (member) => showReportDialog(
             context,
             sharing: _sharing,
@@ -1061,6 +983,34 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
     }
   }
 
+  Future<void> _block(SpaceMember member) async {
+    if (!await _askToBlock(context, member) || !mounted) return;
+    await _run(
+      () => _sharing.blockEverywhere(member.email),
+      notice: '${member.firstName} is blocked',
+    );
+  }
+
+  Future<void> _leave(Space space) async {
+    final keep = await _askToLeave(
+      context,
+      sharing: _sharing,
+      space: space,
+      title:
+          [
+            for (final note in _sharing.notesIn(space.id))
+              if (!note.isHidden) note.title,
+          ].firstOrNull ??
+          space.titleFor(_sharing.userId),
+    );
+    if (keep == null || !mounted) return;
+    final leave = Navigator.of(context);
+    await _run(() async {
+      await _sharing.leave(space.id, keepCopies: keep);
+      leave.pop();
+    });
+  }
+
   /// The join panels share this sheet's one way of running an action.
   Future<void> _panelRun(
     Future<void> Function() action, {
@@ -1125,11 +1075,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                     () => _sharing.removeMember(space.id, member.userId),
                     notice: '${member.firstName} was removed',
                   ),
-                  onBlock: (member) => _run(
-                    () =>
-                        _sharing.blockPerson(member.email, inSpaceId: space.id),
-                    notice: '${member.firstName} is blocked',
-                  ),
+                  onBlock: _block,
                   onReport: (member) => showReportDialog(
                     context,
                     sharing: _sharing,
@@ -1256,12 +1202,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
         else
           TextButton.icon(
             key: const ValueKey('leave-space'),
-            onPressed: enabled
-                ? () => _run(() async {
-                    await _sharing.leave(space.id);
-                    if (context.mounted) Navigator.of(context).pop();
-                  })
-                : null,
+            onPressed: enabled ? () => _leave(space) : null,
             style: TextButton.styleFrom(foregroundColor: danger),
             icon: KapyIcon(
               KapyIcons.logoutRounded,
@@ -1278,6 +1219,129 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
 // ---------------------------------------------------------------------------
 // Pieces both sheets use
 // ---------------------------------------------------------------------------
+
+Future<bool?> _confirm(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String action,
+  bool destructive = false,
+}) => showDialog<bool>(
+  context: context,
+  builder: (context) => AlertDialog(
+    key: ValueKey('share-confirm-${action.toLowerCase()}'),
+    title: Text(title),
+    content: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 380),
+      child: Text(body, style: _bodyStyle(context)),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(false),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(true),
+        style: destructive
+            ? FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              )
+            : null,
+        child: Text(action),
+      ),
+    ],
+  ),
+);
+
+/// Asks before blocking [member]. Blocking ends everything shared between
+/// this account and them, so the question says so.
+Future<bool> _askToBlock(BuildContext context, SpaceMember member) async {
+  final name = member.firstName;
+  return await _confirm(
+        context,
+        title: 'Block $name?',
+        body:
+            '$name loses access to everything you share, you leave what $name '
+            'shares with you (keeping copies), and $name can’t invite you '
+            'again.',
+        action: 'Block',
+        destructive: true,
+      ) ==
+      true;
+}
+
+/// Asks before leaving [space], named by the note [title], and whether to
+/// keep copies; null means no. Leaving takes every note in the space, so
+/// with more than one the question counts them.
+Future<bool?> _askToLeave(
+  BuildContext context, {
+  required Sharing sharing,
+  required Space space,
+  required String title,
+}) async {
+  final owner = space.shortNameOf(space.ownerId);
+  final together = [
+    for (final note in sharing.notesIn(space.id))
+      if (!note.isHidden) note,
+  ].length;
+  var keep = true;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setLocal) => AlertDialog(
+        key: const ValueKey('leave-confirm'),
+        title: Text(
+          together > 1
+              ? 'Leave $together notes from $owner?'
+              : 'Leave “$title”?',
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                together > 1
+                    ? '$owner shares “$title” together with '
+                          '${together - 1} more, so you leave all of them. '
+                          'You stop seeing $owner’s changes, and $owner '
+                          'keeps the notes.'
+                    : 'You stop seeing $owner’s changes. $owner keeps the '
+                          'note.',
+                style: _bodyStyle(context),
+              ),
+              const SizedBox(height: 10),
+              _CheckRow(
+                key: const ValueKey('leave-keep-copy'),
+                value: keep,
+                label: together > 1
+                    ? 'Keep private copies'
+                    : 'Keep a private copy in my notes',
+                onChanged: (value) => setLocal(() => keep = value),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('leave-confirm-action'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    ),
+  );
+  return ok == true ? keep : null;
+}
 
 /// A dialog on a desktop, a sheet with a grab handle on a phone: the same
 /// header, body and footer either way.

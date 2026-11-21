@@ -29,6 +29,12 @@
 # NOTARY_ISSUER instead and an App Store Connect API key is used. FLUTTER
 # overrides the SDK path for runners that install it elsewhere.
 #
+# The iOS build signs with the Apple Distribution certificate in this Mac's
+# keychain. CI has neither that certificate nor an Xcode account, so it sets
+# XCODE_AUTH_KEY_PATH, XCODE_AUTH_KEY_ID and XCODE_AUTH_ISSUER_ID to an App
+# Store Connect API key with the Admin role, and Apple signs the export with
+# its cloud-managed distribution certificate instead.
+#
 # Set SKIP_NOTARIZE=1 to build an unnotarised DMG for local testing. Such a
 # build will be blocked by Gatekeeper on any machine other than this one.
 #
@@ -322,13 +328,46 @@ build_disk_image() {
 build_ios() {
   info "iOS $VERSION ($BUILD_NUMBER) → App Store"
   "$ROOT/packaging/preflight_ios.sh" --archive
-  # shellcheck disable=SC2046
-  "$FLUTTER" build ipa \
-    --release \
-    $(dart_size_flags ios) \
-    --export-options-plist="$ROOT/packaging/ExportOptions-ios-appstore.plist"
+  if [[ -n "${XCODE_AUTH_KEY_PATH:-}" ]]; then
+    build_ios_cloud_signed
+  else
+    # shellcheck disable=SC2046
+    "$FLUTTER" build ipa \
+      --release \
+      $(dart_size_flags ios) \
+      --export-options-plist="$ROOT/packaging/ExportOptions-ios-appstore.plist"
+  fi
   cp "$ROOT/build/ios/ipa/"*.ipa "$OUT/kapy-ios.ipa"
   echo "  → $OUT/kapy-ios.ipa"
+}
+
+# flutter build ipa has no way to hand xcodebuild an API key, so Flutter only
+# writes the build configuration (the size flags included) and xcodebuild does
+# the rest. The archive is left unsigned on purpose: automatic signing would
+# sign it for development, and on a fresh runner that mints a new Apple
+# Development certificate every time until the team hits Apple's limit. The
+# export then signs everything for the App Store with the cloud-managed
+# distribution certificate and the profiles Xcode creates through the key.
+build_ios_cloud_signed() {
+  local archive="$ROOT/build/ios/archive/Runner.xcarchive"
+  # shellcheck disable=SC2046
+  "$FLUTTER" build ios --release --config-only --no-codesign $(dart_size_flags ios)
+  rm -rf "$archive" "$ROOT/build/ios/ipa"
+  xcodebuild archive \
+    -workspace "$ROOT/ios/Runner.xcworkspace" \
+    -scheme Runner \
+    -configuration Release \
+    -destination 'generic/platform=iOS' \
+    -archivePath "$archive" \
+    CODE_SIGNING_ALLOWED=NO
+  xcodebuild -exportArchive \
+    -archivePath "$archive" \
+    -exportOptionsPlist "$ROOT/packaging/ExportOptions-ios-appstore.plist" \
+    -exportPath "$ROOT/build/ios/ipa" \
+    -allowProvisioningUpdates \
+    -authenticationKeyPath "$XCODE_AUTH_KEY_PATH" \
+    -authenticationKeyID "$XCODE_AUTH_KEY_ID" \
+    -authenticationKeyIssuerID "$XCODE_AUTH_ISSUER_ID"
 }
 
 # KapyToolRunner.xpc runs Codex and Claude Code for the sandboxed app, so
