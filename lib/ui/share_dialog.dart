@@ -1444,10 +1444,11 @@ class _SheetScaffold extends StatelessWidget {
       foregroundColor: color,
       minimumSize: const Size(0, 44),
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      textStyle: const TextStyle(
-        fontSize: 15,
-        height: 20 / 15,
-        fontWeight: FontWeight.w500,
+      textStyle: chromeStyle(
+        size: 15,
+        line: 20,
+        weight: AppWeight.button,
+        color: color,
       ),
     );
     return SharingSheetFrame(

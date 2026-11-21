@@ -2110,6 +2110,18 @@ void main() {
           tester.widget<TextButton>(done).style!.foregroundColor!.resolve({}),
           palette.textPrimary,
         );
+        for (final key in [...actions, 'share-done']) {
+          expect(
+            tester
+                .widget<TextButton>(find.byKey(ValueKey(key)))
+                .style!
+                .textStyle!
+                .resolve({})!
+                .fontFamily,
+            AppFonts.ui,
+            reason: '$key keeps the app’s face',
+          );
+        }
         expect(
           tester.getTopRight(done).dx,
           tester.getTopRight(find.byType(SharingSheetFrame)).dx - 12,
@@ -2119,6 +2131,43 @@ void main() {
         await tester.tap(done);
         await tester.pumpAndSettle();
       }
+    });
+
+    testWidgets('the ask that slides up keeps the app’s face on its buttons', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+      });
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+      await tester.pumpAndSettle();
+      for (final key in ['sharing-ask-cancel', 'sharing-ask-ok']) {
+        expect(
+          tester
+              .widget<TextButton>(find.byKey(ValueKey(key)))
+              .style!
+              .textStyle!
+              .resolve({})!
+              .fontFamily,
+          AppFonts.ui,
+          reason: '$key keeps the app’s face',
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+      await tester.pumpAndSettle();
+      expect(alice.notes.byId(note.id)!.isShared, isTrue);
     });
   });
 

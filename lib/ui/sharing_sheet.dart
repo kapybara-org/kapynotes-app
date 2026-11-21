@@ -196,7 +196,12 @@ class _AskFirstState extends State<_AskFirst> {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppRadii.control),
     );
-    const label = TextStyle(fontSize: 15, height: 20 / 15);
+    final label = chromeStyle(
+      size: 15,
+      line: 20,
+      weight: AppWeight.body,
+      color: palette.textPrimary,
+    );
     return SingleChildScrollView(
       key: const ValueKey('sharing-ask'),
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
@@ -227,7 +232,7 @@ class _AskFirstState extends State<_AskFirst> {
             _OptionRow(
               label: option,
               value: _option,
-              style: label.copyWith(color: palette.textPrimary),
+              style: label,
               onChanged: (value) => setState(() => _option = value),
             ),
           ],
@@ -242,7 +247,12 @@ class _AskFirstState extends State<_AskFirst> {
                     minimumSize: const Size.fromHeight(44),
                     backgroundColor: quiet,
                     foregroundColor: palette.textPrimary,
-                    textStyle: label.copyWith(fontWeight: FontWeight.w500),
+                    textStyle: chromeStyle(
+                      size: 15,
+                      line: 20,
+                      weight: AppWeight.button,
+                      color: palette.textPrimary,
+                    ),
                     shape: shape,
                   ),
                   child: const Text('Cancel'),
@@ -257,7 +267,12 @@ class _AskFirstState extends State<_AskFirst> {
                     minimumSize: const Size.fromHeight(44),
                     backgroundColor: palette.tonalBackground,
                     foregroundColor: palette.tonalForeground,
-                    textStyle: label.copyWith(fontWeight: FontWeight.w600),
+                    textStyle: chromeStyle(
+                      size: 15,
+                      line: 20,
+                      weight: AppWeight.page,
+                      color: palette.tonalForeground,
+                    ),
                     shape: shape,
                   ),
                   child: Text(widget.action),
