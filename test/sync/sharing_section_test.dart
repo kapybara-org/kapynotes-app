@@ -401,6 +401,55 @@ void main() {
     await quiet(tester);
   });
 
+  for (final together in [true, false]) {
+    testWidgets('Undo after one note stops says what is true: back in when '
+        'another note keeps them in the share, invited again when not '
+        '(together=$together)', (tester) async {
+      late Note note;
+      await tester.runAsync(() async {
+        await sam.boot();
+        await priya.boot();
+        note = sam.notes.create(body: 'Car service checklist');
+        await sam.sync.syncNow();
+        await sam.sharing.shareNoteWith(note.id, email: priya.email);
+        if (together) {
+          final other = sam.notes.create(body: 'Standup notes');
+          await sam.sync.syncNow();
+          await sam.sharing.shareNoteWith(other.id, email: priya.email);
+        }
+        for (final invite in [...server.outbox]) {
+          await priya.sharing.acceptInvite(invite.token);
+        }
+        await sam.sync.syncNow();
+        await sam.sharing.refresh();
+      });
+      expect(
+        sam.sharing.notesIn(sam.notes.byId(note.id)!.spaceId!),
+        hasLength(together ? 2 : 1),
+      );
+      await pump(tester, sam);
+      await tester.tap(find.byKey(person(priya)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('access-${note.id}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Stop sharing this note'));
+      await tester.pumpAndSettle();
+      await confirm(tester);
+      expect(sam.notes.byId(note.id)!.isShared, isFalse);
+
+      await act(tester, find.text('Undo'));
+      final back = find.text('Priya can see “Car service checklist” again');
+      final invited = find.text('Invitation sent to ${priya.email}');
+      expect(back, together ? findsOneWidget : findsNothing);
+      expect(invited, together ? findsNothing : findsOneWidget);
+      expect(
+        sam.sharing.memberOn(note.id, priya.email),
+        together ? isNotNull : isNull,
+      );
+      await quiet(tester);
+    });
+  }
+
   testWidgets('stopping sharing with a person keeps the notes, with Undo', (
     tester,
   ) async {
