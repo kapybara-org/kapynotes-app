@@ -92,6 +92,16 @@ class TaskInk {
   final Color hairline;
 }
 
+/// Increase contrast's 1 px outline for a Tasks control of [radius], drawn
+/// over it so nothing moves. Null with Increase contrast off.
+BoxDecoration? taskContrastEdge(BuildContext context, double radius) =>
+    context.palette.increasedContrast
+    ? BoxDecoration(
+        border: Border.all(color: TaskInk.of(context).edge),
+        borderRadius: BorderRadius.circular(radius),
+      )
+    : null;
+
 TextStyle taskText(
   double size,
   double line,
@@ -469,12 +479,7 @@ class _PairOptionState extends State<_PairOption> {
                   : Border.all(color: lit ? ink.sage : ink.edge),
               borderRadius: BorderRadius.circular(phone ? 10 : 8),
             ),
-            foregroundDecoration: phone && context.palette.increasedContrast
-                ? BoxDecoration(
-                    border: Border.all(color: ink.edge),
-                    borderRadius: BorderRadius.circular(10),
-                  )
-                : null,
+            foregroundDecoration: phone ? taskContrastEdge(context, 10) : null,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -564,6 +569,7 @@ class _StartButton extends StatelessWidget {
       semantics: semantics,
       onPressed: onPressed,
       fill: ink.lifted,
+      outline: taskContrastEdge(context, phone ? 8 : 6),
       height: phone ? 44 : 32,
       innerHeight: phone ? 36 : 32,
       radius: phone ? 8 : 6,
@@ -596,6 +602,7 @@ class TaskButton extends StatelessWidget {
     required this.onPressed,
     required this.children,
     this.fill,
+    this.outline,
     this.height = 32,
     double? innerHeight,
     this.radius = 6,
@@ -606,6 +613,9 @@ class TaskButton extends StatelessWidget {
   final VoidCallback onPressed;
   final List<Widget> children;
   final Color? fill;
+
+  /// Drawn over the button, so it moves nothing.
+  final Decoration? outline;
 
   /// The target's height; [innerHeight] is the drawn button's.
   final double height;
@@ -636,6 +646,7 @@ class TaskButton extends StatelessWidget {
                 color: fill,
                 borderRadius: BorderRadius.circular(radius),
               ),
+              foregroundDecoration: outline,
               child: Row(mainAxisSize: MainAxisSize.min, children: children),
             ),
           ),
