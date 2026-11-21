@@ -143,7 +143,7 @@ void main() {
           test('${theme.label} ${side.name}'
               '${increase ? ' with Increase contrast on' : ''}'
               '${transparency ? ' with transparency on' : ''}: faint text on '
-              'a selected row and a keycap read at AA', () {
+              'a selected row and both keycaps read at AA', () {
             final build = side == Brightness.dark
                 ? KapyTheme.dark
                 : KapyTheme.light;
@@ -156,9 +156,18 @@ void main() {
             final menu = over(p.surfaceBackground, p.editorBackground);
             final row = over(p.selectedBackground, menu);
             final key = over(p.keycapBackground, row);
+            final accentKey = over(
+              p.tonalKeyBackground,
+              over(p.tonalBackground, p.editorBackground),
+            );
             for (final (ink, ground, what) in [
               (p.textTertiary, row, 'faint text on a selected row'),
               (p.keycapText, key, 'keycap text on its key'),
+              (
+                p.tonalKeyText,
+                accentKey,
+                "the accent keycap's text on its key",
+              ),
             ]) {
               expect(
                 _contrast(over(ink, ground), ground),
@@ -671,7 +680,7 @@ const _spec =
           'tb': 0xFFEBD9B6,
           'tf': 0xFF5E3C12,
           'tkBg': 0xFFD8C098,
-          'tkText': 0xFF764D19,
+          'tkText': 0xFF6D4717,
           'onAccent': 0xFFF7EEDC,
           'clay': 0xFFA84A22,
           'codeBg': 0xFFEAE0CE,
@@ -763,7 +772,7 @@ const _spec =
           'tb': 0xFFD7EDE9,
           'tf': 0xFF145049,
           'tkBg': 0xFFB2D6D1,
-          'tkText': 0xFF1A675E,
+          'tkText': 0xFF196159,
           'onAccent': 0xFFFFFFFF,
           'clay': 0xFFB5552E,
           'codeBg': 0xFFEAEFEE,
