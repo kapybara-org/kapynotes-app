@@ -249,6 +249,39 @@ void main() {
     expect(TagDots.widthFor(2), 20);
   });
 
+  testWidgets('a phone row with three tags shows two dots, 20 wide', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final row = note('Trip budget');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Material(
+          child: TagMarks(
+            marksOf: (_) => const [
+              travel,
+              money,
+              (name: 'Work', colour: TagColour.mustard),
+            ],
+            child: NoteListRowFace(
+              note: row,
+              glance: NoteGlance.of(row, null),
+              date: '11:15',
+              selected: false,
+              hovering: false,
+              touch: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(dotRects(tester), hasLength(2));
+    expect(tester.getSize(find.byType(TagDots)).width, 20);
+  });
+
   testWidgets("a card's preview line is Figtree 12/16 at 400 in T2", (
     tester,
   ) async {

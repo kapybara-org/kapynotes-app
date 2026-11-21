@@ -52,8 +52,9 @@ class TagDots extends StatelessWidget {
   static double get size => AppPlatform.hasPointer ? 6 : 8;
   static double get gap => AppPlatform.hasPointer ? 2 : 4;
 
-  /// How many dots show at most; past that more dots say nothing more.
-  static const int most = 3;
+  /// How many dots show at most: three on a card, and two in a phone row's
+  /// column; past that more dots say nothing more.
+  static int get most => AppPlatform.hasPointer ? 3 : 2;
 
   static double widthFor(int count) {
     final shown = count > most ? most : count;
