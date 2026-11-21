@@ -15,7 +15,6 @@ import '../data/folders.dart';
 import '../data/layout_prefs.dart' show NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
-import '../data/writing_streak.dart';
 import '../sync/presence.dart';
 import '../sync/safety.dart';
 import '../sync/sharing.dart';
@@ -36,7 +35,6 @@ import 'notes_list.dart';
 import 'safety_dialogs.dart';
 import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
-import 'spaces_rail.dart' show StreakMark;
 import 'tag_colours.dart';
 import 'tag_ui.dart';
 import 'tonal_button.dart';
@@ -3872,15 +3870,13 @@ class _PhoneHeading extends StatelessWidget {
 }
 
 /// A phone list's title: the space's name large, its count beside it, and
-/// the clay underline the note page draws. On Home, the writing streak sits
-/// at the end of the row, 12 pt clear of the title.
+/// the clay underline the note page draws.
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
     required this.title,
     required this.count,
     this.onBack,
-    this.streak,
   });
 
   final String title;
@@ -3888,9 +3884,6 @@ class PhoneListTitle extends StatelessWidget {
 
   /// Set for a page reached from Home, such as Shared: its arrow goes back.
   final VoidCallback? onBack;
-
-  /// Home's writing streak, shown while it runs.
-  final WritingStreak? streak;
 
   @override
   Widget build(BuildContext context) {
@@ -3938,23 +3931,10 @@ class PhoneListTitle extends StatelessWidget {
         ],
       ),
     );
-    final streak = this.streak;
     if (onBack == null) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-        child: streak == null || streak.days == 0
-            ? heading
-            : Row(
-                spacing: 12,
-                children: [
-                  Expanded(child: heading),
-                  StreakMark(
-                    key: const ValueKey('phone-streak'),
-                    streak: streak,
-                    inline: true,
-                  ),
-                ],
-              ),
+        child: heading,
       );
     }
     return Padding(

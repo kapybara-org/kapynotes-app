@@ -98,6 +98,7 @@ import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
 import 'phone_home_cards.dart';
+import 'phone_home_header.dart';
 import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
 import 'tasks/tasks_screen.dart';
@@ -4629,8 +4630,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final selected = _shownNote(_selectedId);
     final pageOpen = _phonePageOpen && selected != null && !_tasksMode;
     // Back, from Android's gesture or iOS's edge swipe, goes up one level:
-    // the note's page closes, then the picks let go, then Pinned or Shared
-    // returns to Notes, and only then does the app itself leave.
+    // the note's page closes, then the picks let go, then Pinned, Shared or
+    // Tasks returns to Notes, and only then does the app itself leave.
     final pinnedOrShared = _showingPinnedOnly || _space == LibrarySpace.shared;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: Theme.of(context).brightness == Brightness.dark
@@ -4639,7 +4640,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: ListenableBuilder(
         listenable: _picks,
         builder: (context, _) => PopScope(
-          canPop: !pageOpen && !_picks.on && !pinnedOrShared,
+          canPop: !pageOpen && !_picks.on && !pinnedOrShared && !_tasksMode,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
             if (pageOpen) {
@@ -4718,6 +4719,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         listenable: _toolbarSources,
         builder: (context, _) {
           final tasks = _tasksMode ? _taskController : null;
+          final page = tasks == null
+              ? _phoneNotes()
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _phoneHomeHeader(),
+                    Expanded(
+                      child: TasksScreen(
+                        key: _tasksPage,
+                        phone: true,
+                        controller: tasks,
+                        filter: _taskFilter,
+                        addFocus: _taskAddFocus,
+                        labelOf: _taskNoteLabel,
+                        onOpenNote: _openTaskNote,
+                      ),
+                    ),
+                  ],
+                );
           return PhoneSpaces(
             space: _space,
             onSelected: _showSpace,
@@ -4756,17 +4776,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onCreateAction: _createFromPhone,
             child: SafeArea(
               bottom: false,
-              child: tasks != null
-                  ? TasksScreen(
-                      key: _tasksPage,
-                      phone: true,
-                      controller: tasks,
-                      filter: _taskFilter,
-                      addFocus: _taskAddFocus,
-                      labelOf: _taskNoteLabel,
-                      onOpenNote: _openTaskNote,
+              child: _taskController != null && _phoneHome
+                  ? PhoneHomeSwipe(
+                      onNotes: () => _showSpace(LibrarySpace.notes),
+                      onTasks: () => _showSpace(LibrarySpace.tasks),
+                      child: page,
                     )
-                  : _phoneNotes(),
+                  : page,
             ),
           );
         },
@@ -4795,21 +4811,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// to.
   bool get _sharedPage => !_specialMode && _space == LibrarySpace.shared;
 
+  /// Home on a phone: Notes or Tasks, under the header that turns between
+  /// them, rather than Drawings, Shared, Archive or Hidden.
+  bool get _phoneHome =>
+      !_specialMode &&
+      (_space == LibrarySpace.notes || _space == LibrarySpace.tasks);
+
+  Widget _phoneHomeHeader() => PhoneHomeHeader(
+    tasks: _tasksMode,
+    count: _tasksMode
+        ? _taskController?.read().open.length ?? 0
+        : _matchingCount,
+    onNotes: () => _showSpace(LibrarySpace.notes),
+    onTasks: _taskController == null
+        ? null
+        : () => _showSpace(LibrarySpace.tasks),
+    streak: widget.notes.streak,
+    user: widget.account?.user,
+    onSettings: _showSettings,
+  );
+
   /// The phone's home for Notes, Drawings and Shared: the list beside the
-  /// rail, drawn for a phone under the space's large title.
+  /// rail, drawn for a phone under Home's header or the space's large title.
   Widget _phoneNotes() => Sidebar(
     key: _sharedPage ? const ValueKey('shared-page') : null,
     phone: true,
-    windowBar: PhoneListTitle(
-      title: !_specialMode && _space == LibrarySpace.notes
-          ? 'Notes'
-          : _listTitle,
-      count: _matchingCount,
-      onBack: _sharedPage ? () => _showSpace(LibrarySpace.notes) : null,
-      streak: !_specialMode && _space == LibrarySpace.notes
-          ? widget.notes.streak
-          : null,
-    ),
+    windowBar: _phoneHome
+        ? _phoneHomeHeader()
+        : PhoneListTitle(
+            title: _listTitle,
+            count: _matchingCount,
+            onBack: _sharedPage ? () => _showSpace(LibrarySpace.notes) : null,
+          ),
     notes: _visibleNotes,
     pinnedNoteIds: widget.notes.pinnedNoteIds,
     lockedNoteIds: _noteLimit?.lockedIds ?? const {},

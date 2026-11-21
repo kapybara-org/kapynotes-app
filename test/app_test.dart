@@ -52,6 +52,7 @@ import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
+import 'package:kapy_notes/ui/editor/note_header.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/editor_panes.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
@@ -60,6 +61,7 @@ import 'package:kapy_notes/ui/home_page.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
@@ -71,6 +73,7 @@ import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
 import 'audio/voice_recording_controller_test.dart' show FakeVoiceRecorder;
@@ -5855,6 +5858,8 @@ void main() {
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
     expect(streak, findsNothing);
+    expect(find.byKey(const ValueKey('phone-account')), findsNothing);
+    expect(find.byKey(const ValueKey('home-title-notes')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
     await tester.pumpAndSettle();
@@ -5865,6 +5870,8 @@ void main() {
       'Archive',
     );
     expect(streak, findsNothing);
+    expect(find.byKey(const ValueKey('phone-account')), findsNothing);
+    expect(find.byKey(const ValueKey('home-title-notes')), findsNothing);
   });
 
   testWidgets('a phone keeps its filter row out of the way until its button '
@@ -7413,7 +7420,7 @@ void main() {
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
 
-      expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp(r'^Today, ')), findsOneWidget);
       final card = find.byKey(const ValueKey('home-pinned-card'));
       expect(
@@ -7446,13 +7453,14 @@ void main() {
       expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
     });
 
-    testWidgets("Home's header carries the writing streak at its end, and "
-        'Drawings leaves it out', (tester) async {
+    testWidgets("Home's header carries the streak 12 pt before S, and "
+        'Drawings keeps its own title with none of the header', (tester) async {
       notes.create(body: 'Written today');
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
 
       final streak = find.byKey(const ValueKey('phone-streak'));
+      final avatar = find.byKey(const ValueKey('phone-account'));
       expect(
         find.descendant(of: streak, matching: find.text('1 day')),
         findsOneWidget,
@@ -7465,12 +7473,22 @@ void main() {
         findsOneWidget,
       );
       expect(find.byTooltip('1-day writing streak'), findsOneWidget);
-      expect(tester.getTopRight(streak).dx, 393 - 20);
+      expect(tester.getTopRight(avatar).dx, 393 - 20);
+      expect(tester.getTopLeft(avatar).dx - tester.getTopRight(streak).dx, 12);
+      expect(find.byKey(const ValueKey('phone-list-title')), findsNothing);
       expect(find.byKey(const ValueKey('rail-streak')), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('bar-drawings')));
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('phone-list-title')))
+            .data,
+        'Drawings',
+      );
       expect(streak, findsNothing);
+      expect(avatar, findsNothing);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsNothing);
     });
 
     testWidgets('Home shows no streak before anything is written', (
@@ -7479,8 +7497,107 @@ void main() {
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
 
-      expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+      expect(find.byKey(const ValueKey('phone-account')), findsOneWidget);
       expect(find.byKey(const ValueKey('phone-streak')), findsNothing);
+    });
+
+    testWidgets("S on Home's header opens Settings, as the bar does", (
+      tester,
+    ) async {
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      await tester.tap(find.byKey(const ValueKey('phone-account')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsDialog), findsOneWidget);
+    });
+
+    group('with Tasks', () {
+      final notesTitle = find.byKey(const ValueKey('home-title-notes'));
+      final tasksTitle = find.byKey(const ValueKey('home-title-tasks'));
+      final tasksPage = find.byType(TasksScreen);
+      final groceries = find.widgetWithText(NoteRow, 'Groceries');
+      late String groceriesId;
+
+      Future<void> pumpHome(WidgetTester tester) async {
+        await notes.load();
+        groceriesId = notes.create(body: 'Groceries\nOat milk').id;
+        await pumpApp(
+          tester,
+          size: const Size(393, 852),
+          tasks: TaskLibrary(
+            notes: notes,
+            store: store,
+            storage: MemoryDocStorage(),
+          ),
+        );
+        await showNotesList(tester);
+      }
+
+      Finder underlineOf(Finder title) =>
+          find.descendant(of: title, matching: find.byType(NoteTitleUnderline));
+
+      testWidgets('a tap on Tasks shows Tasks under the same header, and a '
+          'tap on Notes comes back', (tester) async {
+        await pumpHome(tester);
+        expect(underlineOf(notesTitle), findsOneWidget);
+
+        await tester.tap(tasksTitle);
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+        expect(groceries, findsNothing);
+        expect(underlineOf(tasksTitle), findsOneWidget);
+        expect(underlineOf(notesTitle), findsNothing);
+        expect(find.byKey(const ValueKey('phone-account')), findsOneWidget);
+
+        await tester.tap(notesTitle);
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsNothing);
+        expect(groceries, findsOneWidget);
+        expect(underlineOf(notesTitle), findsOneWidget);
+      });
+
+      testWidgets('a swipe left turns Home to Tasks and a swipe right turns '
+          'it back', (tester) async {
+        await pumpHome(tester);
+        final header = find.byType(PhoneHomeHeader);
+
+        await tester.drag(header, const Offset(-120, 0));
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+        expect(underlineOf(tasksTitle), findsOneWidget);
+
+        await tester.drag(header, const Offset(120, 0));
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsNothing);
+        expect(underlineOf(notesTitle), findsOneWidget);
+      });
+
+      testWidgets("a row's own swipe still opens its actions rather than "
+          'turning to Tasks', (tester) async {
+        await pumpHome(tester);
+
+        await tester.drag(groceries, const Offset(-200, 0));
+        await tester.pumpAndSettle();
+        expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
+        expect(tasksPage, findsNothing);
+        expect(underlineOf(notesTitle), findsOneWidget);
+      });
+
+      testWidgets('Back from Tasks goes to Notes rather than leaving', (
+        tester,
+      ) async {
+        await pumpHome(tester);
+        await tester.tap(tasksTitle);
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsNothing);
+        expect(groceries, findsOneWidget);
+      });
     });
 
     testWidgets("Home's Pinned card counts the pinned notes a filter hides, "
