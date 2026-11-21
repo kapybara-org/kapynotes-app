@@ -7908,6 +7908,81 @@ void main() {
         expect(groceries, findsOneWidget);
       });
 
+      testWidgets('the bar to Tasks and back keeps the '
+          'filter', (tester) async {
+        final tags = TagStore(store);
+        await pumpHome(tester, tags: tags);
+        await filterByTag(tester, tags);
+        expectFiltered();
+
+        LibrarySpace highlighted() =>
+            tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).space;
+        await tester.tap(find.byKey(const ValueKey('bar-tasks')));
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+        expect(highlighted(), LibrarySpace.tasks);
+
+        await tester.tap(find.byKey(const ValueKey('bar-notes')));
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsNothing);
+        expect(highlighted(), LibrarySpace.notes);
+        expectFiltered();
+      });
+
+      testWidgets('the bar to Tasks, the header back, '
+          'keeps the filter', (tester) async {
+        final tags = TagStore(store);
+        await pumpHome(tester, tags: tags);
+        await filterByTag(tester, tags);
+
+        await tester.tap(find.byKey(const ValueKey('bar-tasks')));
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+
+        await tester.tap(notesTitle);
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsNothing);
+        expectFiltered();
+      });
+
+      testWidgets('the header to Tasks, the bar back, '
+          'keeps the filter', (tester) async {
+        final tags = TagStore(store);
+        await pumpHome(tester, tags: tags);
+        await filterByTag(tester, tags);
+
+        await tester.tap(tasksTitle);
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('bar-notes')));
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsNothing);
+        expectFiltered();
+      });
+
+      testWidgets('a slow 60 pt drag stays put', (tester) async {
+        await pumpHome(tester);
+        await tester.timedDrag(
+          find.byType(PhoneHomeHeader),
+          const Offset(-60, 0),
+          const Duration(milliseconds: 600),
+        );
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsNothing);
+      });
+
+      testWidgets('a slow 100 pt drag turns the page', (tester) async {
+        await pumpHome(tester);
+        await tester.timedDrag(
+          find.byType(PhoneHomeHeader),
+          const Offset(-100, 0),
+          const Duration(milliseconds: 1000),
+        );
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+      });
+
       testWidgets('a short slow swipe stays put, and a short fast one turns '
           'the page', (tester) async {
         await pumpHome(tester);

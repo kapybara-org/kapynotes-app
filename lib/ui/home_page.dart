@@ -4776,7 +4776,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           );
           return PhoneSpaces(
             space: _space,
-            onSelected: _showSpace,
+            // Between Notes and Tasks the bar turns Home as the header does,
+            // keeping the list; the page already showing, tapped again, and
+            // every other space start the list over.
+            onSelected: (space) =>
+                _phoneHome &&
+                    space != _space &&
+                    (space == LibrarySpace.notes || space == LibrarySpace.tasks)
+                ? _showHome(tasks: space == LibrarySpace.tasks)
+                : _showSpace(space),
             onSettingsPressed: _showSettings,
             showTasks: _taskController != null,
             createLabel: _tasksMode
