@@ -117,8 +117,24 @@ class TasksScreenState extends State<TasksScreen> {
     // An ask made before this screen existed — a menu bar click while the app
     // was showing Notes — is waiting for its first listener.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _takeSheetRequest();
+      if (!mounted) return;
+      _takeSheetRequest();
+      // Once the frame's own focus moves have landed (the page it replaced
+      // letting go, New task's add row), the pair's keys work at once.
+      if (!widget.phone) scheduleMicrotask(_takeKeys);
     });
+  }
+
+  /// Takes the keyboard for the page, unless a field is being typed in.
+  void _takeKeys() {
+    if (!mounted) return;
+    final focused = FocusManager.instance.primaryFocus?.context;
+    if (focused != null &&
+        (focused.widget is EditableText ||
+            focused.findAncestorWidgetOfExactType<EditableText>() != null)) {
+      return;
+    }
+    _listFocus.requestFocus();
   }
 
   void _takeSheetRequest() {
@@ -550,6 +566,7 @@ class TasksScreenState extends State<TasksScreen> {
                 _targetChosen = true;
               }),
               onSubmit: () => unawaited(_add()),
+              onLeave: _listFocus.requestFocus,
             ),
           AnimatedSize(
             duration: const Duration(milliseconds: 160),
@@ -848,6 +865,7 @@ class _AddRow extends StatelessWidget {
     required this.choices,
     required this.onChoose,
     required this.onSubmit,
+    required this.onLeave,
   });
 
   final TextEditingController controller;
@@ -858,6 +876,9 @@ class _AddRow extends StatelessWidget {
   final List<Note> choices;
   final ValueChanged<String?> onChoose;
   final VoidCallback onSubmit;
+
+  /// Escape: hands the keys back to the page, so ←, → and esc reach the pair.
+  final VoidCallback onLeave;
 
   /// A phone's row: taller, larger words, and no keys.
   final bool phone;
@@ -890,8 +911,7 @@ class _AddRow extends StatelessWidget {
             Expanded(
               child: CallbackShortcuts(
                 bindings: {
-                  const SingleActivator(LogicalKeyboardKey.escape):
-                      focus.unfocus,
+                  const SingleActivator(LogicalKeyboardKey.escape): onLeave,
                 },
                 child: TextField(
                   key: const ValueKey('tasks-add-field'),
