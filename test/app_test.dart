@@ -5629,6 +5629,8 @@ void main() {
     final gate = _HiddenGate();
     await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
     await showNotesList(tester);
+    final streak = find.byKey(const ValueKey('phone-streak'));
+    expect(streak, findsOneWidget);
     await openPhoneFilters(tester);
 
     expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
@@ -5642,6 +5644,17 @@ void main() {
 
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
+    expect(streak, findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('phone-list-title'))).data,
+      'Archive',
+    );
+    expect(streak, findsNothing);
   });
 
   testWidgets('a phone keeps its filter row out of the way until its button '
