@@ -46,18 +46,14 @@ class UnloadedPicturesStatus extends StatelessWidget {
           Theme.of(context).textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.body,
             fontWeight: FontWeight.w500,
+            fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
           ),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          KapyIcon(
-            KapyIcons.errorOutlined,
-            size: 15,
-            strokeWidth: 1.9,
-            color: palette.clay,
-          ),
+          KapyIcon(KapyIcons.errorOutlined, size: 15, color: palette.clay),
           const SizedBox(width: 6),
           Text(
             count == 1

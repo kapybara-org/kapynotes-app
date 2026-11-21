@@ -81,17 +81,12 @@ LocalSpeechModel _tinyModel(Map<String, List<int>> files) => LocalSpeechModel(
   id: 'tiny',
   name: 'Tiny Model',
   vendor: 'Nobody',
-  parameters: '1M',
-  architecture: 'None',
   license: 'MIT',
   licenseUrl: 'https://example.com/licence',
   summary: 'A model that does nothing.',
   languages: const ['English', 'French'],
   englishWordErrorRate: 1.5,
-  multilingualWordErrorRate: 2.5,
-  accuracySource: 'nowhere at all',
   speedFactor: 3,
-  speedSource: 'nothing in particular',
   files: [
     for (final entry in files.entries)
       LocalModelFile(

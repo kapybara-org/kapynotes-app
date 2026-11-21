@@ -26,6 +26,7 @@ import 'context_menu.dart';
 import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
+import 'join/joining_ui.dart' show joinedLine;
 import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
@@ -128,16 +129,13 @@ enum PickedAction {
 KapyIconData _pickedIcon(PickedAction action) => switch (action) {
   PickedAction.openTabs => KapyIcons.openExternalRounded,
   PickedAction.pin => KapyIcons.pinOutlined,
-  PickedAction.unpin => KapyIcons.pinRounded,
+  PickedAction.unpin => KapyIcons.pinOutlined,
   PickedAction.hide => hiddenIcon,
   PickedAction.unhide => unhideIcon,
   PickedAction.archive => archiveIcon,
   PickedAction.restore => restoreIcon,
   PickedAction.delete => deleteIcon,
 };
-
-/// The heading the notes waiting for a later day fold under.
-const String _upcoming = 'Upcoming';
 
 /// The note list, under the field that opens search.
 class Sidebar extends StatelessWidget {
@@ -561,13 +559,13 @@ extension on Sidebar {
           ? 'No matching drawings'
           : 'No matching notes',
       detail: nothingShared
-          ? 'Open a note and press Share. Only the people you choose can '
-                'see it.'
+          ? 'Pick notes and someone to share them with. Only the people you '
+                'add, or anyone with a link you turn on, can see them.'
           : null,
       action: nothingShared && onStartSharing != null
           ? TonalButton(
               key: const ValueKey('sidebar-empty-share'),
-              icon: KapyIcons.personAddRounded,
+              icon: KapyIcons.shareRounded,
               label: 'Share with someone',
               onPressed: onStartSharing,
             )
@@ -613,16 +611,18 @@ extension on Sidebar {
 
   /// The picked notes on screen, in the list's order. One picked in another
   /// list, or filtered out by a search, is not what an action here acts on.
-  List<Note> get _picked => [
+  /// With [joining], that note too, as a right click on its row picks it
+  /// before the menu opens.
+  List<Note> _picked([String? joining]) => [
     for (final note in _painted)
-      if (picks?.contains(note.id) ?? false) note,
+      if (note.id == joining || (picks?.contains(note.id) ?? false)) note,
   ];
 
   /// What can be done to the picked notes, each with the ones it applies to:
   /// the row menu's own rules, note by note, so one a reader may only view
   /// is left out of what would change it.
-  List<(PickedAction, List<Note>)> get _pickedChoices {
-    final picked = _picked;
+  List<(PickedAction, List<Note>)> _pickedChoices([String? joining]) {
+    final picked = _picked(joining);
     List<Note> those(bool Function(Note note) applies) =>
         picked.where(applies).toList();
     final unpinned = those((note) => !pinnedNoteIds.contains(note.id));
@@ -671,24 +671,25 @@ extension on Sidebar {
   static String _count(int notes) => notes == 1 ? '1 note' : '$notes notes';
 
   /// The picked notes Tags… tags: all of them, as a row's Tags tags its note.
-  List<String> _taggable(BuildContext context) =>
+  List<String> _taggable(BuildContext context, [String? joining]) =>
       TagShelf.maybeOf(context) == null
       ? const []
-      : [for (final note in _picked) note.id];
+      : [for (final note in _picked(joining)) note.id];
 
   /// The picked notes Move to folder… files: the ones a row would offer it on.
-  List<String> get _fileable => [
-    for (final note in _picked)
+  List<String> _fileable([String? joining]) => [
+    for (final note in _picked(joining))
       if (_files(note)) note.id,
   ];
 
-  /// The menu a right click or long press opens on picked notes: how many,
-  /// then the row menu's groups. How to open them, what to do to them, and
-  /// the ways out of the list.
-  KapyMenu _pickedMenu(BuildContext context) {
-    final picked = _picked.length;
+  /// The menu a right click or long press on a row opens while notes are
+  /// picked, with the row's note, [joining], among them, as the click picks
+  /// it first: how many, then the row menu's groups. How to open them, what
+  /// to do to them, and the ways out of the list.
+  KapyMenu _pickedMenu(BuildContext context, String joining) {
+    final picked = _picked(joining).length;
     final choices = {
-      for (final (action, notes) in _pickedChoices)
+      for (final (action, notes) in _pickedChoices(joining))
         if (notes.isNotEmpty) action: notes,
     };
     List<KapyMenuAction> those(List<PickedAction> actions) => [
@@ -707,14 +708,14 @@ extension on Sidebar {
         those(const [PickedAction.openTabs]),
         [
           ...those(const [PickedAction.pin, PickedAction.unpin]),
-          if (_taggable(context).isNotEmpty)
+          if (_taggable(context, joining).isNotEmpty)
             const KapyMenuAction(
               value: 'picked-tags',
               label: 'Tags',
               icon: KapyIcons.tagRounded,
               hint: '›',
             ),
-          if (_fileable.isNotEmpty)
+          if (_fileable(joining).isNotEmpty)
             const KapyMenuAction(
               value: 'picked-folder',
               label: 'Move to folder…',
@@ -742,9 +743,9 @@ extension on Sidebar {
       return showTagPickerAt(context, anchor, _taggable(context));
     }
     if (folders case final folders? when value == 'picked-folder') {
-      return moveNotesToFolder(context, anchor, folders.store, _fileable);
+      return moveNotesToFolder(context, anchor, folders.store, _fileable());
     }
-    for (final (action, notes) in _pickedChoices) {
+    for (final (action, notes) in _pickedChoices()) {
       if (value != 'picked-${action.name}' || notes.isEmpty) continue;
       onPicked?.call(action, [for (final note in notes) note.id]);
     }
@@ -755,7 +756,7 @@ extension on Sidebar {
   VoidCallback? _pickedAction(PickedAction action) {
     final onPicked = this.onPicked;
     if (onPicked == null) return null;
-    for (final (each, notes) in _pickedChoices) {
+    for (final (each, notes) in _pickedChoices()) {
       if (each != action || notes.isEmpty) continue;
       return () => onPicked(action, [for (final note in notes) note.id]);
     }
@@ -792,7 +793,7 @@ extension on Sidebar {
         ],
       );
     }
-    final picked = _picked.length;
+    final picked = _picked().length;
     final order = _order;
     final label = picked == 0 ? 'Select notes' : '$picked selected';
     final primary = archiveMode
@@ -801,7 +802,7 @@ extension on Sidebar {
         ? PickedAction.unhide
         : PickedAction.archive;
     final choices = {
-      for (final (action, notes) in _pickedChoices) action: notes,
+      for (final (action, notes) in _pickedChoices()) action: notes,
     };
     // Nothing to act on yet: no row of greyed buttons.
     List<Widget> those(List<PickedAction> actions) => [
@@ -812,7 +813,7 @@ extension on Sidebar {
             icon: _pickedIcon(action),
             tooltip: _pickedLabel(
               action,
-              notes.isEmpty ? _picked : notes,
+              notes.isEmpty ? _picked() : notes,
               picked,
             ),
             onPressed: _pickedAction(action),
@@ -844,7 +845,7 @@ extension on Sidebar {
       ...those(const [PickedAction.pin, PickedAction.unpin]),
       if (_taggable(context).isNotEmpty)
         _pickerButton('picked-tags', KapyIcons.tagRounded, 'Tags'),
-      if (_fileable.isNotEmpty)
+      if (_fileable().isNotEmpty)
         _pickerButton(
           'picked-folder',
           KapyIcons.folderMoveOutlined,
@@ -1076,7 +1077,9 @@ extension on Sidebar {
     onPickTo: picks == null || !AppPlatform.hasPointer
         ? null
         : () => picks!.extendTo(_order, note.id, open: _highlighted?.id),
-    pickedActions: picks == null ? null : _pickedMenu,
+    pickedActions: picks == null
+        ? null
+        : (context) => _pickedMenu(context, note.id),
     onPickedAction: _choosePicked,
   );
 
@@ -1292,12 +1295,7 @@ extension on Sidebar {
       }
     }
 
-    final pin = KapyIcon(
-      KapyIcons.pinOutlined,
-      size: 16,
-      strokeWidth: 1.9,
-      color: palette.clay,
-    );
+    final pin = KapyIcon(KapyIcons.pinOutlined, size: 16, color: palette.clay);
     if (_specialMode) {
       section(notes);
       if (hiddenMode) {
@@ -1308,12 +1306,7 @@ extension on Sidebar {
             padding: const EdgeInsets.fromLTRB(20, 6, 18, 0),
             child: Row(
               children: [
-                KapyIcon(
-                  hiddenIcon,
-                  size: 13,
-                  strokeWidth: 1.8,
-                  color: palette.textTertiary,
-                ),
+                KapyIcon(hiddenIcon, size: 13, color: palette.textTertiary),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
@@ -1348,11 +1341,7 @@ extension on Sidebar {
                 onPressed: onPinnedOnlyChanged == null
                     ? null
                     : () => onPinnedOnlyChanged(false),
-                icon: const KapyIcon(
-                  KapyIcons.chevronLeftRounded,
-                  size: 13,
-                  strokeWidth: 2,
-                ),
+                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 13),
               ),
               const SizedBox(width: 6),
               pin,
@@ -1428,7 +1417,7 @@ extension on Sidebar {
         ownDay: ownDay,
       );
       for (final group in grouped) {
-        final fold = group.label == _upcoming;
+        final fold = group.upcoming;
         heading(
           NotesGroupHeading(
             key: ValueKey('sidebar-group-${group.label}'),
@@ -1954,22 +1943,22 @@ class SidebarWindowBar extends StatelessWidget {
     final hideShortcut = this.hideShortcut;
     final onAskKapy = this.onAskKapy;
     final askKapyShortcut = this.askKapyShortcut;
-    final titleStyle = TextStyle(
-      fontFamily: handwritten.fontFamily,
-      fontFamilyFallback: handwritten.fontFamilyFallback,
-      fontVariations: handwritten.fontVariations,
-      fontSize: AppTypeScale.spaceTitle,
-      height: 24 / 20,
-      fontWeight: FontWeight.w500,
+    final titleStyle = chromeStyle(
+      size: AppTypeScale.spaceTitle,
+      line: AppTypeScale.spaceTitle * 1.3,
+      weight: AppWeight.button,
       color: palette.textPrimary,
+      family: handwritten.fontFamily,
+      fallback: handwritten.fontFamilyFallback,
+      extra: handwritten.faceVariations,
     );
     final countText = [count, ?countLabel].join(' ');
-    final countStyle = TextStyle(
-      fontSize: AppTypeScale.small,
-      height: 16 / 12,
-      fontWeight: FontWeight.w500,
+    final countStyle = chromeStyle(
+      size: AppTypeScale.small,
+      line: 16,
+      weight: AppWeight.body,
       color: palette.textTertiary,
-      fontFeatures: const [FontFeature.tabularFigures()],
+      tabular: true,
     );
     double widthOf(String text, TextStyle style) {
       final painter = TextPainter(
@@ -2080,7 +2069,6 @@ class SidebarWindowBar extends StatelessWidget {
                           icon: const KapyIcon(
                             KapyIcons.sparklesOutlined,
                             size: 16,
-                            strokeWidth: 1.5,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -2113,7 +2101,6 @@ class SidebarWindowBar extends StatelessWidget {
                         icon: KapyIcon(
                           KapyIcons.menuOpenRounded,
                           size: AppControlMetrics.iconAction,
-                          strokeWidth: 1.7,
                         ),
                       ),
                     ],
@@ -2247,7 +2234,7 @@ class _InvitationsState extends State<_Invitations> {
               invite,
               () => sharing.acceptInvite(invite.token),
               waiting: 'Joining…',
-              done: 'Joined. Notes appear once they sync',
+              done: joinedLine,
               joins: true,
             ),
             onDecline: () => _act(
@@ -2291,30 +2278,38 @@ class _InvitationCard extends StatelessWidget {
     // a stranger, and a name is only what they call themselves.
     final detail = [
       if (invite.invitedByName != null) invite.invitedBy,
-      '${invite.role.accessLabel} access',
+      invite.role.accessLabel,
     ].join(' · ');
-    final compact = TextButton.styleFrom(
-      visualDensity: VisualDensity.compact,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      minimumSize: Size(0, touch ? 34 : 26),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      textStyle: Theme.of(
-        context,
-      ).textTheme.labelLarge?.copyWith(fontSize: AppTypeScale.small),
+    final avatar = touch ? 32.0 : 28.0;
+    final button = touch ? 36.0 : 28.0;
+    final label = TextStyle(
+      fontSize: touch ? 15 : 13,
+      height: touch ? 20 / 15 : 18 / 13,
+      fontWeight: FontWeight.w500,
     );
+    final buttonStyle = TextButton.styleFrom(
+      minimumSize: Size(0, button),
+      tapTargetSize: touch
+          ? MaterialTapTargetSize.padded
+          : MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      textStyle: label,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          touch ? AppRadii.control : AppRadii.compact,
+        ),
+      ),
+    );
+    final initial = who.trim().isEmpty ? '?' : who.trim()[0].toUpperCase();
     return Padding(
       padding: touch
-          ? const EdgeInsets.fromLTRB(10, 0, 10, 8)
+          ? const EdgeInsets.fromLTRB(16, 0, 16, 8)
           : const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 8, 4, 6),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
         decoration: BoxDecoration(
-          color: palette.surfaceBackground,
+          color: palette.textPrimary.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(AppRadii.control),
-          border: Border.all(
-            color: palette.controlBorder,
-            width: AppHairline.of(context),
-          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2322,28 +2317,32 @@ class _InvitationCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: KapyIcon(
-                    KapyIcons.mailOutlined,
-                    size: AppControlMetrics.iconControl,
-                    color: Theme.of(context).colorScheme.primary,
+                Container(
+                  width: avatar,
+                  height: avatar,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: palette.textPrimary.withValues(alpha: 0.07),
+                  ),
+                  child: Text(
+                    initial,
+                    style: TextStyle(
+                      fontSize: touch ? 14 : 12,
+                      height: touch ? 18 / 14 : 16 / 12,
+                      fontWeight: FontWeight.w500,
+                      color: palette.textPrimary,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.small,
-                          height: 1.3,
-                          color: palette.textPrimary,
-                        ),
+                        style: label.copyWith(color: palette.textPrimary),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -2351,8 +2350,9 @@ class _InvitationCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: AppTypeScale.caption,
-                          color: palette.textTertiary,
+                          fontSize: touch ? 13 : 12,
+                          height: touch ? 18 / 13 : 16 / 12,
+                          color: palette.textSecondary,
                         ),
                       ),
                     ],
@@ -2362,8 +2362,8 @@ class _InvitationCard extends StatelessWidget {
                   builder: (buttonContext) => CompactIconButton(
                     key: ValueKey('sidebar-invite-more-${invite.token}'),
                     tooltip: 'More',
-                    extent: AppControlMetrics.fieldAdornmentSlot,
-                    foregroundColor: palette.textTertiary,
+                    extent: touch ? 32 : 28,
+                    foregroundColor: palette.textSecondary,
                     onPressed: busy
                         ? null
                         : () {
@@ -2378,43 +2378,45 @@ class _InvitationCard extends StatelessWidget {
                             );
                           },
                     icon: KapyIcon(
-                      KapyIcons.moreRounded,
+                      KapyIcons.moreVerticalRounded,
                       size: AppControlMetrics.iconAdornment,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             // Side by side where they fit, stacked where the sidebar is
             // dragged too narrow for both.
             OverflowBar(
               alignment: MainAxisAlignment.end,
               overflowAlignment: OverflowBarAlignment.end,
               overflowSpacing: 4,
+              spacing: 4,
               children: [
                 TextButton(
                   key: ValueKey('sidebar-invite-decline-${invite.token}'),
-                  style: compact,
+                  style: buttonStyle.copyWith(
+                    foregroundColor: WidgetStatePropertyAll(
+                      palette.textSecondary,
+                    ),
+                  ),
                   onPressed: busy ? null : onDecline,
                   child: const Text('Decline'),
                 ),
-                const SizedBox(width: 4),
-                FilledButton(
+                TextButton(
                   key: ValueKey('sidebar-invite-accept-${invite.token}'),
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    minimumSize: Size(0, touch ? 34 : 26),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontSize: AppTypeScale.small,
+                  style: buttonStyle.copyWith(
+                    foregroundColor: WidgetStatePropertyAll(
+                      palette.textPrimary,
+                    ),
+                    backgroundColor: WidgetStatePropertyAll(
+                      palette.textPrimary.withValues(alpha: 0.06),
                     ),
                   ),
                   onPressed: busy ? null : onAccept,
                   child: const Text('Accept'),
                 ),
-                const SizedBox(width: 4),
               ],
             ),
           ],
@@ -2548,8 +2550,7 @@ class SidebarSearchField extends StatelessWidget {
                   children: [
                     KapyIcon(
                       KapyIcons.searchRounded,
-                      size: 16,
-                      strokeWidth: 1.8,
+                      size: 14,
                       color: palette.textSecondary,
                     ),
                     const SizedBox(width: 8),
@@ -2633,7 +2634,6 @@ class SidebarSearchField extends StatelessWidget {
                         KapyIcon(
                           KapyIcons.searchRounded,
                           size: 16,
-                          strokeWidth: 1.8,
                           color: palette.textSecondary,
                         ),
                         const SizedBox(width: 9),
@@ -2692,8 +2692,7 @@ class _FiltersButton extends StatelessWidget {
               onPressed: onPressed,
               icon: KapyIcon(
                 KapyIcons.filterRounded,
-                size: 20,
-                strokeWidth: active ? 2 : 1.8,
+                size: 18,
                 color: active ? palette.textPrimary : palette.textSecondary,
               ),
             ),
@@ -2847,8 +2846,9 @@ class NoteRow extends StatefulWidget {
   final VoidCallback? onPickTo;
 
   /// While picking, the menu a right click or long press opens instead of
-  /// the note's own, for every picked note, and what was chosen from it,
-  /// with the row's context and where a picker it opens goes.
+  /// the note's own, for every picked note with this one among them, and
+  /// what was chosen from it, with the row's context and where a picker it
+  /// opens goes.
   final KapyMenu Function(BuildContext context)? pickedActions;
   final Future<void> Function(String value, BuildContext context, Offset at)?
   onPickedAction;
@@ -2950,9 +2950,7 @@ class _NoteRowState extends State<NoteRow> {
             KapyMenuAction(
               value: 'pin',
               label: widget.pinned ? 'Unpin note' : 'Pin note',
-              icon: widget.pinned
-                  ? KapyIcons.pinRounded
-                  : KapyIcons.pinOutlined,
+              icon: KapyIcons.pinOutlined,
             ),
           if (TagShelf.maybeOf(context) != null)
             const KapyMenuAction(
@@ -2970,8 +2968,12 @@ class _NoteRowState extends State<NoteRow> {
           if (widget.onShare != null)
             KapyMenuAction(
               value: 'share',
-              label: widget.shared ? 'Manage sharing' : 'Share note',
-              icon: KapyIcons.peopleOutlined,
+              label: widget.shared
+                  ? AppPlatform.isMobile
+                        ? 'Sharing'
+                        : 'Manage sharing'
+                  : 'Share note',
+              icon: KapyIcons.shareRounded,
             ),
           if (widget.onHide != null)
             const KapyMenuAction(
@@ -3093,11 +3095,16 @@ class _NoteRowState extends State<NoteRow> {
         },
       );
 
+  /// While picking, a menu is the picked notes', and the note it was opened
+  /// on is one of them: a right click, a long press or an accessibility
+  /// action on a row not picked yet picks it first.
+  void _joinPicks() {
+    if (widget.selecting && !widget.checked) widget.onToggleChecked?.call();
+  }
+
   /// Right-click on desktop, long-press on touch, or the row's More button.
   Future<void> _showContextMenu(BuildContext context, Offset position) async {
-    // While picking, the menu is the picked notes', and the note it was
-    // opened on is one of them.
-    if (widget.selecting && !widget.checked) widget.onToggleChecked?.call();
+    _joinPicks();
     final menu = _menu();
     if (menu.groups.every((group) => group.isEmpty)) return;
 
@@ -3334,11 +3341,14 @@ class _NoteRowState extends State<NoteRow> {
         selected: widget.selecting ? widget.checked : widget.selected,
         // Neither VoiceOver nor TalkBack can right-click or long-press a row
         // to reach its menu, so the menu's choices are actions on the row
-        // itself. Same list, so the two can never drift.
+        // itself. Same list, and the same pick first, so the two can never
+        // drift.
         customSemanticsActions: {
           for (final action in _menu().groups.expand((group) => group))
-            CustomSemanticsAction(label: action.label): () =>
-                unawaited(_choose(action.value)),
+            CustomSemanticsAction(label: action.label): () {
+              _joinPicks();
+              unawaited(_choose(action.value));
+            },
         },
         child: GestureDetector(
           onTap: _open,
@@ -3477,7 +3487,7 @@ class _ShareGroupHeader extends StatelessWidget {
           const SizedBox(width: 5),
         ] else if (people.isEmpty) ...[
           KapyIcon(
-            KapyIcons.peopleOutlined,
+            KapyIcons.groupOutlined,
             size: AppControlMetrics.iconInline,
             color: palette.textTertiary,
           ),
@@ -3584,7 +3594,6 @@ class _DrawingsEmpty extends StatelessWidget {
               child: KapyIcon(
                 KapyIcons.penRounded,
                 size: 30,
-                strokeWidth: 1.5,
                 color: palette.textTertiary,
               ),
             ),
@@ -3797,57 +3806,87 @@ class _PhoneHeading extends StatelessWidget {
 /// A phone list's title: the space's name large, its count beside it, and
 /// the clay underline the note page draws.
 class PhoneListTitle extends StatelessWidget {
-  const PhoneListTitle({super.key, required this.title, required this.count});
+  const PhoneListTitle({
+    super.key,
+    required this.title,
+    required this.count,
+    this.onBack,
+  });
 
   final String title;
   final int count;
 
+  /// Set for a page reached from Home, such as Shared: its arrow goes back.
+  final VoidCallback? onBack;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-      child: Semantics(
-        header: true,
-        label: '$title, $count',
-        excludeSemantics: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Flexible(
-                  child: Text(
-                    title,
-                    key: const ValueKey('phone-list-title'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: AppFonts.title,
-                      fontFamilyFallback: AppFonts.uiFallback,
-                      fontSize: 28,
-                      height: 36 / 28,
-                      color: palette.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  '$count',
+    final onBack = this.onBack;
+    final heading = Semantics(
+      header: true,
+      label: '$title, $count',
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Flexible(
+                child: Text(
+                  title,
+                  key: const ValueKey('phone-list-title'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: AppFonts.ui,
-                    fontSize: 15,
-                    color: palette.textTertiary,
+                    fontFamily: AppFonts.title,
+                    fontFamilyFallback: AppFonts.uiFallback,
+                    fontSize: 28,
+                    height: 36 / 28,
+                    color: palette.textPrimary,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(width: 44, height: 2, color: palette.clay),
-          ],
-        ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '$count',
+                style: TextStyle(
+                  fontFamily: AppFonts.ui,
+                  fontSize: 15,
+                  color: palette.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(width: 44, height: 2, color: palette.clay),
+        ],
+      ),
+    );
+    if (onBack == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+        child: heading,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 12, 20, 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconButton(
+            key: const ValueKey('page-back'),
+            tooltip: 'Back',
+            onPressed: onBack,
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            padding: EdgeInsets.zero,
+            color: palette.textPrimary,
+            icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
+          ),
+          Expanded(child: heading),
+        ],
       ),
     );
   }
@@ -3985,7 +4024,6 @@ class _SwipeActionsState extends State<_SwipeActions>
                                 KapyIcon(
                                   action.icon,
                                   size: 20,
-                                  strokeWidth: 1.8,
                                   color: foreground,
                                 ),
                                 Text(

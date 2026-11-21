@@ -55,7 +55,7 @@ KapyMessage _answer(
 const _codexConnected = KapyAccountState(
   kind: KapyAccountKind.codex,
   status: KapyAccountStatus.connected,
-  models: [FakeKapyAi.gpt, FakeKapyAi.gptMini],
+  models: [FakeKapyAi.gpt],
 );
 const _claudeConnected = KapyAccountState(
   kind: KapyAccountKind.claudeCode,
@@ -446,7 +446,7 @@ void main() {
 
       expect(find.text('ON THIS DEVICE'), findsOneWidget);
       expect(find.text('Apple Intelligence'), findsWidgets);
-      expect(find.text('Codex on this Mac'), findsNWidgets(2));
+      expect(find.text('Codex on this Mac'), findsOneWidget);
       expect(find.text('Claude Code on this Mac'), findsOneWidget);
       expect(find.text('Quick answers and short notes'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsOneWidget);
@@ -486,6 +486,7 @@ void main() {
       expect(find.text('Use Codex'), findsOneWidget);
       expect(find.text('Use Claude Code'), findsOneWidget);
       expect(find.text('Add your key'), findsOneWidget);
+      expect(find.text('Get one, then paste it in Settings'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('kapy-ai-connect-codex')));

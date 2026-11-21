@@ -38,7 +38,6 @@ class EmptyState extends StatelessWidget {
             KapyIcon(
               KapyIcons.penRounded,
               size: 30,
-              strokeWidth: 1.4,
               color: palette.textTertiary,
             ),
             const SizedBox(height: 10),

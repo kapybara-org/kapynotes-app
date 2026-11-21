@@ -242,4 +242,25 @@ void main() {
       expect(find.byKey(const ValueKey('share-with-someone')), findsOneWidget);
     });
   }
+
+  testWidgets('on a phone, Shared is a page whose arrow goes back to the '
+      'notes', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    expect(find.byKey(const ValueKey('shared-page')), findsNothing);
+
+    await openTab(tester, SidebarTab.shared, phone: true);
+    expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+    expect(find.text('Search shared notes'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('page-back')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-page')), findsNothing);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('phone-list-title'))).data,
+      'Notes',
+    );
+  });
 }

@@ -103,7 +103,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
     SettingsSection.account => KapyIcons.accountCircleOutlined,
-    SettingsSection.sharing => KapyIcons.peopleOutlined,
+    SettingsSection.sharing => KapyIcons.groupOutlined,
     SettingsSection.about => KapyIcons.infoOutlined,
   };
 
@@ -2862,6 +2862,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                     fontFamily: 'Shantell Sans',
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                     height: 26 / 20,
                     color: palette.textPrimary,
                   ),
@@ -3102,6 +3103,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                     fontFamily: 'Shantell Sans',
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                     height: 22 / 18,
                     color: palette.textPrimary,
                   ),
@@ -4345,7 +4347,6 @@ class _RailItem extends StatelessWidget {
                   KapyIcon(
                     icon,
                     size: 16,
-                    strokeWidth: 1.7,
                     color: selected
                         ? palette.tonalForeground
                         : palette.textTertiary,

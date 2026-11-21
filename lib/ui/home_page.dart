@@ -2301,7 +2301,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Toast.show(
       context,
       pinned ? '$count pinned' : '$count unpinned',
-      icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
+      icon: KapyIcons.pinOutlined,
     );
   }
 
@@ -4252,7 +4252,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         KapyMenuAction(
           value: 'pin',
           label: pinned ? 'Unpin note' : 'Pin note',
-          icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
+          icon: KapyIcons.pinOutlined,
+        ),
+      if (phone &&
+          note != null &&
+          !_specialMode &&
+          widget.account != null &&
+          (note.isShared || mayEdit))
+        KapyMenuAction(
+          value: 'share',
+          label: note.isShared ? 'Sharing' : 'Share note',
+          icon: KapyIcons.shareRounded,
         ),
       if (note != null && _canMoveToFolder(note))
         const KapyMenuAction(
@@ -4335,6 +4345,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         widget.days?.clearDay(note.id);
       case 'pin':
         _togglePinnedNote(note.id);
+      case 'share':
+        _shareNote(note.id);
       case 'folder':
         unawaited(moveNotesToFolder(context, at, widget.folders!, [note.id]));
       case 'hide':
@@ -4410,7 +4422,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               icon: KapyIcon(
                 KapyIcons.refreshRounded,
                 size: 15,
-                strokeWidth: 1.8,
                 color: palette.textTertiary,
               ),
               label: const Text('Pick again'),
@@ -4756,15 +4767,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// Shared on a phone: a page reached from Home, which its arrow goes back
+  /// to.
+  bool get _sharedPage => !_specialMode && _space == LibrarySpace.shared;
+
   /// The phone's home for Notes, Drawings and Shared: the list beside the
   /// rail, drawn for a phone under the space's large title.
   Widget _phoneNotes() => Sidebar(
+    key: _sharedPage ? const ValueKey('shared-page') : null,
     phone: true,
     windowBar: PhoneListTitle(
       title: !_specialMode && _space == LibrarySpace.notes
           ? 'Notes'
           : _listTitle,
       count: _matchingCount,
+      onBack: _sharedPage ? () => _showSpace(LibrarySpace.notes) : null,
     ),
     notes: _visibleNotes,
     pinnedNoteIds: widget.notes.pinnedNoteIds,
@@ -4798,6 +4815,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? _searchPlaceholder
         : _space == LibrarySpace.drawings
         ? 'Search drawings'
+        : _sharedPage
+        ? 'Search shared notes'
         : _taskController == null
         ? 'Search notes'
         : 'Search notes and tasks',

@@ -80,7 +80,11 @@ class TonalButton extends StatelessWidget {
   static TextStyle? _labelStyle(BuildContext context) => Theme.of(context)
       .textTheme
       .labelLarge
-      ?.copyWith(fontSize: AppTypeScale.control, fontWeight: FontWeight.w500);
+      ?.copyWith(
+        fontSize: AppTypeScale.control,
+        fontWeight: FontWeight.w500,
+        fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -144,7 +148,6 @@ class TonalButton extends StatelessWidget {
                   : fine
                   ? 15
                   : AppControlMetrics.iconControl,
-              strokeWidth: fine ? 2 : 2.2,
             ),
           if (icon != null && label != null) SizedBox(width: bar ? 4 : 6),
           if (label != null) Text(label),

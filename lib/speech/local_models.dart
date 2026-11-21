@@ -120,17 +120,12 @@ class LocalSpeechModel implements DownloadableModel {
     required this.id,
     required this.name,
     required this.vendor,
-    required this.parameters,
-    required this.architecture,
     required this.license,
     required this.licenseUrl,
     required this.summary,
     required this.languages,
     required this.englishWordErrorRate,
-    required this.multilingualWordErrorRate,
-    required this.accuracySource,
     required this.speedFactor,
-    required this.speedSource,
     required this.files,
   });
 
@@ -143,10 +138,6 @@ class LocalSpeechModel implements DownloadableModel {
   final String name;
   @override
   final String vendor;
-
-  /// Written the way the publisher writes it, e.g. `600M`.
-  final String parameters;
-  final String architecture;
 
   /// SPDX identifier. CC-BY models must be credited somewhere the user can
   /// see; this app has no acknowledgements screen, so the model card is it.
@@ -163,18 +154,14 @@ class LocalSpeechModel implements DownloadableModel {
   /// `VoicePrefs.language` holds, in the publisher's order.
   final List<String> languages;
 
-  /// Word error rate as a percentage — lower is better. English is measured
-  /// on a different benchmark from the multilingual figure, so the two are
-  /// not comparable with each other, only with other models on the same one.
+  /// English word error rate as a percentage — lower is better, and
+  /// comparable only with other models on the same benchmark.
   final double englishWordErrorRate;
-  final double multilingualWordErrorRate;
-  final String accuracySource;
 
   /// How many times faster than real time, i.e. a 10-minute recording in
   /// [speedFactor] tenths of a minute. Deliberately not the publisher's
   /// datacentre-GPU number, which tells a laptop user nothing.
   final int speedFactor;
-  final String speedSource;
 
   @override
   final List<LocalModelFile> files;
@@ -246,8 +233,6 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
   id: 'parakeet-tdt-0.6b-v3-int8',
   name: 'Speech model',
   vendor: 'NVIDIA',
-  parameters: '600M',
-  architecture: 'FastConformer-TDT',
   license: 'CC-BY-4.0',
   licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
   summary:
@@ -280,12 +265,8 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
     'ru',
     'uk',
   ],
-  // 6.34% averaged over the eight datasets of the Open ASR Leaderboard;
-  // 11.97% averaged over FLEURS, which is 100-odd languages of read speech
-  // and a much harder test than the English one.
+  // 6.34% averaged over the eight datasets of the Open ASR Leaderboard.
   englishWordErrorRate: 6.34,
-  multilingualWordErrorRate: 11.97,
-  accuracySource: 'NVIDIA, on Open ASR Leaderboard and FLEURS',
   // The publisher advertises RTFx 3332 on an A100, which is true and useless
   // here. The published CPU figures — RTF 0.0476 on Apple silicon, 0.0382 on
   // an 8-vCPU EPYC — read as about 20x, and **this app does not reach them**.
@@ -303,7 +284,6 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
   // existed for the first time and the number could be measured rather than
   // quoted.
   speedFactor: 9,
-  speedSource: 'this app, on an M-series Mac',
   files: <LocalModelFile>[
     LocalModelFile(
       name: 'encoder.int8.onnx',
@@ -362,8 +342,6 @@ class LocalSummaryModel implements DownloadableModel {
     required this.id,
     required this.name,
     required this.vendor,
-    required this.parameters,
-    required this.quantisation,
     required this.contextTokens,
     required this.license,
     required this.licenseUrl,
@@ -380,9 +358,6 @@ class LocalSummaryModel implements DownloadableModel {
   final String name;
   @override
   final String vendor;
-
-  final String parameters;
-  final String quantisation;
 
   /// How much transcript this build can hold at once, in tokens. Not the
   /// architecture's limit — the limit of the bundle we actually ship, which
@@ -451,8 +426,6 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
   id: 'gemma-4-e2b-it-litertlm',
   name: 'Summary model',
   vendor: 'Google',
-  parameters: '2B effective',
-  quantisation: 'mixed 2/4/8-bit',
   // The bundle supports 32K. This is what we ask for, and it is the number
   // that decides both how much transcript fits and how big the KV cache is:
   // a summariser has no use for the rest and every token of it costs memory.

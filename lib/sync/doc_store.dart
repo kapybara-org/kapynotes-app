@@ -328,6 +328,12 @@ class DocRecord {
   /// and a rotation has to carry a snapshot.
   int serverEpoch = 0;
 
+  /// The first op of this note in [unreadSpaceId]'s log that this device
+  /// could not open, kept until it is read. No whole copy from here may say
+  /// it covers that op, since the copy lacks it.
+  String? unreadSpaceId;
+  int? unreadSeq;
+
   bool get hasPending => outbox.isNotEmpty;
 
   Map<String, Object?> toJson() => {
@@ -339,6 +345,10 @@ class DocRecord {
     'seeded': seeded,
     if (offline) 'offline': true,
     'serverEpoch': serverEpoch,
+    if (unreadSpaceId != null && unreadSeq != null) ...{
+      'unreadSpaceId': unreadSpaceId,
+      'unreadSeq': unreadSeq,
+    },
     'doc': _snapshotForWrite(),
     'outbox': outbox.map((entry) => entry.toJson()).toList(),
   };
@@ -384,7 +394,13 @@ class DocRecord {
         )
         ..serverEpoch = raw['serverEpoch'] is int
             ? raw['serverEpoch'] as int
-            : 0;
+            : 0
+        ..unreadSpaceId = raw['unreadSeq'] is int && raw['unreadSpaceId'] is String
+            ? raw['unreadSpaceId'] as String
+            : null
+        ..unreadSeq = raw['unreadSpaceId'] is String && raw['unreadSeq'] is int
+            ? raw['unreadSeq'] as int
+            : null;
     } catch (error) {
       debugPrint('KapyNotes: doc record for $noteId unreadable: $error');
       return null;
