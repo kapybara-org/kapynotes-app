@@ -456,6 +456,17 @@ void main() {
     expect(pair().chosen, isFalse);
   });
 
+  test('Not finished at the instant you chose asks about nothing already on '
+      'the list, when it was picked up in one go', () async {
+    await start(six);
+    tasks.takeNext(pair());
+    tasks.startWith(pair().left);
+    expect(doNow().words, 'B');
+    tasks.notFinished(doNow());
+    expect(doNow().words, 'A');
+    expect(words(choice().upNext), isEmpty);
+  });
+
   test(
     'Choose again clears every choice and starts at the first pair',
     () async {
