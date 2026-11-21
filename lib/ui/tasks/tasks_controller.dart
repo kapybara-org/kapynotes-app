@@ -348,11 +348,6 @@ class TasksController extends ChangeNotifier {
   String? _justDone;
   DateTime? _keptGoing;
 
-  /// The last place on the list when Do now began here, by the task it began
-  /// on. A burst of tasks picked up together, or another device's clock, can
-  /// stamp the list ahead of now, and nothing already on it is new.
-  ({String id, int end})? _chosenOver;
-
   int _listEnd() => read().open.fold(
     0,
     (end, item) => item.entry.position > end ? item.entry.position : end,
@@ -418,7 +413,9 @@ class TasksController extends ChangeNotifier {
   /// Up next, and the tasks not yet shown stay on the list.
   void startWith(TaskItem item) {
     forgetPair();
-    _chosenOver = (id: item.id, end: _listEnd());
+    // A burst of tasks picked up together, or another device's clock, can
+    // stamp the list ahead of now, and nothing already on it is new.
+    library.chosenOver = (id: item.id, end: _listEnd());
     doNow(item);
   }
 
@@ -427,7 +424,8 @@ class TasksController extends ChangeNotifier {
   /// the tick can't be written, nothing moves on.
   Future<void> finish(TaskItem item, {String? noteId}) async {
     final began = item.entry.doNow.v ? item.entry.doNow.at : _stamp();
-    final listEnd = _chosenOver?.id == item.id ? _chosenOver!.end : 0;
+    final chosen = library.chosenOver;
+    final listEnd = chosen?.id == item.id ? chosen!.end : 0;
     if (!await setDone(item, done: true)) return;
     _seenUpTo = null;
     _since = began > listEnd ? began : listEnd;
