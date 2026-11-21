@@ -82,11 +82,8 @@ class TasksSidebar extends StatelessWidget {
                 children: [
                   _FilterRow(
                     key: const ValueKey('tasks-filter-all'),
-                    leading: (ink) => KapyIcon(
-                      KapyIcons.checklistRounded,
-                      size: 15,
-                      color: ink,
-                    ),
+                    leading: (ink) =>
+                        KapyIcon(KapyIcons.tasksOutlined, size: 15, color: ink),
                     label: 'All tasks',
                     count: board.open.length,
                     selected: filter == const TaskFilter.all(),

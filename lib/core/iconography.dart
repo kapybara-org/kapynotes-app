@@ -294,10 +294,6 @@ class KapyIcons {
     0xE03B,
     HugeIcons.strokeRoundedSidebarLeft,
   );
-  static const menuRounded = KapyIconData(
-    0xE03C,
-    HugeIcons.strokeRoundedMenu01,
-  );
   static const micRounded = KapyIconData(0xE03D, HugeIcons.strokeRoundedMic01);
   static const mcpServer = KapyIconData(
     0xE0E3,

@@ -460,7 +460,7 @@ class _MetaRow extends StatelessWidget {
   final List<TagMark> tags;
   final Color ground;
 
-  static const double _glyph = 13;
+  static const double _glyph = 14;
 
   @override
   Widget build(BuildContext context) {
@@ -737,7 +737,7 @@ class NoteListRowFace extends StatelessWidget {
                   children: [
                     if (!touch) const SizedBox(width: TagDots.size + 8),
                     for (final mark in marks) ...[
-                      KapyIcon(mark, size: 13, color: palette.textMuted),
+                      KapyIcon(mark, size: 14, color: palette.textMuted),
                       const SizedBox(width: 5),
                     ],
                     Expanded(
@@ -1037,7 +1037,7 @@ class DrawingListRowFace extends StatelessWidget {
                 Row(
                   children: [
                     for (final mark in marks) ...[
-                      KapyIcon(mark, size: 13, color: palette.textMuted),
+                      KapyIcon(mark, size: 14, color: palette.textMuted),
                       const SizedBox(width: 5),
                     ],
                     Flexible(
@@ -1177,7 +1177,7 @@ class SeeAllLink extends StatelessWidget {
               const SizedBox(width: 1),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
-                size: 13,
+                size: 12,
                 color: palette.accentText,
               ),
             ],
@@ -2495,7 +2495,7 @@ class _FilterMenu extends StatelessWidget {
         if (value != null) ...[value, const SizedBox(width: 6)],
         KapyIcon(
           KapyIcons.chevronRightRounded,
-          size: 13,
+          size: 12,
           color: palette.textTertiary,
         ),
       ],

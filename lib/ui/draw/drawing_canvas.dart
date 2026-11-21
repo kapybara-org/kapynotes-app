@@ -1036,7 +1036,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       bool selected = false,
     }) => CompactIconButton(
       key: ValueKey(key),
-      icon: KapyIcon(icon, size: touch ? null : 17),
+      icon: KapyIcon(icon, size: touch ? null : 16),
       tooltip: tooltip,
       selected: selected,
       onPressed: onPressed,

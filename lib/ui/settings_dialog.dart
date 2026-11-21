@@ -3923,7 +3923,7 @@ class _ShortcutFilter extends StatelessWidget {
                     padding: const EdgeInsets.only(left: 10, right: 8),
                     child: KapyIcon(
                       KapyIcons.searchRounded,
-                      size: 15,
+                      size: AppControlMetrics.iconSearch,
                       color: palette.textSecondary,
                     ),
                   ),
@@ -4443,7 +4443,7 @@ class _SheetPage extends StatelessWidget {
                     onPressed: back,
                     tooltip: 'Back',
                     color: palette.textSecondary,
-                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 17),
+                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 20),
                   ),
                 Expanded(
                   child: Text(
