@@ -16,7 +16,6 @@ import '../sync/spaces.dart';
 import '../sync/sync_api.dart' show SyncRefusedException;
 import 'account/encryption_pane.dart' show changeDate;
 import 'billing/pro_sheet.dart';
-import 'collaborator_colors.dart';
 import 'control_surface.dart';
 import 'join/join_requests_panel.dart';
 import 'join/joining_ui.dart';
@@ -736,7 +735,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         _Message(error, key: const ValueKey('share-error'), isError: true),
       ],
       if (space != null) ...[
-        SizedBox(height: widget.asSheet ? 4 : 18),
+        const SizedBox(height: 4),
         _PeopleWithAccess(
           sharing: _sharing,
           space: space,
@@ -794,8 +793,8 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         _Banner(icon: KapyIcons.hourglassRounded, text: waitingForAccessText),
       ],
       const _Label('People with access'),
-      _PeopleCard(
-        rows: [
+      Column(
+        children: [
           if (owner != null)
             _PersonRow(
               key: ValueKey('member-row-${owner.userId}'),
@@ -854,13 +853,11 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         (
           key: const ValueKey('copy-note'),
           label: 'Make a private copy',
-          icon: KapyIcons.copyRounded,
           onPressed: enabled ? () => _copyPrivate(_note) : null,
         ),
         (
           key: const ValueKey('leave-space'),
           label: 'Leave',
-          icon: KapyIcons.logoutRounded,
           onPressed: enabled ? _leave : null,
         ),
       ];
@@ -869,7 +866,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       (
         key: const ValueKey('stop-sharing'),
         label: 'Stop sharing',
-        icon: null,
         onPressed: enabled ? _stopSharing : null,
       ),
     ];
@@ -1209,7 +1205,6 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                   ),
                 ),
                 if (space.isOwner) ...[
-                  if (!widget.asSheet) const SizedBox(height: 16),
                   const _Label('Add someone by email'),
                   _AccessAndShare(
                     role: _role,
@@ -1274,14 +1269,12 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
         (
           key: const ValueKey('stop-sharing'),
           label: 'Stop sharing',
-          icon: KapyIcons.stopRounded,
           onPressed: enabled ? () => _stopSharing(space) : null,
         )
       else
         (
           key: const ValueKey('leave-space'),
           label: 'Leave',
-          icon: KapyIcons.logoutRounded,
           onPressed: enabled ? () => _leave(space) : null,
         ),
     ];
@@ -1351,17 +1344,11 @@ class _OnPhone extends InheritedWidget {
   bool updateShouldNotify(_OnPhone oldWidget) => false;
 }
 
-/// A footer action beside Done. The Mac dialog shows its icon; a phone sheet
-/// shows only its words.
-typedef _FooterAction = ({
-  Key key,
-  String label,
-  KapyIconData? icon,
-  VoidCallback? onPressed,
-});
+/// A footer action beside Done, in words only.
+typedef _FooterAction = ({Key key, String label, VoidCallback? onPressed});
 
 /// A dialog on a desktop, a sheet with a grab handle on a phone: the same
-/// header, body and footer either way.
+/// header, body and footer either way, at each one's measurements.
 class _SheetScaffold extends StatelessWidget {
   const _SheetScaffold({
     required this.asSheet,
@@ -1385,78 +1372,32 @@ class _SheetScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final header = _Header(
-      phone: asSheet,
-      title: title,
-      subtitle: subtitle,
-      onClose: onClose,
-      more: more,
-    );
-    if (!asSheet) {
-      final done = TextButton(
-        key: const ValueKey('share-done'),
-        onPressed: onClose,
-        child: const Text('Done'),
-      );
-      return AlertDialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        titlePadding: const EdgeInsets.fromLTRB(22, 20, 14, 0),
-        contentPadding: const EdgeInsets.fromLTRB(22, 18, 22, 10),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-        title: header,
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 448),
-          child: SingleChildScrollView(child: body),
-        ),
-        actions: [
-          if (actions.isEmpty)
-            Align(alignment: Alignment.centerRight, child: done)
-          else
-            Wrap(
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 2,
-              runSpacing: 2,
-              children: [
-                for (final action in actions)
-                  if (action.icon case final icon?)
-                    TextButton.icon(
-                      key: action.key,
-                      onPressed: action.onPressed,
-                      icon: KapyIcon(icon, size: AppControlMetrics.iconControl),
-                      label: Text(action.label),
-                    )
-                  else
-                    TextButton(
-                      key: action.key,
-                      onPressed: action.onPressed,
-                      child: Text(action.label),
-                    ),
-                done,
-              ],
-            ),
-        ],
-      );
-    }
-    final palette = context.palette;
-    ButtonStyle text(Color color) => TextButton.styleFrom(
-      foregroundColor: color,
-      minimumSize: const Size(0, 44),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      textStyle: chromeStyle(
-        size: 15,
-        line: 20,
-        weight: AppWeight.button,
-        color: color,
-      ),
-    );
-    return SharingSheetFrame(
-      child: _OnPhone(
-        child: Column(
+    final content = Builder(
+      builder: (context) {
+        final palette = context.palette;
+        final phone = asSheet;
+        ButtonStyle text(Color color) => TextButton.styleFrom(
+          foregroundColor: color,
+          minimumSize: Size(0, phone ? 44 : 28),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: chromeStyle(
+            size: phone ? 15 : 13,
+            line: phone ? 20 : 18,
+            weight: AppWeight.button,
+            color: color,
+          ),
+        );
+        return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            header,
+            _Header(
+              title: title,
+              subtitle: subtitle,
+              onClose: onClose,
+              more: more,
+            ),
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
@@ -1473,7 +1414,12 @@ class _SheetScaffold extends StatelessWidget {
                 ),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  phone ? 4 : 8,
+                  12,
+                  phone ? 0 : 8,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -1501,7 +1447,24 @@ class _SheetScaffold extends StatelessWidget {
               ),
             ),
           ],
+        );
+      },
+    );
+    if (asSheet) return SharingSheetFrame(child: _OnPhone(child: content));
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: context.palette.textPrimary.withValues(alpha: 0.08),
+          width: AppHairline.of(context),
         ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        key: const ValueKey('share-dialog'),
+        width: 480,
+        child: content,
       ),
     );
   }
@@ -1509,14 +1472,12 @@ class _SheetScaffold extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   const _Header({
-    required this.phone,
     required this.title,
     required this.subtitle,
     required this.onClose,
     this.more,
   });
 
-  final bool phone;
   final String title;
   final String subtitle;
   final VoidCallback onClose;
@@ -1525,117 +1486,70 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    if (phone) {
-      return ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 52),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 8, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Semantics(
-                      header: true,
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 17,
-                          height: 22 / 17,
-                          fontWeight: FontWeight.w600,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      softWrap: false,
+    final phone = _OnPhone.of(context);
+    final box = phone ? 44.0 : 28.0;
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: phone ? 52 : 0),
+      child: Padding(
+        padding: phone
+            ? const EdgeInsets.fromLTRB(20, 0, 8, 4)
+            : const EdgeInsets.fromLTRB(20, 16, 12, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(
+                    header: true,
+                    child: Text(
+                      title,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 16 / 13,
-                        color: palette.textSecondary,
+                      style: chromeStyle(
+                        size: phone ? 17 : 15,
+                        line: phone ? 22 : 20,
+                        weight: AppWeight.page,
+                        color: palette.textPrimary,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 4),
-              if (more != null) SizedBox.square(dimension: 44, child: more),
-              SizedBox.square(
-                dimension: 44,
-                child: IconButton(
-                  key: const ValueKey('share-dialog-close'),
-                  tooltip: 'Close',
-                  padding: EdgeInsets.zero,
-                  onPressed: onClose,
-                  icon: KapyIcon(
-                    KapyIcons.closeRounded,
-                    size: 20,
-                    color: palette.textSecondary,
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Semantics(
-                header: true,
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.heading,
-                    fontWeight: FontWeight.w500,
-                    fontVariations: AppWeight.variations(
-                      AppWeight.bold(AppWeight.rowTitle),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    key: const ValueKey('share-subtitle'),
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: chromeStyle(
+                      size: phone ? 13 : 12,
+                      line: 16,
+                      weight: AppWeight.body,
+                      color: palette.textSecondary,
                     ),
-                    color: palette.textPrimary,
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppTypeScale.small,
+            ),
+            const SizedBox(width: 4),
+            if (more != null) SizedBox.square(dimension: box, child: more),
+            SizedBox.square(
+              dimension: box,
+              child: IconButton(
+                key: const ValueKey('share-dialog-close'),
+                tooltip: 'Close',
+                padding: EdgeInsets.zero,
+                onPressed: onClose,
+                icon: KapyIcon(
+                  KapyIcons.closeRounded,
+                  size: phone ? 20 : 16,
                   color: palette.textSecondary,
-                  height: 1.3,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        ?more,
-        IconButton(
-          key: const ValueKey('share-dialog-close'),
-          tooltip: 'Close',
-          onPressed: onClose,
-          icon: KapyIcon(
-            KapyIcons.closeRounded,
-            size: AppControlMetrics.iconControl,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -1730,7 +1644,6 @@ class _PeopleWithAccess extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final me = sharing.userId;
     final present = {
       for (final person in sharing.presentIn(space.id)) person.userId: person,
@@ -1770,9 +1683,9 @@ class _PeopleWithAccess extends StatelessWidget {
             ),
           ),
         const _Label('People with access'),
-        _PeopleCard(
+        Column(
           key: const ValueKey('share-access-card'),
-          rows: [
+          children: [
             for (final member in here)
               _PersonRow(
                 key: ValueKey('member-row-${member.userId}'),
@@ -1780,9 +1693,6 @@ class _PeopleWithAccess extends StatelessWidget {
                 name: member.userId == me ? 'You' : member.displayName,
                 detail: _detailFor(member, present[member.userId]),
                 live: present.containsKey(member.userId),
-                ring: present[member.userId] == null
-                    ? null
-                    : collaboratorColor(member.userId, on: palette.brightness),
                 trailing: member.userId == me
                     ? _RoleText(member.isOwner ? 'Owner' : 'You')
                     : member.isOwner
@@ -1838,34 +1748,6 @@ String _accessLabel(SpaceRole role) => role.canEdit ? 'Can edit' : 'Can view';
 String _notesPhrase(int count) =>
     count == 2 ? 'both notes' : 'all $count notes';
 
-class _PeopleCard extends StatelessWidget {
-  const _PeopleCard({super.key, required this.rows});
-
-  final List<Widget> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    if (_OnPhone.of(context)) return Column(children: rows);
-    return KapyControlSurface(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: Column(
-        children: [
-          for (var index = 0; index < rows.length; index++) ...[
-            if (index > 0)
-              Divider(
-                height: 1,
-                indent: _PersonRow.avatar + 10,
-                color: palette.separator,
-              ),
-            rows[index],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 /// One person: their face, their name, and what they may do.
 class _PersonRow extends StatelessWidget {
   const _PersonRow({
@@ -1876,7 +1758,6 @@ class _PersonRow extends StatelessWidget {
     this.trailing,
     this.invited = false,
     this.live = false,
-    this.ring,
   });
 
   final String seed;
@@ -1885,161 +1766,104 @@ class _PersonRow extends StatelessWidget {
   final Widget? trailing;
   final bool invited;
 
-  /// [detail] says what they are doing right now: typing, or here.
+  /// [detail] says what they are doing right now: typing, or here. Their face
+  /// carries the sage dot while it does.
   final bool live;
-  final Color? ring;
-
-  static const double avatar = 30;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    if (_OnPhone.of(context)) {
-      return ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 56),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  if (invited)
-                    Container(
-                      width: 32,
-                      height: 32,
-                      alignment: Alignment.center,
+    final phone = _OnPhone.of(context);
+    final avatar = phone ? 32.0 : 28.0;
+    final dot = phone ? 12.0 : 10.0;
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: phone ? 56 : 44),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                if (invited)
+                  Container(
+                    key: const ValueKey('invite-face'),
+                    width: avatar,
+                    height: avatar,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: palette.textPrimary.withValues(alpha: 0.07),
+                    ),
+                    child: KapyIcon(
+                      KapyIcons.mailOutlined,
+                      size: phone ? 16 : 14,
+                      color: palette.textTertiary,
+                    ),
+                  )
+                else
+                  ProfileAvatar(extent: avatar, seed: seed, name: name),
+                if (live)
+                  Positioned(
+                    key: const ValueKey('presence-dot'),
+                    right: -1,
+                    bottom: -1,
+                    child: Container(
+                      width: dot,
+                      height: dot,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: palette.textPrimary.withValues(alpha: 0.07),
-                      ),
-                      child: KapyIcon(
-                        KapyIcons.mailOutlined,
-                        size: 16,
-                        color: palette.textTertiary,
-                      ),
-                    )
-                  else
-                    ProfileAvatar(extent: 32, seed: seed, name: name),
-                  if (ring != null)
-                    Positioned(
-                      key: const ValueKey('presence-dot'),
-                      right: -1,
-                      bottom: -1,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: palette.accentText,
-                          border: Border.all(
-                            color: palette.cardBackground,
-                            width: 2,
-                          ),
+                        color: palette.accentText,
+                        border: Border.all(
+                          color: phone
+                              ? palette.cardBackground
+                              : palette.surfaceBackground,
+                          width: 2,
                         ),
                       ),
                     ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: chromeStyle(
+                      size: phone ? 15 : 13,
+                      line: phone ? 20 : 18,
+                      weight: AppWeight.button,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: chromeStyle(
+                      size: phone ? 13 : 12,
+                      line: 16,
+                      weight: AppWeight.body,
+                      color: live
+                          ? palette.textSecondary
+                          : palette.textTertiary,
+                    ),
+                  ),
                 ],
               ),
+            ),
+            if (trailing case final trailing?) ...[
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 20 / 15,
-                        fontWeight: FontWeight.w500,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      detail,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 16 / 13,
-                        color: live
-                            ? palette.textSecondary
-                            : palette.textTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (trailing case final trailing?) ...[
-                const SizedBox(width: 12),
-                trailing,
-              ],
+              trailing,
             ],
-          ),
+          ],
         ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
-        children: [
-          if (invited)
-            Container(
-              width: avatar,
-              height: avatar,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: palette.surfaceBackground,
-                border: Border.all(color: palette.controlBorder),
-              ),
-              child: KapyIcon(
-                KapyIcons.mailOutlined,
-                size: AppControlMetrics.iconAdornment,
-                color: palette.textTertiary,
-              ),
-            )
-          else
-            ProfileAvatar(
-              extent: avatar,
-              seed: seed,
-              name: name,
-              image: null,
-              ring: ring,
-              ringWidth: 2,
-            ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.control,
-                    color: palette.textPrimary,
-                  ),
-                ),
-                Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.caption,
-                    color: live
-                        ? ring ?? palette.textSecondary
-                        : palette.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ?trailing,
-        ],
       ),
     );
   }
@@ -2056,10 +1880,10 @@ class _OverflowMenu extends StatelessWidget {
   Widget build(BuildContext context) => PopupMenuButton<String>(
     key: const ValueKey('share-more'),
     tooltip: 'More',
-    padding: _OnPhone.of(context) ? EdgeInsets.zero : const EdgeInsets.all(8),
+    padding: EdgeInsets.zero,
     icon: KapyIcon(
       KapyIcons.moreVerticalRounded,
-      size: _OnPhone.of(context) ? 20 : AppControlMetrics.iconAction,
+      size: _OnPhone.of(context) ? 20 : 16,
       color: context.palette.textSecondary,
     ),
     onSelected: (_) => onReportNote(),
@@ -2078,19 +1902,18 @@ class _RoleText extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: _OnPhone.of(context)
-        ? TextStyle(
-            fontSize: 15,
-            height: 20 / 15,
-            color: context.palette.textTertiary,
-          )
-        : TextStyle(
-            fontSize: AppTypeScale.caption,
-            color: context.palette.textTertiary,
-          ),
-  );
+  Widget build(BuildContext context) {
+    final phone = _OnPhone.of(context);
+    return Text(
+      text,
+      style: chromeStyle(
+        size: phone ? 15 : 13,
+        line: phone ? 20 : 18,
+        weight: AppWeight.body,
+        color: context.palette.textTertiary,
+      ),
+    );
+  }
 }
 
 /// What a person on the note may do, and how to take them off it.
@@ -2203,55 +2026,33 @@ class _AccessButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    if (_OnPhone.of(context)) {
-      return SizedBox(
-        height: 44,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 15,
-                  height: 20 / 15,
-                  fontWeight: FontWeight.w500,
-                  color: palette.textSecondary,
-                ),
+    final phone = _OnPhone.of(context);
+    return SizedBox(
+      height: phone ? 44 : 28,
+      child: Padding(
+        padding: EdgeInsets.only(left: 8, right: phone ? 0 : 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: chromeStyle(
+                size: phone ? 15 : 13,
+                line: phone ? 20 : 18,
+                weight: AppWeight.button,
+                color: palette.textSecondary,
               ),
-              if (chevron) ...[
-                const SizedBox(width: 4),
-                KapyIcon(
-                  KapyIcons.chevronDownRounded,
-                  size: 14,
-                  color: palette.textSecondary,
-                ),
-              ],
+            ),
+            if (chevron) ...[
+              const SizedBox(width: 4),
+              KapyIcon(
+                KapyIcons.chevronDownRounded,
+                size: phone ? 14 : 12,
+                color: palette.textSecondary,
+              ),
             ],
-          ),
+          ],
         ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: AppTypeScale.caption,
-              color: palette.textSecondary,
-            ),
-          ),
-          if (chevron)
-            KapyIcon(
-              KapyIcons.chevronDownRounded,
-              size: AppControlMetrics.iconInline,
-              color: palette.textTertiary,
-            ),
-        ],
       ),
     );
   }
@@ -2982,32 +2783,21 @@ class _Label extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => _OnPhone.of(context)
-      ? Padding(
-          padding: const EdgeInsets.only(top: 16, bottom: 4),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 13,
-              height: 18 / 13,
-              fontWeight: AppWeight.named(AppWeight.bold(AppWeight.section)),
-              fontVariations: AppWeight.variations(
-                AppWeight.bold(AppWeight.section),
-              ),
-              color: context.palette.textTertiary,
-            ),
-          ),
-        )
-      : Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: AppTypeScale.caption,
-              color: context.palette.textSecondary,
-            ),
-          ),
-        );
+  Widget build(BuildContext context) {
+    final phone = _OnPhone.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 4),
+      child: Text(
+        text,
+        style: chromeStyle(
+          size: phone ? 13 : 12,
+          line: phone ? 18 : 16,
+          weight: AppWeight.section,
+          color: context.palette.textTertiary,
+        ),
+      ),
+    );
+  }
 }
 
 class _Message extends StatelessWidget {

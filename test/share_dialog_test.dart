@@ -2058,7 +2058,10 @@ void main() {
             )
             .first;
         expect(title.style!.fontSize, 17);
-        expect(title.style!.fontWeight, FontWeight.w600);
+        expect(
+          title.style!.fontVariations,
+          contains(const FontVariation('wght', 600)),
+        );
         expect(
           tester.getSize(find.byKey(const ValueKey('share-dialog-close'))),
           const Size(44, 44),
@@ -2250,7 +2253,9 @@ void main() {
       await alice.sync.syncNow();
     });
     await openSheet(tester, note, alice, joining: joiningOver(FakeSend()));
-    final palette = tester.element(find.byType(AlertDialog)).palette;
+    final palette = tester
+        .element(find.byKey(const ValueKey('share-dialog')))
+        .palette;
     expect(
       tester.getSize(find.byKey(const ValueKey('share-email'))).height,
       32,
@@ -2273,6 +2278,129 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('the Mac dialog is S02’s: 480 wide, a clear ⋮ at 16 in a 28 box, '
+      'plain rows, a quiet subtitle and label, and a footer of words with Done '
+      'at the right', (tester) async {
+    tester.view.physicalSize = const Size(1100, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      note = alice.notes.create(body: 'Holiday budget');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sharing.addPerson(
+        note.id,
+        'luca@example.com',
+        role: SpaceRole.viewer,
+      );
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+    });
+
+    for (final (device, actions) in [
+      (alice, ['stop-sharing']),
+      (bob, ['copy-note', 'leave-space']),
+    ]) {
+      await openSheet(tester, device.notes.byId(note.id)!, device);
+      final dialog = find.byKey(const ValueKey('share-dialog'));
+      final palette = tester.element(dialog).palette;
+      expect(tester.getSize(dialog).width, 480);
+
+      final more = find.byKey(const ValueKey('share-more'));
+      expect(tester.getSize(more), const Size(28, 28));
+      expect(
+        tester.getSize(
+          find.descendant(of: more, matching: find.byType(KapyIcon)),
+        ),
+        const Size(16, 16),
+      );
+
+      final subtitle = tester.widget<Text>(
+        find.byKey(const ValueKey('share-subtitle')),
+      );
+      expect(subtitle.style!.fontSize, 12);
+      expect(subtitle.style!.color, palette.textSecondary);
+      expect(
+        subtitle.style!.fontVariations,
+        contains(const FontVariation('wght', 400)),
+      );
+      final label = tester.widget<Text>(find.text('People with access'));
+      expect(label.style!.fontSize, 12);
+      expect(label.style!.color, palette.textTertiary);
+      expect(
+        label.style!.fontVariations,
+        contains(const FontVariation('wght', 520)),
+      );
+
+      final row = find.byKey(ValueKey('member-row-${alice.userId}'));
+      expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+      expect(
+        tester
+            .widget<ProfileAvatar>(
+              find.descendant(of: row, matching: find.byType(ProfileAvatar)),
+            )
+            .extent,
+        28,
+      );
+      expect(
+        find.ancestor(of: row, matching: find.byType(KapyControlSurface)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.byType(Divider)),
+        findsNothing,
+      );
+      if (device == alice) {
+        final face = find.byKey(const ValueKey('invite-face'));
+        expect(tester.getSize(face), const Size(28, 28));
+        expect(
+          tester.getSize(
+            find.descendant(of: face, matching: find.byType(KapyIcon)),
+          ),
+          const Size(14, 14),
+        );
+      }
+
+      final done = find.byKey(const ValueKey('share-done'));
+      expect(tester.getTopRight(done).dx, tester.getTopRight(dialog).dx - 12);
+      var left = tester.getTopLeft(dialog).dx + 12;
+      for (final key in actions) {
+        final action = find.byKey(ValueKey(key));
+        expect(tester.getTopLeft(action).dx, left);
+        expect(tester.getCenter(action).dy, tester.getCenter(done).dy);
+        left = tester.getTopRight(action).dx;
+        expect(
+          find.descendant(of: action, matching: find.byType(KapyIcon)),
+          findsNothing,
+        );
+        expect(
+          tester.widget<TextButton>(action).style!.foregroundColor!.resolve({}),
+          palette.textSecondary,
+        );
+      }
+      expect(
+        tester.widget<TextButton>(done).style!.foregroundColor!.resolve({}),
+        palette.textPrimary,
+      );
+      expect(
+        tester
+            .widget<TextButton>(done)
+            .style!
+            .textStyle!
+            .resolve({})!
+            .fontFamily,
+        AppFonts.ui,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(done);
+      await tester.pumpAndSettle();
+    }
   });
 
   // The server lets only a team space's owner move a note out of it. 1.32.0
