@@ -462,8 +462,10 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   Future<void> _block(SpaceMember member) async {
     if (!await _askToBlock(context, member) || !mounted) return;
     final done = Navigator.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     await _run(() async {
       await _sharing.blockEverywhere(member.email);
+      Toast.showOn(overlay, 'Blocked ${member.displayName}');
       done.pop();
     }, notice: null);
   }
@@ -740,6 +742,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           space: space,
           busy: !enabled,
           onAccess: _changeAccess,
+          removeLabel: 'Remove from this note',
           onRemove: _removePerson,
           onBlock: _block,
           onReport: (member) => showReportDialog(
@@ -847,7 +850,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     required bool owner,
     required bool enabled,
   }) {
-    final danger = Theme.of(context).colorScheme.error;
     final done = TextButton(
       key: const ValueKey('share-done'),
       onPressed: () => Navigator.of(context).pop(),
@@ -875,7 +877,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           TextButton.icon(
             key: const ValueKey('leave-space'),
             onPressed: enabled ? _leave : null,
-            style: TextButton.styleFrom(foregroundColor: danger),
             icon: KapyIcon(
               KapyIcons.logoutRounded,
               size: AppControlMetrics.iconControl,
@@ -895,7 +896,6 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         TextButton(
           key: const ValueKey('stop-sharing'),
           onPressed: enabled ? _stopSharing : null,
-          style: TextButton.styleFrom(foregroundColor: danger),
           child: const Text('Stop sharing'),
         ),
         done,
@@ -993,10 +993,11 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
 
   Future<void> _block(SpaceMember member) async {
     if (!await _askToBlock(context, member) || !mounted) return;
-    await _run(
-      () => _sharing.blockEverywhere(member.email),
-      notice: '${member.firstName} is blocked',
-    );
+    final overlay = Overlay.of(context, rootOverlay: true);
+    await _run(() async {
+      await _sharing.blockEverywhere(member.email);
+      Toast.showOn(overlay, 'Blocked ${member.displayName}');
+    });
   }
 
   Future<void> _leave(Space space) async {
@@ -1019,6 +1020,95 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
     });
   }
 
+  /// The notes here that the people in it see, Hidden ones left out.
+  List<Note> _notesOf(Space space) => [
+    for (final note in _sharing.notesIn(space.id))
+      if (!note.isHidden) note,
+  ];
+
+  /// Someone taken off every note here, asked first as the note's sheet asks,
+  /// with one tap to invite them back.
+  Future<void> _removePerson(Space space, SpaceMember member) async {
+    final name = member.firstName;
+    final many = _notesOf(space).length > 1;
+    final where = many ? 'these notes' : 'this note';
+    final ok = await askFirst(
+      context,
+      title: 'Remove $name from $where?',
+      body: many
+          ? '$name stops seeing these notes, and they leave their devices. '
+                'They stay in your notes, with everything $name wrote.'
+          : '$name stops seeing this note, and it leaves their devices. It '
+                'stays in your notes, with everything $name wrote.',
+      action: 'Remove',
+    );
+    if (ok != true || !mounted) return;
+    await _run(() async {
+      await _sharing.removeMember(space.id, member.userId);
+      if (!mounted) return;
+      final sharing = _sharing;
+      final overlay = Overlay.of(context, rootOverlay: true);
+      Toast.show(
+        context,
+        'Removed $name from $where',
+        action: 'Undo',
+        onAction: () => unawaited(
+          undoSharing(overlay, () async {
+            await sharing.invite(space.id, member.email, role: member.role);
+            return 'Invitation sent to ${member.email}';
+          }),
+        ),
+      );
+    });
+  }
+
+  /// Ends the share, asked first as the note's sheet asks, with one tap to
+  /// share the same notes with the same people again.
+  Future<void> _stopSharing(Space space) async {
+    final notes = _notesOf(space);
+    final audience = _sharing.audienceOf(space);
+    final people = space.othersThan(_sharing.userId).length;
+    final who = space.peoplePhrase(_sharing.userId) ?? 'The people here';
+    final what = notes.length == 1
+        ? '“${notes.single.title}”'
+        : '${notes.length} notes';
+    final ok = await askFirst(
+      context,
+      title: 'Stop sharing $what?',
+      body:
+          '$who ${people > 1 ? 'lose' : 'loses'} access. '
+          '${notes.length == 1 ? 'The note stays' : 'The notes stay'} in your '
+          'notes, with every change.',
+      action: 'Stop sharing',
+    );
+    if (ok != true || !mounted) return;
+    final close = Navigator.of(context);
+    await _run(() async {
+      await _sharing.stopSharing(space.id);
+      if (!mounted) return;
+      final sharing = _sharing;
+      final overlay = Overlay.of(context, rootOverlay: true);
+      Toast.show(
+        context,
+        'Stopped sharing $what',
+        action: notes.isEmpty ? null : 'Undo',
+        onAction: () => unawaited(
+          undoSharing(overlay, () async {
+            final again = await sharing.shareNoteWithPeople(
+              notes.first.id,
+              audience,
+            );
+            for (final note in notes.skip(1)) {
+              await sharing.shareNote(note.id, spaceId: again.id);
+            }
+            return 'Shared again with $who';
+          }),
+        ),
+      );
+      close.pop();
+    });
+  }
+
   /// Access is for every note here, so a change that covers more than one
   /// asks first, as the note's sheet and Settings do.
   Future<void> _changeAccess(Space space, String email, SpaceRole role) async {
@@ -1028,10 +1118,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
         .firstOrNull;
     if (member == null) return;
     final name = member.firstName;
-    final together = [
-      for (final note in _sharing.notesIn(space.id))
-        if (!note.isHidden) note,
-    ].length;
+    final together = _notesOf(space).length;
     if (together > 1) {
       final ok = await askFirst(
         context,
@@ -1098,10 +1185,10 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                   space: space,
                   busy: !enabled,
                   onAccess: (email, role) => _changeAccess(space, email, role),
-                  onRemove: (member) => _run(
-                    () => _sharing.removeMember(space.id, member.userId),
-                    notice: '${member.firstName} was removed',
-                  ),
+                  removeLabel: _notesOf(space).length > 1
+                      ? 'Remove from these notes'
+                      : 'Remove from this note',
+                  onRemove: (member) => _removePerson(space, member),
                   onBlock: _block,
                   onReport: (member) => showReportDialog(
                     context,
@@ -1195,7 +1282,6 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
   }
 
   Widget _footer(BuildContext context, Space? space, bool enabled) {
-    final danger = Theme.of(context).colorScheme.error;
     final done = TextButton(
       key: const ValueKey('share-done'),
       onPressed: () => Navigator.of(context).pop(),
@@ -1213,13 +1299,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
         if (space.isOwner)
           TextButton.icon(
             key: const ValueKey('stop-sharing'),
-            onPressed: enabled
-                ? () => _run(() async {
-                    await _sharing.stopSharing(space.id);
-                    if (context.mounted) Navigator.of(context).pop();
-                  })
-                : null,
-            style: TextButton.styleFrom(foregroundColor: danger),
+            onPressed: enabled ? () => _stopSharing(space) : null,
             icon: KapyIcon(
               KapyIcons.stopRounded,
               size: AppControlMetrics.iconControl,
@@ -1230,7 +1310,6 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
           TextButton.icon(
             key: const ValueKey('leave-space'),
             onPressed: enabled ? () => _leave(space) : null,
-            style: TextButton.styleFrom(foregroundColor: danger),
             icon: KapyIcon(
               KapyIcons.logoutRounded,
               size: AppControlMetrics.iconControl,
@@ -1253,7 +1332,7 @@ Future<bool> _askToBlock(BuildContext context, SpaceMember member) async {
   final name = member.firstName;
   return await askFirst(
         context,
-        title: 'Block $name?',
+        title: 'Block ${member.displayName}?',
         body:
             '$name loses access to everything you share, you leave what $name '
             'shares with you (keeping copies), and $name can’t invite you '
@@ -1523,6 +1602,7 @@ class _PeopleWithAccess extends StatelessWidget {
     required this.space,
     required this.busy,
     required this.onAccess,
+    required this.removeLabel,
     required this.onRemove,
     required this.onBlock,
     required this.onReport,
@@ -1535,6 +1615,10 @@ class _PeopleWithAccess extends StatelessWidget {
   final Space space;
   final bool busy;
   final void Function(String email, SpaceRole role) onAccess;
+
+  /// What taking someone off is called here: this note, or every note in
+  /// the share.
+  final String removeLabel;
   final ValueChanged<SpaceMember> onRemove;
   final ValueChanged<SpaceMember> onBlock;
   final ValueChanged<SpaceMember> onReport;
@@ -1606,6 +1690,7 @@ class _PeopleWithAccess extends StatelessWidget {
                         enabled: !busy,
                         canManage: space.isOwner,
                         canRemove: space.isOwner,
+                        removeLabel: removeLabel,
                         onAccess: (role) => onAccess(member.email, role),
                         onReport: () => onReport(member),
                         onBlock: () => onBlock(member),
@@ -1813,6 +1898,7 @@ class _MemberMenu extends StatelessWidget {
     required this.enabled,
     required this.canManage,
     required this.canRemove,
+    required this.removeLabel,
     required this.onAccess,
     required this.onReport,
     required this.onBlock,
@@ -1823,6 +1909,7 @@ class _MemberMenu extends StatelessWidget {
   final bool enabled;
   final bool canManage;
   final bool canRemove;
+  final String removeLabel;
   final ValueChanged<SpaceRole> onAccess;
   final VoidCallback onReport;
   final VoidCallback onBlock;
@@ -1831,7 +1918,6 @@ class _MemberMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final error = Theme.of(context).colorScheme.error;
     return PopupMenuButton<String>(
       enabled: enabled,
       tooltip: _accessLabel(role),
@@ -1860,13 +1946,7 @@ class _MemberMenu extends StatelessWidget {
         const PopupMenuItem(value: 'block', child: Text('Block…')),
         if (canRemove) ...[
           const PopupMenuDivider(),
-          PopupMenuItem(
-            value: 'remove',
-            child: Text(
-              'Remove from this note',
-              style: TextStyle(color: error),
-            ),
-          ),
+          PopupMenuItem(value: 'remove', child: Text(removeLabel)),
         ],
       ],
       child: Padding(
