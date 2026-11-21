@@ -11,7 +11,10 @@
 #
 # If an earlier iOS version is still waiting for review, the submission
 # cancels that review and sends this version in its place (see
-# packaging/asc_submit.py). If the earlier version is already in review or
+# packaging/asc_submit.py). If that swap fails partway, it puts the earlier
+# version back and resubmits it, and the run fails saying so; if even that
+# fails, the run fails with an "App Store rollback incomplete" error naming
+# what is left to do by hand. If the earlier version is already in review or
 # later, nothing is changed in App Store Connect: the run ends with a
 # "Submission deferred" warning and summary, and the build stays uploaded. Once
 # the earlier version is released, run this workflow again with stores ios and
@@ -268,7 +271,8 @@ jobs:
         run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py build
 
       # Exit 3 means an earlier version is in review or later, so nothing was
-      # changed and the submission waits; the steps after it are skipped.
+      # changed and the submission waits; the steps after it are skipped. A
+      # swap submits here, so the next step finds nothing left to send.
       - name: Prepare the version, with no phased release
         id: prepare
         env: *asc
