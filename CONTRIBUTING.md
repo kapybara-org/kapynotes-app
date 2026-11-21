@@ -21,10 +21,10 @@ Both run in CI on every pull request and on pushes to main and release/**.
 
 The golden tests under `test/goldens/` render with macOS system fonts, so they
 only pass on macOS. CI runs them on a macOS runner (the Goldens workflow) for
-every pull request. When a change is meant to alter an image, run that
-workflow from the Actions tab with your branch's name: it re-renders the
-goldens there and returns the images that changed, or commits them to your
-branch if you tick `commit`.
+every pull request. When a change is meant to alter an image, a maintainer
+runs that workflow on its branch in this repository from the Actions tab. It
+re-renders the goldens there and returns the images that changed, or commits
+them to the branch if `commit` is ticked.
 
 ## What tends to get merged
 

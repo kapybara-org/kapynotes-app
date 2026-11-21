@@ -5,12 +5,19 @@
 # runner pixel for pixel, so the runner, not any one Mac, is the reference.
 # Only the test files that compare goldens run here.
 #
-# The update job runs only when dispatched: from the Actions tab, or with
-# `gh workflow run goldens.yml -f branch=<branch> [-f commit=true]`. It
-# re-renders that branch's goldens and uploads the images that changed as the
-# updated-goldens artifact. With commit it also commits them to the branch,
-# never to main or release/**. GitHub starts no workflow for a push made with
-# GITHUB_TOKEN, so that branch's checks run again on its next push.
+# The update job runs only when dispatched on a branch: pick the branch under
+# "Use workflow from" in the Actions tab, or run
+# `gh workflow run goldens.yml --ref <branch> [-f commit=true]`. The branch
+# needs this file, so a branch cut before it landed merges main first. The job
+# re-renders the branch's goldens and uploads the images that changed as the
+# updated-goldens artifact. With commit it also commits them to the branch.
+#
+# A dispatched run belongs to its branch, cache scope included, and the job
+# refuses main, release/** and tags, so a branch's code never writes to the
+# cache that main and the release builds restore. Checkout keeps no
+# credentials; only the push gets the token. GitHub starts no workflow for a
+# push made with GITHUB_TOKEN, so the branch's checks run again on its next
+# push.
 name: Goldens
 
 on:
@@ -21,12 +28,8 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      branch:
-        description: Branch whose goldens to re-render
-        required: true
-        type: string
       commit:
-        description: Commit the changed images to that branch
+        description: Commit the changed images to this branch
         type: boolean
         default: false
 
@@ -47,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -72,22 +75,21 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: goldens-update-${{ inputs.branch }}
+      group: goldens-update-${{ github.ref }}
     steps:
-      - name: Refuse main and release branches
-        if: inputs.commit
+      - name: Refuse main, release branches and tags
+        if: github.ref_type != 'branch' || github.ref_name == 'main' || startsWith(github.ref_name, 'release/')
         env:
-          BRANCH: ${{ inputs.branch }}
+          REF: ${{ github.ref }}
         run: |
-          case "$BRANCH" in
-            main | release/*) echo "::error::Not committing to $BRANCH"; exit 1 ;;
-          esac
+          echo "::error::Run this on a feature branch, not $REF"
+          exit 1
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.branch }}
+          persist-credentials: false
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -119,11 +121,12 @@ jobs:
       - name: Commit the changed images
         if: inputs.commit
         env:
-          BRANCH: ${{ inputs.branch }}
+          REF: ${{ github.ref }}
+          TOKEN: ${{ github.token }}
         run: |
           if git diff --cached --quiet; then exit 0; fi
           git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -m 'Re-render goldens on the macOS CI runner' \
               -m "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          git push origin "HEAD:refs/heads/$BRANCH"
+          git push "https://x-access-token:$TOKEN@${GITHUB_SERVER_URL#https://}/$GITHUB_REPOSITORY.git" "HEAD:$REF"
