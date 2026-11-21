@@ -38,6 +38,7 @@ Future<void> main() async {
   }
   await integrationDriver(
     driver: driver,
+    responseDataCallback: null,
     onScreenshot: (name, bytes, [args]) async {
       if (!_name.hasMatch(name)) return false;
       final file = File('build/screenshots/$name.png');
