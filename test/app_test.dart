@@ -811,6 +811,29 @@ void main() {
       expect(namesOn(note.id), ['Travel']);
     });
 
+    testWidgets("a note's tag reads as its dot and its name in T2, with no "
+        'chip behind it', (tester) async {
+      final note = notes.create(body: 'Trip to Kochi');
+      tags.addTag(note.id, tags.create('Travel')!.id);
+      await pumpApp(tester, tags: tags);
+
+      final chip = find.byKey(ValueKey('tag-chip-${tags.tags.single.id}'));
+      final palette = tester.element(chip).palette;
+      final face = tester.widget<Container>(
+        find.descendant(of: chip, matching: find.byType(Container)).first,
+      );
+      expect(face.decoration, isNull);
+      expect(
+        tester
+            .widget<Text>(
+              find.descendant(of: chip, matching: find.text('Travel')),
+            )
+            .style
+            ?.color,
+        palette.textSecondary,
+      );
+    });
+
     testWidgets('a name past 32 characters stops at 32', (tester) async {
       final note = notes.create(body: 'Long names');
       await pumpApp(tester, tags: tags);
@@ -3732,12 +3755,7 @@ void main() {
       tester,
     ) async {
       await library(tester);
-      expect(headings(tester), [
-        'Today Thu 19 Nov',
-        'Yesterday Wed 18',
-        'Tue 17',
-        'Tue 20 Oct',
-      ]);
+      expect(headings(tester), ['Today', 'Yesterday', 'Tue 17', 'Tue 20 Oct']);
       expect(find.text('By date'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('notes-grouping')));
@@ -3779,11 +3797,7 @@ void main() {
       }
 
       await tap(const ValueKey('notes-filter-when-thisWeek'));
-      expect(headings(tester), [
-        'Today Thu 19 Nov',
-        'Yesterday Wed 18',
-        'Tue 17',
-      ]);
+      expect(headings(tester), ['Today', 'Yesterday', 'Tue 17']);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('notes-when-chip')),
@@ -3831,7 +3845,7 @@ void main() {
       expect(find.byType(DayStrip), findsOneWidget);
 
       await tap(tester, day(18));
-      expect(headings(tester), ['Yesterday Wed 18']);
+      expect(headings(tester), ['Yesterday']);
       expect(
         find.descendant(of: whenChip, matching: find.text('Wed 18')),
         findsOneWidget,
@@ -3870,7 +3884,7 @@ void main() {
         find.descendant(of: whenChip, matching: find.text('Today')),
         findsOneWidget,
       );
-      expect(headings(tester), ['Today Thu 19 Nov']);
+      expect(headings(tester), ['Today']);
     });
 
     testWidgets('the week counts what the filter shows, and is only in My '
@@ -4502,7 +4516,8 @@ void main() {
     expect(search.top, greaterThanOrEqualTo(bar.bottom));
     expect(search.left - sidebar.left, greaterThanOrEqualTo(12));
     expect(sidebar.right - search.right, greaterThanOrEqualTo(12));
-    // New note sits in the bar, as it does beside the page.
+    // New note sits in the bar, as it does beside the page: quiet, with its
+    // plus in sage.
     expect(
       find.descendant(
         of: find.byType(SidebarWindowBar),
@@ -4510,29 +4525,43 @@ void main() {
       ),
       findsOneWidget,
     );
+    final newNote = tester.widget<TonalButton>(
+      find.byKey(const ValueKey('sidebar-new-note')),
+    );
+    expect(newNote.quiet, isTrue);
+    expect(newNote.sageIcon, isTrue);
   });
 
   testWidgets(
-    'the search shortcut is a keycap that leaves the placeholder room',
+    'the search field is a 4% fill with no border, and its shortcut plain '
+    'Geist Mono in T3 that leaves the placeholder room',
     (tester) async {
       await pumpApp(tester);
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
       final search = find.byKey(const ValueKey('sidebar-search-box'));
       final field = tester.getRect(search);
-      final searchKeycap = find.descendant(
-        of: search,
-        matching: find.byType(Keycap),
+      final palette = tester.element(search).palette;
+      final box = tester.widget<Container>(search).decoration! as BoxDecoration;
+      expect(box.color, palette.fillRest);
+      expect(box.border, isNull);
+      expect(box.boxShadow, isNull);
+      expect(box.borderRadius, BorderRadius.circular(AppRadii.control));
+      expect(
+        find.descendant(of: search, matching: find.byType(Keycap)),
+        findsNothing,
+      );
+      final searchKeycap = find.byKey(
+        const ValueKey('sidebar-search-shortcut'),
       );
       final keycap = tester.getRect(searchKeycap);
-
-      expect(
-        find.descendant(
-          of: searchKeycap,
-          matching: find.text(binding.keycapLabel),
-        ),
-        findsOneWidget,
-      );
+      final hint = tester.widget<Text>(searchKeycap);
+      expect(hint.data, binding.keycapLabel);
+      expect(hint.style!.fontFamily, AppFonts.mono);
+      expect(hint.style!.fontSize, 11);
+      expect(hint.style!.height, 14 / 11);
+      expect(hint.style!.fontWeight, FontWeight.w400);
+      expect(hint.style!.color, palette.textTertiary);
       expect(keycap.right, lessThan(field.right));
       expect(field.right - keycap.right, lessThanOrEqualTo(12));
       expect(keycap.center.dy, closeTo(field.center.dy, 1));
@@ -5839,6 +5868,8 @@ void main() {
     final gate = _HiddenGate();
     await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
     await showNotesList(tester);
+    final streak = find.byKey(const ValueKey('phone-streak'));
+    expect(streak, findsOneWidget);
     await openPhoneFilters(tester);
 
     expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
@@ -5852,6 +5883,17 @@ void main() {
 
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
+    expect(streak, findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('phone-list-title'))).data,
+      'Archive',
+    );
+    expect(streak, findsNothing);
   });
 
   testWidgets('a phone keeps its filter row out of the way until its button '
@@ -7431,6 +7473,43 @@ void main() {
       await tester.pumpAndSettle();
       expect(card, findsOneWidget);
       expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    });
+
+    testWidgets("Home's header carries the writing streak at its end, and "
+        'Drawings leaves it out', (tester) async {
+      notes.create(body: 'Written today');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final streak = find.byKey(const ValueKey('phone-streak'));
+      expect(
+        find.descendant(of: streak, matching: find.text('1 day')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: streak,
+          matching: findKapyIcon(KapyIcons.fireOutlined),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('1-day writing streak'), findsOneWidget);
+      expect(tester.getTopRight(streak).dx, 393 - 20);
+      expect(find.byKey(const ValueKey('rail-streak')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
+      await tester.pumpAndSettle();
+      expect(streak, findsNothing);
+    });
+
+    testWidgets('Home shows no streak before anything is written', (
+      tester,
+    ) async {
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+      expect(find.byKey(const ValueKey('phone-streak')), findsNothing);
     });
 
     testWidgets("Home's Pinned card counts the pinned notes a filter hides, "

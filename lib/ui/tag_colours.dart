@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 
 /// The eight colours a tag can take. A tag stores its colour as this key,
-/// never as a value, so each theme gives it its own card and dot.
+/// never as a value, so each theme gives it its own dot.
 enum TagColour {
   mustard,
   rust,
@@ -13,9 +13,6 @@ enum TagColour {
   slate,
   plum,
   rose;
-
-  /// The colour of a card or row the tag colours, in [palette]'s theme.
-  Color card(CalcPalette palette) => palette.tagCards[index];
 
   /// The tag's dot, beside its name wherever the name appears.
   Color dot(CalcPalette palette) => palette.tagDots[index];

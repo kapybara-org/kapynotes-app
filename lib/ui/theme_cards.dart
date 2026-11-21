@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/appearance.dart';
 import '../core/theme.dart';
-import 'tag_colours.dart';
 
 /// The six themes as cards in Settings › Appearance, each a small window in
 /// its own colours (Themes r2, p-N-0: 20RJ-0 on a computer, 20YF-0 on a
@@ -232,16 +231,15 @@ class _ThemePreview extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: block(color, double.infinity, height, height / 2),
         );
-    Widget note(Color color, {Color? edge}) => Expanded(
+    Widget note() => Expanded(
       child: Container(
         decoration: BoxDecoration(
-          color: color,
-          border: edge == null ? null : Border.all(color: edge),
+          color: p.cardBackground,
+          border: Border.all(color: p.controlBorder),
           borderRadius: BorderRadius.circular(4),
         ),
       ),
     );
-    final sage = TagColour.sage.card(p);
     return Container(
       height: 88,
       clipBehavior: Clip.antiAlias,
@@ -274,11 +272,11 @@ class _ThemePreview extends StatelessWidget {
                 children: [
                   line(p.textHeading, 0.6),
                   const SizedBox(height: 4),
-                  note(TagColour.mustard.card(p)),
+                  note(),
                   const SizedBox(height: 4),
-                  note(p.cardBackground, edge: p.controlBorder),
+                  note(),
                   const SizedBox(height: 4),
-                  note(sage),
+                  note(),
                 ],
               ),
             ),
@@ -317,9 +315,9 @@ class _ThemePreview extends StatelessWidget {
                       final room = constraints.maxWidth >= 62;
                       return Row(
                         children: [
-                          block(sage, room ? 16 : 10, 6, 3),
+                          block(p.resultPillBackground, room ? 16 : 10, 6, 3),
                           const SizedBox(width: 4),
-                          block(TagColour.rust.card(p), room ? 16 : 10, 6, 3),
+                          block(p.resultPillBackground, room ? 16 : 10, 6, 3),
                           const Spacer(),
                           block(p.accent, room ? 18 : 12, 7, 3),
                         ],

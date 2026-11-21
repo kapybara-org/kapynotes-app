@@ -779,6 +779,35 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('the rows lose their lines, and the note reads 13 on 18 in '
+        'the quiet ink', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final row = find.byKey(ValueKey('phone-task-${item('Pay the rent').id}'));
+      final palette = tester.element(row).palette;
+
+      expect([
+        for (final box in tester.widgetList<Container>(
+          find.descendant(of: row, matching: find.byType(Container)),
+        ))
+          if (box.decoration case BoxDecoration(
+            border: Border(:final top, :final bottom),
+          ) when top == BorderSide.none && bottom != BorderSide.none)
+            box,
+      ], isEmpty);
+      final note = tester
+          .widgetList<Text>(
+            find.descendant(of: row, matching: find.byType(Text)),
+          )
+          .firstWhere((text) => text.data == 'Errands')
+          .style!;
+      expect(note.fontFamily, AppFonts.ui);
+      expect(note.fontSize, 13);
+      expect(note.height, 18 / 13);
+      expect(note.color, palette.textTertiary);
+      await settle(tester);
+    });
+
     testWidgets('a tap on the words opens its details, Open in note opens '
         'the note; a long press opens the row menu', (tester) async {
       await setUpTasks(tester, errands);

@@ -63,6 +63,49 @@ void main() {
     }
   }
 
+  testWidgets("iOS's bar is a quiet opaque pill with an 8% edge, and the open "
+      'tab is the 7% fill', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpBar(tester, scale: 1, size: const Size(393, 852));
+    const palette = KapyTheme.darkPalette;
+    BoxDecoration decorationOf(Finder finder) =>
+        tester.widget<Container>(finder).decoration! as BoxDecoration;
+
+    final bar = decorationOf(find.byKey(const ValueKey('phone-bar')));
+    expect(
+      bar.color,
+      Color.alphaBlend(palette.fillRest, palette.sidebarBackground),
+    );
+    expect(bar.color!.a, 1);
+    expect((bar.border! as Border).top.color, palette.edge);
+    Color? tab(String name) => decorationOf(
+      find
+          .descendant(
+            of: find.byKey(ValueKey('bar-$name')),
+            matching: find.byType(Container),
+          )
+          .first,
+    ).color;
+    expect(tab('notes'), palette.fillSelected);
+    expect(tab('drawings'), isNull);
+    expect(find.byType(BackdropFilter), findsNothing);
+  });
+
+  testWidgets("Android's bar keeps Material's shape on the crisp surface, and "
+      'the open tab is the 7% fill', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpBar(tester, scale: 1, size: const Size(393, 852));
+    const palette = KapyTheme.darkPalette;
+    final bar = tester.widget<NavigationBar>(
+      find.byKey(const ValueKey('phone-bar')),
+    );
+    expect(bar.backgroundColor, palette.railBackground);
+    expect(bar.backgroundColor, palette.sidebarBackground);
+    expect(bar.indicatorColor, palette.fillSelected);
+  });
+
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
     testWidgets('on ${platform.name} the tabs rest in T3 and the open one is '
         'T1, at 20', (tester) async {

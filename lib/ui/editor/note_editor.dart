@@ -7476,14 +7476,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               (_scrollController.hasClients ? _scrollController.offset : 0);
           return Stack(
             children: [
-              if (title.word case final word?)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: NoteTitleUnderline(
-                      word: word.shift(Offset(padding.left, y)),
-                    ),
-                  ),
-                ),
               Positioned(
                 left: padding.left,
                 right: AppPlatform.isMobile ? padding.right : null,

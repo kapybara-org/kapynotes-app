@@ -1257,6 +1257,61 @@ void main() {
     });
   });
 
+  group('one pass at a time', () {
+    /// A booted device that has synced once, and the calls one pass makes.
+    Future<(Device, List<String>)> synced() async {
+      final device = Device(server, name: 'a');
+      addTearDown(device.dispose);
+      await device.boot();
+      await device.sync.syncNow();
+      final from = server.calls.length;
+      await device.sync.syncNow();
+      return (device, server.calls.sublist(from));
+    }
+
+    test('a pass asked for as one ends joins the follow-up already asked '
+        'for, and every caller is answered', () async {
+      final (device, one) = await synced();
+      final from = server.calls.length;
+      final first = device.sync.syncNow();
+      // A caller waiting on the pass asks again the moment it ends.
+      final asked = first.then((_) => device.sync.syncNow());
+      final midway = device.sync.syncNow();
+      await Future.wait([
+        first,
+        asked,
+        midway,
+      ]).timeout(const Duration(seconds: 5));
+      expect(server.calls.sublist(from), [...one, ...one]);
+    });
+
+    test('many asks mid-pass get one follow-up, and a follow-up that asks '
+        'again, as a refused push does, ends', () async {
+      final (device, one) = await synced();
+      final from = server.calls.length;
+      var starts = 0;
+      final asks = <Future<void>>[];
+      void onChange() {
+        if (device.sync.status != SyncStatus.syncing) return;
+        if (++starts == 2) {
+          scheduleMicrotask(() => asks.add(device.sync.syncNow()));
+        }
+      }
+
+      device.sync.addListener(onChange);
+      asks.add(device.sync.syncNow());
+      for (var i = 0; i < 5; i++) {
+        asks.add(device.sync.syncNow());
+      }
+      await Future.wait(asks).timeout(const Duration(seconds: 5));
+      device.sync.removeListener(onChange);
+      expect(asks, hasLength(7), reason: 'asked during the follow-up');
+      await asks.last.timeout(const Duration(seconds: 5));
+      await settle(server);
+      expect(server.calls.sublist(from), [...one, ...one]);
+    });
+  });
+
   group('status', () {
     test('an auth failure signs out and keeps the outbox', () async {
       final device = Device(server, name: 'a');

@@ -126,6 +126,9 @@ void main() {
     expect(delete, findsOneWidget);
     expect(_action(tester, delete).label, 'Delete note…');
     expect(_action(tester, delete).destructive, isTrue);
+    // Only destruction takes the warning colour; archiving is its own
+    // quiet action, in T1 with a T2 icon.
+    expect(_action(tester, archive).destructive, isFalse);
     // The key archives in the list, so only Archive names it.
     expect(_action(tester, delete).hint, isNull);
     expect(_action(tester, archive).hint, 'Cmd + Delete');

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -213,7 +212,7 @@ class SpacesRail extends StatelessWidget {
                 ),
               ),
               if (streak != null && streak.days > 0) ...[
-                _RailStreak(key: const ValueKey('rail-streak'), streak: streak),
+                StreakMark(key: const ValueKey('rail-streak'), streak: streak),
                 const SizedBox(height: 7.5),
               ],
               _RailSettings(
@@ -391,7 +390,9 @@ class _Badge extends StatelessWidget {
           fontSize: AppTypeScale.micro,
           height: 12 / 11,
           fontWeight: FontWeight.w500,
-          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+          fontVariations: AppWeight.variations(
+            AppWeight.bold(AppWeight.rowTitle),
+          ),
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -400,13 +401,17 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// The writing streak: a flame over how many days in a row, lit in clay once
+/// The writing streak: a flame and how many days in a row, lit in clay once
 /// today has been written in, waiting in grey until then, flaring for a
-/// moment as it catches.
-class _RailStreak extends StatelessWidget {
-  const _RailStreak({super.key, required this.streak});
+/// moment as it catches. Over its count on the rail, beside it on a phone's
+/// Home.
+class StreakMark extends StatelessWidget {
+  const StreakMark({super.key, required this.streak, this.inline = false});
 
   final WritingStreak streak;
+
+  /// A phone's Home header: the flame before the count, at the header's size.
+  final bool inline;
 
   /// What the tooltip says, and so what a screen reader hears.
   static String describe(WritingStreak streak) => streak.wroteToday
@@ -430,32 +435,47 @@ class _RailStreak extends StatelessWidget {
             tween: Tween(begin: lit, end: lit),
             duration: still ? Duration.zero : const Duration(milliseconds: 600),
             curve: Curves.easeOutCubic,
-            builder: (context, t, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.scale(
-                  scale: streak.wroteToday
-                      ? 1 + 0.3 * math.sin(math.pi * t)
-                      : 1,
-                  alignment: Alignment.bottomCenter,
-                  child: KapyIcon(
-                    KapyIcons.fireOutlined,
-                    size: 16,
-                    color: Color.lerp(palette.textTertiary, palette.clay, t),
-                  ),
+            builder: (context, t, _) {
+              final ink = Color.lerp(
+                palette.textTertiary,
+                palette.textPrimary,
+                t,
+              )!;
+              final flame = Transform.scale(
+                scale: streak.wroteToday ? 1 + 0.3 * math.sin(math.pi * t) : 1,
+                alignment: Alignment.bottomCenter,
+                child: KapyIcon(
+                  KapyIcons.fireOutlined,
+                  size: 16,
+                  color: Color.lerp(palette.textTertiary, palette.clay, t),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  days == 1 ? '1 day' : '$days days',
-                  maxLines: 1,
-                  softWrap: false,
-                  style: _railLabel(
-                    Color.lerp(palette.textTertiary, palette.textPrimary, t)!,
-                    strong: true,
-                  ),
-                ),
-              ],
-            ),
+              );
+              final label = Text(
+                days == 1 ? '1 day' : '$days days',
+                maxLines: 1,
+                softWrap: false,
+                style: inline
+                    ? TextStyle(
+                        fontFamily: AppFonts.ui,
+                        fontSize: 13,
+                        height: 16 / 13,
+                        fontWeight: FontWeight.w500,
+                        color: ink,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      )
+                    : _railLabel(ink, strong: true),
+              );
+              return inline
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: 4,
+                      children: [flame, label],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [flame, const SizedBox(height: 4), label],
+                    );
+            },
           ),
         ),
       ),
@@ -576,12 +596,14 @@ class _RailAccount extends StatelessWidget {
         image: photo,
       );
     } else {
+      final line = palette.raisedBorder;
       face = Container(
         width: _extent,
         height: _extent,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: palette.controlBackground,
+          color: palette.raisedBackground ?? palette.controlBackground,
+          border: line == null ? null : Border.all(color: line),
           shape: BoxShape.circle,
         ),
         child: user == null
@@ -597,7 +619,9 @@ class _RailAccount extends StatelessWidget {
                   fontSize: AppTypeScale.control,
                   height: 1,
                   fontWeight: FontWeight.w500,
-                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                  fontVariations: AppWeight.variations(
+                    AppWeight.bold(AppWeight.rowTitle),
+                  ),
                   color: palette.textPrimary,
                 ),
               ),
@@ -688,7 +712,7 @@ class _Dot extends StatelessWidget {
 /// A phone's way around: the rail's destinations along the bottom, Settings
 /// at the end, and the + beside them. A tap on the + makes what [space] holds
 /// (on Tasks it adds a task); a long press offers [createActions], the rest of
-/// the desktop's New. iOS floats a glass bar over [child]; Android uses
+/// the desktop's New. iOS floats a quiet pill over [child]; Android uses
 /// Material's navigation bar and a floating action button.
 class PhoneSpaces extends StatelessWidget {
   const PhoneSpaces({
@@ -754,7 +778,7 @@ class PhoneSpaces extends StatelessWidget {
           key: const ValueKey('phone-bar'),
           selectedIndex: math.max(0, selected),
           backgroundColor: palette.railBackground,
-          indicatorColor: palette.tonalBackground,
+          indicatorColor: palette.fillSelected,
           surfaceTintColor: Colors.transparent,
           onDestinationSelected: (index) => choose(items[index].to),
           destinations: [
@@ -792,39 +816,35 @@ class PhoneSpaces extends StatelessWidget {
                 constraints: BoxConstraints(
                   maxWidth: items.length > 4 ? 360 : 300,
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(_barHeight / 2),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                    child: Container(
-                      key: const ValueKey('phone-bar'),
-                      height: _barHeight,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: palette.editorBackground.withValues(alpha: 0.86),
-                        borderRadius: BorderRadius.circular(_barHeight / 2),
-                        border: Border.all(
-                          color: palette.separator,
-                          width: AppHairline.of(context),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          for (final item in items)
-                            Expanded(
-                              child: _BarItem(
-                                key: ValueKey(
-                                  'bar-${item.to?.name ?? 'settings'}',
-                                ),
-                                icon: item.icon,
-                                label: item.label,
-                                selected: item.to == space,
-                                onPressed: () => choose(item.to),
-                              ),
-                            ),
-                        ],
-                      ),
+                // Opaque, because it floats over the list.
+                child: Container(
+                  key: const ValueKey('phone-bar'),
+                  height: _barHeight,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Color.alphaBlend(
+                      palette.fillRest,
+                      palette.sidebarBackground,
                     ),
+                    borderRadius: BorderRadius.circular(_barHeight / 2),
+                    border: Border.all(
+                      color: palette.edge,
+                      width: AppHairline.of(context),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      for (final item in items)
+                        Expanded(
+                          child: _BarItem(
+                            key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
+                            icon: item.icon,
+                            label: item.label,
+                            selected: item.to == space,
+                            onPressed: () => choose(item.to),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -863,7 +883,7 @@ class PhoneSpaces extends StatelessWidget {
 }
 
 /// One of the bar's destinations: its icon over its name in a 52 pt pill,
-/// tonal while it is the one on screen.
+/// lifted a step while it is the one on screen.
 class _BarItem extends StatelessWidget {
   const _BarItem({
     super.key,
@@ -894,7 +914,7 @@ class _BarItem extends StatelessWidget {
           child: Container(
             height: 52,
             decoration: BoxDecoration(
-              color: selected ? palette.tonalBackground : null,
+              color: selected ? palette.fillSelected : null,
               borderRadius: BorderRadius.circular(26),
             ),
             alignment: Alignment.center,
