@@ -2314,14 +2314,16 @@ void main() {
       Device device, {
       required SidebarTab tab,
       ValueChanged<SidebarTab>? onTabChanged,
+      bool phone = false,
     }) => harness(
       // The app rebuilds the sidebar whenever the account changes, sharing
       // included; this stands in for that.
       ListenableBuilder(
         listenable: device.sharing,
         builder: (context, _) => SizedBox(
-          width: 280,
+          width: phone ? 393 : 280,
           child: Sidebar(
+            phone: phone,
             notes: [
               for (final note in device.notes.notes)
                 if (sidebarTabLists(tab, note, device.sharing)) note,
@@ -2340,6 +2342,77 @@ void main() {
         ),
       ),
     );
+
+    testWidgets("a phone's row shows who a note is open to, with an envelope "
+        'for an invitation still waiting, and Shared leaves them off', (
+      tester,
+    ) async {
+      late Note shared;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        alice.notes.create(body: 'Private');
+        shared = alice.notes.create(body: 'Ours');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sharing.addPerson(shared.id, carol.email);
+        await alice.sync.syncNow();
+        await alice.sharing.refresh();
+      });
+      final group = alice.sharing.groupOf(alice.notes.byId(shared.id)!)!;
+      expect(group.people.map((person) => person.isInvited), [false, true]);
+
+      await tester.pumpWidget(tabbed(alice, tab: SidebarTab.mine, phone: true));
+      await tester.pumpAndSettle();
+      final row = find.widgetWithText(NoteRow, 'Ours');
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.bySemanticsLabel(
+            RegExp('\n${RegExp.escape(group.title)}\$'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      final initial = group.people.first.name.trim()[0].toUpperCase();
+      expect(
+        find.descendant(of: row, matching: find.text(initial)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is KapyIcon && widget.icon == KapyIcons.mailOutlined,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.widgetWithText(NoteRow, 'Private'),
+          matching: find.bySemanticsLabel(RegExp('\nWith ')),
+        ),
+        findsNothing,
+      );
+
+      await tester.pumpWidget(
+        tabbed(alice, tab: SidebarTab.shared, phone: true),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.widgetWithText(NoteRow, 'Ours'),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is KapyIcon && widget.icon == KapyIcons.mailOutlined,
+          ),
+        ),
+        findsNothing,
+      );
+    });
 
     testWidgets('your own shared note stays in the notes list, and is in '
         'Shared under the person it is open to', (tester) async {
