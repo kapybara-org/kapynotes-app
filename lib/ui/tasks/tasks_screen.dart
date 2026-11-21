@@ -129,9 +129,7 @@ class TasksScreenState extends State<TasksScreen> {
   void _takeKeys() {
     if (!mounted) return;
     final focused = FocusManager.instance.primaryFocus?.context;
-    if (focused != null &&
-        (focused.widget is EditableText ||
-            focused.findAncestorWidgetOfExactType<EditableText>() != null)) {
+    if (focused?.findAncestorWidgetOfExactType<EditableText>() != null) {
       return;
     }
     _listFocus.requestFocus();
