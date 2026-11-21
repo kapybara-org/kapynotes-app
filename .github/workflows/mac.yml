@@ -4,7 +4,9 @@
 # `-f tests='integration_test/a_test.dart integration_test/b_test.dart'` to
 # pick the files. A label run uses the pull request's merge commit and runs
 # the default files. A dispatch runs the branch's own copy, so a branch cut
-# before this file landed merges main first.
+# before this file landed merges main first. GitHub starts no pull_request run
+# while a pull request has a merge conflict, so until it's resolved the label
+# does nothing.
 #
 # tool/ci/mac_tests.sh runs each file under flutter drive as a debug build,
 # signed ad-hoc because the runner has no account for the project's team. By
