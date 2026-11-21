@@ -127,9 +127,7 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
       // follow only when a device holding the key hands it over.
       if (_preview?.status != JoinStatus.member &&
           next.status == JoinStatus.member) {
-        _notice =
-            'The notes arrive the next time ${next.ownerShort} or another '
-            'member is online.';
+        _notice = notesArriveLine;
       }
       _preview = next;
     });
@@ -146,9 +144,7 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
     if (space == null || !mounted) return;
     setState(() {
       _preview = preview.withStatus(JoinStatus.member);
-      _notice =
-          'Joined. Notes appear after ${preview.ownerShort} or another member '
-          'syncs.';
+      _notice = joinedLine;
     });
   });
 
@@ -319,9 +315,7 @@ class _InvitationSheetState extends State<_InvitationSheet> {
     final invite = _invite;
     final String line;
     if (_joined && invite != null) {
-      line =
-          'You are in “${invite.spaceName}”. The notes arrive the next time '
-          'somebody who is already in it syncs.';
+      line = 'You are in “${invite.spaceName}”. $notesArriveLine';
     } else if (_joined) {
       line = 'You are in.';
     } else if (invite != null) {

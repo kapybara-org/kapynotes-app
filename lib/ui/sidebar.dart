@@ -26,6 +26,7 @@ import 'context_menu.dart';
 import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
+import 'join/joining_ui.dart' show joinedLine;
 import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
@@ -558,8 +559,8 @@ extension on Sidebar {
           ? 'No matching drawings'
           : 'No matching notes',
       detail: nothingShared
-          ? 'Open a note and press Share. Only the people you choose can '
-                'see it.'
+          ? 'Pick notes and someone to share them with. Only the people you '
+                'add, or anyone with a link you turn on, can see them.'
           : null,
       action: nothingShared && onStartSharing != null
           ? TonalButton(
@@ -2233,7 +2234,7 @@ class _InvitationsState extends State<_Invitations> {
               invite,
               () => sharing.acceptInvite(invite.token),
               waiting: 'Joining…',
-              done: 'Joined. Notes appear once they sync',
+              done: joinedLine,
               joins: true,
             ),
             onDecline: () => _act(
@@ -2277,30 +2278,38 @@ class _InvitationCard extends StatelessWidget {
     // a stranger, and a name is only what they call themselves.
     final detail = [
       if (invite.invitedByName != null) invite.invitedBy,
-      '${invite.role.accessLabel} access',
+      invite.role.accessLabel,
     ].join(' · ');
-    final compact = TextButton.styleFrom(
-      visualDensity: VisualDensity.compact,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      minimumSize: Size(0, touch ? 34 : 26),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      textStyle: Theme.of(
-        context,
-      ).textTheme.labelLarge?.copyWith(fontSize: AppTypeScale.small),
+    final avatar = touch ? 32.0 : 28.0;
+    final button = touch ? 36.0 : 28.0;
+    final label = TextStyle(
+      fontSize: touch ? 15 : 13,
+      height: touch ? 20 / 15 : 18 / 13,
+      fontWeight: FontWeight.w500,
     );
+    final buttonStyle = TextButton.styleFrom(
+      minimumSize: Size(0, button),
+      tapTargetSize: touch
+          ? MaterialTapTargetSize.padded
+          : MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      textStyle: label,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          touch ? AppRadii.control : AppRadii.compact,
+        ),
+      ),
+    );
+    final initial = who.trim().isEmpty ? '?' : who.trim()[0].toUpperCase();
     return Padding(
       padding: touch
-          ? const EdgeInsets.fromLTRB(10, 0, 10, 8)
+          ? const EdgeInsets.fromLTRB(16, 0, 16, 8)
           : const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 8, 4, 6),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
         decoration: BoxDecoration(
-          color: palette.surfaceBackground,
+          color: palette.textPrimary.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(AppRadii.control),
-          border: Border.all(
-            color: palette.controlBorder,
-            width: AppHairline.of(context),
-          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2308,28 +2317,32 @@ class _InvitationCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: KapyIcon(
-                    KapyIcons.mailOutlined,
-                    size: AppControlMetrics.iconControl,
-                    color: Theme.of(context).colorScheme.primary,
+                Container(
+                  width: avatar,
+                  height: avatar,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: palette.textPrimary.withValues(alpha: 0.07),
+                  ),
+                  child: Text(
+                    initial,
+                    style: TextStyle(
+                      fontSize: touch ? 14 : 12,
+                      height: touch ? 18 / 14 : 16 / 12,
+                      fontWeight: FontWeight.w500,
+                      color: palette.textPrimary,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.small,
-                          height: 1.3,
-                          color: palette.textPrimary,
-                        ),
+                        style: label.copyWith(color: palette.textPrimary),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -2337,8 +2350,9 @@ class _InvitationCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: AppTypeScale.caption,
-                          color: palette.textTertiary,
+                          fontSize: touch ? 13 : 12,
+                          height: touch ? 18 / 13 : 16 / 12,
+                          color: palette.textSecondary,
                         ),
                       ),
                     ],
@@ -2348,8 +2362,8 @@ class _InvitationCard extends StatelessWidget {
                   builder: (buttonContext) => CompactIconButton(
                     key: ValueKey('sidebar-invite-more-${invite.token}'),
                     tooltip: 'More',
-                    extent: AppControlMetrics.fieldAdornmentSlot,
-                    foregroundColor: palette.textTertiary,
+                    extent: touch ? 32 : 28,
+                    foregroundColor: palette.textSecondary,
                     onPressed: busy
                         ? null
                         : () {
@@ -2371,36 +2385,38 @@ class _InvitationCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             // Side by side where they fit, stacked where the sidebar is
             // dragged too narrow for both.
             OverflowBar(
               alignment: MainAxisAlignment.end,
               overflowAlignment: OverflowBarAlignment.end,
               overflowSpacing: 4,
+              spacing: 4,
               children: [
                 TextButton(
                   key: ValueKey('sidebar-invite-decline-${invite.token}'),
-                  style: compact,
+                  style: buttonStyle.copyWith(
+                    foregroundColor: WidgetStatePropertyAll(
+                      palette.textSecondary,
+                    ),
+                  ),
                   onPressed: busy ? null : onDecline,
                   child: const Text('Decline'),
                 ),
-                const SizedBox(width: 4),
-                FilledButton(
+                TextButton(
                   key: ValueKey('sidebar-invite-accept-${invite.token}'),
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    minimumSize: Size(0, touch ? 34 : 26),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontSize: AppTypeScale.small,
+                  style: buttonStyle.copyWith(
+                    foregroundColor: WidgetStatePropertyAll(
+                      palette.textPrimary,
+                    ),
+                    backgroundColor: WidgetStatePropertyAll(
+                      palette.textPrimary.withValues(alpha: 0.06),
                     ),
                   ),
                   onPressed: busy ? null : onAccept,
                   child: const Text('Accept'),
                 ),
-                const SizedBox(width: 4),
               ],
             ),
           ],
@@ -2952,7 +2968,11 @@ class _NoteRowState extends State<NoteRow> {
           if (widget.onShare != null)
             KapyMenuAction(
               value: 'share',
-              label: widget.shared ? 'Manage sharing' : 'Share note',
+              label: widget.shared
+                  ? AppPlatform.isMobile
+                        ? 'Sharing'
+                        : 'Manage sharing'
+                  : 'Share note',
               icon: KapyIcons.shareRounded,
             ),
           if (widget.onHide != null)
@@ -3786,57 +3806,87 @@ class _PhoneHeading extends StatelessWidget {
 /// A phone list's title: the space's name large, its count beside it, and
 /// the clay underline the note page draws.
 class PhoneListTitle extends StatelessWidget {
-  const PhoneListTitle({super.key, required this.title, required this.count});
+  const PhoneListTitle({
+    super.key,
+    required this.title,
+    required this.count,
+    this.onBack,
+  });
 
   final String title;
   final int count;
 
+  /// Set for a page reached from Home, such as Shared: its arrow goes back.
+  final VoidCallback? onBack;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-      child: Semantics(
-        header: true,
-        label: '$title, $count',
-        excludeSemantics: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Flexible(
-                  child: Text(
-                    title,
-                    key: const ValueKey('phone-list-title'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: AppFonts.title,
-                      fontFamilyFallback: AppFonts.uiFallback,
-                      fontSize: 28,
-                      height: 36 / 28,
-                      color: palette.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  '$count',
+    final onBack = this.onBack;
+    final heading = Semantics(
+      header: true,
+      label: '$title, $count',
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Flexible(
+                child: Text(
+                  title,
+                  key: const ValueKey('phone-list-title'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: AppFonts.ui,
-                    fontSize: 15,
-                    color: palette.textTertiary,
+                    fontFamily: AppFonts.title,
+                    fontFamilyFallback: AppFonts.uiFallback,
+                    fontSize: 28,
+                    height: 36 / 28,
+                    color: palette.textPrimary,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(width: 44, height: 2, color: palette.clay),
-          ],
-        ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '$count',
+                style: TextStyle(
+                  fontFamily: AppFonts.ui,
+                  fontSize: 15,
+                  color: palette.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(width: 44, height: 2, color: palette.clay),
+        ],
+      ),
+    );
+    if (onBack == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+        child: heading,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 12, 20, 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconButton(
+            key: const ValueKey('page-back'),
+            tooltip: 'Back',
+            onPressed: onBack,
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            padding: EdgeInsets.zero,
+            color: palette.textPrimary,
+            icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
+          ),
+          Expanded(child: heading),
+        ],
       ),
     );
   }

@@ -116,7 +116,7 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
         key: const ValueKey('join-requests'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          JoinLabel('Waiting to join (${waiting.length})'),
+          JoinLabel('Waiting to join', count: waiting.length),
           KapyControlSurface(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Column(
