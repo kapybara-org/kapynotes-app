@@ -644,8 +644,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// Runs a full pass now: refreshes the spaces, does the duties, catches up
   /// every space — over the socket if it is up, over HTTP if not — and
   /// drains the outbox. Single-flight, with one follow-up for callers that
-  /// asked mid-pass.
+  /// asked mid-pass. Until that follow-up ends, every caller joins it: one
+  /// who asks after the pass ends but before the follow-up starts would
+  /// otherwise run a pass beside it.
   Future<void> syncNow() {
+    if (_queued case final queued?) return queued;
     final current = _inFlight;
     if (current != null) {
       return _queued ??= current
