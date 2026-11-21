@@ -19,11 +19,12 @@ import 'package:kapy_notes/sync/key_store.dart';
 import 'ai_fakes.dart';
 import 'fake_cli.dart';
 
-const _usage = {
+final _resetsAt = testNow.add(const Duration(days: 14));
+final _usage = {
   'used': 3,
   'limit': 500,
   'remaining': 497,
-  'resetsAt': '2026-12-01T00:00:00.000Z',
+  'resetsAt': _resetsAt.toUtc().toIso8601String(),
 };
 
 void main() {
@@ -398,7 +399,7 @@ void main() {
       await ai.ask('Lisbon?');
       await ai.proceed();
       final limit = ai.pending! as KapyLimitReached;
-      expect(limit.resetsAt, DateTime.utc(2026, 12).toLocal());
+      expect(limit.resetsAt, _resetsAt);
       expect(limit.fallback, FakeDeviceModel.apple);
       expect(ai.cloudUsage!.remaining, 0);
       await ai.proceed();

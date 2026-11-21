@@ -445,15 +445,11 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         action: 'Block',
       );
       if (ok == null || !mounted) return;
-      final blocked = await _run('person', () async {
-        await _sharing.blockPerson(person.email);
-        if (_sharing.notesSharedWith(person.email).isNotEmpty) {
-          await _sharing.stopSharingWith(person.email);
-        }
-        for (final space in spaces) {
-          if (!space.isOwner) await _sharing.leave(space.id);
-        }
-      }, done: 'Blocked ${person.name}');
+      final blocked = await _run(
+        'person',
+        () => _sharing.blockEverywhere(person.email),
+        done: 'Blocked ${person.name}',
+      );
       if (blocked && mounted) setState(() => _person = null);
     }
   }

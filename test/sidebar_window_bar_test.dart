@@ -118,4 +118,40 @@ void main() {
       );
     }
   }
+
+  testWidgets('a hairline runs along the bar\'s bottom, as under the band', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Material(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 320,
+              child: SidebarWindowBar(
+                title: 'My notes',
+                count: 12,
+                onCreate: () {},
+                onHide: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final bar = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byType(SidebarWindowBar),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      (bar.foregroundDecoration as BoxDecoration?)?.border,
+      Border(bottom: BorderSide(color: KapyTheme.lightPalette.railBorder)),
+    );
+  });
 }

@@ -1165,106 +1165,129 @@ class _TaskRowState extends State<_TaskRow> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
         child: LayoutBuilder(
-          builder: (context, constraints) => Row(
-            children: [
-              _RowBox(onPressed: widget.onTick, label: item.words),
-              const SizedBox(width: 10),
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onOpen,
-                  child: Text(
-                    item.hasGroup
-                        ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
-                        : item.words,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: taskText(13, 18, stale ? ink.quiet : ink.text),
-                  ),
-                ),
+          builder: (context, constraints) {
+            final words = GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onOpen,
+              child: Text(
+                item.hasGroup
+                    ? '${item.words}  ${item.groupDone} of ${item.groupTotal}'
+                    : item.words,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: taskText(13, 18, stale ? ink.quiet : ink.text),
               ),
-              if (stale) ...[
+            );
+            final under =
+                label != null &&
+                constraints.maxWidth <
+                    MediaQuery.textScalerOf(context).scale(200);
+            return Row(
+              children: [
+                _RowBox(onPressed: widget.onTick, label: item.words),
                 const SizedBox(width: 10),
-                if (constraints.maxWidth >= _stillWantWidth)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Text('Still want this?', style: quiet),
-                  ),
-                _RowButton(
-                  label: 'Keep',
-                  strong: true,
-                  onPressed: widget.onKeep,
+                Expanded(
+                  child: under
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            words,
+                            Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: NoteMark(
+                                note: item.note,
+                                label: label,
+                                onPressed: widget.onOpenNote,
+                              ),
+                            ),
+                          ],
+                        )
+                      : words,
                 ),
-                const SizedBox(width: 4),
-                _RowButton(label: 'Remove', onPressed: widget.onRemove),
-              ] else if (_hovered) ...[
-                const SizedBox(width: 10),
-                Text(
-                  'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
-                  style: quiet,
-                ),
-              ],
-              if (_hovered && !stale) ...[
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: 'More',
-                  child: InkWell(
-                    key: _more,
-                    onTap: () {
-                      final box =
-                          _more.currentContext!.findRenderObject()!
-                              as RenderBox;
-                      _openMenu(
-                        box.localToGlobal(Offset(0, box.size.height + 4)),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(4),
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: ink.chip,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: KapyIcon(
-                        KapyIcons.moreVerticalRounded,
-                        size: 14,
-                        color: ink.secondary,
-                      ),
+                if (stale) ...[
+                  const SizedBox(width: 10),
+                  if (constraints.maxWidth >= _stillWantWidth)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Text('Still want this?', style: quiet),
                     ),
+                  _RowButton(
+                    label: 'Keep',
+                    strong: true,
+                    onPressed: widget.onKeep,
                   ),
-                ),
-              ],
-              if (item.entry.enteredAt != 0 && !stale && !_hovered)
-                Tooltip(
-                  message: 'Not finished, moved to the end',
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: KapyIcon(
-                      KapyIcons.undoRounded,
-                      size: 14,
-                      color: ink.quiet,
-                    ),
+                  const SizedBox(width: 4),
+                  _RowButton(label: 'Remove', onPressed: widget.onRemove),
+                ] else if (_hovered) ...[
+                  const SizedBox(width: 10),
+                  Text(
+                    'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
+                    style: quiet,
                   ),
-                ),
-              if (!_hovered && !stale) TaskDetailsIcon(item: item),
-              const SizedBox(width: 16),
-              SizedBox(
-                width: math.min(150, taskMarkWidth(constraints.maxWidth)),
-                child: label == null
-                    ? null
-                    : Align(
-                        alignment: Alignment.centerLeft,
-                        child: NoteMark(
-                          note: item.note,
-                          label: label,
-                          onPressed: widget.onOpenNote,
+                ],
+                if (_hovered && !stale) ...[
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'More',
+                    child: InkWell(
+                      key: _more,
+                      onTap: () {
+                        final box =
+                            _more.currentContext!.findRenderObject()!
+                                as RenderBox;
+                        _openMenu(
+                          box.localToGlobal(Offset(0, box.size.height + 4)),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: ink.chip,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: KapyIcon(
+                          KapyIcons.moreVerticalRounded,
+                          size: 14,
+                          color: ink.secondary,
                         ),
                       ),
-              ),
-            ],
-          ),
+                    ),
+                  ),
+                ],
+                if (item.entry.enteredAt != 0 && !stale && !_hovered)
+                  Tooltip(
+                    message: 'Not finished, moved to the end',
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: KapyIcon(
+                        KapyIcons.undoRounded,
+                        size: 14,
+                        color: ink.quiet,
+                      ),
+                    ),
+                  ),
+                if (!_hovered && !stale) TaskDetailsIcon(item: item),
+                const SizedBox(width: 16),
+                if (!under)
+                  SizedBox(
+                    width: math.min(150, taskMarkWidth(constraints.maxWidth)),
+                    child: label == null
+                        ? null
+                        : Align(
+                            alignment: Alignment.centerLeft,
+                            child: NoteMark(
+                              note: item.note,
+                              label: label,
+                              onPressed: widget.onOpenNote,
+                            ),
+                          ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'note_attachment.dart';
 import 'task_lines.dart';
 
@@ -58,43 +60,23 @@ List<TaskBlock> taskBlocks(
 }) {
   final tasks = taskLines(text);
   return [
-    for (final task in tasks)
+    for (var i = 0; i < tasks.length; i++)
       TaskBlock(
-        task: task,
-        details: _detailsOf(text, task, tasks, attachments),
+        task: tasks[i],
+        details: _detailsOf(text, tasks, i, attachments),
       ),
   ];
 }
 
 /// The block [task] is, read again from [text]. Null when the line has gone.
 TaskBlock? taskBlockOf(String text, TaskLine task) {
-  for (final block in taskBlocks(text)) {
-    if (block.task.start == task.start) return block;
-  }
-  return null;
-}
-
-/// Whether [task] sits inside another task's details, so it counts on that
-/// parent and has no row of its own in Today.
-bool taskIsNested(String text, TaskLine task) {
-  for (final block in taskBlocks(text)) {
-    final details = block.details;
-    if (details == null || block.task.start == task.start) continue;
-    if (task.start >= details.start && task.start <= details.end) return true;
-  }
-  return false;
-}
-
-/// Done and total for [task] and the smaller tasks indented under it.
-///
-/// One task with nothing under it is 0 of 1, or 1 of 1 once it is done. A
-/// parent with one smaller task is of 2.
-({int done, int total}) taskGroupCount(String text, TaskLine task) {
-  final block = taskBlockOf(text, task);
-  if (block == null) return (done: task.done ? 1 : 0, total: 1);
-  final nested = block.details?.children ?? const <TaskLine>[];
-  final done = (task.done ? 1 : 0) + nested.where((line) => line.done).length;
-  return (done: done, total: 1 + nested.length);
+  final tasks = taskLines(text);
+  final index = tasks.indexWhere((line) => line.start == task.start);
+  if (index < 0) return null;
+  return TaskBlock(
+    task: tasks[index],
+    details: _detailsOf(text, tasks, index, const []),
+  );
 }
 
 /// Writes [plain] as the words under [task], indented to where the task's own
@@ -112,11 +94,11 @@ bool taskIsNested(String text, TaskLine task) {
 /// nothing comes back identical.
 String replaceTaskDetails(String text, TaskLine task, String plain) {
   final column = task.textStart - task.start;
-  final indent = ' ' * column;
-  final block = taskBlockOf(text, task);
-  final details = block?.details;
-  final words = _indentedWords(plain, indent);
-  final rebuilt = words.join('\n');
+  final details = taskBlockOf(text, task)?.details;
+  final was = details == null
+      ? const <String>[]
+      : text.substring(details.start, details.end).split('\n');
+  final rebuilt = _indentedWords(plain, column, was).join('\n');
   if (details == null) {
     if (rebuilt.isEmpty) return text;
     if (task.end >= text.length) return '$text\n$rebuilt';
@@ -138,8 +120,9 @@ String replaceTaskDetails(String text, TaskLine task, String plain) {
   return text.replaceRange(details.start, details.end, rebuilt);
 }
 
-/// The details under [task] with the indent taken off, for an editor that
-/// draws the pictures itself.
+/// The details under [task] with the task's indent taken off, so a line
+/// indented further keeps the rest, for an editor that draws the pictures
+/// itself.
 ///
 /// A picture or video stays a placeholder, so writing these words back with
 /// [replaceTaskDetails] after an edit keeps the note's pictures exactly where
@@ -147,10 +130,11 @@ String replaceTaskDetails(String text, TaskLine task, String plain) {
 String taskDetailsWords(String text, TaskLine task) {
   final details = taskBlockOf(text, task)?.details;
   if (details == null) return '';
+  final column = task.textStart - task.start;
   return text
       .substring(details.start, details.end)
       .split('\n')
-      .map((line) => line.trimLeft())
+      .map((line) => _unindented(line, column))
       .join('\n');
 }
 
@@ -222,10 +206,11 @@ String foldedPreview(String preview, {int limit = 42}) {
 
 TaskDetails? _detailsOf(
   String text,
-  TaskLine task,
   List<TaskLine> tasks,
+  int index,
   List<NoteAttachmentRef> attachments,
 ) {
+  final task = tasks[index];
   final column = task.textStart - task.start;
   if (column <= 0) return null;
   final lines = _linesAfter(text, task.end);
@@ -270,11 +255,8 @@ TaskDetails? _detailsOf(
     hasPicture: picture,
     hasVideo: video,
     children: [
-      for (final child in tasks)
-        if (child.start != task.start &&
-            child.start >= start &&
-            child.start <= end)
-          child,
+      for (var i = index + 1; i < tasks.length && tasks[i].start <= end; i++)
+        tasks[i],
     ],
   );
 }
@@ -290,17 +272,15 @@ class _Line {
 }
 
 /// Lines after [end], which is the end of a task line (before its newline).
-List<_Line> _linesAfter(String text, int end) {
+Iterable<_Line> _linesAfter(String text, int end) sync* {
   var start = end < text.length && text[end] == '\n' ? end + 1 : text.length;
-  final lines = <_Line>[];
   while (start <= text.length) {
     var lineEnd = text.indexOf('\n', start);
     if (lineEnd < 0) lineEnd = text.length;
-    lines.add(_Line(start, lineEnd, text.substring(start, lineEnd)));
+    yield _Line(start, lineEnd, text.substring(start, lineEnd));
     if (lineEnd >= text.length) break;
     start = lineEnd + 1;
   }
-  return lines;
 }
 
 int _indentOf(String line) {
@@ -366,11 +346,29 @@ bool _isMediaLine(String line) {
   return true;
 }
 
-List<String> _indentedWords(String plain, String indent) {
+String _unindented(String line, int column) =>
+    line.substring(math.min(_indentOf(line), column));
+
+List<String> _indentedWords(String plain, int column, List<String> was) {
   final normalized = plain.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   if (normalized.trim().isEmpty) return const [];
+  final lines = normalized.split('\n');
+  final most = math.min(lines.length, was.length);
+  var head = 0;
+  while (head < most && _unindented(was[head], column) == lines[head]) {
+    head++;
+  }
+  var tail = 0;
+  while (tail < most - head &&
+      _unindented(was[was.length - 1 - tail], column) ==
+          lines[lines.length - 1 - tail]) {
+    tail++;
+  }
+  final indent = ' ' * column;
   return [
-    for (final line in normalized.split('\n'))
-      line.trim().isEmpty ? '' : '$indent${line.trimLeft()}',
+    ...was.take(head),
+    for (final line in lines.sublist(head, lines.length - tail))
+      line.trim().isEmpty ? '' : '$indent$line',
+    ...was.sublist(was.length - tail),
   ];
 }

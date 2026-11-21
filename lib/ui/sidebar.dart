@@ -1986,8 +1986,11 @@ class SidebarWindowBar extends StatelessWidget {
       return width;
     }
 
-    return SizedBox(
+    return Container(
       height: AppControlMetrics.scaleBar(context, height),
+      foregroundDecoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.railBorder)),
+      ),
       child: Stack(
         children: [
           const Positioned.fill(

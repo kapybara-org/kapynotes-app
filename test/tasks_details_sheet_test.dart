@@ -3,9 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/editor/image_insertion.dart';
+import 'package:kapy_notes/ui/editor/task_details_editing.dart';
 import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
@@ -77,7 +80,11 @@ void main() {
     });
   }
 
-  Future<void> pumpScreen(WidgetTester tester, {String? noteId}) async {
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    String? noteId,
+    ValueChanged<String>? onOpenNote,
+  }) async {
     await tester.binding.setSurfaceSize(const Size(1200, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -91,7 +98,7 @@ void main() {
                 : TaskFilter.note(noteId),
             addFocus: addFocus,
             labelOf: (note) => note.title,
-            onOpenNote: (_) {},
+            onOpenNote: onOpenNote ?? (_) {},
             onOpenDone: () {},
             newTaskShortcut: '⌘N',
           ),
@@ -296,33 +303,177 @@ void main() {
     await settle(tester);
   });
 
-  testWidgets('typing in the sheet leaves a picture line exactly as it was', (
-    tester,
-  ) async {
-    await setUpTasks(
-      tester,
-      'Errands\n☐ Hide the menu\n  The menu stays up.\n  ￼\n☐ Book flights',
-    );
-    final hide = tasks.read().open.first;
-    await pumpScreen(tester);
+  testWidgets(
+    'typing in the sheet leaves a dropped picture exactly as it was',
+    (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Book flights');
+      final note = notes.byId(errandsId)!;
+      final caret = note.body.indexOf('\n☐ Book');
+      final dropped = attachMediaUnderTask(
+        bodyBefore: note.body,
+        inserted: insertImagesIntoBody(
+          body: note.body,
+          existing: note.attachments,
+          caret: caret,
+          incoming: [
+            NoteImageRef(
+              offset: 0,
+              hash: 'menu-picture',
+              key: Uint8List(32),
+              mime: 'image/png',
+              width: 10,
+              height: 10,
+              bytes: 8,
+            ),
+          ],
+        ),
+      );
+      notes.updateDocument(
+        note.id,
+        dropped.body,
+        note.formats,
+        dropped.attachments,
+      );
+      await tasks.reconcileNow();
+      final hide = tasks.read().open.first;
+      await pumpScreen(tester);
 
-    await tester.tap(nameIn(hide.id, 'Hide the menu'));
-    await tester.pumpAndSettle();
+      await tester.tap(nameIn(hide.id, 'Hide the menu'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(TaskDetailPicture),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is KapyIcon && widget.icon == KapyIcons.imageOutlined,
+          ),
+        ),
+        findsOneWidget,
+      );
 
-    final field = find.descendant(
-      of: find.byType(TaskDetailsSheet),
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(field, 'The menu stays up, then shrinks.\n￼');
-    await tester.pumpAndSettle();
+      final field = find.descendant(
+        of: find.byType(TaskDetailsSheet),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(
+        field,
+        'The menu stays up, then shrinks.\n${sheetDetails(tester)}',
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      noteBody(),
-      'Errands\n☐ Hide the menu\n  The menu stays up, then shrinks.\n  ￼\n☐ Book flights',
-    );
-    expect(noteBody().contains('picture'), isFalse);
-    await settle(tester);
+      final body = noteBody();
+      expect(
+        body,
+        'Errands\n☐ Hide the menu\n  The menu stays up, then shrinks.\n  ￼\n\n'
+        '☐ Book flights',
+      );
+      final picture = notes.byId(errandsId)!.attachments.single as NoteImageRef;
+      expect(picture.hash, 'menu-picture');
+      expect(picture.offset, body.indexOf('￼'));
+      await settle(tester);
+    },
+  );
+
+  group('typing in a parent\'s sheet keeps the nesting inside its details', () {
+    const before =
+        'Errands\n☐ Pack\n  Bring the big bag\n  \n  ☐ Socks\n'
+        '    three pairs\n      • wool ones\n  ☑ Charger\n☐ Book flights';
+    final cases = <String, (String Function(String), String)>{
+      'an edit in the middle': (
+        (words) => words.replaceFirst('three pairs', 'four pairs'),
+        before.replaceFirst('    three pairs', '    four pairs'),
+      ),
+      'a new line': (
+        (words) => words.replaceFirst('big bag', 'big bag\nand a lock'),
+        before.replaceFirst('big bag\n', 'big bag\n  and a lock\n'),
+      ),
+      'a deleted line': (
+        (words) => words.replaceFirst('\n    • wool ones', ''),
+        before.replaceFirst('\n      • wool ones', ''),
+      ),
+    };
+    for (final MapEntry(key: name, value: (edit, after)) in cases.entries) {
+      testWidgets(name, (tester) async {
+        await setUpTasks(tester, before);
+        await pumpScreen(tester);
+        final pack = tasks.read().open.first;
+        await tester.tap(nameIn(pack.id, 'Pack  1 of 3'));
+        await tester.pumpAndSettle();
+        expect(
+          sheetDetails(tester),
+          'Bring the big bag\n\n☐ Socks\n  three pairs\n    • wool ones\n'
+          '☑ Charger',
+        );
+
+        await tester.enterText(
+          find.descendant(
+            of: find.byType(TaskDetailsSheet),
+            matching: find.byType(TextField),
+          ),
+          edit(sheetDetails(tester)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(noteBody(), after);
+        expect(
+          tasks
+              .read()
+              .open
+              .where((item) => item.note.id == errandsId)
+              .map((item) => item.words),
+          ['Pack', 'Book flights'],
+        );
+        expect(tasks.read().open.first.groupTotal, 3);
+        await settle(tester);
+      });
+    }
   });
+
+  for (final scale in [1.3, 2.0]) {
+    testWidgets('at ${scale}x text, the sheet scrolls to Open in note and '
+        'nothing overflows', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final lines = [
+        for (var i = 1; i <= 9; i++) '  Line $i of the details',
+      ].join('\n');
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Ask the landlord about the boiler service, the latch on '
+        'the back bedroom window, the parking permit and spare keys\n  ￼\n'
+        '$lines',
+      );
+      final opened = <String>[];
+      await pumpScreen(tester, onOpenNote: opened.add);
+      final item = tasks.read().open.firstWhere(
+        (item) => item.note.id == errandsId,
+      );
+      await tester.tap(
+        find
+            .descendant(
+              of: rowOf(item.id),
+              matching: find.textContaining('Ask the landlord'),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final open = find.descendant(
+        of: find.byType(TaskDetailsSheet),
+        matching: find.text('Open in note'),
+      );
+      await tester.ensureVisible(open);
+      await tester.pumpAndSettle();
+      final sheet = tester.getRect(find.byType(TaskDetailsSheet));
+      expect(sheet.contains(tester.getCenter(open)), isTrue);
+      await tester.tap(open);
+      await tester.pumpAndSettle();
+      expect(opened, [item.note.id]);
+      expect(tester.takeException(), isNull);
+      await settle(tester);
+    });
+  }
 
   testWidgets('a smaller task inside the details counts on its parent', (
     tester,

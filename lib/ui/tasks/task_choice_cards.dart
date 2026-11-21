@@ -6,7 +6,6 @@ import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/blob_store.dart';
 import '../../data/task_board.dart';
-import '../../data/task_details.dart';
 import '../sidebar_timestamp.dart';
 import 'task_choice.dart';
 import 'task_marks.dart';
@@ -193,6 +192,10 @@ const double taskMarkShare = 0.4;
 /// The widest a note's name grows beside a task's words in a row [row] wide.
 double taskMarkWidth(double row) => math.min(220, row * taskMarkShare);
 
+/// How wide the pair must be for its two cards to sit side by side; a
+/// narrower one stacks them.
+const double _pairBesideWidth = 440;
+
 /// How wide Do now must be for Not finished and Done to sit beside the task;
 /// a narrower card puts them under it.
 const double _doNowBesideWidth = 420;
@@ -345,23 +348,31 @@ class TaskPairCard extends StatelessWidget {
                 ),
               ],
             ),
-          if (phone)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 8,
-              children: [left, right],
-            )
-          else
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 12,
-                children: [
-                  Expanded(child: left),
-                  Expanded(child: right),
-                ],
-              ),
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (phone ||
+                  constraints.maxWidth <
+                      MediaQuery.textScalerOf(
+                        context,
+                      ).scale(_pairBesideWidth)) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 8,
+                  children: [left, right],
+                );
+              }
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 12,
+                  children: [
+                    Expanded(child: left),
+                    Expanded(child: right),
+                  ],
+                ),
+              );
+            },
+          ),
           if (phone) ...[
             Text(
               last
@@ -652,7 +663,7 @@ class TaskDoNowCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
-    final details = taskBlockOf(item.note.body, item.line)?.details;
+    final details = item.details;
     final label = this.label;
     final notFinished = TaskButton(
       key: const ValueKey('tasks-not-finished'),

@@ -511,6 +511,75 @@ void main() {
         await tester.pump(const Duration(seconds: 3));
       },
     );
+
+    for (final (width, scale) in [(420.0, 3.1), (900.0, 1.0)]) {
+      testWidgets(
+        'in a Tasks pane ${width.round()} wide at ${scale}x, an open '
+        'task ${scale == 1 ? 'keeps its note name beside its words' : 'puts its note name under its words'}',
+        (tester) async {
+          await setUpTasks(tester, 'Errands\n☐ Two\n☐ Water the plants');
+          tasks.doNow(tasks.read().open.first);
+          await pumpTasks(
+            tester,
+            size: Size(width, 900),
+            phone: false,
+            label: _shared,
+            scale: scale,
+          );
+          final water = tasks.read().open.firstWhere(
+            (item) => item.words == 'Water the plants',
+          );
+          final row = find.byKey(ValueKey(water.id));
+          final words = find.descendant(
+            of: row,
+            matching: find.text('Water the plants'),
+          );
+          final mark = find.descendant(
+            of: row,
+            matching: find.byType(NoteMark),
+          );
+          expect(mark, findsOneWidget);
+          final wordsRect = tester.getRect(words);
+          final markRect = tester.getRect(mark);
+          if (scale == 1) {
+            expect(markRect.center.dy, closeTo(wordsRect.center.dy, 4));
+            expect(markRect.left, greaterThan(wordsRect.right));
+          } else {
+            expect(markRect.top, greaterThanOrEqualTo(wordsRect.bottom - 0.5));
+            expect(
+              wordsRect.width,
+              greaterThan(16 * 3.1 * 3),
+              reason: 'the note name squeezed the task words',
+            );
+          }
+          expectInside(tester, words, width);
+          expectInside(tester, mark, width);
+          await tester.pump(const Duration(seconds: 3));
+        },
+      );
+    }
+
+    testWidgets('in a Tasks pane 420 wide at 3.1x, a pair card puts its '
+        'note name under its words', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Water the plants');
+      await pumpTasks(
+        tester,
+        size: const Size(420, 900),
+        phone: false,
+        label: _shared,
+        scale: 3.1,
+      );
+      final card = find.byKey(const ValueKey('tasks-pair-left'));
+      final words = pairWords('Hide the menu');
+      expect(
+        tester.getRect(words).width,
+        greaterThan(16 * 3.1 * 3),
+        reason: 'the task kept only its first letters',
+      );
+      expectNoteUnder(tester, words, card, 'Errands for Bob');
+      expectInside(tester, card, 420);
+      await tester.pump(const Duration(seconds: 3));
+    });
   });
 }
 

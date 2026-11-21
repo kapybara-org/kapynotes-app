@@ -870,33 +870,31 @@ class Sharing extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Blocks a person, and ends whatever relationship gave them a way in.
-  ///
-  /// Blocking on its own only stops future invitations, which is no use at
-  /// all if the problem is somebody already in a space with you. So when
-  /// [inSpaceId] is given, this also does the thing that actually removes
-  /// them: the owner removes them, and a member leaves.
-  Future<void> blockPerson(String email, {String? inSpaceId}) async {
-    final address = email.trim().toLowerCase();
-    await _api.block(address);
-
-    final space = inSpaceId == null ? null : _keyring.byId(inSpaceId);
-    if (space != null && space.isTeam) {
-      String? theirId;
-      for (final member in space.members) {
-        if (member.email.toLowerCase() == address) theirId = member.userId;
-      }
-      if (space.isOwner && theirId != null && theirId != userId) {
-        await _api.removeMember(space.id, theirId);
-      } else if (!space.isOwner && theirId != null) {
-        // Not ours to remove them from, so we go instead.
-        _leaving.add(space.id);
-        await _api.removeMember(space.id, userId);
-      }
-    }
-
+  /// Blocks a person: they can't invite this account again. It ends nothing
+  /// already shared; [blockEverywhere] does that too.
+  Future<void> blockPerson(String email) async {
+    await _api.block(_address(email));
     await refresh();
     _sync.requestSync();
+  }
+
+  /// Blocks [email] and ends everything shared between this account and
+  /// them: they lose access to every note this account shares with them,
+  /// and this account leaves every space they own, keeping copies of its
+  /// notes.
+  Future<void> blockEverywhere(String email) async {
+    final address = _address(email);
+    final theirs = [
+      for (final space in teams)
+        if (!space.isOwner &&
+            space.member(space.ownerId)?.email.toLowerCase() == address)
+          space.id,
+    ];
+    await blockPerson(address);
+    if (notesSharedWith(address).isNotEmpty) await stopSharingWith(address);
+    for (final spaceId in theirs) {
+      await leave(spaceId);
+    }
   }
 
   Future<void> unblockPerson(String email) async {
