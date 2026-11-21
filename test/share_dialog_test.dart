@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
-import 'package:flutter/services.dart' show SystemChannels;
+import 'package:flutter/services.dart' show LogicalKeyboardKey, SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -2357,6 +2357,150 @@ void main() {
     }
     semantics.dispose();
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  group('Tab on a Mac', () {
+    /// The keyed control holding the keyboard focus.
+    String? focused() {
+      String? key;
+      FocusManager.instance.primaryFocus?.context?.visitAncestorElements((
+        element,
+      ) {
+        final found = element.widget.key;
+        if (found is! ValueKey<String> || !found.value.startsWith('share-')) {
+          return true;
+        }
+        key = found.value;
+        return false;
+      });
+      return key;
+    }
+
+    /// Presses Tab, or Shift+Tab when [back], and says where each press
+    /// lands.
+    Future<List<String?>> tab(
+      WidgetTester tester,
+      int presses, {
+      bool back = false,
+    }) async {
+      final reached = <String?>[];
+      for (var press = 0; press < presses; press++) {
+        if (back) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        if (back) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pumpAndSettle();
+        reached.add(focused());
+      }
+      return reached;
+    }
+
+    /// A new note of Alice's, after she has shared another with Bob and
+    /// Carol, so both are suggested.
+    Future<Note> afterSharingWithBobAndCarol(WidgetTester tester) async {
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        await carol.boot();
+        final trip = alice.notes.create(body: 'Trip budget');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWithPeople(trip.id, {
+          bob.email: SpaceRole.member,
+          carol.email: SpaceRole.viewer,
+        });
+        for (final device in [bob, carol]) {
+          await device.sharing.acceptInvite(
+            server.outbox.lastWhere((sent) => sent.to == device.email).token,
+          );
+        }
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+        await alice.sharing.refresh();
+      });
+      return note;
+    }
+
+    testWidgets('walks from the email field through the people it suggests '
+        'to the rest of the dialog', (tester) async {
+      await openSheet(tester, await afterSharingWithBobAndCarol(tester), alice);
+      expect(await tab(tester, 9), [
+        'share-dialog-close',
+        'share-email',
+        'share-suggest-${bob.email}',
+        'share-suggest-${carol.email}',
+        'share-role-member',
+        'share-role-viewer',
+        'share-submit-Share',
+        'share-done',
+        'share-dialog-close',
+      ]);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('on an account that has never shared walks the dialog as '
+        'before', (tester) async {
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+      });
+      await openSheet(tester, note, alice);
+      expect(await tab(tester, 7), [
+        'share-dialog-close',
+        'share-email',
+        'share-role-member',
+        'share-role-viewer',
+        'share-submit-Share',
+        'share-done',
+        'share-dialog-close',
+      ]);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('with Shift walks back through the suggestions and the '
+        'dialog', (tester) async {
+      await openSheet(tester, await afterSharingWithBobAndCarol(tester), alice);
+      await tab(tester, 4);
+      expect(focused(), 'share-suggest-${carol.email}');
+      expect(await tab(tester, 8, back: true), [
+        'share-suggest-${bob.email}',
+        'share-email',
+        'share-dialog-close',
+        'share-done',
+        'share-submit-Share',
+        'share-role-viewer',
+        'share-role-member',
+        'share-email',
+      ]);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('keeps the suggestions while one has focus, and drops them '
+        'once focus leaves them and the empty field', (tester) async {
+      await openSheet(tester, await afterSharingWithBobAndCarol(tester), alice);
+      final bobRow = find.byKey(ValueKey('share-suggest-${bob.email}'));
+      final carolRow = find.byKey(ValueKey('share-suggest-${carol.email}'));
+      expect(bobRow, findsNothing);
+      for (final reached in [
+        'share-email',
+        'share-suggest-${bob.email}',
+        'share-suggest-${carol.email}',
+      ]) {
+        await tab(tester, reached == 'share-email' ? 2 : 1);
+        expect(focused(), reached);
+        expect(bobRow, findsOneWidget);
+        expect(carolRow, findsOneWidget);
+      }
+      await tab(tester, 1);
+      expect(focused(), 'share-role-member');
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('share-email')))
+            .controller!
+            .text,
+        isEmpty,
+      );
+      expect(bobRow, findsNothing);
+      expect(carolRow, findsNothing);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
 
   testWidgets('the Mac dialog is S02’s: 480 wide, a clear ⋮ at 16 in a 28 box, '
       'plain rows, a quiet subtitle and label, and a footer of words with Done '

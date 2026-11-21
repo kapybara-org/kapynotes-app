@@ -366,6 +366,38 @@ void main() {
     },
   );
 
+  test('after Done, only a task added after you chose is new, when the list '
+      'was picked up in one go at the instant you chose', () async {
+    final note = await start(six);
+    tasks.takeNext(pair());
+    tasks.startWith(pair().left);
+    expect(doNow().words, 'B');
+    later();
+    await tasks.add('G', noteId: note);
+    later();
+    await tasks.finish(doNow());
+    expect(pair().left.words, 'A');
+    expect(pair().right.words, 'G');
+    expect(pair().joined, isTrue);
+    expect(pair().pairsLeft, 0);
+  });
+
+  test('after Done, a task already on the list is not new even when its '
+      'stamp runs ahead of the clock you chose by', () async {
+    final note = await start(six);
+    final pickedUp = clock;
+    clock = pickedUp.subtract(const Duration(minutes: 1));
+    tasks.takeNext(pair());
+    tasks.startWith(pair().left);
+    expect(doNow().words, 'B');
+    clock = pickedUp.add(const Duration(minutes: 1));
+    await tasks.add('G', noteId: note);
+    later();
+    await tasks.finish(doNow());
+    expect(pair().right.words, 'G');
+    expect(pair().pairsLeft, 0);
+  });
+
   test('a task that was on the list before you chose is not asked about '
       'again after Done', () async {
     await start(six);
