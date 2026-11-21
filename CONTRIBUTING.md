@@ -31,6 +31,12 @@ runs that workflow on its branch in this repository from the Actions tab. It
 re-renders the goldens there and returns the images that changed, or commits
 them to the branch if `commit` is ticked.
 
+The phone integration tests, `integration_test/phone_v2_test.dart` and
+`phone_format_bar_test.dart`, take screenshots as they go. To see them, a
+maintainer adds the `phones` label to a pull request, or runs the Phones
+workflow on its branch from the Actions tab. It runs the tests on an Android
+emulator and uploads the screenshots as the `android-screenshots` artifact.
+
 ## What tends to get merged
 
 Small, self-contained changes with a clear reason. If you are planning

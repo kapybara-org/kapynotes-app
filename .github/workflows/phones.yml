@@ -1,0 +1,89 @@
+# Screenshots of the phone integration tests, for a reviewer to look at. Add
+# the `phones` label to a pull request, or run
+# `gh workflow run phones.yml --ref <branch>`. A label run uses the pull
+# request's merge commit, which has main's copy of this file. A dispatch runs
+# the branch's own copy, so a branch cut before this file landed merges main
+# first.
+#
+# The android job runs integration_test/phone_v2_test.dart and
+# phone_format_bar_test.dart under flutter drive on an Android 16 emulator and
+# uploads every screenshot they take as the android-screenshots artifact. It
+# fails when a test fails, and the screenshots up to that point still upload.
+name: Phones
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Adding any label starts this workflow, so the group names the label: a run
+# for another label, which skips its jobs, never cancels a phones run.
+concurrency:
+  group: phones-${{ github.ref }}-${{ github.event.label.name }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  android:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # The emulator needs hardware acceleration, and the runner's /dev/kvm
+      # belongs to root until this rule opens it.
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get --enforce-lockfile
+
+      - name: Screenshots on an Android 16 emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: bash tool/ci/phone_screenshots.sh emulator-5554
+
+      - name: List the screenshots
+        if: ${{ !cancelled() }}
+        run: |
+          shopt -s nullglob
+          shots=(build/screenshots/*.png)
+          {
+            echo "### ${#shots[@]} Android screenshots"
+            for shot in "${shots[@]}"; do echo "- $(basename "$shot" .png)"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-screenshots
+          path: build/screenshots/
+          if-no-files-found: error

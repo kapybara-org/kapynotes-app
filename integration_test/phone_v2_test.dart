@@ -14,6 +14,8 @@ import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'screenshot.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -36,6 +38,9 @@ void main() {
         misses.add('$screen: a keycap');
       }
       await tester.pumpAndSettle();
+      await screenshot(
+        'phone-v2-${screen.replaceAll(RegExp('[^a-z0-9]+'), '-')}',
+      );
       final root = tester.binding.renderViews
           .map((view) => view.owner?.semanticsOwner?.rootSemanticsNode)
           .whereType<SemanticsNode>()
@@ -136,6 +141,7 @@ void main() {
     ]) {
       await tap(tester, key);
       expect(tester.takeException(), isNull, reason: key);
+      await screenshot('phone-v2-large-text-$key');
     }
   });
 }
