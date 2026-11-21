@@ -1153,9 +1153,17 @@ class AppFonts {
   static const List<String> monoFallback = AppPlatform.monoFontFallback;
 }
 
-/// The weight ladder for interface text. Same steps as main: rows 400,
-/// a selected row 460, a button or chip 500, a section label 520, a page
-/// title or a key number 600.
+/// The weight ladder for interface text.
+///
+/// Figtree, Geist Mono and Shantell Sans are variable on `wght` (300–900,
+/// 100–900 and 300–800). The in-between steps are real on those faces.
+/// Newsreader titles are a static 400 cut and ignore the axis. Odin Rounded
+/// is a static bold and is only the wordmark.
+///
+/// What the eye should land on decides the step:
+/// body, task names and note rows at 400, a selected or hovered row at 460,
+/// a button or chip at 500, a section label at 520, a page title or a key
+/// number at 600.
 class AppWeight {
   const AppWeight._();
 
@@ -1168,6 +1176,12 @@ class AppWeight {
   static const double section = 520;
   static const double page = 600;
 
+  /// What a named weight means on the ladder.
+  ///
+  /// w400 is a row. w500 is a button, a chip, or a handwriting title that is
+  /// not a page title. w600 is a section label. w700 is a page title or a
+  /// key number. A selected row does not use this: it is [selected], and no
+  /// higher. Anything under 400, the display cut, is left alone.
   static double axisOf(FontWeight weight) {
     final value = weight.value;
     if (value < 400) return value.toDouble();
@@ -1177,6 +1191,7 @@ class AppWeight {
     return page;
   }
 
+  /// Nearest named weight, for a fallback face with no `wght` axis.
   static FontWeight named(double axis) {
     if (axis < 350) return FontWeight.w300;
     if (axis < 450) return FontWeight.w400;
@@ -1203,6 +1218,8 @@ class AppWeight {
     return math.min(axis + 200, 700);
   }
 
+  /// `wght` at [axis], keeping any other axes already set (the handwriting
+  /// face's informality pins, for instance).
   static List<FontVariation> variations(
     double axis, {
     List<FontVariation> extra = const [],
@@ -1213,27 +1230,54 @@ class AppWeight {
   ];
 }
 
+/// Interface text on the ladder.
+///
+/// Letter spacing stays 0: small text with tracking looks soft, and macOS
+/// already draws Flutter's glyphs with grayscale antialiasing, which is the
+/// smoothing this face wants. Times and counts pass [tabular] so the figures
+/// don't shuffle as they change.
 TextStyle chromeStyle({
   required double size,
-  required double line,
+
+  /// The line box, or null to take the face's own.
+  required double? line,
   required double weight,
   required Color color,
   String? family,
   List<String>? fallback,
   List<FontVariation> extra = const [],
   bool tabular = false,
-}) => TextStyle(
-  fontFamily: family ?? AppFonts.ui,
-  fontFamilyFallback: fallback ?? AppFonts.uiFallback,
-  fontSize: size,
-  height: line / size,
-  leadingDistribution: TextLeadingDistribution.even,
-  fontWeight: AppWeight.named(AppWeight.bold(weight)),
-  fontVariations: AppWeight.variations(AppWeight.bold(weight), extra: extra),
-  color: color,
-  letterSpacing: 0,
-  fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
-);
+  double letterSpacing = 0,
+  FontStyle? fontStyle,
+}) {
+  final axis = AppWeight.bold(weight);
+  return TextStyle(
+    fontFamily: family ?? AppFonts.ui,
+    fontFamilyFallback: fallback ?? AppFonts.uiFallback,
+    fontSize: size,
+    height: line == null ? null : line / size,
+    leadingDistribution: TextLeadingDistribution.even,
+    fontWeight: AppWeight.named(axis),
+    fontVariations: AppWeight.variations(axis, extra: extra),
+    color: color,
+    letterSpacing: letterSpacing,
+    fontStyle: fontStyle,
+    fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
+  );
+}
+
+/// The same ladder, applied to a style the theme already built.
+TextStyle? ladder(TextStyle? style, double weight) {
+  if (style == null) return null;
+  final axis = AppWeight.bold(weight);
+  return style.copyWith(
+    fontWeight: AppWeight.named(axis),
+    fontVariations: AppWeight.variations(
+      axis,
+      extra: style.fontVariations ?? const [],
+    ),
+  );
+}
 
 class KapyTheme {
   const KapyTheme._();
@@ -2255,11 +2299,13 @@ class KapyTheme {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         foregroundColor: palette.textPrimary,
-        titleTextStyle: base.textTheme.titleMedium?.copyWith(
-          color: palette.textPrimary,
-          fontSize: AppTypeScale.title,
-          fontWeight: FontWeight.w400,
-          letterSpacing: 0,
+        titleTextStyle: ladder(
+          base.textTheme.titleMedium!.copyWith(
+            color: palette.textPrimary,
+            fontSize: AppTypeScale.title,
+            letterSpacing: 0,
+          ),
+          AppWeight.page,
         ),
       ),
       drawerTheme: DrawerThemeData(
@@ -2274,10 +2320,12 @@ class KapyTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shadowColor: Colors.transparent,
-        titleTextStyle: base.textTheme.titleMedium?.copyWith(
-          color: palette.textPrimary,
-          fontSize: AppTypeScale.heading,
-          fontWeight: FontWeight.w600,
+        titleTextStyle: ladder(
+          base.textTheme.titleMedium!.copyWith(
+            color: palette.textPrimary,
+            fontSize: AppTypeScale.heading,
+          ),
+          AppWeight.page,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.dialog),
@@ -2349,9 +2397,11 @@ class KapyTheme {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadii.control),
               ),
-              textStyle: base.textTheme.labelLarge?.copyWith(
-                fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w500,
+              textStyle: ladder(
+                base.textTheme.labelLarge?.copyWith(
+                  fontSize: AppTypeScale.control,
+                ),
+                AppWeight.rowTitle,
               ),
             ).copyWith(
               backgroundColor: fillStates(
@@ -2380,9 +2430,11 @@ class KapyTheme {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadii.control),
               ),
-              textStyle: base.textTheme.labelLarge?.copyWith(
-                fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w500,
+              textStyle: ladder(
+                base.textTheme.labelLarge?.copyWith(
+                  fontSize: AppTypeScale.control,
+                ),
+                AppWeight.rowTitle,
               ),
             ).copyWith(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -2424,9 +2476,11 @@ class KapyTheme {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadii.control),
               ),
-              textStyle: base.textTheme.labelLarge?.copyWith(
-                fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w500,
+              textStyle: ladder(
+                base.textTheme.labelLarge?.copyWith(
+                  fontSize: AppTypeScale.control,
+                ),
+                AppWeight.rowTitle,
               ),
             ).copyWith(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -2466,9 +2520,11 @@ class KapyTheme {
             borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           tapTargetSize: tapTarget,
-          textStyle: base.textTheme.labelLarge?.copyWith(
-            fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w500,
+          textStyle: ladder(
+            base.textTheme.labelLarge?.copyWith(
+              fontSize: AppTypeScale.control,
+            ),
+            AppWeight.rowTitle,
           ),
           overlayColor: Colors.transparent,
           animationDuration: const Duration(milliseconds: 120),
