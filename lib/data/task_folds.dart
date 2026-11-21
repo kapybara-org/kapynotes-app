@@ -48,6 +48,17 @@ class TaskFolds {
     _store.put(hintKey, true);
   }
 
+  /// Set once "How Tasks works" is put away with Got it. Device-local, like
+  /// the hint.
+  static const String howKey = 'howTasksWorks.v1';
+
+  bool get howSeen => _store.data[howKey] == true;
+
+  void markHowSeen() {
+    if (howSeen) return;
+    _store.put(howKey, true);
+  }
+
   Map<String, Object?> _map() {
     final raw = _store.data[storeKey];
     if (raw is! Map) return {};

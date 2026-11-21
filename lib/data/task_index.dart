@@ -250,6 +250,16 @@ class TaskIndex extends ChangeNotifier {
 
   int _stamp() => _now().millisecondsSinceEpoch;
 
+  int _lastAdded = 0;
+
+  /// The [TaskEntry.addedAt] for a task met now: now, or one past the last
+  /// handed out if the clock has not moved past it, so tasks met together
+  /// keep the order they were met in and each later one comes after.
+  int _nextAdded() {
+    final now = _stamp();
+    return _lastAdded = now > _lastAdded ? now : _lastAdded + 1;
+  }
+
   void load() {
     final raw = _store.data[_key];
     if (raw is! Map) return;
@@ -438,7 +448,7 @@ class TaskIndex extends ChangeNotifier {
             noteId: noteId,
             anchor: anchor,
             words: Stamped(digests[i], now),
-            addedAt: now + i,
+            addedAt: _nextAdded(),
           ),
         );
         changed = true;
@@ -460,8 +470,9 @@ class TaskIndex extends ChangeNotifier {
   }
 
   /// Brings the tasks of every note whose document changed since the last
-  /// call into line with it, and of every note on the first. A note that is
-  /// gone, or keeps no document, loses its tasks.
+  /// call into line with it, and of every note on the first, oldest note
+  /// first, as Tasks orders notes. A note that is gone, or keeps no
+  /// document, loses its tasks.
   void reconcileDocs(
     DocStore docs, {
     required bool Function(String noteId) noteIsLive,
@@ -470,7 +481,16 @@ class TaskIndex extends ChangeNotifier {
     final changed = _scanned
         ? docs.takeChanged()
         : {...docs.takeChanged(), for (final r in docs.records) r.noteId};
-    for (final noteId in changed) {
+    final created = {
+      for (final noteId in changed)
+        noteId: docs.get(noteId)?.doc.createdAt?.millisecondsSinceEpoch ?? 0,
+    };
+    final ordered = changed.toList()
+      ..sort((a, b) {
+        final byCreated = created[a]!.compareTo(created[b]!);
+        return byCreated != 0 ? byCreated : a.compareTo(b);
+      });
+    for (final noteId in ordered) {
       final record = docs.get(noteId);
       if (record == null || !noteIsLive(noteId)) {
         forgetNote(noteId);

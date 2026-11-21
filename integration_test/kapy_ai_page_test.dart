@@ -1,28 +1,24 @@
 // The phone's Kapy AI page (M04) on a real phone or simulator, before the
 // bar that mounts it exists:
 //
-//   flutter test integration_test/kapy_ai_page_test.dart -d <device> \
+//   flutter drive --driver test_driver/integration_test.dart \
+//     --target integration_test/kapy_ai_page_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
 // At the phone's own size and safe areas, at 1× and 2× text, it checks that
 // nothing overflows, that every button is 44 × 44 pt to a finger, and that
-// New chat, a chat and a question each reach Kapy AI. Each state is saved as
-// a PNG for a person to look at: in --dart-define=KAPY_SHOTS=<folder> when
-// given (a simulator can write to its Mac's disk), else in the app's
-// documents folder, so pass --no-uninstall to keep them.
-import 'dart:io';
-import 'dart:ui' as ui;
-
-import 'package:flutter/rendering.dart';
+// New chat, a chat and a question each reach Kapy AI. Each state is a
+// screenshot in build/screenshots, for a person to look at.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../test/fake_kapy_ai.dart';
+import 'screenshot.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +38,15 @@ void main() {
       kapyAiAvailable = true;
       final ai = FakeKapyAi(
         pro: true,
+        deviceState: AppPlatform.isAndroid
+            ? const DeviceModelState(
+                status: DeviceModelStatus.ready,
+                model: FakeKapyAi.gemma,
+              )
+            : const DeviceModelState(
+                status: DeviceModelStatus.builtIn,
+                model: FakeKapyAi.appleIntelligence,
+              ),
         chatList: [
           chat(
             'a',
@@ -63,33 +68,29 @@ void main() {
         ],
       )..set(model: KapyModel.cloud);
       var opened = 0;
-      final frame = GlobalKey();
       await tester.pumpWidget(
-        RepaintBoundary(
-          key: frame,
-          child: MaterialApp(
-            theme: KapyTheme.dark(),
-            debugShowCheckedModeBanner: false,
-            home: Builder(
-              builder: (context) {
-                final media = MediaQuery.of(context);
-                return MediaQuery(
-                  data: media.copyWith(textScaler: TextScaler.linear(scale)),
-                  child: Scaffold(
-                    body: KapyAiPage(
-                      kapyAi: ai,
-                      onOpenChat: () => opened++,
-                      onManageAccounts: () {},
-                      account: const SizedBox.square(dimension: 32),
-                      // M04's bar: 56 tall, 30 above the screen's edge on an
-                      // iPhone with its 34 pt home indicator.
-                      barClearance: media.padding.bottom - 4 + 56,
-                      now: () => now,
-                    ),
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          debugShowCheckedModeBanner: false,
+          home: Builder(
+            builder: (context) {
+              final media = MediaQuery.of(context);
+              return MediaQuery(
+                data: media.copyWith(textScaler: TextScaler.linear(scale)),
+                child: Scaffold(
+                  body: KapyAiPage(
+                    kapyAi: ai,
+                    onOpenChat: () => opened++,
+                    onManageAccounts: () {},
+                    account: const SizedBox.square(dimension: 32),
+                    // M04's bar: 56 tall, 30 above the screen's edge on an
+                    // iPhone with its 34 pt home indicator.
+                    barClearance: media.padding.bottom - 4 + 56,
+                    now: () => now,
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ),
       );
@@ -112,21 +113,9 @@ void main() {
       }
       handle.dispose();
 
-      const shots = String.fromEnvironment('KAPY_SHOTS');
-      final folder = shots.isEmpty
-          ? (await getApplicationDocumentsDirectory()).path
-          : shots;
       Future<void> save(String name) async {
         await tester.pumpAndSettle();
-        final boundary =
-            frame.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-        final image = await boundary.toImage(
-          pixelRatio: tester.view.devicePixelRatio,
-        );
-        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-        await File(
-          '$folder/kapy_ai_page_${scale.toInt()}x_$name.png',
-        ).writeAsBytes(bytes!.buffer.asUint8List());
+        await screenshot('kapy-ai-page-${scale.toInt()}x-$name');
       }
 
       await save('list');

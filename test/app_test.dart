@@ -4954,6 +4954,107 @@ void main() {
     });
   });
 
+  group('Tasks keys', () {
+    Future<void> pumpWithPair(WidgetTester tester) async {
+      await notes.load();
+      notes.create(
+        body:
+            'Lisbon trip\n☐ Ask Ana which Sintra palace to skip\n'
+            '☐ Renew passport before the trip\n☐ Book the Sintra train tickets',
+      );
+      notes.create(body: 'Quote for the deck\n☐ Book the room');
+      final tasks = TaskLibrary(
+        notes: notes,
+        store: store,
+        storage: MemoryDocStorage(),
+      );
+      await tasks.load();
+      await tasks.reconcileNow();
+      await pumpApp(tester, tasks: tasks);
+    }
+
+    Future<void> press(WidgetTester tester, ShortcutAction action) async {
+      final binding = shortcuts.bindingFor(action)!;
+      final held = [
+        if (binding.meta) LogicalKeyboardKey.metaLeft,
+        if (binding.control) LogicalKeyboardKey.controlLeft,
+        if (binding.alt) LogicalKeyboardKey.altLeft,
+        if (binding.shift) LogicalKeyboardKey.shiftLeft,
+      ];
+      for (final key in held) {
+        await tester.sendKeyDownEvent(key);
+      }
+      await tester.sendKeyEvent(binding.logicalKey);
+      for (final key in held.reversed) {
+        await tester.sendKeyUpEvent(key);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      testWidgets('on ${platform.name}, the pair answers its keys as soon as '
+          'a click on the rail opens Tasks', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithPair(tester);
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        expect(find.text('First on the list'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('Your choice so far'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      });
+
+      testWidgets('on ${platform.name}, Go to Tasks from a note being typed '
+          'in leaves the keys with the pair', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithPair(tester);
+        await tester.tap(find.text('Quote for the deck').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(NoteEditor));
+        await tester.pumpAndSettle();
+        expect(
+          FocusManager.instance.primaryFocus?.debugLabel,
+          startsWith('note-editor'),
+        );
+
+        await press(tester, ShortcutAction.showTasks);
+        expect(find.text('First on the list'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('Your choice so far'), findsOneWidget);
+      });
+
+      testWidgets('on ${platform.name}, New task from Notes still puts the '
+          'caret in the add row, the arrows stay with it, and Escape hands '
+          'them back to the pair', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithPair(tester);
+
+        await press(tester, ShortcutAction.newTask);
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('First on the list'), findsOneWidget);
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.text('First on the list'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('Your choice so far'), findsOneWidget);
+      });
+    }
+  });
+
   group('New beside the way back to the list', () {
     final pageNew = find.byKey(const ValueKey('page-new'));
     final showList = find.byKey(const ValueKey('page-show-list'));
