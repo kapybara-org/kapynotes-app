@@ -188,6 +188,7 @@ class Sidebar extends StatelessWidget {
     this.now = DateTime.now,
     this.cards = false,
     this.phone = false,
+    this.phoneCards,
     this.filtersOpen = true,
     this.filtersActive = false,
     this.onFiltersToggled,
@@ -347,10 +348,14 @@ class Sidebar extends StatelessWidget {
   /// Whether the list beside the rail draws sticky cards rather than rows.
   final bool cards;
 
-  /// A phone's home: a large title over the list, pinned notes as cards in
-  /// a sideways row, the rest as rows that swipe, and a pull down for
-  /// Quick find. Only beside a [windowBar], which is the phone's title.
+  /// A phone's home: a large title over the list, the rest as rows that
+  /// swipe, and a pull down for Quick find. Only beside a [windowBar], which
+  /// is the phone's title.
   final bool phone;
+
+  /// The cards a phone's Notes puts over its days in place of the pinned
+  /// notes, which are behind one of them.
+  final Widget? phoneCards;
 
   /// The notes filter and the list/cards switch, under the search beside the
   /// rail: see [NotesListControls]. Null leaves them out, as the compact list
@@ -1041,6 +1046,10 @@ extension on Sidebar {
     pinned: pinned,
     locked: lockedNoteIds.contains(note.id),
     collaborators: shared ? collaborators[note.id] ?? const [] : const [],
+    // Shared's own list leaves the faces off: its headings name them.
+    shareGroup: phone && shared && !_onSharedTab
+        ? sharing?.groupOf(note)
+        : null,
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
     openElsewhere: openElsewhereIds.contains(note.id),
@@ -1208,34 +1217,6 @@ extension on Sidebar {
         style: style,
         clockOnly: clockOnly,
       );
-      if (phone && pinned && !drawings) {
-        rows.add(
-          (context) => SizedBox(
-            height: NoteCardFace.squareHeightFor(
-              MediaQuery.textScalerOf(context),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) => ListView.separated(
-                key: const ValueKey('phone-pinned'),
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: margin),
-                itemCount: list.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 12),
-                itemBuilder: (_, index) => SizedBox(
-                  width: (constraints.maxWidth - margin * 2 - 12) / 2,
-                  child: _row(
-                    list[index],
-                    shared: sharing != null && list[index].isShared,
-                    pinned: true,
-                    style: NoteRowStyle.square,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-        return;
-      }
       if (phone && !cards) {
         for (final (index, each) in list.indexed) {
           if (index > 0) {
@@ -1362,7 +1343,14 @@ extension on Sidebar {
       );
       section(groups.pinned, pinned: true);
     } else if (phone) {
-      if (groups.pinned.isNotEmpty) {
+      if (phoneCards case final phoneCards?) {
+        rows.add(
+          (_) => Padding(
+            padding: EdgeInsets.fromLTRB(margin, 10, margin, 0),
+            child: phoneCards,
+          ),
+        );
+      } else if (groups.pinned.isNotEmpty) {
         heading(const _PhoneHeading('Pinned'));
         section(groups.pinned, pinned: true);
       }
@@ -2688,18 +2676,9 @@ class _FiltersButton extends StatelessWidget {
 }
 
 /// How a [NoteRow] draws its note: the desktop list's row or sticky card
-/// beside the spaces rail, a phone's row and pinned card, or the Folders
+/// beside the spaces rail, a phone's row, or the Folders
 /// tab's note in an open folder ([filed]) or in none ([loose]).
-enum NoteRowStyle {
-  row,
-  card,
-  drawingRow,
-  drawingCard,
-  touch,
-  square,
-  filed,
-  loose,
-}
+enum NoteRowStyle { row, card, drawingRow, drawingCard, touch, filed, loose }
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -2726,6 +2705,7 @@ class NoteRow extends StatefulWidget {
     this.pinned = false,
     this.shared = false,
     this.collaborators = const [],
+    this.shareGroup,
     this.locked = false,
     this.selecting = false,
     this.checked = false,
@@ -2829,6 +2809,10 @@ class NoteRow extends StatefulWidget {
   /// Whoever else has the note open right now. While anybody does, the row
   /// says who in place of when it was last changed.
   final List<Collaborator> collaborators;
+
+  /// Who a phone's row shows the note is shared with, at the end of its last
+  /// line. Null leaves the faces off.
+  final ShareGroup? shareGroup;
 
   /// Whether the note limit holds the note read-only.
   final bool locked;
@@ -3142,7 +3126,6 @@ class _NoteRowState extends State<NoteRow> {
     final people = widget.collaborators;
     final card =
         widget.style == NoteRowStyle.card ||
-        widget.style == NoteRowStyle.square ||
         widget.style == NoteRowStyle.drawingCard;
     String stamp({bool clock = true}) => SidebarTimestamp.glance(
       note.updatedAt,
@@ -3168,8 +3151,7 @@ class _NoteRowState extends State<NoteRow> {
     final selected = widget.selected && !widget.selecting;
     final ringed = widget.openElsewhere && !widget.selected;
     final face = switch (widget.style) {
-      NoteRowStyle.card || NoteRowStyle.square => NoteCardFace(
-        square: widget.style == NoteRowStyle.square,
+      NoteRowStyle.card => NoteCardFace(
         note: note,
         glance: glance,
         date: date,
@@ -3223,6 +3205,10 @@ class _NoteRowState extends State<NoteRow> {
         glance: glance,
         date: date,
         snippet: snippet,
+        people: switch (widget.shareGroup) {
+          final group? => _SharePeople(group: group),
+          null => null,
+        },
         place: switch (widget.folders?.tree.pathOfNote(note.id)) {
           final path? when path.isNotEmpty => [
             for (final folder in path) folder.name,
@@ -3701,6 +3687,72 @@ List<({String? lead, String date, List<Note> notes})> _phoneDays(
       ))
         (lead: lead, date: date, notes: notes),
   ];
+}
+
+/// Who a shared note on a phone's row is open to: a face for each person,
+/// with their initial, and an envelope for anyone who has not joined yet.
+class _SharePeople extends StatelessWidget {
+  const _SharePeople({required this.group});
+
+  final ShareGroup group;
+
+  static const double _extent = 16;
+  static const double _step = _extent - 5;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final people = group.people.take(3).toList();
+    return Semantics(
+      label: group.title,
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: _extent + (people.length - 1) * _step,
+          height: _extent,
+          child: Stack(
+            children: [
+              for (final (index, person) in people.indexed.toList().reversed)
+                Positioned(
+                  left: index * _step,
+                  child: Container(
+                    width: _extent,
+                    height: _extent,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: palette.controlBackground,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: palette.paperColor, width: 1.5),
+                    ),
+                    child: person.isInvited
+                        ? KapyIcon(
+                            KapyIcons.mailOutlined,
+                            size: 9,
+                            strokeWidth: 1.75,
+                            color: palette.textMuted,
+                          )
+                        : Text(
+                            (person.name.trim().isEmpty
+                                    ? person.email
+                                    : person.name.trim())
+                                .characters
+                                .first
+                                .toUpperCase(),
+                            textScaler: TextScaler.noScaling,
+                            style: chromeStyle(
+                              size: 9,
+                              line: 10,
+                              weight: 600,
+                              color: palette.textPrimary,
+                            ),
+                          ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// A day's heading on a phone's list, in the note title's face at 19/24, as

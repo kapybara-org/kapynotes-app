@@ -7114,7 +7114,8 @@ void main() {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-    testWidgets('pinned notes are cards over the recent rows', (tester) async {
+    testWidgets("pinned notes wait behind Home's Pinned card, which opens "
+        'them, and Back comes home', (tester) async {
       final trip = notes.create(body: 'Lisbon trip\nFour days in May');
       final reading = notes.create(body: 'Reading list\nThe Overstory');
       notes.create(body: 'Groceries\nOat milk, lemons');
@@ -7124,17 +7125,53 @@ void main() {
       await showNotesList(tester);
 
       expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
-      expect(find.text('Pinned'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp(r'^Today, ')), findsOneWidget);
-      final cards = find.descendant(
-        of: find.byKey(const ValueKey('phone-pinned')),
-        matching: find.byType(NoteCardFace),
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('2')),
+        findsOneWidget,
       );
-      expect(cards, findsNWidgets(2));
-      expect(tester.getSize(cards.first).width, (393 - 40 - 12) / 2);
+      for (final title in ['Lisbon trip', 'Reading list']) {
+        expect(
+          find.descendant(of: card, matching: find.textContaining(title)),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(NoteRow, title), findsNothing);
+      }
+      expect(
+        find.byKey(const ValueKey('home-shared-card')),
+        findsNothing,
+        reason: 'without an account there is nothing to share from',
+      );
       final row = find.widgetWithText(NoteListRowFace, 'Groceries');
-      expect(row, findsOneWidget);
       expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Lisbon trip'), findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(card, findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    });
+
+    testWidgets("Home's Pinned card says so while nothing is pinned", (
+      tester,
+    ) async {
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final card = find.byKey(const ValueKey('home-pinned-card'));
+      expect(
+        find.descendant(of: card, matching: find.text('Nothing pinned yet')),
+        findsOneWidget,
+      );
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
     });
 
     testWidgets('the rows come a day at a time, newest first, each in the '
@@ -7240,13 +7277,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(notes.pinnedNoteIds, contains(groceries.id));
 
+      final card = find.byKey(const ValueKey('home-pinned-card'));
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('phone-pinned')),
-          matching: find.text('Groceries'),
-        ),
+        find.descendant(of: card, matching: find.text('1')),
         findsOneWidget,
       );
+      expect(
+        find.descendant(of: card, matching: find.text('Groceries')),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
 
       await tester.drag(
         find.widgetWithText(NoteRow, 'Team offsite'),

@@ -97,6 +97,7 @@ import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
+import 'phone_home_cards.dart';
 import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
 import 'tasks/tasks_screen.dart';
@@ -4588,8 +4589,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final selected = _shownNote(_selectedId);
     final pageOpen = _phonePageOpen && selected != null && !_tasksMode;
     // Back, from Android's gesture or iOS's edge swipe, goes up one level:
-    // the note's page closes, then the picks let go, and only then does the
-    // app itself leave.
+    // the note's page closes, then the picks let go, then Pinned or Shared
+    // returns to Notes, and only then does the app itself leave.
+    final pinnedOrShared = _showingPinnedOnly || _space == LibrarySpace.shared;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: Theme.of(context).brightness == Brightness.dark
           ? SystemUiOverlayStyle.light
@@ -4597,13 +4599,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: ListenableBuilder(
         listenable: _picks,
         builder: (context, _) => PopScope(
-          canPop: !pageOpen && !_picks.on,
+          canPop: !pageOpen && !_picks.on && !pinnedOrShared,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
             if (pageOpen) {
               _phoneNavigator.currentState?.maybePop();
-            } else {
+            } else if (_picks.on) {
               _picks.clear();
+            } else {
+              _showSpace(LibrarySpace.notes);
             }
           },
           child: Navigator(
@@ -4677,7 +4681,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onSelected: _showSpace,
             onSettingsPressed: _showSettings,
             showTasks: _taskController != null,
-            invitations: widget.account?.sharing?.invites.length,
             createLabel: _tasksMode
                 ? 'New task'
                 : _drawingsOnly
@@ -4804,6 +4807,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ),
     onFiltersToggled: () =>
         setState(() => _phoneFiltersOpen = !_phoneFiltersOpen),
+    pinnedOnly: _showingPinnedOnly,
+    onPinnedOnlyChanged: (value) => setState(() => _pinnedOnly = value),
+    phoneCards: _space != LibrarySpace.notes || _specialMode
+        ? null
+        : PhoneHomeCards(
+            pinned: [
+              for (final note in _visibleNotes)
+                if (widget.notes.pinnedNoteIds.contains(note.id)) note,
+            ],
+            onOpenPinned: widget.notes.pinnedNoteIds.isEmpty
+                ? null
+                : () => setState(() => _pinnedOnly = true),
+            shared: widget.account?.sharing == null
+                ? null
+                : [
+                    for (final note in widget.notes.search(''))
+                      if (note.isShared) note,
+                  ],
+            invitations: widget.account?.sharing?.invites.length ?? 0,
+            onOpenShared: () => _showSpace(LibrarySpace.shared),
+          ),
   );
 
   /// A note's page on a phone: back, then the note's own actions, over the
