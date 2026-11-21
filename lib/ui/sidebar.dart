@@ -3485,7 +3485,6 @@ class _ShareGroupHeader extends StatelessWidget {
               for (final person in people)
                 StackedAvatar(
                   id: person.userId ?? person.email,
-                  seed: person.userId ?? person.email,
                   name: person.name,
                   image: person.image,
                   pending: person.isInvited,

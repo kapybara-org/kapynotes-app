@@ -731,9 +731,63 @@ void main() {
     Future<bool> slowClick(WidgetTester tester) async {
       calls.clear();
       final clicked = panel.click();
-      await tester.pump(MenuBarPanelController.showTimeout);
+      await tester.pump(MenuBarPanelController.firstShowTimeout);
       return clicked;
     }
+
+    testWidgets('the first showing has longer to draw than the ones after', (
+      tester,
+    ) async {
+      answer(tester);
+      var answered = false;
+      unawaited(panel.click().then((_) => answered = true));
+      await tester.pump(MenuBarPanelController.showTimeout);
+      expect(answered, isFalse, reason: 'the first still has time');
+      await tester.pump(
+        MenuBarPanelController.firstShowTimeout -
+            MenuBarPanelController.showTimeout,
+      );
+      expect(answered, isTrue);
+      expect(panel.lastMiss, PanelMiss.noView);
+
+      answered = false;
+      unawaited(panel.click().then((_) => answered = true));
+      await tester.pump(MenuBarPanelController.showTimeout);
+      expect(answered, isTrue, reason: 'the next has the usual time');
+      expect(panel.lastMiss, PanelMiss.noView);
+    });
+
+    testWidgets(
+      'a refused show leaves the next one the first showing\'s time',
+      (tester) async {
+        int? shows;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async {
+            return switch (call.method) {
+              'isSupported' => true,
+              'isControlPressed' => false,
+              'show' => shows,
+              _ => null,
+            };
+          },
+        );
+        expect(await panel.click(), isFalse);
+        expect(panel.lastMiss, PanelMiss.refused);
+
+        shows = 99;
+        var answered = false;
+        unawaited(panel.click().then((_) => answered = true));
+        await tester.pump(MenuBarPanelController.showTimeout);
+        expect(answered, isFalse, reason: 'the refused show made no view');
+        await tester.pump(
+          MenuBarPanelController.firstShowTimeout -
+              MenuBarPanelController.showTimeout,
+        );
+        expect(answered, isTrue);
+        expect(panel.lastMiss, PanelMiss.noView);
+      },
+    );
 
     testWidgets('gives that click the menu, and the next one the panel', (
       tester,
@@ -743,6 +797,7 @@ void main() {
       expect(calls, containsAllInOrder(['show', 'hide']));
       expect(calls, isNot(contains('reveal')));
       expect(panel.isOpen, isFalse);
+      expect(panel.lastMiss, PanelMiss.noView);
 
       slow = false;
       calls.clear();
@@ -751,6 +806,7 @@ void main() {
       await tester.pump();
       expect(await clicked, isTrue);
       expect(panel.isOpen, isTrue);
+      expect(panel.lastMiss, isNull);
       expect(calls, containsAllInOrder(['show', 'reveal']));
       await panel.close();
 
@@ -774,6 +830,63 @@ void main() {
       calls.clear();
       expect(await panel.click(), isFalse);
       expect(calls, isEmpty, reason: 'straight to the menu');
+      expect(panel.lastMiss, PanelMiss.unsupported);
+    });
+
+    testWidgets('says which step a missed showing stopped at', (tester) async {
+      var control = false;
+      int? shows = tester.view.viewId;
+      final revealed = Completer<void>();
+      var revealing = true;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add(call.method);
+        switch (call.method) {
+          case 'isSupported':
+            return true;
+          case 'isControlPressed':
+            return control;
+          case 'show':
+            return shows;
+          case 'reveal' when !revealing:
+            await revealed.future;
+        }
+        return null;
+      });
+
+      control = true;
+      expect(await panel.click(), isFalse);
+      expect(panel.lastMiss, PanelMiss.controlHeld);
+      expect(calls, isNot(contains('show')));
+
+      control = false;
+      shows = null;
+      expect(await panel.click(), isFalse);
+      expect(panel.lastMiss, PanelMiss.refused);
+
+      // Time runs out before the engine draws a frame.
+      shows = tester.view.viewId;
+      expect(await slowClick(tester), isFalse);
+      expect(panel.lastMiss, PanelMiss.noFrame);
+      expect(calls, isNot(contains('reveal')));
+
+      // Drawn, but the native side never answers the reveal.
+      revealing = false;
+      calls.clear();
+      final clicked = panel.click();
+      await tester.pump();
+      await tester.pump();
+      expect(calls, contains('reveal'));
+      await tester.pump(MenuBarPanelController.showTimeout);
+      expect(await clicked, isFalse);
+      expect(panel.lastMiss, PanelMiss.notRevealed);
+      revealed.complete();
+
+      // The next one's view never arrives, whatever step the last reached.
+      shows = 99;
+      expect(await slowClick(tester), isFalse);
+      expect(panel.lastMiss, PanelMiss.noView);
     });
   });
 }

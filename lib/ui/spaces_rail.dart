@@ -605,12 +605,7 @@ class AccountAvatar extends StatelessWidget {
 
     final Widget face;
     if (user != null && photo != null && photo.startsWith('data:image/')) {
-      face = ProfileAvatar(
-        seed: user.id,
-        name: name,
-        extent: _extent,
-        image: photo,
-      );
+      face = ProfileAvatar(name: name, extent: _extent, image: photo);
     } else {
       final line = palette.raisedBorder;
       face = Container(
