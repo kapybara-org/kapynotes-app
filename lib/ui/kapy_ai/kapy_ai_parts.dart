@@ -127,18 +127,6 @@ String kapyAccountName(KapyAccountKind kind) => switch (kind) {
   KapyAccountKind.openRouter => 'Your key',
 };
 
-/// What a row calls [model]. Two choices with the same plain name are
-/// numbered, so a person can tell them apart without a model name.
-String kapyChoiceLabel(KapyModel model, List<KapyModel> siblings) {
-  final base = model.plainLabel;
-  final same = [
-    for (final other in siblings)
-      if (other.plainLabel == base) other,
-  ];
-  if (same.length < 2) return base;
-  return '$base · ${same.indexOf(model) + 1}';
-}
-
 /// The 28 px button of a notice, a confirmation and the key field: sage when
 /// it is the one thing to do, a red tint for Delete, an outline otherwise.
 class KapyAiButton extends StatelessWidget {

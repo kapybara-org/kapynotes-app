@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../ai/open_router.dart';
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import '../context_menu.dart';
 import '../settings_rows.dart';
 import 'kapy_ai_parts.dart';
@@ -118,7 +121,7 @@ class KapyDefaultModelButton extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    kapyChoiceLabel(model, options),
+                    model.plainLabel,
                     style: kapyText(13, 16, palette.textPrimary),
                   ),
                 ),
@@ -151,7 +154,7 @@ String kapyAccountLine(KapyAccountState account) {
   final word = kapyDeviceWord;
   final name = kapyAccountName(account.kind);
   final models = [
-    for (final model in account.models) kapyChoiceLabel(model, account.models),
+    for (final model in account.models) model.plainLabel,
   ].join(', ');
   return switch ((account.kind, account.status)) {
     (KapyAccountKind.openRouter, KapyAccountStatus.connected) =>
@@ -159,7 +162,7 @@ String kapyAccountLine(KapyAccountState account) {
     (KapyAccountKind.openRouter, KapyAccountStatus.error) =>
       'This key was rejected',
     (KapyAccountKind.openRouter, _) =>
-      'Your own key, for answers you already pay for',
+      'Get a key, then add it here, for answers you already pay for',
     (_, KapyAccountStatus.connected) => [
       'Found on this $word',
       if (models.isNotEmpty) models,
@@ -231,6 +234,25 @@ class _KapyAccountRowState extends State<KapyAccountRow> {
     _rejected = false;
   });
 
+  Future<void> _getKey() async {
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        OpenRouterAccount.keysPage,
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !mounted) return;
+    Toast.show(
+      context,
+      'Could not open the page for a key',
+      icon: KapyIcons.errorOutlined,
+      isError: true,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ai = widget.kapyAi;
@@ -263,7 +285,18 @@ class _KapyAccountRowState extends State<KapyAccountRow> {
           label: 'Remove',
           onPressed: () => unawaited(ai.removeOpenRouterKey()),
         ),
-        _ => SettingsRowButton(label: 'Add key', onPressed: _edit),
+        _ => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SettingsRowButton(
+              key: const ValueKey('kapy-openrouter-get-key'),
+              label: 'Get a key',
+              onPressed: () => unawaited(_getKey()),
+            ),
+            const SizedBox(width: 8),
+            SettingsRowButton(label: 'Add key', onPressed: _edit),
+          ],
+        ),
       },
       KapyAccountKind.codex => SettingsRowButton(
         label: 'Check again',

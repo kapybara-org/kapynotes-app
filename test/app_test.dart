@@ -2221,7 +2221,7 @@ void main() {
     // Keep the fallback's required exact credit pinned as well.
     expect(
       RateProvider.exchangeRateApi.attributionLabel,
-      'Rates by Exchange Rate',
+      'Rates By Exchange Rate API',
     );
     expect(
       RateProvider.exchangeRateApi.attributionUrl.toString(),

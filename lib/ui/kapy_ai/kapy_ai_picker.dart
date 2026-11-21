@@ -33,10 +33,10 @@ class KapyAiPicker extends StatelessWidget {
     final accounts = [...ai.accounts]
       ..sort((a, b) => a.kind.index.compareTo(b.kind.index));
 
-    _Row modelRow(KapyModel model, String subline, {String? title}) => _Row(
+    _Row modelRow(KapyModel model, String subline) => _Row(
       key: ValueKey('kapy-ai-model-${model.kind.name}-${model.id}'),
       icon: kapyModelIcon(model.kind),
-      title: title ?? model.plainLabel,
+      title: model.plainLabel,
       subline: subline,
       selected: model == selected,
       onTap: () => onPick(model),
@@ -50,11 +50,7 @@ class KapyAiPicker extends StatelessWidget {
         if (kind != KapyAccountKind.openRouter && !account.enabled) continue;
         for (final model in account.models) {
           accountRows.add(
-            modelRow(
-              model,
-              model.goodFor ?? model.whereItRuns(word),
-              title: kapyChoiceLabel(model, account.models),
-            ),
+            modelRow(model, model.goodFor ?? model.whereItRuns(word)),
           );
         }
         continue;
@@ -69,7 +65,7 @@ class KapyAiPicker extends StatelessWidget {
             _ => 'Use ${kapyAccountName(kind)}',
           },
           subline: switch (kind) {
-            KapyAccountKind.openRouter => 'For answers you already pay for',
+            KapyAccountKind.openRouter => 'Get one, then paste it in Settings',
             _ => 'Install it and sign in there first',
           },
           chevron: true,
@@ -364,14 +360,7 @@ class KapyAiModelButton extends StatelessWidget {
                 const SizedBox(width: 5),
                 Flexible(
                   child: Text(
-                    spent
-                        ? '${model.plainLabel} · 0 left'
-                        : kapyChoiceLabel(model, [
-                            for (final account in kapyAi.accounts)
-                              ...account.models,
-                            ?kapyAi.device.model,
-                            KapyModel.cloud,
-                          ]),
+                    spent ? '${model.plainLabel} · 0 left' : model.plainLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: kapyText(
