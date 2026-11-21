@@ -7,6 +7,7 @@ import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_index.dart';
+import 'package:kapy_notes/data/task_lines.dart';
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'task-board-test.json');
@@ -145,6 +146,49 @@ void main() {
     expect(words(board.open), ['Parent', 'Sibling']);
     expect(board.open.first.groupTotal, 3);
     expect(board.open.first.groupDone, 1);
+  });
+
+  test('halving finds the line a scan of every line found', () {
+    int scanned(NoteDoc doc, List<TaskLine> lines, String anchor) {
+      final parsed = parseAnchor(anchor);
+      if (parsed == null || !doc.knows(parsed)) return -1;
+      final offset = doc.lineOffsetOf(parsed);
+      if (offset == null) return -1;
+      return lines.indexWhere((l) => l.start <= offset && offset <= l.end);
+    }
+
+    // Every character any version held, and every task's record, checked
+    // against every version: the same words on several lines, lines added
+    // above, taken out, emptied, edited and ticked.
+    final anchors = <String>{'zzzzzzzzzzzz:1', 'not an anchor'};
+    final versions = [
+      'Errands\n☐ Milk\n\n☐ Milk\n  ☐ Milk\n  for the cake\n\n\n- [ ] Milk\n☐ Bread',
+      'Top\n\nErrands\n☐ Milk\n\n☐ Milk\n\n  ☐ Milk\n  for the cake\n\n\n- [ ] Milk\n☐ Bread',
+      'Top\n\nErrands\n☐ Milk\n\n\n  ☐ Milk\n  for the cake\n\n\n- [ ] Milk\n☐ Bread rolls',
+      'Top\n\nErrands\n☑ Milk\n\n\n  ☐ Milk\n\n\n\n- [x] Milk\n☐ Bread rolls',
+      '\n\nErrands\n☐ Bread rolls\n\n',
+    ];
+    var found = 0;
+    for (var version = 0; version < versions.length; version++) {
+      note('list', versions[version]);
+      final doc = docs['list']!;
+      expect(doc.text, versions[version]);
+      for (var offset = 1; offset <= doc.text.length; offset++) {
+        anchors.add(doc.anchorAt(offset).id!.key);
+      }
+      anchors.addAll([for (final entry in index.entries) entry.anchor]);
+      final lines = taskLines(doc.text);
+      for (final anchor in anchors) {
+        final line = taskLineIndex(doc, lines, anchor);
+        expect(
+          line,
+          scanned(doc, lines, anchor),
+          reason: '$anchor in version $version',
+        );
+        if (line >= 0) found++;
+      }
+    }
+    expect(found, greaterThan(100));
   });
 
   test('reading one note of many tasks takes time in step with its size', () {

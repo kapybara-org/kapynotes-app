@@ -61,7 +61,17 @@ int taskLineIndex(NoteDoc doc, List<TaskLine> lines, String anchor) {
   if (parsed == null || !doc.knows(parsed)) return -1;
   final offset = doc.lineOffsetOf(parsed);
   if (offset == null) return -1;
-  return lines.indexWhere((l) => l.start <= offset && offset <= l.end);
+  var low = 0;
+  var high = lines.length;
+  while (low < high) {
+    final middle = (low + high) ~/ 2;
+    if (lines[middle].start <= offset) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low > 0 && offset <= lines[low - 1].end ? low - 1 : -1;
 }
 
 /// The anchor a record names, or null for one this build cannot read.
