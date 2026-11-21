@@ -81,7 +81,7 @@ class SharingSheetFrame extends StatelessWidget {
 /// Mac or a PC. With [option], a box ticked to start with, whose answer comes
 /// back. Null means the person said no; without [option], yes is true.
 ///
-/// [warning] turns the action red, for an ask that takes access away.
+/// [warning] is for the one ask whose action can't be taken back.
 Future<bool?> askFirst(
   BuildContext context, {
   required String title,

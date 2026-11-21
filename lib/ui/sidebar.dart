@@ -2991,7 +2991,7 @@ class _NoteRowState extends State<NoteRow> {
                         ? 'Sharing'
                         : 'Manage sharing'
                   : 'Share note',
-              icon: KapyIcons.peopleOutlined,
+              icon: KapyIcons.shareRounded,
             ),
           if (widget.onHide != null)
             const KapyMenuAction(

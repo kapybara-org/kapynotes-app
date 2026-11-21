@@ -377,10 +377,9 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         context,
         title: 'Block $name?',
         body:
-            "They can't invite you again, and this invitation goes away. "
+            'They can’t invite you again, and this invitation goes away. '
             'You can unblock them here, under Blocked people.',
         action: 'Block',
-        warning: true,
       );
       if (ok == null || !mounted) return;
       await _run(
@@ -428,13 +427,12 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
     } else if (choice == 'block') {
       final ok = await askFirst(
         context,
-        title: 'Block ${person.name}?',
+        title: 'Block $first?',
         body:
             '$first loses access to everything you share, you leave what '
-            "$first shares with you (keeping copies), and $first can't "
+            '$first shares with you (keeping copies), and $first can’t '
             'invite you again.',
         action: 'Block',
-        warning: true,
       );
       if (ok == null || !mounted) return;
       final blocked = await _run(
@@ -470,7 +468,6 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
             '$first stops seeing this note. It stays in your notes, with '
             'everything $first wrote.',
         action: 'Stop sharing',
-        warning: true,
       );
       if (ok == null || !mounted) return;
       await _run(
@@ -535,12 +532,13 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
               : 'Leave “$title”?',
           body: together > 1
               ? '$first shares “$title” together with ${together - 1} more, '
-                    "so you leave all of them. You stop seeing $first's "
+                    'so you leave all of them. You stop seeing $first’s '
                     'changes, and $first keeps the notes.'
-              : "You stop seeing $first's changes. $first keeps the note.",
+              : 'You stop seeing $first’s changes. $first keeps the note.',
           action: 'Leave',
-          warning: true,
-          option: together > 1 ? 'Keep private copies' : 'Keep a private copy',
+          option: together > 1
+              ? 'Keep private copies'
+              : 'Keep a private copy in my notes',
         );
         if (keep == null || !mounted) return;
         await _run(
@@ -562,7 +560,6 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
           'stay in your notes, with every change. Notes $first shares with '
           "you aren't affected.",
       action: 'Stop sharing',
-      warning: true,
     );
     if (ok == null || !mounted) return;
     final before = {
@@ -600,7 +597,6 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
           'The invitation and its link stop working. The notes stay as '
           'they are.',
       action: 'Cancel invitation',
-      warning: true,
     );
     if (ok == null || !mounted) return;
     await _run(

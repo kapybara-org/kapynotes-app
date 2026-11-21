@@ -4262,7 +4262,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         KapyMenuAction(
           value: 'share',
           label: note.isShared ? 'Sharing' : 'Share note',
-          icon: KapyIcons.personAddRounded,
+          icon: KapyIcons.shareRounded,
         ),
       if (note != null && _canMoveToFolder(note))
         const KapyMenuAction(
