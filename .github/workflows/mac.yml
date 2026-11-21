@@ -39,7 +39,7 @@ env:
   FLUTTER_VERSION: '3.47.2'
 
 jobs:
-  macos:
+  integration:
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'mac'
     runs-on: xcode-27
     timeout-minutes: 60
