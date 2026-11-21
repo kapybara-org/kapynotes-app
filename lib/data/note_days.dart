@@ -199,6 +199,11 @@ class NoteDayStore extends ChangeNotifier {
     }
   }
 
+  /// A note the server never had takes its day with it, unsent.
+  void dropNote(String noteId) {
+    if (_days.slots.remove(noteId) != null) _changed();
+  }
+
   /// Lets go of [noteId]'s record once it is a delete the server has and this
   /// device's clock has passed: a day given from then on outranks it by its
   /// own time.

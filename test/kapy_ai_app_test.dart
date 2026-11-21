@@ -74,6 +74,7 @@ Future<void> _pump(
 
 Finder get _button => find.byKey(const ValueKey('page-kapy-ai'));
 Finder get _panel => find.byKey(const ValueKey('kapy-ai-panel'));
+Finder get _ask => find.byKey(const ValueKey('sidebar-ask-kapy'));
 
 Future<void> _chord(WidgetTester tester, LogicalKeyboardKey letter) async {
   final key = AppPlatform.isMacOS
@@ -161,6 +162,51 @@ void main() {
       expect(_panel, findsNothing);
     });
 
+    testWidgets('Ask Kapy, left of New note in the list, opens the panel', (
+      tester,
+    ) async {
+      notes.create(body: 'Trip budget');
+      await _pump(tester, sidebar: true);
+
+      expect(_ask, findsOneWidget);
+      final newNote = find.byKey(const ValueKey('sidebar-new-note'));
+      expect(tester.getRect(_ask).right + 8, tester.getRect(newNote).left);
+      expect(
+        tester.getCenter(_ask).dy,
+        closeTo(tester.getCenter(newNote).dy, 0.5),
+      );
+      final tip = tester.widget<Tooltip>(
+        find.descendant(of: _ask, matching: find.byType(Tooltip)),
+      );
+      expect(tip.message, startsWith('Ask Kapy  '));
+
+      await tester.tap(_ask);
+      await tester.pumpAndSettle();
+      expect(_panel, findsOneWidget);
+      expect(find.text('This note · Trip budget'), findsOneWidget);
+
+      // Asking again keeps the panel open, where the page's button would
+      // close it.
+      await tester.tap(_ask);
+      await tester.pumpAndSettle();
+      expect(_panel, findsOneWidget);
+    });
+
+    testWidgets('Ask Kapy stays in the Notes views, out of Drawings', (
+      tester,
+    ) async {
+      await _pump(tester, sidebar: true);
+      expect(_ask, findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(_ask, findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('rail-notes')));
+      await tester.pumpAndSettle();
+      expect(_ask, findsOneWidget);
+    });
+
     testWidgets('⌘J opens it, Esc and ✕ close it', (tester) async {
       notes.create(body: 'Trip budget');
       await _pump(tester);
@@ -239,6 +285,7 @@ void main() {
       await _pump(tester);
 
       expect(_button, findsNothing);
+      expect(_ask, findsNothing);
       await _toggleWithKeys(tester);
       expect(_panel, findsNothing);
     });
@@ -249,6 +296,7 @@ void main() {
       await _pump(tester);
 
       expect(_button, findsNothing);
+      expect(_ask, findsNothing);
       await _toggleWithKeys(tester);
       expect(_panel, findsNothing);
     });

@@ -326,11 +326,17 @@ class KapyAiModelButton extends StatelessWidget {
     required this.kapyAi,
     required this.open,
     required this.onPressed,
+    this.fontSize = 12.5,
+    this.fontWeight = FontWeight.w500,
   });
 
   final KapyAi kapyAi;
   final bool open;
   final VoidCallback onPressed;
+
+  /// The phone's page sets its label as meta, 13 px at 400.
+  final double fontSize;
+  final FontWeight fontWeight;
 
   @override
   Widget build(BuildContext context) {
@@ -346,8 +352,8 @@ class KapyAiModelButton extends StatelessWidget {
         key: const ValueKey('kapy-ai-model-button'),
         hoverColor: palette.kapyHighlight,
         onTap: onPressed,
-        child: SizedBox(
-          height: 26,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 26),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Row(
@@ -373,10 +379,10 @@ class KapyAiModelButton extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: kapyText(
-                      12.5,
+                      fontSize,
                       16,
                       palette.textSecondary,
-                      weight: FontWeight.w500,
+                      weight: fontWeight,
                     ),
                   ),
                 ),

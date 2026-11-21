@@ -111,6 +111,9 @@ Future<void> pumpForGolden(
   /// Notes written earlier in the week, for the page's days and their dots.
   bool withWeek = false,
 
+  /// A tagged note last edited yesterday, for a phone's list of days.
+  bool withYesterday = false,
+
   /// Which build the image is of.
   ///
   /// Sizes in this app resolve from [AppPlatform.hasPointer], not from the
@@ -268,7 +271,21 @@ Future<void> pumpForGolden(
       ),
     ];
   }
+  if (withYesterday) {
+    final edited = DateTime(2026, 8, 31, 18, 40).millisecondsSinceEpoch;
+    store.data['notes.v1'] = [
+      {
+        'id': 'ferry',
+        'body': 'Trip to Goa\nBook the ferry',
+        'createdAt': edited,
+        'updatedAt': edited,
+      },
+    ];
+  }
   await notes.load();
+  if (withYesterday) {
+    goldenTags.setTags('ferry', [goldenTags.create('Trip')!.id]);
+  }
   await tasks?.load();
   prefs.load();
   // These images document the app in use, where the notes list has been
@@ -1486,6 +1503,7 @@ void main() {
           withPinnedNote: !firstRun,
           withTasks: !firstRun,
           withDrawings: !firstRun,
+          withYesterday: !firstRun,
         );
       }
 
