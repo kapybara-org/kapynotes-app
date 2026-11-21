@@ -3182,9 +3182,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   void _settle() {
     // A note deleted, or gone with a space this account left or was taken
     // out of, has nothing left to open.
-    _unopenable.removeWhere(
-      (id) => _notes.byId(id) == null || _docs.get(id)?.unreadSeq == null,
-    );
+    _unopenable.removeWhere((id) => _notes.byId(id) == null);
     final problem = _stuck.isNotEmpty
         ? _stuckError
         : _unopenable.isNotEmpty
