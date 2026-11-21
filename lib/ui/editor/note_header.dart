@@ -159,7 +159,7 @@ class NoteMetaRow extends StatelessWidget {
     );
     final strong = quiet.copyWith(
       fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.rowTitle),
+      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
       color: palette.textSecondary,
     );
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));

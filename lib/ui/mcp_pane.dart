@@ -411,7 +411,7 @@ class _ActivityRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
-                fontVariations: AppWeight.variations(AppWeight.section),
+                fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
                 color: palette.textPrimary,
               ),
             ),

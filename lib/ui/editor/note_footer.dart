@@ -158,7 +158,7 @@ class _ReadOnlyStatus extends StatelessWidget {
             style: TextStyle(
               fontSize: AppTypeScale.caption,
               fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.rowTitle),
+              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
               color: palette.textSecondary,
             ),
           ),

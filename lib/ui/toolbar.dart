@@ -69,7 +69,7 @@ class UpdateRestartButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 fontWeight: FontWeight.w500,
-                fontVariations: AppWeight.variations(AppWeight.rowTitle),
+                fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
               ),
             ),
             style: TextButton.styleFrom(

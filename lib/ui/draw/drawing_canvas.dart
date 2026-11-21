@@ -1146,7 +1146,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               fontFamilyFallback: AppFonts.monoFallback,
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.rowTitle),
+              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -1255,7 +1255,7 @@ class _StylePanel extends StatelessWidget {
       fontSize: 12,
       height: 16 / 12,
       fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.rowTitle),
+      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
       color: palette.textTertiary,
     );
     return _DockSurface(
@@ -1368,7 +1368,7 @@ class _StylePanel extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
-                                    fontVariations: AppWeight.variations(AppWeight.rowTitle),
+                                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                                     color: option == width
                                         ? palette.tonalForeground
                                         : palette.textPrimary,

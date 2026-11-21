@@ -76,7 +76,7 @@ class TonalButton extends StatelessWidget {
       ?.copyWith(
         fontSize: AppTypeScale.control,
         fontWeight: FontWeight.w500,
-        fontVariations: AppWeight.variations(AppWeight.rowTitle),
+        fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
       );
 
   @override

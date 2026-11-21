@@ -1397,7 +1397,7 @@ class _Header extends StatelessWidget {
                   style: TextStyle(
                     fontSize: AppTypeScale.heading,
                     fontWeight: FontWeight.w500,
-                    fontVariations: AppWeight.variations(AppWeight.rowTitle),
+                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                     color: palette.textPrimary,
                   ),
                 ),
