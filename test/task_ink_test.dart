@@ -60,6 +60,10 @@ void main() {
         expect(ink.quiet, palette.textTertiary, reason: reason);
         expect(ink.sage, palette.accentText, reason: reason);
         expect(ink.hairline, palette.separator, reason: reason);
+        if (increaseContrast) {
+          expect(ink.edge, palette.controlBorder, reason: reason);
+          expect(ink.keyEdge, palette.checkboxBorder, reason: reason);
+        }
         for (final derived in [
           ink.lifted,
           ink.button,
@@ -114,5 +118,28 @@ void main() {
     expect(ink.edge, const Color(0x14E2DCCF));
     expect(ink.keyEdge, const Color(0x24E2DCCF));
     expect(ink.hairline, const Color(0x0FE2DCCF));
+  });
+
+  testWidgets('Midnight dark keeps the colours it was drawn in', (
+    tester,
+  ) async {
+    final ink = await inkUnder(
+      tester,
+      KapyTheme.dark(theme: AppTheme.midnight),
+    );
+    expect(ink.card, const Color(0xFF0F0F0F));
+    expect(ink.raised, const Color(0xFF2E2E2E));
+    expect(ink.lifted, const Color(0xFF1C1C1B));
+    expect(ink.rowHover, const Color(0xFF1F1F1F));
+    expect(ink.button, const Color(0xFF1E1E1D));
+    expect(ink.chip, const Color(0xFF212020));
+    expect(ink.text, const Color(0xFFE6E2DA));
+    expect(ink.secondary, const Color(0xFFA8A39A));
+    expect(ink.quiet, const Color(0xFF9A958C));
+    expect(ink.sage, const Color(0xFFA6BC8E));
+    expect(ink.doneFill, const Color(0xFF272B23));
+    expect(ink.edge, const Color(0x14E6E2DA));
+    expect(ink.keyEdge, const Color(0x24E6E2DA));
+    expect(ink.hairline, const Color(0xFF2E2E2E));
   });
 }
