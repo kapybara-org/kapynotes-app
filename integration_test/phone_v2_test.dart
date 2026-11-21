@@ -33,13 +33,14 @@ void main() {
 
     // Every tappable node is 44 pt square at least. A text field's own node
     // is its line of text, so it is left to the box it is given.
-    Future<void> check(String screen) async {
+    Future<void> check(String screen, {bool keyboard = false}) async {
       if (find.byType(Keycap).evaluate().isNotEmpty) {
         misses.add('$screen: a keycap');
       }
       await tester.pumpAndSettle();
       await screenshot(
         'phone-v2-${screen.replaceAll(RegExp('[^a-z0-9]+'), '-')}',
+        device: keyboard,
       );
       final root = tester.binding.renderViews
           .map((view) => view.owner?.semanticsOwner?.rootSemanticsNode)
@@ -94,7 +95,7 @@ void main() {
     await check('notes home, filters open');
     await tap(tester, 'phone-filters');
     await tap(tester, 'sidebar-search-field');
-    await check('quick find');
+    await check('quick find', keyboard: true);
     final cancel = find.byKey(const ValueKey('command-menu-cancel'));
     await tap(
       tester,
@@ -109,7 +110,7 @@ void main() {
     await tap(tester, 'settings-sheet-done');
     await tap(tester, 'bar-notes');
     await tap(tester, 'phone-new');
-    await check('new note');
+    await check('new note', keyboard: true);
     // A device with a hardware keyboard attached raises no software one, so
     // the note asks for the keyboard and takes the caret rather than reading
     // viewInsets. The inset itself is checked on the emulator by hand.

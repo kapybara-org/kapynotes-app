@@ -142,7 +142,7 @@ void main() {
         tester.view.viewInsets.bottom / tester.view.devicePixelRatio;
     expect(bar.height, 44);
     expect(bar.bottom, closeTo(keyboardTop, 1));
-    await screenshot('format-bar-on-keyboard');
+    await screenshot('format-bar-on-keyboard', device: true);
   });
 
   const cases = <(String, String, String)>[
@@ -170,7 +170,10 @@ void main() {
       expect(field(tester).controller.text, expected, reason: key);
       expect(field(tester).controller.selection.isValid, isTrue, reason: key);
       expectStillWriting(tester, reason: key);
-      await screenshot('format-bar-${key.replaceFirst('format-', '')}');
+      await screenshot(
+        'format-bar-${key.replaceFirst('format-', '')}',
+        device: true,
+      );
     });
   }
 
@@ -188,7 +191,7 @@ void main() {
       find.byKey(const ValueKey('link-address')),
       'https://example.com',
     );
-    await screenshot('format-bar-link-address');
+    await screenshot('format-bar-link-address', device: true);
     await tap(tester, 'link-add');
 
     expect(field(tester).controller.text, '[Trip](https://example.com) budget');
@@ -219,7 +222,7 @@ void main() {
     await tap(tester, 'format-indent');
     expect(field(tester).controller.text, '- one\n  - two');
     expectStillWriting(tester, reason: 'indent');
-    await screenshot('format-bar-indent');
+    await screenshot('format-bar-indent', device: true);
 
     await tap(tester, 'format-outdent');
     expect(field(tester).controller.text, '- one\n- two');
@@ -236,7 +239,7 @@ void main() {
     await tester.pump();
     await tap(tester, 'format-commands');
     expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
-    await screenshot('format-bar-commands');
+    await screenshot('format-bar-commands', device: true);
 
     final divider = find.byKey(const ValueKey('slash-command-divider'));
     await tester.ensureVisible(divider);
@@ -264,6 +267,6 @@ void main() {
     expect(tester.view.viewInsets.bottom, 0);
     expect(find.byKey(_bar), findsNothing);
     expect(field(tester).focusNode.hasFocus, isFalse);
-    await screenshot('format-bar-keyboard-hidden');
+    await screenshot('format-bar-keyboard-hidden', device: true);
   });
 }
