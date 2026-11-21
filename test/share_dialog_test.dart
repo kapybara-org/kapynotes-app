@@ -1149,6 +1149,48 @@ void main() {
       await tester.pump(const Duration(seconds: 8));
     });
 
+    testWidgets("Undo after Stop sharing in the share's sheet shares the "
+        'visible notes again and leaves a Hidden one private', (tester) async {
+      late Note ours;
+      late Note hidden;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+        hidden = alice.notes.create(body: 'Kept to myself');
+        await alice.sharing.shareNote(
+          hidden.id,
+          spaceId: alice.notes.byId(ours.id)!.spaceId!,
+        );
+      });
+      alice.notes.applyDoc(
+        alice.notes.byId(hidden.id)!.copyWith(hiddenAt: DateTime.now()),
+      );
+      await open(tester, alice.notes.byId(ours.id)!, alice, whole: true);
+      await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+      await tester.pumpAndSettle();
+      expect(find.text('Stop sharing “Ours”?'), findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
+      final close = find.byKey(const ValueKey('share-dialog-close'));
+      await until(tester, () => close.evaluate().isEmpty);
+      await tester.pumpAndSettle();
+      expect(alice.notes.byId(hidden.id)!.isShared, isFalse);
+
+      await tester.tap(find.text('Undo'));
+      final sent = find.textContaining('Invitation sent to');
+      await until(tester, () => sent.evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('Hidden'), findsNothing);
+      expect(alice.notes.byId(ours.id)!.isShared, isTrue);
+      expect(alice.notes.byId(hidden.id)!.isShared, isFalse);
+      expect(alice.notes.byId(hidden.id)!.isHidden, isTrue);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
     testWidgets('Block asks by the whole name, then says who is blocked', (
       tester,
     ) async {
