@@ -1541,6 +1541,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     // whole document under the new key; so must a seed; and every
     // `snapshotEvery` ops somebody writes one so nobody replays a year.
     final rotating = record.serverEpoch != 0 && epoch > record.serverEpoch;
+    // The server drops every op under the old key when a rotation lands, so
+    // a rotation from here waits until this device has read them all.
+    if (rotating && _missesOpIn(record, entry.spaceId)) return null;
     if (snap != null) {
       snapshot = WireSnapshot(
         covers: entry.covers,
@@ -1719,11 +1722,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   }
 
   /// Something this build cannot answer. The entry is replaced by a
-  /// snapshot of the whole document, which carries every op it held, and
+  /// snapshot of the whole document, which carries every op it held, or by
+  /// the whole document as ops while it misses an op in that space, and
   /// [problem] is shown rather than the entry retried in a loop.
   void _stick(DocRecord record, OutboxEntry entry, String problem) {
     record.outbox.remove(entry);
-    if (entry.deleted == null) {
+    if (entry.deleted == null &&
+        entry.from == null &&
+        _missesOpIn(record, entry.spaceId)) {
+      _queueStateOps(record, entry.spaceId);
+    } else if (entry.deleted == null) {
       record.outbox.insert(
         0,
         OutboxEntry(

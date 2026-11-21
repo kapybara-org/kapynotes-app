@@ -888,6 +888,117 @@ void main() {
         expect(alice.bodyOf(note.id), allOf(contains('A1'), contains('C1')));
       });
 
+      test('a member who could not open an edit, and whose push is refused, '
+          'puts nothing whole over it', () async {
+        note = await shareWithBob('Ledger');
+        spaceId = alice.notes.byId(note.id)!.spaceId!;
+        final carol = Person(server, userId: 'user-3', device: 'carol-pad');
+        addTearDown(carol.dispose);
+        await carol.boot();
+        await alice.sharing.invite(spaceId, carol.email);
+        await carol.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), 'Ledger');
+
+        alice.tick();
+        await alice.sharing.unshareNote(note.id);
+        alice.tick();
+        await alice.sharing.shareNote(note.id, spaceId: spaceId);
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Ledger\nA1');
+        await alice.sync.syncNow();
+
+        carol.api.failNoteKeys = const SyncTransientException('offline');
+        carol.tick(2);
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), 'Ledger');
+
+        // The server refuses her edit for a reason this build can't answer,
+        // so what she holds waits to go up whole once she edits again.
+        server.refusePushes = 'snapshot too large';
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ledger\nC1');
+        await carol.sync.syncNow();
+        expect(carol.sync.lastError, contains('too large to sync'));
+        server.refusePushes = null;
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ledger\nC1\nC2');
+        await carol.sync.syncNow();
+        expect(carol.sync.lastError, isNull);
+
+        final laptop = Person(
+          server,
+          userId: alice.userId,
+          device: 'alice-laptop',
+        );
+        await laptop.boot();
+        expect(laptop.bodyOf(note.id), contains('A1'));
+        laptop.dispose();
+      });
+
+      test('a member who could not open an edit, and rotates the note key '
+          'after a removal, puts nothing whole over it', () async {
+        note = await shareWithBob('Ledger');
+        spaceId = alice.notes.byId(note.id)!.spaceId!;
+        final carol = Person(server, userId: 'user-3', device: 'carol-pad');
+        addTearDown(carol.dispose);
+        await carol.boot();
+        await alice.sharing.invite(spaceId, carol.email);
+        await carol.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), 'Ledger');
+
+        alice.tick();
+        await alice.sharing.unshareNote(note.id);
+        alice.tick();
+        await alice.sharing.shareNote(note.id, spaceId: spaceId);
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Ledger\nA1');
+        await alice.sync.syncNow();
+
+        carol.api.failNoteKeys = const SyncTransientException('offline');
+        carol.tick(2);
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), 'Ledger');
+
+        // Bob is removed, so the next write to the note seals it under a
+        // key he never had.
+        await alice.sharing.removeMember(spaceId, bob.userId);
+        await alice.sync.syncNow();
+        carol.tick();
+        await carol.sync.syncNow();
+        carol.tick();
+        carol.notes.updateBody(note.id, 'Ledger\nC1');
+        await carol.sync.syncNow();
+
+        final laptop = Person(
+          server,
+          userId: alice.userId,
+          device: 'alice-laptop',
+        );
+        await laptop.boot();
+        expect(laptop.bodyOf(note.id), contains('A1'));
+        laptop.dispose();
+
+        // Once she can read it, her rotation goes up with it.
+        carol.api.failNoteKeys = null;
+        carol.tick();
+        await carol.sync.syncNow();
+        carol.tick();
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), allOf(contains('A1'), contains('C1')));
+        final phone = Person(
+          server,
+          userId: alice.userId,
+          device: 'alice-phone',
+        );
+        await phone.boot();
+        expect(phone.bodyOf(note.id), allOf(contains('A1'), contains('C1')));
+        phone.dispose();
+      });
+
       test('a member who held the note before reads what is written once it '
           'is back', () async {
         note = await shareWithBob('Round trip');
