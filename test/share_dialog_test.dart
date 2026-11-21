@@ -864,6 +864,29 @@ void main() {
       });
     }
 
+    testWidgets('the Block question puts its button in red', (tester) async {
+      late Note mine;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        mine = await shareFrom(alice, 'Ours', [bob]);
+      });
+
+      await open(tester, alice.notes.byId(mine.id)!, alice, whole: false);
+      await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Block…'));
+      await tester.pumpAndSettle();
+      final ok = find.byKey(const ValueKey('sharing-ask-ok'));
+      expect(
+        tester.widget<TextButton>(ok).style?.foregroundColor?.resolve({}),
+        Theme.of(tester.element(ok)).colorScheme.error,
+      );
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+      await tester.pumpAndSettle();
+      expect(alice.sharing.hasBlocked(bob.email), isFalse);
+    });
+
     Future<Note> threeFromAlice(WidgetTester tester) async {
       late Note first;
       await tester.runAsync(() async {

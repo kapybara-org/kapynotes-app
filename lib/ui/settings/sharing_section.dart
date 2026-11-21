@@ -380,6 +380,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
             "They can't invite you again, and this invitation goes away. "
             'You can unblock them here, under Blocked people.',
         action: 'Block',
+        warning: true,
       );
       if (ok == null || !mounted) return;
       await _run(
@@ -433,6 +434,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
             "$first shares with you (keeping copies), and $first can't "
             'invite you again.',
         action: 'Block',
+        warning: true,
       );
       if (ok == null || !mounted) return;
       final blocked = await _run(
@@ -468,6 +470,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
             '$first stops seeing this note. It stays in your notes, with '
             'everything $first wrote.',
         action: 'Stop sharing',
+        warning: true,
       );
       if (ok == null || !mounted) return;
       await _run(
@@ -536,6 +539,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
                     'changes, and $first keeps the notes.'
               : "You stop seeing $first's changes. $first keeps the note.",
           action: 'Leave',
+          warning: true,
           option: together > 1 ? 'Keep private copies' : 'Keep a private copy',
         );
         if (keep == null || !mounted) return;
@@ -558,6 +562,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
           'stay in your notes, with every change. Notes $first shares with '
           "you aren't affected.",
       action: 'Stop sharing',
+      warning: true,
     );
     if (ok == null || !mounted) return;
     final before = {
@@ -595,6 +600,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
           'The invitation and its link stop working. The notes stay as '
           'they are.',
       action: 'Cancel invitation',
+      warning: true,
     );
     if (ok == null || !mounted) return;
     await _run(

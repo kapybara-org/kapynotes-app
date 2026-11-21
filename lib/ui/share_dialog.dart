@@ -365,6 +365,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           '$name stops seeing this note, and it leaves their devices. It '
           'stays in your notes, with everything $name wrote.',
       action: 'Remove',
+      warning: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
@@ -397,6 +398,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           '$who ${people > 1 ? 'lose' : 'loses'} access. The note '
           'stays in your notes, with every change.',
       action: 'Stop sharing',
+      warning: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
@@ -483,6 +485,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       body:
           'The invitation and its link stop working. The note stays as it is.',
       action: 'Cancel invitation',
+      warning: true,
     );
     if (ok != true || !mounted) return;
     await _run(() async {
@@ -1232,6 +1235,7 @@ Future<bool> _askToBlock(BuildContext context, SpaceMember member) async {
             'shares with you (keeping copies), and $name can’t invite you '
             'again.',
         action: 'Block',
+        warning: true,
       ) ==
       true;
 }
@@ -1261,6 +1265,7 @@ Future<bool?> _askToLeave(
               '$owner keeps the notes.'
         : 'You stop seeing $owner’s changes. $owner keeps the note.',
     action: 'Leave',
+    warning: true,
     option: together > 1 ? 'Keep private copies' : 'Keep a private copy',
   );
 }
