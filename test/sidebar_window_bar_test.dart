@@ -18,17 +18,27 @@ void main() {
     (TargetPlatform.windows, 'Ctrl+N'),
     (TargetPlatform.macOS, '⌘N'),
   ]) {
-    for (final scale in [1.0, 1.3, 2.0]) {
+    // Ask Kapy's sparkle and the gap after it take 40 more, so its sweep
+    // starts 40 wider.
+    for (final (scale, ask) in [
+      (1.0, false),
+      (1.3, false),
+      (2.0, false),
+      (1.0, true),
+      (1.3, true),
+      (2.0, true),
+    ]) {
       testWidgets(
-        '${platform.name} at ${scale}x text: from 212 to 440 px New note '
-        'gives up its keycap, then its word, before the list title truncates',
+        '${platform.name} at ${scale}x text${ask ? ', with Ask Kapy' : ''}: '
+        'from ${ask ? 252 : 212} to 440 px New note gives up its keycap, '
+        'then its word, before the list title truncates',
         (tester) async {
           AppPlatform.debugTargetPlatformOverride = platform;
           var keycapFrom = 0.0;
           var labelFrom = 0.0;
           var keycap = false;
           var label = false;
-          for (var width = 212.0; width <= 440; width++) {
+          for (var width = ask ? 252.0 : 212.0; width <= 440; width++) {
             await tester.pumpWidget(
               MaterialApp(
                 theme: KapyTheme.light(),
@@ -48,6 +58,7 @@ void main() {
                         count: 12,
                         onCreate: () {},
                         onHide: () {},
+                        onAskKapy: ask ? () {} : null,
                         newNoteShortcut: ShortcutBinding(
                           logicalKey: LogicalKeyboardKey.keyN,
                           physicalKey: PhysicalKeyboardKey.keyN,
@@ -107,4 +118,40 @@ void main() {
       );
     }
   }
+
+  testWidgets('a hairline runs along the bar\'s bottom, as under the band', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Material(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 320,
+              child: SidebarWindowBar(
+                title: 'My notes',
+                count: 12,
+                onCreate: () {},
+                onHide: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final bar = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byType(SidebarWindowBar),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      (bar.foregroundDecoration as BoxDecoration?)?.border,
+      Border(bottom: BorderSide(color: KapyTheme.lightPalette.railBorder)),
+    );
+  });
 }
