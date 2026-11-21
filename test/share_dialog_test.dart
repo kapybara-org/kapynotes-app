@@ -593,6 +593,69 @@ void main() {
       }
     });
 
+    testWidgets('Undo after the sheet has closed still puts them back, and '
+        'says so', (tester) async {
+      await sharedWithBob(tester);
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+      expect(alice.notes.byId(note.id)!.isShared, isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('share-dialog-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('share-dialog-close')), findsNothing);
+
+      await tester.tap(find.text('Undo'));
+      await until(tester, () => alice.notes.byId(note.id)!.isShared);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(server.outbox.last.to, bob.email);
+      expect(find.text('Invitation sent to ${bob.email}'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets('Undo that has to invite them again says so, not that they '
+        'can see the note', (tester) async {
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        await carol.boot();
+        note = alice.notes.create(body: 'Ours');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+        await alice.sharing.addPerson(note.id, carol.email, allNotes: true);
+        await carol.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+      });
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Undo'));
+      final sent = find.text('Invitation sent to ${bob.email}');
+      await until(tester, () => sent.evaluate().isNotEmpty);
+      expect(sent, findsOneWidget);
+      expect(find.textContaining('can see this note again'), findsNothing);
+      expect(find.textContaining('waiting to join'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
     testWidgets('removing somebody says who loses what, and Undo brings them '
         'back', (tester) async {
       await tester.runAsync(() async {
@@ -807,6 +870,55 @@ void main() {
       for (final note in device.notes.notes)
         if (!note.isShared) note.body,
     ]..sort();
+
+    testWidgets("an access change from the share's sheet asks first when it "
+        'covers more than one note, and its notice is announced', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      late Note ours;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        ours = await shareFrom(alice, 'Ours', [bob]);
+        await alice.sharing.shareNote(
+          alice.notes.create(body: 'Renewal notes').id,
+          spaceId: ours.spaceId!,
+        );
+      });
+      await open(tester, alice.notes.byId(ours.id)!, alice, whole: true);
+
+      final bobName = server.user(bob.userId).name.split(' ').first;
+      for (final answer in ['sharing-ask-cancel', 'sharing-ask-ok']) {
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Can view'));
+        await tester.pumpAndSettle();
+        expect(find.text('Let $bobName only view?'), findsOneWidget);
+        expect(
+          find.text(
+            '$bobName sees 2 notes you share together, and the change is for '
+            'all of them.',
+          ),
+          findsOneWidget,
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(ValueKey(answer)));
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        });
+        await tester.pumpAndSettle();
+        expect(
+          server.spaces[ours.spaceId]!.members[bob.userId],
+          answer == 'sharing-ask-ok' ? SpaceRole.viewer : SpaceRole.member,
+        );
+      }
+      expect(
+        tester.getSemantics(find.text('Access changed')),
+        isSemantics(isLiveRegion: true),
+      );
+      semantics.dispose();
+      await tester.pump(const Duration(seconds: 6));
+    });
 
     for (final whole in [false, true]) {
       testWidgets('Block ${from(whole)} asks first, then ends the shares '
@@ -1133,6 +1245,41 @@ void main() {
       contains('Ours'),
     );
     expect(server.outbox.last.to, bob.email);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('Undo after the sheet has closed still shares the note again', (
+    tester,
+  ) async {
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      note = alice.notes.create(body: 'Ours');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
+    });
+
+    await openSheet(tester, alice.notes.byId(note.id)!, alice);
+    await tester.tap(find.byKey(const ValueKey('stop-sharing')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('share-dialog-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('share-dialog-close')), findsNothing);
+
+    await tester.tap(find.text('Undo'));
+    final again = find.textContaining('Shared again with');
+    await until(tester, () => again.evaluate().isNotEmpty);
+    expect(tester.takeException(), isNull);
+    expect(again, findsOneWidget);
+    expect(alice.notes.byId(note.id)!.isShared, isTrue);
     await tester.pump(const Duration(seconds: 5));
   });
 

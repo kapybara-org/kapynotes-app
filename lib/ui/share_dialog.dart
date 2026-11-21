@@ -370,15 +370,20 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     await _run(() async {
       await _sharing.removeFromNote(_note.id, member.email);
       if (!mounted) return;
+      final sharing = _sharing;
+      final noteId = _note.id;
+      final overlay = Overlay.of(context, rootOverlay: true);
       Toast.show(
         context,
         'Removed $name from this note',
         action: 'Undo',
         onAction: () => unawaited(
-          _run(
-            () => _sharing.addPerson(_note.id, member.email, role: role),
-            notice: '$name can see this note again',
-          ),
+          undoSharing(overlay, () async {
+            await sharing.addPerson(noteId, member.email, role: role);
+            return sharing.memberOn(noteId, member.email) == null
+                ? 'Invitation sent to ${member.email}'
+                : '$name can see this note again';
+          }),
         ),
       );
     });
@@ -402,15 +407,18 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     await _run(() async {
       await _sharing.unshareNote(_note.id);
       if (!mounted) return;
+      final sharing = _sharing;
+      final noteId = _note.id;
+      final overlay = Overlay.of(context, rootOverlay: true);
       Toast.show(
         context,
         'Stopped sharing “${_note.title}”',
         action: 'Undo',
         onAction: () => unawaited(
-          _run(
-            () => _sharing.shareNoteWithPeople(_note.id, audience),
-            notice: 'Shared again with $who',
-          ),
+          undoSharing(overlay, () async {
+            await sharing.shareNoteWithPeople(noteId, audience);
+            return 'Shared again with $who';
+          }),
         ),
       );
     });
@@ -1011,6 +1019,36 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
     });
   }
 
+  /// Access is for every note here, so a change that covers more than one
+  /// asks first, as the note's sheet and Settings do.
+  Future<void> _changeAccess(Space space, String email, SpaceRole role) async {
+    final member = space
+        .othersThan(_sharing.userId)
+        .where((member) => member.email.toLowerCase() == email.toLowerCase())
+        .firstOrNull;
+    if (member == null) return;
+    final name = member.firstName;
+    final together = [
+      for (final note in _sharing.notesIn(space.id))
+        if (!note.isHidden) note,
+    ].length;
+    if (together > 1) {
+      final ok = await askFirst(
+        context,
+        title: role.canEdit ? 'Let $name edit?' : 'Let $name only view?',
+        body:
+            '$name sees $together notes you share together, and the change '
+            'is for all of them.',
+        action: 'Change access',
+      );
+      if (ok == null || !mounted) return;
+    }
+    await _run(
+      () => _sharing.changeAccess(space.id, member.userId, role),
+      notice: 'Access changed',
+    );
+  }
+
   /// The join panels share this sheet's one way of running an action.
   Future<void> _panelRun(
     Future<void> Function() action, {
@@ -1059,18 +1097,7 @@ class _SpaceShareSheetState extends State<_SpaceShareSheet> {
                   sharing: _sharing,
                   space: space,
                   busy: !enabled,
-                  onAccess: (email, role) => _run(() async {
-                    for (final member in space.othersThan(_sharing.userId)) {
-                      if (member.email.toLowerCase() != email.toLowerCase()) {
-                        continue;
-                      }
-                      await _sharing.changeAccess(
-                        space.id,
-                        member.userId,
-                        role,
-                      );
-                    }
-                  }, notice: 'Access changed'),
+                  onAccess: (email, role) => _changeAccess(space, email, role),
                   onRemove: (member) => _run(
                     () => _sharing.removeMember(space.id, member.userId),
                     notice: '${member.firstName} was removed',
@@ -2548,33 +2575,38 @@ class _Message extends StatelessWidget {
     final color = isError
         ? Theme.of(context).colorScheme.error
         : Theme.of(context).colorScheme.primary;
-    return KapyControlSurface(
-      color: color.withValues(alpha: 0.07),
-      borderColor: color.withValues(alpha: 0.34),
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: KapyIcon(
-              isError ? KapyIcons.errorOutlined : KapyIcons.checkCircleRounded,
-              size: AppControlMetrics.iconAdornment,
-              color: color,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                color: isError ? color : palette.textSecondary,
-                height: 1.4,
+    return Semantics(
+      liveRegion: true,
+      child: KapyControlSurface(
+        color: color.withValues(alpha: 0.07),
+        borderColor: color.withValues(alpha: 0.34),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: KapyIcon(
+                isError
+                    ? KapyIcons.errorOutlined
+                    : KapyIcons.checkCircleRounded,
+                size: AppControlMetrics.iconAdornment,
+                color: color,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: AppTypeScale.small,
+                  color: isError ? color : palette.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
