@@ -486,7 +486,7 @@ void main() {
       expect(find.text('Use Codex'), findsOneWidget);
       expect(find.text('Use Claude Code'), findsOneWidget);
       expect(find.text('Add your key'), findsOneWidget);
-      expect(find.text('Get one, then paste it in Settings'), findsOneWidget);
+      expect(find.text('Get one, then add it in Settings'), findsOneWidget);
       expect(find.text('Manage accounts…'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('kapy-ai-connect-codex')));
@@ -555,6 +555,63 @@ void main() {
 
       expect(find.text('Codex'), findsNothing);
     });
+
+    const keyMissing = KapyAccountState(
+      kind: KapyAccountKind.openRouter,
+      status: KapyAccountStatus.notConnected,
+    );
+    const manyModels = KapyAccountState(
+      kind: KapyAccountKind.openRouter,
+      status: KapyAccountStatus.connected,
+      models: [
+        FakeKapyAi.gemini,
+        KapyModel(kind: KapyModelKind.openRouter, id: 'a', label: 'A'),
+        KapyModel(kind: KapyModelKind.openRouter, id: 'b', label: 'B'),
+        KapyModel(kind: KapyModelKind.openRouter, id: 'c', label: 'C'),
+        KapyModel(kind: KapyModelKind.openRouter, id: 'd', label: 'D'),
+      ],
+      detail: '4f2a',
+    );
+    for (final (menu, accounts, shown) in [
+      ('a short menu', [keyMissing], true),
+      (
+        'three models',
+        [_codexConnected, _claudeConnected, _routerConnected],
+        false,
+      ),
+      ('a tall menu', [_codexConnected, _claudeConnected, manyModels], false),
+    ]) {
+      testWidgets('Kapy’s head is whole above $menu, or wholly under it', (
+        tester,
+      ) async {
+        const chin = 56.0;
+        tester.view.physicalSize = const Size(400, 760);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await open(tester, FakeKapyAi(pro: true, accountList: accounts));
+        await tester.pump();
+
+        final head = find.descendant(
+          of: find.byType(KapyAiEmpty),
+          matching: find.byType(Image),
+        );
+        final drawn = find
+            .ancestor(
+              of: head,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is Visibility && !widget.visible,
+              ),
+            )
+            .evaluate()
+            .isEmpty;
+        final top = tester.getRect(head).top;
+        final picker = tester.getRect(
+          find.byKey(const ValueKey('kapy-ai-picker')),
+        );
+        expect(drawn, top + chin <= picker.top);
+        expect(drawn, shown);
+      });
+    }
   });
 
   group('what holds a question up', () {

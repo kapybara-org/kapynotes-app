@@ -106,6 +106,7 @@ class KapyAiPanel extends StatefulWidget {
 class _KapyAiPanelState extends State<KapyAiPanel> {
   final _field = TextEditingController();
   final _fieldFocus = FocusNode(debugLabel: 'kapy-ai-composer');
+  final _menu = GlobalKey();
   bool _chats = false;
   bool _picking = false;
 
@@ -238,6 +239,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                       child: Align(
                         alignment: Alignment.bottomCenter,
                         child: KapyAiPicker(
+                          key: _menu,
                           kapyAi: _ai,
                           onPick: _pick,
                           onManageAccounts: () {
@@ -314,6 +316,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     if (chat == null || chat.messages.isEmpty) {
       final noteId = _noteId;
       return KapyAiEmpty(
+        menu: _picking ? _menu : null,
         suggestions: noteId == null
             ? const [
                 'What did I plan for this week?',
