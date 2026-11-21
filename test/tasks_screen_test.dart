@@ -968,6 +968,35 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('on a desktop, Increase contrast adds no outline over the '
+        'pair\'s choices: their own border stays the only one', (tester) async {
+      await canonical(tester);
+      final theme = KapyTheme.dark(
+        theme: AppTheme.midnight,
+        increaseContrast: true,
+      );
+      await pumpScreen(tester, theme: theme);
+      await settle(tester);
+      final line = theme.extension<CalcPalette>()!.controlBorder;
+      for (final side in ['tasks-pair-left', 'tasks-pair-right']) {
+        final box = tester.widget<Container>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey(side)),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+        expect(box.foregroundDecoration, isNull, reason: side);
+        expect(
+          (box.decoration as BoxDecoration?)?.border,
+          Border.all(color: line),
+          reason: side,
+        );
+      }
+      await settle(tester);
+    });
+
     testWidgets('D2 morning, mid-pair', (tester) async {
       await canonical(tester);
       tasks.keepChoice(pair());
