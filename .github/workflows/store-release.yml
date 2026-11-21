@@ -1,0 +1,363 @@
+# App Store and Google Play releases, started by hand.
+#
+#   Actions -> Store release -> Run workflow, from the release branch
+#
+# Builds the iOS app and the Android App Bundle from the version in
+# pubspec.yaml, which must equal the version and build number typed in, then
+# takes each through its store: App Store Connect upload, processing, What's
+# New and review submission; Play internal track, then production. Every
+# release goes to all users once approved, on both stores. There is no phased
+# release on iOS and no staged rollout on Play.
+#
+# The notes files hold the text users see: What's New for the App Store (up to
+# 4000 characters) and the Play release notes (up to 500). Both are paths
+# inside this repository, for example under metadata/.
+#
+# Secrets, all on the store-release environment so that only an approved run
+# sees them:
+#
+#   ASC_APPSTORE_KEY_ID        App Store Connect team API key with the Admin
+#   ASC_APPSTORE_ISSUER_ID     role. Admin is what cloud signing needs: Apple
+#   ASC_APPSTORE_KEY_P8        makes the distribution certificate and profiles
+#                              and signs the export, so no .p12 is stored here.
+#                              The .p8 may be pasted as is or base64-encoded.
+#   PLAY_SERVICE_ACCOUNT_JSON  the service account key that has release
+#                              permission for the app in Play Console
+#   ANDROID_UPLOAD_KEYSTORE_B64  the upload keystore (alias "upload"), base64
+#   ANDROID_KEYSTORE_PASSWORD    its store password
+#   ANDROID_KEY_PASSWORD         the password of the "upload" key in it
+#
+# This repository is public, and so are its run logs and artifacts. No step
+# prints a secret, and GitHub masks them as well. The artifacts are the Dart
+# symbols, the dSYMs and the R8 mapping that make a crash from this build
+# readable; they are kept for 14 days, so copy them somewhere durable.
+name: Store release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version, for example 1.35.1. Must match pubspec.yaml.
+        required: true
+        type: string
+      build_number:
+        description: Build number, for example 43. Must match pubspec.yaml.
+        required: true
+        type: string
+      stores:
+        description: Which stores to release to
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - ios
+          - android
+      ios_notes_file:
+        description: App Store What's New file, repo-relative (needed for ios and both)
+        required: false
+        type: string
+      play_notes_file:
+        description: Play release notes file, repo-relative (needed for android and both)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# One store release at a time. A second run waits rather than cancelling the
+# first, which may be halfway through a submission.
+concurrency:
+  group: store-release
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+  VERSION: ${{ inputs.version }}
+  BUILD: ${{ inputs.build_number }}
+  IOS_NOTES: ${{ inputs.ios_notes_file }}
+  PLAY_NOTES: ${{ inputs.play_notes_file }}
+
+jobs:
+  # Cheap gate, with no secrets and no approval: a typo in the inputs fails
+  # here, before anyone is asked to approve a run.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Inputs must match pubspec.yaml and name real notes files
+        env:
+          STORES: ${{ inputs.stores }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$BUILD" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::version must look like 1.35.1 and build_number like 43"
+            exit 1
+          fi
+          line="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//')"
+          if [ "$line" != "$VERSION+$BUILD" ]; then
+            echo "::error::pubspec.yaml on $GITHUB_REF_NAME says $line, not $VERSION+$BUILD"
+            exit 1
+          fi
+
+          check_notes() {
+            local label="$1" path="$2" limit="$3" real chars
+            if [ -z "$path" ]; then
+              echo "::error::$label is required for this run"
+              exit 1
+            fi
+            real="$(realpath -e -- "$path" 2>/dev/null)" || {
+              echo "::error::$label $path does not exist on $GITHUB_REF_NAME"
+              exit 1
+            }
+            case "$real" in
+              "$GITHUB_WORKSPACE"/*) ;;
+              *) echo "::error::$label must be a path inside the repository"; exit 1 ;;
+            esac
+            chars="$(python3 -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8").read().strip()))' "$real")"
+            if [ "$chars" -eq 0 ] || [ "$chars" -gt "$limit" ]; then
+              echo "::error::$label is $chars characters; it must be 1 to $limit"
+              exit 1
+            fi
+            echo "$label: $path, $chars characters"
+          }
+          if [ "$STORES" != android ]; then check_notes ios_notes_file "$IOS_NOTES" 4000; fi
+          if [ "$STORES" != ios ]; then check_notes play_notes_file "$PLAY_NOTES" 500; fi
+          echo "Releasing $VERSION ($BUILD) to $STORES"
+
+  ios:
+    needs: verify
+    if: inputs.stores != 'android'
+    environment: store-release
+    # The macos-* images stop at Xcode 26; this one carries Xcode 27.
+    runs-on: xcode-27
+    timeout-minutes: 150
+    env:
+      KEY_DIR: /Users/runner/.appstoreconnect/private_keys
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The newest Xcode on the image, not its default, so the build uses the
+      # same SDK as the Mac it replaces (Xcode 27.2, iOS 27.2 SDK).
+      - name: Select the newest Xcode
+        run: |
+          set -euo pipefail
+          xcode="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -type d | sort -V | tail -1)"
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$xcode/Contents/Developer" xcodebuild -version
+          DEVELOPER_DIR="$xcode/Contents/Developer" xcrun --sdk iphoneos --show-sdk-version
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get --enforce-lockfile
+
+      # Where altool looks for AuthKey_<id>.p8, and the file xcodebuild and
+      # asc_submit.py are pointed at.
+      - name: Write the App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_APPSTORE_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_APPSTORE_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_APPSTORE_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_ISSUER_ID:-}" ] || [ -z "${ASC_KEY_P8:-}" ]; then
+            echo "::error::ASC_APPSTORE_KEY_ID, ASC_APPSTORE_ISSUER_ID or ASC_APPSTORE_KEY_P8 is not set on the store-release environment"
+            exit 1
+          fi
+          if ! [[ "$ASC_KEY_ID" =~ ^[A-Z0-9]+$ ]]; then
+            echo "::error::ASC_APPSTORE_KEY_ID is not a key ID"
+            exit 1
+          fi
+          umask 077
+          mkdir -p "$KEY_DIR"
+          key="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8"
+          if [[ "$ASC_KEY_P8" == "-----BEGIN"* ]]; then
+            printf '%s\n' "$ASC_KEY_P8" > "$key"
+          else
+            printf '%s' "$ASC_KEY_P8" | base64 --decode > "$key"
+          fi
+          grep -q -- '-----BEGIN PRIVATE KEY-----' "$key" || {
+            echo "::error::ASC_APPSTORE_KEY_P8 is not a .p8 private key"
+            exit 1
+          }
+
+      - name: Build the IPA
+        env:
+          XCODE_AUTH_KEY_ID: ${{ secrets.ASC_APPSTORE_KEY_ID }}
+          XCODE_AUTH_ISSUER_ID: ${{ secrets.ASC_APPSTORE_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          # Absolute, because the preflight checks it with -x.
+          FLUTTER="$(command -v flutter)"
+          export FLUTTER
+          export XCODE_AUTH_KEY_PATH="$KEY_DIR/AuthKey_$XCODE_AUTH_KEY_ID.p8"
+          packaging/release.sh ios
+
+      - name: Bundle the Dart symbols and dSYMs
+        run: |
+          set -euo pipefail
+          (cd "build/release/symbols/$VERSION" && zip -qr "../../kapy-ios-$VERSION-symbols.zip" ios)
+          ditto -c -k --keepParent build/ios/archive/Runner.xcarchive/dSYMs "build/release/kapy-ios-$VERSION-dSYMs.zip"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-${{ inputs.version }}-symbols
+          path: |
+            build/release/kapy-ios-${{ inputs.version }}-symbols.zip
+            build/release/kapy-ios-${{ inputs.version }}-dSYMs.zip
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_APPSTORE_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_APPSTORE_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app -f build/release/kapy-ios.ipa -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Install the App Store Connect client's dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet PyJWT==2.15.1 cryptography==50.0.2
+
+      - name: Wait for the build to process
+        env: &asc
+          ASC_KEY_ID: ${{ secrets.ASC_APPSTORE_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_APPSTORE_ISSUER_ID }}
+          VER: ${{ inputs.version }}
+          NOTES_FILE: ${{ inputs.ios_notes_file }}
+        run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py build
+
+      - name: Prepare the version, with no phased release
+        env: *asc
+        run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py prepare
+
+      - name: Submit for review
+        env: *asc
+        run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py submit
+
+      - name: Confirm what was submitted
+        env: *asc
+        run: ASC_KEY_PATH="$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" "$RUNNER_TEMP/asc/bin/python" packaging/asc_submit.py status
+
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$KEY_DIR" "$RUNNER_TEMP/asc"
+
+  android:
+    needs: verify
+    if: inputs.stores != 'ios'
+    environment: store-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get --enforce-lockfile
+
+      # key.properties is gitignored and read by android/app/build.gradle.kts.
+      # The alias is fixed at "upload", the alias of the Mac's keystore.
+      - name: Write the upload keystore and key.properties
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_B64:-}" ] || [ -z "${STORE_PASSWORD:-}" ] || [ -z "${KEY_PASSWORD:-}" ]; then
+            echo "::error::ANDROID_UPLOAD_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD or ANDROID_KEY_PASSWORD is not set on the store-release environment"
+            exit 1
+          fi
+          umask 077
+          keystore="$RUNNER_TEMP/upload.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$keystore"
+          # A wrong password or alias fails here, quietly, rather than an hour
+          # into Gradle.
+          keytool -list -keystore "$keystore" -storepass:env STORE_PASSWORD -alias upload >/dev/null
+          # Backslashes are escapes in a .properties file.
+          {
+            printf 'storeFile=%s\n' "$keystore"
+            printf 'storePassword=%s\n' "${STORE_PASSWORD//\\/\\\\}"
+            printf 'keyAlias=upload\n'
+            printf 'keyPassword=%s\n' "${KEY_PASSWORD//\\/\\\\}"
+          } > android/key.properties
+
+      - name: Build the app bundle
+        run: |
+          set -euo pipefail
+          FLUTTER="$(command -v flutter)"
+          export FLUTTER
+          packaging/release.sh android
+
+      - name: Bundle the Dart symbols and the R8 mapping
+        run: |
+          set -euo pipefail
+          (cd "build/release/symbols/$VERSION" && zip -qr "../../kapy-android-$VERSION-symbols.zip" android)
+          cp build/app/outputs/mapping/release/mapping.txt "build/release/kapy-android-$VERSION-mapping.txt"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-${{ inputs.version }}-symbols
+          path: |
+            build/release/kapy-android-${{ inputs.version }}-symbols.zip
+            build/release/kapy-android-${{ inputs.version }}-mapping.txt
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Write the Play service account key
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAY_JSON:-}" ]; then
+            echo "::error::PLAY_SERVICE_ACCOUNT_JSON is not set on the store-release environment"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$PLAY_JSON" > "$RUNNER_TEMP/play-service-account.json"
+          python3 -c 'import json,sys; k=json.load(open(sys.argv[1])); assert k.get("type") == "service_account" and k.get("client_email") and k.get("private_key")' \
+            "$RUNNER_TEMP/play-service-account.json" || {
+            echo "::error::PLAY_SERVICE_ACCOUNT_JSON is not a service account key"
+            exit 1
+          }
+
+      # Internal first, then the same version code is promoted, so production
+      # gets the exact bytes that were uploaded. --rollout 1 means everyone.
+      - name: Upload to the internal track
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ runner.temp }}/play-service-account.json
+        run: python3 packaging/upload_play.py upload --track internal --bundle build/release/kapy-android.aab
+
+      - name: Promote to production for all users
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ runner.temp }}/play-service-account.json
+        run: |
+          python3 packaging/upload_play.py promote --track production --rollout 1 \
+            --version-code "$BUILD" --notes-file "$PLAY_NOTES"
+
+      - name: Remove the keystore and keys
+        if: always()
+        run: rm -f android/key.properties "$RUNNER_TEMP/upload.jks" "$RUNNER_TEMP/play-service-account.json"
