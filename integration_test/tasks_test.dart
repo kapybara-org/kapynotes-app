@@ -1,21 +1,19 @@
 // Tasks on a real Mac or phone: the whole app over notes kept in memory,
 // walked through the boards' states with a clock the test moves.
 //
-//   flutter test integration_test/tasks_test.dart -d <device> \
+//   flutter drive --driver test_driver/integration_test.dart \
+//     --target integration_test/tasks_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
 // The Mac walks D1 to D5 by keys and clicks; a phone walks D6 and D7 by taps
-// and lays the pair and Do now out at 1×, 1.3× and 2× text. With
-// --dart-define=TASKS_SHOTS=true each state is also saved as a picture in the
-// app's support folder, under tasks-shots.
-import 'dart:io';
-import 'dart:ui' as ui;
-
+// and lays the pair and Do now out at 1×, 1.3× and 2× text. Each state is
+// taken dark and light, as screenshots in build/screenshots.
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -27,10 +25,9 @@ import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 
-const _shots = bool.fromEnvironment('TASKS_SHOTS');
+import 'screenshot.dart';
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'tasks-integration.json');
@@ -49,6 +46,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   var clock = DateTime(2026, 11, 19, 9);
+  late LayoutPrefs prefs;
 
   Future<void> launch(WidgetTester tester) async {
     if (AppPlatform.isDesktop) {
@@ -65,6 +63,7 @@ void main() {
       now: () => clock,
     );
     final tags = TagStore(store);
+    prefs = LayoutPrefs(store)..load();
     await notes.load();
     await library.load();
     await tags.load();
@@ -89,7 +88,7 @@ void main() {
         store: store,
         notes: notes,
         rates: RatesRepository(store),
-        prefs: LayoutPrefs(store)..load(),
+        prefs: prefs,
         shortcuts: ShortcutPrefs(store)..load(),
         tags: tags,
         tasks: library,
@@ -99,22 +98,12 @@ void main() {
   }
 
   Future<void> shot(WidgetTester tester, String name) async {
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull, reason: name);
-    if (!_shots) return;
-    final view = tester.binding.renderViews.first;
-    final layer = view.debugLayer! as OffsetLayer;
-    final image = await layer.toImage(
-      Offset.zero & view.flutterView.physicalSize,
-    );
-    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-    final folder = Directory(
-      '${(await getApplicationSupportDirectory()).path}/tasks-shots',
-    )..createSync(recursive: true);
-    File(
-      '${folder.path}/$name.png',
-    ).writeAsBytesSync(bytes!.buffer.asUint8List());
+    for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
+      prefs.appearance = mode;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: name);
+      await screenshot('tasks-$name-${mode.name}');
+    }
   }
 
   Future<void> tap(WidgetTester tester, String key) async {
@@ -155,13 +144,13 @@ void main() {
         contains('Renew passport before the trip'),
       ]),
     );
-    await shot(tester, 'D1-morning-the-first-pair');
+    await shot(tester, 'window-d1-first-pair');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pumpAndSettle();
     expect(find.text('Your choice so far'), findsOneWidget);
     expect(find.text('Up next'), findsOneWidget);
-    await shot(tester, 'D2-morning-mid-pair');
+    await shot(tester, 'window-d2-mid-pair');
 
     await tap(tester, 'tasks-start');
     expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
@@ -169,7 +158,7 @@ void main() {
       heard(tester, 'tasks-do-now'),
       containsAll([contains('Not finished'), contains('Done')]),
     );
-    await shot(tester, 'D3-during-the-day-do-now');
+    await shot(tester, 'window-d3-do-now');
 
     clock = clock.add(const Duration(minutes: 30));
     final field = find.byKey(const ValueKey('tasks-add-field'));
@@ -182,13 +171,13 @@ void main() {
     await tap(tester, 'tasks-done');
     expect(find.byKey(const ValueKey('tasks-just-done')), findsOneWidget);
     expect(find.text('New since you chose'), findsOneWidget);
-    await shot(tester, 'D4-after-done-a-new-task');
+    await shot(tester, 'window-d4-after-done');
 
     clock = DateTime(2026, 11, 19, 18, 30);
     await tap(tester, 'tasks-choose-again');
     expect(find.text('Done for today.'), findsOneWidget);
     expect(find.byKey(const ValueKey('tasks-choose-again')), findsNothing);
-    await shot(tester, 'D5-evening-done-for-today');
+    await shot(tester, 'window-d5-evening');
 
     await tap(tester, 'tasks-keep-going');
     expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
@@ -209,7 +198,7 @@ void main() {
     expect(heard(tester, 'tasks-pair'), hasLength(greaterThanOrEqualTo(2)));
     for (final scale in [1.0, 1.3, 2.0]) {
       tester.platformDispatcher.textScaleFactorTestValue = scale;
-      await shot(tester, 'D6-phone-the-pair@${scale}x');
+      await shot(tester, 'phone-d6-pair-text-${(scale * 100).round()}');
     }
     tester.platformDispatcher.clearTextScaleFactorTestValue();
     await tester.pumpAndSettle();
@@ -223,7 +212,7 @@ void main() {
     expect(done.dx < notFinished.dx || done.dy < notFinished.dy, isTrue);
     for (final scale in [1.0, 1.3, 2.0]) {
       tester.platformDispatcher.textScaleFactorTestValue = scale;
-      await shot(tester, 'D7-phone-do-now@${scale}x');
+      await shot(tester, 'phone-d7-do-now-text-${(scale * 100).round()}');
     }
     tester.platformDispatcher.clearTextScaleFactorTestValue();
     await tester.pumpAndSettle();
