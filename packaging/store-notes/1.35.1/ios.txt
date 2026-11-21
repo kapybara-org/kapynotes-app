@@ -1,0 +1,15 @@
+Kapy Notes 1.35.1
+
+- A new layout for iPhone. Each screen is its own page, and a note opens over the list. Swipe from the edge to go back.
+- The bar at the bottom has Notes, Tasks, Drawings and Settings, and + makes a note, a task or a drawing, depending on where you are.
+- Share from one sheet: add someone by email and choose Can edit or Can view. When a note is shared together with other notes, you choose whether the new person gets only this note or all of them.
+- Settings has a Sharing section with your invitations and everyone you share with, and the Shared list groups notes by person.
+- If a note is shared with you to view only, you can remove it from your notes without leaving the share.
+- Block and Leave in a note's share sheet do exactly what they say. Block works as it does in Settings → Sharing, and when a note is shared together with other notes, Leave says how many notes you're leaving and can keep a copy of each.
+- A task can hold details: indent lines under it for text, pictures or smaller tasks. Tap a task in Tasks to open its details in a sheet, and pull it up for more room.
+- A note's title stays whole at any text size, and the line under it wraps instead of running off the screen.
+- A note shared again with the same people keeps updating for them.
+- With Reduce Motion on, toasts such as Undo stay on screen for their full time.
+- The calculator reads a whole-hour time such as Thursday 4pm as a time.
+- A table's column grip no longer covers the line above the table.
+- The What's new notice in Settings has a close button.
