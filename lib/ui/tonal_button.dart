@@ -23,7 +23,9 @@ class TonalButton extends StatelessWidget {
     this.tooltip,
     this.tall = false,
     this.quiet = false,
+    this.sageIcon = false,
   }) : assert(icon != null || label != null),
+       assert(!sageIcon || quiet, 'Only a quiet button carries a sage icon.'),
        assert(
          label != null || tooltip != null,
          'A button that is only an icon needs a tooltip to be named by.',
@@ -46,6 +48,10 @@ class TonalButton extends StatelessWidget {
   /// Grey text on no fill, filled only under the pointer: an action that is
   /// there when wanted without competing with the page's main one.
   final bool quiet;
+
+  /// A quiet button that is the page's main action, as New note is: its
+  /// icon carries the sage and its words the text's own ink.
+  final bool sageIcon;
 
   /// How wide a button with [label], an icon unless [icon] is false and, if
   /// given, [shortcut]'s keycap lays out at the reader's text size, for a bar
@@ -131,6 +137,8 @@ class TonalButton extends StatelessWidget {
         foregroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? palette.textTertiary
+              : sageIcon
+              ? palette.textPrimary
               : quiet
               ? palette.textSecondary
               : palette.tonalForeground,
@@ -155,6 +163,7 @@ class TonalButton extends StatelessWidget {
                   : fine
                   ? 15
                   : AppControlMetrics.iconControl,
+              color: sageIcon ? palette.accentText : null,
             ),
           if (icon != null && label != null) SizedBox(width: bar ? 4 : 6),
           if (label != null) Text(label),

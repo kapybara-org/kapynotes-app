@@ -64,7 +64,6 @@ void main() {
         for (final MapEntry(key: role, value: colour) in want.roles.entries) {
           expect(roles[role]!(palette), Color(colour), reason: role);
         }
-        expect(palette.tagCards.take(7), [for (final c in want.tags) Color(c)]);
         expect(palette.tagDots.take(7), [for (final c in want.dots) Color(c)]);
       });
 
@@ -77,7 +76,6 @@ void main() {
           expect(roles[role]!(palette), Color(colour), reason: role);
         }
         // A tag looks the same, just easier to read; the grounds stay put.
-        expect(palette.tagCards, plain.tagCards);
         expect(palette.tagDots, plain.tagDots);
         expect(palette.editorBackground, plain.editorBackground);
         expect(palette.cardBackground, plain.cardBackground);
@@ -178,7 +176,6 @@ void main() {
       'in every theme', () {
     for (final (theme, side) in sides) {
       final p = KapyTheme.palette(theme, side);
-      expect(p.tagCards, hasLength(TagColour.values.length));
       expect(p.tagDots, hasLength(TagColour.values.length));
       final rose = TagColour.rose.dot(p);
       for (final other in TagColour.values.where((t) => t != TagColour.rose)) {
@@ -366,10 +363,7 @@ double _deltaE(Color a, Color b) {
 }
 
 const _spec =
-    <
-      (AppTheme, Brightness),
-      ({Map<String, int> roles, List<int> tags, List<int> dots})
-    >{
+    <(AppTheme, Brightness), ({Map<String, int> roles, List<int> dots})>{
       (AppTheme.graphite, Brightness.dark): (
         roles: {
           'canvas': 0xFF151515,
@@ -406,15 +400,6 @@ const _spec =
           'clay': 0xFFD58B63,
           'codeBg': 0xFF292929,
         },
-        tags: [
-          0xFF342F23,
-          0xFF352924,
-          0xFF2C2E24,
-          0xFF232E2E,
-          0xFF252F28,
-          0xFF282C36,
-          0xFF2E2A33,
-        ],
         dots: [
           0xFFC2A04E,
           0xFFC77B55,
@@ -461,15 +446,6 @@ const _spec =
           'clay': 0xFFB5552E,
           'codeBg': 0xFFEFEFEF,
         },
-        tags: [
-          0xFFEEEADE,
-          0xFFF3E6E0,
-          0xFFE9EAE0,
-          0xFFDFEBEB,
-          0xFFE2ECE5,
-          0xFFE4E8F2,
-          0xFFEBE6F0,
-        ],
         dots: [
           0xFF8F7420,
           0xFFB0582F,
@@ -516,15 +492,6 @@ const _spec =
           'clay': 0xFFCF7A57,
           'codeBg': 0xFF10100F,
         },
-        tags: [
-          0xFF28210E,
-          0xFF271710,
-          0xFF1D1F11,
-          0xFF101F1F,
-          0xFF132017,
-          0xFF161B26,
-          0xFF1F1824,
-        ],
         dots: [
           0xFFC9A447,
           0xFFC4734F,
@@ -571,15 +538,6 @@ const _spec =
           'clay': 0xFFC08A78,
           'codeBg': 0xFF262632,
         },
-        tags: [
-          0xFF322F30,
-          0xFF332A31,
-          0xFF2C2D31,
-          0xFF262E39,
-          0xFF292F35,
-          0xFF2A2C3D,
-          0xFF2F2B3D,
-        ],
         dots: [
           0xFFBBA468,
           0xFFBE8670,
@@ -626,15 +584,6 @@ const _spec =
           'clay': 0xFFA65A3A,
           'codeBg': 0xFFE7E6EC,
         },
-        tags: [
-          0xFFE4DFD8,
-          0xFFE8DCDC,
-          0xFFDFDFDB,
-          0xFFD6DFE4,
-          0xFFD9E1DF,
-          0xFFD9DDEC,
-          0xFFE1DCE9,
-        ],
         dots: [
           0xFF866F25,
           0xFFA55A3A,
@@ -681,15 +630,6 @@ const _spec =
           'clay': 0xFFD9804F,
           'codeBg': 0xFF2E2519,
         },
-        tags: [
-          0xFF3D3018,
-          0xFF3C2618,
-          0xFF292717,
-          0xFF3A3024,
-          0xFF312F1B,
-          0xFF32261A,
-          0xFF3B2821,
-        ],
         dots: [
           0xFFE2B94E,
           0xFFD9784A,
@@ -736,15 +676,6 @@ const _spec =
           'clay': 0xFFA84A22,
           'codeBg': 0xFFEAE0CE,
         },
-        tags: [
-          0xFFE7DABE,
-          0xFFEBD5C0,
-          0xFFDDD9C2,
-          0xFFEBDAC5,
-          0xFFE0DDC0,
-          0xFFE2D5C2,
-          0xFFE9D5C9,
-        ],
         dots: [
           0xFF8A6A12,
           0xFFA84A22,
@@ -791,15 +722,6 @@ const _spec =
           'clay': 0xFFE08E6D,
           'codeBg': 0xFF212F32,
         },
-        tags: [
-          0xFF30362C,
-          0xFF30302D,
-          0xFF27352E,
-          0xFF1C363A,
-          0xFF213632,
-          0xFF23333E,
-          0xFF2B313D,
-        ],
         dots: [
           0xFFD3B05A,
           0xFFD7865F,
@@ -846,15 +768,6 @@ const _spec =
           'clay': 0xFFB5552E,
           'codeBg': 0xFFEAEFEE,
         },
-        tags: [
-          0xFFE9E8DA,
-          0xFFEFE4DD,
-          0xFFE3E8DC,
-          0xFFD8E8E9,
-          0xFFDCEAE1,
-          0xFFDEE6EF,
-          0xFFE6E3ED,
-        ],
         dots: [
           0xFF87701C,
           0xFFAF5530,

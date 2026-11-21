@@ -384,6 +384,24 @@ void main() {
     expect(find.text('Settings'), findsNothing);
   });
 
+  testWidgets("a task's note is named in the sans the Tasks list uses, not "
+      'the handwriting face (KAP-250)', (tester) async {
+    await setUpNotes(tester);
+    await pumpMenu(tester);
+    await type(tester, 'train');
+    final task = board.open.single;
+    final labels = tester.widgetList<Text>(find.text(task.note.title)).toList();
+
+    expect(labels, isNotEmpty);
+    for (final label in labels) {
+      expect(label.style?.fontFamily, isNot('Shantell Sans'));
+    }
+    expect(
+      labels.map((label) => label.style?.fontFamily),
+      contains(AppFonts.ui),
+    );
+  });
+
   group('Ask Kapy AI', () {
     testWidgets('is offered only where Kapy AI can be asked', (tester) async {
       await setUpNotes(tester);
