@@ -57,6 +57,12 @@ Future<void> tapAndSettle(
 }
 
 /// Pumps on the real clock until [done], for at most four seconds.
+///
+/// Unlike pumpAndSettle, this leaves a toast up. On a device a toast's
+/// lifetime is an animation (lib/core/toast.dart holds it still only under
+/// flutter test), so pumpAndSettle runs it to the end and the toast is gone.
+/// Wait for a toast, and for anything after it that has to find it, with
+/// this.
 Future<void> pumpUntil(WidgetTester tester, bool Function() done) async {
   for (var pass = 0; pass < 40 && !done(); pass++) {
     await tester.runAsync(
@@ -64,6 +70,17 @@ Future<void> pumpUntil(WidgetTester tester, bool Function() done) async {
     );
     await tester.pump();
   }
+}
+
+/// Taps [target], then pumps on the real clock until [done], leaving any
+/// toast the tap brings up on screen.
+Future<void> tapUntil(
+  WidgetTester tester,
+  Finder target,
+  bool Function() done,
+) async {
+  await tester.tap(target);
+  await pumpUntil(tester, done);
 }
 
 /// An item of one of the sharing sheet's menus.

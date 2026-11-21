@@ -42,7 +42,7 @@ import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../test/share_dialog_test.dart'
+import '../test/support/sharing_devices.dart'
     show Device, FakeSend, joiningOver, opener;
 import '../test/sync/fake_server.dart' show FakeApi, FakeAuth, FakeServer;
 import 'screenshot.dart';
@@ -172,9 +172,16 @@ void main() {
 
   /// The app as it launches, then Home's Shared card, which opens Shared as
   /// a page.
+  ///
+  /// Launching, the app restores the account itself, which swaps in a
+  /// sharing of its own that hears about the spaces a moment later. Until it
+  /// has, Trip budget counts as somebody else's note, and the page it opens
+  /// on goes back to Shared rather than Home. So this waits for that sharing
+  /// to know Trip budget's space, then goes back until Home's card is there.
   Future<void> openSharedPage(WidgetTester tester) async {
     prefs.load();
     shortcuts.load();
+    final restored = account.sharing;
     await tester.pumpWidget(
       KapyNotesApp(
         store: store,
@@ -185,13 +192,24 @@ void main() {
         account: account,
       ),
     );
+    await pumpUntil(tester, () {
+      final sharing = account.sharing;
+      return sharing != null &&
+          !identical(sharing, restored) &&
+          sharing.spaceOf(notes.byId(tripId)!) != null;
+    });
     await tester.pumpAndSettle();
     final back = find.byKey(const ValueKey('page-back'));
-    if (back.evaluate().isNotEmpty) {
+    final card = find.byKey(const ValueKey('home-shared-card'));
+    for (
+      var taps = 0;
+      taps < 3 && card.evaluate().isEmpty && back.evaluate().isNotEmpty;
+      taps++
+    ) {
       await tester.tap(back);
       await tester.pumpAndSettle();
     }
-    final card = find.byKey(const ValueKey('home-shared-card'));
+    expect(card, findsOneWidget, reason: 'Home, with its Shared card');
     await tester.ensureVisible(card);
     await tester.pumpAndSettle();
     await tester.tap(card);
@@ -235,10 +253,10 @@ void main() {
     expect(sheet, findsOneWidget);
   }
 
+  /// Closes the sheet without settling, so a toast it left stays up.
   Future<void> closeSheetIfOpen(WidgetTester tester) async {
-    if (close.evaluate().isEmpty) return;
-    await tester.tap(close);
-    await tester.pumpAndSettle();
+    if (close.evaluate().isNotEmpty) await tester.tap(close);
+    await pumpUntil(tester, () => sheet.evaluate().isEmpty);
   }
 
   group('#245, #255 and #256', () {
@@ -365,12 +383,19 @@ void main() {
       expectNeutral(tester, askOk, 'Remove');
       await screenshot('phone-sharing-remove-ask');
 
-      await tapAndSettle(tester, askOk);
-      expect(find.textContaining('Removed Carol'), findsOneWidget);
+      final removed = find.textContaining('Removed Carol');
+      await tapUntil(
+        tester,
+        askOk,
+        () =>
+            removed.evaluate().isNotEmpty &&
+            memberRow('user-3').evaluate().isEmpty,
+      );
+      expect(removed, findsOneWidget);
       expect(memberRow('user-3'), findsNothing);
-      await tester.tap(close);
-      await tester.pumpAndSettle();
+      await closeSheetIfOpen(tester);
       expect(sheet, findsNothing);
+      expect(removed, findsOneWidget);
       await screenshot('phone-sharing-removed-toast');
 
       await tester.tap(find.text('Undo'));
@@ -401,14 +426,19 @@ void main() {
       expectNeutral(tester, askOk, 'Stop sharing');
       await screenshot('phone-sharing-stop-ask');
 
-      await tapAndSettle(tester, askOk, milliseconds: 600);
-      await pumpUntil(tester, () => !notes.byId(tripId)!.isShared);
+      final stopped = find.textContaining('Stopped sharing');
+      await tapUntil(
+        tester,
+        askOk,
+        () => stopped.evaluate().isNotEmpty && !notes.byId(tripId)!.isShared,
+      );
       expect(notes.byId(tripId)!.isShared, isFalse);
+      expect(stopped, findsOneWidget);
       await closeSheetIfOpen(tester);
       expect(sheet, findsNothing);
-      expect(find.textContaining('Stopped sharing'), findsOneWidget);
       await pumpUntil(tester, () => !listed('Trip budget'));
       expect(listed('Trip budget'), isFalse);
+      expect(stopped, findsOneWidget);
       await screenshot('phone-sharing-stopped-toast');
 
       await tester.tap(find.text('Undo'));
@@ -536,9 +566,14 @@ void main() {
       );
       expectNeutral(tester, askOk, 'Block');
       await screenshot('phone-sharing-block-ask-$sheetName');
-      await tapAndSettle(tester, askOk);
       final blocked = find.text('Blocked Priya Nair');
-      await pumpUntil(tester, () => blocked.evaluate().isNotEmpty);
+      await tapUntil(
+        tester,
+        askOk,
+        () =>
+            blocked.evaluate().isNotEmpty &&
+            memberRow('user-2').evaluate().isEmpty,
+      );
       expect(blocked, findsOneWidget);
       expect(account.sharing!.hasBlocked(priya.email), isTrue);
       expect(memberRow('user-2'), findsNothing);
@@ -560,6 +595,7 @@ void main() {
       await openSharedPage(tester);
       await openSheetFor(tester, 'Trip budget');
       await blockPriya(tester, 'note-sheet');
+      await pumpUntil(tester, () => sheet.evaluate().isEmpty);
       expect(sheet, findsNothing);
       await expectPriyaGone(tester, 'note-sheet');
     }, skip: !phone);

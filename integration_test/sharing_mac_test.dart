@@ -27,7 +27,7 @@ import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../test/share_dialog_test.dart' show Device;
+import '../test/support/sharing_devices.dart' show Device;
 import '../test/sync/fake_server.dart' show FakeServer;
 import 'screenshot.dart';
 import 'sharing_support.dart';
@@ -213,9 +213,14 @@ void main() {
       );
       expectNeutral(tester, askOk, 'Block');
       await screenshot('mac-sharing-block-ask-$dialogName');
-      await tapAndSettle(tester, askOk);
       final blocked = find.text('Blocked Priya Nair');
-      await pumpUntil(tester, () => blocked.evaluate().isNotEmpty);
+      await tapUntil(
+        tester,
+        askOk,
+        () =>
+            blocked.evaluate().isNotEmpty &&
+            memberRow('user-2').evaluate().isEmpty,
+      );
       expect(blocked, findsOneWidget);
       expect(sam.sharing.hasBlocked(priya.email), isTrue);
       expect(memberRow('user-2'), findsNothing);
@@ -240,6 +245,7 @@ void main() {
       await showSam(tester, tripId);
       await open(tester, 'note');
       await blockPriya(tester, 'note-dialog');
+      await pumpUntil(tester, () => dialog.evaluate().isEmpty);
       expect(dialog, findsNothing);
       await expectPriyaGone(tester, 'note-dialog');
     }, skip: !mac);
@@ -408,23 +414,18 @@ void main() {
       }
     }, skip: !mac);
 
-    // KAPY-65 measured this order for an account that has shared with nobody
-    // yet. Once it has, the field offers those people while it holds focus,
-    // and Tab never leaves it.
-    testWidgets('Tab walks close, email, Member, Viewer, Share and Done, '
-        'and stays in the dialog', (tester) async {
-      await tester.runAsync(() async {
-        await sam.boot();
-        bankId = sam.notes.create(body: 'Bank details').id;
-        await sam.sync.syncNow();
-      });
+    testWidgets('Tab walks close, email, each person it suggests, Member, '
+        'Viewer, Share and Done, and stays in the dialog', (tester) async {
+      await shareAround(tester);
       await showSam(tester, bankId);
       await open(tester, 'note');
       expect(find.byKey(const ValueKey('share-more')), findsNothing);
 
-      const order = [
+      final order = [
         'share-dialog-close',
         'share-email',
+        'share-suggest-${carol.email}',
+        'share-suggest-${priya.email}',
         'share-role-member',
         'share-role-viewer',
         'share-submit-Share',

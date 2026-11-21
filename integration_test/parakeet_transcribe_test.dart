@@ -41,9 +41,7 @@ void main() {
     // Looked for beside the models rather than in the repo, because the app
     // is sandboxed on macOS and cannot read the project directory. Copy
     // `test/fixtures/speech.m4a` next to `speech-models` to run this.
-    final support = (await models.directoryFor(
-      parakeetTdt06bV3Int8,
-    )).parent.parent;
+    final support = (await models.directoryFor(parakeetTdt06bV3Int8)).parent.parent;
     final recording = File('${support.path}/speech.m4a');
     if (!recording.existsSync()) {
       // ignore: avoid_print
@@ -56,10 +54,8 @@ void main() {
     final decoded = await const AudioDecoder().decode(recording);
     addTearDown(decoded.dispose);
     // ignore: avoid_print
-    print(
-      'DECODED: ${decoded.frames} frames at ${decoded.sampleRate} Hz '
-      '(${decoded.duration.inMilliseconds} ms)',
-    );
+    print('DECODED: ${decoded.frames} frames at ${decoded.sampleRate} Hz '
+        '(${decoded.duration.inMilliseconds} ms)');
     expect(decoded.sampleRate, 16000);
     expect(decoded.frames, greaterThan(0));
 
@@ -74,11 +70,9 @@ void main() {
     final elapsed = DateTime.now().difference(started);
 
     // ignore: avoid_print
-    print(
-      'ELAPSED: ${elapsed.inMilliseconds} ms for '
-      '${decoded.duration.inMilliseconds} ms of audio '
-      '(${(decoded.duration.inMilliseconds / elapsed.inMilliseconds).toStringAsFixed(1)}x real time)',
-    );
+    print('ELAPSED: ${elapsed.inMilliseconds} ms for '
+        '${decoded.duration.inMilliseconds} ms of audio '
+        '(${(decoded.duration.inMilliseconds / elapsed.inMilliseconds).toStringAsFixed(1)}x real time)');
     for (final segment in draft.segments) {
       // ignore: avoid_print
       print('SEGMENT [${segment.s}-${segment.e}] ${segment.t}');

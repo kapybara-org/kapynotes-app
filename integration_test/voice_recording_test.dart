@@ -51,8 +51,7 @@ void main() {
     expect(
       started,
       isTrue,
-      reason:
-          'the microphone was refused — check the purpose string, the '
+      reason: 'the microphone was refused — check the purpose string, the '
           'macOS audio-input entitlement, and that RECORD_AUDIO is granted',
     );
     expect(controller.isRecording, isTrue);
@@ -72,11 +71,7 @@ void main() {
     final file = result!.file;
     expect(await file.exists(), isTrue);
     final bytes = await file.readAsBytes();
-    expect(
-      bytes.length,
-      greaterThan(1024),
-      reason: 'the file is suspiciously empty',
-    );
+    expect(bytes.length, greaterThan(1024), reason: 'the file is suspiciously empty');
 
     // The whole reason mp4_duration.dart exists: every platform writes its own
     // container, and this build has to read all of them. A null here means the
@@ -85,8 +80,7 @@ void main() {
     expect(
       headerMs,
       isNotNull,
-      reason:
-          'could not find moov/mvhd in what ${Platform.operatingSystem} '
+      reason: 'could not find moov/mvhd in what ${Platform.operatingSystem} '
           'recorded — the chip would fall back to the elapsed timer',
     );
     expect(headerMs, greaterThan(1500));
@@ -143,11 +137,7 @@ void main() {
     await Future<void>.delayed(const Duration(seconds: 2));
 
     final result = await controller.stop();
-    expect(
-      result,
-      isNotNull,
-      reason: 'a paused-and-resumed recording was lost',
-    );
+    expect(result, isNotNull, reason: 'a paused-and-resumed recording was lost');
     expect(mp4DurationMs(await result!.file.readAsBytes()), isNotNull);
   });
 

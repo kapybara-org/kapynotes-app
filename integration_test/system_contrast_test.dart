@@ -14,7 +14,9 @@ void main() {
   testWidgets('the platform answers where Flutter cannot read the switch', (
     tester,
   ) async {
-    final asked = SystemContrast.channel.invokeMethod<bool>('increaseContrast');
+    final asked = SystemContrast.channel.invokeMethod<bool>(
+      'increaseContrast',
+    );
     if (Platform.isMacOS || Platform.isAndroid) {
       expect(await asked, isA<bool>());
     } else {

@@ -18,7 +18,7 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'share_dialog_test.dart' show Device;
+import 'support/sharing_devices.dart' show Device;
 import 'sync/fake_server.dart';
 import 'sync/sharing_section_test.dart' show namePeople;
 import 'test_fonts.dart';
