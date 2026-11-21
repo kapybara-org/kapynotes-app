@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_chats.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_conversation.dart';
@@ -492,6 +493,43 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('kapy-ai-connect-codex')));
       await tester.pump();
       expect(managed, 1);
+    });
+
+    testWidgets('a computer\'s own model is not headed by its own name', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await open(
+        tester,
+        FakeKapyAi(
+          deviceState: const DeviceModelState(
+            status: DeviceModelStatus.ready,
+            model: FakeKapyAi.gemma,
+            totalBytes: 2600000000,
+            receivedBytes: 2600000000,
+          ),
+        ),
+      );
+
+      expect(
+        [
+          for (final text in tester.widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('kapy-ai-picker')),
+              matching: find.byType(Text),
+            ),
+          ))
+            text.data!,
+        ],
+        [
+          'On this device',
+          'Answers stay on this computer',
+          'KAPY AI',
+          'Kapy AI Cloud',
+          'Part of Pro',
+        ],
+      );
     });
 
     testWidgets('a phone with no on-device model says so, and offers a key', (
