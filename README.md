@@ -39,8 +39,9 @@ is no direct import, so it is not listed as a dependency.
 Verified on Flutter 3.47.2. Android needs JDK 17+ (`flutter config --jdk-dir`)
 and SDK platform 36; iOS needs Xcode's iOS platform installed
 (`xcodebuild -downloadPlatform iOS`). Goldens under `test/goldens/` render
-with macOS system fonts — regenerate them on macOS with
-`flutter test --update-goldens`.
+with macOS system fonts, so CI checks them on a macOS runner (the Goldens
+workflow). To regenerate them, run that workflow on your branch from the Actions
+tab, or `flutter test --update-goldens` on a Mac.
 
 Linux builds on Ubuntu 22.04 or newer. Beyond Flutter's own toolchain it needs
 the libraries the plugins link, and a JDK, because `jni` (transitive, and
