@@ -20,8 +20,8 @@
 # Every release goes to all users the moment it is approved, so prepare deletes
 # any phased release and fails if one is still there afterwards.
 #
-# The token is signed here with PyJWT and cryptography
-# (pip install PyJWT cryptography), so the key is only ever read from its file.
+# The token is signed here with PyJWT and cryptography (hash-pinned in
+# packaging/asc-requirements.txt), so the key is only ever read from its file.
 # Nothing printed names a person or a credential: this repository is public,
 # and so are its CI logs.
 
@@ -31,8 +31,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-
-import jwt
 
 API = "https://api.appstoreconnect.apple.com"
 APP = "6807810082"
@@ -56,6 +54,8 @@ def token():
     global _token, _minted
     now = int(time.time())
     if _token is None or now - _minted > TOKEN_REFRESH:
+        import jwt
+
         with open(env("ASC_KEY_PATH")) as handle:
             key = handle.read()
         _token = jwt.encode(
@@ -69,7 +69,7 @@ def token():
     return _token
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, missing_ok=False):
     request = urllib.request.Request(
         API + path,
         method=method,
@@ -81,15 +81,19 @@ def call(method, path, body=None):
             raw = response.read().decode()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as error:
+        if missing_ok and error.code == 404:
+            return None
         raise SystemExit(f"{method} {path.split('?')[0]} -> {error.code} {error.read().decode()[:800]}")
 
 
 def optional(path):
-    """A to-one relationship that does not exist answers 404 rather than null."""
-    try:
-        return call("GET", path)["data"]
-    except SystemExit:
-        return None
+    """A to-one relationship that does not exist answers 404 rather than null.
+
+    Only a 404 means absent. Any other failure stops the run, so a check that
+    could not be made never reads as "there is none".
+    """
+    found = call("GET", path, missing_ok=True)
+    return found and found["data"]
 
 
 def notes():
