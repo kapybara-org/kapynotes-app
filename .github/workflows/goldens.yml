@@ -1,0 +1,129 @@
+# Golden images, on every pull request and on pushes to main and release/**.
+#
+# The goldens render with the macOS system fonts that test/test_fonts.dart
+# loads, so they run on a macOS runner. Every image on main matches this
+# runner pixel for pixel, so the runner, not any one Mac, is the reference.
+# Only the test files that compare goldens run here.
+#
+# The update job runs only when dispatched: from the Actions tab, or with
+# `gh workflow run goldens.yml -f branch=<branch> [-f commit=true]`. It
+# re-renders that branch's goldens and uploads the images that changed as the
+# updated-goldens artifact. With commit it also commits them to the branch,
+# never to main or release/**. GitHub starts no workflow for a push made with
+# GITHUB_TOKEN, so that branch's checks run again on its next push.
+name: Goldens
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch whose goldens to re-render
+        required: true
+        type: string
+      commit:
+        description: Commit the changed images to that branch
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  goldens:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    concurrency:
+      group: goldens-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - run: flutter test $(git grep -l matchesGoldenFile -- 'test/*_test.dart')
+
+      # The expected, actual and diff images for each golden that failed.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-failures
+          path: test/**/failures/**
+          if-no-files-found: ignore
+
+  update:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    concurrency:
+      group: goldens-update-${{ inputs.branch }}
+    steps:
+      - name: Refuse main and release branches
+        if: inputs.commit
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          case "$BRANCH" in
+            main | release/*) echo "::error::Not committing to $BRANCH"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - run: flutter test --update-goldens $(git grep -l matchesGoldenFile -- 'test/*_test.dart')
+
+      - name: Collect the images that changed
+        run: |
+          git add -A -- ':(glob)test/**/goldens/**'
+          git diff --cached --name-only > "$RUNNER_TEMP/changed.txt"
+          while IFS= read -r f; do
+            mkdir -p "$RUNNER_TEMP/updated-goldens/$(dirname "$f")"
+            cp "$f" "$RUNNER_TEMP/updated-goldens/$f"
+          done < "$RUNNER_TEMP/changed.txt"
+          {
+            echo "$(wc -l < "$RUNNER_TEMP/changed.txt" | tr -d ' ') images changed"
+            sed 's/^/- /' "$RUNNER_TEMP/changed.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: updated-goldens
+          path: ${{ runner.temp }}/updated-goldens/
+          if-no-files-found: ignore
+
+      - name: Commit the changed images
+        if: inputs.commit
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'Re-render goldens on the macOS CI runner' \
+              -m "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          git push origin "HEAD:refs/heads/$BRANCH"

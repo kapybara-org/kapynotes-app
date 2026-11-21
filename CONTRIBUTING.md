@@ -20,8 +20,11 @@ flutter test
 Both run in CI on every pull request and on pushes to main and release/**.
 
 The golden tests under `test/goldens/` render with macOS system fonts, so they
-only pass on macOS. If you are on Linux or Windows, run
-`flutter test --exclude-tags golden` and let CI cover the rest.
+only pass on macOS. CI runs them on a macOS runner (the Goldens workflow) for
+every pull request. When a change is meant to alter an image, run that
+workflow from the Actions tab with your branch's name: it re-renders the
+goldens there and returns the images that changed, or commits them to your
+branch if you tick `commit`.
 
 ## What tends to get merged
 
