@@ -476,7 +476,7 @@ class _PaneHeaderState extends State<_PaneHeader> {
                     const SizedBox(width: 4),
                     if (widget.shared) ...[
                       KapyIcon(
-                        KapyIcons.peopleOutlined,
+                        KapyIcons.groupOutlined,
                         size: 13,
                         color: palette.textTertiary,
                       ),
@@ -607,7 +607,11 @@ class _EmptyPaneState extends State<EmptyPane> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SplitViewIcon(size: 30, color: palette.textTertiary),
+                KapyIcon(
+                  KapyIcons.viewColumnOutlined,
+                  size: 30,
+                  color: palette.textTertiary,
+                ),
                 const SizedBox(height: 12),
                 Text(
                   'Choose a note',
@@ -835,65 +839,4 @@ class _PaneSplitViewState extends State<PaneSplitView> {
       ),
     );
   }
-}
-
-/// A frame split down the middle: the split-view glyph.
-///
-/// Drawn rather than taken from the icon font, whose nearest glyphs are a
-/// phone's split screen and a table of columns, neither of which reads as
-/// "put another note beside this one" at toolbar size.
-class SplitViewIcon extends StatelessWidget {
-  const SplitViewIcon({super.key, this.size, this.color});
-
-  final double? size;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final iconTheme = IconTheme.of(context);
-    final extent = size ?? iconTheme.size ?? 24;
-    return SizedBox.square(
-      dimension: extent,
-      child: CustomPaint(
-        painter: _SplitViewIconPainter(
-          color ?? iconTheme.color ?? context.palette.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-class _SplitViewIconPainter extends CustomPainter {
-  const _SplitViewIconPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Proportions of a 24pt Material glyph, so the stroke sits beside the
-    // font's own icons without looking heavier or lighter than them.
-    final unit = size.width / 24;
-    final stroke = 1.8 * unit;
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke;
-    final frame = Rect.fromLTRB(3 * unit, 4.5 * unit, 21 * unit, 19.5 * unit);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        frame.deflate(stroke / 2),
-        Radius.circular(2.5 * unit),
-      ),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(frame.center.dx, frame.top + stroke / 2),
-      Offset(frame.center.dx, frame.bottom - stroke / 2),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_SplitViewIconPainter oldDelegate) =>
-      oldDelegate.color != color;
 }

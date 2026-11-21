@@ -279,7 +279,6 @@ class _Chip extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.clipboardOutlined,
                   size: 13,
-                  strokeWidth: 1.8,
                   color: palette.textSecondary,
                 ),
                 Text(
@@ -293,7 +292,6 @@ class _Chip extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.chevronDownRounded,
                   size: 11,
-                  strokeWidth: 2,
                   color: palette.textTertiary,
                 ),
               ],
@@ -442,7 +440,6 @@ class _MenuRow extends StatelessWidget {
                       ? KapyIcon(
                           KapyIcons.checkRounded,
                           size: 14,
-                          strokeWidth: 2.4,
                           color: palette.accentText,
                         )
                       : null,

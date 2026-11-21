@@ -1089,7 +1089,7 @@ class _Footer extends StatelessWidget {
           ),
           const Spacer(),
           IconButton(
-            icon: const KapyIcon(KapyIcons.moreRounded, size: 20),
+            icon: const KapyIcon(KapyIcons.moreVerticalRounded, size: 20),
             tooltip: 'More',
             onPressed: onMenu,
           ),

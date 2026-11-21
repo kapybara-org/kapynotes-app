@@ -1,10 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:material_ui/material_ui.dart';
+
+import '../kapy_icon_finder.dart';
 
 class _Host extends StatefulWidget {
   const _Host({required this.initial});
@@ -68,6 +71,35 @@ Future<void> _tool(WidgetTester tester, String name) async {
 }
 
 void main() {
+  testWidgets('the shape and text tools draw Hugeicons glyphs', (tester) async {
+    await _pump(tester);
+    for (final (tool, icon, paths) in [
+      (
+        DrawTool.rect,
+        KapyIcons.rectangleRounded,
+        HugeIcons.strokeRoundedSquare,
+      ),
+      (
+        DrawTool.ellipse,
+        KapyIcons.circleOutlined,
+        HugeIcons.strokeRoundedCircle,
+      ),
+      (DrawTool.line, KapyIcons.lineRounded, HugeIcons.strokeRoundedLiner),
+      (DrawTool.text, KapyIcons.textFormatRounded, HugeIcons.strokeRoundedText),
+    ]) {
+      expect(tool.icon, same(icon), reason: tool.name);
+      expect(icon.paths, same(paths), reason: tool.name);
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('draw-tool-${tool.name}')),
+          matching: findKapyIcon(icon),
+        ),
+        findsOneWidget,
+        reason: tool.name,
+      );
+    }
+  });
+
   testWidgets('a pen stroke is one element, reported once', (tester) async {
     final host = await _pump(tester);
     await _drag(tester, const [
