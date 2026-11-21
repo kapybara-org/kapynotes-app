@@ -1909,8 +1909,8 @@ class SidebarWindowBar extends StatelessWidget {
   final ShortcutBinding? hideShortcut;
 
   /// Opens Kapy AI's panel from the sparkle left of New note. Null leaves
-  /// the sparkle out, as in every list but My notes and while Kapy AI is
-  /// off or not in this build.
+  /// the sparkle out, as over Drawings and Tasks and while Kapy AI is off
+  /// or not in this build.
   final VoidCallback? onAskKapy;
   final ShortcutBinding? askKapyShortcut;
 

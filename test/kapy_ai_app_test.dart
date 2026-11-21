@@ -192,7 +192,7 @@ void main() {
       expect(_panel, findsOneWidget);
     });
 
-    testWidgets('Ask Kapy is in My notes alone, not over Drawings', (
+    testWidgets('Ask Kapy stays in the Notes views, out of Drawings', (
       tester,
     ) async {
       await _pump(tester, sidebar: true);
