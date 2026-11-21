@@ -107,9 +107,13 @@ void main() {
   const trip = 'Trip\n☐ A1\n☐ A2';
   const car = 'Car\n☐ B1\n☐ B2';
 
+  /// The left card, then every right card ← meets until the round ends;
+  /// a round that outruns the list fails rather than hangs.
   List<String> keepToTheEnd() {
     final asked = [pair().left.words];
+    final most = 3 * tasks.read().open.length;
     while (choice().stage is PairStage) {
+      if (asked.length > most) fail('the pair kept asking: $asked');
       asked.add(pair().right.words);
       keep();
     }
@@ -228,11 +232,7 @@ void main() {
     if (rekey) tasks.index.rekey((noteId, anchor) => 'rekeyed-$anchor');
     notes.updateBody(note, edited);
     await tasks.reconcileNow();
-    while (choice().stage is PairStage) {
-      asked.add(pair().right.words);
-      keep();
-    }
-    return asked;
+    return [...asked, ...keepToTheEnd().skip(1)];
   }
 
   const tasksOfSix = '☐ A\n☐ B\n☐ C\n☐ D\n☐ E\n☐ F';
@@ -267,6 +267,36 @@ void main() {
     expect(tasks.read().open.first.id, startsWith('rekeyed-'));
     expect(asked, ['A', 'B', 'C', 'D', 'E', 'F']);
     expect(doNow().words, 'A');
+  });
+
+  test('after a restart mid-round, the pair carries on from the last dot and '
+      'never asks about the tasks above it', () async {
+    await start(six);
+    later();
+    tasks.dot(tasks.read().open[1]);
+    later();
+    tasks.dot(tasks.read().open[3]);
+    tasks = TasksController(
+      notes: notes,
+      library: library,
+      canEdit: (_) => true,
+      now: () => clock,
+    );
+    addTearDown(tasks.dispose);
+    expect(keepToTheEnd(), ['D', 'E', 'F']);
+    expect(doNow().words, 'D');
+  });
+
+  test('a task shown on the right and then moved to the end leaves the pair '
+      'where it was', () async {
+    await start(six);
+    final passed = pair().right;
+    keep();
+    later();
+    tasks.moveToEnd(passed);
+    expect(words(tasks.read().open), ['A', 'C', 'D', 'E', 'F', 'B']);
+    expect(pair().left.words, 'A');
+    expect(pair().right.words, 'C');
   });
 
   test('with one task on the list there is no pair: it is Do now', () async {
