@@ -103,18 +103,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # A fresh iPhone, booted while Flutter installs. The software keyboard
-      # has to come up as it does on a phone, so no hardware keyboard is
-      # connected, and Slide to Type is off so its introduction doesn't cover
-      # the first keyboard.
-      - name: Boot an iOS 27.2 iPhone
+      # A fresh iPhone, booting in the background while Flutter installs. The
+      # software keyboard has to come up as it does on a phone, so no hardware
+      # keyboard is connected.
+      - name: Create an iOS 27.2 iPhone
         id: simulator
         run: |
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
           udid=$(xcrun simctl create phones "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-27-2)
-          xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid"
-          xcrun simctl spawn "$udid" defaults write com.apple.keyboard.ContinuousPath KeyboardContinuousPathEnabled -bool false
+          xcrun simctl boot "$udid" >/dev/null 2>&1 &
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -124,6 +121,16 @@ jobs:
           cache: true
 
       - run: flutter pub get --enforce-lockfile
+
+      # Waits out the boot, or boots the iPhone if that failed, then turns
+      # Slide to Type off, which only a booted iPhone accepts, so its
+      # introduction doesn't cover the first keyboard.
+      - name: Wait for the iPhone
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.ContinuousPath KeyboardContinuousPathEnabled -bool false
 
       - name: Screenshots on an iOS 27.2 iPhone
         env:
