@@ -3827,6 +3827,36 @@ total to usd''';
       );
     });
 
+    // The editor lets go only once the keyboard has stayed down, so by then
+    // the reader may have moved on to another field. That one keeps it.
+    testWidgets('a field that takes the focus after Back keeps it', (
+      tester,
+    ) async {
+      final node = await pumpFocused(tester);
+      await setKeyboard(tester, 300);
+      await setKeyboard(tester, 0);
+      await tester.pump(const Duration(milliseconds: 200));
+
+      final other = FocusNode(debugLabel: 'other');
+      final entry = OverlayEntry(
+        builder: (_) => Focus(focusNode: other, child: const SizedBox()),
+      );
+      tester.state<OverlayState>(find.byType(Overlay).first).insert(entry);
+      await tester.pump();
+      other.requestFocus();
+      await tester.pump();
+      expect(other.hasPrimaryFocus, isTrue);
+      expect(node.hasFocus, isFalse);
+
+      await tester.pump(const Duration(seconds: 4));
+      final kept = other.hasPrimaryFocus;
+      entry.remove();
+      await tester.pump();
+      entry.dispose();
+      other.dispose();
+      expect(kept, isTrue);
+    });
+
     // The guard used to read MediaQuery, which a Scaffold hands its body with
     // the bottom inset already taken out — so it never saw the keyboard, and
     // every note opened went on asking for one for five seconds. Pressing Back
