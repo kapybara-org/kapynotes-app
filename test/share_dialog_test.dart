@@ -36,6 +36,7 @@ import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'billing/billing_fakes.dart';
+import 'kapy_icon_finder.dart';
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
@@ -1933,6 +1934,26 @@ void main() {
       await tester.tap(find.text('Shared'), buttons: kSecondaryButton);
       await tester.pumpAndSettle();
       expect(find.text('Manage sharing'), findsOneWidget);
+
+      // Share's one icon, as everywhere else, rather than the Shared mark.
+      final line = find.ancestor(
+        of: find.text('Manage sharing'),
+        matching: find.byType(KapyMenuActionRow),
+      );
+      expect(
+        find.descendant(
+          of: line,
+          matching: findKapyIcon(KapyIcons.shareRounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: line,
+          matching: findKapyIcon(KapyIcons.groupOutlined),
+        ),
+        findsNothing,
+      );
     },
   );
 

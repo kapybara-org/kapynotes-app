@@ -146,8 +146,6 @@ void main() {
       id: 'restricted-model',
       name: 'Restricted Model',
       vendor: 'Somebody',
-      parameters: '1B',
-      quantisation: 'int4',
       contextTokens: 4096,
       license: 'Some Terms of Use',
       licenseUrl: 'https://example.com/terms',

@@ -953,7 +953,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
             _person = null;
             _error = null;
           }),
-          icon: const KapyIcon(KapyIcons.chevronLeftRounded, size: 14),
+          icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 14),
           label: const Text('All people'),
         ),
       ),
@@ -973,7 +973,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
         trailing: Builder(
           builder: (button) => _IconAction(
             key: const ValueKey('person-menu'),
-            icon: KapyIcons.moreRounded,
+            icon: KapyIcons.moreVerticalRounded,
             tooltip: 'More for ${person.name}',
             onPressed: _idle ? () => _personMenu(button, person) : null,
           ),
@@ -1047,7 +1047,7 @@ class _SharingSectionBodyState extends State<SharingSectionBody> {
                 trailing: Builder(
                   builder: (button) => _IconAction(
                     key: ValueKey('received-${note.id}'),
-                    icon: KapyIcons.moreRounded,
+                    icon: KapyIcons.moreVerticalRounded,
                     tooltip: 'More for ${_titleOf(note)}',
                     onPressed: _idle
                         ? () => _receivedMenu(button, note, person)
@@ -1557,7 +1557,7 @@ class _InviteRow extends StatelessWidget {
         Builder(
           builder: (button) => _IconAction(
             key: ValueKey('invite-menu-${invite.token}'),
-            icon: KapyIcons.moreRounded,
+            icon: KapyIcons.moreVerticalRounded,
             tooltip: 'More',
             onPressed: enabled ? () => onMenu(button) : null,
           ),

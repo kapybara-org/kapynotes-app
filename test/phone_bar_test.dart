@@ -5,6 +5,8 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'kapy_icon_finder.dart';
+
 void main() {
   Future<void> pumpBar(
     WidgetTester tester, {
@@ -61,6 +63,33 @@ void main() {
         }
       });
     }
+  }
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on ${platform.name} the tabs rest in T3 and the open one is '
+        'T1, at 20', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpBar(tester, scale: 1, size: const Size(393, 852));
+      const palette = KapyTheme.darkPalette;
+      KapyIcon icon(String tab, KapyIconData data) => tester.widget<KapyIcon>(
+        find.descendant(
+          of: find.byKey(ValueKey('bar-$tab')),
+          matching: findKapyIcon(data),
+        ),
+      );
+
+      expect(icon('notes', KapyIcons.noteOutlined).color, palette.textPrimary);
+      expect(icon('notes', KapyIcons.noteOutlined).size, 20);
+      expect(
+        icon('drawings', KapyIcons.penRounded).color,
+        palette.textTertiary,
+      );
+      expect(
+        icon('settings', KapyIcons.settingsGearOutlined).color,
+        palette.textTertiary,
+      );
+    });
   }
 
   testWidgets('a screen reader hears how many invitations wait under Shared', (

@@ -460,7 +460,6 @@ class _DayStripState extends State<DayStrip> {
                       icon: const KapyIcon(
                         KapyIcons.chevronLeftRounded,
                         size: 16,
-                        strokeWidth: 1.8,
                       ),
                     ),
                     const SizedBox(width: DayStrip._arrowGap),
@@ -490,7 +489,6 @@ class _DayStripState extends State<DayStrip> {
                       icon: const KapyIcon(
                         KapyIcons.chevronRightRounded,
                         size: 16,
-                        strokeWidth: 1.8,
                       ),
                     ),
                   ],
@@ -541,22 +539,12 @@ class _DayStripState extends State<DayStrip> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (compact) ...[
-                KapyIcon(
-                  KapyIcons.calendarOutlined,
-                  size: 16,
-                  strokeWidth: 1.8,
-                  color: icons,
-                ),
+                KapyIcon(KapyIcons.calendarOutlined, size: 16, color: icons),
                 const SizedBox(width: 4),
               ],
               Text(label),
               const SizedBox(width: 4),
-              KapyIcon(
-                KapyIcons.chevronDownRounded,
-                size: 12,
-                strokeWidth: 1.8,
-                color: icons,
-              ),
+              KapyIcon(KapyIcons.chevronDownRounded, size: 12, color: icons),
             ],
           ),
         ),
@@ -820,7 +808,6 @@ class _DayPickerState extends State<DayPicker> {
                     icon: const KapyIcon(
                       KapyIcons.chevronLeftRounded,
                       size: 16,
-                      strokeWidth: 1.8,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -834,7 +821,6 @@ class _DayPickerState extends State<DayPicker> {
                     icon: const KapyIcon(
                       KapyIcons.chevronRightRounded,
                       size: 16,
-                      strokeWidth: 1.8,
                     ),
                   ),
                 ],

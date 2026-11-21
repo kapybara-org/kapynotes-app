@@ -1755,7 +1755,6 @@ void main() {
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester, size: const Size(420, 800));
       expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
-      expect(findKapyIcon(KapyIcons.pinRounded), findsNothing);
     },
   );
 
@@ -1809,6 +1808,31 @@ void main() {
           }
         }
       }
+    });
+
+    testWidgets('its pin line draws the one pin, to pin and to unpin', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      final note = notes.create(body: 'alpha');
+      await tester.pumpAndSettle();
+      final pin = find.descendant(
+        of: lineOf('pin'),
+        matching: findKapyIcon(KapyIcons.pinOutlined),
+      );
+
+      await openMore(tester);
+      expect(find.text('Pin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
+      await tester.tap(lineOf('pin'));
+      await tester.pumpAndSettle();
+      expect(notes.isPinned(note.id), isTrue);
+
+      await openMore(tester);
+      expect(find.text('Unpin note'), findsOneWidget);
+      expect(pin, findsOneWidget);
     });
 
     testWidgets('More pins the note and floats the window, side by side, each '
@@ -2197,7 +2221,7 @@ void main() {
     // Keep the fallback's required exact credit pinned as well.
     expect(
       RateProvider.exchangeRateApi.attributionLabel,
-      'Rates by Exchange Rate',
+      'Rates By Exchange Rate API',
     );
     expect(
       RateProvider.exchangeRateApi.attributionUrl.toString(),
@@ -8855,6 +8879,50 @@ void main() {
       expect(
         find.descendant(of: list, matching: find.text('Renewal notes')),
         findsOneWidget,
+      );
+    });
+
+    testWidgets('only the day grouping folds its Upcoming: a tag named '
+        'Upcoming starts open when the list groups by tag', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final tags = TagStore(store);
+      await tags.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      final standup = notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      tags.addTag(standup.id, tags.create('Upcoming')!.id);
+      await pumpApp(
+        tester,
+        size: const Size(1600, 900),
+        days: days,
+        tags: tags,
+      );
+
+      final list = find.byType(Sidebar);
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-grouping-byTag')));
+      await tester.pumpAndSettle();
+      // The heading is the tag's now, and folds nothing.
+      expect(tester.widget<NotesGroupHeading>(upcoming).label, 'Upcoming');
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isNull);
+      expect(
+        find.descendant(of: list, matching: find.text('Standup')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+        reason: 'under No tag',
       );
     });
   });

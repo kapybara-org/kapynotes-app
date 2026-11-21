@@ -937,7 +937,6 @@ class _AddRow extends StatelessWidget {
             KapyIcon(
               KapyIcons.addRounded,
               size: 16,
-              strokeWidth: 1.8,
               color: focused ? palette.accentText : palette.textTertiary,
             ),
             const SizedBox(width: 10),
@@ -1077,7 +1076,6 @@ class _NotePicker extends StatelessWidget {
                 KapyIcon(
                   KapyIcons.chevronDownRounded,
                   size: 11,
-                  strokeWidth: 2,
                   color: palette.textTertiary,
                 ),
               ],
@@ -1273,7 +1271,6 @@ class _DoNowCard extends StatelessWidget {
                                 icon: KapyIcon(
                                   KapyIcons.undoRounded,
                                   size: 14,
-                                  strokeWidth: 1.9,
                                   color: palette.textSecondary,
                                 ),
                                 label: const Text('Not finished'),
@@ -1512,7 +1509,7 @@ class _PickButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            KapyIcon(icon, size: 15, strokeWidth: 2, color: ink),
+            KapyIcon(icon, size: 15, color: ink),
             const SizedBox(width: 7),
           ],
           Flexible(
@@ -1929,7 +1926,6 @@ class _Box extends StatelessWidget {
                 ? KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    strokeWidth: 2.2,
                     color: palette.paperColor,
                   )
                 : null,
@@ -1950,11 +1946,18 @@ double _markWidth(double row) => math.min(220, row * _markShare);
 /// Whether a row [width] wide has room for the note's name beside the task's
 /// words at the current text size; a narrower one puts it on its own line.
 bool _markFitsBeside(BuildContext context, double width) =>
-    width >= MediaQuery.textScalerOf(context).scale(200);
+    width >= 200 * MediaQuery.textScalerOf(context).scale(16) / 16;
 
-/// How wide a list row must be to say "Still want this?" beside Keep and
-/// Remove; a narrower one keeps the room for the task's words.
+/// How wide a list row must be at 1× to say "Still want this?" beside Keep
+/// and Remove; a narrower one keeps the room for the task's words.
 const double _stillWantWidth = 520;
+
+/// The words on Keep and Remove at 1×, which grow with the text size; their
+/// padding and the gaps around them take 50 more that doesn't.
+const double _keepRemoveWords = 73;
+
+/// "Still want this?" and its gap at 1×.
+const double _stillWantWords = 90;
 
 /// How far a touch row's mark reaches into the page margin, so the target is
 /// 44 points wide while the dot and the words stay where the desktop has them.
@@ -2046,9 +2049,34 @@ class _TaskRowState extends State<_TaskRow> {
                 ),
               ),
             );
-            final under =
-                label != null &&
-                !_markFitsBeside(context, constraints.maxWidth);
+            final grow = MediaQuery.textScalerOf(context).scale(12) / 12;
+            final ask = constraints.maxWidth >= _stillWantWidth * grow;
+            final controls = stale
+                ? 50 +
+                      grow *
+                          (ask
+                              ? _keepRemoveWords + _stillWantWords
+                              : _keepRemoveWords)
+                : 0.0;
+            final below = constraints.maxWidth < controls * 2;
+            final room = below
+                ? constraints.maxWidth
+                : constraints.maxWidth - controls;
+            final under = label != null && !_markFitsBeside(context, room);
+            final keep = Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (ask) Text('Still want this?', style: quiet),
+                _RowButton(
+                  label: 'Keep',
+                  strong: true,
+                  onPressed: widget.onKeep,
+                ),
+                _RowButton(label: 'Remove', onPressed: widget.onRemove),
+              ],
+            );
             return Row(
               children: [
                 Tooltip(
@@ -2081,38 +2109,28 @@ class _TaskRowState extends State<_TaskRow> {
                 _Box(done: false, onPressed: widget.onTick, label: item.words),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: under
+                  child: under || below
                       ? Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             words,
-                            Align(
-                              alignment: AlignmentDirectional.centerStart,
-                              child: NoteMark(
-                                note: item.note,
-                                label: label,
-                                onPressed: widget.onOpenNote,
+                            if (under)
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: NoteMark(
+                                  note: item.note,
+                                  label: label,
+                                  onPressed: widget.onOpenNote,
+                                ),
                               ),
-                            ),
+                            if (below) keep,
                           ],
                         )
                       : words,
                 ),
                 TaskDetailsIcon(item: item),
                 if (stale) ...[
-                  const SizedBox(width: 10),
-                  if (constraints.maxWidth >= _stillWantWidth)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Text('Still want this?', style: quiet),
-                    ),
-                  _RowButton(
-                    label: 'Keep',
-                    strong: true,
-                    onPressed: widget.onKeep,
-                  ),
-                  const SizedBox(width: 4),
-                  _RowButton(label: 'Remove', onPressed: widget.onRemove),
+                  if (!below) ...[const SizedBox(width: 10), keep],
                 ] else if (_hovered) ...[
                   const SizedBox(width: 10),
                   Text(
@@ -2129,7 +2147,6 @@ class _TaskRowState extends State<_TaskRow> {
                         child: KapyIcon(
                           KapyIcons.undoRounded,
                           size: 14,
-                          strokeWidth: 1.9,
                           color: palette.textTertiary,
                         ),
                       ),
@@ -2138,9 +2155,7 @@ class _TaskRowState extends State<_TaskRow> {
                 if (label != null && !under) ...[
                   const SizedBox(width: 10),
                   ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: _markWidth(constraints.maxWidth),
-                    ),
+                    constraints: BoxConstraints(maxWidth: _markWidth(room)),
                     child: NoteMark(
                       note: item.note,
                       label: label,
@@ -2499,7 +2514,6 @@ class _PhoneTaskRow extends StatelessWidget {
                                 ? KapyIcon(
                                     KapyIcons.checkRounded,
                                     size: 15,
-                                    strokeWidth: 2.2,
                                     color: palette.paperColor,
                                   )
                                 : null,

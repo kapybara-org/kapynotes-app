@@ -127,8 +127,15 @@ DateTime noteDay(
   DateTime? ownDay,
 }) => ownDay ?? dayShown(note.updatedAt, displayTime);
 
-/// A heading in the notes list, and the notes under it.
-typedef NoteGroup = ({String label, String? detail, List<Note> notes});
+/// A heading in the notes list, and the notes under it. [upcoming] marks the
+/// one grouping by day gives the notes waiting for a later day, which the
+/// list beside the rail folds; no other group is it, whatever its label.
+typedef NoteGroup = ({
+  String label,
+  String? detail,
+  List<Note> notes,
+  bool upcoming,
+});
 
 /// [notes] under the headings [grouping] gives them, each group keeping the
 /// order the notes came in: a heading for each day, newest first; one for
@@ -148,7 +155,10 @@ List<NoteGroup> groupNotes(
 }) {
   final groups = <Object?, NoteGroup>{};
   void add(Object? key, String label, String? detail, Note note) => groups
-      .putIfAbsent(key, () => (label: label, detail: detail, notes: <Note>[]))
+      .putIfAbsent(
+        key,
+        () => (label: label, detail: detail, notes: <Note>[], upcoming: false),
+      )
       .notes
       .add(note);
 
@@ -170,7 +180,12 @@ List<NoteGroup> groupNotes(
         ..sort((a, b) => b.compareTo(a));
       return [
         if (waiting.isNotEmpty)
-          (label: 'Upcoming', detail: '${waiting.length}', notes: waiting),
+          (
+            label: 'Upcoming',
+            detail: '${waiting.length}',
+            notes: waiting,
+            upcoming: true,
+          ),
         for (final day in days) groups[day]!,
       ];
     case NotesGrouping.byTag:

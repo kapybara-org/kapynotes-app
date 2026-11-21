@@ -1,0 +1,24 @@
+# Tests that fail on Linux because they assume a macOS host: main 0b728d3 on GitHub's
+# ubuntu-latest with Flutter 3.47.2, run 44864440012. file<TAB>test name. Golden
+# mismatches are not listed, because compare.py leaves them to the Goldens workflow.
+test/app_test.dart	a window that cannot blur keeps its opaque paint
+test/app_test.dart	results have a shortcut like the notes list
+test/app_test.dart	shows and records every editable desktop shortcut
+test/app_test.dart	spaces rail New note sits in the bar over the search, with its keycap
+test/app_test.dart	transparency off is the slider at its Off end
+test/app_test.dart	transparency thins the whole window, and persists
+test/billing/note_limit_ui_test.dart	a day tapped over the limit gives the open note no day
+test/billing/note_limit_ui_test.dart	a note past the limit opens read-only, and says why
+test/billing/note_limit_ui_test.dart	no new note starts over the limit, and it says what to do
+test/billing/note_limit_ui_test.dart	pinning a note past the limit makes it the editable one
+test/folders_ui_test.dart	beside the rail a filed note has its folders in a light line 8 above its title, which open in this tab or behind; an unfiled note has none
+test/folders_ui_test.dart	beside the rail ⌘-click or a middle click on a folder opens it in a tab behind, once, under its icon and name
+test/golden_test.dart	desktop dark folder in a tab
+test/kapy_ai_test.dart	chats Pro with sync off says they are kept here, not that they sync
+test/kapy_ai_test.dart	chats groups by day, then month, with the year when it differs
+test/kapy_ai_test.dart	panel each model names where an answer came from
+test/kapy_ai_test.dart	picker names the device, and what each account model is good for
+test/kapy_ai_test.dart	what holds a question up Claude Code’s first use says the notes leave this Mac
+test/kapy_ai_test.dart	what holds a question up Codex’s first use names OpenAI and the ChatGPT plan
+test/kapy_ai_test.dart	what holds a question up a key’s first use does not name a provider
+test/preferences_test.dart	window, divider, and daily-section preferences survive reload
