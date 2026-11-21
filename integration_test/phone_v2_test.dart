@@ -95,6 +95,19 @@ void main() {
     await tap(tester, 'phone-filters');
     await tap(tester, 'sidebar-search-field');
     await check('quick find');
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('command-menu-field')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .focusNode
+          .hasFocus,
+      isTrue,
+      reason: 'quick find opens ready to type',
+    );
     final cancel = find.byKey(const ValueKey('command-menu-cancel'));
     await tap(
       tester,

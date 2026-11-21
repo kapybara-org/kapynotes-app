@@ -21,10 +21,19 @@ void keepMobilePopupKeyboardClosed() {
   WidgetsBinding.instance.addPostFrameCallback((_) => dismiss());
 }
 
+/// Route settings for a popup that opens to be typed into, such as Quick
+/// find, so that [MobilePopupKeyboardObserver] lets its field raise the
+/// keyboard.
+class TypingPopupSettings extends RouteSettings {
+  const TypingPopupSettings();
+}
+
 /// Applies the mobile keyboard policy to dialogs, sheets, and popup menus.
+/// A popup opened with [TypingPopupSettings] keeps the keyboard its field
+/// asks for, and still puts it away when it closes.
 class MobilePopupKeyboardObserver extends NavigatorObserver {
   void _guardOpeningPopup(PopupRoute<dynamic> route) {
-    if (!AppPlatform.isMobile) return;
+    if (!AppPlatform.isMobile || route.settings is TypingPopupSettings) return;
     keepMobilePopupKeyboardClosed();
 
     final animation = route.animation;

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
+import '../core/popup_keyboard.dart';
 import '../core/theme.dart';
 import '../data/folders.dart' show Folder, FolderTree;
 import '../data/note.dart';
@@ -200,6 +201,7 @@ Future<CommandChoice?> showCommandMenu(
       useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
+      routeSettings: const TypingPopupSettings(),
       backgroundColor: palette.paperColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
@@ -211,6 +213,7 @@ Future<CommandChoice?> showCommandMenu(
   return showDialog<CommandChoice>(
     context: context,
     barrierColor: dark ? const Color(0x990C0B09) : const Color(0x402A2620),
+    routeSettings: const TypingPopupSettings(),
     builder: build,
   );
 }
