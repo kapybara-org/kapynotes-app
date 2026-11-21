@@ -146,7 +146,13 @@ class TaskBoard {
     }
     open.sort((a, b) {
       final byPosition = a.entry.position.compareTo(b.entry.position);
-      return byPosition != 0 ? byPosition : a.id.compareTo(b.id);
+      if (byPosition != 0) return byPosition;
+      final byNote = a.note.createdAt.compareTo(b.note.createdAt);
+      if (byNote != 0) return byNote;
+      final byNoteId = a.note.id.compareTo(b.note.id);
+      if (byNoteId != 0) return byNoteId;
+      final byLine = a.line.start.compareTo(b.line.start);
+      return byLine != 0 ? byLine : a.id.compareTo(b.id);
     });
     done.sort((a, b) => b.entry.doneAt.v!.compareTo(a.entry.doneAt.v!));
     TaskItem? newest;
