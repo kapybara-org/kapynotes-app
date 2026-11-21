@@ -1,7 +1,9 @@
 # Screenshots of the phone integration tests, for a reviewer to look at. Add
 # the `phones` label to a pull request, or run
-# `gh workflow run phones.yml --ref <branch>`. The branch needs this file, so a
-# branch cut before it landed merges main first.
+# `gh workflow run phones.yml --ref <branch>`. A label run uses the pull
+# request's merge commit, which has main's copy of this file. A dispatch runs
+# the branch's own copy, so a branch cut before this file landed merges main
+# first.
 #
 # The android job runs integration_test/phone_v2_test.dart and
 # phone_format_bar_test.dart under flutter drive on an Android 16 emulator and
@@ -84,4 +86,4 @@ jobs:
         with:
           name: android-screenshots
           path: build/screenshots/
-          if-no-files-found: warn
+          if-no-files-found: error

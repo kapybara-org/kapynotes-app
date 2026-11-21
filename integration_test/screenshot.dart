@@ -15,11 +15,15 @@ import 'package:integration_test/integration_test.dart';
 
 /// Takes a screenshot of the app as it is now. [name] is lower-case letters,
 /// digits and dashes.
+///
+/// Throws in a profile or release build, which keeps no layer tree to draw.
 Future<void> screenshot(String name) async {
   final binding = IntegrationTestWidgetsFlutterBinding.instance;
   final view = binding.renderViews.first;
   final layer = view.debugLayer;
-  if (layer is! OffsetLayer) return;
+  if (layer is! OffsetLayer) {
+    throw StateError('No layer tree to draw $name from: run a debug build.');
+  }
   final image = await layer.toImage(view.paintBounds);
   final png = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
