@@ -95,6 +95,7 @@ class PageToolbar extends StatelessWidget {
     required this.listVisible,
     required this.onShowList,
     this.showListShortcut,
+    this.underList = false,
     this.onOpenFolder,
     this.noteOpen = false,
     this.syncStatus,
@@ -129,6 +130,11 @@ class PageToolbar extends StatelessWidget {
   final bool listVisible;
   final VoidCallback onShowList;
   final String? showListShortcut;
+
+  /// Whether the list lies open over the page. The band then leaves its
+  /// hairline to the list's bar, so the dimmed page draws no second line
+  /// below it.
+  final bool underList;
 
   /// Whether there is a note on the page for Saved to speak for.
   final bool noteOpen;
@@ -226,6 +232,11 @@ class PageToolbar extends StatelessWidget {
         back == null ? height : phoneHeight,
       ),
       color: palette.isGlass ? palette.paperColor : null,
+      foregroundDecoration: back == null && !underList
+          ? BoxDecoration(
+              border: Border(bottom: BorderSide(color: palette.railBorder)),
+            )
+          : null,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
