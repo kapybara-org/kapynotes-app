@@ -817,7 +817,8 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           if (me != null)
             _PersonRow(
               key: ValueKey('member-row-${me.userId}'),
-              name: 'You',
+              name: me.displayName,
+              label: 'You',
               detail: me.role.canEdit
                   ? 'You can edit this note'
                   : 'You can only view this note',
@@ -1704,7 +1705,8 @@ class _PeopleWithAccess extends StatelessWidget {
             for (final member in here)
               _PersonRow(
                 key: ValueKey('member-row-${member.userId}'),
-                name: member.userId == me ? 'You' : member.displayName,
+                name: member.displayName,
+                label: member.userId == me ? 'You' : null,
                 detail: _detailFor(member, present[member.userId]),
                 live: present.containsKey(member.userId),
                 trailing: member.userId == me
@@ -1766,13 +1768,18 @@ class _PersonRow extends StatelessWidget {
   const _PersonRow({
     super.key,
     required this.name,
+    this.label,
     required this.detail,
     this.trailing,
     this.invited = false,
     this.live = false,
   });
 
+  /// Who they are: what their face is drawn from.
   final String name;
+
+  /// What the row calls them when that isn't [name]: "You".
+  final String? label;
   final String detail;
   final Widget? trailing;
   final bool invited;
@@ -1842,7 +1849,7 @@ class _PersonRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name,
+                    label ?? name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: chromeStyle(

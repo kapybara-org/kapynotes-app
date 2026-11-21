@@ -64,7 +64,7 @@ class ProfileAvatar extends StatelessWidget {
       color: palette.selectedBackground,
       child: Center(
         child: Text(
-          avatarInitials(name),
+          avatarInitial(name),
           style: TextStyle(
             fontSize: extent * 0.42,
             fontWeight: FontWeight.w400,
@@ -111,20 +111,15 @@ Uint8List? _decodeDataImage(String value) {
   }
 }
 
-/// What a face without a photo shows: the first character of the first and
-/// the last word of [name], capitalised, or one for a single word. An email
-/// address is one word. A name with nothing in it shows '?'.
-String avatarInitials(String name) {
-  final words = name.trim().split(RegExp(r'\s+'));
-  if (words.first.isEmpty) return '?';
-  String initial(String word) {
-    final char = word.characters.first;
-    final upper = char.toUpperCase();
-    return upper.characters.length == 1 ? upper : char;
+/// What a face without a photo shows: the first character of the first word
+/// in [name] that doesn't open with punctuation, capitalised. A name with no
+/// such word shows '?'.
+String avatarInitial(String name) {
+  for (final word in name.split(RegExp(r'\s+'))) {
+    if (word.isEmpty || word.startsWith(_punctuation)) continue;
+    return word.characters.first.toUpperCase();
   }
-
-  return [
-    initial(words.first),
-    if (words.length > 1) initial(words.last),
-  ].join();
+  return '?';
 }
+
+final _punctuation = RegExp(r'^\p{P}', unicode: true);

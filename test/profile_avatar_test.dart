@@ -29,17 +29,18 @@ String _shown(WidgetTester tester) => tester
     .data!;
 
 void main() {
-  testWidgets('a default face shows the initials of the name', (tester) async {
+  testWidgets('a default face shows the first letter of the name', (
+    tester,
+  ) async {
     await _pumpFace(tester, 'Sam Rivera');
-    expect(_shown(tester), 'SR');
-
-    await _pumpFace(tester, '  ada   lovelace byron ');
-    expect(_shown(tester), 'AB');
+    expect(_shown(tester), 'S');
   });
 
-  testWidgets('a one-word name shows one letter', (tester) async {
-    await _pumpFace(tester, 'Priya');
-    expect(_shown(tester), 'P');
+  testWidgets('extra whitespace around and inside the name is skipped', (
+    tester,
+  ) async {
+    await _pumpFace(tester, '  \n ada   lovelace ');
+    expect(_shown(tester), 'A');
   });
 
   testWidgets('an empty name shows a neutral glyph', (tester) async {
@@ -66,12 +67,19 @@ void main() {
     expect(_shown(tester), 'J');
   });
 
-  test('initials keep whole characters from any script', () {
-    expect(avatarInitials('🦫 Kapy'), '🦫K');
-    expect(avatarInitials('👩🏽‍💻 dev'), '👩🏽‍💻D');
-    expect(avatarInitials('Ζωή Νικολάου'), 'ΖΝ');
-    expect(avatarInitials('李 小龙'), '李小');
-    expect(avatarInitials('ßtraße'), 'ß');
+  test('the initial is a whole character from any script', () {
+    expect(avatarInitial('🦫 Kapy'), '🦫');
+    expect(avatarInitial('👩🏽‍💻 Dev'), '👩🏽‍💻');
+    expect(avatarInitial('Ζωή Ν'), 'Ζ');
+    expect(avatarInitial('李小龙'), '李');
+    expect(avatarInitial('ßtraße'), 'ß');
+  });
+
+  test('words that open with punctuation are passed over', () {
+    expect(avatarInitial('Ana (she/her)'), 'A');
+    expect(avatarInitial('"Kapy" Notes'), 'N');
+    expect(avatarInitial('(Ana) Silva'), 'S');
+    expect(avatarInitial('- -'), '?');
   });
 
   testWidgets('no avatar asks a server for a face', (tester) async {
@@ -123,8 +131,8 @@ void main() {
       expect(image.image, isNot(isA<NetworkImage>()));
       expect(image.image, isA<MemoryImage>());
     }
-    expect(find.text('SR'), findsNWidgets(3));
-    for (final text in ['?', 'LP', 'P']) {
+    expect(find.text('S'), findsNWidgets(3));
+    for (final text in ['?', 'L', 'P']) {
       expect(find.text(text), findsWidgets, reason: text);
     }
   });
@@ -140,6 +148,6 @@ void main() {
       ),
     );
     expect(image.image, isA<MemoryImage>());
-    expect(find.text('SR'), findsNothing);
+    expect(find.text('S'), findsNothing);
   });
 }

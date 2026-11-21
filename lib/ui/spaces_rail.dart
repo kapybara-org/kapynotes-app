@@ -608,7 +608,7 @@ class _RailAccount extends StatelessWidget {
                 color: palette.textTertiary,
               )
             : Text(
-                avatarInitials(name),
+                avatarInitial(name),
                 textScaler: TextScaler.noScaling,
                 style: TextStyle(
                   fontSize: AppTypeScale.control,
