@@ -37,15 +37,14 @@ Note _createWith(
 
 void main() {
   late DateTime clock;
+  late _MemoryStore store;
   late NotesStore notes;
   late TaskLibrary library;
   late TasksController tasks;
 
-  /// A list from [body], and from [then] too when given: a note made a
-  /// minute later whose id sorts first, both picked up in one reconcile.
-  Future<String> start(String body, {DateTime? at, String? then}) async {
-    clock = at ?? DateTime(2026, 11, 19, 9);
-    final store = _MemoryStore();
+  /// The app over [store] as it stands, as after a relaunch: the notes, the
+  /// task index and Tasks, read afresh.
+  Future<void> launch() async {
     notes = NotesStore(store, now: () => clock);
     library = TaskLibrary(
       notes: notes,
@@ -66,6 +65,14 @@ void main() {
       held.dispose();
       heldLibrary.dispose();
     });
+  }
+
+  /// A list from [body], and from [then] too when given: a note made a
+  /// minute later whose id sorts first, both picked up in one reconcile.
+  Future<String> start(String body, {DateTime? at, String? then}) async {
+    clock = at ?? DateTime(2026, 11, 19, 9);
+    store = _MemoryStore();
+    await launch();
     final note = notes.create(body: body);
     if (then != null) {
       clock = clock.add(const Duration(minutes: 1));
@@ -398,6 +405,25 @@ void main() {
     expect(pair().pairsLeft, 0);
   });
 
+  test('after a relaunch between choosing and Done, a task already on the '
+      'list is still not new when its stamp runs ahead of the clock you '
+      'chose by', () async {
+    final note = await start(six);
+    final pickedUp = clock;
+    clock = pickedUp.subtract(const Duration(minutes: 1));
+    tasks.takeNext(pair());
+    tasks.startWith(pair().left);
+    await launch();
+    await tasks.reconcileNow();
+    expect(doNow().words, 'B');
+    clock = pickedUp.add(const Duration(minutes: 1));
+    await tasks.add('G', noteId: note);
+    later();
+    await tasks.finish(doNow());
+    expect(pair().right.words, 'G');
+    expect(pair().pairsLeft, 0);
+  });
+
   test('a task that was on the list before you chose is not asked about '
       'again after Done', () async {
     await start(six);
@@ -454,6 +480,17 @@ void main() {
     expect(words(tasks.read().open), ['B', 'C', 'A']);
     expect(pair().left.words, 'B');
     expect(pair().chosen, isFalse);
+  });
+
+  test('Not finished at the instant you chose asks about nothing already on '
+      'the list, when it was picked up in one go', () async {
+    await start(six);
+    tasks.takeNext(pair());
+    tasks.startWith(pair().left);
+    expect(doNow().words, 'B');
+    tasks.notFinished(doNow());
+    expect(doNow().words, 'A');
+    expect(words(choice().upNext), isEmpty);
   });
 
   test(

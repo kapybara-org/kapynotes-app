@@ -7,6 +7,7 @@ import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_index.dart';
+import 'package:kapy_notes/data/task_lines.dart';
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'task-board-test.json');
@@ -147,32 +148,95 @@ void main() {
     expect(board.open.first.groupDone, 1);
   });
 
+  test('halving finds the line a scan of every line found', () {
+    int scanned(NoteDoc doc, List<TaskLine> lines, String anchor) {
+      final parsed = parseAnchor(anchor);
+      if (parsed == null || !doc.knows(parsed)) return -1;
+      final offset = doc.lineOffsetOf(parsed);
+      if (offset == null) return -1;
+      return lines.indexWhere((l) => l.start <= offset && offset <= l.end);
+    }
+
+    // Every character any version held, and every task's record, checked
+    // against every version: the same words on several lines, lines added
+    // above, taken out, emptied, edited and ticked.
+    final anchors = <String>{'zzzzzzzzzzzz:1', 'not an anchor'};
+    final versions = [
+      'Errands\n☐ Milk\n\n☐ Milk\n  ☐ Milk\n  for the cake\n\n\n- [ ] Milk\n☐ Bread',
+      'Top\n\nErrands\n☐ Milk\n\n☐ Milk\n\n  ☐ Milk\n  for the cake\n\n\n- [ ] Milk\n☐ Bread',
+      'Top\n\nErrands\n☐ Milk\n\n\n  ☐ Milk\n  for the cake\n\n\n- [ ] Milk\n☐ Bread rolls',
+      'Top\n\nErrands\n☑ Milk\n\n\n  ☐ Milk\n\n\n\n- [x] Milk\n☐ Bread rolls',
+      '\n\nErrands\n☐ Bread rolls\n\n',
+    ];
+    var found = 0;
+    for (var version = 0; version < versions.length; version++) {
+      note('list', versions[version]);
+      final doc = docs['list']!;
+      expect(doc.text, versions[version]);
+      for (var offset = 1; offset <= doc.text.length; offset++) {
+        anchors.add(doc.anchorAt(offset).id!.key);
+      }
+      anchors.addAll([for (final entry in index.entries) entry.anchor]);
+      final lines = taskLines(doc.text);
+      for (final anchor in anchors) {
+        final line = taskLineIndex(doc, lines, anchor);
+        expect(
+          line,
+          scanned(doc, lines, anchor),
+          reason: '$anchor in version $version',
+        );
+        if (line >= 0) found++;
+      }
+    }
+    expect(found, greaterThan(100));
+  });
+
   test('reading one note of many tasks takes time in step with its size', () {
-    int fastest(int tasks) {
-      notes.clear();
-      note(
+    TaskBoard Function() reader(int tasks) {
+      final big = note(
         'big$tasks',
         [
           'Big list',
           for (var i = 0; i < tasks; i++) ...['☐ Task $i', '  A detail for $i'],
         ].join('\n'),
       );
-      var best = 1 << 40;
-      for (var run = 0; run < 5; run++) {
-        final watch = Stopwatch()..start();
-        expect(read().open, hasLength(tasks));
-        best = math.min(best, watch.elapsedMicroseconds);
-      }
-      return best;
+      final entries = [
+        for (final entry in index.entries)
+          if (entry.noteId == big.id) entry,
+      ];
+      return () => TaskBoard.read(
+        entries: entries,
+        notes: [big],
+        docOf: (id) => docs[id],
+      );
     }
 
-    fastest(100);
-    final small = fastest(100);
-    final large = fastest(800);
+    int took(TaskBoard Function() read) {
+      final watch = Stopwatch()..start();
+      read();
+      return watch.elapsedMicroseconds;
+    }
+
+    final small = reader(100);
+    final large = reader(800);
+    expect(small().open, hasLength(100));
+    expect(large().open, hasLength(800));
+
+    // The fastest of many reads of each, taken in turns: by the last rounds
+    // the compiler has optimised both, a busy machine slows both alike, and
+    // a read it interrupted doesn't count. Twice linear growth still passes;
+    // a board that scans the note for every task takes about 64 times as long.
+    var fastSmall = 1 << 40;
+    var fastLarge = 1 << 40;
+    for (var round = 0; round < 20; round++) {
+      fastSmall = math.min(fastSmall, took(small));
+      fastLarge = math.min(fastLarge, took(large));
+    }
     expect(
-      large,
-      lessThan(small * 16),
-      reason: 'eight times the tasks took ${large / small} times as long',
+      fastLarge,
+      lessThan(fastSmall * 32),
+      reason:
+          'eight times the tasks took ${fastLarge / fastSmall} times as long',
     );
   });
 }

@@ -222,7 +222,8 @@ class SpacesRail extends StatelessWidget {
               ),
               if (onAccountPressed != null) ...[
                 const SizedBox(height: 7.5),
-                _RailAccount(
+                AccountAvatar(
+                  key: const ValueKey('rail-account'),
                   onPressed: onAccountPressed,
                   user: user,
                   syncStatus: syncStatus,
@@ -543,12 +544,27 @@ class _RailSettings extends StatelessWidget {
   }
 }
 
-/// Who is signed in, with a dot that says how sync is doing. Opens Account
-/// & sync.
-class _RailAccount extends StatelessWidget {
-  const _RailAccount({required this.onPressed, this.user, this.syncStatus});
+/// Who is signed in, with a dot that says how sync is doing: the rail's way
+/// to Account & sync, and a phone Home's way to Settings.
+class AccountAvatar extends StatelessWidget {
+  const AccountAvatar({
+    super.key,
+    required this.onPressed,
+    this.label = 'Account & sync',
+    this.user,
+    this.syncStatus,
+    this.target = _extent,
+  });
 
   final VoidCallback onPressed;
+
+  /// The square a tap lands in, the circle at its centre: 44 on a phone,
+  /// where every target is.
+  final double target;
+
+  /// What a tap opens, for a screen reader, and the tooltip while nobody is
+  /// signed in.
+  final String label;
   final AccountUser? user;
   final SyncStatus? syncStatus;
 
@@ -624,35 +640,40 @@ class _RailAccount extends StatelessWidget {
     }
 
     return Tooltip(
-      message: [name.isEmpty ? 'Account & sync' : name, ?status].join('\n'),
+      message: [name.isEmpty ? label : name, ?status].join('\n'),
       child: Semantics(
         container: true,
         button: true,
-        label: ['Account & sync', ?status].join(', '),
+        label: [label, ?status].join(', '),
         child: InkWell(
-          key: const ValueKey('rail-account'),
           onTap: onPressed,
           customBorder: const CircleBorder(),
           mouseCursor: SystemMouseCursors.click,
           splashFactory: NoSplash.splashFactory,
           child: ExcludeSemantics(
             child: SizedBox.square(
-              dimension: _extent,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  face,
-                  if (dot != null)
-                    Positioned(
-                      right: -1,
-                      bottom: -1,
-                      child: _Dot(
-                        key: const ValueKey('rail-sync-dot'),
-                        color: dot,
-                        diameter: 10,
-                      ),
-                    ),
-                ],
+              dimension: target,
+              child: Center(
+                child: SizedBox.square(
+                  key: const ValueKey('account-circle'),
+                  dimension: _extent,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      face,
+                      if (dot != null)
+                        Positioned(
+                          right: -1,
+                          bottom: -1,
+                          child: _Dot(
+                            key: const ValueKey('rail-sync-dot'),
+                            color: dot,
+                            diameter: 10,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

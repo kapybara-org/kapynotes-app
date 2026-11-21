@@ -44,6 +44,7 @@ class TaskLibrary extends ChangeNotifier {
   }
 
   static const String _localKey = 'tasks.local.v1';
+  static const String _chosenKey = 'tasks.chosenOver.v1';
 
   final NotesStore _notes;
   final LocalStore _store;
@@ -69,6 +70,19 @@ class TaskLibrary extends ChangeNotifier {
   /// the first, and the first after sync lets go.
   bool _fresh = true;
   bool _scheduled = false;
+
+  /// The last place on the list when Do now began here, by the task it began
+  /// on. Kept on this device and never synced, so a relaunch between
+  /// choosing and Done still knows what was already on the list.
+  ({String id, int end})? get chosenOver => switch (_store.data[_chosenKey]) {
+    {'id': final String id, 'end': final int end} => (id: id, end: end),
+    _ => null,
+  };
+
+  set chosenOver(({String id, int end})? value) => _store.put(
+    _chosenKey,
+    value == null ? null : {'id': value.id, 'end': value.end},
+  );
 
   /// Whether [load] has finished, and [docs] and [index] can be read.
   bool get isLoaded => _loaded;

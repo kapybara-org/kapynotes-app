@@ -129,9 +129,7 @@ class TasksScreenState extends State<TasksScreen> {
   void _takeKeys() {
     if (!mounted) return;
     final focused = FocusManager.instance.primaryFocus?.context;
-    if (focused != null &&
-        (focused.widget is EditableText ||
-            focused.findAncestorWidgetOfExactType<EditableText>() != null)) {
+    if (focused?.findAncestorWidgetOfExactType<EditableText>() != null) {
       return;
     }
     _listFocus.requestFocus();
@@ -899,6 +897,7 @@ class _AddRow extends StatelessWidget {
         color: ink.card,
         borderRadius: BorderRadius.circular(phone ? 10 : 9),
       ),
+      foregroundDecoration: taskContrastEdge(context, phone ? 10 : 9),
       child: LayoutBuilder(
         builder: (context, constraints) => Row(
           children: [
@@ -1026,6 +1025,7 @@ class _NotePicker extends StatelessWidget {
                 color: ink.lifted,
                 borderRadius: BorderRadius.circular(phone ? 8 : 6),
               ),
+              foregroundDecoration: taskContrastEdge(context, phone ? 8 : 6),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

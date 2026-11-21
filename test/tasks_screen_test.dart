@@ -968,6 +968,97 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('on a desktop, Increase contrast adds no outline over the '
+        'pair\'s choices: their own border stays the only one', (tester) async {
+      await canonical(tester);
+      final theme = KapyTheme.dark(
+        theme: AppTheme.midnight,
+        increaseContrast: true,
+      );
+      await pumpScreen(tester, theme: theme);
+      await settle(tester);
+      final line = theme.extension<CalcPalette>()!.controlBorder;
+      for (final side in ['tasks-pair-left', 'tasks-pair-right']) {
+        final box = tester.widget<Container>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey(side)),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+        expect(box.foregroundDecoration, isNull, reason: side);
+        expect(
+          (box.decoration as BoxDecoration?)?.border,
+          Border.all(color: line),
+          reason: side,
+        );
+      }
+      await settle(tester);
+    });
+
+    testWidgets('Increase contrast outlines the add row, its note chip and '
+        'Start with in the theme\'s contrast line, and moves nothing', (
+      tester,
+    ) async {
+      await canonical(tester);
+      for (final phone in [false, true]) {
+        final rects = <bool, List<Rect>>{};
+        for (final increaseContrast in [false, true]) {
+          final theme = KapyTheme.dark(
+            theme: AppTheme.midnight,
+            increaseContrast: increaseContrast,
+          );
+          await pumpScreen(tester, phone: phone, theme: theme);
+          await settle(tester);
+          final line = theme.extension<CalcPalette>()!.controlBorder;
+          rects[increaseContrast] = [];
+          for (final key in [
+            'tasks-add-row',
+            'tasks-note-picker',
+            'tasks-start',
+          ]) {
+            final control = find
+                .descendant(
+                  of: find.byKey(ValueKey(key)),
+                  matching: find.byType(Container),
+                  matchRoot: true,
+                )
+                .first;
+            final box = tester.widget<Container>(control);
+            final reason =
+                '$key, phone: $phone, '
+                'increaseContrast: $increaseContrast';
+            expect(
+              (box.decoration as BoxDecoration?)?.border,
+              isNull,
+              reason: reason,
+            );
+            expect(
+              (box.foregroundDecoration as BoxDecoration?)?.border,
+              increaseContrast ? Border.all(color: line) : isNull,
+              reason: reason,
+            );
+            expect(
+              (box.foregroundDecoration as BoxDecoration?)?.borderRadius,
+              increaseContrast
+                  ? (box.decoration as BoxDecoration?)?.borderRadius
+                  : isNull,
+              reason: reason,
+            );
+            rects[increaseContrast]!.addAll([
+              tester.getRect(control),
+              tester.getRect(
+                find.descendant(of: control, matching: find.byType(Text)).first,
+              ),
+            ]);
+          }
+        }
+        expect(rects[true], rects[false], reason: 'phone: $phone');
+      }
+      await settle(tester);
+    });
+
     testWidgets('D2 morning, mid-pair', (tester) async {
       await canonical(tester);
       tasks.keepChoice(pair());
