@@ -152,24 +152,17 @@ class KapyDefaultModelButton extends StatelessWidget {
 /// An account's line in Settings, said the same in the row and in a search.
 String kapyAccountLine(KapyAccountState account) {
   final word = kapyDeviceWord;
-  final name = kapyAccountName(account.kind);
-  final models = [
-    for (final model in account.models) model.plainLabel,
-  ].join(', ');
   return switch ((account.kind, account.status)) {
     (KapyAccountKind.openRouter, KapyAccountStatus.connected) =>
       'Key ending ${_lastFour(account.detail)}, kept on this $word',
     (KapyAccountKind.openRouter, KapyAccountStatus.error) =>
       'This key was rejected',
     (KapyAccountKind.openRouter, _) =>
-      'Get a key, then add it here, for answers you already pay for',
-    (_, KapyAccountStatus.connected) => [
-      'Found on this $word',
-      if (models.isNotEmpty) models,
-    ].join(' · '),
+      'Get a key, then add it here, for answers from a plan you pay for',
+    (_, KapyAccountStatus.connected) => 'Found on this $word',
     (_, KapyAccountStatus.error) =>
-      'Signed out. Sign in inside $name, then check again',
-    _ => 'Install $name and sign in there. Kapy finds it',
+      'Signed out. Sign in there, then check again',
+    _ => 'Not found on this $word. Install it, sign in, then check again',
   };
 }
 

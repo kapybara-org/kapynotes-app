@@ -81,8 +81,7 @@ class KapyModel {
 
   /// The picker's subline for an account model.
   String whereItRuns(String device) => switch (kind) {
-    KapyModelKind.codex => 'Codex on this $device',
-    KapyModelKind.claudeCode => 'Claude Code on this $device',
+    KapyModelKind.codex || KapyModelKind.claudeCode => 'On this $device',
     KapyModelKind.openRouter => 'Through your key',
     KapyModelKind.device => 'Answers stay on this $device',
     KapyModelKind.cloud => 'Kapy AI Cloud',
