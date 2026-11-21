@@ -1,0 +1,4 @@
+Block and Leave in a note's share sheet now do exactly what they say.
+
+- Block works as it does in Settings → Sharing: the person loses access to everything you share with them, you leave what they share with you and keep copies, and they can't invite you again.
+- When a note is shared together with other notes, Leave now says how many notes you're leaving, and Keep private copies saves a copy of each one.
