@@ -107,6 +107,12 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color cardBackground;
   final Color paneEdge;
 
+  /// D01's raised fill and its line, for the Notes · Folders track and the
+  /// rail's account circle, in a theme that keeps them off its controls and
+  /// cards. Null where those draw on the card and control colours.
+  final Color? raisedBackground;
+  final Color? raisedBorder;
+
   /// A switch that is off: the track reads as a slot, not as a control.
   final Color switchTrackOff;
 
@@ -165,10 +171,9 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// A quote's bar, Paper's.
   final Color quoteBar;
 
-  /// Each tag colour's card and dot, in tag order: mustard, rust, olive,
-  /// teal, sage, slate, plum and rose. A tag keeps its name in every theme;
-  /// only these change.
-  final List<Color> tagCards;
+  /// Each tag colour's dot, in tag order: mustard, rust, olive, teal, sage,
+  /// slate, plum and rose. A tag keeps its name in every theme; only these
+  /// change.
   final List<Color> tagDots;
 
   /// Whether this is Increase contrast's version of the palette, which also
@@ -290,6 +295,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       textMuted: _mix(textMuted, ink, 0.45),
       textTertiary: faint,
       controlBorder: border,
+      raisedBorder: raisedBorder == null ? null : border,
       paneEdge: border,
       pageBorder: hairline,
       paperRuling: hairline,
@@ -357,6 +363,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.textDescription,
     required this.cardBackground,
     required this.paneEdge,
+    this.raisedBackground,
+    this.raisedBorder,
     required this.switchTrackOff,
     required this.checkboxBorder,
     required this.lineCommand,
@@ -378,7 +386,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.codePanel,
     required this.codeChip,
     required this.quoteBar,
-    required this.tagCards,
     required this.tagDots,
     this.increasedContrast = false,
     this.translucency = 1,
@@ -438,6 +445,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? textDescription,
     Color? cardBackground,
     Color? paneEdge,
+    Color? raisedBackground,
+    Color? raisedBorder,
     Color? switchTrackOff,
     Color? checkboxBorder,
     Color? lineCommand,
@@ -459,7 +468,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? codePanel,
     Color? codeChip,
     Color? quoteBar,
-    List<Color>? tagCards,
     List<Color>? tagDots,
     bool? increasedContrast,
     double? translucency,
@@ -516,6 +524,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     textDescription: textDescription ?? this.textDescription,
     cardBackground: cardBackground ?? this.cardBackground,
     paneEdge: paneEdge ?? this.paneEdge,
+    raisedBackground: raisedBackground ?? this.raisedBackground,
+    raisedBorder: raisedBorder ?? this.raisedBorder,
     switchTrackOff: switchTrackOff ?? this.switchTrackOff,
     checkboxBorder: checkboxBorder ?? this.checkboxBorder,
     lineCommand: lineCommand ?? this.lineCommand,
@@ -537,7 +547,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     codePanel: codePanel ?? this.codePanel,
     codeChip: codeChip ?? this.codeChip,
     quoteBar: quoteBar ?? this.quoteBar,
-    tagCards: tagCards ?? this.tagCards,
     tagDots: tagDots ?? this.tagDots,
     increasedContrast: increasedContrast ?? this.increasedContrast,
     translucency: translucency ?? this.translucency,
@@ -603,6 +612,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       textDescription: mix(textDescription, other.textDescription),
       cardBackground: mix(cardBackground, other.cardBackground),
       paneEdge: mix(paneEdge, other.paneEdge),
+      raisedBackground: t < 0.5 ? raisedBackground : other.raisedBackground,
+      raisedBorder: t < 0.5 ? raisedBorder : other.raisedBorder,
       switchTrackOff: mix(switchTrackOff, other.switchTrackOff),
       checkboxBorder: mix(checkboxBorder, other.checkboxBorder),
       lineCommand: mix(lineCommand, other.lineCommand),
@@ -624,10 +635,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       codePanel: mix(codePanel, other.codePanel),
       codeChip: mix(codeChip, other.codeChip),
       quoteBar: mix(quoteBar, other.quoteBar),
-      tagCards: [
-        for (var i = 0; i < tagCards.length; i++)
-          mix(tagCards[i], other.tagCards[i]),
-      ],
       tagDots: [
         for (var i = 0; i < tagDots.length; i++)
           mix(tagDots[i], other.tagDots[i]),
@@ -1416,12 +1423,12 @@ class KapyTheme {
   static const CalcPalette darkPalette = CalcPalette(
     number: Color(0xFFE2DCCF),
     keyword: Color(0xFFE2DCCF),
-    unit: Color(0xFFA09A8C),
-    currency: Color(0xFFA09A8C),
+    unit: Color(0xFF968E7F),
+    currency: Color(0xFF968E7F),
     function: Color(0xFFE2DCCF),
     variable: Color(0xFFE2DCCF),
-    operator: Color(0xFFA09A8C),
-    comment: Color(0xFFA09A8C),
+    operator: Color(0xFF968E7F),
+    comment: Color(0xFF968E7F),
     chipNumber: Color(0xFFB3C79C),
     chipCurrency: Color(0xFFB3C79C),
     chipUnit: Color(0xFFB3C79C),
@@ -1443,7 +1450,7 @@ class KapyTheme {
     hover: Color(0xFF282622),
     paperFiber: Color(0x00000000),
     paperRuling: Color(0xFF2E2A25),
-    railBackground: Color(0xFF171512),
+    railBackground: Color(0xFF1C1A17),
     railBorder: Color(0x0FE2DCCF),
     tonalBackground: Color(0xFF2E3828),
     tonalForeground: Color(0xFFC2D6AC),
@@ -1465,6 +1472,8 @@ class KapyTheme {
     textDescription: Color(0xFF9C9485),
     cardBackground: Color(0xFF24221E),
     paneEdge: Color(0x0FE2DCCF),
+    raisedBackground: Color(0xFF2A2722),
+    raisedBorder: Color(0xFF312D27),
     switchTrackOff: Color(0xFF3A362F),
     checkboxBorder: Color(0xFF645D51),
     lineCommand: Color(0xFF6B6458),
@@ -1474,7 +1483,7 @@ class KapyTheme {
     pageBorder: Color(0x0FE2DCCF),
     textDivider: Color(0xFF554F47),
     switchThumb: Color(0xFFE2DCCF),
-    wellBackground: Color(0xFF1C1A17),
+    wellBackground: Color(0xFF24221E),
     segmentSelected: Color(0xFF2A2824),
     shadow: Color(0x00000000),
     accent: Color(0xFF7D9468),
@@ -1486,16 +1495,6 @@ class KapyTheme {
     codePanel: Color(0xFF1E1C19),
     codeChip: Color(0xFF2E2A25),
     quoteBar: Color(0xFF4A453D),
-    tagCards: [
-      Color(0xFF393425),
-      Color(0xFF372B26),
-      Color(0xFF2B3125),
-      Color(0xFF273133),
-      Color(0xFF25332A),
-      Color(0xFF282D38),
-      Color(0xFF322A37),
-      Color(0xFF38292D),
-    ],
     tagDots: [
       Color(0xFFC9A447),
       Color(0xFFC4734F),
@@ -1590,16 +1589,6 @@ class KapyTheme {
     codePanel: Color(0xFFF6F2E8),
     codeChip: Color(0xFFEFEADD),
     quoteBar: Color(0xFFD0C8B5),
-    tagCards: [
-      Color(0xFFF4EBC8),
-      Color(0xFFF2E0D4),
-      Color(0xFFE6EBD5),
-      Color(0xFFDCE8E6),
-      Color(0xFFD9EAD9),
-      Color(0xFFDEE4F0),
-      Color(0xFFEADFEC),
-      Color(0xFFF3DDE2),
-    ],
     tagDots: [
       Color(0xFFA88424),
       Color(0xFFB5643F),
@@ -1708,16 +1697,6 @@ class KapyTheme {
     clay: Color(0xFFD58B63),
     codeBg: Color(0xFF292929),
     tSage: Color(0xFF343434),
-    tags: [
-      Color(0xFF342F23),
-      Color(0xFF352924),
-      Color(0xFF2C2E24),
-      Color(0xFF232E2E),
-      Color(0xFF252F28),
-      Color(0xFF282C36),
-      Color(0xFF2E2A33),
-      Color(0xFF34282C),
-    ],
     dots: [
       Color(0xFFC2A04E),
       Color(0xFFC77B55),
@@ -1765,16 +1744,6 @@ class KapyTheme {
     clay: Color(0xFFB5552E),
     codeBg: Color(0xFFEFEFEF),
     tSage: Color(0xFFE1E1E1),
-    tags: [
-      Color(0xFFEEEADE),
-      Color(0xFFF3E6E0),
-      Color(0xFFE9EAE0),
-      Color(0xFFDFEBEB),
-      Color(0xFFE2ECE5),
-      Color(0xFFE4E8F2),
-      Color(0xFFEBE6F0),
-      Color(0xFFF2E4EA),
-    ],
     dots: [
       Color(0xFF8F7420),
       Color(0xFFB0582F),
@@ -1822,16 +1791,6 @@ class KapyTheme {
     clay: Color(0xFFCF7A57),
     codeBg: Color(0xFF10100F),
     tSage: Color(0xFF1C2117),
-    tags: [
-      Color(0xFF28210E),
-      Color(0xFF271710),
-      Color(0xFF1D1F11),
-      Color(0xFF101F1F),
-      Color(0xFF132017),
-      Color(0xFF161B26),
-      Color(0xFF1F1824),
-      Color(0xFF26161B),
-    ],
     dots: [
       Color(0xFFC9A447),
       Color(0xFFC4734F),
@@ -1879,16 +1838,6 @@ class KapyTheme {
     clay: Color(0xFFC08A78),
     codeBg: Color(0xFF262632),
     tSage: Color(0xFF2D2C3E),
-    tags: [
-      Color(0xFF322F30),
-      Color(0xFF332A31),
-      Color(0xFF2C2D31),
-      Color(0xFF262E39),
-      Color(0xFF292F35),
-      Color(0xFF2A2C3D),
-      Color(0xFF2F2B3D),
-      Color(0xFF332A36),
-    ],
     dots: [
       Color(0xFFBBA468),
       Color(0xFFBE8670),
@@ -1936,16 +1885,6 @@ class KapyTheme {
     clay: Color(0xFFA65A3A),
     codeBg: Color(0xFFE7E6EC),
     tSage: Color(0xFFDEDBEA),
-    tags: [
-      Color(0xFFE4DFD8),
-      Color(0xFFE8DCDC),
-      Color(0xFFDFDFDB),
-      Color(0xFFD6DFE4),
-      Color(0xFFD9E1DF),
-      Color(0xFFD9DDEC),
-      Color(0xFFE1DCE9),
-      Color(0xFFE7DBE4),
-    ],
     dots: [
       Color(0xFF866F25),
       Color(0xFFA55A3A),
@@ -1993,16 +1932,6 @@ class KapyTheme {
     clay: Color(0xFFD9804F),
     codeBg: Color(0xFF2E2519),
     tSage: Color(0xFF392B19),
-    tags: [
-      Color(0xFF3D3018),
-      Color(0xFF3C2618),
-      Color(0xFF292717),
-      Color(0xFF3A3024),
-      Color(0xFF312F1B),
-      Color(0xFF32261A),
-      Color(0xFF3B2821),
-      Color(0xFF3C261C),
-    ],
     dots: [
       Color(0xFFE2B94E),
       Color(0xFFD9784A),
@@ -2050,16 +1979,6 @@ class KapyTheme {
     clay: Color(0xFFA84A22),
     codeBg: Color(0xFFEAE0CE),
     tSage: Color(0xFFE7D8C0),
-    tags: [
-      Color(0xFFE7DABE),
-      Color(0xFFEBD5C0),
-      Color(0xFFDDD9C2),
-      Color(0xFFEBDAC5),
-      Color(0xFFE0DDC0),
-      Color(0xFFE2D5C2),
-      Color(0xFFE9D5C9),
-      Color(0xFFEDD3C5),
-    ],
     dots: [
       Color(0xFF8A6A12),
       Color(0xFFA84A22),
@@ -2107,16 +2026,6 @@ class KapyTheme {
     clay: Color(0xFFE08E6D),
     codeBg: Color(0xFF212F32),
     tSage: Color(0xFF1E3738),
-    tags: [
-      Color(0xFF30362C),
-      Color(0xFF30302D),
-      Color(0xFF27352E),
-      Color(0xFF1C363A),
-      Color(0xFF213632),
-      Color(0xFF23333E),
-      Color(0xFF2B313D),
-      Color(0xFF372E2F),
-    ],
     dots: [
       Color(0xFFD3B05A),
       Color(0xFFD7865F),
@@ -2164,16 +2073,6 @@ class KapyTheme {
     clay: Color(0xFFB5552E),
     codeBg: Color(0xFFEAEFEE),
     tSage: Color(0xFFD9E9E7),
-    tags: [
-      Color(0xFFE9E8DA),
-      Color(0xFFEFE4DD),
-      Color(0xFFE3E8DC),
-      Color(0xFFD8E8E9),
-      Color(0xFFDCEAE1),
-      Color(0xFFDEE6EF),
-      Color(0xFFE6E3ED),
-      Color(0xFFEEE2E7),
-    ],
     dots: [
       Color(0xFF87701C),
       Color(0xFFAF5530),
@@ -2676,7 +2575,6 @@ class _Tones {
     required this.clay,
     required this.codeBg,
     required this.tSage,
-    required this.tags,
     required this.dots,
   });
 
@@ -2714,7 +2612,6 @@ class _Tones {
   final Color clay;
   final Color codeBg;
   final Color tSage;
-  final List<Color> tags;
   final List<Color> dots;
 }
 
@@ -2805,7 +2702,6 @@ CalcPalette _fromTones(_Tones t) {
     codePanel: panel,
     codeChip: t.codeBg,
     quoteBar: t.box,
-    tagCards: t.tags,
     tagDots: t.dots,
   );
 }

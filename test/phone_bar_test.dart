@@ -92,6 +92,20 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
+  testWidgets("Android's bar keeps Material's shape on the crisp surface, and "
+      'the open tab is the 7% fill', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpBar(tester, scale: 1, size: const Size(393, 852));
+    const palette = KapyTheme.darkPalette;
+    final bar = tester.widget<NavigationBar>(
+      find.byKey(const ValueKey('phone-bar')),
+    );
+    expect(bar.backgroundColor, palette.railBackground);
+    expect(bar.backgroundColor, palette.sidebarBackground);
+    expect(bar.indicatorColor, palette.fillSelected);
+  });
+
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
     testWidgets('on ${platform.name} the tabs rest in T3 and the open one is '
         'T1, at 20', (tester) async {

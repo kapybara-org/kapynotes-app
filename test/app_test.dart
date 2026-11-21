@@ -4516,7 +4516,8 @@ void main() {
     expect(search.top, greaterThanOrEqualTo(bar.bottom));
     expect(search.left - sidebar.left, greaterThanOrEqualTo(12));
     expect(sidebar.right - search.right, greaterThanOrEqualTo(12));
-    // New note sits in the bar, as it does beside the page.
+    // New note sits in the bar, as it does beside the page: quiet, with its
+    // plus in sage.
     expect(
       find.descendant(
         of: find.byType(SidebarWindowBar),
@@ -4524,6 +4525,11 @@ void main() {
       ),
       findsOneWidget,
     );
+    final newNote = tester.widget<TonalButton>(
+      find.byKey(const ValueKey('sidebar-new-note')),
+    );
+    expect(newNote.quiet, isTrue);
+    expect(newNote.sageIcon, isTrue);
   });
 
   testWidgets(

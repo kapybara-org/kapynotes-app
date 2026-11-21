@@ -2579,9 +2579,7 @@ class SidebarSearchField extends StatelessWidget {
 
     final trailing = this.trailing;
     return Padding(
-      padding: phone
-          ? EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6)
-          : const EdgeInsets.fromLTRB(18, 0, 18, 12),
+      padding: EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6),
       child: Row(
         children: [
           Expanded(
@@ -2599,37 +2597,12 @@ class SidebarSearchField extends StatelessWidget {
                     // A phone's well is a 44 pt target, as every touch target
                     // is, and grows with the text size rather than cutting
                     // the placeholder's letters off.
-                    height: phone ? null : 40,
-                    constraints: phone
-                        ? const BoxConstraints(minHeight: 44)
-                        : null,
-                    padding: phone
-                        ? const EdgeInsets.fromLTRB(14, 6, 10, 6)
-                        : const EdgeInsets.only(left: 14, right: 10),
-                    decoration: phone
-                        ? BoxDecoration(
-                            color: palette.fillRest,
-                            borderRadius: BorderRadius.circular(
-                              AppRadii.control,
-                            ),
-                          )
-                        : BoxDecoration(
-                            color: palette.surfaceBackground,
-                            border: Border.all(
-                              color: palette.controlBorder,
-                              width: 1.5,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              AppRadii.surface,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: palette.shadowAt(0x4D),
-                                offset: Offset(0, 1),
-                                blurRadius: 2,
-                              ),
-                            ],
-                          ),
+                    constraints: const BoxConstraints(minHeight: 44),
+                    padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
+                    decoration: BoxDecoration(
+                      color: palette.fillRest,
+                      borderRadius: BorderRadius.circular(AppRadii.control),
+                    ),
                     child: Row(
                       children: [
                         KapyIcon(
@@ -2644,7 +2617,7 @@ class SidebarSearchField extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: phone ? 16 : 14,
+                              fontSize: 16,
                               color: searching
                                   ? palette.textPrimary
                                   : palette.textTertiary,

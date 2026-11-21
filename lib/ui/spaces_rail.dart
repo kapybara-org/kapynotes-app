@@ -596,12 +596,14 @@ class _RailAccount extends StatelessWidget {
         image: photo,
       );
     } else {
+      final line = palette.raisedBorder;
       face = Container(
         width: _extent,
         height: _extent,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: palette.controlBackground,
+          color: palette.raisedBackground ?? palette.controlBackground,
+          border: line == null ? null : Border.all(color: line),
           shape: BoxShape.circle,
         ),
         child: user == null
@@ -776,7 +778,7 @@ class PhoneSpaces extends StatelessWidget {
           key: const ValueKey('phone-bar'),
           selectedIndex: math.max(0, selected),
           backgroundColor: palette.railBackground,
-          indicatorColor: palette.tonalBackground,
+          indicatorColor: palette.fillSelected,
           surfaceTintColor: Colors.transparent,
           onDestinationSelected: (index) => choose(items[index].to),
           destinations: [
