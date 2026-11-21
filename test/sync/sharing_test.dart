@@ -48,6 +48,7 @@ class Person {
     bool acceptOnTheirOwn = false,
     Duration minRetry = const Duration(seconds: 5),
     int snapshotEvery = 150,
+    int rereadPages = 100,
   }) {
     server.seedBundle(userId);
     store = MemoryStore();
@@ -76,6 +77,7 @@ class Person {
       presenceLinger: const Duration(milliseconds: 60),
       minRetry: minRetry,
       snapshotEvery: snapshotEvery,
+      rereadPages: rereadPages,
     );
     sharing = Sharing(
       api: api,
@@ -887,6 +889,131 @@ void main() {
         await alice.sync.syncNow();
         expect(alice.bodyOf(note.id), allOf(contains('A1'), contains('C1')));
       });
+
+      /// Carol, in the note's space beside Alice and Bob, holding a key to
+      /// the note that its return under a new one makes stale.
+      Future<Person> carolIn({bool live = false, int rereadPages = 100}) async {
+        note = await shareWithBob('Ledger');
+        spaceId = alice.notes.byId(note.id)!.spaceId!;
+        final carol = Person(
+          server,
+          userId: 'user-3',
+          device: 'carol-pad',
+          rereadPages: rereadPages,
+        );
+        addTearDown(carol.dispose);
+        await carol.boot();
+        await alice.sharing.invite(spaceId, carol.email);
+        await carol.sharing.acceptInvite(server.outbox.last.token);
+        await alice.sync.syncNow();
+        await carol.sync.syncNow();
+        if (live) await carol.goLive();
+        expect(carol.bodyOf(note.id), 'Ledger');
+        alice.tick();
+        await alice.sharing.unshareNote(note.id);
+        alice.tick();
+        await alice.sharing.shareNote(note.id, spaceId: spaceId);
+        return carol;
+      }
+
+      /// Alice writes [body], and Carol, who can't fetch the note's key, takes
+      /// in nothing of it.
+      Future<void> unreadBy(Person carol, String body) async {
+        alice.tick();
+        alice.notes.updateBody(note.id, body);
+        await alice.sync.syncNow();
+        carol.api.failNoteKeys = const SyncTransientException('offline');
+        carol.tick();
+        await carol.syncAndSettle();
+        expect(carol.bodyOf(note.id), 'Ledger');
+      }
+
+      /// An edit to the note in an engine this build doesn't know, as a newer
+      /// app would write it. Its seq in the log.
+      int newerAppEdit() => server
+          .pushOps(
+            alice.userId,
+            deviceIdFor('alice-next'),
+            OpsPush(
+              spaceId: spaceId,
+              noteId: note.id,
+              ops: [
+                WireOp(
+                  deviceSeq: 1,
+                  epoch: 1,
+                  engine: 'fugue9',
+                  payload: SealedBox.empty,
+                ),
+              ],
+            ),
+          )
+          .seqs
+          .single;
+
+      test('a member on a live socket reads an edit she could not open, '
+          'once she can', () async {
+        final carol = await carolIn(live: true);
+        await unreadBy(carol, 'Ledger\nA1');
+        carol.api.failNoteKeys = null;
+        carol.tick();
+        await carol.syncAndSettle();
+        expect(carol.bodyOf(note.id), contains('A1'));
+        expect(carol.docs.get(note.id)!.unreadSeq, isNull);
+      });
+
+      test('a member on a live socket reads an edit she could not open as '
+          'soon as a note key comes', () async {
+        final carol = await carolIn(live: true);
+        await unreadBy(carol, 'Ledger\nA1');
+        carol.api.failNoteKeys = null;
+        // Nothing asks Carol to sync: Alice's next edit, over the socket,
+        // fetches the key.
+        alice.tick();
+        alice.notes.updateBody(note.id, 'Ledger\nA1\nA2');
+        await alice.sync.syncNow();
+        await settle(server);
+        expect(carol.bodyOf(note.id), allOf(contains('A1'), contains('A2')));
+      });
+
+      test('a read again keeps the mark of a newer edit that still does not '
+          'open', () async {
+        final carol = await carolIn();
+        await unreadBy(carol, 'Ledger\nA1');
+        carol.api.failNoteKeys = null;
+        final newer = newerAppEdit();
+        await carol.sync.syncNow();
+        expect(carol.bodyOf(note.id), contains('A1'));
+        expect(carol.docs.get(note.id)!.unreadSeq, newer);
+      });
+
+      test('a read again cut short goes on where it stopped', () async {
+        final carol = await carolIn(rereadPages: 1);
+        await unreadBy(carol, 'Ledger\nA1');
+        await unreadBy(carol, 'Ledger\nA1\nA2');
+        await unreadBy(carol, 'Ledger\nA1\nA2\nA3');
+        server.pageSize = 1;
+        carol.api.failNoteKeys = null;
+        for (var pass = 0; pass < 6; pass++) {
+          carol.tick();
+          await carol.sync.syncNow();
+        }
+        expect(carol.bodyOf(note.id), contains('A3'));
+        expect(carol.docs.get(note.id)!.unreadSeq, isNull);
+      });
+
+      test(
+        'an edit that still does not open with every key at hand is said',
+        () async {
+          final carol = await carolIn();
+          await carol.sync.syncNow();
+          newerAppEdit();
+          await carol.sync.syncNow();
+          expect(carol.sync.lastError, isNull, reason: 'the keys may come yet');
+          await carol.sync.syncNow();
+          expect(carol.sync.status, SyncStatus.failed);
+          expect(carol.sync.lastError, unopenableProblem);
+        },
+      );
 
       test('a member who could not open an edit, and whose push is refused, '
           'puts nothing whole over it', () async {
