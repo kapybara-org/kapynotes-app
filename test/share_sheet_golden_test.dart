@@ -9,8 +9,9 @@ import 'share_dialog_test.dart' show Device, FakeSend, joiningOver, opener;
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
-/// The phone share sheets as the sharing boards draw them, dark, on an
-/// iPhone 15: the owner's sheet in P09's state and a viewer's in P16's.
+/// The share sheets as the sharing boards draw them, dark: the owner's in
+/// P09's state and a viewer's in P16's, as a sheet on an iPhone 15 and as the
+/// Mac's dialog (S02) in a desktop window.
 void main() {
   late FakeServer server;
   late Device sanjay;
@@ -44,11 +45,17 @@ void main() {
     return note;
   }
 
-  Future<void> showSheet(WidgetTester tester, Note note, Device device) async {
-    tester.view.physicalSize = const Size(393, 852);
+  Future<void> showSheet(
+    WidgetTester tester,
+    Note note,
+    Device device, {
+    required Size size,
+    required TargetPlatform platform,
+  }) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    AppPlatform.debugTargetPlatformOverride = platform;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await tester.pumpWidget(
       JoiningScope.value(
@@ -63,42 +70,46 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('the owner’s sheet: one person typing, one invited, link off', (
-    tester,
-  ) async {
-    late Note note;
-    await tester.runAsync(() async {
-      note = await share(SpaceRole.member);
-      await sanjay.sharing.addPerson(
-        note.id,
-        'luca@example.com',
-        role: SpaceRole.viewer,
+  for (final (surface, device, size, platform) in const [
+    ('sheet', 'phone', Size(393, 852), TargetPlatform.iOS),
+    ('dialog', 'mac', Size(1100, 720), TargetPlatform.macOS),
+  ]) {
+    testWidgets('the owner’s $surface: one person typing, one invited, link '
+        'off, on a $device', (tester) async {
+      late Note note;
+      await tester.runAsync(() async {
+        note = await share(SpaceRole.member);
+        await sanjay.sharing.addPerson(
+          note.id,
+          'luca@example.com',
+          role: SpaceRole.viewer,
+        );
+        sanjay.sync.resume();
+        priya.sync.resume();
+        await settle(server);
+        priya.sync.reportTyping(note.id);
+        await settle(server);
+      });
+      await showSheet(tester, note, sanjay, size: size, platform: platform);
+      expect(find.text('Typing…'), findsOneWidget);
+      expect(find.text('Invited'), findsOneWidget);
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/share_${surface}_owner_${device}_dark.png'),
       );
-      sanjay.sync.resume();
-      priya.sync.resume();
-      await settle(server);
-      priya.sync.reportTyping(note.id);
-      await settle(server);
     });
-    await showSheet(tester, note, sanjay);
-    expect(find.text('Typing…'), findsOneWidget);
-    expect(find.text('Invited'), findsOneWidget);
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/share_sheet_owner_phone_dark.png'),
-    );
-  });
 
-  testWidgets('a viewer’s sheet', (tester) async {
-    late Note note;
-    await tester.runAsync(() async {
-      note = await share(SpaceRole.viewer);
+    testWidgets('a viewer’s $surface on a $device', (tester) async {
+      late Note note;
+      await tester.runAsync(() async {
+        note = await share(SpaceRole.viewer);
+      });
+      await showSheet(tester, note, priya, size: size, platform: platform);
+      expect(find.text('You can only view this note'), findsOneWidget);
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/share_${surface}_viewer_${device}_dark.png'),
+      );
     });
-    await showSheet(tester, note, priya);
-    expect(find.text('You can only view this note'), findsOneWidget);
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/share_sheet_viewer_phone_dark.png'),
-    );
-  });
+  }
 }
