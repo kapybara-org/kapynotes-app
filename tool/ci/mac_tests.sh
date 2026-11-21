@@ -14,8 +14,9 @@
 #   the microphone, permissions a runner can't grant;
 # - gemma_summary and parakeet_transcribe, which skip themselves without
 #   their models, 2.6 GB and 670 MB;
-# - menu_bar_panel, because on the runner one of its 21 openings in a row
-#   came back as not shown (run 44932436367), so it runs only when named.
+# - menu_bar_panel, until KAP-264 finds out why one of its 21 openings in a
+#   row came back as not shown on the runner (run 44932436367). It runs only
+#   when named.
 #
 # Every file runs even when one fails, and the script exits 1 if any did. A
 # test that hangs is stopped after 10 minutes.
