@@ -148,31 +148,51 @@ void main() {
   });
 
   test('reading one note of many tasks takes time in step with its size', () {
-    int fastest(int tasks) {
-      notes.clear();
-      note(
+    TaskBoard Function() reader(int tasks) {
+      final big = note(
         'big$tasks',
         [
           'Big list',
           for (var i = 0; i < tasks; i++) ...['☐ Task $i', '  A detail for $i'],
         ].join('\n'),
       );
-      var best = 1 << 40;
-      for (var run = 0; run < 5; run++) {
-        final watch = Stopwatch()..start();
-        expect(read().open, hasLength(tasks));
-        best = math.min(best, watch.elapsedMicroseconds);
-      }
-      return best;
+      final entries = [
+        for (final entry in index.entries)
+          if (entry.noteId == big.id) entry,
+      ];
+      return () => TaskBoard.read(
+        entries: entries,
+        notes: [big],
+        docOf: (id) => docs[id],
+      );
     }
 
-    fastest(100);
-    final small = fastest(100);
-    final large = fastest(800);
+    int took(TaskBoard Function() read) {
+      final watch = Stopwatch()..start();
+      read();
+      return watch.elapsedMicroseconds;
+    }
+
+    final small = reader(100);
+    final large = reader(800);
+    expect(small().open, hasLength(100));
+    expect(large().open, hasLength(800));
+
+    // The fastest of many reads of each, taken in turns: by the last rounds
+    // the compiler has optimised both, a busy machine slows both alike, and
+    // a read it interrupted doesn't count. Twice linear growth still passes;
+    // a board that scans the note for every task takes about 64 times as long.
+    var fastSmall = 1 << 40;
+    var fastLarge = 1 << 40;
+    for (var round = 0; round < 20; round++) {
+      fastSmall = math.min(fastSmall, took(small));
+      fastLarge = math.min(fastLarge, took(large));
+    }
     expect(
-      large,
-      lessThan(small * 16),
-      reason: 'eight times the tasks took ${large / small} times as long',
+      fastLarge,
+      lessThan(fastSmall * 32),
+      reason:
+          'eight times the tasks took ${fastLarge / fastSmall} times as long',
     );
   });
 }
