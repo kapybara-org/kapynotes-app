@@ -95,6 +95,7 @@ class PageToolbar extends StatelessWidget {
     required this.listVisible,
     required this.onShowList,
     this.showListShortcut,
+    this.create,
     this.underList = false,
     this.onOpenFolder,
     this.noteOpen = false,
@@ -130,6 +131,10 @@ class PageToolbar extends StatelessWidget {
   final bool listVisible;
   final VoidCallback onShowList;
   final String? showListShortcut;
+
+  /// The list's New, as a + beside the way back to the list while the list
+  /// and its New are hidden: [label] is what a screen reader hears.
+  final ({String label, String tooltip, VoidCallback onPressed})? create;
 
   /// Whether the list lies open over the page. The band then leaves its
   /// hairline to the list's bar, so the dimmed page draws no second line
@@ -210,8 +215,23 @@ class PageToolbar extends StatelessWidget {
   /// Whether a page [width] wide has room in the bar for Saved, or for the
   /// count of [unloadedPictures] that stands in for it. Where it hasn't,
   /// Saved goes on the note's date line instead.
-  static bool savedFits(double width, {required int unloadedPictures}) =>
-      width >= (unloadedPictures > 0 ? _unloadedPicturesWidth : _savedWidth);
+  ///
+  /// With [withNew], the + beside the way back to the list takes its room
+  /// first.
+  static bool savedFits(
+    double width, {
+    required int unloadedPictures,
+    bool withNew = false,
+  }) =>
+      width - (withNew ? _newRoom : 0) >=
+      (unloadedPictures > 0 ? _unloadedPicturesWidth : _savedWidth);
+
+  /// What the + beside the way back to the list takes from the band: its
+  /// button and the 4 before it.
+  static double get _newRoom => _extent + 4;
+
+  static double get _extent =>
+      AppPlatform.hasPointer ? 32.0 : AppControlMetrics.iconButtonExtent;
 
   /// Narrower than this, "Update and restart" shortens to "Update".
   static const double _updateLabelWidth = 680;
@@ -219,12 +239,11 @@ class PageToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final extent = AppPlatform.hasPointer
-        ? 32.0
-        : AppControlMetrics.iconButtonExtent;
+    final extent = _extent;
     final showListShortcut = this.showListShortcut;
     final days = this.days;
     final back = this.back;
+    final create = listVisible || underList ? null : this.create;
     return Container(
       key: const ValueKey('page-toolbar'),
       height: AppControlMetrics.scaleBar(
@@ -240,6 +259,7 @@ class PageToolbar extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
+          final room = width - (create == null ? 0 : _newRoom);
           // The month's button starts 8 before its words, and the way back
           // to the list sits 8 in.
           Widget band(Widget lead, [Widget? week]) => CustomMultiChildLayout(
@@ -268,6 +288,18 @@ class PageToolbar extends StatelessWidget {
                           size: 16,
                         ),
                       ),
+                      if (create != null) ...[
+                        const SizedBox(width: 4),
+                        CompactIconButton(
+                          key: const ValueKey('page-new'),
+                          tooltip: create.tooltip,
+                          semanticLabel: create.label,
+                          extent: extent,
+                          radius: 8,
+                          onPressed: create.onPressed,
+                          icon: const KapyIcon(KapyIcons.addRounded, size: 16),
+                        ),
+                      ],
                       const SizedBox(width: 8),
                     ],
                     Flexible(child: lead),
@@ -279,7 +311,7 @@ class PageToolbar extends StatelessWidget {
                 id: _Slot.actions,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: _actions(width, extent),
+                  children: _actions(room, extent),
                 ),
               ),
             ],
@@ -296,14 +328,14 @@ class PageToolbar extends StatelessWidget {
                   child: _phoneBar(back, width, extent),
                 )
               else if (days != null)
-                days(width < _fullWidth, band)
+                days(room < _fullWidth, band)
               else
                 band(
                   _Path(
                     path: path!,
-                    form: width >= _fullWidth
+                    form: room >= _fullWidth
                         ? _PathForm.full
-                        : width >= _savedWidth
+                        : room >= _savedWidth
                         ? _PathForm.short
                         : _PathForm.last,
                     onOpenFolder: onOpenFolder,

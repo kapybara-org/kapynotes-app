@@ -4921,50 +4921,59 @@ void main() {
     });
   });
 
-  group('New on the rail while the list is hidden', () {
-    final railNew = find.byKey(const ValueKey('rail-new'));
+  group('New beside the way back to the list', () {
+    final pageNew = find.byKey(const ValueKey('page-new'));
+    final showList = find.byKey(const ValueKey('page-show-list'));
     final sidebarNew = find
         .byKey(const ValueKey('sidebar-new-note'))
         .hitTestable();
+
+    Future<void> pumpWithTasks(WidgetTester tester) async {
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(
+        tester,
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+    }
+
+    void expectBesideShowList(WidgetTester tester) {
+      expect(showList, findsOneWidget);
+      expect(pageNew, findsOneWidget);
+      expect(tester.getSize(pageNew), tester.getSize(showList));
+      expect(
+        tester.getTopLeft(pageNew).dx - tester.getTopRight(showList).dx,
+        4,
+      );
+      expect(tester.getCenter(pageNew).dy, tester.getCenter(showList).dy);
+    }
 
     for (final platform in [
       TargetPlatform.macOS,
       TargetPlatform.windows,
       TargetPlatform.linux,
     ]) {
-      testWidgets('on ${platform.name}, takes over from the list\'s New and '
-          'makes what the space holds', (tester) async {
+      testWidgets('on ${platform.name}, every page that leads with the way '
+          'back to the list has New beside it, making what the space '
+          'holds', (tester) async {
         AppPlatform.debugTargetPlatformOverride = platform;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-        await notes.load();
-        notes.create(body: 'Groceries');
-        await pumpApp(
-          tester,
-          tasks: TaskLibrary(
-            notes: notes,
-            store: store,
-            storage: MemoryDocStorage(),
-          ),
-        );
+        await pumpWithTasks(tester);
         expect(sidebarNew, findsOneWidget);
-        expect(railNew, findsNothing);
+        expect(pageNew, findsNothing);
 
         await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
         await tester.pumpAndSettle();
         expect(sidebarNew, findsNothing);
-        expect(railNew, findsOneWidget);
-        expect(
-          tester
-              .widget<Tooltip>(
-                find.ancestor(of: railNew, matching: find.byType(Tooltip)),
-              )
-              .message,
-          'New note  ${shortcuts.hintFor(ShortcutAction.newNote)!.displayLabel}',
-        );
-        expect(tester.getSemantics(railNew).label, 'New note');
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New note');
 
         final before = notes.notes.length;
-        await tester.tap(railNew);
+        await tester.tap(pageNew);
         await tester.pumpAndSettle();
         expect(notes.notes, hasLength(before + 1));
         expect(notes.notes.first.isDrawing, isFalse);
@@ -4972,56 +4981,123 @@ void main() {
 
         await tester.tap(find.byKey(const ValueKey('rail-drawings')));
         await tester.pumpAndSettle();
-        expect(tester.getSemantics(railNew).label, 'New drawing');
-        await tester.tap(railNew);
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New drawing');
+        await tester.tap(pageNew);
         await tester.pumpAndSettle();
         expect(notes.notes.where((note) => note.isDrawing), hasLength(1));
         expect(notes.notes.first.isDrawing, isTrue);
         expect(find.byType(DrawingCanvas), findsOneWidget);
 
+        // Tasks draws a band of its own over its page.
         await tester.tap(find.byKey(const ValueKey('rail-tasks')));
         await tester.pumpAndSettle();
-        expect(tester.getSemantics(railNew).label, 'New task');
+        expectBesideShowList(tester);
+        expect(tester.getSemantics(pageNew).label, 'New task');
         final beforeTask = notes.notes.length;
-        await tester.tap(railNew);
+        await tester.tap(pageNew);
         await tester.pumpAndSettle();
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
         expect(notes.notes, hasLength(beforeTask));
 
-        await tester.tap(notesToggleWithLabel('Show notes'));
+        await tester.tap(showList);
         await tester.pumpAndSettle();
-        expect(railNew, findsNothing);
+        expect(pageNew, findsNothing);
+        expect(find.byKey(const ValueKey('rail-new')), findsNothing);
         expect(sidebarNew, findsOneWidget);
       });
     }
 
-    testWidgets('a keyboard reaches it with Tab, and Enter makes a note', (
-      tester,
-    ) async {
+    testWidgets('names what it makes and its chord, and a keyboard reaches it '
+        'with Tab and presses it with Enter or Space', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await notes.load();
       notes.create(body: 'Groceries');
       await pumpApp(tester, sidebarVisible: false);
+      expect(
+        find.descendant(
+          of: pageNew,
+          matching: find.byTooltip(
+            SidebarWindowBar.newTooltip(
+              'note',
+              shortcuts.hintFor(ShortcutAction.newNote),
+            ),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(pageNew),
+        isSemantics(
+          label: 'New note',
+          tooltip:
+              'New note  ${shortcuts.hintFor(ShortcutAction.newNote)!.displayLabel}',
+          isButton: true,
+          hasTapAction: true,
+          isFocusable: true,
+          hasEnabledState: true,
+          isEnabled: true,
+        ),
+      );
+
       final plus = find.descendant(
-        of: railNew,
+        of: pageNew,
         matching: findKapyIcon(KapyIcons.addRounded),
       );
+      bool focused() => Focus.of(tester.element(plus)).hasPrimaryFocus;
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pump();
       var tabs = 0;
-      while (!Focus.of(tester.element(plus)).hasPrimaryFocus && tabs < 50) {
+      while (!focused() && tabs < 50) {
         await tester.sendKeyEvent(LogicalKeyboardKey.tab);
         await tester.pump();
         tabs++;
       }
-      expect(Focus.of(tester.element(plus)).hasPrimaryFocus, isTrue);
+      expect(focused(), isTrue);
 
       final before = notes.notes.length;
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(notes.notes, hasLength(before + 1));
       expect(notes.notes.first.isDrawing, isFalse);
+
+      notes.updateBody(notes.notes.first.id, 'Written');
+      await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      tabs = 0;
+      while (!focused() && tabs < 50) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        tabs++;
+      }
+      expect(focused(), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(before + 2));
+    });
+
+    testWidgets('the rail stays put as the list hides and shows', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpWithTasks(tester);
+      final tiles = [
+        for (final name in ['notes', 'tasks', 'drawings'])
+          find.byKey(ValueKey('rail-$name')),
+      ];
+      final shown = [for (final tile in tiles) tester.getRect(tile)];
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(pageNew, findsOneWidget);
+      expect([for (final tile in tiles) tester.getRect(tile)], shown);
+
+      await tester.tap(showList);
+      await tester.pumpAndSettle();
+      expect([for (final tile in tiles) tester.getRect(tile)], shown);
     });
   });
 

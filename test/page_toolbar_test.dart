@@ -64,6 +64,7 @@ void main() {
     List<KapyMenuAction> moreActions = const [],
     void Function(String value, Offset at)? onMore,
     VoidCallback? onShowList,
+    VoidCallback? onNew,
     void Function(String folderId, {required bool behind})? onOpenFolder,
     Widget? assistant,
     List<Widget>? actions,
@@ -78,6 +79,9 @@ void main() {
     underList: underList,
     onShowList: onShowList ?? () {},
     showListShortcut: 'Cmd + \\',
+    create: onNew == null
+        ? null
+        : (label: 'New note', tooltip: 'New note  Cmd + N', onPressed: onNew),
     onOpenFolder: onOpenFolder ?? (_, {required behind}) {},
     noteOpen: noteOpen,
     syncStatus: syncStatus,
@@ -92,6 +96,7 @@ void main() {
 
   final bar = find.byKey(const ValueKey('page-toolbar'));
   final showList = find.byKey(const ValueKey('page-show-list'));
+  final newButton = find.byKey(const ValueKey('page-new'));
   final saved = find.byKey(const ValueKey('page-saved'));
   final share = find.byKey(const ValueKey('page-share'));
   final more = find.byKey(const ValueKey('page-more'));
@@ -305,10 +310,189 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('page-new-note')), findsNothing);
+    expect(newButton, findsNothing);
 
     await tester.tap(showList);
     expect(shown, 1);
+  });
+
+  group('New beside the way back to the list', () {
+    testWidgets('sits 4 after it, the same quiet button, and makes what the '
+        'list\'s New makes', (tester) async {
+      var made = 0;
+      await tester.pumpWidget(
+        harness(toolbar(listVisible: false, onNew: () => made++)),
+      );
+
+      expect(tester.getSize(newButton), tester.getSize(showList));
+      expect(
+        tester.getTopLeft(newButton).dx - tester.getTopRight(showList).dx,
+        4,
+      );
+      expect(tester.getCenter(newButton).dy, tester.getCenter(showList).dy);
+      expect(tester.getTopLeft(path).dx - tester.getTopRight(newButton).dx, 8);
+      expect(
+        find.descendant(
+          of: newButton,
+          matching: findKapyIcon(KapyIcons.addRounded),
+        ),
+        findsOneWidget,
+      );
+      KapyIcon glyph(Finder button, KapyIconData data) =>
+          tester.widget<KapyIcon>(
+            find.descendant(of: button, matching: findKapyIcon(data)),
+          );
+      expect(
+        glyph(newButton, KapyIcons.addRounded).size,
+        glyph(showList, KapyIcons.menuOpenRounded).size,
+      );
+      expect(
+        IconTheme.of(
+          tester.element(
+            find.descendant(
+              of: newButton,
+              matching: findKapyIcon(KapyIcons.addRounded),
+            ),
+          ),
+        ).color,
+        IconTheme.of(
+          tester.element(
+            find.descendant(
+              of: showList,
+              matching: findKapyIcon(KapyIcons.menuOpenRounded),
+            ),
+          ),
+        ).color,
+      );
+
+      await tester.tap(newButton);
+      expect(made, 1);
+    });
+
+    testWidgets('is left out while the list shows, beside the page or over '
+        'it', (tester) async {
+      await tester.pumpWidget(harness(toolbar(onNew: () {})));
+      expect(newButton, findsNothing);
+      await tester.pumpWidget(
+        harness(toolbar(listVisible: false, underList: true, onNew: () {})),
+      );
+      expect(newButton, findsNothing);
+    });
+
+    testWidgets('names what it makes and its chord, and the keyboard reaches '
+        'and presses it', (tester) async {
+      final semantics = tester.ensureSemantics();
+      var made = 0;
+      await tester.pumpWidget(
+        harness(toolbar(listVisible: false, onNew: () => made++)),
+      );
+      expect(
+        find.descendant(
+          of: newButton,
+          matching: find.byTooltip('New note  Cmd + N'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(newButton),
+        isSemantics(
+          label: 'New note',
+          tooltip: 'New note  Cmd + N',
+          isButton: true,
+          hasTapAction: true,
+          isFocusable: true,
+          hasEnabledState: true,
+          isEnabled: true,
+        ),
+      );
+
+      bool focused() => Focus.of(
+        tester.element(
+          find.descendant(
+            of: newButton,
+            matching: findKapyIcon(KapyIcons.addRounded),
+          ),
+        ),
+      ).hasPrimaryFocus;
+      var tabs = 0;
+      while (!focused() && tabs < 10) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        tabs++;
+      }
+      expect(focused(), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(made, 1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(made, 2);
+      semantics.dispose();
+    });
+
+    testWidgets('takes its room before the path, the days and Saved decide '
+        'what fits', (tester) async {
+      // Its button and the 4 before it.
+      const room = 32.0 + 4;
+      final compact = <bool>[];
+      Widget days(bool narrow, PlaceDays place) {
+        compact.add(narrow);
+        return place(
+          const SizedBox(width: 96, height: 32),
+          narrow ? null : const SizedBox(width: double.infinity, height: 44),
+        );
+      }
+
+      Widget at(double width, {bool withNew = true, bool withDays = false}) =>
+          harness(
+            toolbar(
+              listVisible: false,
+              onNew: withNew ? () {} : null,
+              days: withDays ? days : null,
+              assistant: const SizedBox(key: ai, width: 49, height: 32),
+            ),
+            width: width + 2 * border,
+          );
+
+      await tester.pumpWidget(at(720 + room - 1, withDays: true));
+      expect(compact.last, isTrue);
+      await tester.pumpWidget(at(720 + room, withDays: true));
+      expect(compact.last, isFalse);
+      await tester.pumpWidget(
+        at(720 + room - 1, withNew: false, withDays: true),
+      );
+      expect(compact.last, isFalse);
+
+      await tester.pumpWidget(at(720 + room - 1));
+      expect(fold, findsOneWidget);
+      await tester.pumpWidget(at(720 + room));
+      expect(fold, findsNothing);
+      await tester.pumpWidget(at(560 + room - 1));
+      expect(fold, findsNothing);
+      expect(onPath('Clients'), findsOneWidget);
+
+      await tester.pumpWidget(at(560 + room));
+      expect(saved, findsOneWidget);
+      await tester.pumpWidget(at(560 + room - 1));
+      expect(saved, findsNothing);
+      expect(
+        PageToolbar.savedFits(
+          560 + room - 1,
+          unloadedPictures: 0,
+          withNew: true,
+        ),
+        isFalse,
+      );
+      expect(
+        PageToolbar.savedFits(560 + room, unloadedPictures: 0, withNew: true),
+        isTrue,
+      );
+      expect(
+        PageToolbar.savedFits(560 + room - 1, unloadedPictures: 0),
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   testWidgets('the path names each level, with only where the page is in '
@@ -768,6 +952,7 @@ void main() {
           harness(
             toolbar(
               listVisible: listVisible,
+              onNew: () {},
               members: crowd,
               assistant: const SizedBox(width: 38, height: 32),
               days: week,

@@ -15,7 +15,6 @@ import '../sync/sync_service.dart';
 import 'context_menu.dart';
 import 'installed_version.dart';
 import 'profile_avatar.dart';
-import 'sidebar.dart' show SidebarWindowBar;
 import 'window_drag_area.dart';
 
 /// What the notes list beside the spaces rail can show.
@@ -53,9 +52,6 @@ class SpacesRail extends StatelessWidget {
     required this.space,
     required this.onSelected,
     required this.onSettingsPressed,
-    this.onCreate,
-    this.createNoun = 'note',
-    this.createShortcut,
     this.invitations,
     this.openTasks,
     this.streak,
@@ -70,14 +66,6 @@ class SpacesRail extends StatelessWidget {
   final LibrarySpace space;
   final ValueChanged<LibrarySpace> onSelected;
   final VoidCallback onSettingsPressed;
-
-  /// What the list's New does, from a + at the top while the list is hidden
-  /// and its New with it. Null leaves the + off, so only one New shows.
-  final VoidCallback? onCreate;
-
-  /// What New makes in the space on screen, named as the list's New names it.
-  final String createNoun;
-  final ShortcutBinding? createShortcut;
 
   /// How many invitations are waiting under Shared, counted on its badge.
   ///
@@ -124,7 +112,6 @@ class SpacesRail extends StatelessWidget {
     final streak = this.streak;
     final onAccountPressed = this.onAccountPressed;
     final openTasks = this.openTasks;
-    final onCreate = this.onCreate;
 
     Widget destination(
       LibrarySpace destination, {
@@ -174,29 +161,6 @@ class SpacesRail extends StatelessWidget {
                         child: Column(
                           children: [
                             const SizedBox(height: 8),
-                            if (onCreate != null) ...[
-                              Tooltip(
-                                message: SidebarWindowBar.newTooltip(
-                                  createNoun,
-                                  createShortcut,
-                                ),
-                                child: Semantics(
-                                  container: true,
-                                  button: true,
-                                  label: 'New $createNoun',
-                                  child: _RailButton(
-                                    key: const ValueKey('rail-new'),
-                                    onPressed: onCreate,
-                                    child: KapyIcon(
-                                      KapyIcons.addRounded,
-                                      size: 20,
-                                      color: palette.textSecondary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
                             destination(
                               LibrarySpace.notes,
                               icon: KapyIcons.noteOutlined,
