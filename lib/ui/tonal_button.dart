@@ -135,6 +135,13 @@ class TonalButton extends StatelessWidget {
               ? palette.textSecondary
               : palette.tonalForeground,
         ),
+        side: quiet
+            ? WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.focused)
+                    ? BorderSide(color: palette.selectedBorder, width: 1)
+                    : BorderSide.none,
+              )
+            : null,
         textStyle: WidgetStatePropertyAll(_labelStyle(context)),
       ),
       child: Row(
