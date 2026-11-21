@@ -136,8 +136,12 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: AppTypeScale.body,
-                                  fontWeight: FontWeight.w500,
-                                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                                  fontWeight: AppWeight.font(
+                                    AppWeight.rowTitle,
+                                  ),
+                                  fontVariations: AppWeight.wght(
+                                    AppWeight.rowTitle,
+                                  ),
                                   color: palette.textPrimary,
                                 ),
                               ),

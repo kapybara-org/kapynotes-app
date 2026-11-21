@@ -3620,7 +3620,10 @@ class _FilterPopoverState extends State<_FilterPopover> {
                               'Filter',
                               style: link.copyWith(
                                 color: palette.textSecondary,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: AppWeight.font(AppWeight.button),
+                                fontVariations: AppWeight.wght(
+                                  AppWeight.button,
+                                ),
                               ),
                             ),
                           ],

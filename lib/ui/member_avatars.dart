@@ -387,7 +387,8 @@ class _AvatarCircle extends StatelessWidget {
           // Fixed against the circle rather than scaled with Dynamic Type: the
           // circle cannot grow with it, so scaling the letter only clips it.
           fontSize: extent * (label.length > 1 ? 0.36 : 0.44),
-          fontWeight: FontWeight.w400,
+          fontWeight: AppWeight.font(AppWeight.body),
+          fontVariations: AppWeight.wght(AppWeight.body),
           color: foreground,
           height: 1,
         ),

@@ -493,10 +493,11 @@ class _CameraTopBar extends StatelessWidget {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
               fontSize: 16,
-              fontWeight: FontWeight.w400,
+              fontWeight: AppWeight.font(AppWeight.body),
+              fontVariations: AppWeight.wght(AppWeight.body),
             ),
           ),
           Align(

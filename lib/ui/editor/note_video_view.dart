@@ -164,7 +164,8 @@ class _NoteVideoViewState extends State<NoteVideoView> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: AppTypeScale.caption,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: AppWeight.font(AppWeight.body),
+                  fontVariations: AppWeight.wght(AppWeight.body),
                   shadows: [Shadow(blurRadius: 6, color: Colors.black)],
                 ),
               ),
@@ -249,8 +250,8 @@ class _VideoUploadCover extends StatelessWidget {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: AppTypeScale.control,
-                  fontWeight: FontWeight.w500,
-                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                  fontWeight: AppWeight.font(AppWeight.rowTitle),
+                  fontVariations: AppWeight.wght(AppWeight.rowTitle),
                 ),
               ),
       ),

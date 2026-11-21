@@ -83,13 +83,11 @@ class TonalButton extends StatelessWidget {
             : 6 + Keycap.widthOf(context, shortcut, tonal: true) + 6);
   }
 
-  static TextStyle? _labelStyle(BuildContext context) => Theme.of(context)
-      .textTheme
-      .labelLarge
-      ?.copyWith(
+  static TextStyle? _labelStyle(BuildContext context) =>
+      Theme.of(context).textTheme.labelLarge?.copyWith(
         fontSize: AppTypeScale.control,
-        fontWeight: FontWeight.w500,
-        fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+        fontWeight: AppWeight.font(AppWeight.rowTitle),
+        fontVariations: AppWeight.wght(AppWeight.rowTitle),
       );
 
   @override

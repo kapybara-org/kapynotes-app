@@ -402,8 +402,8 @@ class _BlockButton extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: AppTypeScale.small,
-                    fontWeight: FontWeight.w500,
-                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                    fontWeight: AppWeight.font(AppWeight.rowTitle),
+                    fontVariations: AppWeight.wght(AppWeight.rowTitle),
                   ),
                 ),
                 KapyIcon(
@@ -484,7 +484,8 @@ class _LinkField extends StatelessWidget {
     final style = TextStyle(
       color: palette.textPrimary,
       fontSize: AppTypeScale.small,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
     );
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -558,8 +559,8 @@ class _LinkField extends StatelessWidget {
                       style: TextStyle(
                         color: palette.tonalForeground,
                         fontSize: AppTypeScale.caption,
-                        fontWeight: FontWeight.w500,
-                        fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                        fontWeight: AppWeight.font(AppWeight.rowTitle),
+                        fontVariations: AppWeight.wght(AppWeight.rowTitle),
                       ),
                     ),
                     const Keycap('↵'),
@@ -595,7 +596,8 @@ class _BlockMenu extends StatelessWidget {
     final quiet = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
     );
     return Material(
       type: MaterialType.transparency,
@@ -619,8 +621,8 @@ class _BlockMenu extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textTertiary,
                     fontSize: AppTypeScale.badge,
-                    fontWeight: FontWeight.w500,
-                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                    fontWeight: AppWeight.font(AppWeight.rowTitle),
+                    fontVariations: AppWeight.wght(AppWeight.rowTitle),
                     letterSpacing: 0.44,
                   ),
                 ),
@@ -671,7 +673,10 @@ class _BlockMenu extends StatelessWidget {
                                   style: TextStyle(
                                     color: palette.textPrimary,
                                     fontSize: AppTypeScale.body,
-                                    fontWeight: FontWeight.w400,
+                                    fontWeight: AppWeight.font(AppWeight.body),
+                                    fontVariations: AppWeight.wght(
+                                      AppWeight.body,
+                                    ),
                                   ),
                                 ),
                               ),

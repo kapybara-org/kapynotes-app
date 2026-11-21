@@ -243,7 +243,8 @@ class SpacesRail extends StatelessWidget {
 TextStyle _railLabel(Color color, {required bool strong}) => TextStyle(
   fontSize: AppTypeScale.caption,
   height: 16 / 12,
-  fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
+  fontWeight: AppWeight.font(strong ? AppWeight.button : AppWeight.body),
+  fontVariations: AppWeight.wght(strong ? AppWeight.button : AppWeight.body),
   color: color,
   fontFeatures: const [FontFeature.tabularFigures()],
 );
@@ -390,10 +391,8 @@ class _Badge extends StatelessWidget {
         style: TextStyle(
           fontSize: AppTypeScale.micro,
           height: 12 / 11,
-          fontWeight: FontWeight.w500,
-          fontVariations: AppWeight.variations(
-            AppWeight.bold(AppWeight.rowTitle),
-          ),
+          fontWeight: AppWeight.font(AppWeight.button),
+          fontVariations: AppWeight.wght(AppWeight.button),
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -460,7 +459,8 @@ class StreakMark extends StatelessWidget {
                         fontFamily: AppFonts.ui,
                         fontSize: 13,
                         height: 16 / 13,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: AppWeight.font(AppWeight.button),
+                        fontVariations: AppWeight.wght(AppWeight.button),
                         color: ink,
                         fontFeatures: const [FontFeature.tabularFigures()],
                       )
@@ -629,10 +629,8 @@ class AccountAvatar extends StatelessWidget {
                 style: TextStyle(
                   fontSize: AppTypeScale.control,
                   height: 1,
-                  fontWeight: FontWeight.w500,
-                  fontVariations: AppWeight.variations(
-                    AppWeight.bold(AppWeight.rowTitle),
-                  ),
+                  fontWeight: AppWeight.font(AppWeight.button),
+                  fontVariations: AppWeight.wght(AppWeight.button),
                   color: palette.textPrimary,
                 ),
               ),
@@ -953,7 +951,12 @@ class _BarItem extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10.5,
                     height: 13 / 10.5,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: AppWeight.font(
+                      selected ? AppWeight.section : AppWeight.button,
+                    ),
+                    fontVariations: AppWeight.wght(
+                      selected ? AppWeight.section : AppWeight.button,
+                    ),
                     color: ink,
                   ),
                 ),

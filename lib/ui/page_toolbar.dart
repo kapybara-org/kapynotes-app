@@ -1013,7 +1013,8 @@ class _BackButton extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: AppTypeScale.body,
-                fontWeight: FontWeight.w500,
+                fontWeight: AppWeight.font(AppWeight.button),
+                fontVariations: AppWeight.wght(AppWeight.button),
                 color: palette.textPrimary,
               ),
             ),

@@ -923,15 +923,19 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       style: touch
           ? Theme.of(context).textTheme.titleMedium?.copyWith(
               color: palette.textPrimary,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppWeight.font(AppWeight.section),
+              fontVariations: AppWeight.wght(AppWeight.section),
             )
           : TextStyle(
               fontFamily: handwritten.fontFamily,
               fontFamilyFallback: handwritten.fontFamilyFallback,
-              fontVariations: handwritten.fontVariations,
               fontSize: 28,
               height: 36 / 28,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppWeight.font(AppWeight.section),
+              fontVariations: AppWeight.wght(
+                AppWeight.section,
+                extra: handwritten.fontVariations ?? const [],
+              ),
               color: palette.textPrimary,
             ),
       decoration: InputDecoration(
@@ -965,7 +969,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 16 / 13,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
                 color: palette.textTertiary,
               ),
             ),
@@ -1145,8 +1150,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               fontFamily: AppFonts.mono,
               fontFamilyFallback: AppFonts.monoFallback,
               fontSize: 13,
-              fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+              fontWeight: AppWeight.font(AppWeight.rowTitle),
+              fontVariations: AppWeight.wght(AppWeight.rowTitle),
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -1254,8 +1259,8 @@ class _StylePanel extends StatelessWidget {
     final label = TextStyle(
       fontSize: 12,
       height: 16 / 12,
-      fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      fontWeight: AppWeight.font(AppWeight.rowTitle),
+      fontVariations: AppWeight.wght(AppWeight.rowTitle),
       color: palette.textTertiary,
     );
     return _DockSurface(
@@ -1367,8 +1372,12 @@ class _StylePanel extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                                    fontWeight: AppWeight.font(
+                                      AppWeight.rowTitle,
+                                    ),
+                                    fontVariations: AppWeight.wght(
+                                      AppWeight.rowTitle,
+                                    ),
                                     color: option == width
                                         ? palette.tonalForeground
                                         : palette.textPrimary,

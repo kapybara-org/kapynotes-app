@@ -194,8 +194,8 @@ class NoteVoiceChip extends StatelessWidget {
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: 13,
       height: 16 / 12.5,
-      fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      fontWeight: AppWeight.font(AppWeight.rowTitle),
+      fontVariations: AppWeight.wght(AppWeight.rowTitle),
       fontFeatures: const [FontFeature.tabularFigures()],
       color: palette.textSecondary,
     );
@@ -254,7 +254,8 @@ class NoteVoiceChip extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: small.copyWith(
-                        fontWeight: FontWeight.w400,
+                        fontWeight: AppWeight.font(AppWeight.body),
+                        fontVariations: AppWeight.wght(AppWeight.body),
                         color: _isTransient
                             ? palette.textTertiary
                             : palette.textMuted,

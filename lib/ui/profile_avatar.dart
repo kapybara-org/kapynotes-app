@@ -67,7 +67,8 @@ class ProfileAvatar extends StatelessWidget {
           avatarInitial(name),
           style: TextStyle(
             fontSize: extent * 0.42,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             color: palette.textPrimary,
             height: 1,
           ),

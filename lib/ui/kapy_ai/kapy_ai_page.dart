@@ -177,7 +177,8 @@ class _KapyAiPageState extends State<KapyAiPage> {
         fontFamily: 'Shantell Sans',
         fontSize: 26,
         height: 32 / 26,
-        fontWeight: FontWeight.w600,
+        fontWeight: AppWeight.font(AppWeight.section),
+        fontVariations: AppWeight.wght(AppWeight.section),
         color: palette.textPrimary,
       ),
     );
@@ -444,7 +445,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                           kapyAi: _ai,
                           open: _picking,
                           fontSize: 13,
-                          fontWeight: FontWeight.w400,
+                          weight: FontWeight.w400,
                           onPressed: _togglePicker,
                         ),
                       ),

@@ -962,7 +962,8 @@ class _CommandMenuState extends State<CommandMenu> {
                 'Cancel',
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppWeight.font(AppWeight.button),
+                  fontVariations: AppWeight.wght(AppWeight.button),
                   color: palette.accentText,
                 ),
               ),
@@ -1009,7 +1010,8 @@ class _CommandMenuState extends State<CommandMenu> {
                         scope.label,
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: AppWeight.font(AppWeight.button),
+                          fontVariations: AppWeight.wght(AppWeight.button),
                           color: scope == _scope
                               ? palette.paperColor
                               : palette.textPrimary,
@@ -1072,7 +1074,8 @@ class _CommandMenuState extends State<CommandMenu> {
                 style: TextStyle(
                   fontSize: 12,
                   height: 16 / 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppWeight.font(AppWeight.button),
+                  fontVariations: AppWeight.wght(AppWeight.button),
                   color: palette.textPrimary,
                 ),
               ),
@@ -1137,7 +1140,8 @@ class _CommandMenuState extends State<CommandMenu> {
           style: TextStyle(
             fontSize: 12,
             height: 16 / 12,
-            fontWeight: FontWeight.w500,
+            fontWeight: AppWeight.font(AppWeight.button),
+            fontVariations: AppWeight.wght(AppWeight.button),
             color: palette.textTertiary,
           ),
         ),
@@ -1243,9 +1247,12 @@ class _CommandMenuState extends State<CommandMenu> {
                               TextStyle(
                                 fontSize: 14,
                                 height: 18 / 14,
-                                fontWeight: lit
-                                    ? FontWeight.w500
-                                    : FontWeight.w400,
+                                fontWeight: AppWeight.font(
+                                  lit ? AppWeight.button : AppWeight.body,
+                                ),
+                                fontVariations: AppWeight.wght(
+                                  lit ? AppWeight.button : AppWeight.body,
+                                ),
                                 color: line.muted || done
                                     ? palette.textSecondary
                                     : palette.textPrimary,
@@ -1334,7 +1341,8 @@ class _CommandMenuState extends State<CommandMenu> {
     }
     final mark = TextStyle(
       color: palette.accentText,
-      fontWeight: FontWeight.w600,
+      fontWeight: AppWeight.font(AppWeight.section),
+      fontVariations: AppWeight.wght(AppWeight.section),
     );
     final spans = <TextSpan>[];
     var start = 0;
@@ -1396,7 +1404,8 @@ class _CommandMenuState extends State<CommandMenu> {
                         style: TextStyle(
                           fontSize: 14,
                           height: 18 / 14,
-                          fontWeight: FontWeight.w400,
+                          fontWeight: AppWeight.font(AppWeight.body),
+                          fontVariations: AppWeight.wght(AppWeight.body),
                           color: palette.textPrimary,
                         ),
                       ),
@@ -1473,7 +1482,8 @@ class _CommandMenuState extends State<CommandMenu> {
                       style: TextStyle(
                         fontSize: 12,
                         height: 16 / 12,
-                        fontWeight: FontWeight.w400,
+                        fontWeight: AppWeight.font(AppWeight.body),
+                        fontVariations: AppWeight.wght(AppWeight.body),
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),

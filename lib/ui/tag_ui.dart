@@ -91,7 +91,8 @@ TextStyle _text(double size, FontWeight weight, Color color) => TextStyle(
   fontFamilyFallback: AppFonts.uiFallback,
   fontSize: size,
   height: 16 / size,
-  fontWeight: weight,
+  fontWeight: AppWeight.font(AppWeight.axisOf(weight)),
+  fontVariations: AppWeight.wght(AppWeight.axisOf(weight)),
   color: color,
 );
 

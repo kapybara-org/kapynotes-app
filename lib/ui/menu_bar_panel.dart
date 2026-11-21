@@ -754,8 +754,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final style = TextStyle(fontSize: 11.5, height: 14 / 11.5, color: palette.textTertiary);
     final link = style.copyWith(
       color: palette.textSecondary,
-      fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      fontWeight: AppWeight.font(AppWeight.rowTitle),
+      fontVariations: AppWeight.wght(AppWeight.rowTitle),
     );
     final notes = _tab == _Tab.notes;
     final Widget? line = switch (_notice) {
@@ -822,8 +822,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                 style: TextStyle(
                   fontSize: 12,
                   height: 16 / 12,
-                  fontWeight: FontWeight.w600,
-                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+                  fontWeight: AppWeight.font(AppWeight.section),
+                  fontVariations: AppWeight.wght(AppWeight.section),
                   color: palette.textSecondary,
                 ),
               ),
@@ -878,8 +878,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final head = TextStyle(
       fontSize: 12,
       height: 16 / 12,
-      fontWeight: FontWeight.w600,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+      fontWeight: AppWeight.font(AppWeight.section),
+      fontVariations: AppWeight.wght(AppWeight.section),
       color: palette.textSecondary,
     );
     final children = <Widget>[];
@@ -951,8 +951,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             'No notes yet',
             style: TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+              fontWeight: AppWeight.font(AppWeight.rowTitle),
+              fontVariations: AppWeight.wght(AppWeight.rowTitle),
               color: palette.textPrimary,
             ),
           ),
@@ -1064,8 +1064,15 @@ class _Tabs extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       height: 16 / 13,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected ? palette.textPrimary : palette.textSecondary,
+                      fontWeight: AppWeight.font(
+                        selected ? AppWeight.section : AppWeight.body,
+                      ),
+                      fontVariations: AppWeight.wght(
+                        selected ? AppWeight.section : AppWeight.body,
+                      ),
+                      color: selected
+                          ? palette.textPrimary
+                          : palette.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 7),
@@ -1255,8 +1262,8 @@ class _TaskRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10.5,
                     height: 13 / 10.5,
-                    fontWeight: FontWeight.w600,
-                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+                    fontWeight: AppWeight.font(AppWeight.section),
+                    fontVariations: AppWeight.wght(AppWeight.section),
                     letterSpacing: 0.63,
                     color: palette.accentText,
                   ),
@@ -1399,8 +1406,8 @@ class _TextButton extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          fontWeight: FontWeight.w500,
-          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+          fontWeight: AppWeight.font(AppWeight.rowTitle),
+          fontVariations: AppWeight.wght(AppWeight.rowTitle),
           color: context.palette.textPrimary,
         ),
       ),

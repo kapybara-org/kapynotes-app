@@ -106,20 +106,20 @@ class ResultChip extends StatefulWidget {
     required bool pill,
     bool total = false,
     Color? color,
-  }) => TextStyle(
-    fontFamily: AppFonts.mono,
-    fontFamilyFallback: AppFonts.monoFallback,
-    fontSize: AppTypeScale.result,
-    fontWeight: !pill
-        ? null
-        : total
-        ? FontWeight.w600
-        : FontWeight.w500,
-    height: pill ? 16 / 13 : 1.2,
-    leadingDistribution: TextLeadingDistribution.even,
-    color: color,
-    fontFeatures: const [FontFeature.tabularFigures()],
-  );
+  }) {
+    final step = total ? AppWeight.section : AppWeight.button;
+    return TextStyle(
+      fontFamily: AppFonts.mono,
+      fontFamilyFallback: AppFonts.monoFallback,
+      fontSize: AppTypeScale.result,
+      fontWeight: pill ? AppWeight.font(step) : null,
+      fontVariations: pill ? AppWeight.wght(step) : null,
+      height: pill ? 16 / 13 : 1.2,
+      leadingDistribution: TextLeadingDistribution.even,
+      color: color,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+  }
 
   @override
   State<ResultChip> createState() => _ResultChipState();

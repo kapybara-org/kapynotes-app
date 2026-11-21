@@ -132,7 +132,8 @@ class NoteDragFeedback extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -364,7 +365,8 @@ class _EditorPaneFrameState extends State<EditorPaneFrame> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: AppTypeScale.small,
-                              fontWeight: FontWeight.w400,
+                              fontWeight: AppWeight.font(AppWeight.body),
+                              fontVariations: AppWeight.wght(AppWeight.body),
                               color: scheme.onPrimary,
                             ),
                           ),
@@ -490,9 +492,8 @@ class _PaneHeaderState extends State<_PaneHeader> {
                         style: TextStyle(
                           fontSize: AppTypeScale.small,
                           height: 1,
-                          fontWeight: widget.active
-                              ? FontWeight.w400
-                              : FontWeight.w400,
+                          fontWeight: AppWeight.font(AppWeight.body),
+                          fontVariations: AppWeight.wght(AppWeight.body),
                           fontStyle: title == null ? FontStyle.italic : null,
                           color: widget.active
                               ? palette.textPrimary
@@ -618,7 +619,8 @@ class _EmptyPaneState extends State<EmptyPane> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: AppTypeScale.title,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
