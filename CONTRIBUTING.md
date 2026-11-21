@@ -35,7 +35,8 @@ The phone integration tests, `integration_test/phone_v2_test.dart` and
 `phone_format_bar_test.dart`, take screenshots as they go. To see them, a
 maintainer adds the `phones` label to a pull request, or runs the Phones
 workflow on its branch from the Actions tab. It runs the tests on an Android
-emulator and uploads the screenshots as the `android-screenshots` artifact.
+emulator and an iOS simulator and uploads the screenshots as the
+`android-screenshots` and `ios-screenshots` artifacts.
 
 ## What tends to get merged
 

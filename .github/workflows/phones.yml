@@ -5,10 +5,13 @@
 # the branch's own copy, so a branch cut before this file landed merges main
 # first.
 #
-# The android job runs integration_test/phone_v2_test.dart and
-# phone_format_bar_test.dart under flutter drive on an Android 16 emulator and
-# uploads every screenshot they take as the android-screenshots artifact. It
+# Two jobs run integration_test/phone_v2_test.dart and
+# phone_format_bar_test.dart under flutter drive and upload every screenshot
+# they take: android on an Android 16 emulator, as the android-screenshots
+# artifact, and ios on an iOS 27.2 iPhone simulator, as ios-screenshots. Each
 # fails when a test fails, and the screenshots up to that point still upload.
+# The ios job holds one of the five macOS jobs the organization can run at
+# once, so nothing here runs on a push.
 name: Phones
 
 on:
@@ -85,5 +88,62 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-screenshots
+          path: build/screenshots/
+          if-no-files-found: error
+
+  ios:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      # The runner defaults to Xcode 27.1; 27.2 brings the iOS 27.2 runtime.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # A fresh iPhone, booted while Flutter installs. The software keyboard
+      # has to come up as it does on a phone, so no hardware keyboard is
+      # connected, and Slide to Type is off so its introduction doesn't cover
+      # the first keyboard.
+      - name: Boot an iOS 27.2 iPhone
+        id: simulator
+        run: |
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          runtime=$(xcrun simctl list runtimes -j | jq -r '.runtimes[] | select(.name == "iOS 27.2" and .isAvailable) | .identifier')
+          udid=$(xcrun simctl create phones "iPhone 17" "$runtime")
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid"
+          xcrun simctl spawn "$udid" defaults write com.apple.keyboard.ContinuousPath KeyboardContinuousPathEnabled -bool false
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get --enforce-lockfile
+
+      - name: Screenshots on an iOS 27.2 iPhone
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: bash tool/ci/phone_screenshots.sh "$UDID"
+
+      - name: List the screenshots
+        if: ${{ !cancelled() }}
+        run: |
+          shopt -s nullglob
+          shots=(build/screenshots/*.png)
+          {
+            echo "### ${#shots[@]} iOS screenshots"
+            for shot in "${shots[@]}"; do echo "- $(basename "$shot" .png)"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
           path: build/screenshots/
           if-no-files-found: error
