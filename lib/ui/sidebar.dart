@@ -1924,6 +1924,11 @@ class SidebarWindowBar extends StatelessWidget {
 
   static const double height = 52;
 
+  /// New's name and chord on hover, as the page's + names it while this bar
+  /// is hidden.
+  static String newTooltip(String noun, ShortcutBinding? shortcut) =>
+      ['New $noun', ?shortcut?.displayLabel].join('  ');
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -2072,10 +2077,7 @@ class SidebarWindowBar extends StatelessWidget {
                         // chord, on hover.
                         tooltip: keycap
                             ? null
-                            : [
-                                'New $noun',
-                                ?newNoteShortcut?.displayLabel,
-                              ].join('  '),
+                            : newTooltip(noun, newNoteShortcut),
                         onPressed: onCreate,
                       ),
                       const SizedBox(width: 8),
