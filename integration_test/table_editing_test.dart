@@ -30,6 +30,8 @@ import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/table_controls.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'screenshot.dart';
+
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'table-editing-integration.json');
 
@@ -158,6 +160,7 @@ void main() {
         '| Hotel | Sanjay | 896 |\n| Taxi | Ana | 38 |\n| Tickets | Ana | 412 |',
       ),
     );
+    await screenshot('table-row-dragged');
   });
 
   testWidgets('a row is added below the first and then deleted', (
@@ -173,6 +176,7 @@ void main() {
         '| Tickets | Ana | 412 |\n|  |  |  |\n',
       ),
     );
+    await screenshot('table-row-added');
 
     await reach(tester, 2);
     await tapKey(tester, 'table-row-grip-2');
@@ -226,6 +230,7 @@ void main() {
     await settle(tester);
     expect(text(tester), '$header| --- | --- |\n| Tea | 2 |\n');
     expect(frameOf(tester).rowEdges, hasLength(3));
+    await screenshot('table-typed-by-hand');
   });
 
   testWidgets('a column border drags a width into the dashes', (tester) async {
@@ -239,5 +244,6 @@ void main() {
     final dashes = RegExp(r'\| (-+) \| :---:').firstMatch(sized)!.group(1)!;
     expect(dashes.length, greaterThan(3));
     expect(sized.replaceFirst('| $dashes |', '| --- |'), _body);
+    await screenshot('table-column-widened');
   }, skip: phone);
 }
