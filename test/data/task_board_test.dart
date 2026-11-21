@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/crdt/note_doc.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -143,5 +145,34 @@ void main() {
     expect(words(board.open), ['Parent', 'Sibling']);
     expect(board.open.first.groupTotal, 3);
     expect(board.open.first.groupDone, 1);
+  });
+
+  test('reading one note of many tasks takes time in step with its size', () {
+    int fastest(int tasks) {
+      notes.clear();
+      note(
+        'big$tasks',
+        [
+          'Big list',
+          for (var i = 0; i < tasks; i++) ...['☐ Task $i', '  A detail for $i'],
+        ].join('\n'),
+      );
+      var best = 1 << 40;
+      for (var run = 0; run < 5; run++) {
+        final watch = Stopwatch()..start();
+        expect(read().open, hasLength(tasks));
+        best = math.min(best, watch.elapsedMicroseconds);
+      }
+      return best;
+    }
+
+    fastest(50);
+    final small = fastest(50);
+    final large = fastest(200);
+    expect(
+      large,
+      lessThan(small * 8),
+      reason: 'four times the tasks took ${large / small} times as long',
+    );
   });
 }

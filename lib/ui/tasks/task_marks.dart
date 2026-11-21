@@ -4,7 +4,6 @@ import '../../core/editor_font.dart';
 import '../../core/theme.dart';
 import '../../data/note.dart';
 import '../../data/task_board.dart';
-import '../../data/task_details.dart';
 import '../../sync/spaces.dart';
 import '../tag_colours.dart';
 
@@ -76,7 +75,7 @@ class TaskDetailsIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final details = taskBlockOf(item.note.body, item.line)?.details;
+    final details = item.details;
     if (details == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(left: 8),
