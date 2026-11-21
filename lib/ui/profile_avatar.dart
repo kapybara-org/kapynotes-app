@@ -5,20 +5,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
 
-/// A stable DiceBear avatar that does not disclose an email address or user
-/// id in the request seed.
-Uri diceBearAvatarUri(String seed) => Uri.https(
-  'api.dicebear.com',
-  '/10.x/initials/png',
-  {'seed': _seedHash(seed).toRadixString(16), 'size': '128'},
-);
-
-/// Profile picture with a deterministic DiceBear default and a local initial
-/// behind it for offline launches.
+/// Profile picture: the photo somebody uploaded, or their initials drawn
+/// here, so a face never asks anybody else's server for anything.
 class ProfileAvatar extends StatelessWidget {
   const ProfileAvatar({
     super.key,
-    required this.seed,
     required this.name,
     required this.extent,
     this.image,
@@ -26,7 +17,6 @@ class ProfileAvatar extends StatelessWidget {
     this.ringWidth = 1.5,
   });
 
-  final String seed;
   final String name;
   final double extent;
   final String? image;
@@ -36,11 +26,8 @@ class ProfileAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final custom = _dataImage(image);
-    final provider = custom == null
-        ? NetworkImage(diceBearAvatarUri(seed).toString())
-        : MemoryImage(custom) as ImageProvider<Object>;
-    final fallback = _fallback(context);
+    final photo = _dataImage(image);
+    final initials = _initials(context);
 
     return Container(
       width: extent,
@@ -54,21 +41,24 @@ class ProfileAvatar extends StatelessWidget {
       ),
       padding: ring == null ? EdgeInsets.zero : EdgeInsets.all(ringWidth),
       child: ClipOval(
-        child: Image(
-          image: provider,
-          width: extent,
-          height: extent,
-          fit: BoxFit.cover,
-          filterQuality: FilterQuality.medium,
-          // A new photo replaces the old one when it is ready, not a blank.
-          gaplessPlayback: true,
-          errorBuilder: (_, _, _) => fallback,
-        ),
+        child: photo == null
+            ? initials
+            : Image(
+                image: MemoryImage(photo),
+                width: extent,
+                height: extent,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.medium,
+                // A new photo replaces the old one when it is ready, not a
+                // blank.
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => initials,
+              ),
       ),
     );
   }
 
-  Widget _fallback(BuildContext context) {
+  Widget _initials(BuildContext context) {
     final palette = context.palette;
     return ColoredBox(
       color: palette.selectedBackground,
@@ -121,21 +111,15 @@ Uint8List? _decodeDataImage(String value) {
   }
 }
 
-/// The letter a face without a photo shows: the first one in [value] that is
-/// not a space, capitalised.
-String avatarInitial(String value) {
-  for (final rune in value.runes) {
-    final char = String.fromCharCode(rune);
-    if (char.trim().isNotEmpty) return char.toUpperCase();
+/// What a face without a photo shows: the first character of the first word
+/// in [name] that doesn't open with punctuation, capitalised. A name with no
+/// such word shows '?'.
+String avatarInitial(String name) {
+  for (final word in name.split(RegExp(r'\s+'))) {
+    if (word.isEmpty || word.startsWith(_punctuation)) continue;
+    return word.characters.first.toUpperCase();
   }
   return '?';
 }
 
-int _seedHash(String value) {
-  var hash = 0x811c9dc5;
-  for (final unit in value.codeUnits) {
-    hash ^= unit;
-    hash = (hash * 0x01000193) & 0xFFFFFFFF;
-  }
-  return hash;
-}
+final _punctuation = RegExp(r'^\p{P}', unicode: true);

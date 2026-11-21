@@ -713,6 +713,42 @@ void main() {
     String from(bool whole) =>
         whole ? "from the share's sheet" : "from the note's sheet";
 
+    for (final whole in [false, true]) {
+      testWidgets('your own row reads You and shows your own initial, '
+          '${from(whole)}', (tester) async {
+        server.user(alice.userId).name = 'Alice Moreau';
+        server.user(bob.userId).name = 'Bob Stone';
+        late Note ours;
+        await tester.runAsync(() async {
+          await alice.boot();
+          await bob.boot();
+          ours = await shareFrom(alice, 'Ours', [bob]);
+        });
+        for (final (device, initial) in [(alice, 'A'), (bob, 'B')]) {
+          await open(tester, device.notes.byId(ours.id)!, device, whole: whole);
+          final row = find.byKey(ValueKey('member-row-${device.userId}'));
+          expect(
+            find.descendant(of: row, matching: find.text('You')),
+            findsWidgets,
+          );
+          final face = find.descendant(
+            of: row,
+            matching: find.byType(ProfileAvatar),
+          );
+          expect(
+            find.descendant(of: face, matching: find.text(initial)),
+            findsOneWidget,
+            reason: device.userId,
+          );
+          expect(
+            find.descendant(of: face, matching: find.text('Y')),
+            findsNothing,
+          );
+          await tester.pumpWidget(const SizedBox());
+        }
+      });
+    }
+
     /// The notes [device] holds of its own, by body.
     List<String> ownNotes(Device device) => [
       for (final note in device.notes.notes)

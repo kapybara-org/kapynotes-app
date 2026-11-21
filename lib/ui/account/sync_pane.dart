@@ -596,7 +596,6 @@ class _ProfileEditorState extends State<_ProfileEditor> {
           children: [
             ProfileAvatar(
               key: const ValueKey('profile-avatar'),
-              seed: user.id,
               name: _name.text.trim().isEmpty ? user.displayName : _name.text,
               image: _image,
               extent: 64,
@@ -1159,7 +1158,6 @@ class _ProfileRow extends StatelessWidget {
         children: [
           ProfileAvatar(
             key: const ValueKey('profile-avatar'),
-            seed: user.id,
             name: user.displayName,
             image: user.image,
             extent: 36,

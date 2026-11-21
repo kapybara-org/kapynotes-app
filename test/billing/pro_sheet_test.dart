@@ -277,11 +277,9 @@ void main() {
     await pumpSheet(tester);
 
     await tester.tap(find.byKey(const ValueKey('pro-buy')));
-    // Long enough for every confirmation poll to come back empty.
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
-    }
+    await tester.pumpAndSettle();
 
+    expect(billing.activity, BillingActivity.idle);
     expect(find.textContaining('payment has gone through'), findsOneWidget);
     expect(find.text('Pro Lifetime is yours. Thank you.'), findsNothing);
   });
