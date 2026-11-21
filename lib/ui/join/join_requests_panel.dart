@@ -137,6 +137,7 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
                                 style: TextStyle(
                                   fontSize: AppTypeScale.body,
                                   fontWeight: FontWeight.w500,
+                                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
                                   color: palette.textPrimary,
                                 ),
                               ),
