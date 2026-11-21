@@ -1957,7 +1957,7 @@ class SidebarWindowBar extends StatelessWidget {
     final titleStyle = chromeStyle(
       size: AppTypeScale.spaceTitle,
       line: AppTypeScale.spaceTitle * 1.3,
-      weight: AppWeight.page,
+      weight: AppWeight.button,
       color: palette.textPrimary,
       family: handwritten.fontFamily,
       fallback: handwritten.fontFamilyFallback,
