@@ -2169,6 +2169,110 @@ void main() {
       await tester.pumpAndSettle();
       expect(alice.notes.byId(note.id)!.isShared, isTrue);
     });
+
+    testWidgets('P09’s controls: a quiet field, a quietly lifted access, a '
+        'sage-tinted Share, and an Invite link row under a hairline rather '
+        'than a card', (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+      });
+      await openSheet(tester, note, alice, joining: joiningOver(FakeSend()));
+      final palette = tester.element(find.byType(BottomSheet)).palette;
+
+      final field = find.byKey(const ValueKey('share-email'));
+      final decoration = tester.widget<TextField>(field).decoration!;
+      expect(tester.getSize(field).height, 44);
+      expect(decoration.fillColor, palette.textPrimary.withValues(alpha: 0.04));
+      expect(decoration.enabledBorder!.borderSide, BorderSide.none);
+
+      Color? fill(String key) => tester
+          .widget<TextButton>(find.byKey(ValueKey(key)))
+          .style!
+          .backgroundColor
+          ?.resolve({});
+      expect(
+        tester.getSize(find.byKey(const ValueKey('share-role'))).height,
+        36,
+      );
+      expect(
+        fill('share-role-member'),
+        palette.textPrimary.withValues(alpha: 0.07),
+      );
+      expect(fill('share-role-viewer'), isNull);
+      await tester.tap(segment('Can view'));
+      await tester.pumpAndSettle();
+      expect(
+        fill('share-role-viewer'),
+        palette.textPrimary.withValues(alpha: 0.07),
+      );
+      expect(fill('share-role-member'), isNull);
+
+      final share = tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('share-submit-Share')),
+          )
+          .style!;
+      expect(
+        share.backgroundColor!.resolve({}),
+        palette.accentText.withValues(alpha: 0.16),
+      );
+      expect(share.foregroundColor!.resolve({}), palette.accentText);
+
+      final link = find.byKey(const ValueKey('share-link'));
+      expect(
+        find.ancestor(of: link, matching: find.byType(KapyControlSurface)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: link, matching: find.byType(KapyControlSurface)),
+        findsNothing,
+      );
+      expect(tester.getSize(link).height, greaterThanOrEqualTo(52));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  testWidgets('on a Mac the same controls take S02’s sizes: a 32 field, a 28 '
+      'access track and Share in the sage tint, with the link as a row', (
+    tester,
+  ) async {
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      note = alice.notes.create(body: 'Holiday budget');
+      await alice.sync.syncNow();
+    });
+    await openSheet(tester, note, alice, joining: joiningOver(FakeSend()));
+    final palette = tester.element(find.byType(AlertDialog)).palette;
+    expect(
+      tester.getSize(find.byKey(const ValueKey('share-email'))).height,
+      32,
+    );
+    expect(tester.getSize(find.byKey(const ValueKey('share-role'))).height, 28);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('share-submit-Share')),
+          )
+          .style!
+          .backgroundColor!
+          .resolve({}),
+      palette.accentText.withValues(alpha: 0.16),
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('share-link')),
+        matching: find.byType(KapyControlSurface),
+      ),
+      findsNothing,
+    );
   });
 
   // The server lets only a team space's owner move a note out of it. 1.32.0
