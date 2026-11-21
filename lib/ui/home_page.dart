@@ -4065,6 +4065,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       ..._buildTasksPage(
                                         tasks,
                                         listVisible: listFits && listShown,
+                                        underList: !listFits && listShown,
                                       )
                                     else ...[
                                       if (!cramped)
@@ -4077,6 +4078,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                               ? null
                                               : _openFolder,
                                           listVisible: listFits && listShown,
+                                          underList: !listFits && listShown,
                                           onShowList: _toggleList,
                                           showListShortcut: _sidebarShortcut,
                                           noteOpen: selected != null,
@@ -4353,6 +4355,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   List<Widget> _buildTasksPage(
     TasksController tasks, {
     required bool listVisible,
+    required bool underList,
   }) {
     final filter = _taskFilter;
     final note = filter.noteId == null
@@ -4377,6 +4380,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ],
         ),
         listVisible: listVisible,
+        underList: underList,
         onShowList: _toggleList,
         showListShortcut: _sidebarShortcut,
         updates: widget.updates,
