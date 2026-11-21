@@ -469,6 +469,12 @@ class _PairOptionState extends State<_PairOption> {
                   : Border.all(color: lit ? ink.sage : ink.edge),
               borderRadius: BorderRadius.circular(phone ? 10 : 8),
             ),
+            foregroundDecoration: phone && context.palette.increasedContrast
+                ? BoxDecoration(
+                    border: Border.all(color: ink.edge),
+                    borderRadius: BorderRadius.circular(10),
+                  )
+                : null,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
