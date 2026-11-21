@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -899,6 +900,71 @@ void main() {
     testWidgets('D1 morning, the first pair', (tester) async {
       await canonical(tester);
       await golden(tester, 'd1_first_pair');
+      await settle(tester);
+    });
+
+    for (final increaseContrast in [false, true]) {
+      testWidgets('D1 on a phone in Midnight, increaseContrast: '
+          '$increaseContrast', (tester) async {
+        await canonical(tester);
+        await pumpScreen(
+          tester,
+          phone: true,
+          theme: KapyTheme.dark(
+            theme: AppTheme.midnight,
+            increaseContrast: increaseContrast,
+          ),
+        );
+        await settle(tester);
+        await expectLater(
+          find.byType(TasksScreen),
+          matchesGoldenFile(
+            'goldens/tasks_pair_midnight${increaseContrast ? '_contrast' : ''}.png',
+          ),
+        );
+        await settle(tester);
+      });
+    }
+
+    testWidgets('on a phone, Increase contrast outlines the pair\'s choices '
+        'in the theme\'s contrast line, and moves nothing', (tester) async {
+      await canonical(tester);
+      final rects = <bool, List<Rect>>{};
+      for (final increaseContrast in [false, true]) {
+        final theme = KapyTheme.dark(
+          theme: AppTheme.midnight,
+          increaseContrast: increaseContrast,
+        );
+        await pumpScreen(tester, phone: true, theme: theme);
+        await settle(tester);
+        final line = theme.extension<CalcPalette>()!.controlBorder;
+        rects[increaseContrast] = [];
+        for (final side in ['tasks-pair-left', 'tasks-pair-right']) {
+          final card = find.descendant(
+            of: find.byKey(ValueKey(side)),
+            matching: find.byType(Container),
+          );
+          final box = tester.widget<Container>(card.first);
+          final borders = [
+            (box.decoration as BoxDecoration?)?.border,
+            (box.foregroundDecoration as BoxDecoration?)?.border,
+          ].nonNulls;
+          expect(
+            borders,
+            increaseContrast ? [Border.all(color: line)] : isEmpty,
+            reason: '$side, increaseContrast: $increaseContrast',
+          );
+          rects[increaseContrast]!.addAll([
+            tester.getRect(card.first),
+            tester.getRect(
+              find
+                  .descendant(of: card.first, matching: find.byType(Text))
+                  .first,
+            ),
+          ]);
+        }
+      }
+      expect(rects[true], rects[false]);
       await settle(tester);
     });
 
