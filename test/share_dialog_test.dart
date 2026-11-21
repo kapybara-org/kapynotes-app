@@ -28,9 +28,12 @@ import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/control_surface.dart';
 import 'package:kapy_notes/ui/home_page.dart' show forgottenMessage;
 import 'package:kapy_notes/ui/note_picks.dart';
+import 'package:kapy_notes/ui/profile_avatar.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
+import 'package:kapy_notes/ui/sharing_sheet.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -1859,6 +1862,109 @@ void main() {
       );
       expect(field.autofocus, isFalse);
       expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets('takes the phone sheet measurements: a 17 pt header, '
+        'people in 56 pt rows with no card, and a footer of words with Done '
+        'at the right', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWithPeople(note.id, {
+          bob.email: SpaceRole.member,
+        });
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+        await bob.sync.syncNow();
+      });
+
+      for (final (device, actions) in [
+        (alice, ['stop-sharing']),
+        (bob, ['copy-note', 'leave-space']),
+      ]) {
+        await openSheet(tester, device.notes.byId(note.id)!, device);
+        final palette = tester.element(find.byType(BottomSheet)).palette;
+        expect(
+          find.descendant(
+            of: find.byType(BottomSheet),
+            matching: find.byType(SharingSheetFrame),
+          ),
+          findsOneWidget,
+        );
+        final title = tester
+            .widgetList<Text>(
+              find.text(device == alice ? 'Share' : 'Shared with you'),
+            )
+            .first;
+        expect(title.style!.fontSize, 17);
+        expect(title.style!.fontWeight, FontWeight.w600);
+        expect(
+          tester.getSize(find.byKey(const ValueKey('share-dialog-close'))),
+          const Size(44, 44),
+        );
+
+        final label = tester.widget<Text>(find.text('People with access'));
+        expect(label.style!.fontSize, 13);
+        expect(label.style!.color, palette.textTertiary);
+        final row = find.byKey(ValueKey('member-row-${alice.userId}'));
+        expect(tester.getSize(row).height, greaterThanOrEqualTo(56));
+        expect(
+          tester
+              .widget<ProfileAvatar>(
+                find.descendant(of: row, matching: find.byType(ProfileAvatar)),
+              )
+              .extent,
+          32,
+        );
+        expect(
+          find.ancestor(of: row, matching: find.byType(KapyControlSurface)),
+          findsNothing,
+        );
+
+        final done = find.byKey(const ValueKey('share-done'));
+        // ignore: avoid_print
+        print(
+          'DBG done=${tester.getRect(done)} frame=${tester.getRect(find.byType(SharingSheetFrame))} sheet=${tester.getRect(find.byType(BottomSheet))} view=${tester.view.physicalSize}',
+        );
+        for (final key in actions) {
+          final action = find.byKey(ValueKey(key));
+          expect(
+            find.descendant(of: action, matching: find.byType(KapyIcon)),
+            findsNothing,
+          );
+          expect(
+            tester.getRect(action).right,
+            lessThanOrEqualTo(tester.getRect(done).left),
+          );
+          expect(
+            tester
+                .widget<TextButton>(action)
+                .style!
+                .foregroundColor!
+                .resolve({}),
+            palette.textSecondary,
+          );
+        }
+        expect(
+          tester.widget<TextButton>(done).style!.foregroundColor!.resolve({}),
+          palette.textPrimary,
+        );
+        expect(
+          tester.getTopRight(done).dx,
+          tester.getTopRight(find.byType(SharingSheetFrame)).dx - 12,
+        );
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(done);
+        await tester.pumpAndSettle();
+      }
     });
   });
 
