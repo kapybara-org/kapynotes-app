@@ -4,6 +4,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -51,6 +52,7 @@ Future<void> _pump(
   Size size = const Size(1500, 800),
   TargetPlatform platform = TargetPlatform.macOS,
   bool sidebar = false,
+  FolderStore? folders,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -70,6 +72,7 @@ Future<void> _pump(
       prefs: prefs,
       shortcuts: shortcuts,
       kapyAi: ai,
+      folders: folders,
     ),
   );
   await tester.pumpAndSettle();
@@ -1142,11 +1145,12 @@ void main() {
     final page = find.byKey(const ValueKey('kapy-ai-page'));
     final home = find.byKey(const ValueKey('home-title-notes'));
 
-    Future<void> pumpPhone(WidgetTester tester) async {
+    Future<void> pumpPhone(WidgetTester tester, {FolderStore? folders}) async {
       await _pump(
         tester,
         size: const Size(390, 844),
         platform: TargetPlatform.iOS,
+        folders: folders,
       );
       final back = find.byKey(const ValueKey('page-back'));
       if (back.evaluate().isNotEmpty) {
@@ -1251,6 +1255,23 @@ void main() {
       await tester.pumpAndSettle();
       expect(tab, findsOneWidget);
       expect(page, findsNothing);
+    });
+
+    testWidgets("with Kapy AI on, Folders' and Drawings' fields still name "
+        'what they search', (tester) async {
+      Finder field(String words) => find.descendant(
+        of: find.byKey(const ValueKey('sidebar-search-field')),
+        matching: find.text(words),
+      );
+      await pumpPhone(tester, folders: FolderStore(store));
+      expect(field('Search or Ask Kapy AI'), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(field('Search folders'), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('folders-drawings-tile')));
+      expect(field('Search drawings'), findsOneWidget);
+      expect(field('Search or Ask Kapy AI'), findsNothing);
     });
 
     testWidgets("after a visit to Drawings, + on it makes a note, and Folders "

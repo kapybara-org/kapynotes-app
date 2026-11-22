@@ -8245,6 +8245,35 @@ void main() {
         expect(groceries, findsOneWidget);
       });
 
+      testWidgets('on an iPhone, a swipe in from the left edge takes a '
+          'folder, and Drawings, back to Folders', (tester) async {
+        await pumpFolders(tester);
+        Future<void> swipe(Finder row) async {
+          await tester.dragFrom(
+            Offset(2, tester.getCenter(row).dy),
+            const Offset(200, 0),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        await openFolder(tester, work);
+        await swipe(brief);
+        expect(find.byKey(ValueKey('phone-folder-${work.id}')), findsNothing);
+        expect(tree, findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+
+        await tap(tester, tile);
+        await swipe(find.text('Deck flow'));
+        expect(tree, findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+
+        // The tree is a tab of its own, with no level to go back to, so its
+        // edge leaves it where it is, as Android's Back would not.
+        await swipe(find.byKey(ValueKey('folder-${work.id}')));
+        expect(tree, findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
       testWidgets('Back in a folder lets the picks go first, then goes to '
           'Folders', (tester) async {
         await pumpFolders(tester);
