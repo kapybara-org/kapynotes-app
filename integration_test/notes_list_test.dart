@@ -464,6 +464,46 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// A card under a day heading gives only its time, after its ring where it
+  /// has one, as D03 and D04 draw them ("9:12", "○ 8:55"); a pinned card
+  /// keeps its day.
+  void expectBoardDates(WidgetTester tester) {
+    Finder card(String title) =>
+        find.descendant(of: row(title), matching: find.byType(NoteCardFace));
+    String time(String title) => SidebarTimestamp.clock(
+      prefs.displayTime(
+        notes.allNotes.singleWhere((note) => note.title == title).updatedAt,
+      ),
+    );
+    for (final title in ['Call with Arjun', 'Quote for the deck']) {
+      expect(tester.widget<NoteCardFace>(card(title)).date, time(title));
+    }
+    expect(
+      tester
+          .getRect(
+            find.descendant(
+              of: card('Call with Arjun'),
+              matching: find.byType(ChecklistPie),
+            ),
+          )
+          .right,
+      lessThan(
+        tester
+            .getRect(
+              find.descendant(
+                of: card('Call with Arjun'),
+                matching: find.text(time('Call with Arjun')),
+              ),
+            )
+            .left,
+      ),
+    );
+    expect(
+      tester.widget<NoteCardFace>(card('Reading list')).date,
+      'Today, ${time('Reading list')}',
+    );
+  }
+
   Future<void> boardShot(WidgetTester tester, String name) async {
     expect(tester.getSize(find.byType(KapyNotesApp)), boardSize, reason: name);
     expect(tester.takeException(), isNull, reason: name);
@@ -502,6 +542,7 @@ void main() {
           .decoration,
       isNull,
     );
+    expectBoardDates(tester);
     await click(tester, row('Call with Arjun'));
     final tabs = find.byType(NoteTabRow);
     expect(tabs, findsNothing, reason: 'one note open has no tab row');
@@ -569,6 +610,7 @@ void main() {
     final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
     final today = find.byKey(const ValueKey('sidebar-group-Today'));
     expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+    expectBoardDates(tester);
     expect(
       tester.getTopLeft(upcoming).dy,
       lessThan(tester.getTopLeft(today).dy),

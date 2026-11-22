@@ -45,6 +45,7 @@ import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
@@ -4273,7 +4274,7 @@ void main() {
         expect(ring('October plan'), findsNothing);
         expect(
           tester.widget<NoteCardFace>(card('Call with Arjun')).date,
-          'Today, 11:00',
+          '11:00',
         );
 
         prefs.noteCards = false;
@@ -4290,6 +4291,158 @@ void main() {
               .date,
           'Mon 7 Dec',
         );
+      });
+
+      testWidgets('on $device, a card or row under a day heading gives only '
+          'its time, after its ring, and its day and time under Pinned, by '
+          "tag and on a folder's page by tag", (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final folders = FolderStore(store);
+        await folders.load();
+        await library(tester, folders: folders);
+        prefs.noteCards = true;
+        notes.updateBody(
+          'Call with Arjun',
+          'Call with Arjun\n☐ Send the deck\n☑ Book a room',
+        );
+        await tester.pumpAndSettle();
+
+        Finder card(String title) => find.byWidgetPredicate(
+          (widget) => widget is NoteCardFace && widget.note.title == title,
+        );
+        String cardDate(String title) =>
+            tester.widget<NoteCardFace>(card(title)).date;
+        Finder row(String title) => find.byWidgetPredicate(
+          (widget) => widget is NoteListRowFace && widget.note.title == title,
+        );
+        String rowDate(String title) =>
+            tester.widget<NoteListRowFace>(row(title)).date;
+
+        expect(headings(tester), [
+          'Today',
+          'Yesterday',
+          'Tue 17',
+          'Tue 20 Oct',
+        ]);
+        expect(cardDate('Call with Arjun'), '12:00');
+        expect(cardDate('Standup notes'), '17:00');
+        expect(cardDate('October plan'), '8:00');
+        final ring = find.descendant(
+          of: card('Call with Arjun'),
+          matching: find.byType(ChecklistPie),
+        );
+        expect(
+          tester.getRect(ring).right,
+          lessThan(
+            tester
+                .getRect(
+                  find.descendant(
+                    of: card('Call with Arjun'),
+                    matching: find.text('12:00'),
+                  ),
+                )
+                .left,
+          ),
+        );
+
+        notes.togglePinned('Call with Arjun');
+        await tester.pumpAndSettle();
+        expect(cardDate('Call with Arjun'), 'Today, 12:00');
+        expect(ring, findsOneWidget);
+
+        prefs.noteCards = false;
+        await tester.pumpAndSettle();
+        expect(rowDate('Standup notes'), '17:00');
+        expect(rowDate('Pricing ideas'), '8:00');
+        notes.togglePinned('Standup notes');
+        await tester.pumpAndSettle();
+        expect(rowDate('Standup notes'), 'Yesterday');
+
+        prefs.notesGrouping = NotesGrouping.byTag;
+        await tester.pumpAndSettle();
+        expect(headings(tester), ['No tag']);
+        expect(rowDate('Pricing ideas'), 'Tue');
+        prefs.noteCards = true;
+        await tester.pumpAndSettle();
+        expect(cardDate('October plan'), '20 Oct');
+
+        prefs.notesGrouping = NotesGrouping.byDate;
+        notes
+          ..togglePinned('Call with Arjun')
+          ..togglePinned('Standup notes');
+        final work = folders.create('Work')!;
+        folders.file(['Call with Arjun', 'Pricing ideas'], work.id);
+        prefs.foldersShown = true;
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+        final page = find.byKey(ValueKey('folder-page-${work.id}'));
+        String pageDate(String title) => tester
+            .widget<NoteCardFace>(
+              find.descendant(of: page, matching: card(title)),
+            )
+            .date;
+        expect(pageDate('Call with Arjun'), '12:00');
+        expect(pageDate('Pricing ideas'), '8:00');
+        prefs.notesGrouping = NotesGrouping.byTag;
+        await tester.pumpAndSettle();
+        expect(pageDate('Call with Arjun'), 'Today, 12:00');
+        expect(pageDate('Pricing ideas'), 'Tue');
+      });
+
+      testWidgets('on $device, someone in a shared note under a day heading '
+          'shows where its time would be', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final note = Note(
+          id: 'shared',
+          body: 'Shared\n☐ Send the deck',
+          createdAt: DateTime(2026, 11, 1),
+          updatedAt: DateTime(2026, 11, 19, 11, 32),
+        );
+        for (final style in [NoteRowStyle.card, NoteRowStyle.row]) {
+          for (final people in [
+            const <Collaborator>[],
+            const [Collaborator(userId: 'ana', name: 'Ana', fullName: 'Ana')],
+          ]) {
+            await tester.pumpWidget(
+              MaterialApp(
+                theme: KapyTheme.dark(),
+                home: Material(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: 300,
+                      height: style == NoteRowStyle.card
+                          ? NoteCardFace.height
+                          : null,
+                      child: NoteRow(
+                        note: note,
+                        query: '',
+                        displayTime: (time) => time,
+                        selected: false,
+                        onTap: () {},
+                        style: style,
+                        clockOnly: true,
+                        shared: true,
+                        collaborators: people,
+                        now: () => DateTime(2026, 11, 19, 12),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            await tester.pumpAndSettle();
+            expect(
+              find.text(
+                people.isEmpty ? '11:32' : presenceStatusText(['Ana'])!,
+              ),
+              findsOneWidget,
+              reason: '$style',
+            );
+          }
+        }
       });
     }
 
@@ -5867,8 +6020,8 @@ void main() {
         .map((row) => row.note.title)
         .toList();
     expect(rowTitles(), ['Latest', 'Older']);
-    expect(find.widgetWithText(NoteRow, 'Yesterday'), findsOneWidget);
-    expect(find.widgetWithText(NoteRow, 'Tue'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, '8:05'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, '12:00'), findsOneWidget);
     expect(find.widgetWithText(NoteRow, 'latest details'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NoteRow, 'Older'));
@@ -5886,7 +6039,7 @@ void main() {
             ),
           )
           .date,
-      'Today, 9:10',
+      '9:10',
     );
   });
 

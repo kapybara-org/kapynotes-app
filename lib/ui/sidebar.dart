@@ -508,12 +508,14 @@ class Sidebar extends StatelessWidget {
   }
 
   /// A note's card, or its row in the list view, away from the list: on a
-  /// folder's page, with the face, clicks and menu it has here.
-  Widget noteTile(Note note) => _row(
+  /// folder's page, with the face, clicks and menu it has here, giving only
+  /// its time under a heading that names its day ([clockOnly]).
+  Widget noteTile(Note note, {bool clockOnly = false}) => _row(
     note,
     shared: sharing != null && note.isShared,
     pinned: pinnedNoteIds.contains(note.id),
     style: cards ? NoteRowStyle.card : NoteRowStyle.row,
+    clockOnly: clockOnly,
   );
 }
 
@@ -1056,7 +1058,9 @@ extension on Sidebar {
     shared: shared,
     pinned: pinned,
     locked: lockedNoteIds.contains(note.id),
-    collaborators: shared ? collaborators[note.id] ?? const [] : const [],
+    collaborators: shared && !(phone && clockOnly)
+        ? collaborators[note.id] ?? const []
+        : const [],
     // Shared's own list leaves the faces off: its headings name them.
     shareGroup: phone && shared && !_onSharedTab
         ? sharing?.groupOf(note)
@@ -1367,7 +1371,8 @@ extension on Sidebar {
         }
       } else {
         // A day at a time, newest first, under the day the note was last
-        // edited.
+        // edited, each note giving its time alone, even while others have it
+        // open.
         for (final day in _phoneDays(
           groups.mine,
           now: now(),
@@ -1422,7 +1427,7 @@ extension on Sidebar {
           ),
         );
         if (!fold || upcomingOpen) {
-          section(group.notes, upcoming: fold);
+          section(group.notes, upcoming: fold, clockOnly: group.day != null);
         }
       }
     }
@@ -2784,7 +2789,7 @@ class NoteRow extends StatefulWidget {
   final int depth;
 
   /// Whether the row sits under a heading that already names its day, so it
-  /// gives only the time it was last changed, even while others have it open.
+  /// gives only the time it was last changed, unless others have it open.
   final bool clockOnly;
 
   /// The day still to come that the note was given, which an Upcoming row or
@@ -3232,9 +3237,7 @@ class _NoteRowState extends State<NoteRow> {
     final day = card && people.isEmpty && dayAhead == null
         ? stamp(clock: false)
         : null;
-    final date = widget.clockOnly
-        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
-        : people.isNotEmpty
+    final date = people.isNotEmpty
         ? typingStatusText([
                 for (final person in people)
                   if (person.typing) person.name,
@@ -3245,6 +3248,8 @@ class _NoteRowState extends State<NoteRow> {
             dayAhead,
             today: dayShown(widget.now(), widget.displayTime),
           )
+        : widget.clockOnly
+        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
         : stamp();
     final glance = NoteGlance.of(note, widget.engine);
     final picking = widget.selecting ? widget.checked : null;

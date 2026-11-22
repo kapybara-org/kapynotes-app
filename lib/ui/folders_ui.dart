@@ -1628,8 +1628,9 @@ class FolderPage extends StatelessWidget {
   /// [notes] in the notes list's groups: by day, unless it is set otherwise.
   final List<NoteGroup> Function(List<Note> notes) group;
 
-  /// A note's card, or its row in the list view.
-  final Widget Function(Note note) noteTile;
+  /// A note's card, or its row in the list view, giving only its time under
+  /// a heading that names its day ([clockOnly]).
+  final Widget Function(Note note, {bool clockOnly}) noteTile;
 
   /// Shows a folder in this tab, or with [behind] in a new tab behind it.
   final void Function(String folderId, {required bool behind}) onTab;
@@ -1766,7 +1767,7 @@ class FolderPage extends StatelessWidget {
             grid(
               each.notes.length,
               NoteCardFace.height,
-              (at) => noteTile(each.notes[at]),
+              (at) => noteTile(each.notes[at], clockOnly: each.day != null),
             );
             continue;
           }
@@ -1780,7 +1781,7 @@ class FolderPage extends StatelessWidget {
                   constraints: const BoxConstraints(
                     maxWidth: 3 * _cardWidth + 2 * _gap,
                   ),
-                  child: noteTile(note),
+                  child: noteTile(note, clockOnly: each.day != null),
                 ),
               ),
             );
