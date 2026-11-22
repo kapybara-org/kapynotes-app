@@ -26,7 +26,7 @@ SpacesRail rail({
   LibrarySpace space = LibrarySpace.notes,
   ValueChanged<LibrarySpace>? onSelected,
   int? invitations,
-  int? openTasks,
+  bool tasks = false,
   WritingStreak? streak,
   VoidCallback? onAccountPressed,
   AccountUser? user,
@@ -36,7 +36,7 @@ SpacesRail rail({
   onSelected: onSelected ?? (_) {},
   onSettingsPressed: () {},
   invitations: invitations,
-  openTasks: openTasks,
+  tasks: tasks,
   streak: streak,
   onAccountPressed: onAccountPressed,
   user: user,
@@ -52,14 +52,14 @@ void main() {
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-  testWidgets('Tasks sits after Notes once there is a task index, and counts '
-      'what is open on its badge', (tester) async {
+  testWidgets('Tasks sits after Notes once there is a task index, with no '
+      'count on it, as D01 draws it', (tester) async {
     await tester.pumpWidget(harness(rail()));
     expect(find.byKey(const ValueKey('rail-tasks')), findsNothing);
 
     LibrarySpace? asked;
     await tester.pumpWidget(
-      harness(rail(openTasks: 10, onSelected: (open) => asked = open)),
+      harness(rail(tasks: true, onSelected: (open) => asked = open)),
     );
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('rail-tasks'))).dy,
@@ -67,19 +67,19 @@ void main() {
         tester.getTopLeft(find.byKey(const ValueKey('rail-notes'))).dy,
       ),
     );
+    expect(find.byKey(const ValueKey('rail-tasks-badge')), findsNothing);
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('rail-tasks-badge')),
-        matching: find.text('10'),
+        of: find.byKey(const ValueKey('rail-tasks')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Text && int.tryParse(widget.data ?? '') != null,
+        ),
       ),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(space(tester, 'tasks'), isSemantics(label: 'Tasks, 10 open'));
+    expect(space(tester, 'tasks'), isSemantics(label: 'Tasks'));
     await tester.tap(find.byKey(const ValueKey('rail-tasks')));
     expect(asked, LibrarySpace.tasks);
-
-    await tester.pumpWidget(harness(rail(openTasks: 0)));
-    expect(find.byKey(const ValueKey('rail-tasks-badge')), findsNothing);
   });
 
   testWidgets('a space asks to be opened, and the open one is marked', (
@@ -164,7 +164,7 @@ void main() {
   testWidgets('Hidden and the archive are filter choices, not places', (
     tester,
   ) async {
-    await tester.pumpWidget(harness(rail(openTasks: 1, invitations: 0)));
+    await tester.pumpWidget(harness(rail(tasks: true, invitations: 0)));
     expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
     expect(find.byKey(const ValueKey('rail-archive')), findsNothing);
   });
@@ -317,7 +317,7 @@ void main() {
                 height: height,
                 child: rail(
                   invitations: 2,
-                  openTasks: 10,
+                  tasks: true,
                   streak: const WritingStreak(days: 3, wroteToday: true),
                   onAccountPressed: () {},
                 ),

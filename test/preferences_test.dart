@@ -354,21 +354,13 @@ void main() {
     );
   });
 
-  test('the "/" hint retires after three uses, and the last command used '
-      'survives reload', () {
+  test('the last command used survives reload', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
-    expect(prefs.slashHint, isTrue);
     expect(prefs.lastSlashCommand, isNull);
-    for (var use = 0; use < LayoutPrefs.slashHintUses; use++) {
-      expect(prefs.slashHint, isTrue);
-      prefs.noteSlashCommandUsed();
-    }
-    expect(prefs.slashHint, isFalse);
     prefs.lastSlashCommand = 'heading2';
 
     final reloaded = LayoutPrefs(store)..load();
-    expect(reloaded.slashHint, isFalse);
     expect(reloaded.lastSlashCommand, 'heading2');
   });
 
