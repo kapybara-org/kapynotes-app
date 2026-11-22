@@ -154,7 +154,7 @@ class Sidebar extends StatelessWidget {
     this.onEnterSelected,
     this.onOpenToSide,
     this.openElsewhereIds = const {},
-    this.dayIds = const {},
+    this.ofPickedDay,
     this.onOpenInNewTab,
     this.onOpenSelectedInNewTab,
     this.tabbedIds = const {},
@@ -242,9 +242,9 @@ class Sidebar extends StatelessWidget {
   /// only move the focus to it.
   final Set<String> openElsewhereIds;
 
-  /// The notes on the day last picked in the page's week, lit more quietly
-  /// than the open one.
-  final Set<String> dayIds;
+  /// Whether a note is on the day last picked in the page's week, which
+  /// lights it more quietly than the open one. Asked only of the rows built.
+  final bool Function(Note note)? ofPickedDay;
 
   /// Opens a note in a tab of its own behind the one in front: ⌘-click or
   /// Ctrl-click, a middle click, or the menu. Null in the compact and archive
@@ -1059,7 +1059,7 @@ extension on Sidebar {
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
     openElsewhere: openElsewhereIds.contains(note.id),
-    ofPickedDay: dayIds.contains(note.id),
+    ofPickedDay: ofPickedDay?.call(note) ?? false,
     onOpenInNewTab: onOpenInNewTab == null
         ? null
         : () => onOpenInNewTab!(note.id),

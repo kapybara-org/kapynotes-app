@@ -1381,9 +1381,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!keepList) _showTabOf(next);
     }
     _selectedId = next;
-    if (_pickedDay case final day?
-        when next == null || _dayOfNoteId(next) != day) {
-      _pickedDay = null;
+    if (_pickedDay case final day?) {
+      final note = widget.notes.byId(next);
+      final nextDay = note == null ? _dayOfFreshNote[next] : _dayOfNote(note);
+      if (nextDay != day) _pickedDay = null;
     }
     final open = _workspace.openNoteIds;
     _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
@@ -1948,14 +1949,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// until another day is picked or a note from another day opens.
   DateTime? _pickedDay;
 
-  /// The day [id] sits on: the one it was started from, its own, or the day
-  /// it was last edited.
-  DateTime? _dayOfNoteId(String id) {
-    if (_dayOfFreshNote[id] case final day?) return day;
-    final note = widget.notes.byId(id);
-    if (note == null) return null;
-    return noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
-  }
+  /// The day [note] sits on: the one it was started from, its own, or the
+  /// day it was last edited.
+  DateTime _dayOfNote(Note note) =>
+      _dayOfFreshNote[note.id] ??
+      noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
 
   /// A day picked in the page's week. Its latest note opens, with Upcoming
   /// opened when the day is still to come; with no notes, a page to write on
@@ -4042,12 +4040,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               upcomingOpen: _upcomingOpen,
               onUpcomingToggled: () =>
                   setState(() => _upcomingOpen = !_upcomingOpen),
-              dayIds: switch (_pickedDay) {
-                null => const {},
-                final day => {
-                  for (final note in widget.notes.notes)
-                    if (_dayOfNoteId(note.id) == day) note.id,
-                },
+              ofPickedDay: switch (_pickedDay) {
+                null => null,
+                final day => (note) => _dayOfNote(note) == day,
               },
               when: _when,
               onWhenChanged: _setWhen,
