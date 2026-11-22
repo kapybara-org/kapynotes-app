@@ -564,9 +564,12 @@ class PopoverAtPoint extends SingleChildLayoutDelegate {
 /// its tag off, a tap narrows the list to it, and a drag moves it: the first
 /// colours the note.
 class NoteTagChips extends StatefulWidget {
-  const NoteTagChips({super.key, required this.noteId});
+  const NoteTagChips({super.key, required this.noteId, this.adds = true});
 
   final String noteId;
+
+  /// Whether + Tag follows the chips. A phone's note adds tags from More.
+  final bool adds;
 
   @override
   State<NoteTagChips> createState() => _NoteTagChipsState();
@@ -586,6 +589,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
     if (shelf == null) return const SizedBox.shrink();
     final palette = context.palette;
     final tags = shelf.store.tagsOf(widget.noteId);
+    if (!widget.adds && tags.isEmpty) return const SizedBox.shrink();
     void move(String dragged, String onto) {
       final ids = [for (final tag in tags) tag.id];
       final to = ids.indexOf(onto);
@@ -651,32 +655,35 @@ class _NoteTagChipsState extends State<NoteTagChips> {
         ),
       ),
     );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Past this the chips scroll, so + Tag stays in reach.
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final tag in tags) ...[
-                  _TagChip(
-                    tag: tag,
-                    onFilter: () => shelf.onFilter(tag.id),
-                    onRemove: () =>
-                        shelf.store.removeTag(widget.noteId, tag.id),
-                    onDropped: (dragged) => move(dragged, tag.id),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-              ],
-            ),
-          ),
+    // Past 360, or the width there is, the chips scroll, so + Tag stays in
+    // reach and nothing runs off the line.
+    final chips = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 360),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final tag in tags) ...[
+              _TagChip(
+                tag: tag,
+                onFilter: () => shelf.onFilter(tag.id),
+                onRemove: () => shelf.store.removeTag(widget.noteId, tag.id),
+                onDropped: (dragged) => move(dragged, tag.id),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ],
         ),
-        add,
-      ],
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          constraints.hasBoundedWidth ? Flexible(child: chips) : chips,
+          if (widget.adds) add,
+        ],
+      ),
     );
   }
 }

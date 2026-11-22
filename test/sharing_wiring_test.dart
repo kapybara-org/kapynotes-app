@@ -17,6 +17,7 @@ import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
@@ -141,12 +142,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// A phone opens on a note's page, with the list under it; beside a
-  /// window the list is already there.
+  /// A phone opens on a note's page, with the list under it, which the
+  /// phone's own back returns to; beside a window the list is already there.
   Future<void> showList(WidgetTester tester, {required bool phone}) async {
-    final back = find.byKey(const ValueKey('page-back'));
-    if (phone && back.evaluate().isNotEmpty) {
-      await tester.tap(back);
+    if (phone && find.byType(PhoneNoteHeader).evaluate().isNotEmpty) {
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
     }
     expect(find.byType(Sidebar), findsOneWidget);
@@ -599,6 +599,79 @@ void main() {
       isSemantics(isSelected: true),
     );
     expect(listed(tester, 'Bank details'), isTrue);
+  });
+
+  testWidgets('on a phone, a view-only note shared with you has Home and '
+      'More, no week, and More offers only what a viewer can do', (
+    tester,
+  ) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await priyaShares(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.text('Packing list'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('page-home')), findsOneWidget);
+    expect(find.byKey(const ValueKey('page-day')), findsNothing);
+    expect(find.byKey(const ValueKey('page-tasks-line')), findsNothing);
+    expect(find.byKey(const ValueKey('page-share')), findsNothing);
+    expect(find.byKey(const ValueKey('view-only-status')), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    Finder item(String value) => find.byKey(ValueKey('page-more-$value'));
+    expect(
+      find.descendant(of: item('share'), matching: find.text('Sharing')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: item('delete'), matching: find.text('Remove note…')),
+      findsOneWidget,
+    );
+    for (final value in ['day', 'folder', 'tags', 'hide', 'archive']) {
+      expect(item(value), findsNothing, reason: value);
+    }
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+
+    // Home goes to Home, not back to the Shared list it was opened from.
+    await tester.tap(find.byKey(const ValueKey('page-home')));
+    await tester.pumpAndSettle();
+    expect(find.byType(PhoneNoteHeader), findsNothing);
+    expect(find.byKey(const ValueKey('shared-page')), findsNothing);
+    expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('on a phone, a note of your own that you share can be '
+      'archived but not moved to Hidden Notes', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.text('Trip budget'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    Finder item(String value) => find.byKey(ValueKey('page-more-$value'));
+    expect(item('archive'), findsOneWidget);
+    expect(item('hide'), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('on an iPhone, a swipe in from the left edge takes Shared '

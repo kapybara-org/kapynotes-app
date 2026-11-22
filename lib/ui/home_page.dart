@@ -80,6 +80,7 @@ import 'editor_panes.dart';
 import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
 import 'command_menu.dart';
+import 'compact_icon_button.dart';
 import 'empty_state.dart';
 import 'folders_ui.dart'
     show
@@ -103,6 +104,8 @@ import 'page_pane.dart';
 import 'page_toolbar.dart';
 import 'phone_home_cards.dart';
 import 'phone_home_header.dart';
+import 'phone_note_header.dart';
+import 'note_day_scope.dart' show withNoteDays;
 import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
 import 'tasks/tasks_screen.dart';
@@ -315,6 +318,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Whether a phone's filter row is showing. It starts put away, so the list
   /// keeps the room, and the button beside the search brings it back.
   bool _phoneFiltersOpen = false;
+
+  /// Whether a phone note's week is open under its header. It opens by
+  /// default, and only the day button closes it (M11).
+  bool _phoneWeekOpen = true;
 
   bool get _showingPinnedOnly =>
       _pinnedOnly && !_specialMode && widget.notes.pinnedNoteIds.isNotEmpty;
@@ -2033,7 +2040,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _writeOnDay(DateTime day) {
     final days = widget.days;
     if (days == null) return;
-    _createNote(onMade: (id) => _dayOfFreshNote[id] = day);
+    _createNote(titled: false, onMade: (id) => _dayOfFreshNote[id] = day);
   }
 
   /// Gives the note whose page is open another day, or none at all.
@@ -2047,6 +2054,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       today: today,
       filled: days.dayOf(note.id) ?? noteDay(note, displayTime),
       firstWeekday: firstWeekday(context),
+      sheet:
+          AppPlatform.isMobile &&
+          MediaQuery.sizeOf(context).width < kTwoPaneBreakpoint,
     );
     if (picked == null || !mounted) return;
     if (days.setDay(note.id, picked) == false) {
@@ -2063,6 +2073,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _createNote({
     bool drawing = false,
     String body = '',
+    bool titled = true,
     ValueChanged<String>? onMade,
   }) {
     final recording = widget.recording;
@@ -2070,7 +2081,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(
         recording.finishRecordingAndFlush().then((_) {
           if (mounted) {
-            _createNoteNow(drawing: drawing, body: body, onMade: onMade);
+            _createNoteNow(
+              drawing: drawing,
+              body: body,
+              titled: titled,
+              onMade: onMade,
+            );
           }
         }),
       );
@@ -2078,7 +2094,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // will not be blank by the time this runs and a new one will follow.
       return true;
     }
-    return _createNoteNow(drawing: drawing, body: body, onMade: onMade);
+    return _createNoteNow(
+      drawing: drawing,
+      body: body,
+      titled: titled,
+      onMade: onMade,
+    );
   }
 
   /// What New makes in the space on screen: a drawing in Drawings, a note
@@ -2116,10 +2137,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// [body] is the note's first words, from the ⌘K menu's field. A note made
   /// while a folder's tab is in front, or a phone shows a folder, goes into
-  /// that folder.
+  /// that folder. One that isn't [titled] starts as an empty page rather than
+  /// under "New Note", as a day tapped on a phone's week opens it (M11).
   bool _createNoteNow({
     bool drawing = false,
     String body = '',
+    bool titled = true,
     ValueChanged<String>? onMade,
   }) {
     final creatingHidden = _hiddenMode;
@@ -2132,15 +2155,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final note =
         blank ??
         widget.notes.create(
-          body: drawing || body.isNotEmpty ? body : Note.blankBody,
+          body: drawing || body.isNotEmpty || !titled ? body : Note.blankBody,
           authored: body.isNotEmpty,
           hidden: creatingHidden,
           drawing: drawing,
         );
     if (blank == null) {
       _freshNoteIds.add(note.id);
-    } else {
+    } else if (titled) {
       widget.notes.startAsNew(blank.id);
+    } else {
+      widget.notes.startAsEmpty(blank.id);
     }
     onMade?.call(note.id);
     if (folderId != null) {
@@ -3328,6 +3353,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required double extent,
     double gap = 0,
     bool pageBar = false,
+    bool showsOpen = true,
   }) {
     final ai = _kapyAi;
     if (ai == null) return null;
@@ -3343,6 +3369,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       iconSize: pageBar ? 16 : 17,
       trailingGap: gap,
       divided: pageBar,
+      showsOpen: showsOpen,
     );
   }
 
@@ -4437,7 +4464,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// What the page's More menu offers: the window's own actions, then the
   /// open note's, in the order and on the terms of that note's menu in the
   /// list.
-  List<KapyMenuAction> _pageActions(Note? note, {bool phone = false}) {
+  List<KapyMenuAction> _pageActions(Note? note) {
     final splitBlocker = _specialMode
         ? null
         : _workspace.paneCount >= EditorWorkspace.maxPanes
@@ -4452,34 +4479,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ?.keycapLabel;
     final pinned = note != null && widget.notes.isPinned(note.id);
     return [
-      if (!phone)
-        KapyMenuAction(
-          value: 'split',
-          label: canSplit ? 'Split view' : splitBlocker ?? 'Split view',
-          icon: KapyIcons.viewColumnOutlined,
-          hint: canSplit
-              ? widget.shortcuts
-                    .hintFor(ShortcutAction.splitEditor)
-                    ?.keycapLabel
-              : null,
-          enabled: canSplit,
-        ),
+      KapyMenuAction(
+        value: 'split',
+        label: canSplit ? 'Split view' : splitBlocker ?? 'Split view',
+        icon: KapyIcons.viewColumnOutlined,
+        hint: canSplit
+            ? widget.shortcuts.hintFor(ShortcutAction.splitEditor)?.keycapLabel
+            : null,
+        enabled: canSplit,
+      ),
       ?_onTopAction,
       if (note != null && !_specialMode)
         KapyMenuAction(
           value: 'pin',
           label: pinned ? 'Unpin note' : 'Pin note',
           icon: KapyIcons.pinOutlined,
-        ),
-      if (phone &&
-          note != null &&
-          !_specialMode &&
-          widget.account != null &&
-          (note.isShared || mayEdit))
-        KapyMenuAction(
-          value: 'share',
-          label: note.isShared ? 'Sharing' : 'Share note',
-          icon: KapyIcons.shareRounded,
         ),
       if (note != null && _canMoveToFolder(note))
         const KapyMenuAction(
@@ -4538,6 +4552,103 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
+  /// A phone note's More menu, in M09's groups: its day, then what files and
+  /// shares it, then Hidden Notes, then the ways out of the list.
+  KapyMenu _phoneMenu(Note note) {
+    final mayEdit = _canEditNote(note);
+    final days = widget.days;
+    return (
+      heading: null,
+      groups: [
+        [
+          if (mayEdit && days != null) ...[
+            const KapyMenuAction(
+              value: 'day',
+              label: 'Move to another day',
+              icon: KapyIcons.calendarOutlined,
+            ),
+            if (days.dayOf(note.id) != null)
+              const KapyMenuAction(
+                value: 'undate',
+                label: 'Remove day',
+                icon: KapyIcons.calendarRemoveOutlined,
+              ),
+          ],
+        ],
+        [
+          if (!_specialMode)
+            KapyMenuAction(
+              value: 'pin',
+              label: widget.notes.isPinned(note.id) ? 'Unpin note' : 'Pin note',
+              icon: KapyIcons.pinOutlined,
+            ),
+          if (!_specialMode &&
+              widget.account != null &&
+              (note.isShared || mayEdit))
+            KapyMenuAction(
+              value: 'share',
+              label: note.isShared ? 'Sharing' : 'Share note',
+              icon: KapyIcons.shareRounded,
+            ),
+          if (widget.folders != null && !_specialMode && _canFile(note))
+            const KapyMenuAction(
+              value: 'folder',
+              label: 'Move to folder…',
+              icon: KapyIcons.folderMoveOutlined,
+            ),
+          if (mayEdit && !_specialMode && widget.tags != null)
+            const KapyMenuAction(
+              value: 'tags',
+              label: 'Tags',
+              icon: KapyIcons.tagRounded,
+            ),
+        ],
+        [
+          if (mayEdit && !_specialMode && !note.isShared)
+            const KapyMenuAction(
+              value: 'hide',
+              label: 'Move to Hidden Notes',
+              icon: hiddenIcon,
+            ),
+          if (mayEdit && _archiveMode)
+            const KapyMenuAction(
+              value: 'restore',
+              label: 'Restore note',
+              icon: restoreIcon,
+            ),
+          if (mayEdit && _hiddenMode)
+            const KapyMenuAction(
+              value: 'unhide',
+              label: 'Move to Notes',
+              icon: unhideIcon,
+            ),
+        ],
+        [
+          if (mayEdit && !_specialMode)
+            const KapyMenuAction(
+              value: 'archive',
+              label: 'Archive note',
+              icon: archiveIcon,
+            ),
+          if (_canRemoveNote(note))
+            KapyMenuAction(
+              value: 'delete',
+              label: [
+                _sharedBy(note) != null
+                    ? 'Remove note'
+                    : _specialMode
+                    ? 'Delete permanently'
+                    : 'Delete note',
+                if (widget.prefs.askBeforeDeleting) '…',
+              ].join(),
+              icon: deleteIcon,
+              destructive: true,
+            ),
+        ],
+      ],
+    );
+  }
+
   /// Does what the page's More menu names: the window's own actions, then
   /// the folder's in front or the open note's. [at] is where a list or a
   /// field it opens goes.
@@ -4566,6 +4677,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _shareNote(note.id);
       case 'folder':
         unawaited(moveNotesToFolder(context, at, widget.folders!, [note.id]));
+      case 'tags':
+        if (_phoneNavigator.currentContext case final page?) {
+          unawaited(showTagPickerAt(page, at, [note.id]));
+        }
       case 'hide':
         unawaited(_hideNote(note.id));
       case 'restore':
@@ -5316,70 +5431,239 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A note's page on a phone: back, then the note's own actions, over the
   /// editor.
-  Widget _phonePage(Note note) => Scaffold(
-    backgroundColor: context.palette.paperColor,
-    body: ListenableBuilder(
-      listenable: _toolbarSources,
-      builder: (context, _) {
-        // A phone on its side with the keyboard up has no room to spare: the
-        // bar steps aside and the lines take its room and the padding's.
-        final cramped = isCrampedPage(
-          MediaQuery.sizeOf(context),
-          MediaQuery.viewInsetsOf(context).bottom,
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // The bar steps aside on its side with the keyboard up, so the
-            // lines take its room; Back is still the phone's gesture.
-            if (!cramped)
-              SafeArea(
-                bottom: false,
-                child: PageToolbar(
-                  back: (
-                    to: _specialMode
-                        ? _show.label
-                        : _space == LibrarySpace.notes
-                        ? 'Notes'
-                        : _space.title,
-                    onPressed: () =>
-                        unawaited(_phoneNavigator.currentState?.maybePop()),
+  Widget _phonePage(Note note) => Builder(
+    builder: (outer) => Scaffold(
+      backgroundColor: context.palette.paperColor,
+      body: ListenableBuilder(
+        listenable: _toolbarSources,
+        builder: (context, _) {
+          // A phone on its side with the keyboard up has no room to spare: the
+          // bar steps aside and the lines take its room and the padding's.
+          final cramped = isCrampedPage(
+            MediaQuery.sizeOf(context),
+            MediaQuery.viewInsetsOf(context).bottom,
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The bar steps aside on its side with the keyboard up, so the
+              // lines take its room; Back is still the phone's gesture.
+              if (!cramped)
+                SafeArea(
+                  bottom: false,
+                  child: _phoneNoteHeader(
+                    note,
+                    // The Scaffold takes the keyboard out of its own body's
+                    // insets, so the page's are read from above it, where only
+                    // this page rebuilds as the keyboard slides. A blank
+                    // page (M11) keeps its header as it is until the first
+                    // words.
+                    typing:
+                        note.body.isNotEmpty &&
+                        MediaQuery.viewInsetsOf(outer).bottom > 0,
                   ),
-                  listVisible: true,
-                  onShowList: _closePhonePage,
-                  noteOpen: true,
-                  syncStatus: widget.account?.sync?.status,
-                  members: _selectedMembers,
-                  present: _selectedPresence,
-                  currentUserId: widget.account?.sharing?.userId ?? '',
-                  noteShared: note.isShared,
-                  onShare: _shareSelected,
-                  assistant: _kapyAiButton(
-                    extent: AppControlMetrics.iconButtonExtent,
-                    gap: 2,
-                  ),
-                  moreActions: _pageActions(note, phone: true),
-                  onMore: (action, at) => _runPageAction(action, note, at),
-                  updates: widget.updates,
+                ),
+              Expanded(
+                child: SafeArea(
+                  top: false,
+                  // The footer insets its own controls past the home indicator,
+                  // as the page bar does past the status bar.
+                  bottom: false,
+                  child: _phoneEditor(note, cramped: cramped),
                 ),
               ),
-            Expanded(
-              child: SafeArea(
-                top: false,
-                // The footer insets its own controls past the home indicator,
-                // as the page bar does past the status bar.
-                bottom: false,
-                child: _phoneEditor(note, cramped: cramped),
-              ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     ),
   );
 
+  /// A phone note's header: Home, its day, Kapy AI and More, then its week
+  /// and its day's tasks. The week is only for My notes, as on a Mac.
+  Widget _phoneNoteHeader(Note note, {required bool typing}) {
+    final displayTime = widget.prefs.displayTime;
+    final today = dayShown(widget.notes.now(), displayTime);
+    final day = noteDay(
+      note,
+      displayTime,
+      ownDay: _dayOfFreshNote[note.id] ?? _ownDayOf(note),
+    );
+    final hasDays = _space == LibrarySpace.notes && !_specialMode;
+    final tasks = hasDays ? _phoneTasksOn(day, today) : 0;
+    return PhoneNoteHeader(
+      onHome: _phoneGoHome,
+      typing: typing,
+      day: hasDays ? day : null,
+      today: today,
+      weekOpen: _phoneWeekOpen,
+      onWeekToggled: () => setState(() => _phoneWeekOpen = !_phoneWeekOpen),
+      week: hasDays
+          ? DayStrip(
+              phone: true,
+              place: (_, week) => week!,
+              today: today,
+              picked: day,
+              onPick: (day, _) => _writeOnDay(day),
+              notes: _filtered(widget.notes.search(''), anyTime: true),
+              displayTime: displayTime,
+              firstWeekday: firstWeekday(context),
+              ownDay: widget.days == null ? null : _ownDayOf,
+              onOpenNote: (id, {required behind}) => _select(id),
+            )
+          : null,
+      tasks: tasks,
+      onTasks: tasks == 0 ? null : () => unawaited(_openPhoneTasks()),
+      members: _selectedMembers,
+      present: _selectedPresence,
+      currentUserId: widget.account?.sharing?.userId ?? '',
+      onMembers: _shareSelected,
+      assistant: _kapyAiButton(
+        extent: AppControlMetrics.iconButtonExtent,
+        gap: 2,
+        showsOpen: false,
+      ),
+      menu: _phoneMenu(note),
+      onMenu: (action, at) => _runPageAction(action, note, at),
+    );
+  }
+
+  /// Home from a note's page: back to the notes it was opened over, or to
+  /// Notes from Shared, Drawings, the archive or Hidden Notes.
+  void _phoneGoHome() {
+    if (_phoneHome) {
+      unawaited(_phoneNavigator.currentState?.maybePop());
+    } else {
+      _showSpace(LibrarySpace.notes);
+    }
+  }
+
+  /// How many tasks the line under a phone note's week counts: today's list
+  /// for a note of today or before, whose tasks are on it, or the tasks
+  /// waiting for a later [day] in that day's notes.
+  int _phoneTasksOn(DateTime day, DateTime today) {
+    final open = _taskController?.read().open ?? const [];
+    final displayTime = widget.prefs.displayTime;
+    return open.where((item) {
+      final ownDay = _ownDayOf(item.note);
+      final waits = ownDay != null && ownDay.isAfter(today);
+      return day.isAfter(today)
+          ? waits && noteDay(item.note, displayTime, ownDay: ownDay) == day
+          : !waits;
+    }).length;
+  }
+
+  /// The tasks sheet over a phone note (M15): Tasks' own list, with Do now
+  /// first, pulled up from the bottom. It closes back to the note.
+  Future<void> _openPhoneTasks() async {
+    final tasks = _taskController;
+    if (tasks == null) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Theme.of(context).drawerTheme.scrimColor,
+      builder: (sheet) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        minChildSize: 0.3,
+        builder: (sheet, scroll) {
+          final palette = sheet.palette;
+          return withNoteDays(
+            widget.days,
+            DecoratedBox(
+              key: const ValueKey('phone-tasks-sheet'),
+              decoration: BoxDecoration(
+                color: palette.paperColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 8),
+                      decoration: BoxDecoration(
+                        color: palette.textDivider,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 6, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Tasks',
+                            style: chromeStyle(
+                              size: AppTypeScale.body,
+                              line: 22,
+                              weight: AppWeight.button,
+                              color: palette.textPrimary,
+                            ),
+                          ),
+                        ),
+                        CompactIconButton(
+                          key: const ValueKey('phone-tasks-sheet-close'),
+                          tooltip: 'Close',
+                          extent: AppControlMetrics.iconButtonExtent,
+                          onPressed: () => Navigator.of(sheet).pop(),
+                          icon: const KapyIcon(
+                            KapyIcons.chevronDownRounded,
+                            size: 18,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: TasksScreen(
+                      phone: true,
+                      sheet: true,
+                      scrollController: scroll,
+                      controller: tasks,
+                      filter: const TaskFilter.all(),
+                      addFocus: _taskAddFocus,
+                      labelOf: _taskNoteLabel,
+                      displayTime: widget.prefs.displayTime,
+                      images: widget.notes.blobs,
+                      onOpenNote: (id) {
+                        Navigator.of(sheet).pop();
+                        _openTaskNote(id);
+                      },
+                      onOpenDone: () {
+                        Navigator.of(sheet).pop();
+                        _openTasksDone();
+                        _showHome(tasks: true);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _phoneEditor(Note note, {required bool cramped}) {
     if (_opensAsDrawing(note)) return _buildDrawing(note);
+    final folders = widget.folders;
+    final editor = _phoneNoteEditor(note, cramped: cramped);
+    return folders == null
+        ? editor
+        : NoteFolders(tree: folders.tree, child: editor);
+  }
+
+  Widget _phoneNoteEditor(Note note, {required bool cramped}) {
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -5387,6 +5671,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         builder: (context, _) => NoteEditor(
           key: _phoneEditorKey,
           cramped: cramped,
+          phone: true,
           player: widget.player,
           voiceStateFor: _voiceStateFor,
           onOpenVoiceNote: _openVoiceNote,
@@ -5419,6 +5704,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
+          createdAt: note.createdAt,
           idlePeekHeld: () => _kapyAi?.answering ?? false,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
           paperStyle: widget.prefs.paperStyle,

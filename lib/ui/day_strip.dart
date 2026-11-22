@@ -66,6 +66,7 @@ class DayStrip extends StatefulWidget {
     this.ownDay,
     this.onOpenNote,
     this.compact = false,
+    this.phone = false,
   });
 
   /// The day the list shows as today.
@@ -101,6 +102,18 @@ class DayStrip extends StatefulWidget {
 
   /// One button for the picked day in place of the month, and no week.
   final bool compact;
+
+  /// A phone note's week: always seven days, the calendar week from
+  /// [firstWeekday] that holds the picked day, each day its weekday over its
+  /// date across the whole width, and no month. A day with one note opens
+  /// it, a day with several lists them, and a day with none opens a page to
+  /// write on it.
+  final bool phone;
+
+  /// A phone's arrows: the strip's height to press, and this wide, or down
+  /// to the least where a narrower phone needs the room for its days.
+  static const double _phoneArrowWidth = 28;
+  static const double _phoneArrowMin = 20;
 
   /// The chip a day sits in, and the room the whole week needs at [days] of
   /// them: the chips, 2 between them, and an arrow with 2 clear at each end.
@@ -152,14 +165,37 @@ class _DayStripState extends State<DayStrip> {
   /// window moved [_shift] days.
   List<DateTime> get _shown => _week(days);
 
-  /// The [count] days in view, today in the middle until paged away.
+  /// The [count] days in view, today in the middle until paged away, or on a
+  /// phone the calendar week that holds today, paged by whole weeks.
   List<DateTime> _week(int count) {
     final today = widget.today;
+    if (widget.phone) {
+      final start = _weekStart(today);
+      return [
+        for (var index = 0; index < 7; index++)
+          DateTime(start.year, start.month, start.day + _shift + index),
+      ];
+    }
     final centre = (count - 1) ~/ 2;
     return [
       for (var index = 0; index < count; index++)
         DateTime(today.year, today.month, today.day - centre + _shift + index),
     ];
+  }
+
+  /// The first day of [day]'s calendar week.
+  DateTime _weekStart(DateTime day) => DateTime(
+    day.year,
+    day.month,
+    day.day - (day.weekday - widget.firstWeekday) % 7,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.phone) return;
+    days = 7;
+    if (widget.picked case final picked?) _bringIntoView(picked);
   }
 
   /// A day picked in the calendar brings its week into view.
@@ -175,6 +211,16 @@ class _DayStripState extends State<DayStrip> {
   void _bringIntoView(DateTime day) {
     if (_shown.contains(day)) return;
     final today = widget.today;
+    if (widget.phone) {
+      final from = _weekStart(today);
+      final to = _weekStart(day);
+      _shift = DateTime.utc(
+        to.year,
+        to.month,
+        to.day,
+      ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+      return;
+    }
     final apart = DateTime.utc(
       day.year,
       day.month,
@@ -198,8 +244,22 @@ class _DayStripState extends State<DayStrip> {
   }
 
   /// A click on [day] in the week or the calendar: lists its notes where
-  /// there is no list beside the page, and otherwise picks it.
+  /// there is no list beside the page, and otherwise picks it. On a phone it
+  /// opens a day's one note, lists several, or opens a page to write on a day
+  /// that holds none.
   void _choose(DateTime day, {BuildContext? at}) {
+    if (widget.phone) {
+      final notes = _notesOn(day);
+      final onOpen = widget.onOpenNote;
+      if (notes.isEmpty) {
+        widget.onPick(day, notes);
+      } else if (notes.length == 1 && onOpen != null) {
+        onOpen(notes.single.id, behind: false);
+      } else {
+        unawaited(_list(day, at: at));
+      }
+      return;
+    }
     if (widget.onOpenNote != null) {
       unawaited(_list(day, at: at));
       return;
@@ -376,6 +436,9 @@ class _DayStripState extends State<DayStrip> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.phone) {
+      return widget.place(const SizedBox.shrink(), _phoneWeek());
+    }
     final palette = context.palette;
     final compact = widget.compact;
     final picked = widget.picked;
@@ -470,6 +533,88 @@ class _DayStripState extends State<DayStrip> {
     );
   }
 
+  /// A phone's week across the whole width: ‹, the seven days sharing what
+  /// is left, ›.
+  Widget _phoneWeek() {
+    final today = widget.today;
+    final shown = _shown;
+    final counts = _counts(shown);
+    final picked = widget.picked;
+    final filled = _listing ?? picked ?? today;
+    // As narrow as M09 draws them, and narrower on a small phone, so each of
+    // the seven days keeps 44 to tap; the arrows keep the strip's whole
+    // height.
+    Widget arrow(
+      String key,
+      String label,
+      KapyIconData icon,
+      int by,
+      double width,
+    ) => Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: InkResponse(
+        key: ValueKey(key),
+        onTap: () => setState(() => _shift += by),
+        radius: width,
+        child: SizedBox(
+          width: width,
+          height: _Day.phoneHeight,
+          child: Center(
+            child: KapyIcon(
+              icon,
+              size: 16,
+              color: context.palette.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = ((constraints.maxWidth - 7 * 44) / 2).clamp(
+          DayStrip._phoneArrowMin,
+          DayStrip._phoneArrowWidth,
+        );
+        return Row(
+          key: _weekRow,
+          children: [
+            arrow(
+              'day-strip-back',
+              'The week before',
+              KapyIcons.chevronLeftRounded,
+              -7,
+              width,
+            ),
+            for (final day in shown)
+              Expanded(
+                child: Builder(
+                  builder: (tapped) => _Day(
+                    key: ValueKey('day-strip-${_date(day)}'),
+                    day: day,
+                    today: day == today,
+                    picked: day == picked,
+                    filled: day == filled,
+                    count: counts[day]!,
+                    stacked: true,
+                    onTap: () => _choose(day, at: tapped),
+                  ),
+                ),
+              ),
+            arrow(
+              'day-strip-forward',
+              'The week after',
+              KapyIcons.chevronRightRounded,
+              7,
+              width,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   /// What opens the calendar, tonal while it is open: the month over the
   /// week, or the one button for the day in its place, raised and led by a
   /// calendar.
@@ -537,10 +682,18 @@ class _Day extends StatefulWidget {
     required this.filled,
     required this.count,
     required this.onTap,
+    this.stacked = false,
   });
+
+  /// How tall a phone's day is: its weekday, its date and its dots.
+  static const double phoneHeight = 52;
 
   final DateTime day;
   final bool today;
+
+  /// A phone's day: its weekday over its date, both in the day's colour,
+  /// and a quiet fill while it is the note's.
+  final bool stacked;
 
   /// Whether the list is narrowed to this day.
   final bool picked;
@@ -566,61 +719,103 @@ class _DayState extends State<_Day> {
     final day = widget.day;
     final filled = widget.filled;
     final dots = math.min(widget.count, 3);
-    final column = SizedBox(
-      width: DayStrip._dayWidth,
-      height: 40,
-      child: Column(
+    final dotRow = SizedBox(
+      height: 3,
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            height: 30,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: filled
-                  ? palette.tonalBackground
-                  : _hovered || _focused
-                  ? palette.controlBackground
-                  : null,
-              borderRadius: BorderRadius.circular(6),
+          for (var dot = 0; dot < dots; dot++) ...[
+            if (dot > 0) const SizedBox(width: 2),
+            Container(
+              width: 3,
+              height: 3,
+              decoration: BoxDecoration(
+                color: widget.today ? sage : palette.textTertiary,
+                shape: BoxShape.circle,
+              ),
             ),
-            child: Text(
-              SidebarTimestamp.weekdayAndDay(day),
-              maxLines: 1,
-              style: _figtree(
-                13,
-                16,
-                widget.today || filled ? FontWeight.w600 : FontWeight.w500,
-                filled
-                    ? palette.tonalForeground
-                    : widget.today
-                    ? sage
-                    : palette.textPrimary,
-              ).copyWith(fontFeatures: _figures),
-            ),
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 3,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var dot = 0; dot < dots; dot++) ...[
-                  if (dot > 0) const SizedBox(width: 2),
-                  Container(
-                    width: 3,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: widget.today ? sage : palette.textTertiary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+          ],
         ],
       ),
     );
+    final column = widget.stacked
+        ? Container(
+            constraints: const BoxConstraints(minHeight: _Day.phoneHeight),
+            decoration: BoxDecoration(
+              color: filled
+                  ? palette.controlBackground
+                  : _focused
+                  ? palette.hover
+                  : null,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  SidebarTimestamp.shortWeekday(day),
+                  maxLines: 1,
+                  style: _figtree(
+                    13,
+                    16,
+                    widget.today ? FontWeight.w600 : FontWeight.w400,
+                    widget.today ? sage : palette.textSecondary,
+                  ),
+                ),
+                Text(
+                  '${day.day}',
+                  maxLines: 1,
+                  style: _figtree(
+                    17,
+                    22,
+                    widget.today ? FontWeight.w600 : FontWeight.w500,
+                    widget.today ? sage : palette.textPrimary,
+                  ).copyWith(fontFeatures: _figures),
+                ),
+                const SizedBox(height: 3),
+                dotRow,
+              ],
+            ),
+          )
+        : SizedBox(
+            width: DayStrip._dayWidth,
+            height: 40,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  height: 30,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: filled
+                        ? palette.tonalBackground
+                        : _hovered || _focused
+                        ? palette.controlBackground
+                        : null,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    SidebarTimestamp.weekdayAndDay(day),
+                    maxLines: 1,
+                    style: _figtree(
+                      13,
+                      16,
+                      widget.today || filled
+                          ? FontWeight.w600
+                          : FontWeight.w500,
+                      filled
+                          ? palette.tonalForeground
+                          : widget.today
+                          ? sage
+                          : palette.textPrimary,
+                    ).copyWith(fontFeatures: _figures),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                dotRow,
+              ],
+            ),
+          );
     return TextButton(
       onPressed: widget.onTap,
       onHover: (hovered) => setState(() => _hovered = hovered),
@@ -657,6 +852,7 @@ class DayPicker extends StatefulWidget {
     required this.counts,
     required this.firstWeekday,
     required this.onPicked,
+    this.sheet = false,
   });
 
   /// The month it opens on, as its first day.
@@ -667,6 +863,10 @@ class DayPicker extends StatefulWidget {
   final int firstWeekday;
   final ValueChanged<DateTime> onPicked;
 
+  /// Inside a phone's sheet (M12): the month's name with Today beside it,
+  /// days the sheet's width across, and a swipe to the month either side.
+  final bool sheet;
+
   @override
   State<DayPicker> createState() => _DayPickerState();
 }
@@ -674,8 +874,13 @@ class DayPicker extends StatefulWidget {
 class _DayPickerState extends State<DayPicker> {
   late DateTime _month = widget.month;
 
+  void _page(int by) =>
+      setState(() => _month = DateTime(_month.year, _month.month + by));
+
   @override
   Widget build(BuildContext context) {
+    final sheet = widget.sheet;
+    final extent = sheet ? 44.0 : 32.0;
     final palette = context.palette;
     final sage = Theme.of(context).colorScheme.primary;
     final weekdays = MaterialLocalizations.of(context).narrowWeekdays;
@@ -693,7 +898,7 @@ class _DayPickerState extends State<DayPicker> {
     ];
 
     Widget cell(DateTime? day) {
-      if (day == null) return const SizedBox.square(dimension: 32);
+      if (day == null) return SizedBox(width: extent, height: extent);
       final filled = day == widget.filled;
       final notes = counts[day] ?? 0;
       final (weight, color) = filled
@@ -707,7 +912,9 @@ class _DayPickerState extends State<DayPicker> {
         key: ValueKey('day-month-${_date(day)}'),
         onPressed: () => widget.onPicked(day),
         style: ButtonStyle(
-          fixedSize: const WidgetStatePropertyAll(Size.square(32)),
+          fixedSize: WidgetStatePropertyAll(
+            sheet ? Size.fromHeight(extent) : Size.square(extent),
+          ),
           minimumSize: const WidgetStatePropertyAll(Size.zero),
           padding: const WidgetStatePropertyAll(EdgeInsets.zero),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -727,7 +934,10 @@ class _DayPickerState extends State<DayPicker> {
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           textStyle: WidgetStatePropertyAll(
-            _figtree(13, 16, weight, color).copyWith(fontFeatures: _figures),
+            (sheet
+                    ? _figtree(17, 22, weight, color)
+                    : _figtree(13, 16, weight, color))
+                .copyWith(fontFeatures: _figures),
           ),
         ),
         child: Semantics(
@@ -739,6 +949,122 @@ class _DayPickerState extends State<DayPicker> {
       );
     }
 
+    Widget spaced(List<Widget> children) => Row(
+      children: [
+        for (var index = 0; index < children.length; index++) ...[
+          if (index > 0) const SizedBox(width: 4),
+          sheet ? Expanded(child: children[index]) : children[index],
+        ],
+      ],
+    );
+
+    final monthName = SidebarTimestamp.monthName(month);
+    final header = sheet
+        ? Row(
+            children: [
+              Expanded(
+                child: Text(
+                  month.year == today.year
+                      ? monthName
+                      : '$monthName ${month.year}',
+                  key: const ValueKey('day-month-name'),
+                  style: _figtree(15, 20, FontWeight.w600, palette.textPrimary),
+                ),
+              ),
+              TextButton(
+                key: const ValueKey('day-month-today'),
+                onPressed: () => widget.onPicked(today),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  backgroundColor: palette.controlBackground,
+                  foregroundColor: palette.textPrimary,
+                  textStyle: _figtree(
+                    14,
+                    18,
+                    FontWeight.w500,
+                    palette.textPrimary,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Today'),
+              ),
+            ],
+          )
+        : Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$monthName ${month.year}',
+                  style: _figtree(13, 16, FontWeight.w500, palette.textPrimary),
+                ),
+              ),
+              CompactIconButton(
+                key: const ValueKey('day-month-back'),
+                tooltip: 'Previous month',
+                extent: 24,
+                onPressed: () => _page(-1),
+                icon: const KapyIcon(KapyIcons.chevronLeftRounded, size: 16),
+              ),
+              const SizedBox(width: 4),
+              CompactIconButton(
+                key: const ValueKey('day-month-forward'),
+                tooltip: 'Next month',
+                extent: 24,
+                onPressed: () => _page(1),
+                icon: const KapyIcon(KapyIcons.chevronRightRounded, size: 16),
+              ),
+            ],
+          );
+    final grid = Column(
+      key: const ValueKey('day-month'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        SizedBox(height: sheet ? 16 : 8),
+        ExcludeSemantics(
+          child: spaced([
+            for (var column = 0; column < 7; column++)
+              SizedBox(
+                width: 32,
+                child: Text(
+                  weekdays[(widget.firstWeekday + column) % 7],
+                  textAlign: TextAlign.center,
+                  style: sheet
+                      ? _figtree(13, 16, FontWeight.w500, palette.textTertiary)
+                      : _figtree(11, 12, FontWeight.w500, palette.textTertiary),
+                ),
+              ),
+          ]),
+        ),
+        for (var start = 0; start < cells.length; start += 7) ...[
+          const SizedBox(height: 4),
+          spaced([
+            for (var index = start; index < start + 7; index++)
+              cell(index < cells.length ? cells[index] : null),
+          ]),
+        ],
+      ],
+    );
+    if (sheet) {
+      return Semantics(
+        label: '$monthName ${month.year}',
+        onIncrease: () => _page(1),
+        onDecrease: () => _page(-1),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragEnd: (details) => switch (details.primaryVelocity) {
+            final speed? when speed < -200 => _page(1),
+            final speed? when speed > 200 => _page(-1),
+            _ => null,
+          },
+          child: grid,
+        ),
+      );
+    }
     return Material(
       color: palette.surfaceBackground,
       shape: RoundedRectangleBorder(
@@ -751,114 +1077,69 @@ class _DayPickerState extends State<DayPicker> {
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          width: 7 * 32 + 6 * 4,
-          child: Column(
-            key: const ValueKey('day-month'),
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${SidebarTimestamp.monthName(month)} ${month.year}',
-                      style: _figtree(
-                        13,
-                        16,
-                        FontWeight.w500,
-                        palette.textPrimary,
-                      ),
-                    ),
-                  ),
-                  CompactIconButton(
-                    key: const ValueKey('day-month-back'),
-                    tooltip: 'Previous month',
-                    extent: 24,
-                    onPressed: () => setState(
-                      () => _month = DateTime(month.year, month.month - 1),
-                    ),
-                    icon: const KapyIcon(
-                      KapyIcons.chevronLeftRounded,
-                      size: 16,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  CompactIconButton(
-                    key: const ValueKey('day-month-forward'),
-                    tooltip: 'Next month',
-                    extent: 24,
-                    onPressed: () => setState(
-                      () => _month = DateTime(month.year, month.month + 1),
-                    ),
-                    icon: const KapyIcon(
-                      KapyIcons.chevronRightRounded,
-                      size: 16,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ExcludeSemantics(
-                child: Row(
-                  children: [
-                    for (var column = 0; column < 7; column++) ...[
-                      if (column > 0) const SizedBox(width: 4),
-                      SizedBox(
-                        width: 32,
-                        child: Text(
-                          weekdays[(widget.firstWeekday + column) % 7],
-                          textAlign: TextAlign.center,
-                          style: _figtree(
-                            11,
-                            12,
-                            FontWeight.w500,
-                            palette.textTertiary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              for (var start = 0; start < cells.length; start += 7) ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    for (var index = start; index < start + 7; index++) ...[
-                      if (index > start) const SizedBox(width: 4),
-                      cell(index < cells.length ? cells[index] : null),
-                    ],
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
+        child: SizedBox(width: 7 * 32 + 6 * 4, child: grid),
       ),
     );
   }
 }
 
-/// Asks for a day on a month to pick from, 4 under [context]'s box or in the
-/// middle of the window, and gives the day picked: Move to another day.
+/// Asks for a day on a month to pick from, and gives the day picked: Move to
+/// another day. In the middle of the window, or on a phone as a sheet over
+/// the dimmed page under its name (M12).
 Future<DateTime?> showDayPicker(
   BuildContext context, {
   required DateTime today,
   required DateTime filled,
   required int firstWeekday,
-}) => showDialog<DateTime>(
-  context: context,
-  barrierColor: Colors.transparent,
-  builder: (context) => Dialog(
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    child: DayPicker(
-      month: DateTime(filled.year, filled.month),
-      today: today,
-      filled: filled,
-      counts: (_) => const {},
-      firstWeekday: firstWeekday,
-      onPicked: (day) => Navigator.of(context).pop(day),
+  bool sheet = false,
+}) {
+  Widget picker(BuildContext context) => DayPicker(
+    month: DateTime(filled.year, filled.month),
+    today: today,
+    filled: filled,
+    counts: (_) => const {},
+    firstWeekday: firstWeekday,
+    sheet: sheet,
+    onPicked: (day) => Navigator.of(context).pop(day),
+  );
+  if (!sheet) {
+    return showDialog<DateTime>(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: picker(context),
+      ),
+    );
+  }
+  return showModalBottomSheet<DateTime>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      top: false,
+      child: Padding(
+        key: const ValueKey('day-sheet'),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Move to another day',
+              style: _figtree(
+                17,
+                22,
+                FontWeight.w600,
+                context.palette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            picker(context),
+          ],
+        ),
+      ),
     ),
-  ),
-);
+  );
+}

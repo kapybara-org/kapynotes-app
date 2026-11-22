@@ -127,7 +127,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
-    final back = find.byKey(const ValueKey('page-back'));
+    final back = find.byKey(const ValueKey('page-home'));
     if (back.evaluate().isNotEmpty) {
       await tester.tap(back);
       await tester.pumpAndSettle();

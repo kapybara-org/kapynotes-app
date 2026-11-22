@@ -309,7 +309,7 @@ Finder notesToggleWithLabel(String label) => find.byWidgetPredicate(
 /// a window with the list closed and on a phone with the drawer shut.
 Future<void> showNotesList(WidgetTester tester) async {
   // A phone's list is under the page it opened on.
-  final back = find.byKey(const ValueKey('page-back'));
+  final back = find.byKey(const ValueKey('page-home'));
   if (back.evaluate().isNotEmpty) {
     await tester.tap(back);
     await tester.pumpAndSettle();
@@ -8125,9 +8125,9 @@ void main() {
       expect(openNoteField(tester).focusNode.hasFocus, isTrue);
       expect(tester.testTextInput.isVisible, isTrue);
       expect(find.byKey(const ValueKey('phone-bar')), findsNothing);
-      expect(find.text('Notes'), findsOneWidget);
+      expect(find.text('Home'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
       expect(find.byType(NoteEditor), findsNothing);
       expect(tester.testTextInput.isVisible, isFalse);
@@ -8172,7 +8172,7 @@ void main() {
       expectNoKeys();
 
       tester.view.resetViewInsets();
-      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('phone-bar')), findsOneWidget);
       expectNoKeys();
@@ -8277,7 +8277,7 @@ void main() {
       await pumpApp(tester, size: const Size(412, 915));
 
       expect(find.text('Notes'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('phone-bar')), findsOneWidget);
       expect(find.byType(NavigationBar), findsNothing);
@@ -8955,7 +8955,7 @@ void main() {
         expect(find.byType(NoteEditor), findsOneWidget);
         expect(openNoteBody(tester), startsWith('Acme brief'));
 
-        await tap(tester, find.byKey(const ValueKey('page-back')));
+        await tap(tester, find.byKey(const ValueKey('page-home')));
         await tap(tester, barNotes);
         expect(find.byType(TasksScreen), findsNothing);
         expect(groceries, findsOneWidget);
@@ -9467,7 +9467,7 @@ void main() {
         expect(notes.notes.length, before + 1);
         expect(find.byType(NoteField), findsOneWidget);
 
-        await tester.tap(find.byKey(const ValueKey('page-back')));
+        await tester.tap(find.byKey(const ValueKey('page-home')));
         await tester.pumpAndSettle();
         await open(tester);
         expect(menu, findsOneWidget);
@@ -10540,7 +10540,7 @@ void main() {
 
       await tester.tap(find.text('Living room'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('page-back')), findsOneWidget);
+      expect(find.byKey(const ValueKey('page-home')), findsOneWidget);
     });
 
     testWidgets('a tag pill narrows the list, and a second tap widens it', (

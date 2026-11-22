@@ -690,7 +690,8 @@ class EditorMetrics {
   /// The note's first line, its title: under twice the writing's size and a
   /// step lighter than a heading's weight, so it names the note without
   /// shouting over it. The meta row sits under it, 10 below the title and 24
-  /// above the body; on a phone the tags take a line of their own.
+  /// above the body. On a tablet it keeps a second line's room for the tags;
+  /// a phone's facts and tags share one line, as M07 draws them.
   static double get titleFontSize => AppPlatform.isMobile ? 28 : 30;
   static double get titleRow => AppPlatform.isMobile ? 36 : 38;
   static const FontWeight titleWeight = FontWeight.w500;
@@ -698,6 +699,7 @@ class EditorMetrics {
   static double get metaRow => AppPlatform.isMobile ? 16 + 8 + 22 : 16;
   static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
+  static const double phoneMetaRow = 22;
 
   /// While the page's days have the bar's top left, a filed note's folders
   /// sit in a line of their own [pathGap] above its title.

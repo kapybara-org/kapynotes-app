@@ -198,14 +198,14 @@ void main() {
           sharing.spaceOf(notes.byId(tripId)!) != null;
     });
     await tester.pumpAndSettle();
-    final back = find.byKey(const ValueKey('page-back'));
+    final home = find.byKey(const ValueKey('page-home'));
     final card = find.byKey(const ValueKey('home-shared-card'));
     for (
       var taps = 0;
-      taps < 3 && card.evaluate().isEmpty && back.evaluate().isNotEmpty;
+      taps < 3 && card.evaluate().isEmpty && home.evaluate().isNotEmpty;
       taps++
     ) {
-      await tester.tap(back);
+      await tester.tap(home);
       await tester.pumpAndSettle();
     }
     expect(card, findsOneWidget, reason: 'Home, with its Shared card');
@@ -222,7 +222,7 @@ void main() {
     await tester.tap(row(title));
     await tester.pumpAndSettle();
     expect(sharedPage, findsNothing);
-    await tester.tap(find.byKey(const ValueKey('page-back')));
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(sharedPage, findsOneWidget);
   }
