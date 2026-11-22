@@ -4,6 +4,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -51,6 +52,7 @@ Future<void> _pump(
   Size size = const Size(1500, 800),
   TargetPlatform platform = TargetPlatform.macOS,
   bool sidebar = false,
+  FolderStore? folders,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -70,6 +72,7 @@ Future<void> _pump(
       prefs: prefs,
       shortcuts: shortcuts,
       kapyAi: ai,
+      folders: folders,
     ),
   );
   await tester.pumpAndSettle();
@@ -328,6 +331,20 @@ void main() {
       await tester.enterText(menuField, words);
       await tester.pumpAndSettle();
     }
+
+    testWidgets('Drawings\' field says Search drawings, even with Kapy AI on', (
+      tester,
+    ) async {
+      await _pump(tester, sidebar: true);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(sidebarField('Search drawings'), findsOneWidget);
+      expect(sidebarField('Search or Ask Kapy AI'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('rail-notes')));
+      await tester.pumpAndSettle();
+      expect(sidebarField('Search or Ask Kapy AI'), findsOneWidget);
+    });
 
     testWidgets('the fields offer to ask, and Tab asks with the note’s chip', (
       tester,
@@ -1128,11 +1145,12 @@ void main() {
     final page = find.byKey(const ValueKey('kapy-ai-page'));
     final home = find.byKey(const ValueKey('home-title-notes'));
 
-    Future<void> pumpPhone(WidgetTester tester) async {
+    Future<void> pumpPhone(WidgetTester tester, {FolderStore? folders}) async {
       await _pump(
         tester,
         size: const Size(390, 844),
         platform: TargetPlatform.iOS,
+        folders: folders,
       );
       final back = find.byKey(const ValueKey('page-back'));
       if (back.evaluate().isNotEmpty) {
@@ -1237,6 +1255,45 @@ void main() {
       await tester.pumpAndSettle();
       expect(tab, findsOneWidget);
       expect(page, findsNothing);
+    });
+
+    testWidgets("with Kapy AI on, Folders' and Drawings' fields still name "
+        'what they search', (tester) async {
+      Finder field(String words) => find.descendant(
+        of: find.byKey(const ValueKey('sidebar-search-field')),
+        matching: find.text(words),
+      );
+      await pumpPhone(tester, folders: FolderStore(store));
+      expect(field('Search or Ask Kapy AI'), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(field('Search folders'), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('folders-drawings-tile')));
+      expect(field('Search drawings'), findsOneWidget);
+      expect(field('Search or Ask Kapy AI'), findsNothing);
+    });
+
+    testWidgets("after a visit to Drawings, + on it makes a note, and Folders "
+        'is back on its tree', (tester) async {
+      await pumpPhone(tester);
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      await tap(tester, find.byKey(const ValueKey('folders-drawings-tile')));
+      await tap(tester, tab);
+
+      // The blank note the app opens on is the one + reuses, as for a note.
+      await tap(tester, find.byKey(const ValueKey('phone-new')));
+      expect(page, findsNothing);
+      expect(notes.notes.where((note) => note.isDrawing), isEmpty);
+
+      await tap(tester, find.byKey(const ValueKey('page-back')));
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('phone-list-title')))
+            .data,
+        'Folders',
+      );
     });
 
     testWidgets('a build without Kapy AI has no tab for it', (tester) async {

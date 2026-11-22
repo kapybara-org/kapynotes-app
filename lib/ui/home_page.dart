@@ -2047,14 +2047,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// [body] is the note's first words, from the ⌘K menu's field. A note made
-  /// while a folder's tab is in front goes into that folder.
+  /// while a folder's tab is in front, or a phone shows a folder, goes into
+  /// that folder.
   bool _createNoteNow({
     bool drawing = false,
     String body = '',
     ValueChanged<String>? onMade,
   }) {
     final creatingHidden = _hiddenMode;
-    final folderId = drawing ? null : _folderInFront;
+    final folderId = drawing ? null : _folderInFront ?? _phoneFolderShown?.id;
     final blank = drawing || body.isNotEmpty ? null : _blankNoteAlreadyOpen();
     if (blank == null && !(_noteLimit?.canCreate ?? true)) {
       unawaited(_explainNoteLimit(creating: true));
@@ -3158,9 +3159,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// What the search fields read: they offer to ask Kapy AI only while it
-  /// can be asked.
-  String get _searchPlaceholder => _kapyAiOn
+  /// What the search fields read: Drawings' names what it finds, and the
+  /// rest offer to ask Kapy AI only while it can be asked.
+  String get _searchPlaceholder => _space == LibrarySpace.drawings
+      ? 'Search drawings'
+      : _kapyAiOn
       ? 'Search or Ask Kapy AI'
       : _offersFolders && !_usesCompactLayout
       ? 'Search notes and folders'
@@ -3470,7 +3473,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       displayTime: widget.prefs.displayTime,
       taskLabel: _taskNoteLabel,
       tasks: _taskController?.read(),
-      folders: _usesCompactLayout ? null : widget.folders?.tree,
+      folders: widget.folders?.tree,
       showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
       askKapyAi: _kapyAiOn,
@@ -3517,6 +3520,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         } else {
           _openTaskNote(note.id);
         }
+      case OpenFolderChoice(:final folderId) when _usesCompactLayout:
+        _showFolders();
+        setState(() => _phoneFolder = folderId);
       case OpenFolderChoice(:final folderId):
         _showNotes(NotesShow.all);
         _openFolder(folderId, behind: false);
@@ -3689,6 +3695,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _phoneTab = PhoneTab.folders;
       _phoneFolder = null;
       _phoneUpcoming = false;
+      _tasksMode = false;
     });
   }
 
@@ -3697,21 +3704,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// which it holds, turns back as the header does, keeping the list.
   void _selectPhoneTab(PhoneTab tab) {
     final again = tab == _phoneTab;
+    // Drawings is a page of Folders, so another tab leaves it, for All notes
+    // as Notes' own tap there does.
+    if (!again && _drawingsOnly) _showSpace(LibrarySpace.notes);
     switch (tab) {
-      case PhoneTab.notes when !again:
-        if (_drawingsOnly) {
-          _showSpace(LibrarySpace.notes);
-        } else {
-          setState(() => _phoneTab = PhoneTab.notes);
-        }
-      case PhoneTab.notes when _tasksMode:
+      case PhoneTab.notes when again && _tasksMode:
         _showHome(tasks: false);
-      case PhoneTab.notes:
+      case PhoneTab.notes when again:
         _showSpace(LibrarySpace.notes);
       case PhoneTab.folders when again:
         _showFolders();
-      case PhoneTab.folders || PhoneTab.kapyAi:
-        setState(() => _phoneTab = tab);
+      case _:
+        // Tasks is a page of Notes, so another tab leaves it too, with the
+        // Notes list kept as it was.
+        setState(() {
+          _phoneTab = tab;
+          _tasksMode = false;
+        });
+    }
+  }
+
+  /// Back on a phone's list, from Android's back or the edge swipe: one level
+  /// up at a time. Tasks returns to Notes and picks let go, then a folder,
+  /// Upcoming or Drawings returns to Folders, another tab to Notes, and on
+  /// Notes Pinned or Shared to its Home.
+  void _phoneListBack() {
+    if (_tasksMode) {
+      _showHome(tasks: false);
+    } else if (_picks.on) {
+      _picks.clear();
+    } else if (_phoneTab == PhoneTab.folders &&
+        (_drawingsOnly || _phoneFolderShown != null || _phoneUpcomingShown)) {
+      _showFolders();
+    } else if (_phoneTab != PhoneTab.notes) {
+      setState(() => _phoneTab = PhoneTab.notes);
+    } else if (_showingPinnedOnly) {
+      setState(() => _pinnedOnly = false);
+    } else {
+      _showSpace(LibrarySpace.notes);
     }
   }
 
@@ -4719,9 +4749,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final selected = _shownNote(_selectedId);
     final pageOpen = _phonePageOpen && selected != null && !_tasksMode;
     // Back, from Android's gesture or iOS's edge swipe, goes up one level:
-    // the note's page closes, then a folder or Drawings returns to Folders,
-    // the picks let go, Pinned, Shared or Tasks returns to Notes, as do
-    // Folders and Kapy AI, and only then does the app itself leave.
+    // the note's page closes, then on Folders the picks let go and a folder
+    // or Drawings returns to Folders. Folders and Kapy AI return to Notes,
+    // where Tasks returns to Notes, the picks let go, and Pinned or Shared
+    // returns to Notes, and only then does the app itself leave.
     final pinnedOrShared = _showingPinnedOnly || _space == LibrarySpace.shared;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: Theme.of(context).brightness == Brightness.dark
@@ -4740,19 +4771,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (didPop) return;
             if (pageOpen) {
               _phoneNavigator.currentState?.maybePop();
-            } else if (_phoneTab == PhoneTab.folders &&
-                (_drawingsOnly || _phoneFolder != null || _phoneUpcoming)) {
-              _showFolders();
-            } else if (_phoneTab != PhoneTab.notes) {
-              setState(() => _phoneTab = PhoneTab.notes);
-            } else if (_tasksMode) {
-              _showHome(tasks: false);
-            } else if (_picks.on) {
-              _picks.clear();
-            } else if (_showingPinnedOnly) {
-              setState(() => _pinnedOnly = false);
             } else {
-              _showSpace(LibrarySpace.notes);
+              _phoneListBack();
             }
           },
           child: Navigator(
@@ -4824,6 +4844,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? _taskController
               : null;
           final ai = _phoneTab == PhoneTab.kapyAi && _kapyAiOn ? _kapyAi : null;
+          // A swipe left turns Home to Tasks; a swipe right goes up a level,
+          // as iOS's edge swipe does out of a page, from wherever Back goes up
+          // one rather than across to another tab.
+          final turns = _taskController != null && _phoneHome;
+          final back = _phoneTab == PhoneTab.notes
+              ? _tasksMode ||
+                    _showingPinnedOnly ||
+                    _space == LibrarySpace.shared
+              : _phoneTab == PhoneTab.folders &&
+                    (_drawingsOnly ||
+                        _phoneFolderShown != null ||
+                        _phoneUpcomingShown);
           // The Notes list stays built under Tasks, out of sight, so it comes
           // back scrolled and narrowed as it was left.
           final page = Stack(
@@ -4930,9 +4962,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: SafeArea(
               bottom: false,
               child: PhoneHomeSwipe(
-                onTurn: _taskController != null && _phoneHome
-                    ? (tasks) => _showHome(tasks: tasks)
+                onTurn: turns || back
+                    ? (tasks) {
+                        if (tasks && turns) _showHome(tasks: true);
+                        if (!tasks && back) _phoneListBack();
+                      }
                     : null,
+                backFromEdge: back,
                 child: page,
               ),
             ),
@@ -5110,10 +5146,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onTabChanged: _setSidebarTab,
       searchPlaceholder: tree
           ? 'Search folders'
-          : _kapyAiOn
+          : _kapyAiOn || _space == LibrarySpace.drawings
           ? _searchPlaceholder
-          : _space == LibrarySpace.drawings
-          ? 'Search drawings'
           : _sharedPage
           ? 'Search shared notes'
           : _taskController == null
@@ -5495,6 +5529,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
+      writingFont: widget.prefs.writingFont,
       onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
       onTitleChanged: (title) => _updateDrawing(note.id, title: title),
     );
