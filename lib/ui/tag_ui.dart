@@ -564,9 +564,12 @@ class PopoverAtPoint extends SingleChildLayoutDelegate {
 /// its tag off, a tap narrows the list to it, and a drag moves it: the first
 /// colours the note.
 class NoteTagChips extends StatefulWidget {
-  const NoteTagChips({super.key, required this.noteId});
+  const NoteTagChips({super.key, required this.noteId, this.adds = true});
 
   final String noteId;
+
+  /// Whether + Tag follows the chips. A phone's note adds tags from More.
+  final bool adds;
 
   @override
   State<NoteTagChips> createState() => _NoteTagChipsState();
@@ -586,6 +589,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
     if (shelf == null) return const SizedBox.shrink();
     final palette = context.palette;
     final tags = shelf.store.tagsOf(widget.noteId);
+    if (!widget.adds && tags.isEmpty) return const SizedBox.shrink();
     void move(String dragged, String onto) {
       final ids = [for (final tag in tags) tag.id];
       final to = ids.indexOf(onto);
@@ -675,7 +679,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
             ),
           ),
         ),
-        add,
+        if (widget.adds) add,
       ],
     );
   }

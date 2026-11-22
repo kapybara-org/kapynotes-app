@@ -77,15 +77,16 @@ class NoteFolders extends InheritedWidget {
   const NoteFolders({
     super.key,
     required this.tree,
-    required this.onOpenFolder,
+    this.onOpenFolder,
     required super.child,
   });
 
   final FolderTree tree;
 
   /// Shows a folder from the line in this tab, or with behind in a new tab
-  /// behind it.
-  final void Function(String folderId, {required bool behind}) onOpenFolder;
+  /// behind it. Null on a phone, which has no folder to show it on, so the
+  /// line only says where the note is.
+  final void Function(String folderId, {required bool behind})? onOpenFolder;
 
   static NoteFolders? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<NoteFolders>();
@@ -259,38 +260,31 @@ class NoteMetaRow extends StatelessWidget {
         ),
     ];
     if (AppPlatform.isMobile) {
-      // Grows with the text size and the tags' 44 pt targets rather than
-      // clipping them to a fixed row.
+      // One line that wraps with the text size: the facts a dot apart, then
+      // the tags after a gap, as M07 draws them.
       return ConstrainedBox(
         constraints: BoxConstraints(minHeight: EditorMetrics.metaRow),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Wrap(
+          key: const ValueKey('note-facts'),
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 16),
-              child: Wrap(
-                key: const ValueKey('note-facts'),
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  for (final (index, item) in items.indexed)
-                    index == 0
-                        ? item
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SizedBox(width: _gap),
-                              dot,
-                              const SizedBox(width: _gap),
-                              item,
-                            ],
-                          ),
-                ],
+            for (final (index, item) in items.indexed)
+              index == 0
+                  ? item
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(width: _gap),
+                        dot,
+                        const SizedBox(width: _gap),
+                        item,
+                      ],
+                    ),
+            if (tags case final tags?)
+              Padding(
+                padding: const EdgeInsets.only(left: _gap + 4),
+                child: tags,
               ),
-            ),
-            const SizedBox(height: 8),
-            // The tags' own targets are 44 pt tall on a phone, so the row
-            // gives them the room rather than clipping them to the pill.
-            SizedBox(height: AppPlatform.hasPointer ? 22 : 44, child: tags),
           ],
         ),
       );

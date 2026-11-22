@@ -762,7 +762,7 @@ void main() {
         platform: TargetPlatform.iOS,
         withPinnedNote: true,
       );
-      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
 
       final card = tester.getRect(
@@ -1535,13 +1535,13 @@ void main() {
 
       testWidgets('phone notes home, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await matches('notes_home');
       });
 
       testWidgets('phone notes, two picked, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         final rows = find.byType(NoteRow);
         await tester.longPress(rows.last);
         await tester.pumpAndSettle();
@@ -1559,7 +1559,7 @@ void main() {
             goldenTags.create(tag)!.id,
           ]);
         }
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'phone-filters');
         await tapAndSettle(tester, 'sidebar-notes-filter');
         await matches('notes_filter');
@@ -1567,7 +1567,7 @@ void main() {
 
       testWidgets('phone new menu, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tester.longPress(find.byKey(const ValueKey('phone-new')));
         await tester.pumpAndSettle();
         await matches('new_menu');
@@ -1575,7 +1575,7 @@ void main() {
 
       testWidgets('phone quick find, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'sidebar-search-field');
         await matches('quick_find');
       });
@@ -1592,21 +1592,21 @@ void main() {
         );
         await tester.runAsync(goldenTasks.reconcileNow);
         await tester.pumpAndSettle();
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'bar-tasks');
         await matches('tasks');
       });
 
       testWidgets('phone drawings, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'bar-drawings');
         await matches('drawings');
       });
 
       testWidgets('phone settings, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'bar-settings');
         expect(
           find.byKey(const ValueKey('settings-whats-new-row')),
@@ -1617,7 +1617,7 @@ void main() {
 
       testWidgets('phone settings, a category opened, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'bar-settings');
         await tapAndSettle(tester, 'settings-section-appearance');
         await matches('settings_appearance');
@@ -1852,7 +1852,7 @@ void main() {
       goldenPrefs.nightTheme = const NightTheme(enabled: true);
       await tester.pumpAndSettle();
       for (final key in [
-        'page-back',
+        'page-home',
         'bar-settings',
         'settings-section-appearance',
       ]) {

@@ -89,7 +89,7 @@ void main() {
     }
 
     await check('first launch page');
-    await tap(tester, 'page-back');
+    await tap(tester, 'page-home');
     await check('notes home');
     await tap(tester, 'phone-filters');
     await check('notes home, filters open');
@@ -146,7 +146,7 @@ void main() {
     await app.main();
     await tester.pumpAndSettle(const Duration(seconds: 1));
     for (final key in [
-      'page-back',
+      'page-home',
       'phone-filters',
       'bar-tasks',
       'bar-drawings',

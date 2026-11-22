@@ -132,7 +132,7 @@ void main() {
       return labels;
     }
 
-    await tap('page-back');
+    await tap('page-home');
     await tap('bar-tasks');
 
     expect(find.text('What do you want to work on next?'), findsOneWidget);

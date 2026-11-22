@@ -69,11 +69,9 @@ void main() {
     Widget? assistant,
     List<Widget>? actions,
     Widget Function(bool compact, PlaceDays place)? days,
-    ({String to, VoidCallback onPressed})? back,
   }) => PageToolbar(
     path: path,
     days: days,
-    back: back,
     actions: actions,
     listVisible: listVisible,
     underList: underList,
@@ -138,7 +136,7 @@ void main() {
   });
 
   testWidgets('the band has a hairline along its bottom, but none under the '
-      'list or on a phone', (tester) async {
+      'list', (tester) async {
     BoxDecoration? hairline() =>
         tester.widget<Container>(bar).foregroundDecoration as BoxDecoration?;
 
@@ -150,11 +148,6 @@ void main() {
 
     await tester.pumpWidget(
       harness(toolbar(listVisible: false, underList: true)),
-    );
-    expect(hairline(), isNull);
-
-    await tester.pumpWidget(
-      harness(toolbar(back: (to: 'Notes', onPressed: () {}))),
     );
     expect(hairline(), isNull);
   });
@@ -758,78 +751,6 @@ void main() {
     expect(more, findsOneWidget);
     expect(find.byKey(ai), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-    testWidgets('a ${platform.name} note header draws Back as an arrow at 18 '
-        'and More as ⋮ at 20', (tester) async {
-      AppPlatform.debugTargetPlatformOverride = platform;
-      await tester.pumpWidget(
-        harness(
-          toolbar(
-            listVisible: false,
-            back: (to: 'Notes', onPressed: () {}),
-            moreActions: const [
-              KapyMenuAction(
-                value: 'pin',
-                label: 'Pin note',
-                icon: KapyIcons.pinOutlined,
-              ),
-            ],
-          ),
-          width: 393,
-        ),
-      );
-
-      final back = find.byKey(const ValueKey('page-back'));
-      final arrow = find.descendant(
-        of: back,
-        matching: findKapyIcon(KapyIcons.arrowBackRounded),
-      );
-      expect(arrow, findsOneWidget);
-      expect(tester.widget<KapyIcon>(arrow).size, 18);
-      expect(findKapyIcon(KapyIcons.chevronLeftRounded), findsNothing);
-
-      final dots = find.descendant(
-        of: more,
-        matching: findKapyIcon(KapyIcons.moreVerticalRounded),
-      );
-      expect(dots, findsOneWidget);
-      expect(tester.widget<KapyIcon>(dots).size, 20);
-    });
-  }
-
-  testWidgets('Home is a quiet button: its arrow and words in T1 on no fill, '
-      "as the header's other ghosts", (tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    await tester.pumpWidget(
-      harness(
-        toolbar(listVisible: false, back: (to: 'Notes', onPressed: () {})),
-        width: 393,
-      ),
-    );
-
-    final back = find.byKey(const ValueKey('page-back'));
-    final palette = tester.element(back).palette;
-    final arrow = find.descendant(
-      of: back,
-      matching: findKapyIcon(KapyIcons.arrowBackRounded),
-    );
-    expect(tester.widget<KapyIcon>(arrow).color, palette.textPrimary);
-    expect(tester.widget<KapyIcon>(arrow).size, 18);
-    expect(tester.getSize(arrow).width, 18);
-    expect(
-      tester
-          .widget<Text>(find.descendant(of: back, matching: find.text('Notes')))
-          .style
-          ?.color,
-      palette.textPrimary,
-    );
-    final style = tester.widget<TextButton>(back).style!;
-    expect(
-      style.backgroundColor?.resolve({}),
-      anyOf(isNull, Colors.transparent),
-    );
   });
 
   testWidgets("the count of pictures that didn't load gives way sooner", (

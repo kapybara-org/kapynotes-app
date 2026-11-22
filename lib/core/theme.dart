@@ -692,12 +692,12 @@ class EditorMetrics {
   /// The note's first line, its title: under twice the writing's size and a
   /// step lighter than a heading's weight, so it names the note without
   /// shouting over it. The meta row sits under it, 10 below the title and 24
-  /// above the body; on a phone the tags take a line of their own.
+  /// above the body; on a phone it is as tall as the tags on it.
   static double get titleFontSize => AppPlatform.isMobile ? 28 : 30;
   static double get titleRow => AppPlatform.isMobile ? 36 : 38;
   static const FontWeight titleWeight = FontWeight.w500;
   static const double metaGap = 10;
-  static double get metaRow => AppPlatform.isMobile ? 16 + 8 + 22 : 16;
+  static double get metaRow => AppPlatform.isMobile ? 22 : 16;
   static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 

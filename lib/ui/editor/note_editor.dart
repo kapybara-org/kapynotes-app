@@ -57,6 +57,7 @@ import 'table_geometry.dart';
 import 'note_footer.dart';
 import 'phone_format_bar.dart';
 import '../note_day_scope.dart';
+import '../notes_grouping.dart' show dayShown;
 import 'note_header.dart';
 import '../sidebar_timestamp.dart';
 import '../tag_ui.dart';
@@ -192,6 +193,7 @@ class NoteEditor extends StatefulWidget {
     required this.highlighter,
     this.keepResultRoom = false,
     this.cramped = false,
+    this.phone = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -355,6 +357,11 @@ class NoteEditor extends StatefulWidget {
   /// padding, as on a phone on its side with the keyboard up. The lines take
   /// that room instead.
   final bool cramped;
+
+  /// On a phone's note page (M09): its folders in the line above the title,
+  /// and under it the note's day and time with its tags, which are added
+  /// from More rather than from a + Tag of their own.
+  final bool phone;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -7452,7 +7459,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// The note's folders in the line above its title, scrolled with it.
   Widget _pathLine(
     List<PagePlace> folders,
-    void Function(String folderId, {required bool behind}) onOpenFolder,
+    void Function(String folderId, {required bool behind})? onOpenFolder,
     EdgeInsets padding,
   ) => ClipRect(
     child: ListenableBuilder(
@@ -7500,12 +7507,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           );
         },
         child: NoteMetaRow(
-          day: NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
-          edited: SidebarTimestamp.edited(
-            widget.lastUpdatedAt ?? now,
-            now: now,
-            displayTime: widget.displayTime ?? (time) => time.toLocal(),
-          ),
+          day: widget.phone
+              ? null
+              : NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
+          edited: widget.phone
+              ? _dayAndTime(now)
+              : SidebarTimestamp.edited(
+                  widget.lastUpdatedAt ?? now,
+                  now: now,
+                  displayTime: widget.displayTime ?? (time) => time.toLocal(),
+                ),
           done: checklist.done,
           tasks: checklist.total,
           total: _totalText,
@@ -7516,10 +7527,24 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           onReadOnlyPressed: widget.onReadOnlyPressed,
           tags: TagShelf.maybeOf(context) == null
               ? null
-              : NoteTagChips(noteId: widget.noteId),
+              : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
         ),
       ),
     );
+  }
+
+  /// The note's day and the time it was last written, as a phone's line
+  /// under the title says them: "Fri 21 · 9:41", or the time alone today.
+  String _dayAndTime(DateTime now) {
+    final displayTime = widget.displayTime ?? (time) => time.toLocal();
+    final edited = displayTime(widget.lastUpdatedAt ?? now);
+    final clock = SidebarTimestamp.clock(edited);
+    final day =
+        NoteDayScope.maybeOf(context)?.dayOf(widget.noteId) ??
+        DateTime(edited.year, edited.month, edited.day);
+    return day == dayShown(now, displayTime)
+        ? clock
+        : '${SidebarTimestamp.weekdayAndDay(day)} · $clock';
   }
 
   /// The faint "+" beside an empty line, the caret's or the pointer's, that
@@ -7896,7 +7921,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A phone on its side, with the keyboard up, has no room to spare: the
     // lines take the padding rather than being pushed out of sight.
     if (widget.cramped) basePadding = basePadding.copyWith(top: 0, bottom: 0);
-    final noteFolders = EditorMetrics.page
+    final noteFolders = EditorMetrics.page || widget.phone
         ? NoteFolders.maybeOf(context)
         : null;
     final folders = <PagePlace>[

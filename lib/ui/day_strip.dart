@@ -67,6 +67,7 @@ class DayStrip extends StatefulWidget {
     this.onOpenNote,
     this.onWriteOn,
     this.compact = false,
+    this.phone = false,
   });
 
   /// The day the list shows as today.
@@ -103,6 +104,16 @@ class DayStrip extends StatefulWidget {
 
   /// One button for the picked day in place of the month, and no week.
   final bool compact;
+
+  /// A phone note's week: always seven days, the calendar week from
+  /// [firstWeekday] that holds the picked day, each day its weekday over its
+  /// date across the whole width, and no month. A day with one note opens
+  /// it, a day with several lists them, and a day with none opens a page to
+  /// write on it.
+  final bool phone;
+
+  /// A phone's arrows: the strip's height to press, and this wide.
+  static const double _phoneArrowWidth = 28;
 
   /// The chip a day sits in, and the room the whole week needs at [days] of
   /// them: the chips, 2 between them, and an arrow with 2 clear at each end.
@@ -168,14 +179,37 @@ class _DayStripState extends State<DayStrip> {
   /// window moved [_shift] days.
   List<DateTime> get _shown => _week(days);
 
-  /// The [count] days in view, today in the middle until paged away.
+  /// The [count] days in view, today in the middle until paged away, or on a
+  /// phone the calendar week that holds today, paged by whole weeks.
   List<DateTime> _week(int count) {
     final today = widget.today;
+    if (widget.phone) {
+      final start = _weekStart(today);
+      return [
+        for (var index = 0; index < 7; index++)
+          DateTime(start.year, start.month, start.day + _shift + index),
+      ];
+    }
     final centre = (count - 1) ~/ 2;
     return [
       for (var index = 0; index < count; index++)
         DateTime(today.year, today.month, today.day - centre + _shift + index),
     ];
+  }
+
+  /// The first day of [day]'s calendar week.
+  DateTime _weekStart(DateTime day) => DateTime(
+    day.year,
+    day.month,
+    day.day - (day.weekday - widget.firstWeekday) % 7,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.phone) return;
+    days = 7;
+    if (_picked case final picked?) _bringIntoView(picked);
   }
 
   /// A day picked in the calendar brings its week into view.
@@ -191,6 +225,16 @@ class _DayStripState extends State<DayStrip> {
   void _bringIntoView(DateTime day) {
     if (_shown.contains(day)) return;
     final today = widget.today;
+    if (widget.phone) {
+      final from = _weekStart(today);
+      final to = _weekStart(day);
+      _shift = DateTime.utc(
+        to.year,
+        to.month,
+        to.day,
+      ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+      return;
+    }
     final apart = DateTime.utc(
       day.year,
       day.month,
@@ -217,6 +261,18 @@ class _DayStripState extends State<DayStrip> {
   /// there is no list to narrow, narrows the list to it, or opens a page to
   /// write it when it holds none.
   void _choose(DateTime day, {int notes = 0, BuildContext? at}) {
+    if (widget.phone) {
+      final onOpen = widget.onOpenNote;
+      final only = notes == 1 ? _notesOn(day).single : null;
+      if (notes == 0) {
+        widget.onWriteOn?.call(day);
+      } else if (only != null && onOpen != null) {
+        onOpen(only.id, behind: false);
+      } else {
+        unawaited(_list(day, at: at));
+      }
+      return;
+    }
     if (widget.onOpenNote != null) {
       unawaited(_list(day, at: at));
       return;
@@ -231,6 +287,18 @@ class _DayStripState extends State<DayStrip> {
     if (notes == 0) widget.onWriteOn?.call(day);
   }
 
+  /// The notes that fall on [day].
+  List<Note> _notesOn(DateTime day) => [
+    for (final note in widget.notes)
+      if (noteDay(
+            note,
+            widget.displayTime,
+            ownDay: widget.ownDay?.call(note),
+          ) ==
+          day)
+        note,
+  ];
+
   /// Lists [day]'s notes 4 under the week, from the left of the day tapped
   /// [at], or under the button that stands in for it, and opens the one
   /// picked.
@@ -242,16 +310,7 @@ class _DayStripState extends State<DayStrip> {
     final onOpen = widget.onOpenNote;
     if (box == null || onOpen == null) return;
     final palette = context.palette;
-    final notes = [
-      for (final note in widget.notes)
-        if (noteDay(
-              note,
-              widget.displayTime,
-              ownDay: widget.ownDay?.call(note),
-            ) ==
-            day)
-          note,
-    ];
+    final notes = _notesOn(day);
     setState(() {
       _bringIntoView(day);
       _listing = day;
@@ -405,6 +464,9 @@ class _DayStripState extends State<DayStrip> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.phone) {
+      return widget.place(const SizedBox.shrink(), _phoneWeek());
+    }
     final palette = context.palette;
     final compact = widget.compact;
     final when = widget.when;
@@ -498,6 +560,58 @@ class _DayStripState extends State<DayStrip> {
     );
   }
 
+  /// A phone's week across the whole width: ‹, the seven days sharing what
+  /// is left, ›.
+  Widget _phoneWeek() {
+    final today = widget.today;
+    final shown = _shown;
+    final counts = _counts(shown);
+    final picked = _picked;
+    final filled = _listing ?? picked ?? today;
+    Widget arrow(String key, String tooltip, KapyIconData icon, int by) =>
+        CompactIconButton(
+          key: ValueKey(key),
+          tooltip: tooltip,
+          extent: _Day.phoneHeight,
+          width: DayStrip._phoneArrowWidth,
+          radius: 8,
+          onPressed: () => setState(() => _shift += by),
+          icon: KapyIcon(icon, size: 16),
+        );
+    return Row(
+      key: _weekRow,
+      children: [
+        arrow(
+          'day-strip-back',
+          'The week before',
+          KapyIcons.chevronLeftRounded,
+          -7,
+        ),
+        for (final day in shown)
+          Expanded(
+            child: Builder(
+              builder: (tapped) => _Day(
+                key: ValueKey('day-strip-${_date(day)}'),
+                day: day,
+                today: day == today,
+                picked: day == picked,
+                filled: day == filled,
+                count: counts[day]!,
+                stacked: true,
+                onTap: () => _choose(day, notes: counts[day]!, at: tapped),
+              ),
+            ),
+          ),
+        arrow(
+          'day-strip-forward',
+          'The week after',
+          KapyIcons.chevronRightRounded,
+          7,
+        ),
+      ],
+    );
+  }
+
   /// What opens the calendar, tonal while it is open: the month over the
   /// week, or the one button for the day in its place, raised and led by a
   /// calendar.
@@ -565,10 +679,18 @@ class _Day extends StatefulWidget {
     required this.filled,
     required this.count,
     required this.onTap,
+    this.stacked = false,
   });
+
+  /// How tall a phone's day is: its weekday, its date and its dots.
+  static const double phoneHeight = 52;
 
   final DateTime day;
   final bool today;
+
+  /// A phone's day: its weekday over its date, both in the day's colour,
+  /// and a quiet fill while it is the note's.
+  final bool stacked;
 
   /// Whether the list is narrowed to this day.
   final bool picked;
@@ -594,61 +716,103 @@ class _DayState extends State<_Day> {
     final day = widget.day;
     final filled = widget.filled;
     final dots = math.min(widget.count, 3);
-    final column = SizedBox(
-      width: DayStrip._dayWidth,
-      height: 40,
-      child: Column(
+    final dotRow = SizedBox(
+      height: 3,
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            height: 30,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: filled
-                  ? palette.tonalBackground
-                  : _hovered || _focused
-                  ? palette.controlBackground
-                  : null,
-              borderRadius: BorderRadius.circular(6),
+          for (var dot = 0; dot < dots; dot++) ...[
+            if (dot > 0) const SizedBox(width: 2),
+            Container(
+              width: 3,
+              height: 3,
+              decoration: BoxDecoration(
+                color: widget.today ? sage : palette.textTertiary,
+                shape: BoxShape.circle,
+              ),
             ),
-            child: Text(
-              SidebarTimestamp.weekdayAndDay(day),
-              maxLines: 1,
-              style: _figtree(
-                13,
-                16,
-                widget.today || filled ? FontWeight.w600 : FontWeight.w500,
-                filled
-                    ? palette.tonalForeground
-                    : widget.today
-                    ? sage
-                    : palette.textPrimary,
-              ).copyWith(fontFeatures: _figures),
-            ),
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 3,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var dot = 0; dot < dots; dot++) ...[
-                  if (dot > 0) const SizedBox(width: 2),
-                  Container(
-                    width: 3,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: widget.today ? sage : palette.textTertiary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+          ],
         ],
       ),
     );
+    final column = widget.stacked
+        ? Container(
+            constraints: const BoxConstraints(minHeight: _Day.phoneHeight),
+            decoration: BoxDecoration(
+              color: filled
+                  ? palette.controlBackground
+                  : _focused
+                  ? palette.hover
+                  : null,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  SidebarTimestamp.shortWeekday(day),
+                  maxLines: 1,
+                  style: _figtree(
+                    13,
+                    16,
+                    widget.today ? FontWeight.w600 : FontWeight.w400,
+                    widget.today ? sage : palette.textSecondary,
+                  ),
+                ),
+                Text(
+                  '${day.day}',
+                  maxLines: 1,
+                  style: _figtree(
+                    17,
+                    22,
+                    widget.today ? FontWeight.w600 : FontWeight.w500,
+                    widget.today ? sage : palette.textPrimary,
+                  ).copyWith(fontFeatures: _figures),
+                ),
+                const SizedBox(height: 3),
+                dotRow,
+              ],
+            ),
+          )
+        : SizedBox(
+            width: DayStrip._dayWidth,
+            height: 40,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  height: 30,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: filled
+                        ? palette.tonalBackground
+                        : _hovered || _focused
+                        ? palette.controlBackground
+                        : null,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    SidebarTimestamp.weekdayAndDay(day),
+                    maxLines: 1,
+                    style: _figtree(
+                      13,
+                      16,
+                      widget.today || filled
+                          ? FontWeight.w600
+                          : FontWeight.w500,
+                      filled
+                          ? palette.tonalForeground
+                          : widget.today
+                          ? sage
+                          : palette.textPrimary,
+                    ).copyWith(fontFeatures: _figures),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                dotRow,
+              ],
+            ),
+          );
     return TextButton(
       onPressed: widget.onTap,
       onHover: (hovered) => setState(() => _hovered = hovered),

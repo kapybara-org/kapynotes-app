@@ -137,7 +137,7 @@ void main() {
   /// A phone opens on a note's page, with the list under it; beside a
   /// window the list is already there.
   Future<void> showList(WidgetTester tester, {required bool phone}) async {
-    final back = find.byKey(const ValueKey('page-back'));
+    final back = find.byKey(const ValueKey('page-home'));
     if (phone && back.evaluate().isNotEmpty) {
       await tester.tap(back);
       await tester.pumpAndSettle();
@@ -357,7 +357,7 @@ void main() {
     expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
     expect(find.text('Search shared notes'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('page-back')));
+    await tester.tap(find.byKey(const ValueKey('page-home')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('shared-page')), findsNothing);
     expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
