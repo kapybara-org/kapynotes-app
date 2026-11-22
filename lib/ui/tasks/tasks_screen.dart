@@ -246,6 +246,7 @@ class TasksScreenState extends State<TasksScreen> {
     );
     final picked = await showKapyContextMenu<TaskFilter>(
       context: context,
+      useRootNavigator: true,
       globalPosition: box.localToGlobal(box.size.bottomLeft(Offset.zero)),
       requestFocus: false,
       items: [
@@ -1402,6 +1403,7 @@ class _NotePicker extends StatelessWidget {
     unawaited(
       showKapyContextMenu<String>(
         context: context,
+        useRootNavigator: true,
         requestFocus: false,
         globalPosition: box.localToGlobal(Offset(0, box.size.height + 4)),
         items: [
@@ -1433,6 +1435,7 @@ Future<void> _showTaskMenu(
 }) async {
   final choice = await showKapyContextMenu<int>(
     context: context,
+    useRootNavigator: true,
     globalPosition: position,
     requestFocus: false,
     items: [

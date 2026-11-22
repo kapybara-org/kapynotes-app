@@ -8912,6 +8912,22 @@ void main() {
           expect(find.byType(PhoneHomeHeader).hitTestable(), findsOneWidget);
         });
 
+        testWidgets("a row's menu covers the whole screen, the bar too, and "
+            'a tap anywhere closes it', (tester) async {
+          await pumpHome(tester, also: trip);
+          await tester.tap(tasksTitle);
+          await tester.pumpAndSettle();
+          await tester.longPress(find.text('Buy euros'));
+          await tester.pumpAndSettle();
+          final doNow = find.byKey(const ValueKey('task-menu-Do now'));
+          expect(doNow, findsOneWidget);
+          expect(bar.hitTestable(), findsNothing);
+          await tester.tapAt(const Offset(8, 8));
+          await tester.pumpAndSettle();
+          expect(doNow, findsNothing);
+          expect(bar.hitTestable(), findsOneWidget);
+        });
+
         testWidgets("the system back comes back to Tasks, and only then "
             'to Notes', (tester) async {
           await openTask(tester);
