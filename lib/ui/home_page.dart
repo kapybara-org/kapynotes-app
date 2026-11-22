@@ -3201,7 +3201,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What the search fields read: Drawings' names what it finds, and the
   /// rest offer to ask Kapy AI only while it can be asked.
-  String get _searchPlaceholder => _kapyAiOn && _space != LibrarySpace.drawings
+  String get _searchPlaceholder =>
+      _kapyAiOn && _space != LibrarySpace.drawings
       ? 'Search or Ask Kapy AI'
       : _listSearchPlaceholder;
 
@@ -3487,8 +3488,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 MediaQuery.sizeOf(context).width < kapyAiOverlayBelow),
         today: dayShown(widget.notes.now(), displayTime),
         picked: _pickedDay,
-        onPick: (day, notes) =>
-            _pickDay(day, notes, write: widget.days != null && listVisible),
+        onPick: (day, notes) => _pickDay(
+          day,
+          notes,
+          write: widget.days != null && listVisible,
+        ),
         notes: folderId == null
             ? _filtered(widget.notes.search(''), anyTime: true)
             : widget.folders!.tree.notesIn(

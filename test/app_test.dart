@@ -8864,6 +8864,23 @@ void main() {
         expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
       });
 
+      testWidgets("the Drawings tile names a drawing older than a week by its "
+          'date', (tester) async {
+        var clock = DateTime(2026, 11, 14, 9);
+        notes = NotesStore(store, now: () => clock);
+        await notes.load();
+        final sketch = notes.create(drawing: true);
+        notes.updateDrawing(sketch.id, NoteDrawing.empty, title: 'Shelf plan');
+        clock = DateTime(2026, 11, 22, 12);
+        await pumpApp(tester, size: const Size(393, 852));
+        await showNotesList(tester);
+        await tap(tester, barFolders);
+        expect(
+          find.descendant(of: tile, matching: find.text('Shelf plan · 14 Nov')),
+          findsOneWidget,
+        );
+      });
+
       testWidgets('a nested folder opens with its notes; its arrow and Back '
           'go to Folders, and Back again to Notes', (tester) async {
         await pumpFolders(tester);
@@ -9380,6 +9397,8 @@ void main() {
         await folders.load();
         await pumpUpcoming(tester, folders: folders);
         days.setDay(renewal, inDays(3));
+        final standup = notes.notes.firstWhere((n) => n.title == 'Standup');
+        days.setDay(standup.id, inDays(-2));
         await tap(tester, find.byKey(const ValueKey('bar-folders')));
         final later = SidebarTimestamp.weekdayAndDay(inDays(3));
         final row = find.widgetWithText(NoteRow, 'Renewal notes');
@@ -9387,6 +9406,15 @@ void main() {
           find.descendant(of: row, matching: find.text(later)),
           findsOneWidget,
           reason: 'Not in a folder has no day heading',
+        );
+        final earlier = find.widgetWithText(NoteRow, 'Standup');
+        expect(
+          find.descendant(
+            of: earlier,
+            matching: find.text(SidebarTimestamp.clock(standup.updatedAt)),
+          ),
+          findsOneWidget,
+          reason: 'an earlier day keeps the time it was changed',
         );
 
         await tap(tester, tile);

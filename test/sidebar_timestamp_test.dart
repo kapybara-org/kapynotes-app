@@ -98,4 +98,22 @@ void main() {
       date: 'Fri 23 Oct',
     ));
   });
+
+  test('briefDay says today, yesterday and tomorrow, the weekday within a '
+      'week, then the date', () {
+    final today = DateTime(2026, 11, 22);
+    String brief(int days) =>
+        SidebarTimestamp.briefDay(DateTime(2026, 11, 22 + days), today: today);
+    expect(brief(0), 'Today');
+    expect(brief(1), 'Tomorrow');
+    expect(brief(-1), 'Yesterday');
+    expect(brief(6), 'Sat 28');
+    expect(brief(-6), 'Mon 16');
+    expect(brief(7), '29 Nov');
+    expect(brief(-7), '15 Nov');
+    expect(
+      SidebarTimestamp.briefDay(DateTime(2027, 1, 5), today: today),
+      '5 Jan 2027',
+    );
+  });
 }
