@@ -3134,9 +3134,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() => _kapyAiWasOn = _kapyAiOn);
   }
 
-  /// What the search fields read: they offer to ask Kapy AI only while it
-  /// can be asked.
-  String get _searchPlaceholder => _kapyAiOn
+  /// What the search fields read: Drawings' names what it finds, and the
+  /// rest offer to ask Kapy AI only while it can be asked.
+  String get _searchPlaceholder => _space == LibrarySpace.drawings
+      ? 'Search drawings'
+      : _kapyAiOn
       ? 'Search or Ask Kapy AI'
       : _offersFolders && !_usesCompactLayout
       ? 'Search notes and folders'
@@ -4917,10 +4919,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     collaborators: widget.account?.sync?.collaboratorsByNote ?? const {},
     tab: _sidebarTab,
     onTabChanged: _setSidebarTab,
-    searchPlaceholder: _kapyAiOn
+    searchPlaceholder: _kapyAiOn || _space == LibrarySpace.drawings
         ? _searchPlaceholder
-        : _space == LibrarySpace.drawings
-        ? 'Search drawings'
         : _sharedPage
         ? 'Search shared notes'
         : _taskController == null
@@ -5246,6 +5246,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
+      writingFont: widget.prefs.writingFont,
       onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
       onTitleChanged: (title) => _updateDrawing(note.id, title: title),
     );
