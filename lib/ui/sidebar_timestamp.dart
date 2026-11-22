@@ -139,6 +139,14 @@ class SidebarTimestamp {
     };
   }
 
+  /// A day still to come, as an Upcoming note names it: the weekday and the
+  /// day within the week ahead ("Fri 21"), then the date as [shortDay] has
+  /// it, with the year when it is not this one ("Mon 7 Dec").
+  static String dayAhead(DateTime day, {required DateTime today}) =>
+      _daysBetween(today, day) < 7
+      ? weekdayAndDay(day)
+      : shortDay(day, now: today);
+
   /// A weekday in three letters: "Wed".
   static String shortWeekday(DateTime day) => _weekdays[day.weekday - 1];
 

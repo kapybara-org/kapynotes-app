@@ -12,7 +12,7 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../calc/engine.dart';
 import '../data/folders.dart';
-import '../data/layout_prefs.dart' show NotesGrouping;
+import '../data/layout_prefs.dart' show LayoutPrefs, NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../sync/presence.dart';
@@ -1018,6 +1018,7 @@ extension on Sidebar {
     NoteRowStyle style = NoteRowStyle.row,
     int depth = 0,
     bool clockOnly = false,
+    DateTime? dayAhead,
   }) => MetaData(
     metaData: NotePickTarget(note.id),
     child: _noteRow(
@@ -1027,6 +1028,7 @@ extension on Sidebar {
       style: style,
       depth: depth,
       clockOnly: clockOnly,
+      dayAhead: dayAhead,
     ),
   );
 
@@ -1037,12 +1039,14 @@ extension on Sidebar {
     required NoteRowStyle style,
     required int depth,
     bool clockOnly = false,
+    DateTime? dayAhead,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
     style: style,
     depth: depth,
     clockOnly: clockOnly,
+    dayAhead: dayAhead,
     folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
@@ -1218,6 +1222,7 @@ extension on Sidebar {
       Iterable<Note> notes, {
       bool pinned = false,
       bool clockOnly = false,
+      bool upcoming = false,
     }) {
       final list = notes.toList();
       Widget note(Note note) => _row(
@@ -1226,6 +1231,9 @@ extension on Sidebar {
         pinned: pinned,
         style: style,
         clockOnly: clockOnly,
+        dayAhead: upcoming
+            ? noteDay(note, displayTime, ownDay: ownDay?.call(note))
+            : null,
       );
       if (phone && !cards) {
         for (final (index, each) in list.indexed) {
@@ -1413,7 +1421,9 @@ extension on Sidebar {
             onTap: fold ? onUpcomingToggled : null,
           ),
         );
-        if (!fold || upcomingOpen) section(group.notes);
+        if (!fold || upcomingOpen) {
+          section(group.notes, upcoming: fold && AppPlatform.hasPointer);
+        }
       }
     }
 
@@ -1924,6 +1934,14 @@ class SidebarWindowBar extends StatelessWidget {
 
   static const double height = 52;
 
+  /// The narrowest desktop list that keeps the count and New's word: the
+  /// list's own width, which a 1440 pt window gives it and where D01 and D03
+  /// draw both, with the sparkle, New and the toggle side by side. Below it
+  /// they fold away, and sooner wherever the reader's text size or a longer
+  /// name leaves them no room. A tablet keeps 8 between the buttons and
+  /// folds only for room.
+  static const double fullWidth = LayoutPrefs.defaultSidebarWidth;
+
   /// New's name and chord on hover, as the page's + names it while this bar
   /// is hidden.
   static String newTooltip(String noun, ShortcutBinding? shortcut) =>
@@ -1988,13 +2006,15 @@ class SidebarWindowBar extends StatelessWidget {
                   // count, so the space's name keeps its room on a list
                   // dragged narrow. Everything is measured as it prints, at
                   // the reader's text size and with this platform's chord.
+                  final desktop = AppPlatform.hasPointer;
+                  final gap = desktop ? 0 : 8;
                   final room =
                       constraints.maxWidth -
                       widthOf(title, titleStyle) -
                       8 -
-                      8 -
+                      gap -
                       32 -
-                      (onAskKapy == null ? 0 : 32 + 8);
+                      (onAskKapy == null ? 0 : 32 + gap);
                   final chord = noun == 'drawing'
                       ? null
                       : newNoteShortcut?.keycapLabel;
@@ -2006,8 +2026,12 @@ class SidebarWindowBar extends StatelessWidget {
                         shortcut: shortcut,
                         tall: true,
                       );
-                  final keycap = chord != null && fits(shortcut: chord);
-                  final label = fits();
+                  final label =
+                      (!desktop ||
+                          constraints.maxWidth + 2 * 16 >= fullWidth) &&
+                      fits();
+                  final keycap =
+                      label && chord != null && fits(shortcut: chord);
                   return Row(
                     children: [
                       Expanded(
@@ -2053,7 +2077,7 @@ class SidebarWindowBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      if (onAskKapy != null) ...[
+                      if (onAskKapy != null)
                         CompactIconButton(
                           key: const ValueKey('sidebar-ask-kapy'),
                           tooltip: askKapyShortcut == null
@@ -2067,8 +2091,8 @@ class SidebarWindowBar extends StatelessWidget {
                             size: 16,
                           ),
                         ),
+                      if (onAskKapy != null && !desktop)
                         const SizedBox(width: 8),
-                      ],
                       TonalButton(
                         key: const ValueKey('sidebar-new-note'),
                         tall: true,
@@ -2084,7 +2108,7 @@ class SidebarWindowBar extends StatelessWidget {
                             : newTooltip(noun, newNoteShortcut),
                         onPressed: onCreate,
                       ),
-                      const SizedBox(width: 8),
+                      if (!desktop) const SizedBox(width: 8),
                       CompactIconButton(
                         key: const ValueKey('sidebar-hide'),
                         tooltip: hideShortcut == null
@@ -2747,6 +2771,7 @@ class NoteRow extends StatefulWidget {
     this.style = NoteRowStyle.row,
     this.depth = 0,
     this.clockOnly = false,
+    this.dayAhead,
     this.engine,
     this.now = DateTime.now,
     this.folders,
@@ -2761,6 +2786,11 @@ class NoteRow extends StatefulWidget {
   /// Whether the row sits under a heading that already names its day, so it
   /// gives only the time it was last changed, even while others have it open.
   final bool clockOnly;
+
+  /// The day still to come that the note was given, which an Upcoming row or
+  /// card names in place of when the note was last changed, as D04's "Fri
+  /// 21". Null outside Upcoming.
+  final DateTime? dayAhead;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -3014,7 +3044,7 @@ class _NoteRowState extends State<NoteRow> {
               value: 'archive',
               label: 'Archive note',
               icon: archiveIcon,
-              hint: archiveShortcut?.displayLabel,
+              hint: archiveShortcut?.keycapLabel,
             ),
           if (widget.onDelete != null)
             KapyMenuAction(
@@ -3022,7 +3052,7 @@ class _NoteRowState extends State<NoteRow> {
               label: widget.deleteLabel,
               icon: deleteIcon,
               hint: widget.onArchive == null
-                  ? archiveShortcut?.displayLabel
+                  ? archiveShortcut?.keycapLabel
                   : null,
               destructive: true,
             ),
@@ -3198,16 +3228,24 @@ class _NoteRowState extends State<NoteRow> {
       today: card,
       clock: clock,
     );
-    final day = card && people.isEmpty ? stamp(clock: false) : null;
+    final dayAhead = widget.dayAhead;
+    final day = card && people.isEmpty && dayAhead == null
+        ? stamp(clock: false)
+        : null;
     final date = widget.clockOnly
         ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
-        : people.isEmpty
-        ? stamp()
-        : typingStatusText([
+        : people.isNotEmpty
+        ? typingStatusText([
                 for (final person in people)
                   if (person.typing) person.name,
               ]) ??
-              presenceStatusText([for (final person in people) person.name])!;
+              presenceStatusText([for (final person in people) person.name])!
+        : dayAhead != null
+        ? SidebarTimestamp.dayAhead(
+            dayAhead,
+            today: dayShown(widget.now(), widget.displayTime),
+          )
+        : stamp();
     final glance = NoteGlance.of(note, widget.engine);
     final picking = widget.selecting ? widget.checked : null;
     // While picking, what is lit is what is picked: the open note keeps its

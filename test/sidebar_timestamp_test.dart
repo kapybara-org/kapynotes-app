@@ -57,6 +57,26 @@ void main() {
     expect(heading(DateTime(2026, 11, 20)), ('Fri 20 Nov', null));
   });
 
+  test('names a day still to come by its weekday within the week ahead, '
+      'then by its date', () {
+    final today = DateTime(2026, 11, 19);
+    String ahead(DateTime day) => SidebarTimestamp.dayAhead(day, today: today);
+
+    expect(ahead(DateTime(2026, 11, 20)), 'Fri 20');
+    expect(ahead(DateTime(2026, 11, 21)), 'Sat 21');
+    expect(ahead(DateTime(2026, 11, 25)), 'Wed 25');
+    expect(ahead(DateTime(2026, 11, 26)), 'Thu 26 Nov');
+    expect(ahead(DateTime(2026, 12, 7)), 'Mon 7 Dec');
+    expect(ahead(DateTime(2027, 1, 8)), 'Fri 8 Jan 2027');
+    expect(
+      SidebarTimestamp.dayAhead(
+        DateTime(2027, 1, 2),
+        today: DateTime(2026, 12, 30),
+      ),
+      'Sat 2',
+    );
+  });
+
   test("heads a phone's day of notes, counting days by the calendar", () {
     ({String? lead, String date}) heading(DateTime day, DateTime now) =>
         SidebarTimestamp.phoneDay(day, now: now);

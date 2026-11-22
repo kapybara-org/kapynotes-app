@@ -40,6 +40,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
@@ -47,6 +48,7 @@ import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
+import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
@@ -171,7 +173,7 @@ void main() {
     final ask = find.byKey(const ValueKey('sidebar-ask-kapy'));
     final newNote = find.byKey(const ValueKey('sidebar-new-note'));
     expect(ask, findsOneWidget);
-    expect(tester.getRect(ask).right + 8, tester.getRect(newNote).left);
+    expect(tester.getRect(ask).right, tester.getRect(newNote).left);
     expect(
       tester.getCenter(ask).dy,
       moreOrLessEquals(tester.getCenter(newNote).dy, epsilon: 0.5),
@@ -477,6 +479,29 @@ void main() {
     tester,
   ) async {
     await board(tester);
+    expect(find.byKey(const ValueKey('sidebar-space-count')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('sidebar-new-note')),
+        matching: find.text('New note'),
+      ),
+      findsOneWidget,
+    );
+    final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
+    expect(
+      tester
+          .widget<Container>(
+            find.descendant(of: filter, matching: find.byType(Container)).first,
+          )
+          .decoration,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<Container>(find.byKey(const ValueKey('sidebar-view-switch')))
+          .decoration,
+      isNull,
+    );
     await click(tester, row('Call with Arjun'));
     final tabs = find.byType(NoteTabRow);
     expect(tabs, findsNothing, reason: 'one note open has no tab row');
@@ -495,6 +520,15 @@ void main() {
     ];
     expect(menu.take(2), ['Open in new tab', 'Open to the side']);
     expect(menu, containsAll(['Pin note', 'Delete note…']));
+    expect(
+      tester
+          .widget<KapyMenuActionRow>(
+            find.widgetWithText(KapyMenuActionRow, 'Archive note'),
+          )
+          .action
+          .hint,
+      '⌘⌫',
+    );
     await boardShot(tester, 'd03-menu');
 
     await click(
@@ -561,6 +595,39 @@ void main() {
       ),
     );
     expect(tester.widget<NotesGroupHeading>(upcoming).folded, isFalse);
+    expect(
+      tester
+          .getRect(
+            find.descendant(
+              of: upcoming,
+              matching: findKapyIcon(KapyIcons.chevronDownRounded),
+            ),
+          )
+          .left,
+      greaterThan(
+        tester
+            .getRect(find.descendant(of: upcoming, matching: find.text('1')))
+            .right,
+      ),
+    );
+    expect(
+      tester
+          .widget<NoteCardFace>(
+            find.descendant(
+              of: row('Renewal notes'),
+              matching: find.byType(NoteCardFace),
+            ),
+          )
+          .date,
+      SidebarTimestamp.weekdayAndDay(friday),
+    );
+    final ring = tester.widget<ChecklistPie>(
+      find.descendant(
+        of: row('Renewal notes'),
+        matching: find.byType(ChecklistPie),
+      ),
+    );
+    expect((ring.done, ring.total), (0, 2));
     expect(today, findsOneWidget, reason: 'the list stays whole');
     final renewal = tester.widget<NoteRow>(row('Renewal notes'));
     expect(renewal.selected, isTrue);

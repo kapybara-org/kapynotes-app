@@ -4217,6 +4217,70 @@ void main() {
       expect(chip, findsOneWidget);
     });
 
+    testWidgets("an Upcoming note names its own day, not its last edit, with "
+        'its task ring only when it has boxes', (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      prefs.noteCards = true;
+      notes.updateBody(
+        'Pricing ideas',
+        'Pricing ideas\n☐ Send the deck\n☑ Draft the deck',
+      );
+      days
+        ..setDay('Pricing ideas', DateTime(2026, 11, 21))
+        ..setDay('October plan', DateTime(2026, 12, 7));
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(const ValueKey('sidebar-group-Upcoming')));
+
+      Finder card(String title) => find.byWidgetPredicate(
+        (widget) => widget is NoteCardFace && widget.note.title == title,
+      );
+      Finder ring(String title) =>
+          find.descendant(of: card(title), matching: find.byType(ChecklistPie));
+      final edited = notes.allNotes
+          .firstWhere((n) => n.id == 'Pricing ideas')
+          .updatedAt;
+      expect((edited.month, edited.day), (11, 19));
+      expect(tester.widget<NoteCardFace>(card('Pricing ideas')).date, 'Sat 21');
+      expect(tester.widget<NoteCardFace>(card('Pricing ideas')).day, isNull);
+      final pie = tester.widget<ChecklistPie>(ring('Pricing ideas'));
+      expect((pie.done, pie.total), (1, 2));
+      expect(
+        find.descendant(
+          of: card('Pricing ideas'),
+          matching: find.text('Sat 21'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<NoteCardFace>(card('October plan')).date,
+        'Mon 7 Dec',
+      );
+      expect(ring('October plan'), findsNothing);
+      expect(
+        tester.widget<NoteCardFace>(card('Call with Arjun')).date,
+        'Today, 11:00',
+      );
+
+      prefs.noteCards = false;
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<NoteListRowFace>(
+              find.byWidgetPredicate(
+                (widget) =>
+                    widget is NoteListRowFace &&
+                    widget.note.title == 'October plan',
+              ),
+            )
+            .date,
+        'Mon 7 Dec',
+      );
+    });
+
     testWidgets("When's spans count a note by its own day, and one with none "
         'by the day it was last edited', (tester) async {
       final days = NoteDayStore(store);
@@ -6554,7 +6618,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Archive note'), findsOneWidget);
-      expect(find.text('Cmd + Delete'), findsOneWidget);
+      expect(find.text('⌘⌫'), findsOneWidget);
     });
 
     // The card view's menu used to cut "Archive note" to "Archive…" beside
@@ -6576,7 +6640,7 @@ void main() {
         final lines = find.byType(KapyMenuActionRow);
         final shortcut = shortcuts
             .bindingFor(ShortcutAction.deleteNote)!
-            .displayLabel;
+            .keycapLabel;
         expect(
           find.descendant(of: lines, matching: find.text('Archive note')),
           findsOneWidget,

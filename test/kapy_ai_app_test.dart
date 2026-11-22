@@ -181,7 +181,7 @@ void main() {
 
       expect(_ask, findsOneWidget);
       final newNote = find.byKey(const ValueKey('sidebar-new-note'));
-      expect(tester.getRect(_ask).right + 8, tester.getRect(newNote).left);
+      expect(tester.getRect(_ask).right, tester.getRect(newNote).left);
       expect(
         tester.getCenter(_ask).dy,
         closeTo(tester.getCenter(newNote).dy, 0.5),
