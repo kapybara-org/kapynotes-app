@@ -712,6 +712,56 @@ void main() {
       await tester.pump(const Duration(seconds: 8));
     });
 
+    testWidgets('a removal the server refuses once the toast’s time is up '
+        'puts them back, saying why', (tester) async {
+      await sharedWithBobAndCarol(tester);
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await removeBob(tester);
+      server.onRemoval = () async {
+        server.onRemoval = null;
+        throw const SyncRefusedException(403, 'view-only', {});
+      };
+
+      await tester.pump(const Duration(seconds: 5));
+      final row = find.byKey(ValueKey('member-row-${bob.userId}'));
+      await until(tester, () => row.evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+      expect(row, findsOneWidget);
+      expect(
+        find.text('You have View only access to this space.'),
+        findsOneWidget,
+      );
+      expect(bobOnServer(), isTrue);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets('a removal put off by a lost connection shows them being '
+        'removed until it goes', (tester) async {
+      await sharedWithBobAndCarol(tester);
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      await removeBob(tester);
+      server.onRemoval = () async {
+        server.onRemoval = null;
+        throw const SyncTransientException('offline');
+      };
+
+      await tester.pump(const Duration(seconds: 5));
+      final row = find.byKey(ValueKey('member-row-${bob.userId}'));
+      await until(tester, () => row.evaluate().isNotEmpty);
+      expect(
+        find.descendant(of: row, matching: find.text('Removing…')),
+        findsOneWidget,
+      );
+      expect(find.byKey(ValueKey('member-menu-${bob.userId}')), findsNothing);
+      expect(bobOnServer(), isTrue);
+
+      await tester.runAsync(alice.sync.syncNow);
+      await until(tester, () => row.evaluate().isEmpty);
+      expect(bobOnServer(), isFalse);
+      expect(row, findsNothing);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
     testWidgets('Undo after the sheet has closed invites them again, and '
         'says so', (tester) async {
       await sharedWithBob(tester);

@@ -98,6 +98,66 @@ void main() {
     });
   }
 
+  testWidgets('with the bar in a navigator of its own, as on Home, a sheet '
+      'from the one around it takes a toast back to the bottom edge', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.resetPadding);
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: ToastClearanceScope(
+          child: Navigator(
+            pages: [
+              MaterialPage<void>(
+                child: PhoneSpaces(
+                  space: LibrarySpace.notes,
+                  onSelected: (_) {},
+                  onSettingsPressed: () {},
+                  createLabel: 'New note',
+                  onCreate: () {},
+                  createActions: const [],
+                  onCreateAction: (_) {},
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ],
+            onDidRemovePage: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final outer = tester.element(find.byType(ToastClearanceScope));
+    final toast = find.byKey(const ValueKey('toast-surface'));
+
+    Toast.show(outer, 'Removed Carol from this note');
+    await tester.pumpAndSettle();
+    expect(
+      tester.getBottomLeft(toast).dy,
+      lessThanOrEqualTo(
+        tester.getTopLeft(find.byKey(const ValueKey('phone-bar'))).dy - 16,
+      ),
+    );
+
+    unawaited(
+      showModalBottomSheet<void>(
+        context: outer,
+        builder: (_) => const SizedBox(height: 200),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Toast.show(outer, 'Removed Carol from this note');
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(toast).dy, 852 - 34 - 16);
+  });
+
   testWidgets("iOS's bar is a quiet opaque pill with an 8% edge, and the open "
       'tab is the 7% fill', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;

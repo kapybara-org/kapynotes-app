@@ -433,8 +433,9 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
 }
 
 /// Keeps toasts above [child], such as a phone's bar and its +, while its
-/// route is the one on top. A sheet over it takes the toast back down to the
-/// bottom edge, over the sheet's footer.
+/// route is the one on top, and the page around its navigator too when a
+/// [ToastClearanceScope] marks one. A sheet over it takes the toast back down
+/// to the bottom edge, over the sheet's footer.
 class ToastClearance extends StatefulWidget {
   const ToastClearance({super.key, required this.child});
 
@@ -448,7 +449,7 @@ class _ToastClearanceState extends State<ToastClearance> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (ModalRoute.of(context)?.isCurrent ?? true) {
+    if (_OnTop.of(context) && (ModalRoute.of(context)?.isCurrent ?? true)) {
       Toast._clearance = this;
     } else if (identical(Toast._clearance, this)) {
       Toast._clearance = null;
@@ -463,4 +464,30 @@ class _ToastClearanceState extends State<ToastClearance> {
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// Wraps a navigator nested in a page, so a [ToastClearance] inside it also
+/// steps aside while a sheet from an outer navigator covers that page.
+class ToastClearanceScope extends StatelessWidget {
+  const ToastClearanceScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => _OnTop(
+    onTop: _OnTop.of(context) && (ModalRoute.of(context)?.isCurrent ?? true),
+    child: child,
+  );
+}
+
+class _OnTop extends InheritedWidget {
+  const _OnTop({required this.onTop, required super.child});
+
+  final bool onTop;
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_OnTop>()?.onTop ?? true;
+
+  @override
+  bool updateShouldNotify(_OnTop old) => onTop != old.onTop;
 }

@@ -4712,22 +4712,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _phoneListBack();
             }
           },
-          child: Navigator(
-            key: _phoneNavigator,
-            pages: [
-              MaterialPage(key: _phoneListPage, child: _phoneList()),
-              if (pageOpen)
-                MaterialPage(
-                  // One page whichever note is on it: a note opened over
-                  // another replaces it in place rather than pushing a second
-                  // editor beside the first.
-                  key: const ValueKey('phone-page'),
-                  child: _phonePage(selected),
-                ),
-            ],
-            onDidRemovePage: (page) {
-              if (page.key != _phoneListPage) _closePhonePage();
-            },
+          child: ToastClearanceScope(
+            child: Navigator(
+              key: _phoneNavigator,
+              pages: [
+                MaterialPage(key: _phoneListPage, child: _phoneList()),
+                if (pageOpen)
+                  MaterialPage(
+                    // One page whichever note is on it: a note opened over
+                    // another replaces it in place rather than pushing a second
+                    // editor beside the first.
+                    key: const ValueKey('phone-page'),
+                    child: _phonePage(selected),
+                  ),
+              ],
+              onDidRemovePage: (page) {
+                if (page.key != _phoneListPage) _closePhonePage();
+              },
+            ),
           ),
         ),
       ),

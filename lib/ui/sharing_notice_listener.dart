@@ -6,6 +6,7 @@ import '../core/toast.dart';
 import '../sync/account.dart';
 import '../sync/sharing.dart';
 import '../sync/sync_api.dart';
+import 'safety_dialogs.dart';
 
 /// Follows the account to whichever [Sharing] it has now, signed in or not,
 /// and says that one's notices.
@@ -70,10 +71,12 @@ class _SharingNoticesState extends State<SharingNotices> {
   void _show(SharingNotice notice) {
     final sharing = widget.sharing;
     final spaceId = notice.leaveSpaceId;
+    final refusal = notice.refusal;
     if (!mounted || sharing == null) return;
     Toast.show(
       context,
-      notice.message,
+      refusal == null ? notice.message : describeSharingError(refusal),
+      isError: refusal != null,
       action: spaceId == null ? null : 'Leave',
       onAction: spaceId == null
           ? null

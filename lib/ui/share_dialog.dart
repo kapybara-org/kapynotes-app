@@ -141,13 +141,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     // frame, since sending tells listeners at once and the tree is locked.
     final sharing = _sharing;
     final noteId = widget.note.id;
-    scheduleMicrotask(() async {
-      try {
-        await sharing.sendHeldRemovals(noteId);
-      } on Object catch (error) {
-        debugPrint('KapyNotes: a removal was not sent: $error');
-      }
-    });
+    scheduleMicrotask(() => sharing.sendHeldRemovalsQuietly(noteId));
     super.dispose();
   }
 
@@ -389,7 +383,16 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       if (!mounted) return;
       final sharing = _sharing;
       final noteId = _note.id;
-      sharing.holdRemoval(noteId, member.email, Toast.actionLifetime);
+      sharing.holdRemoval(
+        noteId,
+        member.email,
+        Toast.actionLifetime,
+        onRefused: (error) {
+          if (!mounted) return false;
+          setState(() => _error = describeSharingError(error));
+          return true;
+        },
+      );
       final overlay = Overlay.of(context, rootOverlay: true);
       Toast.show(
         context,
@@ -1677,7 +1680,8 @@ class _PeopleWithAccess extends StatelessWidget {
   final Sharing sharing;
   final Space space;
 
-  /// The note this list is for, whose removals held for Undo it leaves out.
+  /// The note this list is for, whose removals held for Undo it leaves out
+  /// until they miss the server and wait to go again.
   final String? noteId;
   final bool busy;
   final void Function(String email, SpaceRole role) onAccess;
@@ -1695,13 +1699,16 @@ class _PeopleWithAccess extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final me = sharing.userId;
+    final noteId = this.noteId;
     final present = {
       for (final person in sharing.presentIn(space.id)) person.userId: person,
     };
     final warnings = sharing.trust.warningsFor(space.id);
     final members = [
       for (final member in space.members)
-        if (noteId == null || !sharing.isRemovalHeld(noteId!, member.email))
+        if (noteId == null ||
+            !sharing.isRemovalHeld(noteId, member.email) ||
+            sharing.isRemovalWaiting(noteId, member.email))
           member,
     ];
     final here = [
@@ -1748,6 +1755,9 @@ class _PeopleWithAccess extends StatelessWidget {
                     ? _RoleText(member.isOwner ? 'Owner' : 'You')
                     : member.isOwner
                     ? const _RoleText('Owner')
+                    : noteId != null &&
+                          sharing.isRemovalWaiting(noteId, member.email)
+                    ? const _RoleText('Removing…')
                     : _MemberMenu(
                         key: ValueKey('member-menu-${member.userId}'),
                         role: member.role,

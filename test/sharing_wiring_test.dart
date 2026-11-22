@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -107,6 +109,10 @@ void main() {
     });
     return mine;
   }
+
+  /// Whether Priya is still in [space] on the server.
+  bool priyaIn(String space) =>
+      server.spaces[space]?.members.containsKey(priya.userId) ?? false;
 
   Future<void> pumpApp(WidgetTester tester, {required bool phone}) async {
     AppPlatform.debugTargetPlatformOverride = phone
@@ -327,6 +333,57 @@ void main() {
     expect(find.byType(Sidebar), findsNothing);
     return space;
   }
+
+  testWidgets('leaving the app sends a removal still held for Undo', (
+    tester,
+  ) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    await pumpApp(tester, phone: true);
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+
+    await tester.runAsync(() async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      for (var wait = 0; wait < 100 && priyaIn(space); wait++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(priyaIn(space), isFalse);
+    expect(account.sharing!.cancelRemoval(mine, priya.email), isFalse);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('signing out sends a removal still held for Undo first', (
+    tester,
+  ) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    // Someone else stays invited, so the note stays shared.
+    await tester.runAsync(
+      () => account.sharing!.addPerson(mine, 'ravi@kapy34.test'),
+    );
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+
+    await tester.runAsync(account.signOut);
+    expect(account.state, AccountState.signedOut);
+    expect(priyaIn(space), isFalse);
+  });
+
+  testWidgets('a removal the server never answers does not hold signing out '
+      'up', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+    server.onRemoval = () => Completer<void>().future;
+
+    final watch = Stopwatch()..start();
+    await tester.runAsync(account.signOut);
+    expect(account.state, AccountState.signedOut);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+  });
 
   testWidgets('on a phone, Leave without a copy from the open page goes back '
       'to Shared', (tester) async {
