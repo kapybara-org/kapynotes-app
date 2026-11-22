@@ -139,6 +139,21 @@ class SidebarTimestamp {
     };
   }
 
+  /// A day as briefly as a tile, or a row with no day heading over it, can
+  /// say it: "Today", "Yesterday" or "Tomorrow", the weekday and the day
+  /// within a week either way ("Tue 24"), then the date ("12 Nov"), with the
+  /// year only when it is not this one.
+  static String briefDay(DateTime day, {required DateTime today}) {
+    final date = '${day.day} ${_months[day.month - 1]}';
+    return switch (_daysBetween(day, today)) {
+      0 => 'Today',
+      1 => 'Yesterday',
+      -1 => 'Tomorrow',
+      > -7 && < 7 => weekdayAndDay(day),
+      _ => day.year == today.year ? date : '$date ${day.year}',
+    };
+  }
+
   /// A weekday in three letters: "Wed".
   static String shortWeekday(DateTime day) => _weekdays[day.weekday - 1];
 
@@ -171,16 +186,17 @@ class SidebarTimestamp {
 
   /// A day's heading on a phone's list: "Today" or "Yesterday" leading
   /// "Wed 19", then "Mon 17 Nov" alone, where the day alone could be any
-  /// month's. A day still to come is Today: a note edited on another device
-  /// with its clock ahead files under today rather than above it.
+  /// month's. Ahead, as Upcoming lists its notes, "Tomorrow" leads "Thu 20",
+  /// and later days have their date alone.
   static ({String? lead, String date}) phoneDay(
     DateTime shown, {
     required DateTime now,
   }) {
     final date = weekdayAndDay(shown);
     return switch (_daysBetween(shown, now)) {
-      <= 0 => (lead: 'Today', date: date),
+      0 => (lead: 'Today', date: date),
       1 => (lead: 'Yesterday', date: date),
+      -1 => (lead: 'Tomorrow', date: date),
       _ => (lead: null, date: '$date ${_months[shown.month - 1]}'),
     };
   }

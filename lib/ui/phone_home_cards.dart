@@ -75,6 +75,9 @@ class PhoneFolderTiles extends StatelessWidget {
     required this.drawings,
     required this.newest,
     required this.onOpenDrawings,
+    this.upcoming,
+    this.soonest,
+    this.onOpenUpcoming,
   });
 
   final List<Note> drawings;
@@ -82,6 +85,15 @@ class PhoneFolderTiles extends StatelessWidget {
   /// The newest drawing's title and day, such as "Deck flow · Today".
   final String? newest;
   final VoidCallback onOpenDrawings;
+
+  /// The notes given a later day, where the build keeps days; null leaves
+  /// Upcoming's place empty.
+  final List<Note>? upcoming;
+
+  /// The soonest of them, by title and day, such as "Renewal notes · Fri 21
+  /// Nov".
+  final String? soonest;
+  final VoidCallback? onOpenUpcoming;
 
   @override
   Widget build(BuildContext context) => IntrinsicHeight(
@@ -101,7 +113,21 @@ class PhoneFolderTiles extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        const Expanded(child: SizedBox()),
+        Expanded(
+          child: switch (upcoming) {
+            final upcoming? => _HomeCard(
+              key: const ValueKey('folders-upcoming-tile'),
+              icon: KapyIcons.calendarOutlined,
+              name: 'Upcoming',
+              notes: upcoming,
+              empty: 'Nothing for a later day',
+              detail: soonest,
+              oneLine: true,
+              onPressed: onOpenUpcoming,
+            ),
+            null => const SizedBox(),
+          },
+        ),
       ],
     ),
   );
