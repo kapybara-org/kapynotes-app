@@ -598,6 +598,22 @@ void main() {
       expect(edited(), '8:55');
     });
 
+    testWidgets("a Mac's line keeps the note's last edit, where a phone's "
+        'keeps the time it was written (D01)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      final arjun = (store.data['notes.v1']! as List).last as Map;
+      arjun['updatedAt'] = DateTime(2025, 11, 19, 9, 30).millisecondsSinceEpoch;
+      seed();
+      await pump(tester, width: 1400);
+      await tester.tap(find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tester.pumpAndSettle();
+      final line = tester
+          .widget<Text>(find.byKey(const ValueKey('note-edited')))
+          .data!;
+      expect(line, contains('9:30'));
+      expect(line, isNot(contains('8:55')));
+    });
+
     for (final (width, count) in [(360.0, 4), (390.0, 6)]) {
       testWidgets('$count tags at $width wrap onto a line of their own, and '
           'the writing starts under them', (tester) async {
@@ -777,6 +793,15 @@ void main() {
         isSemantics(isSelected: true),
       );
 
+      for (var date = 16; date <= 22; date++) {
+        expect(
+          tester
+              .getSize(find.byKey(ValueKey('day-month-2025-11-$date')))
+              .height,
+          greaterThanOrEqualTo(44),
+        );
+      }
+
       await tester.fling(
         find.byKey(const ValueKey('day-month-2025-11-12')),
         const Offset(-300, 0),
@@ -789,6 +814,19 @@ void main() {
       await tester.pumpAndSettle();
       expect(sheet, findsNothing);
       expect(days.dayOf('renewal'), DateTime(2025, 11, 19));
+    });
+
+    testWidgets('a narrow Mac window gives Move to another day the popover, '
+        'not the sheet', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      seed();
+      await pump(tester, width: 600);
+      await tester.tap(find.byKey(const ValueKey('page-more')).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('page-more-day')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DayPicker), findsOneWidget);
+      expect(find.byKey(const ValueKey('day-sheet')), findsNothing);
     });
 
     testWidgets('Archive and Delete note… take the note away', (tester) async {
