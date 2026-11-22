@@ -10,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/note_drawing.dart';
 import '../../data/notes_store.dart';
 import '../compact_icon_button.dart';
+import '../editor/editor_formatting.dart';
 import '../sidebar_swipe.dart';
 import 'drawing_geometry.dart';
 import 'drawing_painter.dart';
@@ -78,6 +79,7 @@ class DrawingCanvas extends StatefulWidget {
     this.edited,
     this.readOnly = false,
     this.onFocus,
+    this.writingFont = WritingFont.clean,
   });
 
   final NoteDrawing drawing;
@@ -91,6 +93,9 @@ class DrawingCanvas extends StatefulWidget {
   final bool readOnly;
 
   final VoidCallback? onFocus;
+
+  /// The person's writing font, which sets the title as it sets a note's.
+  final WritingFont writingFont;
 
   @override
   State<DrawingCanvas> createState() => DrawingCanvasState();
@@ -858,7 +863,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
                   pan: _pan,
                   zoom: _zoom,
                   ink: ink,
-                  grid: palette.controlBorder,
+                  grid: palette.textPrimary.withValues(alpha: 0.08),
                   accent: Theme.of(context).colorScheme.primary,
                   textStyle: _textStyle(context),
                 ),
@@ -910,7 +915,6 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   Widget _buildHeader(BuildContext context) {
     final palette = context.palette;
     final touch = !AppPlatform.hasPointer;
-    const handwritten = WritingFont.handwritten;
     final edited = widget.edited;
     final shapes = _drawing.elements.length;
     final title = TextField(
@@ -923,16 +927,12 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       style: touch
           ? Theme.of(context).textTheme.titleMedium?.copyWith(
               color: palette.textPrimary,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppWeight.font(AppWeight.section),
+              fontVariations: AppWeight.wght(AppWeight.section),
             )
-          : TextStyle(
-              fontFamily: handwritten.fontFamily,
-              fontFamilyFallback: handwritten.fontFamilyFallback,
-              fontVariations: handwritten.fontVariations,
-              fontSize: 28,
-              height: 36 / 28,
-              fontWeight: FontWeight.w600,
-              color: palette.textPrimary,
+          : noteTitleStyle(
+              EditorMetrics.textStyle(palette.textPrimary, widget.writingFont),
+              writingFont: widget.writingFont,
             ),
       decoration: InputDecoration(
         hintText: 'Untitled drawing',
@@ -965,7 +965,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 16 / 13,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
                 color: palette.textTertiary,
               ),
             ),
@@ -1145,8 +1146,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               fontFamily: AppFonts.mono,
               fontFamilyFallback: AppFonts.monoFallback,
               fontSize: 13,
-              fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+              fontWeight: AppWeight.font(AppWeight.rowTitle),
+              fontVariations: AppWeight.wght(AppWeight.rowTitle),
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -1254,8 +1255,8 @@ class _StylePanel extends StatelessWidget {
     final label = TextStyle(
       fontSize: 12,
       height: 16 / 12,
-      fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      fontWeight: AppWeight.font(AppWeight.rowTitle),
+      fontVariations: AppWeight.wght(AppWeight.rowTitle),
       color: palette.textTertiary,
     );
     return _DockSurface(
@@ -1367,8 +1368,12 @@ class _StylePanel extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                                    fontWeight: AppWeight.font(
+                                      AppWeight.rowTitle,
+                                    ),
+                                    fontVariations: AppWeight.wght(
+                                      AppWeight.rowTitle,
+                                    ),
                                     color: option == width
                                         ? palette.tonalForeground
                                         : palette.textPrimary,

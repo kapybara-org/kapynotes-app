@@ -149,12 +149,13 @@ class NoteMetaRow extends StatelessWidget {
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: 13,
       height: 16 / 13,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
       color: palette.textTertiary,
     );
     final strong = quiet.copyWith(
-      fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      fontWeight: AppWeight.font(AppWeight.rowTitle),
+      fontVariations: AppWeight.wght(AppWeight.rowTitle),
       color: palette.textSecondary,
     );
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));

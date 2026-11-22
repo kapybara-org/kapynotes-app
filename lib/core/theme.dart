@@ -1245,6 +1245,17 @@ class AppWeight {
     return math.min(axis + 200, 700);
   }
 
+  /// A style's `fontWeight` for [step], Bold Text included: the named weight
+  /// a fallback face with no `wght` axis draws.
+  static FontWeight font(double step) => named(bold(step));
+
+  /// A style's `fontVariations` for [step], Bold Text included, keeping any
+  /// [extra] axes. Pair it with [font], so the same step reaches every face.
+  static List<FontVariation> wght(
+    double step, {
+    List<FontVariation> extra = const [],
+  }) => variations(bold(step), extra: extra);
+
   /// `wght` at [axis], keeping any other axes already set (the handwriting
   /// face's informality pins, for instance).
   static List<FontVariation> variations(
@@ -1551,7 +1562,7 @@ class KapyTheme {
     tonalBackground: Color(0xFFE6ECDB),
     tonalForeground: Color(0xFF445A2F),
     tonalKeyBackground: Color(0xFFD3DEC2),
-    tonalKeyText: Color(0xFF56703C),
+    tonalKeyText: Color(0xFF4E6536),
     keycapBackground: Color(0xFFEFEADD),
     keycapBorder: Color(0xFFD9D2C1),
     keycapText: Color(0xFF666054),
@@ -1974,7 +1985,7 @@ class KapyTheme {
     tb: Color(0xFFEBD9B6),
     tf: Color(0xFF5E3C12),
     tkBg: Color(0xFFD8C098),
-    tkText: Color(0xFF764D19),
+    tkText: Color(0xFF6D4717),
     onAccent: Color(0xFFF7EEDC),
     clay: Color(0xFFA84A22),
     codeBg: Color(0xFFEAE0CE),
@@ -2068,7 +2079,7 @@ class KapyTheme {
     tb: Color(0xFFD7EDE9),
     tf: Color(0xFF145049),
     tkBg: Color(0xFFB2D6D1),
-    tkText: Color(0xFF1A675E),
+    tkText: Color(0xFF196159),
     onAccent: Color(0xFFFFFFFF),
     clay: Color(0xFFB5552E),
     codeBg: Color(0xFFEAEFEE),
@@ -2138,45 +2149,57 @@ class KapyTheme {
             letterSpacing: -0.3,
           ),
           headlineLarge: base.textTheme.headlineLarge?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             letterSpacing: -0.3,
           ),
           headlineMedium: base.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             letterSpacing: -0.2,
           ),
           headlineSmall: base.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
           ),
           titleLarge: base.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
           ),
           titleMedium: base.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
           ),
           titleSmall: base.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
           ),
           bodyLarge: base.textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
           ),
           bodyMedium: base.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
           ),
           bodySmall: base.textTheme.bodySmall?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             fontSize: AppPlatform.isWindows ? AppTypeScale.caption : null,
             height: AppPlatform.isWindows ? 1.3 : null,
           ),
           labelLarge: base.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
           ),
           labelMedium: base.textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             fontSize: AppPlatform.isWindows ? AppTypeScale.caption : null,
           ),
           labelSmall: base.textTheme.labelSmall?.copyWith(
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             fontSize: AppPlatform.isWindows ? AppTypeScale.micro : null,
             height: AppPlatform.isWindows ? 1.2 : null,
           ),

@@ -177,7 +177,8 @@ class _KapyAiPageState extends State<KapyAiPage> {
         fontFamily: 'Shantell Sans',
         fontSize: 26,
         height: 32 / 26,
-        fontWeight: FontWeight.w600,
+        fontWeight: AppWeight.font(AppWeight.section),
+        fontVariations: AppWeight.wght(AppWeight.section),
         color: palette.textPrimary,
       ),
     );
@@ -322,12 +323,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
             padding: EdgeInsets.fromLTRB(20, i == 0 ? 18 : 14, 20, 6),
             child: Text(
               label,
-              style: kapyText(
-                13,
-                18,
-                _quiet,
-                weight: FontWeight.w500,
-              ).copyWith(fontVariations: const [FontVariation('wght', 520)]),
+              style: kapyText(13, 18, _quiet, weight: FontWeight.w600),
             ),
           ),
           for (final chat in rows)
@@ -444,7 +440,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                           kapyAi: _ai,
                           open: _picking,
                           fontSize: 13,
-                          fontWeight: FontWeight.w400,
+                          weight: FontWeight.w400,
                           onPressed: _togglePicker,
                         ),
                       ),

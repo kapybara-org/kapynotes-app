@@ -367,7 +367,8 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             style: TextStyle(
               fontSize: AppTypeScale.micro,
               letterSpacing: 0.8,
-              fontWeight: FontWeight.w400,
+              fontWeight: AppWeight.font(AppWeight.body),
+              fontVariations: AppWeight.wght(AppWeight.body),
               color: palette.textTertiary,
             ),
           ),
@@ -805,7 +806,8 @@ class _Header extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -1163,7 +1165,8 @@ class _SpeakerBar extends StatelessWidget {
             '${speakers.length} speakers',
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: FontWeight.w400,
+              fontWeight: AppWeight.font(AppWeight.body),
+              fontVariations: AppWeight.wght(AppWeight.body),
               color: palette.textSecondary,
             ),
           ),
@@ -1224,7 +1227,8 @@ class _SpeakerLabel extends StatelessWidget {
           name,
           style: TextStyle(
             fontSize: AppTypeScale.caption,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             color: palette.textSecondary,
           ),
         ),
@@ -1265,7 +1269,8 @@ class _QuietButton extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: AppTypeScale.caption,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             color: palette.textSecondary,
           ),
         ),
@@ -1317,7 +1322,8 @@ class _RewriteChip extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontSize: AppTypeScale.small,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: AppWeight.font(AppWeight.body),
+                  fontVariations: AppWeight.wght(AppWeight.body),
                   color: enabled ? palette.textPrimary : palette.textTertiary,
                 ),
               ),
@@ -1363,7 +1369,8 @@ class _TakeCard extends StatelessWidget {
                   take.kind.label,
                   style: TextStyle(
                     fontSize: AppTypeScale.caption,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textSecondary,
                   ),
                 ),

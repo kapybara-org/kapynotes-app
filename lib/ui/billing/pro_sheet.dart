@@ -316,7 +316,8 @@ class _ProSheetState extends State<ProSheet> {
                       'Pro Lifetime',
                       style: TextStyle(
                         fontSize: AppTypeScale.title,
-                        fontWeight: FontWeight.w400,
+                        fontWeight: AppWeight.font(AppWeight.body),
+                        fontVariations: AppWeight.wght(AppWeight.body),
                         letterSpacing: -0.15,
                         color: palette.textPrimary,
                       ),
@@ -351,7 +352,8 @@ class _ProSheetState extends State<ProSheet> {
                   textAlign: TextAlign.end,
                   style: TextStyle(
                     fontSize: AppPlatform.hasPointer ? 25 : 28,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     letterSpacing: -0.6,
                     color: palette.textPrimary,
                   ),
@@ -478,7 +480,8 @@ class _ProSheetState extends State<ProSheet> {
     final billing = _billing;
     final style = TextStyle(
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
       color: palette.textTertiary,
     );
     return Column(
@@ -548,7 +551,8 @@ ButtonStyle _primaryActionStyle(BuildContext context) => FilledButton.styleFrom(
   ),
   textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
     fontSize: AppTypeScale.control,
-    fontWeight: FontWeight.w400,
+    fontWeight: AppWeight.font(AppWeight.body),
+    fontVariations: AppWeight.wght(AppWeight.body),
     letterSpacing: -0.1,
   ),
 );
@@ -559,7 +563,8 @@ ButtonStyle _quietButtonStyle(BuildContext context) => TextButton.styleFrom(
   tapTargetSize: AppControlMetrics.iconButtonTapTargetSize,
   textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
     fontSize: AppTypeScale.caption,
-    fontWeight: FontWeight.w400,
+    fontWeight: AppWeight.font(AppWeight.body),
+    fontVariations: AppWeight.wght(AppWeight.body),
   ),
 );
 
@@ -651,7 +656,8 @@ class _Hero extends StatelessWidget {
           'Kapy Notes Pro',
           style: TextStyle(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             letterSpacing: 0.1,
             color: accent,
           ),
@@ -662,7 +668,8 @@ class _Hero extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: AppPlatform.hasPointer ? 28 : 32,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             letterSpacing: -0.8,
             height: 1.1,
             color: palette.textPrimary,
@@ -718,7 +725,8 @@ class _Owned extends StatelessWidget {
                   'Pro Lifetime is on this account',
                   style: TextStyle(
                     fontSize: AppTypeScale.title,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -793,7 +801,8 @@ class _Trying extends StatelessWidget {
                   left,
                   style: TextStyle(
                     fontSize: AppTypeScale.title,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -848,7 +857,8 @@ class _OwnedHere extends StatelessWidget {
                   'Pro Lifetime is on this device',
                   style: TextStyle(
                     fontSize: AppTypeScale.title,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -879,7 +889,8 @@ class _SectionLabel extends StatelessWidget {
     text,
     style: TextStyle(
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
       letterSpacing: 0.15,
       color: context.palette.textTertiary,
     ),
@@ -979,7 +990,8 @@ class _BenefitRow extends StatelessWidget {
                   title,
                   style: TextStyle(
                     fontSize: AppTypeScale.body,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     letterSpacing: -0.1,
                     color: palette.textPrimary,
                   ),
@@ -1023,7 +1035,8 @@ class _Allowance extends StatelessWidget {
           value,
           style: TextStyle(
             fontSize: AppPlatform.hasPointer ? 22 : 24,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             letterSpacing: -0.5,
             color: palette.textPrimary,
           ),
@@ -1123,7 +1136,8 @@ class _Pack extends StatelessWidget {
                   title,
                   style: TextStyle(
                     fontSize: AppTypeScale.body,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -1147,7 +1161,8 @@ class _Pack extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
               ),
             ),
             onPressed: enabled && price != null ? onBuy : null,

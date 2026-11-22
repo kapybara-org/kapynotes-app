@@ -695,6 +695,33 @@ void main() {
       );
     });
 
+    test('the chord saved for Open Kapy Notes is the one registered, which '
+        "the panel's footer names", () async {
+      final shortcuts = ShortcutPrefs(_MemoryStore())..load();
+      shortcuts.update(
+        ShortcutAction.openApp,
+        const ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyJ,
+          physicalKey: PhysicalKeyboardKey.keyJ,
+          meta: true,
+          control: true,
+        ),
+      );
+      await subject.initialize(shortcuts);
+
+      final registered = [
+        for (final call in hotKeys.log)
+          if (call.method == 'register' &&
+              (call.arguments as Map)['identifier'] == 'kapynotes.openApp')
+            call.arguments as Map,
+      ];
+      expect(registered, hasLength(1));
+      expect(registered.single['key'], {
+        'usageCode': PhysicalKeyboardKey.keyJ.usbHidUsage,
+      });
+      expect(registered.single['modifiers'], ['control', 'meta']);
+    });
+
     test('a chord another app holds is reported, and the icon still opens '
         'the panel', () async {
       hotKeys.refuses.add('register');

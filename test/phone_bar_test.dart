@@ -92,6 +92,35 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
+  testWidgets("iOS's bar is 56 high, its tabs 46 high with radius 23", (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpBar(tester, scale: 1, size: const Size(393, 852));
+    final bar = find.byKey(const ValueKey('phone-bar'));
+    expect(tester.getSize(bar).height, 56);
+    expect(
+      (tester.widget<Container>(bar).decoration! as BoxDecoration).borderRadius,
+      BorderRadius.circular(28),
+    );
+    for (final name in ['notes', 'tasks', 'drawings', 'settings']) {
+      final tab = find
+          .descendant(
+            of: find.byKey(ValueKey('bar-$name')),
+            matching: find.byType(Container),
+          )
+          .first;
+      expect(tester.getSize(tab).height, 46, reason: name);
+      expect(
+        (tester.widget<Container>(tab).decoration! as BoxDecoration)
+            .borderRadius,
+        BorderRadius.circular(23),
+        reason: name,
+      );
+    }
+  });
+
   testWidgets("Android's bar keeps Material's shape on the crisp surface, and "
       'the open tab is the 7% fill', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;

@@ -363,7 +363,12 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                                     ?.copyWith(
                                       fontSize: AppTypeScale.body,
                                       color: palette.textPrimary,
-                                      fontWeight: FontWeight.w400,
+                                      fontWeight: AppWeight.font(
+                                        AppWeight.body,
+                                      ),
+                                      fontVariations: AppWeight.wght(
+                                        AppWeight.body,
+                                      ),
                                       height: 1.2,
                                     ),
                               ),
@@ -386,7 +391,12 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                                       MaterialTapTargetSize.shrinkWrap,
                                   textStyle: TextStyle(
                                     fontSize: AppTypeScale.body,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: AppWeight.font(
+                                      AppWeight.button,
+                                    ),
+                                    fontVariations: AppWeight.wght(
+                                      AppWeight.button,
+                                    ),
                                   ),
                                 ),
                                 child: Text(label),

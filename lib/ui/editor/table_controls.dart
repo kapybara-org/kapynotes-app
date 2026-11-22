@@ -338,7 +338,8 @@ class _MenuHeadingState extends State<_MenuHeading> {
       widget.label,
       style: TextStyle(
         fontSize: AppTypeScale.caption,
-        fontWeight: FontWeight.w400,
+        fontWeight: AppWeight.font(AppWeight.body),
+        fontVariations: AppWeight.wght(AppWeight.body),
         color: context.palette.textTertiary,
       ),
     ),
@@ -398,7 +399,8 @@ class _AlignRow extends StatelessWidget {
               'Align',
               style: TextStyle(
                 fontSize: touch ? AppTypeScale.body : AppTypeScale.control,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
                 color: palette.textPrimary,
               ),
             ),

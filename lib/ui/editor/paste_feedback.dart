@@ -238,7 +238,8 @@ TextStyle _type(double size, FontWeight weight, Color color) => TextStyle(
   fontSize: size,
   height: 16 / size,
   leadingDistribution: TextLeadingDistribution.even,
-  fontWeight: weight,
+  fontWeight: AppWeight.font(AppWeight.axisOf(weight)),
+  fontVariations: AppWeight.wght(AppWeight.axisOf(weight)),
   color: color,
 );
 

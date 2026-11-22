@@ -45,8 +45,8 @@ class UnloadedPicturesStatus extends StatelessWidget {
         textStyle: WidgetStatePropertyAll(
           Theme.of(context).textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.body,
-            fontWeight: FontWeight.w500,
-            fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+            fontWeight: AppWeight.font(AppWeight.rowTitle),
+            fontVariations: AppWeight.wght(AppWeight.rowTitle),
           ),
         ),
       ),

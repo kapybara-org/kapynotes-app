@@ -2,17 +2,22 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
+import 'package:kapy_notes/ui/draw/drawing_painter.dart';
+import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../kapy_icon_finder.dart';
 
 class _Host extends StatefulWidget {
-  const _Host({required this.initial});
+  const _Host({required this.initial, this.writingFont});
 
   final NoteDrawing initial;
+  final WritingFont? writingFont;
 
   @override
   State<_Host> createState() => _HostState();
@@ -32,6 +37,7 @@ class _HostState extends State<_Host> {
       body: DrawingCanvas(
         drawing: drawing,
         title: title,
+        writingFont: widget.writingFont ?? WritingFont.clean,
         onChanged: (next) => setState(() {
           drawing = next;
           reports++;
@@ -42,11 +48,17 @@ class _HostState extends State<_Host> {
   );
 }
 
-Future<_HostState> _pump(WidgetTester tester, {NoteDrawing? initial}) async {
+Future<_HostState> _pump(
+  WidgetTester tester, {
+  NoteDrawing? initial,
+  WritingFont? writingFont,
+}) async {
   tester.view.physicalSize = const Size(1000, 700);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(_Host(initial: initial ?? NoteDrawing.empty));
+  await tester.pumpWidget(
+    _Host(initial: initial ?? NoteDrawing.empty, writingFont: writingFont),
+  );
   await tester.pumpAndSettle();
   return tester.state<_HostState>(find.byType(_Host));
 }
@@ -227,5 +239,118 @@ void main() {
     await tester.pump();
     expect(host.drawing.isEmpty, isTrue);
     expect(find.text('200%'), findsOneWidget);
+  });
+
+  group('on a desktop', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    TextStyle titleStyle(WidgetTester tester) => tester
+        .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
+        .style!;
+
+    testWidgets('the title is set in Newsreader, as a note\'s is, with the '
+        'default writing font', (tester) async {
+      await _pump(tester);
+      final style = titleStyle(tester);
+      expect(style.fontFamily, AppFonts.title);
+      expect(style.fontSize, EditorMetrics.titleFontSize);
+      expect(style.fontSize! * style.height!, EditorMetrics.titleRow);
+      expect(style.fontWeight, FontWeight.w400);
+      expect(style.color, KapyTheme.lightPalette.textPrimary);
+    });
+
+    testWidgets('a writing font picked in Settings titles the drawing too', (
+      tester,
+    ) async {
+      for (final (font, family) in [
+        (WritingFont.handwritten, WritingFont.handwritten.fontFamily),
+        (WritingFont.mixed, WritingFont.handwritten.fontFamily),
+        (WritingFont.monospace, WritingFont.monospace.fontFamily),
+      ]) {
+        await _pump(tester, writingFont: font);
+        final style = titleStyle(tester);
+        final note = noteTitleStyle(
+          EditorMetrics.textStyle(KapyTheme.lightPalette.textPrimary, font),
+          writingFont: font,
+        );
+        expect(style.fontFamily, family, reason: font.name);
+        expect(style.fontWeight, EditorMetrics.titleWeight, reason: font.name);
+        expect(style.fontSize, note.fontSize, reason: font.name);
+        expect(style.fontVariations, note.fontVariations, reason: font.name);
+      }
+    });
+  });
+
+  group('the dot grid', () {
+    final surface = find.byKey(const ValueKey('drawing-surface'));
+
+    /// The grid's points and paint, from the one drawPoints call.
+    PaintPattern grid(void Function(List<Offset> points, Paint paint) check) =>
+        paints..something((method, arguments) {
+          if (method != #drawPoints) return false;
+          check(arguments[1] as List<Offset>, arguments[2] as Paint);
+          return true;
+        });
+
+    testWidgets('is D08\'s: a 2 px dot every 22, in the ink at 8%', (
+      tester,
+    ) async {
+      await _pump(tester);
+      expect(
+        surface,
+        grid((points, paint) {
+          expect(points.first, Offset.zero);
+          expect(points[1], const Offset(0, 22));
+          expect(points.where((p) => p.dy == 0).elementAt(1).dx, 22);
+          expect(paint.strokeWidth, 2);
+          expect(paint.strokeCap, StrokeCap.round);
+          expect(
+            paint.color,
+            isSameColorAs(
+              KapyTheme.lightPalette.textPrimary.withValues(alpha: 0.08),
+            ),
+          );
+        }),
+      );
+    });
+
+    testWidgets('follows the pan, and thins out zoomed far out rather than '
+        'turning grey', (tester) async {
+      Widget painted({required Offset pan, required double zoom}) =>
+          CustomPaint(
+            key: const ValueKey('grid'),
+            size: const Size(200, 200),
+            painter: DrawingPainter(
+              elements: const [],
+              hidden: const {},
+              extra: const [],
+              selection: const [],
+              marquee: null,
+              pan: pan,
+              zoom: zoom,
+              ink: const Color(0xFF000000),
+              grid: const Color(0x14000000),
+              accent: const Color(0xFF000000),
+              textStyle: const TextStyle(),
+            ),
+          );
+      final painter = find.byKey(const ValueKey('grid'));
+
+      await tester.pumpWidget(painted(pan: const Offset(5, 30), zoom: 1));
+      expect(
+        painter,
+        grid((points, _) {
+          expect(points.first, const Offset(5, 8));
+          expect(points[1], const Offset(5, 30));
+        }),
+      );
+
+      await tester.pumpWidget(painted(pan: Offset.zero, zoom: 0.5));
+      expect(
+        painter,
+        grid((points, _) => expect(points[1], const Offset(0, 44))),
+      );
+    });
   });
 }

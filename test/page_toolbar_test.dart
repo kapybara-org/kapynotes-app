@@ -619,6 +619,51 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a drawing\'s path, with nothing to fold, keeps Drawings until '
+      'Saved leaves the bar', (tester) async {
+    const shelf = PagePath(
+      icon: KapyIcons.penRounded,
+      root: 'Drawings',
+      levels: [(name: 'Shelf plan', folderId: null)],
+    );
+    await tester.pumpWidget(
+      harness(
+        toolbar(path: shelf, listVisible: false),
+        width: 640 + 2 * border,
+      ),
+    );
+    expect(onPath('Drawings'), findsOneWidget);
+    expect(onPath('Shelf plan'), findsOneWidget);
+    expect(
+      tester.widget<Text>(onPath('Drawings')).style!.color,
+      KapyTheme.darkPalette.textTertiary,
+    );
+    expect(
+      tester.widget<Text>(onPath('Shelf plan')).style!.fontWeight,
+      FontWeight.w500,
+    );
+    expect(
+      find.descendant(
+        of: path,
+        matching: findKapyIcon(KapyIcons.chevronRightRounded),
+      ),
+      findsOneWidget,
+    );
+    expect(fold, findsNothing);
+    expect(find.byTooltip('Drawings › Shelf plan'), findsNothing);
+
+    await tester.pumpWidget(
+      harness(
+        toolbar(path: shelf, listVisible: false),
+        width: 520 + 2 * border,
+      ),
+    );
+    expect(onPath('Drawings'), findsNothing);
+    expect(onPath('Shelf plan'), findsOneWidget);
+    expect(find.byTooltip('Drawings › Shelf plan'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a long name stops at 200 and leaves the other names whole', (
     tester,
   ) async {
@@ -761,8 +806,8 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-    testWidgets('a ${platform.name} note header draws Back as an arrow and '
-        'More as ⋮, both at 20', (tester) async {
+    testWidgets('a ${platform.name} note header draws Back as an arrow at 18 '
+        'and More as ⋮ at 20', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
       await tester.pumpWidget(
         harness(
@@ -787,7 +832,7 @@ void main() {
         matching: findKapyIcon(KapyIcons.arrowBackRounded),
       );
       expect(arrow, findsOneWidget);
-      expect(tester.widget<KapyIcon>(arrow).size, 20);
+      expect(tester.widget<KapyIcon>(arrow).size, 18);
       expect(findKapyIcon(KapyIcons.chevronLeftRounded), findsNothing);
 
       final dots = find.descendant(
@@ -816,6 +861,8 @@ void main() {
       matching: findKapyIcon(KapyIcons.arrowBackRounded),
     );
     expect(tester.widget<KapyIcon>(arrow).color, palette.textPrimary);
+    expect(tester.widget<KapyIcon>(arrow).size, 18);
+    expect(tester.getSize(arrow).width, 18);
     expect(
       tester
           .widget<Text>(find.descendant(of: back, matching: find.text('Notes')))

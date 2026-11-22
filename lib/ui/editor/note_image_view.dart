@@ -516,8 +516,8 @@ class _ImageTransferCover extends StatelessWidget {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: AppTypeScale.caption,
-                    fontWeight: FontWeight.w500,
-                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                    fontWeight: AppWeight.font(AppWeight.rowTitle),
+                    fontVariations: AppWeight.wght(AppWeight.rowTitle),
                   ),
                 ),
               ],
@@ -655,8 +655,10 @@ class _RemoteImage extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: AppTypeScale.body,
-                                fontWeight: FontWeight.w500,
-                                fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                                fontWeight: AppWeight.font(AppWeight.rowTitle),
+                                fontVariations: AppWeight.wght(
+                                  AppWeight.rowTitle,
+                                ),
                                 color: palette.textSubheading,
                               ),
                             ),
@@ -685,8 +687,8 @@ class _RemoteImage extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: AppTypeScale.control,
-                            fontWeight: FontWeight.w500,
-                            fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                            fontWeight: AppWeight.font(AppWeight.rowTitle),
+                            fontVariations: AppWeight.wght(AppWeight.rowTitle),
                             color: palette.textSubheading,
                           ),
                         ),

@@ -121,6 +121,7 @@ class MenuBarPanel extends StatefulWidget {
     required this.shortcuts,
     required this.canEdit,
     required this.inWindow,
+    required this.isTaken,
     this.noteLimit,
     this.recording,
     this.now = DateTime.now,
@@ -139,6 +140,9 @@ class MenuBarPanel extends StatefulWidget {
   /// Closes the panel, brings the window forward and has it act.
   final Future<void> Function(void Function(MenuBarWindowActions window))
   inWindow;
+
+  /// Whether another app holds [action]'s chord, so this one never got it.
+  final bool Function(ShortcutAction action) isTaken;
 
   final NoteLimit? noteLimit;
   final VoiceRecordingController? recording;
@@ -754,8 +758,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final style = TextStyle(fontSize: 11.5, height: 14 / 11.5, color: palette.textTertiary);
     final link = style.copyWith(
       color: palette.textSecondary,
-      fontWeight: FontWeight.w500,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+      fontWeight: AppWeight.font(AppWeight.rowTitle),
+      fontVariations: AppWeight.wght(AppWeight.rowTitle),
     );
     final notes = _tab == _Tab.notes;
     final Widget? line = switch (_notice) {
@@ -822,8 +826,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                 style: TextStyle(
                   fontSize: 12,
                   height: 16 / 12,
-                  fontWeight: FontWeight.w600,
-                  fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+                  fontWeight: AppWeight.font(AppWeight.section),
+                  fontVariations: AppWeight.wght(AppWeight.section),
                   color: palette.textSecondary,
                 ),
               ),
@@ -878,8 +882,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final head = TextStyle(
       fontSize: 12,
       height: 16 / 12,
-      fontWeight: FontWeight.w600,
-      fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+      fontWeight: AppWeight.font(AppWeight.section),
+      fontVariations: AppWeight.wght(AppWeight.section),
       color: palette.textSecondary,
     );
     final children = <Widget>[];
@@ -912,7 +916,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     ? KapyIcons.penRounded
                     : KapyIcons.noteOutlined,
                 size: 15,
-                color: heading == 'Pinned' ? palette.clay : palette.textTertiary,
+                color: palette.textTertiary,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -936,7 +940,9 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final quiet = TextStyle(color: palette.textTertiary);
     final soft = TextStyle(color: palette.textSecondary);
     final meta = AppPlatform.isMacOS;
-    final summon = widget.shortcuts.bindingFor(ShortcutAction.openMenuBarPanel);
+    final summon = widget.isTaken(ShortcutAction.openMenuBarPanel)
+        ? null
+        : widget.shortcuts.bindingFor(ShortcutAction.openMenuBarPanel);
     Widget line(List<Widget> children) => Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(children: children),
@@ -951,8 +957,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             'No notes yet',
             style: TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w500,
-              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+              fontWeight: AppWeight.font(AppWeight.rowTitle),
+              fontVariations: AppWeight.wght(AppWeight.rowTitle),
               color: palette.textPrimary,
             ),
           ),
@@ -979,7 +985,9 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
 
   Widget _footer(BuildContext context) {
     final palette = context.palette;
-    final open = widget.shortcuts.bindingFor(ShortcutAction.openApp);
+    final open = widget.isTaken(ShortcutAction.openApp)
+        ? null
+        : widget.shortcuts.bindingFor(ShortcutAction.openApp);
     final find = widget.shortcuts.bindingFor(ShortcutAction.findNotes);
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
@@ -1004,7 +1012,16 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                   Text('Open Kapy Notes', style: TextStyle(color: palette.textSecondary)),
                   if (open != null) ...[
                     const SizedBox(width: 8),
-                    Keycap(open.keycapLabel),
+                    Text(
+                      open.keycapLabel,
+                      style: TextStyle(
+                        fontFamily: AppFonts.mono,
+                        fontFamilyFallback: AppFonts.monoFallback,
+                        fontSize: 11,
+                        height: 14 / 11,
+                        color: palette.textSecondary,
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -1064,8 +1081,15 @@ class _Tabs extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       height: 16 / 13,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected ? palette.textPrimary : palette.textSecondary,
+                      fontWeight: AppWeight.font(
+                        selected ? AppWeight.section : AppWeight.body,
+                      ),
+                      fontVariations: AppWeight.wght(
+                        selected ? AppWeight.section : AppWeight.body,
+                      ),
+                      color: selected
+                          ? palette.textPrimary
+                          : palette.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 7),
@@ -1255,8 +1279,8 @@ class _TaskRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10.5,
                     height: 13 / 10.5,
-                    fontWeight: FontWeight.w600,
-                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+                    fontWeight: AppWeight.font(AppWeight.section),
+                    fontVariations: AppWeight.wght(AppWeight.section),
                     letterSpacing: 0.63,
                     color: palette.accentText,
                   ),
@@ -1399,8 +1423,8 @@ class _TextButton extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          fontWeight: FontWeight.w500,
-          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+          fontWeight: AppWeight.font(AppWeight.rowTitle),
+          fontVariations: AppWeight.wght(AppWeight.rowTitle),
           color: context.palette.textPrimary,
         ),
       ),

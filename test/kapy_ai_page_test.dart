@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
 import 'package:material_ui/material_ui.dart';
@@ -133,6 +134,19 @@ void main() {
     );
     expect(find.text('Kapy AI Cloud'), findsOneWidget);
     expect(find.byKey(const ValueKey('account')), findsOneWidget);
+
+    List<FontVariation>? wghtOf(String label) =>
+        tester.widget<Text>(find.text(label)).style?.fontVariations;
+    for (final label in ['Yesterday', 'Previous 7 days', 'October']) {
+      expect(wghtOf(label), [const FontVariation('wght', 520)], reason: label);
+    }
+    final dispatcher = tester.binding.platformDispatcher;
+    dispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures.allOn;
+    addTearDown(dispatcher.clearAccessibilityFeaturesTestValue);
+    await _pump(tester, _ai());
+    for (final label in ['Yesterday', 'Previous 7 days', 'October']) {
+      expect(wghtOf(label), [const FontVariation('wght', 700)], reason: label);
+    }
   });
 
   testWidgets('says where chats are kept when they do not sync', (
@@ -284,6 +298,98 @@ void main() {
     );
     await tester.pump();
     expect(find.text('No chats match'), findsOneWidget);
+  });
+
+  group('the picker on a phone', () {
+    List<String> pickerText(WidgetTester tester) => [
+      for (final text in tester.widgetList<Text>(
+        find.descendant(
+          of: find.byKey(const ValueKey('kapy-ai-picker')),
+          matching: find.byType(Text),
+        ),
+      ))
+        text.data!,
+    ];
+
+    Future<void> openPicker(
+      WidgetTester tester,
+      TargetPlatform platform,
+      DeviceModelState device,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await _pump(
+        tester,
+        FakeKapyAi(
+          chatList: _chats,
+          deviceState: device,
+          accountList: const [
+            KapyAccountState(
+              kind: KapyAccountKind.openRouter,
+              status: KapyAccountStatus.connected,
+              models: [FakeKapyAi.gemini],
+              detail: '4f2a',
+            ),
+          ],
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('kapy-ai-model-button')),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Android: "On this device" is said once, by its row', (
+      tester,
+    ) async {
+      await openPicker(
+        tester,
+        TargetPlatform.android,
+        const DeviceModelState(
+          status: DeviceModelStatus.ready,
+          model: FakeKapyAi.gemma,
+          totalBytes: 2600000000,
+          receivedBytes: 2600000000,
+        ),
+      );
+
+      expect(pickerText(tester), [
+        'On this device',
+        'Answers stay on this phone',
+        'KAPY AI',
+        'Kapy AI Cloud',
+        'Part of Pro',
+        'YOUR ACCOUNTS',
+        'Fast',
+        'Quick answers and short notes',
+        'Manage accounts…',
+      ]);
+    });
+
+    testWidgets('iOS: Apple Intelligence keeps its heading', (tester) async {
+      await openPicker(
+        tester,
+        TargetPlatform.iOS,
+        const DeviceModelState(
+          status: DeviceModelStatus.builtIn,
+          model: FakeKapyAi.appleIntelligence,
+        ),
+      );
+
+      expect(pickerText(tester), [
+        'ON THIS DEVICE',
+        'Apple Intelligence',
+        'Answers stay on this iPhone',
+        'KAPY AI',
+        'Kapy AI Cloud',
+        'Part of Pro',
+        'YOUR ACCOUNTS',
+        'Fast',
+        'Quick answers and short notes',
+        'Manage accounts…',
+      ]);
+    });
   });
 
   testWidgets('every button is at least 44 × 44 to a finger', (tester) async {

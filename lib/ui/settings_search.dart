@@ -344,7 +344,8 @@ class SettingsSearchResults<S> extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: SettingsMetrics.titleSize,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
                 color: palette.textSecondary,
               ),
             ),

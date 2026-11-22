@@ -1289,7 +1289,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       available.map((note) => note.id),
       fallbackId: preferred ?? available.firstOrNull?.id,
     );
-    _adoptWorkspaceSelection(previous);
+    _adoptWorkspaceSelection(
+      previous,
+      keepList: _usesCompactLayout && !_phonePageOpen,
+    );
     final parked = widget.notes.byId(_noteBeforeSpace);
     if (parked == null || parked.isHidden || parked.isArchived) {
       _noteBeforeSpace = _openedBySpace = null;
@@ -1364,17 +1367,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Takes up whatever the panes now have focused, after any change to them,
-  /// and lets go of the editors of notes no longer on screen.
+  /// and lets go of the editors of notes no longer on screen. With [keepList]
+  /// the list on screen stays as it is rather than following the selection.
   void _adoptWorkspaceSelection(
     String? previous, {
     bool selectionPreview = false,
+    bool keepList = false,
   }) {
     final next = _workspace.selectedNoteId;
     if (previous != next) {
       widget.account?.sync?.leaveNote(previous);
       _namer?.left(previous);
       _phoneEditorKey = GlobalKey<NoteEditorState>();
-      _showTabOf(next);
+      if (!keepList) _showTabOf(next);
     }
     _selectedId = next;
     final open = _workspace.openNoteIds;
@@ -3129,9 +3134,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() => _kapyAiWasOn = _kapyAiOn);
   }
 
-  /// What the search fields read: they offer to ask Kapy AI only while it
-  /// can be asked.
-  String get _searchPlaceholder => _kapyAiOn
+  /// What the search fields read: Drawings' names what it finds, and the
+  /// rest offer to ask Kapy AI only while it can be asked.
+  String get _searchPlaceholder => _space == LibrarySpace.drawings
+      ? 'Search drawings'
+      : _kapyAiOn
       ? 'Search or Ask Kapy AI'
       : _offersFolders && !_usesCompactLayout
       ? 'Search notes and folders'
@@ -3650,6 +3657,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _showHome({required bool tasks}) {
     if (tasks == _tasksMode) return;
     _openSpace(tasks ? LibrarySpace.tasks : LibrarySpace.notes);
+  }
+
+  /// Back on a phone's list, from Android's back or a swipe right: the picks
+  /// let go, then Tasks, Pinned or Shared returns to Notes.
+  void _phoneListBack() {
+    if (_tasksMode) {
+      _showHome(tasks: false);
+    } else if (_picks.on) {
+      _picks.clear();
+    } else if (_showingPinnedOnly) {
+      setState(() => _pinnedOnly = false);
+    } else {
+      _showSpace(LibrarySpace.notes);
+    }
   }
 
   /// What opening [space] sets up, whether or not the list was reset.
@@ -4667,14 +4688,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (didPop) return;
             if (pageOpen) {
               _phoneNavigator.currentState?.maybePop();
-            } else if (_tasksMode) {
-              _showHome(tasks: false);
-            } else if (_picks.on) {
-              _picks.clear();
-            } else if (_showingPinnedOnly) {
-              setState(() => _pinnedOnly = false);
             } else {
-              _showSpace(LibrarySpace.notes);
+              _phoneListBack();
             }
           },
           child: Navigator(
@@ -4743,6 +4758,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         listenable: _toolbarSources,
         builder: (context, _) {
           final tasks = _tasksMode ? _taskController : null;
+          // A swipe left turns Home to Tasks; a swipe right goes back out of
+          // Tasks, Pinned or Shared, as iOS's edge swipe does out of a page,
+          // since none of them is a page of its own to swipe away.
+          final turns = _taskController != null && _phoneHome;
+          final back =
+              _tasksMode || _showingPinnedOnly || _space == LibrarySpace.shared;
           // The Notes list stays built under Tasks, out of sight, so it comes
           // back scrolled and narrowed as it was left.
           final page = Stack(
@@ -4821,9 +4842,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: SafeArea(
               bottom: false,
               child: PhoneHomeSwipe(
-                onTurn: _taskController != null && _phoneHome
-                    ? (tasks) => _showHome(tasks: tasks)
+                onTurn: turns || back
+                    ? (tasks) {
+                        if (tasks && turns) _showHome(tasks: true);
+                        if (!tasks && back) _phoneListBack();
+                      }
                     : null,
+                backFromEdge: back,
                 child: page,
               ),
             ),
@@ -4912,10 +4937,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     collaborators: widget.account?.sync?.collaboratorsByNote ?? const {},
     tab: _sidebarTab,
     onTabChanged: _setSidebarTab,
-    searchPlaceholder: _kapyAiOn
+    searchPlaceholder: _kapyAiOn || _space == LibrarySpace.drawings
         ? _searchPlaceholder
-        : _space == LibrarySpace.drawings
-        ? 'Search drawings'
         : _sharedPage
         ? 'Search shared notes'
         : _taskController == null
@@ -5241,6 +5264,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
+      writingFont: widget.prefs.writingFont,
       onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
       onTitleChanged: (title) => _updateDrawing(note.id, title: title),
     );

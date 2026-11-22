@@ -1837,7 +1837,8 @@ class _PickActions extends StatelessWidget {
       DefaultTextStyle.of(context).style.merge(
         TextStyle(
           fontSize: AppTypeScale.small,
-          fontWeight: FontWeight.w400,
+          fontWeight: AppWeight.font(AppWeight.body),
+          fontVariations: AppWeight.wght(AppWeight.body),
           color: context.palette.textSecondary,
         ),
       );
@@ -1903,6 +1904,8 @@ class SidebarWindowBar extends StatelessWidget {
   final VoidCallback onHide;
 
   /// Printed on New note's keycap, so the chord is learnt from the button.
+  /// New drawing has no keycap, as D08 draws it, and names the chord on
+  /// hover.
   final ShortcutBinding? newNoteShortcut;
   final ShortcutBinding? hideShortcut;
 
@@ -1985,7 +1988,9 @@ class SidebarWindowBar extends StatelessWidget {
                       8 -
                       32 -
                       (onAskKapy == null ? 0 : 32 + 8);
-                  final chord = newNoteShortcut?.keycapLabel;
+                  final chord = noun == 'drawing'
+                      ? null
+                      : newNoteShortcut?.keycapLabel;
                   bool fits({String? shortcut}) =>
                       room - 8 - widthOf(countText, countStyle) >=
                       TonalButton.widthOf(
@@ -2279,7 +2284,8 @@ class _InvitationCard extends StatelessWidget {
     final label = TextStyle(
       fontSize: touch ? 15 : 13,
       height: touch ? 20 / 15 : 18 / 13,
-      fontWeight: FontWeight.w500,
+      fontWeight: AppWeight.font(AppWeight.button),
+      fontVariations: AppWeight.wght(AppWeight.button),
     );
     final buttonStyle = TextButton.styleFrom(
       minimumSize: Size(0, button),
@@ -2324,7 +2330,8 @@ class _InvitationCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: touch ? 14 : 12,
                       height: touch ? 18 / 14 : 16 / 12,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: AppWeight.font(AppWeight.button),
+                      fontVariations: AppWeight.wght(AppWeight.button),
                       color: palette.textPrimary,
                     ),
                   ),
@@ -2510,7 +2517,8 @@ class SidebarSearchField extends StatelessWidget {
             fontFamilyFallback: AppFonts.monoFallback,
             fontSize: 11,
             height: 14 / 11,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             color: palette.textTertiary,
           ),
         ),
@@ -2537,8 +2545,8 @@ class SidebarSearchField extends StatelessWidget {
               cursor: SystemMouseCursors.text,
               child: Container(
                 key: const ValueKey('sidebar-search-box'),
-                height: 40,
-                padding: const EdgeInsets.only(left: 12, right: 8),
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   color: palette.fillRest,
                   borderRadius: BorderRadius.circular(AppRadii.control),
@@ -2548,7 +2556,7 @@ class SidebarSearchField extends StatelessWidget {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: 14,
-                      color: palette.textSecondary,
+                      color: palette.textTertiary,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -3036,7 +3044,8 @@ class _NoteRowState extends State<NoteRow> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: AppTypeScale.body,
-                            fontWeight: FontWeight.w400,
+                            fontWeight: AppWeight.font(AppWeight.body),
+                            fontVariations: AppWeight.wght(AppWeight.body),
                             color: palette.textPrimary,
                           ),
                         ),
@@ -3470,7 +3479,8 @@ class _ShareGroupHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: FontWeight.w400,
+              fontWeight: AppWeight.font(AppWeight.body),
+              fontVariations: AppWeight.wght(AppWeight.body),
               letterSpacing: 0.3,
               color: palette.textTertiary,
             ),
@@ -3574,10 +3584,13 @@ class _DrawingsEmpty extends StatelessWidget {
             style: TextStyle(
               fontFamily: handwritten.fontFamily,
               fontFamilyFallback: handwritten.fontFamilyFallback,
-              fontVariations: handwritten.fontVariations,
               fontSize: 16,
               height: 22 / 16,
-              fontWeight: FontWeight.w500,
+              fontWeight: AppWeight.font(AppWeight.button),
+              fontVariations: AppWeight.wght(
+                AppWeight.button,
+                extra: handwritten.fontVariations ?? const [],
+              ),
               color: palette.textSubheading,
             ),
           ),
@@ -3591,7 +3604,8 @@ class _DrawingsEmpty extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 18 / 13,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
                 color: palette.textTertiary,
               ),
             ),
@@ -3831,7 +3845,8 @@ class _PhoneHeading extends StatelessWidget {
         fontFamily: AppFonts.ui,
         fontSize: 15,
         height: 20 / 15,
-        fontWeight: FontWeight.w500,
+        fontWeight: AppWeight.font(AppWeight.button),
+        fontVariations: AppWeight.wght(AppWeight.button),
         color: context.palette.textSecondary,
       ),
     ),
@@ -4066,7 +4081,12 @@ class _SwipeActionsState extends State<_SwipeActions>
                                   style: TextStyle(
                                     fontFamily: AppFonts.ui,
                                     fontSize: 12.5,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: AppWeight.font(
+                                      AppWeight.button,
+                                    ),
+                                    fontVariations: AppWeight.wght(
+                                      AppWeight.button,
+                                    ),
                                     color: foreground,
                                   ),
                                 ),

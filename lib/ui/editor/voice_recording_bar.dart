@@ -138,7 +138,8 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: AppTypeScale.control,
-                        fontWeight: FontWeight.w400,
+                        fontWeight: AppWeight.font(AppWeight.body),
+                        fontVariations: AppWeight.wght(AppWeight.body),
                         color: active
                             ? palette.textPrimary
                             : palette.textSecondary,
@@ -163,7 +164,8 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
                     fontFeatures: const [FontFeature.tabularFigures()],
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -295,7 +297,8 @@ class _LiveWaveform extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w400,
+                            fontWeight: AppWeight.font(AppWeight.body),
+                            fontVariations: AppWeight.wght(AppWeight.body),
                             color: palette.textSecondary,
                           ),
                         ),
