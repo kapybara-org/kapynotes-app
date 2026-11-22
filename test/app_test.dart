@@ -8059,6 +8059,7 @@ void main() {
       Future<void> pumpFolders(
         WidgetTester tester, {
         Size size = const Size(393, 852),
+        bool tasks = false,
       }) async {
         folders = FolderStore(store);
         await folders.load();
@@ -8071,7 +8072,18 @@ void main() {
         clients = folders.create('Clients', parentId: work.id)!;
         acme = folders.create('Acme', parentId: clients.id)!;
         folders.file([note.id], acme.id);
-        await pumpApp(tester, size: size, folders: folders);
+        await pumpApp(
+          tester,
+          size: size,
+          folders: folders,
+          tasks: tasks
+              ? TaskLibrary(
+                  notes: notes,
+                  store: store,
+                  storage: MemoryDocStorage(),
+                )
+              : null,
+        );
         await showNotesList(tester);
       }
 
@@ -8079,6 +8091,123 @@ void main() {
         await tester.tap(finder);
         await tester.pumpAndSettle();
       }
+
+      Future<void> openFolder(WidgetTester tester, Folder folder) async {
+        await tap(tester, barFolders);
+        if (find.byKey(ValueKey('folder-${folder.id}')).evaluate().isEmpty) {
+          await tap(tester, find.byKey(ValueKey('folder-chevron-${work.id}')));
+          await tap(
+            tester,
+            find.byKey(ValueKey('folder-chevron-${clients.id}')),
+          );
+        }
+        await tap(tester, find.byKey(ValueKey('folder-${folder.id}')));
+      }
+
+      testWidgets("after a visit to Tasks a folder's note still opens, and "
+          'Notes is back on its list', (tester) async {
+        await pumpFolders(tester, tasks: true);
+        // It opens on the newest note, a drawing, so on Drawings.
+        await tap(tester, barNotes);
+        await tap(tester, find.byKey(const ValueKey('home-title-tasks')));
+        expect(find.byType(TasksScreen), findsOneWidget);
+
+        await openFolder(tester, work);
+        await tap(tester, brief);
+        expect(find.byType(NoteEditor), findsOneWidget);
+        expect(openNoteBody(tester), startsWith('Acme brief'));
+
+        await tap(tester, find.byKey(const ValueKey('page-back')));
+        await tap(tester, barNotes);
+        expect(find.byType(TasksScreen), findsNothing);
+        expect(groceries, findsOneWidget);
+      });
+
+      testWidgets('Back in a folder lets the picks go first, then goes to '
+          'Folders', (tester) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        await tester.longPress(brief);
+        await tester.pumpAndSettle();
+        await tap(tester, find.text('Select'));
+        final picked = find.text('1 selected');
+        expect(picked, findsOneWidget);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(picked, findsNothing);
+        expect(find.byKey(ValueKey('phone-folder-${work.id}')), findsOneWidget);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(tree, findsOneWidget);
+      });
+
+      testWidgets('+ in a folder files the new note there', (tester) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        final before = {for (final note in notes.notes) note.id};
+
+        await tap(tester, find.byKey(const ValueKey('phone-new')));
+        final made = notes.notes.singleWhere(
+          (note) => !before.contains(note.id),
+        );
+        expect(folders.tree.folderOf(made.id), work.id);
+        expect(find.byType(NoteEditor), findsOneWidget);
+      });
+
+      testWidgets("Folders' search finds a folder, and choosing it opens it "
+          'on Folders', (tester) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        await tap(tester, find.byKey(const ValueKey('sidebar-search-field')));
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          'Acme',
+        );
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(const ValueKey('command-menu-row-Acme')));
+        expect(find.byKey(ValueKey('phone-folder-${acme.id}')), findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+        expect(brief, findsOneWidget);
+      });
+
+      testWidgets('with its folder deleted, Back from it still goes on', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        folders.delete(work.id);
+        await tester.pumpAndSettle();
+        expect(tree, findsOneWidget);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(lit(tester), PhoneTab.notes);
+        expect(tree, findsNothing);
+      });
+
+      testWidgets("Pinned doesn't narrow a folder, and its title counts the "
+          'folder alone', (tester) async {
+        await pumpFolders(tester);
+        final invoice = notes.create(body: 'Acme invoice\nNet 30');
+        folders.file([invoice.id], acme.id);
+        notes.togglePinned(invoice.id);
+        await tap(tester, barNotes);
+        await tap(tester, find.byKey(const ValueKey('home-pinned-card')));
+        expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+
+        await openFolder(tester, acme);
+        expect(brief, findsOneWidget);
+        expect(find.widgetWithText(NoteRow, 'Acme invoice'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(PhoneListTitle),
+            matching: find.text('2'),
+          ),
+          findsOneWidget,
+        );
+      });
 
       testWidgets('the bar opens Folders: its title and S, the Drawings tile '
           'naming the newest drawing, and the tree', (tester) async {
@@ -8400,6 +8529,42 @@ void main() {
         expect(dim, findsNothing);
         expect(notes.notes.length, before, reason: 'closing makes nothing');
         expect(find.byType(NoteEditor), findsNothing);
+      });
+
+      testWidgets("the dim leaves the bar as it was and darkens the page", (
+        tester,
+      ) async {
+        await pumpPlus(tester);
+        final tab = tester.getRect(find.byKey(const ValueKey('bar-folders')));
+        final points = [
+          tab.topLeft + const Offset(6, 8),
+          const Offset(200, 300),
+        ];
+        Future<List<Color>> pixels() async {
+          final (data, width) = (await tester.runAsync(() async {
+            final image = await captureImage(
+              find.byType(KapyNotesApp).evaluate().single,
+            );
+            final data = await image.toByteData();
+            final width = image.width;
+            image.dispose();
+            return (data!, width);
+          }))!;
+          return [
+            for (final point in points)
+              Color(
+                data.getUint32(
+                  (point.dy.round() * width + point.dx.round()) * 4,
+                ),
+              ),
+          ];
+        }
+
+        final before = await pixels();
+        await open(tester);
+        final after = await pixels();
+        expect(after.first, before.first, reason: 'the bar stays as it was');
+        expect(after.last, isNot(before.last), reason: 'the page dims');
       });
 
       testWidgets('the menu fits an SE at 3.1× text', (tester) async {

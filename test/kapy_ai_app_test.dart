@@ -1239,6 +1239,28 @@ void main() {
       expect(page, findsNothing);
     });
 
+    testWidgets("after a visit to Drawings, + on it makes a note, and Folders "
+        'is back on its tree', (tester) async {
+      await pumpPhone(tester);
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      await tap(tester, find.byKey(const ValueKey('folders-drawings-tile')));
+      await tap(tester, tab);
+
+      // The blank note the app opens on is the one + reuses, as for a note.
+      await tap(tester, find.byKey(const ValueKey('phone-new')));
+      expect(page, findsNothing);
+      expect(notes.notes.where((note) => note.isDrawing), isEmpty);
+
+      await tap(tester, find.byKey(const ValueKey('page-back')));
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('phone-list-title')))
+            .data,
+        'Folders',
+      );
+    });
+
     testWidgets('a build without Kapy AI has no tab for it', (tester) async {
       kapyAiAvailable = false;
       await pumpPhone(tester);
