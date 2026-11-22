@@ -157,7 +157,10 @@ void main() {
     expect(find.textContaining('later release'), findsNothing);
     expect(find.byKey(const ValueKey('settings-update-changelog')), findsOne);
     expect(find.byKey(const ValueKey('settings-update-restart')), findsNothing);
-    expect(find.byKey(const ValueKey('settings-whats-new-hide')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-whats-new-hide')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('with no changelog cached yet it is quiet about it', (
@@ -274,10 +277,10 @@ void main() {
     });
   }
 
-  // At 520 px the card is down to its one-line form and shows no error; the
-  // taller window gets the whole card, where a long error must stop at the two
-  // lines its height estimate allows.
-  for (final height in [520.0, 760.0]) {
+  // At 512 px, a dialog 472 high, the card is down to its one-line form and
+  // shows no error; the taller window gets the whole card, where a long error
+  // must stop at the two lines its height estimate allows.
+  for (final height in [512.0, 760.0]) {
     testWidgets('a long update error in a window ${height.toInt()} px high '
         'takes two lines at most and leaves every category reachable', (
       tester,
@@ -337,52 +340,56 @@ void main() {
   }
 
   // main.dart builds no UpdateChecker on a phone, so Settings gets updates:
-  // null there. The row must not depend on one.
+  // null there. What's new must not depend on one.
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-    testWidgets('on ${platform.name}, with no update checker, the index opens '
-        'with one quiet row for the changelog, and nothing to update', (
-      tester,
-    ) async {
+    testWidgets('on ${platform.name}, About says what is new until it is '
+        'opened, and its notes open the changelog', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
-      PackageInfo.setMockInitialValues(
-        appName: 'Kapy Notes',
-        packageName: 'com.kapybara.kapynotes',
-        version: '1.0.0',
-        buildNumber: '1',
-        buildSignature: '',
-      );
+      Future<void> runVersion(String version) async {
+        PackageInfo.setMockInitialValues(
+          appName: 'Kapy Notes',
+          packageName: 'com.kapybara.kapynotes',
+          version: version,
+          buildNumber: '1',
+          buildSignature: '',
+        );
+      }
+
+      await runVersion('1.0.0');
       tester.view.physicalSize = const Size(400, 860);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final store = _MemoryStore();
       final notes = NotesStore(store);
       await notes.load();
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: KapyTheme.dark(),
-          home: Scaffold(
-            body: SettingsDialog(
-              layoutPrefs: LayoutPrefs(store),
-              shortcuts: ShortcutPrefs(store)..load(),
-              rates: RatesRepository(store),
-              notes: notes,
-              asSheet: true,
+      Future<void> pumpSheet() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: KapyTheme.dark(),
+            home: Scaffold(
+              body: SettingsDialog(
+                layoutPrefs: LayoutPrefs(store)..load(),
+                shortcuts: ShortcutPrefs(store)..load(),
+                rates: RatesRepository(store),
+                notes: notes,
+                asSheet: true,
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
+      }
 
-      final row = find.byKey(const ValueKey('settings-whats-new-row'));
-      expect(find.text("What's new in 1.0.0"), findsOneWidget);
-      expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
-      expect(
-        tester.getTopLeft(row).dy,
-        lessThan(tester.getTopLeft(find.byType(TextField).first).dy),
-        reason: 'above the search',
-      );
+      final about = find.byKey(const ValueKey('settings-section-about'));
+      Finder whatsNew() =>
+          find.descendant(of: about, matching: find.text("What's new"));
+
+      await pumpSheet();
+      expect(whatsNew(), findsOneWidget);
+      expect(find.text('Version 1.0.0'), findsOneWidget);
       expect(find.byKey(_card), findsNothing);
-      expect(find.text('About & updates'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing, reason: 'Search on Home');
 
       final launched = <Object?>[];
       const channel = MethodChannel('plugins.flutter.io/url_launcher');
@@ -395,12 +402,28 @@ void main() {
         () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, null),
       );
-      await tester.tap(row);
+      await tester.tap(about);
+      await tester.pumpAndSettle();
+      expect(find.text('See what changed'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('changelog')));
       await tester.pumpAndSettle();
       expect(
         launched.single,
         containsPair('url', 'https://kapynotes.com/changelog'),
       );
+
+      await tester.tap(find.byKey(const ValueKey('settings-sheet-back')));
+      await tester.pumpAndSettle();
+      expect(whatsNew(), findsNothing);
+      expect(store.data['whatsNewDismissed.v1'], '1.0.0');
+
+      await pumpSheet();
+      expect(whatsNew(), findsNothing, reason: 'seen stays seen');
+
+      await runVersion('1.2.0');
+      await pumpSheet();
+      expect(whatsNew(), findsOneWidget, reason: 'a newer version is news');
+      expect(find.text('Version 1.2.0'), findsOneWidget);
     });
   }
 
@@ -432,7 +455,10 @@ void main() {
 
     launched.clear();
     await tester.tap(
-      find.descendant(of: find.byKey(hideKey), matching: find.byType(IconButton)),
+      find.descendant(
+        of: find.byKey(hideKey),
+        matching: find.byType(IconButton),
+      ),
     );
     await tester.pumpAndSettle();
     expect(launched, isEmpty);
@@ -450,7 +476,9 @@ void main() {
 
     expect(find.byTooltip("Hide what's new"), findsOneWidget);
     final semanticsHandle = tester.ensureSemantics();
-    final semantics = tester.getSemantics(find.bySemanticsLabel("Hide what's new"));
+    final semantics = tester.getSemantics(
+      find.bySemanticsLabel("Hide what's new"),
+    );
     semanticsHandle.dispose();
     expect(semantics.flagsCollection.isButton, isTrue);
     expect(semantics.label, "Hide what's new");
@@ -487,7 +515,10 @@ void main() {
     final prefs = LayoutPrefs(store)..load();
     await pumpCard(tester, _checker(store), prefs: prefs);
     await tester.tap(
-      find.descendant(of: find.byKey(hideKey), matching: find.byType(IconButton)),
+      find.descendant(
+        of: find.byKey(hideKey),
+        matching: find.byType(IconButton),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -517,148 +548,6 @@ void main() {
     expect(find.text("What's new in 1.2.0"), findsOneWidget);
     expect(find.text('Notes come back with the new version.'), findsOneWidget);
     expect(find.byKey(hideKey), findsOneWidget);
-  });
-
-  testWidgets('on a phone the close button is at least 44 pt and does not '
-      'open the row', (tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    PackageInfo.setMockInitialValues(
-      appName: 'Kapy Notes',
-      packageName: 'com.kapybara.kapynotes',
-      version: '1.0.0',
-      buildNumber: '1',
-      buildSignature: '',
-    );
-    final store = _MemoryStore();
-    final prefs = LayoutPrefs(store)..load();
-    tester.view.physicalSize = const Size(390, 200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final launched = <Object?>[];
-    const channel = MethodChannel('plugins.flutter.io/url_launcher');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'launch') launched.add(call.arguments);
-          return true;
-        });
-    addTearDown(
-      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-
-    Future<void> pumpRow(LayoutPrefs rowPrefs) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: KapyTheme.dark(),
-          home: Scaffold(body: SettingsWhatsNewRow(prefs: rowPrefs)),
-        ),
-      );
-      await tester.pumpAndSettle();
-    }
-
-    await pumpRow(prefs);
-    expect(find.text("What's new in 1.0.0"), findsOneWidget);
-    final hide = find.byKey(hideKey);
-    final hideButton = find.descendant(
-      of: hide,
-      matching: find.byType(IconButton),
-    );
-    expect(tester.getSize(hideButton).shortestSide, greaterThanOrEqualTo(44));
-
-    await tester.tap(find.byKey(const ValueKey('settings-whats-new-row')));
-    await tester.pumpAndSettle();
-    expect(launched, hasLength(1));
-    expect(find.text("What's new in 1.0.0"), findsOneWidget);
-
-    launched.clear();
-    await tester.tap(hideButton);
-    await tester.pumpAndSettle();
-    expect(launched, isEmpty);
-    expect(find.textContaining("What's new"), findsNothing);
-    expect(store.data['whatsNewDismissed.v1'], '1.0.0');
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await pumpRow(LayoutPrefs(store)..load());
-    expect(find.textContaining("What's new"), findsNothing);
-
-    PackageInfo.setMockInitialValues(
-      appName: 'Kapy Notes',
-      packageName: 'com.kapybara.kapynotes',
-      version: '1.2.0',
-      buildNumber: '2',
-      buildSignature: '',
-    );
-    await tester.pumpWidget(const SizedBox.shrink());
-    await pumpRow(LayoutPrefs(store)..load());
-    expect(find.text("What's new in 1.2.0"), findsOneWidget);
-  });
-
-  testWidgets('on a phone, closing the notice leaves What\'s new in About', (
-    tester,
-  ) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    PackageInfo.setMockInitialValues(
-      appName: 'Kapy Notes',
-      packageName: 'com.kapybara.kapynotes',
-      version: '1.0.0',
-      buildNumber: '1',
-      buildSignature: '',
-    );
-    tester.view.physicalSize = const Size(400, 860);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final store = _MemoryStore();
-    final notes = NotesStore(store);
-    await notes.load();
-    final prefs = LayoutPrefs(store)..load();
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: KapyTheme.dark(),
-        home: Scaffold(
-          body: SettingsDialog(
-            layoutPrefs: prefs,
-            shortcuts: ShortcutPrefs(store)..load(),
-            rates: RatesRepository(store),
-            notes: notes,
-            asSheet: true,
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final launched = <Object?>[];
-    const channel = MethodChannel('plugins.flutter.io/url_launcher');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'launch') launched.add(call.arguments);
-          return true;
-        });
-    addTearDown(
-      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-
-    await tester.tap(
-      find.descendant(of: find.byKey(hideKey), matching: find.byType(IconButton)),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text("What's new in 1.0.0"), findsNothing);
-
-    final about = find.byKey(const ValueKey('settings-section-about'));
-    await tester.ensureVisible(about);
-    await tester.tap(about);
-    await tester.pumpAndSettle();
-    expect(find.text("What's new"), findsOneWidget);
-    expect(find.text('See what changed'), findsOneWidget);
-    expect(find.byKey(hideKey), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('changelog')));
-    await tester.pumpAndSettle();
-    expect(
-      launched.single,
-      containsPair('url', 'https://kapynotes.com/changelog'),
-    );
   });
 
   // A narrow Mac window is still a computer: its About pane keeps the
@@ -705,10 +594,17 @@ void main() {
             : KapyTheme.light(theme: theme);
         await pumpCard(tester, _checker(_MemoryStore()), theme: data);
         final icon = tester.widget<KapyIcon>(
-          find.descendant(of: find.byKey(hideKey), matching: find.byType(KapyIcon)),
+          find.descendant(
+            of: find.byKey(hideKey),
+            matching: find.byType(KapyIcon),
+          ),
         );
         final palette = tester.element(find.byKey(hideKey)).palette;
-        expect(icon.color, palette.textTertiary, reason: '${theme.name} dark=$dark');
+        expect(
+          icon.color,
+          palette.textTertiary,
+          reason: '${theme.name} dark=$dark',
+        );
       }
     }
   });

@@ -18,6 +18,10 @@
 		A1B2C0D000000000000000A4 /* WriteNoteWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */; };
 		A1B2C0D000000000000000D2 /* QuickAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000D1 /* QuickAction.swift */; };
 		A1B2C0D000000000000000D4 /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000D3 /* QuickActionsWidget.swift */; };
+		A1B2C0D000000000000000E2 /* WriteNoteWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000E1 /* WriteNoteWidgetBundle.swift */; };
+		A1B2C0D000000000000000E4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000E3 /* Assets.xcassets */; };
+		A1B2C0D000000000000000E6 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000E5 /* Figtree-SemiBold.ttf */; };
+		A1B2C0D000000000000000E8 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000E7 /* Figtree-Regular.ttf */; };
 		A1B2C0D000000000000000A5 /* WriteNoteWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000A1 /* WriteNoteWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		C1A0B0F20000000000000002 /* RichClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F20000000000000001 /* RichClipboardTests.swift */; };
@@ -103,6 +107,10 @@
 		A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteNoteWidget.swift; sourceTree = "<group>"; };
 		A1B2C0D000000000000000D1 /* QuickAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickAction.swift; sourceTree = "<group>"; };
 		A1B2C0D000000000000000D3 /* QuickActionsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionsWidget.swift; sourceTree = "<group>"; };
+		A1B2C0D000000000000000E1 /* WriteNoteWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteNoteWidgetBundle.swift; sourceTree = "<group>"; };
+		A1B2C0D000000000000000E3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A1B2C0D000000000000000E5 /* Figtree-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-SemiBold.ttf"; sourceTree = "<group>"; };
+		A1B2C0D000000000000000E7 /* Figtree-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Regular.ttf"; sourceTree = "<group>"; };
 		A1B2C0D000000000000000A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -197,6 +205,10 @@
 				A1B2C0D000000000000000D1 /* QuickAction.swift */,
 				A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */,
 				A1B2C0D000000000000000D3 /* QuickActionsWidget.swift */,
+				A1B2C0D000000000000000E1 /* WriteNoteWidgetBundle.swift */,
+				A1B2C0D000000000000000E3 /* Assets.xcassets */,
+				A1B2C0D000000000000000E5 /* Figtree-SemiBold.ttf */,
+				A1B2C0D000000000000000E7 /* Figtree-Regular.ttf */,
 				A1B2C0D000000000000000A3 /* Info.plist */,
 			);
 			path = WriteNoteWidget;
@@ -335,6 +347,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C0D000000000000000E4 /* Assets.xcassets in Resources */,
+				A1B2C0D000000000000000E6 /* Figtree-SemiBold.ttf in Resources */,
+				A1B2C0D000000000000000E8 /* Figtree-Regular.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -423,6 +438,7 @@
 				A1B2C0D000000000000000D2 /* QuickAction.swift in Sources */,
 				A1B2C0D000000000000000A4 /* WriteNoteWidget.swift in Sources */,
 				A1B2C0D000000000000000D4 /* QuickActionsWidget.swift in Sources */,
+				A1B2C0D000000000000000E2 /* WriteNoteWidgetBundle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

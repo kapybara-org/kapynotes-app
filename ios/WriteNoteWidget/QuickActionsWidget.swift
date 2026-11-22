@@ -28,34 +28,39 @@ struct QuickActionsProvider: TimelineProvider {
 
 struct QuickActionsView: View {
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: 0) {
       ForEach(QuickAction.allCases, id: \.self) { action in
         Link(destination: action.url) {
           QuickActionTile(action: action)
         }
       }
     }
-    .foregroundStyle(ink)
-    .containerBackground(paper, for: .widget)
+    .containerBackground(widgetBackground, for: .widget)
   }
 }
 
-/// One column. It fills its share of the row so that the whole of it is the
-/// tap target, not just the glyph and the word in the middle of it.
+/// One column: a full-height third of the widget, edge to edge, so that the
+/// whole of it is the tap target and not just the disc and the word in the
+/// middle of it. Write sits on the primary disc, the other two on the tonal.
 struct QuickActionTile: View {
   let action: QuickAction
 
   var body: some View {
-    VStack(spacing: 8) {
-      Image(systemName: action.symbol)
-        .font(.system(size: 26, weight: .regular))
+    let primary = action == .write
+    VStack(spacing: 10) {
+      QuickActionDisc(
+        action: action,
+        fill: primary ? widgetPrimary : widgetTonal,
+        ink: primary ? widgetOnPrimary : widgetOnTonal)
       Text(action.title)
-        .font(.system(size: 14, weight: .semibold, design: .rounded))
+        .font(Figtree.semibold(15))
+        .foregroundStyle(widgetText)
         .lineLimit(1)
         .minimumScaleFactor(0.8)
+        .frame(height: 20)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .contentShape(Rectangle())
   }
 }
 
@@ -70,5 +75,6 @@ struct QuickActionsWidget: Widget {
     .configurationDisplayName("Write, Dictate, Capture")
     .description("All three, one tap each, into the note you were writing.")
     .supportedFamilies([.systemMedium])
+    .contentMarginsDisabled()
   }
 }

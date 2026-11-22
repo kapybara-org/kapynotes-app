@@ -115,11 +115,12 @@ Widget _app({Brightness brightness = Brightness.dark}) => MaterialApp(
   ),
 );
 
-/// Shows the bubble over a selection whose first line is [above], the way the
-/// editor does, with every block and button on offer.
+/// Shows the bubble by a selection whose first line is [above] and last
+/// [below], the way the editor does, with every block and button on offer.
 Future<void> _show(
   WidgetTester tester, {
   Rect above = const Rect.fromLTWH(60, 300, 160, 22),
+  Rect? below,
   Rect within = Rect.largest,
   String block = 'Text',
   bool markdown = true,
@@ -148,7 +149,7 @@ Future<void> _show(
   _standalone.show(
     _context,
     above: above,
-    below: above,
+    below: below ?? above,
     within: within,
     block: block,
     markdownEnabled: markdown,
@@ -198,17 +199,62 @@ void main() {
   }
 
   group('the bubble', () {
-    testWidgets('sits over the selection, and under it near the top edge', (
-      tester,
-    ) async {
+    testWidgets('sits under the selection, as D05 draws it, and over it '
+        'near the bottom edge', (tester) async {
       window(tester);
       await tester.pumpWidget(_app());
       await _show(tester);
-      expect(tester.getRect(_bubble).bottom, lessThanOrEqualTo(300));
+      expect(tester.getRect(_bubble).top, 300 + 22 + 8);
       expect(tester.getRect(_bubble).height, 40);
 
+      // Under the selection's last line, centred on it.
+      await _show(
+        tester,
+        above: const Rect.fromLTWH(60, 200, 300, 22),
+        below: const Rect.fromLTWH(160, 230, 100, 22),
+      );
+      expect(tester.getRect(_bubble).top, 230 + 22 + 8);
+      expect(
+        tester.getRect(_bubble).center.dx,
+        closeTo(210, 0.5),
+      );
+
+      // With no room under it, over its first line.
+      await _show(tester, above: const Rect.fromLTWH(60, 420, 160, 22));
+      expect(tester.getRect(_bubble).bottom, 420 - 8);
+
+      // Near the top edge, under it still.
       await _show(tester, above: const Rect.fromLTWH(60, 20, 160, 22));
-      expect(tester.getRect(_bubble).top, greaterThanOrEqualTo(42));
+      expect(tester.getRect(_bubble).top, 20 + 22 + 8);
+    });
+
+    testWidgets('Text ▾ opens downward under a bubble that sits under the '
+        'selection', (tester) async {
+      window(tester);
+      await tester.pumpWidget(_app());
+      await _show(tester, above: const Rect.fromLTWH(60, 40, 160, 22));
+      _standalone.toggleBlocks();
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.byKey(const ValueKey('selection-block-menu'))).top,
+        greaterThan(tester.getRect(_bubble).bottom),
+      );
+    });
+
+    testWidgets('Text ▾ under the selection opens upward when it does not '
+        'fit below and there is more room above', (tester) async {
+      window(tester);
+      await tester.pumpWidget(_app());
+      await _show(tester, above: const Rect.fromLTWH(60, 320, 160, 22));
+      expect(tester.getRect(_bubble).top, 320 + 22 + 8);
+      _standalone.toggleBlocks();
+      await tester.pumpAndSettle();
+      final menu = find.byKey(const ValueKey('selection-block-menu'));
+      expect(
+        tester.getSize(menu).height,
+        greaterThan(480 - 8 - tester.getRect(_bubble).bottom - 6),
+      );
+      expect(tester.getRect(menu).bottom, tester.getRect(_bubble).top - 6);
     });
 
     testWidgets('keeps to the note\'s pane, menu and all', (tester) async {
@@ -397,11 +443,11 @@ void main() {
       expect(_bubble, findsOneWidget);
       final editable = NoteDriver(tester);
       final line = editable.toGlobal(
-        Offset(0, editable.boxesFor(controller.selection).first.top),
+        Offset(0, editable.boxesFor(controller.selection).last.bottom),
       );
       expect(
-        tester.getRect(_bubble).bottom,
-        moreOrLessEquals(line.dy - 8, epsilon: 0.01),
+        tester.getRect(_bubble).top,
+        moreOrLessEquals(line.dy + 8, epsilon: 0.01),
       );
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);

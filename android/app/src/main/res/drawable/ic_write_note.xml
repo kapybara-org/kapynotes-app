@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Drawn white and tinted by the layout, so one file serves both themes. -->
+<!-- PencilEdit02, the pen and not the + that makes a new note, from the app's own icon set, stroked at 1.9 on its 24 grid as
+     the widgets draw it. Drawn white and tinted by the layout, so one file
+     serves every disc in both themes. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M20.71,7.04c0.39,-0.39 0.39,-1.02 0,-1.41l-2.34,-2.34c-0.39,-0.39 -1.02,-0.39 -1.41,0l-1.83,1.83 3.75,3.75 1.83,-1.83z" />
+        android:pathData="M16.425,4.605L17.415,3.615C18.235,2.795 19.565,2.795 20.385,3.615C21.205,4.435 21.205,5.765 20.385,6.585L19.395,7.575M16.425,4.605L9.766,11.264C9.258,11.772 8.898,12.408 8.724,13.104L8,16L10.896,15.276C11.592,15.102 12.228,14.742 12.736,14.234L19.395,7.575M16.425,4.605L19.395,7.575"
+        android:strokeWidth="1.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineJoin="round" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M3,17.25L3,21h3.75L17.81,9.94l-3.75,-3.75L3,17.25z" />
+        android:pathData="M19,13.5C19,16.788 19,18.431 18.092,19.538C17.926,19.74 17.74,19.926 17.538,20.092C16.431,21 14.787,21 11.5,21H11C7.229,21 5.343,21 4.172,19.828C3,18.657 3,16.771 3,13V12.5C3,9.213 3,7.569 3.908,6.462C4.074,6.26 4.26,6.074 4.462,5.908C5.569,5 7.213,5 10.5,5"
+        android:strokeWidth="1.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

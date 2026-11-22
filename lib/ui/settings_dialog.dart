@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../ai/kapy_ai.dart';
@@ -48,6 +49,7 @@ import 'mcp_pane.dart';
 import 'mobile_data_sheet.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
+import 'profile_avatar.dart';
 import 'settings/sharing_section.dart';
 import 'settings_rows.dart';
 import 'theme_cards.dart';
@@ -68,7 +70,6 @@ enum SettingsSection {
   appearance,
   notes,
   voice,
-  mcp,
   window,
   shortcuts,
   account,
@@ -76,7 +77,7 @@ enum SettingsSection {
   about,
 }
 
-const _sheetCorners = BorderRadius.vertical(top: Radius.circular(22));
+const _sheetCorners = BorderRadius.vertical(top: Radius.circular(12));
 const _sheetIndexKey = ValueKey('settings-sheet-index');
 
 /// Wide enough for the full desktop dialog, its insets, and the Windows frame.
@@ -87,7 +88,6 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => 'Appearance',
     SettingsSection.notes => 'Notes',
     SettingsSection.voice => 'Voice & AI',
-    SettingsSection.mcp => mcpSectionLabel,
     SettingsSection.window => 'Window',
     SettingsSection.shortcuts => 'Shortcuts',
     SettingsSection.account => 'Account & sync',
@@ -99,7 +99,6 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => KapyIcons.paintBoardOutlined,
     SettingsSection.notes => KapyIcons.noteOutlined,
     SettingsSection.voice => KapyIcons.micRounded,
-    SettingsSection.mcp => mcpSectionIcon,
     SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
     SettingsSection.account => KapyIcons.accountCircleOutlined,
@@ -114,13 +113,13 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance =>
       'How Kapy Notes looks: theme, paper, fonts and text size',
     SettingsSection.notes =>
-      'How notes open, typing and calculations, backup and Hidden Notes',
+      'How notes open, typing and calculations, backup, Hidden Notes and tags',
     SettingsSection.voice =>
       kapyAiAvailable
-          ? 'Voice notes, transcripts, summaries and Kapy AI, and where each '
-                'one runs'
-          : 'Voice notes, transcripts and summaries, and where each one runs',
-    SettingsSection.mcp => mcpSectionSummary,
+          ? 'Voice notes, summaries and Kapy AI, and the AI apps that can use '
+                'your notes'
+          : 'Voice notes, transcripts and summaries, and the AI apps that can '
+                'use your notes',
     SettingsSection.window =>
       'What the window shows, and what happens when it closes',
     SettingsSection.shortcuts =>
@@ -383,7 +382,8 @@ class _Setting {
   /// control: a switch, which flips from anywhere on it, or an update.
   final Widget? row;
 
-  Widget build() => KeyedSubtree(
+  /// The row in its card, or [bare], straight on the pane.
+  Widget build({bool bare = false}) => KeyedSubtree(
     key: ValueKey(id),
     child:
         row ??
@@ -397,6 +397,7 @@ class _Setting {
           changed: changed,
           onReset: onReset,
           onTap: onTap,
+          flush: bare,
         ),
   );
 }
@@ -408,15 +409,30 @@ class _Group {
     this.settings, {
     this.detail,
     this.caption,
+    this.lead,
+    this.bare = false,
+    this.apart = false,
     this.after = const [],
   });
 
-  final String title;
+  /// Null for a card that needs no heading over it.
+  final String? title;
   final String? detail;
 
   /// A line under the heading, for a group that needs saying what it is.
   final String? caption;
   final List<_Setting> settings;
+
+  /// What sits between the heading and the card: the appearance preview.
+  final Widget? lead;
+
+  /// Rows straight on the pane with no card round them, for the two that
+  /// head Appearance: its mode and its themes.
+  final bool bare;
+
+  /// Twice the gap above it: a new part of a page with no heading to say so,
+  /// as Appearance's themes and its night theme are.
+  final bool apart;
 
   /// What is said under the card: a note, an error.
   final List<Widget> after;
@@ -437,7 +453,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// section rail visible while that resize reaches Flutter.
   static const double _railBreakpoint = 560;
   static const double _dialogWidth = 940;
-  static const double _dialogHeight = 760;
+  static const double _dialogHeight = 860;
   static const double _navWidth = 232;
 
   String? _shortcutError;
@@ -499,6 +515,11 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   bool get _searching => _query.isNotEmpty;
 
+  /// The version this build is, for the foot of the sheet's list and its
+  /// What's new. Empty until it has been read, and on a computer, whose
+  /// updater names it instead.
+  String _version = '';
+
   @override
   void initState() {
     super.initState();
@@ -508,6 +529,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     }
     _search.addListener(_onSearchChanged);
     _shortcutFilter.addListener(() => setState(() {}));
+    if (widget.asSheet) unawaited(_readVersion());
     if (!widget.asSheet) HardwareKeyboard.instance.addHandler(_onFindKey);
     _shortcutError = widget.desktopIntegration?.registrationError;
     _loadSpeechState();
@@ -664,19 +686,18 @@ class _SettingsDialogState extends State<SettingsDialog>
   bool _isAvailable(SettingsSection section) => switch (section) {
     SettingsSection.window ||
     SettingsSection.shortcuts => AppPlatform.isDesktop,
-    // A phone has no updater, but the notes still live here, the same place a
-    // computer keeps them. Closing the notice at the top of the list must not
-    // be the last way in.
+    // A phone has no updater, but its release notes still live here, the same
+    // place a computer keeps them, and the list marks the row while this
+    // version's are unread.
     SettingsSection.about => widget.updates != null || AppPlatform.isMobile,
     SettingsSection.account ||
     SettingsSection.sharing => widget.account != null,
     // Present even signed out, and even with no transcription configured:
-    // recording works without an account, and the pane says so rather than
-    // hiding and leaving the user to wonder where the setting went.
-    SettingsSection.voice => widget.voicePrefs != null,
+    // recording works without an account, and the AI apps that can use your
+    // notes are in here too.
     SettingsSection.appearance ||
     SettingsSection.notes ||
-    SettingsSection.mcp => true,
+    SettingsSection.voice => true,
   };
 
   List<SettingsSection> get _sections =>
@@ -871,8 +892,22 @@ class _SettingsDialogState extends State<SettingsDialog>
     ];
   }
 
-  void _openSheetSection(SettingsSection section) =>
-      setState(() => _sheetSection = section);
+  Future<void> _readVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _version = info.version);
+    } catch (_) {
+      // No version to name, so no line for it and no What's new.
+    }
+  }
+
+  void _openSheetSection(SettingsSection section) {
+    // What's new is a row in About, so going there is seeing the pointer.
+    if (section == SettingsSection.about) {
+      widget.layoutPrefs.dismissWhatsNew(_version);
+    }
+    setState(() => _sheetSection = section);
+  }
 
   /// Leaves settings for a note shared from or to this account.
   void _openNote(String id) {
@@ -920,18 +955,13 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// Where a search result goes: its category, scrolled to its row, with the
   /// row lit for a moment so the eye does not have to hunt for it again.
   ///
-  /// The dialog lets the search go, because the pane it led to is now the
-  /// thing on screen. The sheet keeps it: the results are the page under the
-  /// one it pushed, and going back should land on them.
+  /// The search goes, because the pane it led to is now the thing on screen.
+  /// A phone's sheet has no search of its own: Search on Home finds settings
+  /// and opens the sheet on the one it found.
   void _openResult(SettingsSearchEntry<SettingsSection> entry) {
     if (entry.elsewhere != null) return;
-    if (widget.asSheet) {
-      FocusManager.instance.primaryFocus?.unfocus();
-      _openSheetSection(entry.section);
-    } else {
-      _search.clear();
-      _showSection(entry.section);
-    }
+    _search.clear();
+    _showSection(entry.section);
     final target = entry.target;
     if (target == null) return;
     WidgetsBinding.instance.addPostFrameCallback(
@@ -995,22 +1025,20 @@ class _SettingsDialogState extends State<SettingsDialog>
     return found;
   }
 
-  /// The search field, which heads settings in every shape it takes.
+  /// The search field, at the head of the dialog's rail or its single column.
   Widget _searchField({required bool autofocus}) => SettingsSearchField(
     controller: _search,
     focusNode: _searchFocus,
     autofocus: autofocus,
-    // On a phone the keyboard's Search key only puts the keyboard away: the
-    // results are already there, and the thumb picks one.
-    onSubmitted: widget.asSheet ? _searchFocus.unfocus : _openMarkedResult,
-    onMove: widget.asSheet ? null : _moveResult,
+    onSubmitted: _openMarkedResult,
+    onMove: _moveResult,
   );
 
   Widget _searchResults() => SettingsSearchResults<SettingsSection>(
     key: const ValueKey('settings-search-results'),
     query: _query,
     results: _results,
-    marked: widget.asSheet ? null : _resultIndex,
+    marked: _resultIndex,
     onOpen: _openResult,
   );
 
@@ -1410,6 +1438,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     T? byDefault,
     TextStyle Function(T option)? styleFor,
     bool Function(T option)? enabledFor,
+    double? width,
     Widget? below,
     List<String> keywords = const [],
   }) {
@@ -1432,6 +1461,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         onSelected: onSelected,
         styleFor: styleFor,
         enabledFor: enabledFor,
+        width: width,
       ),
     );
   }
@@ -1443,9 +1473,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     SettingsSection.window => _windowGroups(),
     SettingsSection.shortcuts => _shortcutGroups(),
     SettingsSection.about => _aboutGroups(),
-    SettingsSection.account ||
-    SettingsSection.sharing ||
-    SettingsSection.mcp => const [],
+    SettingsSection.account || SettingsSection.sharing => const [],
   };
 
   /// The slider's left end is Off, and the rest of it is the amount from its
@@ -1471,7 +1499,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ShortcutAction.resetEditorTextSize,
     ].map(_keycaps).where((keys) => keys.isNotEmpty).join(' ');
     return [
-      _Group('Look', [
+      _Group(null, [
         _choice<AppearanceMode>(
           'mode-setting',
           'Mode',
@@ -1483,28 +1511,40 @@ class _SettingsDialogState extends State<SettingsDialog>
           label: (mode) => mode.label,
           onSelected: (mode) => prefs.appearance = mode,
           byDefault: AppearanceMode.system,
+          width: 300,
           keyPrefix: 'appearance',
           keywords: ['dark mode', 'light mode', 'night', 'colour', 'color'],
         ),
-        _Setting(
-          'theme-setting',
-          'Theme',
-          subtitle: 'Each comes in dark and light; Midnight is dark only.',
-          keywords: [
-            'colour',
-            'color',
-            'palette',
-            'scheme',
-            for (final theme in AppTheme.values) theme.label,
-          ],
-          value: prefs.theme.label,
-          changed: prefs.theme != AppTheme.riverbank,
-          onReset: () => prefs.theme = AppTheme.riverbank,
-          below: ThemeCards(
-            selected: prefs.theme,
-            onSelected: (theme) => prefs.theme = theme,
+      ], bare: true),
+      _Group(
+        null,
+        [
+          _Setting(
+            'theme-setting',
+            'Theme',
+            subtitle:
+                'Changes apply right away. Each theme has a dark and a light '
+                'side; Midnight is dark only.',
+            keywords: [
+              'colour',
+              'color',
+              'palette',
+              'scheme',
+              for (final theme in AppTheme.values) theme.label,
+            ],
+            value: prefs.theme.label,
+            changed: prefs.theme != AppTheme.riverbank,
+            onReset: () => prefs.theme = AppTheme.riverbank,
+            below: ThemeCards(
+              selected: prefs.theme,
+              onSelected: (theme) => prefs.theme = theme,
+            ),
           ),
-        ),
+        ],
+        bare: true,
+        apart: true,
+      ),
+      _Group(null, [
         _toggle(
           'increase-contrast-setting',
           'Increase contrast',
@@ -1523,6 +1563,8 @@ class _SettingsDialogState extends State<SettingsDialog>
             'borders',
           ],
         ),
+      ]),
+      _Group(null, [
         _toggle(
           'night-theme-setting',
           'At night, use a different theme',
@@ -1596,19 +1638,9 @@ class _SettingsDialogState extends State<SettingsDialog>
             ),
           ),
         ],
-        _choice<PaperStyle>(
-          'paper-setting',
-          'Paper',
-          'The background behind your writing',
-          options: PaperStyle.values,
-          selected: prefs.paperStyle,
-          label: (paper) => paper.label,
-          onSelected: (paper) => prefs.paperStyle = paper,
-          byDefault: PaperStyle.plain,
-          keyPrefix: 'paper-style',
-          keywords: ['ruled', 'lined', 'notepad', 'plain', 'texture'],
-        ),
-        if (LayoutPrefs.supportsTransparency)
+      ], apart: true),
+      if (LayoutPrefs.supportsTransparency)
+        _Group(null, [
           _Setting(
             'transparency-setting',
             'Transparency',
@@ -1636,8 +1668,20 @@ class _SettingsDialogState extends State<SettingsDialog>
               },
             ),
           ),
-      ]),
-      _Group('Text', [
+        ]),
+      _Group('Paper and text', [
+        _choice<PaperStyle>(
+          'paper-setting',
+          'Paper',
+          'The background behind your writing',
+          options: PaperStyle.values,
+          selected: prefs.paperStyle,
+          label: (paper) => paper.label,
+          onSelected: (paper) => prefs.paperStyle = paper,
+          byDefault: PaperStyle.plain,
+          keyPrefix: 'paper-style',
+          keywords: ['ruled', 'lined', 'notepad', 'plain', 'texture'],
+        ),
         _choice<WritingFont>(
           'writing-font-setting',
           'Writing font',
@@ -1693,7 +1737,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           keyPrefix: 'app-text-size',
           keywords: ['font size', 'ui scale', 'zoom', 'bigger text', 'larger'],
         ),
-      ]),
+      ], lead: _AppearancePreview(prefs: prefs)),
     ];
   }
 
@@ -1848,24 +1892,6 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
         ),
       ]),
-      _Group('Deleting', [
-        _toggle(
-          'ask-before-deleting-toggle',
-          'Ask before deleting notes',
-          'Deleting several notes at once always asks',
-          value: prefs.askBeforeDeleting,
-          onChanged: (value) => prefs.askBeforeDeleting = value,
-          byDefault: true,
-          keywords: [
-            'delete',
-            'confirm',
-            'confirmation',
-            'warning',
-            'don’t ask again',
-            'remove',
-          ],
-        ),
-      ]),
       if (AppPlatform.isDesktop || _usesPin)
         _Group('Hidden Notes', [
           if (AppPlatform.isDesktop)
@@ -1903,6 +1929,24 @@ class _SettingsDialogState extends State<SettingsDialog>
             row: TagSettings(store: store, listed: listed),
           ),
         ]),
+      _Group('Deleting', [
+        _toggle(
+          'ask-before-deleting-toggle',
+          'Ask before deleting notes',
+          'Deleting several notes at once always asks',
+          value: prefs.askBeforeDeleting,
+          onChanged: (value) => prefs.askBeforeDeleting = value,
+          byDefault: true,
+          keywords: [
+            'delete',
+            'confirm',
+            'confirmation',
+            'warning',
+            'don’t ask again',
+            'remove',
+          ],
+        ),
+      ]),
     ];
   }
 
@@ -2789,15 +2833,15 @@ class _SettingsDialogState extends State<SettingsDialog>
     // A fixed size keeps the dialog from resizing under the pointer as
     // sections of different lengths are selected; a small window takes all
     // but a margin of itself.
-    final width = math.min(_dialogWidth, media.width - 48);
-    final height = math.min(_dialogHeight, media.height - 48);
+    final width = math.min(_dialogWidth, media.width - 40);
+    final height = math.min(_dialogHeight, media.height - 40);
     // The rail needs the room a wide dialog has; a Windows window resized
     // narrow stacks its sections like any other.
     final paned = width >= _railBreakpoint;
     const corners = BorderRadius.all(Radius.circular(AppRadii.dialog));
 
     return Dialog(
-      insetPadding: const EdgeInsets.all(24),
+      insetPadding: const EdgeInsets.all(20),
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
@@ -2845,7 +2889,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   Widget _paneHeader({required String title, required String summary}) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 22, 22, 18),
+      padding: const EdgeInsets.fromLTRB(28, 22, 22, 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2858,12 +2902,10 @@ class _SettingsDialogState extends State<SettingsDialog>
                   key: const ValueKey('settings-pane-title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Shantell Sans',
-                    fontSize: 20,
-                    fontWeight: AppWeight.font(AppWeight.section),
-                    fontVariations: AppWeight.wght(AppWeight.section),
-                    height: 26 / 20,
+                  style: chromeStyle(
+                    size: 20,
+                    line: 26,
+                    weight: AppWeight.page,
                     color: palette.textPrimary,
                   ),
                 ),
@@ -2874,8 +2916,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 12.5,
-                    height: 16 / 12.5,
-                    color: palette.textDescription,
+                    height: 17 / 12.5,
+                    color: palette.textTertiary,
                   ),
                 ),
               ],
@@ -2886,6 +2928,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             key: const ValueKey('settings-done'),
             label: 'Done',
             shortcut: 'esc',
+            neutral: true,
             onPressed: () => Navigator.of(context).pop(),
           ),
         ],
@@ -3008,24 +3051,13 @@ class _SettingsDialogState extends State<SettingsDialog>
                               title: 'Settings',
                               bottomInset: bottomInset,
                               children: [
-                                if (!_searching)
-                                  SettingsWhatsNewRow(
-                                    prefs: widget.layoutPrefs,
-                                  ),
-                                // No autofocus: a keyboard that rises the
-                                // moment settings opens would cover the very
-                                // list it is there to search.
-                                _searchField(autofocus: false),
-                                const SizedBox(height: 14),
-                                if (_searching)
-                                  _searchResults()
-                                else
-                                  _CategoryList(
-                                    sections: _sections,
-                                    changed: _changedSections,
-                                    account: widget.account,
-                                    onSelect: _openSheetSection,
-                                  ),
+                                _SheetIndex(
+                                  sections: _sections,
+                                  account: widget.account,
+                                  prefs: widget.layoutPrefs,
+                                  version: _version,
+                                  onSelect: _openSheetSection,
+                                ),
                               ],
                             ),
                           ),
@@ -3101,12 +3133,10 @@ class _SettingsDialogState extends State<SettingsDialog>
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Settings',
-                  style: TextStyle(
-                    fontFamily: 'Shantell Sans',
-                    fontSize: 18,
-                    fontWeight: AppWeight.font(AppWeight.section),
-                    fontVariations: AppWeight.wght(AppWeight.section),
-                    height: 22 / 18,
+                  style: chromeStyle(
+                    size: 13,
+                    line: 18,
+                    weight: AppWeight.button,
                     color: palette.textPrimary,
                   ),
                 ),
@@ -3217,23 +3247,28 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   List<Widget> _fromGroups(List<_Group> groups) => [
     for (final group in groups) ...[
-      if (group != groups.first) SizedBox(height: SettingsMetrics.groupGap),
-      SettingsLabel(group.title, detail: group.detail, caption: group.caption),
-      SettingsGroup(
-        children: [for (final setting in group.settings) setting.build()],
-      ),
+      if (group != groups.first)
+        SizedBox(height: SettingsMetrics.groupGap * (group.apart ? 2 : 1)),
+      if (group.title case final title?)
+        SettingsLabel(title, detail: group.detail, caption: group.caption),
+      if (group.lead case final lead?) ...[lead, const SizedBox(height: 12)],
+      if (group.bare) ...[
+        for (final setting in group.settings) setting.build(bare: true),
+      ] else
+        SettingsGroup(
+          children: [for (final setting in group.settings) setting.build()],
+        ),
       ...group.after,
     ],
   ];
 
   List<Widget> _paneFor(SettingsSection section) => switch (section) {
-    SettingsSection.appearance => [
-      _AppearancePreview(prefs: widget.layoutPrefs),
-      SizedBox(height: SettingsMetrics.groupGap),
-      ..._fromGroups(_appearanceGroups()),
+    SettingsSection.voice => [
+      ..._fromGroups(_voiceGroups()),
+      if (widget.voicePrefs != null) SizedBox(height: SettingsMetrics.groupGap),
+      const McpPane(),
     ],
     SettingsSection.shortcuts => _shortcutsPane(),
-    SettingsSection.mcp => const [McpPane()],
     SettingsSection.account => [
       SyncPane(
         account: widget.account!,
@@ -4135,130 +4170,333 @@ class _SheetGrabber extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 8, bottom: 6),
+    padding: const EdgeInsets.only(top: 8),
     child: Center(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: context.palette.textTertiary.withValues(alpha: 0.5),
+          color: context.palette.textPrimary.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(AppRadii.pill),
         ),
-        child: const SizedBox(width: 38, height: 4),
+        child: const SizedBox(width: 36, height: 5),
       ),
     ),
   );
 }
 
-/// The list the sheet opens on: every category, what is inside it, and the
-/// chevron that goes there.
-class _CategoryList extends StatelessWidget {
-  const _CategoryList({
+/// The list the sheet opens on (M16): who is signed in, the categories as
+/// cards of one-line rows, and the version. A row ends on what is waiting in
+/// it, where something is: the invitations, the mode, a release's notes not
+/// yet looked at.
+class _SheetIndex extends StatelessWidget {
+  const _SheetIndex({
     required this.sections,
-    required this.changed,
     required this.account,
+    required this.prefs,
+    required this.version,
     required this.onSelect,
   });
 
   final List<SettingsSection> sections;
-
-  /// The categories holding a setting off its default.
-  final Set<SettingsSection> changed;
   final Account? account;
+  final LayoutPrefs prefs;
+
+  /// The running version, empty until it has been read.
+  final String version;
   final ValueChanged<SettingsSection> onSelect;
 
-  /// The account is the one category whose contents depend on where you
-  /// already stand in it, so its line answers that before it is opened.
-  String _summaryFor(SettingsSection section) {
-    final account = this.account;
-    if (section != SettingsSection.account || account == null) {
-      return section.summary;
-    }
-    return switch (account.state) {
-      AccountState.restoring => 'Checking your account',
-      AccountState.signedOut => 'Sign in to sync and share notes',
-      AccountState.needsProfile => 'Choose the name people will see',
-      AccountState.needsPassphrase => 'Save your passphrase to start syncing',
-      AccountState.locked => 'Unlock to read these notes here',
-      AccountState.keysChanged => 'Waiting for your new passphrase',
-      AccountState.needsAccountDecision => 'Choose what happens to local notes',
-      AccountState.ready => account.user?.displayName ?? 'Signed in',
+  /// M16's cards, in its order: on a phone the notes come before their look.
+  static const _cards = [
+    [SettingsSection.account],
+    [SettingsSection.sharing],
+    [SettingsSection.notes, SettingsSection.appearance, SettingsSection.voice],
+    [SettingsSection.about],
+  ];
+
+  Widget _row(SettingsSection section) {
+    final key = ValueKey('settings-section-${section.name}');
+    void open() => onSelect(section);
+    return switch (section) {
+      SettingsSection.account => _AccountRow(
+        key: key,
+        account: account!,
+        onTap: open,
+      ),
+      SettingsSection.sharing => _IndexRow(
+        key: key,
+        section: section,
+        value: switch (account?.sharing?.invites.length ?? 0) {
+          0 => null,
+          1 => '1 invitation waiting',
+          final count => '$count invitations waiting',
+        },
+        onTap: open,
+      ),
+      SettingsSection.appearance => _IndexRow(
+        key: key,
+        section: section,
+        value: prefs.appearance.label,
+        quiet: true,
+        onTap: open,
+      ),
+      SettingsSection.about => _IndexRow(
+        key: key,
+        section: section,
+        value: prefs.showWhatsNew(version) ? "What's new" : null,
+        onTap: open,
+      ),
+      _ => _IndexRow(key: key, section: section, onTap: open),
     };
   }
 
-  Widget _card() => SettingsGroup(
-    children: [
-      for (final section in sections)
-        _CategoryRow(
-          key: ValueKey('settings-section-${section.name}'),
-          section: section,
-          summary: _summaryFor(section),
-          changed: changed.contains(section),
-          onTap: () => onSelect(section),
-        ),
-    ],
-  );
+  Widget _list(BuildContext context) {
+    final palette = context.palette;
+    final cards = [
+      for (final card in _cards)
+        [
+          for (final section in card)
+            if (sections.contains(section)) section,
+        ],
+    ].where((card) => card.isNotEmpty).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final card in cards) ...[
+          if (card != cards.first) const SizedBox(height: 16),
+          KapyControlSurface(
+            color: palette.cardBackground,
+            borderColor: palette.fillEdge,
+            child: Column(
+              children: [for (final section in card) _row(section)],
+            ),
+          ),
+        ],
+        if (version.isNotEmpty)
+          Padding(
+            key: const ValueKey('settings-sheet-version'),
+            padding: const EdgeInsets.fromLTRB(10, 14, 10, 0),
+            child: Text(
+              'Version $version',
+              style: TextStyle(
+                fontSize: 13,
+                height: 16 / 13,
+                color: palette.textTertiary,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final account = this.account;
-    if (account == null) return _card();
+    if (account == null) return _list(context);
+    // Billing and sharing come and go with the account, so they are listened
+    // to as they stand at each of its changes.
     return ListenableBuilder(
       listenable: account,
-      builder: (context, _) => _card(),
+      builder: (context, _) => ListenableBuilder(
+        listenable: Listenable.merge([?account.billing, ?account.sharing]),
+        builder: (context, _) => _list(context),
+      ),
     );
   }
 }
 
-/// One category on that list.
-class _CategoryRow extends StatelessWidget {
-  const _CategoryRow({
-    super.key,
-    required this.section,
-    required this.summary,
-    required this.changed,
-    required this.onTap,
-  });
+/// The account at the head of the phone's list: the face and name of whoever
+/// is signed in and their plan, or how far signing in has got.
+class _AccountRow extends StatelessWidget {
+  const _AccountRow({super.key, required this.account, required this.onTap});
 
-  final SettingsSection section;
-  final String summary;
-  final bool changed;
+  final Account account;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
+    final user = account.user;
+    final signedIn = account.state == AccountState.ready && user != null;
+    final label = SettingsSection.account.label;
+    final (title, subtitle) = signedIn
+        ? (
+            user.displayName,
+            switch (account.billing?.entitlements) {
+              final plan? when plan.isPro => '$label · Pro',
+              _? => '$label · Free plan',
+              null => label,
+            },
+          )
+        : (
+            label,
+            switch (account.state) {
+              AccountState.restoring => 'Checking your account',
+              AccountState.signedOut => 'Sign in to sync and share notes',
+              AccountState.needsProfile => 'Choose the name people will see',
+              AccountState.needsPassphrase =>
+                'Save your passphrase to start syncing',
+              AccountState.locked => 'Unlock to read these notes here',
+              AccountState.keysChanged => 'Waiting for your new passphrase',
+              AccountState.needsAccountDecision =>
+                'Choose what happens to local notes',
+              AccountState.ready => 'Signed in',
+            },
+          );
     return Semantics(
       button: true,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              // A tinted tile: on the way back, a category is found by shape
-              // and colour long before its label is read again.
-              Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(AppRadii.control),
+              if (signedIn)
+                ProfileAvatar(
+                  name: user.displayName,
+                  image: user.image,
+                  extent: 40,
+                )
+              else
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: palette.selectedBackground,
+                    shape: BoxShape.circle,
+                  ),
+                  child: KapyIcon(
+                    SettingsSection.account.icon,
+                    size: 20,
+                    color: palette.textSecondary,
+                  ),
                 ),
-                child: KapyIcon(section.icon, size: 18, color: accent),
-              ),
               const SizedBox(width: 12),
               Expanded(
-                child: SettingsRowCopy(
-                  title: section.label,
-                  subtitle: summary,
-                  changed: changed,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 20 / 15,
+                        fontWeight: AppWeight.font(AppWeight.button),
+                        fontVariations: AppWeight.wght(AppWeight.button),
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 16 / 13,
+                        color: palette.textTertiary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
-                size: SettingsMetrics.chevronSize,
+                size: 14,
+                color: palette.textTertiary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One category on the phone's list, on one line: its icon and name, what is
+/// in it at the end, and the chevron that goes there.
+class _IndexRow extends StatelessWidget {
+  const _IndexRow({
+    super.key,
+    required this.section,
+    required this.onTap,
+    this.value,
+    this.quiet = false,
+  });
+
+  final SettingsSection section;
+  final VoidCallback onTap;
+
+  /// What is waiting in it, marked with a dot, or with [quiet] what it is
+  /// set to.
+  final String? value;
+  final bool quiet;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final value = this.value;
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              KapyIcon(section.icon, size: 18, color: palette.textSecondary),
+              const SizedBox(width: 12),
+              // The value keeps to the end of the line while there is room
+              // for it beside the name, and drops under it at the largest text
+              // sizes rather than squeezing the name.
+              Expanded(
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      section.label,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 20 / 15,
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    if (value != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              value,
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 16 / 13,
+                                color: palette.textTertiary,
+                              ),
+                            ),
+                          ),
+                          if (!quiet) ...[
+                            const SizedBox(width: 12),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: palette.clay,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const SizedBox.square(dimension: 8),
+                            ),
+                          ],
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              KapyIcon(
+                KapyIcons.chevronRightRounded,
+                size: 14,
                 color: palette.textTertiary,
               ),
             ],
@@ -4336,7 +4574,7 @@ class _RailItem extends StatelessWidget {
         selected: selected,
         button: true,
         child: Material(
-          color: selected ? palette.tonalBackground : Colors.transparent,
+          color: selected ? palette.fillSelected : Colors.transparent,
           borderRadius: corners,
           child: InkWell(
             onTap: onTap,
@@ -4347,23 +4585,16 @@ class _RailItem extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(
                 children: [
-                  KapyIcon(
-                    icon,
-                    size: 16,
-                    color: selected
-                        ? palette.tonalForeground
-                        : palette.textTertiary,
-                  ),
+                  KapyIcon(icon, size: 16, color: palette.textTertiary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       label,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        height: 16 / 13.5,
-                        color: selected
-                            ? palette.tonalForeground
-                            : palette.textPrimary,
+                      style: chromeStyle(
+                        size: 13.5,
+                        line: 18,
+                        weight: selected ? AppWeight.selected : AppWeight.body,
+                        color: palette.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -4436,8 +4667,9 @@ class _SheetPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(back == null ? 20 : 4, 0, 10, 6),
+          Container(
+            height: 48,
+            padding: EdgeInsets.fromLTRB(back == null ? 20 : 4, 0, 8, 0),
             child: Row(
               children: [
                 if (back != null)
@@ -4453,7 +4685,9 @@ class _SheetPage extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontSize: 17,
-                      letterSpacing: -0.2,
+                      height: 22 / 17,
+                      fontWeight: AppWeight.font(AppWeight.page),
+                      fontVariations: AppWeight.wght(AppWeight.page),
                       color: palette.textPrimary,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -4463,20 +4697,24 @@ class _SheetPage extends StatelessWidget {
                   key: const ValueKey('settings-sheet-done'),
                   onPressed: () =>
                       Navigator.of(context, rootNavigator: true).pop(),
+                  style: TextButton.styleFrom(
+                    foregroundColor: palette.textPrimary,
+                    textStyle: chromeStyle(
+                      size: 15,
+                      line: 20,
+                      weight: AppWeight.button,
+                      color: palette.textPrimary,
+                    ),
+                  ),
                   child: const Text('Done'),
                 ),
               ],
             ),
           ),
-          Divider(
-            height: AppHairline.of(context),
-            thickness: AppHairline.of(context),
-            color: palette.separator,
-          ),
           Expanded(
             child: _withFlash(
               SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 24 + bottomInset),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: children,
@@ -4563,9 +4801,6 @@ class _VersionStatus extends StatelessWidget {
     final palette = context.palette;
     final version = updates.currentVersion;
     if (version.isEmpty) return const SizedBox.shrink();
-    final shown = version.endsWith('.0')
-        ? version.substring(0, version.length - 2)
-        : version;
     final pending = updates.hasUpdate;
     return Container(
       key: const ValueKey('settings-version-status'),
@@ -4585,12 +4820,12 @@ class _VersionStatus extends StatelessWidget {
           const SizedBox(width: 7),
           Expanded(
             child: Text(
-              'Version $shown · ${pending ? 'Update available' : 'Up to date'}',
+              'Version $version · ${pending ? 'Update available' : 'Up to date'}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 11.5,
-                height: 14 / 11.5,
+                fontSize: 12,
+                height: 16 / 12,
                 color: palette.textTertiary,
               ),
             ),
@@ -5186,9 +5421,9 @@ class _ReleaseRow extends StatelessWidget {
   }
 }
 
-/// The phone's lasting way to the notes. The notice at the top of Settings
-/// can be closed; this row cannot, and it lives in About, where a computer
-/// keeps the same route.
+/// The phone's way to the release notes, in About, where a computer keeps
+/// the same route. The list marks About & updates until it is opened for
+/// this version.
 class _QuietWhatsNewRow extends StatelessWidget {
   const _QuietWhatsNewRow();
 

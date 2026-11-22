@@ -332,7 +332,7 @@ void main() {
     await type(tester, 'text size');
 
     expect(find.text('Settings'), findsOneWidget);
-    expect(find.text('Appearance › Text'), findsWidgets);
+    expect(find.text('Appearance › Paper and text'), findsWidgets);
     expect(find.text('Open in Settings'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     final choice = chosen! as RevealSettingChoice;
@@ -427,6 +427,16 @@ void main() {
         ),
         findsOneWidget,
       );
+      // D11: the footer says tab asks, and every key is plain text.
+      expect(find.text('Ask Kapy AI'), findsOneWidget);
+      final caps = tester.widgetList<Keycap>(find.byType(Keycap));
+      expect(
+        [for (final cap in caps) cap.label],
+        containsAll(['esc', 'tab', '↑↓', '↵']),
+      );
+      for (final cap in caps) {
+        expect(cap.plain, isTrue, reason: cap.label);
+      }
     });
 
     testWidgets('is not there before anything is typed', (tester) async {

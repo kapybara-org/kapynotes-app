@@ -17,6 +17,7 @@ import 'checklist_pie.dart';
 import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
+import 'editor/voice_chip.dart' show formatVoiceDuration;
 import 'notes_grouping.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'tag_colours.dart';
@@ -133,18 +134,21 @@ class NoteGlance {
     return glance;
   }
 
-  /// The line a list row gives the note: how far its checklist has got, then
-  /// its first line, with the answer when that line is a sum.
-  String get summary {
+  /// The note's first line, with the answer when that line is a sum.
+  String? get preview {
     final line = this.line;
     final result = this.result;
-    final said = line == null
+    return line == null
         ? null
         : result == null
         ? line
         : '${line.split('=').first.trim()} = $result';
-    return [if (boxes > 0) '$done of $boxes done', ?said].join(' · ');
   }
+
+  /// The line a list row gives the note: how far its checklist has got, then
+  /// its [preview].
+  String get summary =>
+      [if (boxes > 0) '$done of $boxes done', ?preview].join(' · ');
 }
 
 const _cardRadius = BorderRadius.only(
@@ -597,12 +601,24 @@ class NoteListRowFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final marks = _marksOf(
-      glance.media,
-      locked: locked,
-      shared: shared && people == null,
-    );
-    final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
+    final people = this.people;
+    final marks = touch
+        ? const <KapyIconData>[]
+        : _marksOf(
+            glance.media,
+            locked: locked,
+            shared: shared && people == null,
+          );
+    final holds = touch
+        ? _holdsOf(palette, shared: shared && people == null)
+        : const <Widget>[];
+    final summary =
+        snippet ??
+        (note.isEmpty
+            ? 'Empty'
+            : touch
+            ? glance.preview ?? ''
+            : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
     final tagMarks = TagMarks.of(context, note.id);
@@ -711,7 +727,7 @@ class NoteListRowFace extends StatelessWidget {
                       ),
                   ],
                 ),
-                SizedBox(height: touch ? 4 : 3),
+                const SizedBox(height: 3),
                 Row(
                   children: [
                     if (!touch) SizedBox(width: TagDots.size + 8),
@@ -734,27 +750,110 @@ class NoteListRowFace extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: _figtree(
-                          touch ? 13.5 : AppTypeScale.body,
-                          touch ? 18 : 16,
+                          touch ? 14 : AppTypeScale.body,
+                          touch ? 20 : 16,
                           FontWeight.w400,
                           note.isEmpty
                               ? palette.textTertiary
+                              : touch
+                              ? palette.textSecondary
                               : palette.textMuted,
                         ),
                       ),
                     ),
-                    if (people case final people?) ...[
+                    if (people != null && holds.isEmpty) ...[
                       const SizedBox(width: 8),
                       people,
                     ],
                   ],
                 ),
+                if (holds.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    key: const ValueKey('note-row-holds'),
+                    spacing: 12,
+                    children: [
+                      // At large text the last holds are cut off at the
+                      // edge, so the people at the end stay whole.
+                      Expanded(
+                        child: UnconstrainedBox(
+                          alignment: AlignmentDirectional.centerStart,
+                          constrainedAxis: Axis.vertical,
+                          clipBehavior: Clip.hardEdge,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 12,
+                            children: holds,
+                          ),
+                        ),
+                      ),
+                      ?people,
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// A phone row's third line, what the note holds: how far its checklist
+  /// has got, how long its recordings and videos run, how many pictures it
+  /// has, then whether it is read-only or [shared]. Each is a 14 pt icon 6
+  /// from its words, 12 from the next. Empty when it holds only words.
+  List<Widget> _holdsOf(CalcPalette palette, {required bool shared}) {
+    final ink = palette.textTertiary;
+    final words = chromeStyle(
+      size: 12,
+      line: 16,
+      weight: AppWeight.axisOf(FontWeight.w400),
+      color: ink,
+      tabular: true,
+    );
+    var voice = Duration.zero;
+    var video = Duration.zero;
+    var pictures = 0;
+    for (final ref in note.attachments) {
+      switch (ref) {
+        case NoteVoiceRef():
+          voice += ref.duration;
+        case NoteVideoRef():
+          video += ref.duration;
+        case NoteImageRef():
+          pictures++;
+        default:
+      }
+    }
+    Widget hold(Widget icon, [String? text]) => Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 6,
+      children: [
+        icon,
+        if (text != null) Text(text, maxLines: 1, style: words),
+      ],
+    );
+    Widget mark(KapyIconData icon) => KapyIcon(icon, size: 14, color: ink);
+    return [
+      if (glance.boxes > 0)
+        hold(
+          ChecklistPie(
+            done: glance.done,
+            total: glance.boxes,
+            fill: ink,
+            check: palette.sidebarBackground,
+          ),
+          '${glance.done} of ${glance.boxes}',
+        ),
+      if (glance.media.contains(NoteMedia.voice))
+        hold(mark(NoteMedia.voice.icon), formatVoiceDuration(voice)),
+      if (glance.media.contains(NoteMedia.video))
+        hold(mark(NoteMedia.video.icon), formatVoiceDuration(video)),
+      if (pictures > 0) hold(mark(NoteMedia.image.icon), '$pictures'),
+      if (locked) hold(mark(KapyIcons.lockRounded)),
+      if (shared) hold(mark(KapyIcons.groupOutlined)),
+    ];
   }
 }
 
@@ -1433,7 +1532,7 @@ BoxDecoration _menuSurface(CalcPalette palette) => BoxDecoration(
 class _WhenChip extends StatelessWidget {
   const _WhenChip({required this.when, required this.onClear});
 
-  final WhenFilter when;
+  final NotesWhen when;
   final VoidCallback onClear;
 
   @override
@@ -1547,7 +1646,6 @@ class NotesListControls extends StatelessWidget {
     this.when,
     this.onWhenChanged,
     required this.today,
-    this.weekShown,
     this.grouping,
     this.onGroupingChanged,
     this.alignEnd = false,
@@ -1592,16 +1690,11 @@ class NotesListControls extends StatelessWidget {
   final ValueChanged<TagFilter>? onTagsChanged;
 
   /// What When narrows the list to; null leaves When out of the menu.
-  final WhenFilter? when;
-  final ValueChanged<WhenFilter>? onWhenChanged;
+  final NotesWhen? when;
+  final ValueChanged<NotesWhen>? onWhenChanged;
 
   /// The day When's spans count back from, as the list shows days.
   final DateTime today;
-
-  /// Whether the page's bar shows the week, for When's menu to point there
-  /// for a single day. Asked as the menu opens, since the bar trades the
-  /// week for one button where it is short of room.
-  final bool Function()? weekShown;
 
   /// How the list groups what Pinned leaves, and the menu that changes it;
   /// without a grouping there is no menu.
@@ -1687,7 +1780,6 @@ class NotesListControls extends StatelessWidget {
       when: when,
       onWhenChanged: onWhenChanged,
       today: today,
-      weekShown: weekShown,
       everything: everything,
       narrowed: narrowed,
       phone: phone,
@@ -1842,7 +1934,6 @@ class _NotesFilter extends StatefulWidget {
     required this.when,
     required this.onWhenChanged,
     required this.today,
-    required this.weekShown,
     required this.everything,
     required this.narrowed,
     this.phone = false,
@@ -1859,10 +1950,9 @@ class _NotesFilter extends StatefulWidget {
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
   final TagFilter? tags;
   final ValueChanged<TagFilter>? onTagsChanged;
-  final WhenFilter? when;
-  final ValueChanged<WhenFilter>? onWhenChanged;
+  final NotesWhen? when;
+  final ValueChanged<NotesWhen>? onWhenChanged;
   final DateTime today;
-  final bool Function()? weekShown;
 
   /// What the button says while nothing is narrowed.
   final String everything;
@@ -1913,7 +2003,6 @@ class _NotesFilterState extends State<_NotesFilter> {
     _FilterSubmenu.when when widget.when != null => _WhenMenu(
       when: widget.when!,
       today: widget.today,
-      footnote: widget.weekShown?.call() ?? false,
       onChanged: _chooseWhen,
     ),
     _FilterSubmenu.tags when widget.tags != null => _TagsMenu(
@@ -2378,7 +2467,7 @@ class _FilterMenu extends StatelessWidget {
   final ValueChanged<NoteMedia?> onTick;
 
   /// What When narrows the list to; null leaves When out.
-  final WhenFilter? when;
+  final NotesWhen? when;
 
   /// Opens or closes the When submenu.
   final VoidCallback onWhen;
@@ -2757,19 +2846,16 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
 }
 
 /// The filter's When submenu, beside the When row: each span with the days
-/// it covers, and a tick on the one the list reaches back over. While the
-/// page shows the week, a footnote points there for a single day.
+/// it covers, and a tick on the one the list reaches back over.
 class _WhenMenu extends StatelessWidget {
   const _WhenMenu({
     required this.when,
     required this.today,
-    required this.footnote,
     required this.onChanged,
   });
 
-  final WhenFilter when;
+  final NotesWhen when;
   final DateTime today;
-  final bool footnote;
   final ValueChanged<NotesWhen> onChanged;
 
   @override
@@ -2809,26 +2895,6 @@ class _WhenMenu extends StatelessWidget {
           for (final (index, span) in NotesWhen.values.indexed) ...[
             if (index > 0) const SizedBox(height: 1),
             row(span),
-          ],
-          if (footnote) ...[
-            Container(
-              height: 1,
-              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              color: palette.separator,
-            ),
-            Padding(
-              key: const ValueKey('notes-when-footnote'),
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-              child: Text(
-                'For one day, click it in the week at the top of the page',
-                style: _figtree(
-                  AppTypeScale.small,
-                  16,
-                  FontWeight.w400,
-                  palette.textTertiary,
-                ),
-              ),
-            ),
           ],
         ],
       ),

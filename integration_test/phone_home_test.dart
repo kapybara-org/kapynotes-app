@@ -19,8 +19,10 @@ import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -52,7 +54,7 @@ void main() {
   final older = DateTime(today.year, today.month, today.day - 3);
   late LayoutPrefs prefs;
 
-  Future<void> launch(WidgetTester tester) async {
+  Future<void> launch(WidgetTester tester, {bool folders = false}) async {
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
     var clock = today;
@@ -73,14 +75,37 @@ void main() {
     }
 
     final trip = write('Lisbon trip\nFour days in May', 3, 8, 5);
-    write('Offsite agenda\nRoom, lunch, the deck', 3, 10, 0);
+    final offsite = write('Offsite agenda\nRoom, lunch, the deck', 3, 10, 0);
     final groceries = write('Groceries\nOat milk, lemons', 1, 18, 40);
     final reading = write('Reading list\nThe Overstory', 1, 21, 30);
-    write('Call with Arjun\nSend the deck', 0, 9, 12);
+    final call = write('Call with Arjun\nSend the deck', 0, 9, 12);
     clock = today;
     notes.togglePinned(trip);
     notes.togglePinned(reading);
     tags.addTag(groceries, tags.create('Errands')!.id);
+
+    // M02's tree, opened down to Acme, with two drawings for its tile.
+    FolderStore? folderStore;
+    if (folders) {
+      folderStore = FolderStore(store);
+      await folderStore.load();
+      final work = folderStore.create('Work')!;
+      final clients = folderStore.create('Clients', parentId: work.id)!;
+      final acme = folderStore.create('Acme', parentId: clients.id)!;
+      folderStore.create('Product');
+      final personal = folderStore.create('Personal')!;
+      folderStore.file([trip, reading], personal.id);
+      folderStore.file([offsite], work.id);
+      folderStore.file([call], acme.id);
+      prefs.setFolderOpen(work.id, true);
+      prefs.setFolderOpen(clients.id, true);
+      for (final (title, hour) in [('Shelf plan', 8), ('Deck flow', 9)]) {
+        clock = DateTime(today.year, today.month, today.day, hour, 40);
+        final drawing = notes.create(drawing: true);
+        notes.updateDrawing(drawing.id, NoteDrawing.empty, title: title);
+      }
+      clock = today;
+    }
 
     await tester.pumpWidget(
       KapyNotesApp(
@@ -90,6 +115,7 @@ void main() {
         prefs: prefs,
         shortcuts: ShortcutPrefs(store)..load(),
         tags: tags,
+        folders: folderStore,
       ),
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
@@ -120,8 +146,17 @@ void main() {
     await launch(tester);
 
     final days = [
-      for (final heading in tester.widgetList<Text>(headings))
-        heading.textSpan!.toPlainText(),
+      for (var i = 0; i < headings.evaluate().length; i++)
+        tester
+            .widgetList<Text>(
+              find.descendant(
+                of: headings.at(i),
+                matching: find.byType(Text),
+                matchRoot: true,
+              ),
+            )
+            .map((text) => text.data ?? text.textSpan!.toPlainText())
+            .join(' '),
     ];
     expect(days, hasLength(3));
     expect(days[0], startsWith('Today '));
@@ -135,7 +170,7 @@ void main() {
     expect(tester.getBottomLeft(pinnedCard).dy, lessThan(tops.first));
 
     for (final (title, day, time) in [
-      ('Call with Arjun', 0, '09:12'),
+      ('Call with Arjun', 0, '9:12'),
       ('Groceries', 1, '18:40'),
       ('Offsite agenda', 2, '10:00'),
     ]) {
@@ -229,5 +264,49 @@ void main() {
     expect(pinnedCard, findsOneWidget);
     expect(headings, findsWidgets);
     await shot(tester, 'large-text');
+  });
+
+  testWidgets("the bar's boards, dark: Folders (M02), Drawings from Folders "
+      '(M03) and the + menu open (M05)', (tester) async {
+    await launch(tester, folders: true);
+    prefs.appearance = AppearanceMode.dark;
+    await tester.pumpAndSettle();
+    Future<void> tap(String key) async {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> board(String name) async {
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: name);
+      await screenshot('phone-bar-$name-dark');
+    }
+
+    final title = find.byKey(const ValueKey('phone-list-title'));
+    await tap('bar-folders');
+    expect(tester.widget<Text>(title).data, 'Folders');
+    expect(find.byKey(const ValueKey('folders-drawings-tile')), findsOneWidget);
+    expect(find.textContaining('Deck flow · '), findsOneWidget);
+    for (final name in ['Work', 'Clients', 'Acme', 'Product', 'Personal']) {
+      expect(find.text(name), findsOneWidget, reason: name);
+    }
+    expect(find.text('Not in a folder'), findsOneWidget);
+    await board('m02-folders');
+
+    await tap('folders-drawings-tile');
+    expect(tester.widget<Text>(title).data, 'Drawings');
+    expect(find.byKey(const ValueKey('page-back')), findsOneWidget);
+    expect(find.text('Recent'), findsOneWidget);
+    await board('m03-drawings');
+
+    await tap('bar-notes');
+    await tester.longPress(find.byKey(const ValueKey('phone-new')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('phone-new-dim')), findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-new-close')), findsOneWidget);
+    expect(find.text('New drawing'), findsOneWidget);
+    await board('m05-plus');
+    await tap('phone-new-close');
+    expect(find.byKey(const ValueKey('phone-new-close')), findsNothing);
   });
 }

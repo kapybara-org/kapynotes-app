@@ -66,6 +66,47 @@ class PhoneHomeCards extends StatelessWidget {
   }
 }
 
+/// The tiles over a phone's folder tree (M02): Drawings, which counts the
+/// drawings and names the newest with its day. It takes half the row, the
+/// other half being Upcoming's when that comes.
+class PhoneFolderTiles extends StatelessWidget {
+  const PhoneFolderTiles({
+    super.key,
+    required this.drawings,
+    required this.newest,
+    required this.onOpenDrawings,
+  });
+
+  final List<Note> drawings;
+
+  /// The newest drawing's title and day, such as "Deck flow · Today".
+  final String? newest;
+  final VoidCallback onOpenDrawings;
+
+  @override
+  Widget build(BuildContext context) => IntrinsicHeight(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: _HomeCard(
+            key: const ValueKey('folders-drawings-tile'),
+            icon: KapyIcons.penRounded,
+            name: 'Drawings',
+            notes: drawings,
+            empty: 'No drawings yet',
+            detail: newest,
+            oneLine: true,
+            onPressed: onOpenDrawings,
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Expanded(child: SizedBox()),
+      ],
+    ),
+  );
+}
+
 class _HomeCard extends StatelessWidget {
   const _HomeCard({
     super.key,
@@ -75,6 +116,8 @@ class _HomeCard extends StatelessWidget {
     required this.empty,
     required this.onPressed,
     this.invitations = 0,
+    this.detail,
+    this.oneLine = false,
   });
 
   final KapyIconData icon;
@@ -85,6 +128,11 @@ class _HomeCard extends StatelessWidget {
   final String empty;
   final VoidCallback? onPressed;
   final int invitations;
+
+  /// One line under the name in place of the notes' titles, as a folder
+  /// tile has, or [empty] in its place while it is null.
+  final String? detail;
+  final bool oneLine;
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +171,7 @@ class _HomeCard extends StatelessWidget {
                           height: 32,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: palette.controlBackground,
+                            color: palette.selectedBackground,
                             borderRadius: BorderRadius.circular(9),
                           ),
                           child: KapyIcon(
@@ -189,26 +237,40 @@ class _HomeCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                // Two lines' room whatever fills it, so the cards keep one
-                // height as notes come and go.
-                SizedBox(
-                  height: MediaQuery.textScalerOf(context).scale(13) * 36 / 13,
-                  child: Text(
-                    notes.isEmpty
-                        ? empty
-                        : [
-                            for (final note in notes.take(8)) note.title,
-                          ].join(', '),
-                    maxLines: 2,
+                if (oneLine)
+                  Text(
+                    detail ?? empty,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: chromeStyle(
                       size: 13,
-                      line: 18,
+                      line: 16,
                       weight: 400,
                       color: palette.textMuted,
                     ),
+                  )
+                else
+                  // Two lines' room whatever fills it, so the cards keep one
+                  // height as notes come and go.
+                  SizedBox(
+                    height:
+                        MediaQuery.textScalerOf(context).scale(13) * 36 / 13,
+                    child: Text(
+                      notes.isEmpty
+                          ? empty
+                          : [
+                              for (final note in notes.take(8)) note.title,
+                            ].join(', '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: chromeStyle(
+                        size: 13,
+                        line: 18,
+                        weight: 400,
+                        color: palette.textSecondary,
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

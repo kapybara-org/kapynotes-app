@@ -111,6 +111,16 @@ TextStyle uiStyle(
   tabular: tabular,
 );
 
+/// Newsreader at 19/24, the serif a phone heads a day with: "Today" over
+/// Home's notes and over Tasks.
+TextStyle dayTitleStyle(Color color) => TextStyle(
+  fontFamily: AppFonts.title,
+  fontFamilyFallback: AppFonts.uiFallback,
+  fontSize: 19,
+  height: 24 / 19,
+  color: color,
+);
+
 /// A source mark, a date, a count: interface face, regular weight, quiet.
 TextStyle metaStyle(
   double size,

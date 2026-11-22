@@ -9,7 +9,7 @@
 # that test's header says.
 #
 # With no files it runs every integration_test/*_test.dart except these:
-# - phone_* and kapy_ai_page, which test the phones' screens;
+# - phone_*, kapy_ai_page and kapy_ai_sheet, which test the phones' screens;
 # - apple_transcribe and voice_recording, which need speech recognition or
 #   the microphone, permissions a runner can't grant;
 # - gemma_summary and parakeet_transcribe, which skip themselves without
@@ -30,7 +30,7 @@ else
   tests=()
   for test in integration_test/*_test.dart; do
     case ${test#integration_test/} in
-      phone_* | kapy_ai_page_test.dart) ;;
+      phone_* | kapy_ai_page_test.dart | kapy_ai_sheet_test.dart) ;;
       apple_transcribe_test.dart | voice_recording_test.dart) ;;
       gemma_summary_test.dart | parakeet_transcribe_test.dart) ;;
       *) tests+=("$test") ;;
