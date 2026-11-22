@@ -861,8 +861,8 @@ class KapyAiToolbarButton extends StatelessWidget {
 }
 
 /// Where a phone's sheet rests over the note it was opened from, as a share
-/// of the screen: its top at 42.3%, so the note's header and title stay in
-/// view (M10).
+/// of the screen above the keyboard: with the keyboard down its top is at
+/// 42.3%, so the note's header and title stay in view (M10).
 const double kapyAiSheetRest = 0.577;
 
 /// From this share of the screen up, the sheet is the full panel.
@@ -918,13 +918,10 @@ class _KapyAiSheet extends StatefulWidget {
 class _KapyAiSheetState extends State<_KapyAiSheet> {
   final _sheet = DraggableScrollableController();
 
-  /// The sheet's size with the keyboard down: where the person left it.
+  /// Where the person has the sheet, as a share of the space above the
+  /// keyboard. Only a drag, a snap or Pick another moves it; the keyboard
+  /// moves the space it is measured in instead.
   late double _size = widget.rest ? kapyAiSheetRest : 1;
-  double _keyboard = 0;
-
-  /// Set when a drag puts the keyboard away: the sheet stays where the drag
-  /// leaves it rather than following the keyboard down.
-  bool _letGo = false;
 
   @override
   void initState() {
@@ -939,32 +936,13 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
   }
 
   void _resized() {
-    if (_keyboard > 0 && !_letGo) return;
     final wasCompact = _size < _kapyAiSheetFull;
     _size = _sheet.size;
     if (wasCompact != _size < _kapyAiSheetFull) setState(() {});
   }
 
-  /// The keyboard lifts the sheet by its own height, so the field sits just
-  /// above it and the chat keeps its room; the note may go under the sheet.
-  void _follow(double keyboard, double screen) {
-    if (keyboard == _keyboard) return;
-    _keyboard = keyboard;
-    if (_letGo) {
-      if (keyboard == 0) _letGo = false;
-      return;
-    }
-    final size = (_size + keyboard / screen).clamp(0.0, 1.0);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _sheet.isAttached && _sheet.size > 0) {
-        _sheet.jumpTo(size);
-      }
-    });
-  }
-
   void _expand() {
     if (!_sheet.isAttached) return;
-    if (_keyboard > 0) setState(() => _size = 1);
     unawaited(
       _sheet.animateTo(
         1,
@@ -974,65 +952,44 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
     );
   }
 
-  /// A drag on the sheet puts the keyboard away, as people expect of a sheet.
-  bool _dragged(ScrollStartNotification notification) {
-    if (notification.depth > 0 || notification.dragDetails == null) {
-      return false;
-    }
-    if (_keyboard > 0) _letGo = true;
-    FocusManager.instance.primaryFocus?.unfocus();
-    return false;
-  }
-
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final keyboard = media.viewInsets.bottom;
-    _follow(keyboard, media.size.height);
+    final above = media.size.height - keyboard;
     final compact = _size < _kapyAiSheetFull;
-    return DraggableScrollableSheet(
-      controller: _sheet,
-      expand: false,
-      snap: true,
-      snapSizes: const [kapyAiSheetRest],
-      minChildSize: 0,
-      initialChildSize: _size,
-      builder: (context, scroll) => LayoutBuilder(
-        builder: (context, box) {
-          final palette = context.palette;
-          final height = math.max(
-            box.maxHeight,
-            media.size.height * kapyAiSheetRest,
-          );
-          final under = math.max(
-            0.0,
-            widget.statusBar - (media.size.height - box.maxHeight),
-          );
-          // The keyboard reaches this layout a frame before the sheet has
-          // risen for it, so the field is lifted only as far as the sheet
-          // already is, and the sheet's layout never has to squeeze.
-          final risen = math.min(
-            media.size.height,
-            _size * media.size.height + keyboard,
-          );
-          final lift = (keyboard - (risen - box.maxHeight)).clamp(
-            0.0,
-            keyboard,
-          );
-          return ClipRRect(
-            key: const ValueKey('kapy-ai-sheet'),
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(AppRadii.surface),
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: palette.sidebarBackground,
-                border: Border(
-                  top: BorderSide(color: palette.textPrimary.withAlpha(0x14)),
-                ),
+    // The sheet lives in the space above the keyboard, so its rest and full
+    // height are shares of that space and the field always sits just above
+    // the keyboard; with the keyboard down, that is the whole screen.
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: DraggableScrollableSheet(
+        controller: _sheet,
+        expand: false,
+        snap: true,
+        snapSizes: const [kapyAiSheetRest],
+        minChildSize: 0,
+        initialChildSize: _size,
+        builder: (context, scroll) => LayoutBuilder(
+          builder: (context, box) {
+            final palette = context.palette;
+            final height = math.max(box.maxHeight, above * kapyAiSheetRest);
+            final under = math.max(
+              0.0,
+              widget.statusBar - (above - box.maxHeight),
+            );
+            return ClipRRect(
+              key: const ValueKey('kapy-ai-sheet'),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppRadii.surface),
               ),
-              child: NotificationListener<ScrollStartNotification>(
-                onNotification: _dragged,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: palette.sidebarBackground,
+                  border: Border(
+                    top: BorderSide(color: palette.textPrimary.withAlpha(0x14)),
+                  ),
+                ),
                 child: CustomScrollView(
                   controller: scroll,
                   slivers: [
@@ -1046,9 +1003,9 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
                         child: Padding(
                           padding: EdgeInsets.only(
                             top: under,
-                            bottom: compact
-                                ? lift
-                                : math.max(lift, media.padding.bottom),
+                            bottom: compact || keyboard > 0
+                                ? 0
+                                : media.padding.bottom,
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1084,9 +1041,9 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
                   ],
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

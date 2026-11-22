@@ -12,6 +12,7 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
@@ -446,49 +447,6 @@ void main() {
       expect(_panel, findsNothing);
     });
 
-    testWidgets('the keyboard lifts it, with the field just above it', (
-      tester,
-    ) async {
-      await open(tester);
-      final rest = sheetTop(tester);
-      await tester.tap(field);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      await tester.pumpAndSettle();
-
-      expect(sheetTop(tester), moreOrLessEquals(rest - 300, epsilon: 1));
-      expect(
-        tester.getRect(field).bottom,
-        lessThanOrEqualTo(screen.height - 300),
-      );
-      expect(find.text('About Call with Arjun'), findsOneWidget);
-
-      tester.view.resetViewInsets();
-      await tester.pumpAndSettle();
-      expect(sheetTop(tester), moreOrLessEquals(rest, epsilon: 1));
-    });
-
-    testWidgets(
-      'at 2× text a tall keyboard lifts it with nothing overflowing',
-      (tester) async {
-        tester.platformDispatcher.textScaleFactorTestValue = 2;
-        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-        await open(tester);
-        final rest = sheetTop(tester);
-        await tester.tap(field);
-        // The keyboard's full height in one frame, as a phone may report it,
-        // reaches the sheet a frame before the sheet has risen.
-        tester.view.viewInsets = const FakeViewPadding(bottom: 360);
-        await tester.pump();
-        expect(tester.takeException(), isNull);
-        await tester.pumpAndSettle();
-        expect(sheetTop(tester), moreOrLessEquals(rest - 360, epsilon: 1));
-        expect(
-          tester.getRect(field).bottom,
-          lessThanOrEqualTo(screen.height - 360),
-        );
-      },
-    );
-
     testWidgets('Pick another with the keyboard up opens the full panel '
         'with the picker', (tester) async {
       final id = await open(tester);
@@ -528,67 +486,6 @@ void main() {
       expect(find.byKey(const ValueKey('kapy-ai-picker')), findsOneWidget);
     });
 
-    testWidgets('a drag with the keyboard up puts it away, and the sheet '
-        'stays where it was dropped', (tester) async {
-      await open(tester);
-      await tester.tap(field);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      await tester.pumpAndSettle();
-
-      await tester.drag(grabber, const Offset(0, -300));
-      await tester.pump();
-      expect(
-        tester.widget<TextField>(field).focusNode!.hasFocus,
-        isFalse,
-        reason: 'the drag puts the keyboard away',
-      );
-      tester.view.resetViewInsets();
-      await tester.pumpAndSettle();
-      expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
-      expect(chats, findsOneWidget);
-
-      await tester.tap(field);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      await tester.pumpAndSettle();
-      final hold = await tester.startGesture(tester.getCenter(grabber));
-      for (var step = 0; step < 10; step++) {
-        await hold.moveBy(const Offset(0, 33));
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      await tester.pump(const Duration(milliseconds: 300));
-      await hold.up();
-      await tester.pump();
-      tester.view.resetViewInsets();
-      await tester.pumpAndSettle();
-      expect(
-        sheetTop(tester),
-        moreOrLessEquals(screen.height * 0.423, epsilon: 1),
-      );
-      expect(find.text('About Call with Arjun'), findsOneWidget);
-    });
-
-    testWidgets('at rest the field takes no keyboard', (tester) async {
-      await open(tester);
-      for (var frame = 0; frame < 5; frame++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      expect(tester.testTextInput.hasAnyClients, isFalse);
-    });
-
-    testWidgets('a short drag up or down settles back at rest', (tester) async {
-      await open(tester);
-      final rest = sheetTop(tester);
-      for (final dy in [-150.0, 150.0]) {
-        await tester.timedDrag(
-          grabber,
-          Offset(0, dy),
-          const Duration(seconds: 1),
-        );
-        await tester.pumpAndSettle();
-        expect(sheetTop(tester), moreOrLessEquals(rest, epsilon: 1));
-      }
-    });
-
     testWidgets('from Quick find’s Ask row it opens at full height', (
       tester,
     ) async {
@@ -618,6 +515,173 @@ void main() {
       expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
       expect(chats, findsOneWidget);
       expect(find.text('Ask about this note'), findsNothing);
+    });
+
+    double restTop(double keyboard) =>
+        (screen.height - keyboard) * (1 - kapyAiSheetRest);
+
+    Future<void> keyboardAt(WidgetTester tester, double inset) async {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pumpAndSettle();
+    }
+
+    void composerAbove(WidgetTester tester, double inset) {
+      final bottom = tester.getRect(field).bottom;
+      expect(
+        bottom <= screen.height - inset && bottom >= screen.height - inset - 80,
+        isTrue,
+        reason: 'the field ends at $bottom, just above a $inset keyboard',
+      );
+    }
+
+    Future<void> heldDrag(WidgetTester tester, double dy) async {
+      final hold = await tester.startGesture(tester.getCenter(grabber));
+      for (var step = 0; step < 10; step++) {
+        await hold.moveBy(Offset(0, dy / 10));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pump(const Duration(milliseconds: 300));
+      await hold.up();
+      await tester.pumpAndSettle();
+    }
+
+    void atRest(WidgetTester tester, double inset) {
+      expect(sheetTop(tester), moreOrLessEquals(restTop(inset), epsilon: 1));
+      expect(find.text('About Call with Arjun'), findsOneWidget);
+      expect(chats, findsNothing);
+    }
+
+    testWidgets('the keyboard keeps the field just above it, and going down '
+        'in one frame or in steps leaves the sheet at rest', (tester) async {
+      await open(tester);
+      await tester.tap(field);
+      await keyboardAt(tester, 300);
+      composerAbove(tester, 300);
+      atRest(tester, 300);
+
+      tester.view.resetViewInsets();
+      await tester.pump();
+      atRest(tester, 0);
+
+      await keyboardAt(tester, 300);
+      for (final inset in [240.0, 180.0, 120.0, 60.0, 0.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        await tester.pump();
+        composerAbove(tester, inset);
+      }
+      await tester.pumpAndSettle();
+      atRest(tester, 0);
+    });
+
+    testWidgets('slow, short drags settle back at rest, keyboard up or down', (
+      tester,
+    ) async {
+      await open(tester);
+      await tester.tap(field);
+      await keyboardAt(tester, 300);
+      for (final dy in [30.0, 60.0, 100.0]) {
+        await heldDrag(tester, dy);
+        atRest(tester, 300);
+        composerAbove(tester, 300);
+      }
+      await keyboardAt(tester, 0);
+      for (final dy in [-150.0, 150.0]) {
+        await heldDrag(tester, dy);
+        atRest(tester, 0);
+      }
+    });
+
+    testWidgets('dragged to full or back to rest with the keyboard up, it '
+        'stays there when the keyboard goes down', (tester) async {
+      await open(tester);
+      await tester.tap(field);
+      await keyboardAt(tester, 300);
+      await heldDrag(tester, -300);
+      expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
+      expect(chats, findsOneWidget);
+      composerAbove(tester, 300);
+      await keyboardAt(tester, 0);
+      expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
+      expect(chats, findsOneWidget);
+
+      await tester.tap(field);
+      await keyboardAt(tester, 300);
+      await heldDrag(tester, 230);
+      atRest(tester, 300);
+      await keyboardAt(tester, 0);
+      atRest(tester, 0);
+    });
+
+    testWidgets('the field tapped again while the keyboard is going down '
+        'sits above it when it comes back up', (tester) async {
+      await open(tester);
+      await tester.tap(field);
+      await keyboardAt(tester, 300);
+      await heldDrag(tester, 150);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 150);
+      await tester.pump();
+      await tester.tap(field);
+      await keyboardAt(tester, 300);
+      composerAbove(tester, 300);
+      atRest(tester, 300);
+    });
+
+    testWidgets('at 2× text a tall keyboard in one frame overflows nothing, '
+        'and the chat scrolls in the sheet', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final id = await open(tester);
+      await ask(tester, id);
+      await tester.tap(field);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 360);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      composerAbove(tester, 360);
+      expect(sheetTop(tester), moreOrLessEquals(restTop(360), epsilon: 1));
+      final chat = tester.state<ScrollableState>(
+        find
+            .ancestor(
+              of: find.text(question),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(chat.position.maxScrollExtent, greaterThan(0));
+    });
+
+    testWidgets('the field takes no keyboard at any frame of the entrance', (
+      tester,
+    ) async {
+      notes.create(body: 'Call with Arjun');
+      ai = FakeKapyAi(pro: true)..set(model: KapyModel.cloud);
+      await _pump(tester, size: screen, platform: TargetPlatform.iOS);
+      await tester.tap(_button);
+      for (var frame = 0; frame < 40; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(
+          tester.testTextInput.hasAnyClients,
+          isFalse,
+          reason: 'frame $frame',
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.hasAnyClients, isFalse);
+    });
+
+    testWidgets('scrolling the chat with the keyboard up keeps the keyboard', (
+      tester,
+    ) async {
+      final id = await open(tester);
+      await ask(tester, id);
+      await tester.tap(field);
+      await keyboardAt(tester, 300);
+      await tester.drag(find.text(question), const Offset(0, 120));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      atRest(tester, 300);
     });
   });
 
