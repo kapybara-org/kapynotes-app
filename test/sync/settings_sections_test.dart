@@ -24,7 +24,10 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/control_surface.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/settings_rows.dart';
+import 'package:kapy_notes/ui/settings_search.dart';
 
 import '../test_fonts.dart';
 import 'fake_server.dart';
@@ -84,6 +87,7 @@ Future<void> pumpSettings(
   Entitlements? entitlements,
   bool withCloudAccess = false,
   List<String> invitedBy = const [],
+  bool increaseContrast = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -157,7 +161,7 @@ Future<void> pumpSettings(
 
   await tester.pumpWidget(
     MaterialApp(
-      theme: KapyTheme.dark(),
+      theme: KapyTheme.dark(increaseContrast: increaseContrast),
       home: Scaffold(
         body: SettingsDialog(
           layoutPrefs: LayoutPrefs(store)..load(),
@@ -412,52 +416,145 @@ void main() {
     expect(find.byKey(const ValueKey('join-code')), findsOneWidget);
   });
 
+  // The crisp boards draw Settings' filled cards, search field and segment
+  // tracks with no edge. Increase contrast gives each its border back, and
+  // rings the chosen theme card in the accent.
+  for (final increaseContrast in const [false, true]) {
+    testWidgets('Appearance with Increase contrast '
+        '${increaseContrast ? 'on' : 'off'}', (tester) async {
+      await pumpSettings(
+        tester,
+        size: const Size(1440, 900),
+        asSheet: false,
+        section: SettingsSection.appearance,
+        increaseContrast: increaseContrast,
+      );
+      final palette = tester.element(find.byType(SettingsDialog)).palette;
+      final edge = increaseContrast
+          ? palette.controlBorder
+          : const Color(0x00000000);
+
+      final groups = tester.widgetList<KapyControlSurface>(
+        find.descendant(
+          of: find.byType(SettingsGroup),
+          matching: find.byType(KapyControlSurface),
+        ),
+      );
+      expect(groups, isNotEmpty);
+      expect(groups.map((group) => group.borderColor), everyElement(edge));
+
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byType(SettingsSearchField),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(field.decoration!.enabledBorder!.borderSide.color, edge);
+
+      final track = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byWidgetPredicate((w) => w is SettingsSegmented).first,
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      expect(
+        (track.decoration! as BoxDecoration).border,
+        increaseContrast ? Border.all(color: edge) : isNull,
+      );
+
+      BorderSide outline(String theme) {
+        final card = tester.widget<Material>(
+          find
+              .ancestor(
+                of: find.byKey(ValueKey('theme-$theme')),
+                matching: find.byType(Material),
+              )
+              .first,
+        );
+        return (card.shape! as RoundedRectangleBorder).side;
+      }
+
+      expect(
+        outline('riverbank'),
+        increaseContrast
+            ? BorderSide(color: palette.accent, width: 2)
+            : BorderSide.none,
+      );
+      expect(
+        outline('graphite'),
+        increaseContrast ? BorderSide(color: edge) : BorderSide.none,
+      );
+    });
+  }
+
   group('in the app\'s own fonts', () {
     setUpAll(loadTestFonts);
 
-    // Twice the text, as iOS's accessibility sizes give: the phone's list
-    // grows rather than clipping, every name stays whole, and a value too
-    // wide to sit beside its name drops under it.
-    testWidgets('the phone list grows with large text', (tester) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      tester.platformDispatcher.textScaleFactorTestValue = 2;
-      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-
-      await pumpSettings(
+    // iOS's accessibility sizes, at twice the text and past it: the phone's
+    // list grows rather than clipping, every name stays whole (at 2.35×
+    // About & updates takes two lines), and a value too wide to sit beside
+    // its name drops under it, inside its own row, and wraps when it is
+    // wider than the row.
+    for (final scale in const [2.0, 2.35]) {
+      testWidgets('the phone list grows with text at ${scale}x', (
         tester,
-        size: const Size(390, 844),
-        asSheet: true,
-        invitedBy: const ['Priya', 'Arjun'],
-      );
+      ) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-      expect(tester.takeException(), isNull);
-      for (final name in [
-        'Sharing',
-        'Notes',
-        'Appearance',
-        'Voice & AI',
-        'About & updates',
-      ]) {
-        final label = tester.renderObject<RenderParagraph>(find.text(name));
-        expect(
-          label.size.width,
-          greaterThanOrEqualTo(label.getMaxIntrinsicWidth(double.infinity)),
-          reason: '$name is cut short',
+        await pumpSettings(
+          tester,
+          size: const Size(390, 844),
+          asSheet: true,
+          invitedBy: const ['Priya', 'Arjun'],
         );
-      }
-      final waiting = find.text('2 invitations waiting');
-      expect(waiting, findsOneWidget);
-      expect(
-        tester.getTopLeft(waiting).dy,
-        greaterThanOrEqualTo(tester.getBottomLeft(find.text('Sharing')).dy),
-      );
-      expect(
-        tester
-            .getSize(find.byKey(const ValueKey('settings-section-account')))
-            .height,
-        greaterThan(64),
-      );
-    });
+
+        expect(tester.takeException(), isNull);
+        for (final name in [
+          'Sharing',
+          'Notes',
+          'Appearance',
+          'Voice & AI',
+          'About & updates',
+        ]) {
+          final label = tester.renderObject<RenderParagraph>(find.text(name));
+          expect(
+            label.didExceedMaxLines,
+            isFalse,
+            reason: '$name is cut short',
+          );
+          expect(
+            label.size.width,
+            greaterThanOrEqualTo(label.getMinIntrinsicWidth(double.infinity)),
+            reason: '$name breaks inside a word',
+          );
+        }
+        final sharing = find.byKey(const ValueKey('settings-section-sharing'));
+        final waiting = find.descendant(
+          of: sharing,
+          matching: find.text('2 invitations waiting'),
+        );
+        expect(waiting, findsOneWidget);
+        expect(
+          tester.getTopLeft(waiting).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(find.text('Sharing')).dy),
+        );
+        expect(
+          tester.getBottomLeft(waiting).dy,
+          lessThanOrEqualTo(tester.getBottomLeft(sharing).dy),
+        );
+        expect(tester.getSize(sharing).height, greaterThan(48));
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('settings-section-account')))
+              .height,
+          greaterThan(64),
+        );
+      });
+    }
   });
 }
