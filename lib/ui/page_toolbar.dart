@@ -1007,14 +1007,15 @@ class PageBackButton extends StatelessWidget {
               size: 18,
               color: palette.textPrimary,
             ),
+            const SizedBox(width: 8),
             Text(
               to,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: AppTypeScale.body,
-                fontWeight: AppWeight.font(AppWeight.button),
-                fontVariations: AppWeight.wght(AppWeight.button),
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
                 color: palette.textPrimary,
               ),
             ),

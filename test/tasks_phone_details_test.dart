@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
@@ -458,5 +459,247 @@ void main() {
     );
     expect(markIn(listed().id), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
+  });
+
+  group('a picture in the details (M14)', () {
+    final fields = find.descendant(of: page, matching: find.byType(TextField));
+    final pictures = find.byType(TaskDetailPicture);
+
+    // Puts [details] under Hide the menu, a picture at each mark, numbered
+    // in order, and opens its page.
+    Future<void> openWith(WidgetTester tester, String details) async {
+      await pumpPhone(tester);
+      final note = notes.allNotes.first;
+      final body = note.body.replaceFirst('  It shrinks to a pill.', details);
+      final marks = [
+        for (var i = 0; i < body.length; i++)
+          if (body.codeUnitAt(i) == 0xFFFC) i,
+      ];
+      notes.updateDocument(note.id, body, note.formats, [
+        for (var k = 0; k < marks.length; k++)
+          NoteImageRef(
+            offset: marks[k],
+            hash: 'picture-$k',
+            key: Uint8List(32),
+            mime: 'image/png',
+            width: 10,
+            height: 10,
+            bytes: 8,
+          ),
+      ]);
+      await tasks.reconcileNow();
+      await tester.pumpAndSettle();
+      await openListed(tester);
+    }
+
+    List<String> words(WidgetTester tester) => [
+      for (final field in tester.widgetList<TextField>(fields))
+        field.controller!.text,
+    ];
+
+    // The pictures the page draws, top to bottom, by the mark each draws.
+    List<String> drawn(WidgetTester tester) {
+      final note = notes.allNotes.first;
+      return [
+        for (final picture in tester.widgetList<TaskDetailPicture>(pictures))
+          (note.attachments.singleWhere((ref) => ref.offset == picture.at)
+                  as NoteImageRef)
+              .hash,
+      ];
+    }
+
+    Rect pictureAt(WidgetTester tester, int index) => tester.getRect(
+      find.descendant(of: pictures.at(index), matching: find.byType(ClipRRect)),
+    );
+
+    // The note says [details] under Hide the menu, and every picture is on
+    // its own mark, in order.
+    void expectNote(String details, int count) {
+      final note = notes.allNotes.first;
+      expect(
+        note.body,
+        'Errands\n☐ Pay the rent\n☐ Call the bank\n☐ Hide the menu\n'
+        '$details\n☐ Book flights',
+      );
+      expect(
+        [for (final ref in note.attachments) (ref as NoteImageRef).hash],
+        [for (var k = 0; k < count; k++) 'picture-$k'],
+      );
+      for (final ref in note.attachments) {
+        expect(note.body.codeUnitAt(ref.offset), 0xFFFC);
+      }
+    }
+
+    testWidgets('sits between the lines around its mark, 12 pt from each', (
+      tester,
+    ) async {
+      await openWith(
+        tester,
+        '  It shrinks to a pill.\n  \uFFFC\n  Then it fades.',
+      );
+      expect(words(tester), ['It shrinks to a pill.', 'Then it fades.']);
+      expect(drawn(tester), ['picture-0']);
+      final above = tester.getRect(fields.at(0));
+      final picture = pictureAt(tester, 0);
+      final below = tester.getRect(fields.at(1));
+      expect(picture.size, const Size(200, 96));
+      expect(picture.left, above.left);
+      expect(picture.top, above.bottom + 12);
+      expect(below.top, picture.bottom + 12);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('typing in either field keeps the mark where it was', (
+      tester,
+    ) async {
+      await openWith(
+        tester,
+        '  It shrinks to a pill.\n  \uFFFC\n  Then it fades.',
+      );
+      await tester.enterText(fields.at(0), 'It shrinks fast.\nAnd stays.');
+      await tester.pumpAndSettle();
+      expectNote(
+        '  It shrinks fast.\n  And stays.\n  \uFFFC\n  Then it fades.',
+        1,
+      );
+      await tester.enterText(fields.at(1), 'Then it goes.');
+      await tester.pumpAndSettle();
+      expectNote(
+        '  It shrinks fast.\n  And stays.\n  \uFFFC\n  Then it goes.',
+        1,
+      );
+      expect(words(tester), ['It shrinks fast.\nAnd stays.', 'Then it goes.']);
+      expect(drawn(tester), ['picture-0']);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('several marks each draw their own picture, in order', (
+      tester,
+    ) async {
+      await openWith(
+        tester,
+        '  One.\n  \uFFFC\n  Two.\n  \uFFFC\uFFFC\n  Three.',
+      );
+      expect(words(tester), ['One.', 'Two.', 'Three.']);
+      expect(drawn(tester), ['picture-0', 'picture-1', 'picture-2']);
+      expect(
+        pictureAt(tester, 0).top,
+        greaterThan(tester.getRect(fields.at(0)).bottom),
+      );
+      expect(
+        tester.getRect(fields.at(1)).top,
+        greaterThan(pictureAt(tester, 0).bottom),
+      );
+      expect(
+        pictureAt(tester, 1).top,
+        greaterThan(tester.getRect(fields.at(1)).bottom),
+      );
+      expect(
+        pictureAt(tester, 2).top,
+        greaterThan(pictureAt(tester, 1).bottom),
+      );
+      expect(
+        tester.getRect(fields.at(2)).top,
+        greaterThan(pictureAt(tester, 2).bottom),
+      );
+
+      await tester.enterText(fields.at(1), 'Two, typed.');
+      await tester.pumpAndSettle();
+      expectNote(
+        '  One.\n  \uFFFC\n  Two, typed.\n  \uFFFC\uFFFC\n  Three.',
+        3,
+      );
+      expect(drawn(tester), ['picture-0', 'picture-1', 'picture-2']);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('a mark at the very start leaves an empty field above it, '
+        'and words written there go on a line of their own', (tester) async {
+      await openWith(tester, '  \uFFFC\n  After.');
+      expect(words(tester), ['', 'After.']);
+      expect(
+        pictureAt(tester, 0).top,
+        greaterThan(tester.getRect(fields.at(0)).bottom),
+      );
+      await tester.enterText(fields.at(0), 'Before.');
+      await tester.pumpAndSettle();
+      expectNote('  Before.\n  \uFFFC\n  After.', 1);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('a mark at the very end leaves an empty field under it, '
+        'and words written there go on a line of their own', (tester) async {
+      await openWith(tester, '  Before.\n  \uFFFC');
+      expect(words(tester), ['Before.', '']);
+      expect(
+        tester.getRect(fields.at(1)).top,
+        greaterThan(pictureAt(tester, 0).bottom),
+      );
+      await tester.enterText(fields.at(1), 'After.');
+      await tester.pumpAndSettle();
+      expectNote('  Before.\n  \uFFFC\n  After.', 1);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets(
+      'with no mark, the details stay one field and draw no picture',
+      (tester) async {
+        await openWith(tester, '  It shrinks to a pill.\n  Then it fades.');
+        expect(words(tester), ['It shrinks to a pill.\nThen it fades.']);
+        expect(pictures, findsNothing);
+        expect(
+          tester.widget<TextField>(fields).decoration?.hintText,
+          'Add details',
+        );
+        await tester.enterText(fields, 'It shrinks.\nThen it fades.');
+        await tester.pumpAndSettle();
+        expectNote('  It shrinks.\n  Then it fades.', 0);
+        await tester.pump(const Duration(seconds: 3));
+      },
+    );
+
+    testWidgets('deleting every word on one side keeps the mark, and its '
+        'field, with no blank line left', (tester) async {
+      await openWith(
+        tester,
+        '  It shrinks to a pill.\n  \uFFFC\n  Then it fades.',
+      );
+      await tester.enterText(fields.at(1), '');
+      await tester.pumpAndSettle();
+      expectNote('  It shrinks to a pill.\n  \uFFFC', 1);
+      expect(words(tester), ['It shrinks to a pill.', '']);
+      await tester.enterText(fields.at(1), 'Back again.');
+      await tester.pumpAndSettle();
+      expectNote('  It shrinks to a pill.\n  \uFFFC\n  Back again.', 1);
+
+      await tester.enterText(fields.at(0), '');
+      await tester.pumpAndSettle();
+      expectNote('  \uFFFC\n  Back again.', 1);
+      expect(words(tester), ['', 'Back again.']);
+      expect(drawn(tester), ['picture-0']);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('details indented further than they need come out flush, '
+        'and a write keeps each untouched line as it was', (tester) async {
+      await openWith(
+        tester,
+        '      It shrinks to a pill.\n      \uFFFC\n        Then it fades.',
+      );
+      expect(words(tester), ['It shrinks to a pill.', '  Then it fades.']);
+      await tester.enterText(fields.at(0), 'It shrinks fast.');
+      await tester.pumpAndSettle();
+      expectNote(
+        '      It shrinks fast.\n      \uFFFC\n        Then it fades.',
+        1,
+      );
+      await tester.enterText(fields.at(1), '  Then it goes.');
+      await tester.pumpAndSettle();
+      expectNote(
+        '      It shrinks fast.\n      \uFFFC\n        Then it goes.',
+        1,
+      );
+      await tester.pump(const Duration(seconds: 3));
+    });
   });
 }

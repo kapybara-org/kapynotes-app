@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
@@ -34,8 +35,8 @@ class TaskDetailsSheet extends StatefulWidget {
   final BlobStore? images;
 
   /// On a phone's task page: the details alone, as M14 has them, larger and
-  /// with the picture under the words. The page draws the task, its way
-  /// back and Open in note.
+  /// with each picture between the words where its mark sits. The page draws
+  /// the task, its way back and Open in note.
   final bool phone;
 
   @override
@@ -43,39 +44,118 @@ class TaskDetailsSheet extends StatefulWidget {
 }
 
 class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
-  late final TextEditingController _words = TextEditingController(
-    text: _plain(widget.item),
-  );
-  late final FocusNode _focus = FocusNode();
+  /// A run of picture marks, with the line breaks around it.
+  static final _markRun = RegExp('\n?\uFFFC(?:\n?\uFFFC)*\n?');
+
+  /// The words around each run of picture marks, a field each, and the runs
+  /// between them exactly as the details hold them, so a write puts every
+  /// mark back where it was. One field and no runs on a desktop.
+  List<TextEditingController> _parts = const [];
+  List<FocusNode> _focuses = const [];
+  List<String> _marks = const [];
+
+  /// Whether the words before the first run and after the last were empty
+  /// when the details were last read.
+  ({bool first, bool last}) _wereEmpty = (first: false, last: false);
   bool _adding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _show(_plain(widget.item));
+  }
 
   @override
   void didUpdateWidget(TaskDetailsSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.id != widget.item.id) {
       _adding = false;
-      _words.text = _plain(widget.item);
+      _show(_plain(widget.item));
       return;
     }
     final plain = _plain(widget.item);
-    if (plain != _words.text && !_focus.hasFocus) _words.text = plain;
+    if (plain != _text && !_focuses.any((focus) => focus.hasFocus)) {
+      _show(plain);
+    }
   }
 
   @override
   void dispose() {
-    _words.dispose();
-    _focus.dispose();
+    for (final part in _parts) {
+      part.dispose();
+    }
+    for (final focus in _focuses) {
+      focus.dispose();
+    }
     super.dispose();
   }
 
   String _plain(TaskItem item) => taskDetailsWords(item.note.body, item.line);
+
+  void _show(String plain) {
+    final runs = widget.phone
+        ? _markRun.allMatches(plain).toList()
+        : const <RegExpMatch>[];
+    final parts = <String>[];
+    var from = 0;
+    for (final run in runs) {
+      parts.add(plain.substring(from, run.start));
+      from = run.end;
+    }
+    parts.add(plain.substring(from));
+    final marks = [for (final run in runs) run[0]!];
+    _wereEmpty = (first: parts.first.isEmpty, last: parts.last.isEmpty);
+    if (listEquals(marks, _marks) && parts.length == _parts.length) {
+      for (var i = 0; i < parts.length; i++) {
+        if (_parts[i].text != parts[i]) _parts[i].text = parts[i];
+      }
+      return;
+    }
+    final old = <ChangeNotifier>[..._parts, ..._focuses];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final notifier in old) {
+        notifier.dispose();
+      }
+    });
+    _marks = marks;
+    _parts = [for (final part in parts) TextEditingController(text: part)];
+    _focuses = [for (final _ in parts) FocusNode()];
+  }
+
+  /// The details as the fields hold them, each run of marks back in its
+  /// place. Before the first run and after the last, the line break goes
+  /// with the words: emptied, they take it, so no blank line is left in the
+  /// note, and written where there were none, they bring one, so they never
+  /// share the picture's line.
+  String get _text {
+    final parts = [for (final part in _parts) part.text];
+    final marks = [..._marks];
+    if (marks.isNotEmpty) {
+      final first = marks.first.startsWith('\n')
+          ? marks.first.substring(1)
+          : marks.first;
+      final opens = first != marks.first || _wereEmpty.first;
+      marks.first = parts.first.isNotEmpty && opens ? '\n$first' : first;
+      final last = marks.last.endsWith('\n')
+          ? marks.last.substring(0, marks.last.length - 1)
+          : marks.last;
+      final closes = last != marks.last || _wereEmpty.last;
+      marks.last = parts.last.isNotEmpty && closes ? '$last\n' : last;
+    }
+    return [
+      for (var i = 0; i < parts.length; i++) ...[
+        if (i > 0) marks[i - 1],
+        parts[i],
+      ],
+    ].join();
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final item = widget.item;
     final details = item.details;
-    final empty = !_adding && _words.text.trim().isEmpty && details == null;
+    final empty = !_adding && _text.trim().isEmpty && details == null;
     // A note shared to view only: its details are shown, never taken, since
     // the controller would drop every write without a word.
     final editable = widget.tasks.canEdit(item.note);
@@ -87,15 +167,27 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       alignment: Alignment.centerLeft,
     );
-    final picture = details == null
-        ? null
-        : TaskDetailPicture(
-            item: item,
-            details: details,
-            images: widget.images,
-            size: phone ? 96 : 72,
-            width: phone ? 200 : null,
-          );
+    Widget field(int i) => TextField(
+      controller: _parts[i],
+      focusNode: _focuses[i],
+      readOnly: !editable,
+      minLines: 1,
+      maxLines: null,
+      style: uiStyle(
+        phone ? 16 : 13,
+        phone ? 22 : 20,
+        FontWeight.w400,
+        palette.textSecondary,
+      ),
+      decoration: InputDecoration(
+        border: InputBorder.none,
+        filled: false,
+        isCollapsed: true,
+        contentPadding: EdgeInsets.zero,
+        hintText: editable && _marks.isEmpty ? 'Add details' : null,
+      ),
+      onChanged: (_) => widget.tasks.setDetails(widget.item, _text),
+    );
     final words = empty && editable
         ? Align(
             alignment: Alignment.centerLeft,
@@ -104,7 +196,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
               onPressed: () {
                 setState(() => _adding = true);
                 unawaited(widget.tasks.openDetails(widget.item));
-                _focus.requestFocus();
+                _focuses.first.requestFocus();
               },
               child: Text(
                 'Add details',
@@ -119,27 +211,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
           )
         : empty
         ? null
-        : TextField(
-            controller: _words,
-            focusNode: _focus,
-            readOnly: !editable,
-            minLines: 1,
-            maxLines: null,
-            style: uiStyle(
-              phone ? 16 : 13,
-              phone ? 22 : 20,
-              FontWeight.w400,
-              palette.textSecondary,
-            ),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              filled: false,
-              isCollapsed: true,
-              contentPadding: EdgeInsets.zero,
-              hintText: editable ? 'Add details' : null,
-            ),
-            onChanged: (value) => widget.tasks.setDetails(widget.item, value),
-          );
+        : field(0);
     final hint = empty || !editable
         ? Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -163,16 +235,51 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
       ),
     );
     if (phone) {
+      // M14: each picture where its mark sits, 12 pt from the words around
+      // it, and the words on either side in a field of their own.
+      final body = item.note.body;
+      final at = [
+        if (details != null)
+          for (var i = details.start; i < details.end; i++)
+            if (body.codeUnitAt(i) == 0xFFFC) i,
+      ];
+      final column = <Widget>[
+        if (words != null && (editable || _parts.first.text.isNotEmpty)) words,
+      ];
+      var mark = 0;
+      for (var i = 1; i < _parts.length; i++) {
+        for (final _ in '\uFFFC'.allMatches(_marks[i - 1])) {
+          if (details != null && mark < at.length) {
+            column.add(
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 12),
+                child: TaskDetailPicture(
+                  item: item,
+                  details: details,
+                  images: widget.images,
+                  at: at[mark],
+                  size: 96,
+                  width: 200,
+                ),
+              ),
+            );
+          }
+          mark++;
+        }
+        if (editable || _parts[i].text.isNotEmpty) column.add(field(i));
+      }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ?words,
-          if (picture != null)
-            Padding(padding: const EdgeInsets.only(top: 4), child: picture),
-          ?hint,
-        ],
+        children: [...column, ?hint],
       );
     }
+    final picture = details == null
+        ? null
+        : TaskDetailPicture(
+            item: item,
+            details: details,
+            images: widget.images,
+          );
     // D09: a column against the window's right edge, its header in the page
     // bar's row, and Open in note straight under the words.
     final edge = BorderSide(color: palette.railBorder);
@@ -243,13 +350,14 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
   }
 }
 
-/// The first picture under a task, small, or a play mark when it is a video.
+/// A picture under a task, small, or a play mark when it is a video.
 class TaskDetailPicture extends StatelessWidget {
   const TaskDetailPicture({
     super.key,
     required this.item,
     required this.details,
     required this.images,
+    this.at,
     this.size = 72,
     this.width,
   });
@@ -257,6 +365,10 @@ class TaskDetailPicture extends StatelessWidget {
   final TaskItem item;
   final TaskDetails details;
   final BlobStore? images;
+
+  /// The mark it draws, by where that sits in the note. Without it, the
+  /// first picture under the task.
+  final int? at;
 
   /// How tall it is, and how wide too unless [width] says otherwise.
   final double size;
@@ -268,7 +380,10 @@ class TaskDetailPicture extends StatelessWidget {
     NoteImageRef? picture;
     var video = false;
     for (final ref in item.note.attachments) {
-      if (ref.offset < details.start || ref.offset > details.end) continue;
+      final here = at == null
+          ? ref.offset >= details.start && ref.offset <= details.end
+          : ref.offset == at;
+      if (!here) continue;
       if (ref is NoteImageRef && picture == null) picture = ref;
       if (ref is NoteVideoRef) video = true;
     }
@@ -378,7 +493,7 @@ class PhoneTaskPage extends StatelessWidget {
                       style: uiStyle(
                         AppTypeScale.body,
                         22,
-                        FontWeight.w500,
+                        FontWeight.w400,
                         palette.accentText,
                       ),
                     ),

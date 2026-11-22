@@ -106,6 +106,9 @@ Future<void> pumpForGolden(
   bool withNote = true,
   bool blankNote = false,
   bool withImages = false,
+
+  /// The picture store alone, for a picture a test puts in a note itself.
+  bool withImageStore = false,
   bool withUpdates = false,
   bool updateAvailable = false,
 
@@ -251,7 +254,7 @@ Future<void> pumpForGolden(
   final notes = NotesStore(
     store,
     now: () => _goldenNow,
-    blobs: withImages ? _imageStore : null,
+    blobs: withImages || withImageStore ? _imageStore : null,
   );
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
@@ -691,6 +694,10 @@ late Directory _imageDir;
 late BlobStore _imageStore;
 late List<String> _imageHashes;
 
+/// The chart in Send the deck's details, M14's picture at three times its
+/// 200 × 96.
+late String _deckHash;
+
 /// Flat-coloured rectangles rather than photographs, so the golden is about
 /// the layout — where a picture sits, how wide it is, what it does to the
 /// lines around it — and not about a JPEG decoder's rounding.
@@ -756,6 +763,9 @@ void main() {
       await _imageStore.put(_swatch(600, 600, img.ColorRgb8(104, 168, 128))),
       await _imageStore.put(_swatch(600, 600, img.ColorRgb8(158, 130, 198))),
     ];
+    _deckHash = await _imageStore.put(
+      _swatch(600, 288, img.ColorRgb8(67, 78, 87)),
+    );
   });
 
   tearDownAll(() async {
@@ -1665,6 +1675,7 @@ void main() {
         bool firstRun = false,
         NoteDayStore? days,
         bool signedIn = false,
+        bool withImageStore = false,
       }) async {
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
@@ -1686,6 +1697,7 @@ void main() {
           withYesterday: !firstRun,
           days: days,
           signedIn: signedIn,
+          withImageStore: withImageStore,
         );
       }
 
@@ -1844,9 +1856,12 @@ void main() {
       // M13 with a search typed, and M13a: Do now over Up next, the line
       // after it and Later. The boards are drawn on an iPhone.
       if (phone == 'iphone') {
-        Future<void> openBoardTasks(WidgetTester tester) async {
+        Future<void> openBoardTasks(
+          WidgetTester tester, {
+          bool withImageStore = false,
+        }) async {
           final days = await boardDays();
-          await pumpPhone(tester, days: days);
+          await pumpPhone(tester, days: days, withImageStore: withImageStore);
           await seedBoardTasks(tester, days);
           await tapAndSettle(tester, 'page-back');
           await tapAndSettle(tester, 'home-title-tasks');
@@ -1870,19 +1885,31 @@ void main() {
           await matches('tasks_up_next');
         });
 
-        // M14: a task opened, pushed under the bar.
+        // M14: a task opened, pushed under the bar, its chart between the
+        // lines of its details.
         testWidgets('phone tasks, a task opened, $name', (tester) async {
-          await openBoardTasks(tester);
+          await openBoardTasks(tester, withImageStore: true);
           final call = goldenNotes.notes.firstWhere(
             (note) => note.title == 'Call with Arjun',
           );
-          goldenNotes.updateBody(
-            call.id,
-            '${call.body}\n'
-            '  Slides 1 to 6 are done. The charts need the new numbers '
-            'from Finance.\n'
-            '  Send it before the 17:00 review.',
-          );
+          final body =
+              '${call.body}\n'
+              '  Slides 1 to 6 are done. The charts need the new numbers '
+              'from Finance.\n'
+              '  \u{FFFC}\n'
+              '  Send it before the 17:00 review.';
+          goldenNotes.updateDocument(call.id, body, call.formats, [
+            ...call.attachments,
+            NoteImageRef(
+              offset: body.indexOf('\u{FFFC}'),
+              hash: _deckHash,
+              key: Uint8List(32),
+              mime: 'image/png',
+              width: 600,
+              height: 288,
+              bytes: 4096,
+            ),
+          ]);
           await tester.runAsync(goldenTasks.reconcileNow);
           await tester.pumpAndSettle();
           final deck = find.text('Send the deck').last;
@@ -1892,6 +1919,15 @@ void main() {
           await tester.pumpAndSettle();
           expect(
             find.byKey(const ValueKey('phone-task-open-note')),
+            findsOneWidget,
+          );
+          await _warmVisibleNoteImages(tester);
+          unawaited(tester.binding.reassembleApplication());
+          await tester.pumpAndSettle();
+          expect(
+            find.byWidgetPredicate(
+              (widget) => widget is Image && widget.image is NoteImageProvider,
+            ),
             findsOneWidget,
           );
           await matches('tasks_task_opened');
