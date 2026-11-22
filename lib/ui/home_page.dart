@@ -4021,7 +4021,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   space: space,
                   onSelected: _showSpace,
                   invitations: widget.account?.sharing?.invites.length,
-                  openTasks: taskBoard?.open.length,
+                  tasks: taskBoard != null,
                   streak: widget.notes.streak,
                   onSettingsPressed: _showSettings,
                   settingsShortcut: widget.shortcuts.hintFor(
