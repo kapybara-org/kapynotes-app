@@ -4264,7 +4264,7 @@ class _SheetIndex extends StatelessWidget {
           if (card != cards.first) const SizedBox(height: 16),
           KapyControlSurface(
             color: palette.cardBackground,
-            borderColor: Colors.transparent,
+            borderColor: palette.fillEdge,
             child: Column(
               children: [for (final section in card) _row(section)],
             ),

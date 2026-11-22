@@ -182,7 +182,7 @@ class SettingsGroup extends StatelessWidget {
     final pointer = AppPlatform.hasPointer;
     return KapyControlSurface(
       color: palette.cardBackground,
-      borderColor: Colors.transparent,
+      borderColor: palette.fillEdge,
       child: Column(
         children: [
           for (var index = 0; index < children.length; index++) ...[
@@ -802,6 +802,9 @@ class SettingsSegmented<T> extends StatelessWidget {
       decoration: BoxDecoration(
         color: Color.alphaBlend(palette.fillControl, palette.cardBackground),
         borderRadius: BorderRadius.circular(AppRadii.control),
+        border: palette.increasedContrast
+            ? Border.all(color: palette.fillEdge)
+            : null,
       ),
       child: Row(
         mainAxisSize: fitted ? MainAxisSize.min : MainAxisSize.max,

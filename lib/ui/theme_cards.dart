@@ -92,6 +92,7 @@ class _ThemeCard extends StatelessWidget {
       selected: selected,
       inMutuallyExclusiveGroup: true,
       // The chosen card is a step lighter, with no outline or tick (D13).
+      // Increase contrast outlines every card and rings the chosen one.
       child: Material(
         color: selected
             ? Color.alphaBlend(ground.fillControl, ground.cardBackground)
@@ -99,6 +100,11 @@ class _ThemeCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.surface),
+          side: !ground.increasedContrast
+              ? BorderSide.none
+              : selected
+              ? BorderSide(color: ground.accent, width: 2)
+              : BorderSide(color: ground.controlBorder),
         ),
         child: InkWell(
           key: ValueKey('theme-${theme.name}'),

@@ -230,7 +230,7 @@ class SettingsSearchField extends StatelessWidget {
                 color: palette.textTertiary,
               ),
               fillColor: palette.fillRest,
-              borderColor: Colors.transparent,
+              borderColor: palette.fillEdge,
               radius: 10,
               neutralFocus: true,
               // InputDecorator gives its prefix the whole adornment slot.
