@@ -233,9 +233,10 @@ class _SelectionBubbleOverlay extends StatelessWidget {
   );
 }
 
-/// Over the selection's first line, or under its last near the top edge,
-/// across no further than the note's own pane; Text ▾ opens upward when there is room, so the selection stays in view,
-/// and otherwise toward the side with more, kept on screen.
+/// Under the selection's last line, as D05 draws it, or over its first where
+/// there is no room below, across no further than the note's own pane. Text ▾
+/// opens away from the selection when there is room, so the selection stays
+/// in view, and otherwise toward the side with more, kept on screen.
 class _BubbleLayout extends MultiChildLayoutDelegate {
   _BubbleLayout({
     required this.above,
@@ -267,15 +268,21 @@ class _BubbleLayout extends MultiChildLayoutDelegate {
     final bottom = size.height - safeArea.bottom - _margin;
     final left = math.max(0.0, within.left) + _margin;
     final right = math.min(size.width, within.right) - _margin;
-    double across(double width) =>
-        _clamp(above.center.dx - width / 2, left, right - width);
-
     final bubbleSize = layoutChild(bubble, loose);
-    final fitsAbove = above.top - _gap - bubbleSize.height >= top;
-    final y = fitsAbove
-        ? above.top - _gap - bubbleSize.height
-        : _clamp(below.bottom + _gap, top, bottom - bubbleSize.height);
-    final x = across(bubbleSize.width);
+    final fitsBelow = below.bottom + _gap + bubbleSize.height <= bottom;
+    final line = fitsBelow ? below : above;
+    final y = fitsBelow
+        ? below.bottom + _gap
+        : _clamp(
+            above.top - _gap - bubbleSize.height,
+            top,
+            bottom - bubbleSize.height,
+          );
+    final x = _clamp(
+      line.center.dx - bubbleSize.width / 2,
+      left,
+      right - bubbleSize.width,
+    );
     positionChild(bubble, Offset(x, y));
 
     if (!hasChild(menu)) return;
@@ -283,7 +290,7 @@ class _BubbleLayout extends MultiChildLayoutDelegate {
     final roomAbove = y - _menuGap - top;
     final roomBelow = bottom - (y + bubbleSize.height + _menuGap);
     final upward =
-        fitsAbove && (menuSize.height <= roomAbove || roomAbove > roomBelow);
+        !fitsBelow && (menuSize.height <= roomAbove || roomAbove > roomBelow);
     positionChild(
       menu,
       Offset(
