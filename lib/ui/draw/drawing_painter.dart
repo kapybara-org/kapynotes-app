@@ -40,7 +40,9 @@ class DrawingPainter extends CustomPainter {
   final Color accent;
   final TextStyle textStyle;
 
-  static const double _gridSpacing = 24;
+  /// D08's grid: a 2 px dot every 22.
+  static const double gridSpacing = 22;
+  static const double gridDot = 2;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -78,14 +80,14 @@ class DrawingPainter extends CustomPainter {
   }
 
   void _paintGrid(Canvas canvas, Size size) {
-    var spacing = _gridSpacing * zoom;
-    // Zoomed far out, a dot every 24 units is a grey wash. Thin it instead.
+    var spacing = gridSpacing * zoom;
+    // Zoomed far out, a dot every 22 units is a grey wash. Thin it instead.
     while (spacing < 12) {
       spacing *= 4;
     }
     final paint = Paint()
       ..color = grid
-      ..strokeWidth = 1.6
+      ..strokeWidth = gridDot
       ..strokeCap = StrokeCap.round;
     final startX = pan.dx % spacing;
     final startY = pan.dy % spacing;
