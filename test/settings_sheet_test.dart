@@ -107,15 +107,34 @@ void main() {
       find.byKey(const ValueKey('settings-section-numbers')),
       findsNothing,
     );
-    // Each category says what is behind it before it is opened.
+    // One line each, as M16 draws them, with the notes before their look and
+    // Appearance saying what it is set to.
     expect(
       find.text('How Kapy Notes looks: theme, paper, fonts and text size'),
+      findsNothing,
+    );
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('settings-section-notes')))
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('settings-section-appearance')),
+            )
+            .dy,
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('settings-section-appearance')),
+        matching: find.text('System'),
+      ),
       findsOneWidget,
     );
 
     // Shortcuts and the window belong to a desktop. About does not: phones
-    // update through their store, but the release notes still live there, so
-    // closing the notice at the top of the list is never the last way in.
+    // update through their store, but the release notes still live there.
     for (final section in ['shortcuts', 'window']) {
       expect(
         find.byKey(ValueKey('settings-section-$section')),
@@ -131,7 +150,7 @@ void main() {
 
     // The whole point of the list: none of the panes are on this screen.
     expect(find.text('Daily separators'), findsNothing);
-    expect(find.text('TEXT'), findsNothing);
+    expect(find.text('PAPER AND TEXT'), findsNothing);
   });
 
   testWidgets('pushes one category and comes back to the list', (tester) async {
@@ -141,14 +160,14 @@ void main() {
 
     // The title says where you are, and only that category is here.
     expect(find.text('Appearance'), findsOneWidget);
-    expect(find.text('TEXT'), findsOneWidget);
+    expect(find.text('PAPER AND TEXT'), findsOneWidget);
     expect(find.byKey(const ValueKey('transparency-setting')), findsNothing);
     expect(find.byKey(const ValueKey('settings-section-notes')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('settings-sheet-back')));
     await tester.pumpAndSettle();
 
-    expect(find.text('TEXT'), findsNothing);
+    expect(find.text('PAPER AND TEXT'), findsNothing);
     expect(
       find.byKey(const ValueKey('settings-section-notes')),
       findsOneWidget,
