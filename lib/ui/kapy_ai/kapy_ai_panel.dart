@@ -84,7 +84,6 @@ class KapyAiPanel extends StatefulWidget {
     required this.onOpenNote,
     required this.onManageAccounts,
     required this.onClose,
-    this.shortcut,
     this.now = DateTime.now,
     this.compact = false,
     this.inSheet = false,
@@ -112,10 +111,6 @@ class KapyAiPanel extends StatefulWidget {
   /// Settings › Voice & AI at Your accounts.
   final VoidCallback onManageAccounts;
   final VoidCallback onClose;
-
-  /// The keys that open and close the panel, as a keycap prints them: ⌘J.
-  /// Null on a phone, and where the shortcut has been cleared.
-  final String? shortcut;
   final DateTime Function() now;
 
   @override
@@ -559,15 +554,9 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   Widget _composer() {
     final palette = context.palette;
     final noteId = _noteId;
-    final empty = _ai.current?.messages.isEmpty ?? true;
-    final shortcut = widget.shortcut;
     final typed = _field.text.trim().isNotEmpty;
     final canSend = typed && !_ai.answering;
-    final line = typed && _ai.answering
-        ? 'Kapy AI is still answering'
-        : empty && shortcut != null
-        ? '$shortcut opens and closes Kapy AI'
-        : null;
+    final line = typed && _ai.answering ? 'Kapy AI is still answering' : null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
       child: Column(
@@ -760,12 +749,12 @@ class KapyAiDock extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(child: child),
-            SizedBox(
+            Container(
               width: kapyAiPanelWidth,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12, right: 12, bottom: 4),
-                child: panel,
+              decoration: BoxDecoration(
+                border: Border(left: BorderSide(color: palette.separator)),
               ),
+              child: panel,
             ),
           ],
         );

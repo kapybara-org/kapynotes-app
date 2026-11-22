@@ -4,7 +4,6 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
-import 'package:kapy_notes/ui/notes_grouping.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -25,21 +24,20 @@ void main() {
   );
 
   /// Pumps the strip in [room] at most, with its month over its week, keeping
-  /// When as the strip sets it, and hands back every When it set and every
-  /// day asked for a page.
-  Future<(List<WhenFilter>, List<DateTime>)> pumpStrip(
+  /// the day it picks filled, and hands back every day it picked with the
+  /// ids of the notes on it.
+  Future<List<(DateTime, List<String>)>> pumpStrip(
     WidgetTester tester, {
     DateTime? today,
     List<Note> notes = const [],
-    WhenFilter when = NotesWhen.anyTime,
+    DateTime? picked,
     bool compact = false,
     double room = 1200,
     DateTime? Function(Note note)? ownDay,
     void Function(String noteId, {required bool behind})? onOpenNote,
   }) async {
-    final set = <WhenFilter>[];
-    final asked = <DateTime>[];
-    var current = when;
+    final picks = <(DateTime, List<String>)>[];
+    var current = picked;
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
@@ -56,17 +54,16 @@ void main() {
                     children: [month, ?week],
                   ),
                   today: today ?? thursday,
-                  when: current,
-                  onWhenChanged: (when) => setState(() {
-                    set.add(when);
-                    current = when;
+                  picked: current,
+                  onPick: (day, notes) => setState(() {
+                    picks.add((day, [for (final note in notes) note.id]));
+                    current = day;
                   }),
                   notes: notes,
                   displayTime: (at) => at,
                   firstWeekday: DateTime.monday,
                   ownDay: ownDay,
                   onOpenNote: onOpenNote,
-                  onWriteOn: asked.add,
                   compact: compact,
                 ),
               ),
@@ -77,7 +74,7 @@ void main() {
     );
     // The month names the days that fit, a frame after they are laid out.
     await tester.pump();
-    return (set, asked);
+    return picks;
   }
 
   Finder day(int date, {int month = 11}) =>
@@ -166,45 +163,37 @@ void main() {
     expect(dotsOf(day(16)), findsNothing);
   });
 
-  testWidgets('a click narrows to the day, and a second lets it go', (
+  testWidgets('a click picks the day, with the notes on it, and fills it', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    final (set, asked) = await pumpStrip(tester);
+    final picks = await pumpStrip(
+      tester,
+      notes: [
+        note('standup', 'Standup', DateTime(2026, 11, 17, 10)),
+        note('pricing', 'Pricing ideas', DateTime(2026, 11, 17, 16)),
+        note('renewal', 'Renewal notes', DateTime(2026, 11, 16, 9)),
+      ],
+      ownDay: (note) => note.id == 'renewal' ? DateTime(2026, 11, 21) : null,
+    );
 
     await tap(tester, day(17));
-    expect(set.single, WhenDay(DateTime(2026, 11, 17), today: thursday));
-    expect(set.single.label, 'Tue 17');
+    expect(picks.single.$1, DateTime(2026, 11, 17));
+    expect(picks.single.$2, ['standup', 'pricing']);
     expect(tester.getSemantics(day(17)), isSemantics(isSelected: true));
 
-    await tap(tester, day(17));
-    expect(set.last, NotesWhen.anyTime);
-    expect(tester.getSemantics(day(17)), isSemantics(isSelected: false));
-
-    // Today is When's own Today.
-    await tap(tester, day(19));
-    expect(set.last, NotesWhen.today);
-    await tap(tester, day(19));
-    expect(set.last, NotesWhen.anyTime);
-    // None of these days holds a note, so picking each asks for a page, and
-    // letting it go asks for none.
-    expect(asked, [DateTime(2026, 11, 17), thursday]);
-    semantics.dispose();
-  });
-
-  testWidgets('a day with no notes opens a page to write it', (tester) async {
-    final (set, asked) = await pumpStrip(
-      tester,
-      notes: [note('standup', 'Standup', DateTime(2026, 11, 17, 10))],
-    );
     await tap(tester, day(21));
-    expect(asked.single, DateTime(2026, 11, 21));
-    expect(set.single, WhenDay(DateTime(2026, 11, 21), today: thursday));
+    expect(picks.last.$1, DateTime(2026, 11, 21));
+    expect(picks.last.$2, ['renewal']);
+    expect(tester.getSemantics(day(17)), isSemantics(isSelected: false));
+    expect(tester.getSemantics(day(21)), isSemantics(isSelected: true));
 
-    // A day with notes only narrows.
-    await tap(tester, day(17));
-    expect(asked, hasLength(1));
-    expect(set.last, WhenDay(DateTime(2026, 11, 17), today: thursday));
+    // A day with nothing on it is picked with no notes, for a page to
+    // write it.
+    await tap(tester, day(20));
+    expect(picks.last.$1, DateTime(2026, 11, 20));
+    expect(picks.last.$2, isEmpty);
+    semantics.dispose();
   });
 
   testWidgets('‹ and › move a week at a time', (tester) async {
@@ -237,7 +226,7 @@ void main() {
 
   testWidgets('the month picks a day as a click would, and brings it into '
       'view', (tester) async {
-    final (set, asked) = await pumpStrip(
+    final picks = await pumpStrip(
       tester,
       notes: [note('kickoff', 'Kickoff', DateTime(2026, 11, 2, 10))],
     );
@@ -265,21 +254,16 @@ void main() {
     await tap(tester, find.byKey(const ValueKey('day-month-forward')));
 
     await tap(tester, inMonth(2));
-    expect(set.single, WhenDay(DateTime(2026, 11, 2), today: thursday));
+    expect(picks.single.$1, DateTime(2026, 11, 2));
+    expect(picks.single.$2, ['kickoff']);
     expect(day(2), findsOneWidget);
     expect(day(19), findsNothing);
-    expect(asked, isEmpty);
-
-    // Picked again, it lets the list go, as a second click does.
-    await tap(tester, find.byKey(const ValueKey('day-strip-month')));
-    await tap(tester, inMonth(2));
-    expect(set.last, NotesWhen.anyTime);
   });
 
   testWidgets('with no list to narrow, a day lists its notes, and the one '
       'picked opens, behind on ⌘-click', (tester) async {
     final opened = <(String, bool)>[];
-    final (set, _) = await pumpStrip(
+    final picks = await pumpStrip(
       tester,
       notes: [
         note('standup', 'Standup notes', DateTime(2026, 11, 18, 10, 5)),
@@ -296,7 +280,7 @@ void main() {
     expect(find.text('Pricing ideas'), findsNothing);
     await tap(tester, find.text('Book ideas'));
     expect(opened.single, ('ideas', false));
-    expect(set, isEmpty);
+    expect(picks, isEmpty);
 
     await tap(tester, day(18));
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
@@ -317,12 +301,15 @@ void main() {
     expect(find.text('Today'), findsOneWidget);
     expect(day(19), findsNothing);
 
-    await pumpStrip(
-      tester,
-      compact: true,
-      when: WhenDay(DateTime(2026, 11, 17), today: thursday),
-    );
-    expect(find.text('Tue 17'), findsOneWidget);
+    // A day picked goes by its date, so the name stays true past midnight.
+    for (final (date, label) in [
+      (18, 'Wed 18'),
+      (17, 'Tue 17'),
+      (12, 'Thu 12 Nov'),
+    ]) {
+      await pumpStrip(tester, compact: true, picked: DateTime(2026, 11, date));
+      expect(find.text(label), findsOneWidget);
+    }
     await tap(tester, find.byKey(const ValueKey('day-strip-date')));
     expect(find.text('November 2026'), findsOneWidget);
   });

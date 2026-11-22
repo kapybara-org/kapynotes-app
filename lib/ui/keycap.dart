@@ -19,8 +19,9 @@ class Keycap extends StatelessWidget {
   /// second control beside it.
   final bool tonal;
 
-  /// The legend alone, in faint mono with no chip round it: the key beside
-  /// a neutral button's label, as Settings' Done esc is drawn, and inside a
+  /// The legend alone, Geist Mono 11/14 in T3 with no chip round it: the
+  /// way the / menu (D06) and ⌘K (D11) print their keys, the key beside a
+  /// neutral button's label, as Settings' Done esc is drawn, and inside a
   /// filled field such as its search.
   final bool plain;
 
@@ -36,7 +37,7 @@ class Keycap extends StatelessWidget {
     final painter = TextPainter(
       text: TextSpan(
         text: label,
-        style: _style(tonal: tonal),
+        style: _style(tonal: tonal, plain: plain),
       ),
       textDirection: TextDirection.ltr,
       textScaler: MediaQuery.textScalerOf(context),
@@ -48,13 +49,17 @@ class Keycap extends StatelessWidget {
     return tonal ? width + 2 * 5 : math.max(20, width + 2 * 6 + 2);
   }
 
-  static TextStyle _style({required bool tonal, Color? color}) => TextStyle(
+  static TextStyle _style({
+    required bool tonal,
+    bool plain = false,
+    Color? color,
+  }) => TextStyle(
     fontFamily: AppFonts.mono,
     fontFamilyFallback: AppFonts.monoFallback,
     fontSize: tonal ? AppTypeScale.micro : AppTypeScale.keycap,
-    fontWeight: AppWeight.font(AppWeight.rowTitle),
-    fontVariations: AppWeight.wght(AppWeight.rowTitle),
-    height: 1.1,
+    fontWeight: AppWeight.font(plain ? AppWeight.body : AppWeight.rowTitle),
+    fontVariations: AppWeight.wght(plain ? AppWeight.body : AppWeight.rowTitle),
+    height: plain ? 14 / 11 : 1.1,
     leadingDistribution: TextLeadingDistribution.even,
     letterSpacing: 0,
     color: color,
@@ -69,7 +74,7 @@ class Keycap extends StatelessWidget {
         label,
         maxLines: 1,
         softWrap: false,
-        style: _style(tonal: false, color: palette.textTertiary),
+        style: _style(tonal: false, plain: true, color: palette.textTertiary),
       );
     }
     return Container(

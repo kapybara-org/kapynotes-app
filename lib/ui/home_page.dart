@@ -97,7 +97,7 @@ import 'note_picks.dart';
 import 'note_tabs.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
-import 'page_card.dart';
+import 'page_pane.dart';
 import 'page_toolbar.dart';
 import 'phone_home_cards.dart';
 import 'phone_home_header.dart';
@@ -114,7 +114,6 @@ import 'tag_ui.dart';
 import 'sidebar_swipe.dart';
 import 'spaces_rail.dart';
 import 'split_view.dart';
-import 'window_drag_area.dart';
 import 'draw/drawing_canvas.dart';
 
 /// The narrowest window that holds the notes list beside the page. Below it a
@@ -306,7 +305,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   TagFilter _tagFilter = const TagFilter();
 
   /// How far back that list reaches, kept the same way.
-  WhenFilter _when = NotesWhen.anyTime;
+  NotesWhen _when = NotesWhen.anyTime;
 
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
@@ -394,7 +393,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
 
   /// The page's days, keyed so they keep their place in the week wherever
-  /// the bar is built, and so When can ask whether the week is on show.
+  /// the bar is built.
   final _dayStrip = GlobalKey();
   late final TasksController? _taskController = switch (widget.tasks) {
     final tasks? => TasksController(
@@ -1382,6 +1381,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!keepList) _showTabOf(next);
     }
     _selectedId = next;
+    if (_pickedDay case final day?) {
+      final note = widget.notes.byId(next);
+      final nextDay = note == null ? _dayOfFreshNote[next] : _dayOfNote(note);
+      if (nextDay != day) _pickedDay = null;
+    }
     final open = _workspace.openNoteIds;
     _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
     if (!selectionPreview) _scheduleDiscardAbandonedBlanks();
@@ -1940,6 +1944,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Whether the list's Upcoming fold is open.
   bool _upcomingOpen = false;
+
+  /// The day last picked in the page's week. Its notes are lit in the list
+  /// until another day is picked or a note from another day opens.
+  DateTime? _pickedDay;
+
+  /// The day [note] sits on: the one it was started from, its own, or the
+  /// day it was last edited.
+  DateTime _dayOfNote(Note note) =>
+      _dayOfFreshNote[note.id] ??
+      noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
+
+  /// A day picked in the page's week. Its latest note opens, with Upcoming
+  /// opened when the day is still to come; with no notes, a page to write on
+  /// it opens where [write] allows one. The list stays whole.
+  void _pickDay(DateTime day, List<Note> notes, {required bool write}) {
+    if (notes.isEmpty) {
+      if (!write) return;
+      _writeOnDay(day);
+      setState(() => _pickedDay = day);
+      return;
+    }
+    final today = dayShown(widget.notes.now(), widget.prefs.displayTime);
+    setState(() {
+      _pickedDay = day;
+      if (day.isAfter(today)) _upcomingOpen = true;
+    });
+    _select(
+      notes.reduce((a, b) => b.updatedAt.isAfter(a.updatedAt) ? b : a).id,
+    );
+  }
 
   /// The day a note started from a tapped day will be given once it has its
   /// first words: a page left untouched writes neither the note nor a day.
@@ -2688,7 +2722,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  void _setWhen(WhenFilter when) => setState(() => _when = when);
+  void _setWhen(NotesWhen when) => setState(() => _when = when);
 
   /// The tags the lists offer, in the person's order, each with how many
   /// notes carry it: the archived ones in Archive, and otherwise the rest,
@@ -3136,10 +3170,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What the search fields read: Drawings' names what it finds, and the
   /// rest offer to ask Kapy AI only while it can be asked.
-  String get _searchPlaceholder => _space == LibrarySpace.drawings
-      ? 'Search drawings'
-      : _kapyAiOn
+  String get _searchPlaceholder =>
+      _kapyAiOn && _space != LibrarySpace.drawings
       ? 'Search or Ask Kapy AI'
+      : _listSearchPlaceholder;
+
+  /// What the desktop list's field reads, Kapy AI or not, as D01 draws it:
+  /// Ask Kapy has its own button beside it, and ⌘K's results still offer to
+  /// ask. Drawings' names what it finds.
+  String get _listSearchPlaceholder => _space == LibrarySpace.drawings
+      ? 'Search drawings'
       : _offersFolders && !_usesCompactLayout
       ? 'Search notes and folders'
       : 'Search';
@@ -3208,9 +3248,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : kapyAccountRowId(ai.accounts.first.kind),
     ),
     onClose: onClose,
-    shortcut: AppPlatform.isDesktop
-        ? widget.shortcuts.hintFor(ShortcutAction.toggleKapyAi)?.keycapLabel
-        : null,
     now: widget.notes.now,
   );
 
@@ -3383,7 +3420,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     when: _when,
     onWhenChanged: _setWhen,
     today: dayShown(widget.notes.now(), widget.prefs.displayTime),
-    weekShown: () => DayStrip.showsWeek(_dayStrip),
     cards: widget.prefs.noteCards,
     onCardsChanged: phone ? null : (cards) => widget.prefs.noteCards = cards,
     grouping: sort ? widget.prefs.notesGrouping : null,
@@ -3394,9 +3430,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     phone: phone,
   );
 
-  /// The page's days, in My notes and on a folder in front, counting and
-  /// narrowing what the list shows or what the folder holds. With the list
-  /// hidden and no folder in front, a day lists its notes instead. Their
+  /// The page's days, in My notes and on a folder in front, counting what
+  /// the list shows or what the folder holds; a day picked there opens its
+  /// latest note. With the list hidden and no folder in front, a day lists
+  /// its notes instead. Their
   /// month takes the bar's top left, so the open note's folders go in the
   /// line above its title. Kapy AI open over the page's right edge leaves
   /// them the one button for the day.
@@ -3419,8 +3456,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 (_kapyAi?.enabled ?? false) &&
                 MediaQuery.sizeOf(context).width < kapyAiOverlayBelow),
         today: dayShown(widget.notes.now(), displayTime),
-        when: _when,
-        onWhenChanged: _setWhen,
+        picked: _pickedDay,
+        onPick: (day, notes) => _pickDay(
+          day,
+          notes,
+          write: widget.days != null && listVisible,
+        ),
         notes: folderId == null
             ? _filtered(widget.notes.search(''), anyTime: true)
             : widget.folders!.tree.notesIn(
@@ -3431,7 +3472,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         displayTime: displayTime,
         firstWeekday: firstWeekday(context),
         ownDay: widget.days == null ? null : _ownDayOf,
-        onWriteOn: widget.days == null || !listVisible ? null : _writeOnDay,
         onOpenNote: listVisible || folderId != null ? null : _openFromDay,
       ),
     );
@@ -3633,7 +3673,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return [
       for (final note in _narrowed(notes))
         if (!_dayOfFreshNote.containsKey(note.id) &&
-            (span == null || span.covers(noteDay(note, displayTime))) &&
+            (span == null ||
+                span.covers(
+                  noteDay(note, displayTime, ownDay: _ownDayOf(note)),
+                )) &&
             (!byMedia || NoteMedia.shows(note, _mediaFilter)) &&
             (!byTag.narrowed ||
                 byTag.matches([
@@ -3887,12 +3930,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // around the software keyboard. Desktop reports zero here.
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     // A phone on its side with the keyboard up has no room to spare: the page
-    // gives up its bar and its margins for the lines being typed.
+    // gives up its bar for the lines being typed.
     final cramped = isCrampedPage(MediaQuery.sizeOf(context), keyboardInset);
-    // The canvas left around the page, on every side but the one against the
-    // notes list, whose own margin keeps the two apart.
-    const pageInset = 12.0;
-
     // The desktop layout is its own chrome rather than a Scaffold, but text
     // fields, menus and ink still need a Material ancestor. It is the canvas
     // the rail, the notes list and the page stand on, and transparent in glass
@@ -3995,7 +4034,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               searchShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.findNotes,
               ),
-              searchPlaceholder: _searchPlaceholder,
+              searchPlaceholder: _listSearchPlaceholder,
               archiveShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.deleteNote,
               ),
@@ -4013,6 +4052,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               upcomingOpen: _upcomingOpen,
               onUpcomingToggled: () =>
                   setState(() => _upcomingOpen = !_upcomingOpen),
+              ofPickedDay: switch (_pickedDay) {
+                null => null,
+                final day => (note) => _dayOfNote(note) == day,
+              },
               when: _when,
               onWhenChanged: _setWhen,
               folders: switch (widget.folders) {
@@ -4057,7 +4100,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   space: space,
                   onSelected: _showSpace,
                   invitations: widget.account?.sharing?.invites.length,
-                  openTasks: taskBoard?.open.length,
+                  tasks: taskBoard != null,
                   streak: widget.notes.streak,
                   onSettingsPressed: _showSettings,
                   settingsShortcut: widget.shortcuts.hintFor(
@@ -4118,132 +4161,99 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       left: false,
                       bottom: false,
                       child: _withKapyAi(
-                        Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            const Positioned(
-                              left: 0,
-                              top: 0,
-                              right: 0,
-                              height: pageInset,
-                              child: WindowDragArea(child: SizedBox.expand()),
-                            ),
-                            AnimatedPadding(
-                              duration: const Duration(milliseconds: 160),
-                              curve: Curves.easeOutCubic,
-                              padding: EdgeInsets.fromLTRB(
-                                listFits && listShown ? 0 : pageInset,
-                                cramped || (listFits && listShown)
-                                    ? 0
-                                    : pageInset,
-                                pageInset,
-                                cramped ? 0 : pageInset,
-                              ),
-                              child: PageCard(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (tasks != null)
-                                      ..._buildTasksPage(
-                                        tasks,
-                                        listVisible: listFits && listShown,
-                                        underList: !listFits && listShown,
-                                        create: create,
-                                      )
-                                    else ...[
-                                      if (!cramped)
-                                        PageToolbar(
-                                          path: pageDays == null
-                                              ? _pagePath(selected)
-                                              : null,
-                                          days: pageDays,
-                                          onOpenFolder: widget.folders == null
-                                              ? null
-                                              : _openFolder,
-                                          listVisible: listFits && listShown,
-                                          underList: !listFits && listShown,
-                                          onShowList: _toggleList,
-                                          showListShortcut: _sidebarShortcut,
-                                          create: create,
-                                          noteOpen: selected != null,
-                                          syncStatus:
-                                              widget.account?.syncStatus,
-                                          unloadedPictures: unloaded.length,
-                                          onShowUnloadedPicture:
-                                              unloaded.isEmpty
-                                              ? null
-                                              : () => _selectedEditor
-                                                    ?.showAttachment(
-                                                      unloaded.first.offset,
-                                                    ),
-                                          members: _selectedMembers,
-                                          present: _selectedPresence,
-                                          currentUserId:
-                                              widget.account?.sharing?.userId ??
-                                              '',
-                                          noteShared:
-                                              selected?.isShared ?? false,
-                                          onShare: _shareSelected,
-                                          assistant: assistant,
-                                          actions: _folderInFront == null
-                                              ? null
-                                              : const [],
-                                          moreActions: moreActions,
-                                          onMore: moreActions.isEmpty
-                                              ? null
-                                              : (action, at) => _runPageAction(
-                                                  action,
-                                                  selected,
-                                                  at,
-                                                ),
-                                          updates: widget.updates,
-                                        ),
-                                      TabRowReveal(
-                                        shown:
-                                            !_specialMode &&
-                                            _workspace.tabs.length > 1,
-                                        child: _buildTabRow(),
-                                      ),
-                                      Expanded(
-                                        child: LayoutBuilder(
-                                          builder: (context, page) =>
-                                              DateLineSaved(
-                                                saved: _savedOnDateLine(
-                                                  selected,
-                                                  page.maxWidth,
-                                                  unloadedPictures:
-                                                      unloaded.length,
-                                                  withNew: !listShown,
-                                                ),
-                                                child: switch ((
-                                                  widget.folders,
-                                                  pageDays,
-                                                )) {
-                                                  (final folders?, _?) =>
-                                                    NoteFolders(
-                                                      tree: folders.tree,
-                                                      onOpenFolder: _openFolder,
-                                                      child:
-                                                          _buildWideWorkspace(
-                                                            sidebar,
-                                                            cramped: cramped,
-                                                          ),
-                                                    ),
-                                                  _ => _buildWideWorkspace(
-                                                    sidebar,
-                                                    cramped: cramped,
-                                                  ),
-                                                },
-                                              ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                        PagePane(
+                          divided: listFits && listShown,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (tasks != null)
+                                ..._buildTasksPage(
+                                  tasks,
+                                  listVisible: listFits && listShown,
+                                  underList: !listFits && listShown,
+                                  create: create,
+                                )
+                              else ...[
+                                if (!cramped)
+                                  PageToolbar(
+                                    path: pageDays == null
+                                        ? _pagePath(selected)
+                                        : null,
+                                    days: pageDays,
+                                    onOpenFolder: widget.folders == null
+                                        ? null
+                                        : _openFolder,
+                                    listVisible: listFits && listShown,
+                                    underList: !listFits && listShown,
+                                    onShowList: _toggleList,
+                                    showListShortcut: _sidebarShortcut,
+                                    create: create,
+                                    noteOpen: selected != null,
+                                    syncStatus: widget.account?.syncStatus,
+                                    unloadedPictures: unloaded.length,
+                                    onShowUnloadedPicture: unloaded.isEmpty
+                                        ? null
+                                        : () => _selectedEditor?.showAttachment(
+                                            unloaded.first.offset,
+                                          ),
+                                    members: _selectedMembers,
+                                    present: _selectedPresence,
+                                    currentUserId:
+                                        widget.account?.sharing?.userId ?? '',
+                                    noteShared: selected?.isShared ?? false,
+                                    onShare: _shareSelected,
+                                    assistant: assistant,
+                                    actions: _folderInFront == null
+                                        ? null
+                                        : const [],
+                                    moreActions: moreActions,
+                                    onMore: moreActions.isEmpty
+                                        ? null
+                                        : (action, at) => _runPageAction(
+                                            action,
+                                            selected,
+                                            at,
+                                          ),
+                                    updates: widget.updates,
+                                  ),
+                                TabRowReveal(
+                                  shown:
+                                      !_specialMode &&
+                                      _workspace.tabs.length > 1,
+                                  child: _buildTabRow(),
                                 ),
-                              ),
-                            ),
-                          ],
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, page) => DateLineSaved(
+                                      saved: _savedOnDateLine(
+                                        selected,
+                                        page.maxWidth,
+                                        unloadedPictures: unloaded.length,
+                                        withNew: !listShown,
+                                      ),
+                                      child: switch ((
+                                        widget.folders,
+                                        pageDays,
+                                      )) {
+                                        (final folders?, _?) => NoteFolders(
+                                          tree: folders.tree,
+                                          onOpenFolder: _openFolder,
+                                          child: _buildWideWorkspace(
+                                            sidebar,
+                                            cramped: cramped,
+                                          ),
+                                        ),
+                                        _ => _buildWideWorkspace(
+                                          sidebar,
+                                          cramped: cramped,
+                                        ),
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -5107,8 +5117,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
-          slashHint: widget.prefs.slashHint,
-          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
           lastSlashCommand: SlashCommandType.values
               .asNameMap()[widget.prefs.lastSlashCommand],
           onSlashCommandChosen: (command) =>
@@ -5204,8 +5212,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
-          slashHint: widget.prefs.slashHint,
-          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
           lastSlashCommand: SlashCommandType.values
               .asNameMap()[widget.prefs.lastSlashCommand],
           onSlashCommandChosen: (command) =>

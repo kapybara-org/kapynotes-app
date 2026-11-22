@@ -120,8 +120,17 @@ void main() {
     await launch(tester);
 
     final days = [
-      for (final heading in tester.widgetList<Text>(headings))
-        heading.textSpan!.toPlainText(),
+      for (var i = 0; i < headings.evaluate().length; i++)
+        tester
+            .widgetList<Text>(
+              find.descendant(
+                of: headings.at(i),
+                matching: find.byType(Text),
+                matchRoot: true,
+              ),
+            )
+            .map((text) => text.data ?? text.textSpan!.toPlainText())
+            .join(' '),
     ];
     expect(days, hasLength(3));
     expect(days[0], startsWith('Today '));
@@ -135,7 +144,7 @@ void main() {
     expect(tester.getBottomLeft(pinnedCard).dy, lessThan(tops.first));
 
     for (final (title, day, time) in [
-      ('Call with Arjun', 0, '09:12'),
+      ('Call with Arjun', 0, '9:12'),
       ('Groceries', 1, '18:40'),
       ('Offsite agenda', 2, '10:00'),
     ]) {

@@ -701,7 +701,7 @@ class _CommandList extends StatelessWidget {
                           label: command.group.label,
                           excludeSemantics: true,
                           child: Text(
-                            command.group.label.toUpperCase(),
+                            command.group.label,
                             style: TextStyle(
                               color: palette.textTertiary,
                               fontSize: AppTypeScale.badge,
@@ -709,7 +709,6 @@ class _CommandList extends StatelessWidget {
                               fontVariations: AppWeight.wght(
                                 AppWeight.rowTitle,
                               ),
-                              letterSpacing: 0.44,
                             ),
                           ),
                         ),
@@ -920,7 +919,7 @@ class _CommandRow extends StatelessWidget {
                     if (requiresMarkdown)
                       Text('Markdown', maxLines: 1, style: quiet)
                     else if (hint != null)
-                      Keycap(hint),
+                      Keycap(hint, plain: true),
                   ],
                 ),
               ),
@@ -1047,7 +1046,7 @@ class _KeyHints extends StatelessWidget {
               ('↵', 'insert'),
               ('esc', 'close'),
             ]) ...[
-              Keycap(key),
+              Keycap(key, plain: true),
               Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: Text(action, style: style),

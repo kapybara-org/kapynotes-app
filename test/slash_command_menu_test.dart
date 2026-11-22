@@ -4,6 +4,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/editor/slash_command_menu.dart';
 import 'package:kapy_notes/ui/editor/slash_commands.dart';
+import 'package:kapy_notes/ui/keycap.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -43,8 +44,6 @@ Future<void> _open(
       SlashCommandType.video: '⌘⇧M',
       SlashCommandType.voiceNote: '⌘⇧R',
       SlashCommandType.file: '⌘⇧A',
-      SlashCommandType.checklist: '⌘⇧C',
-      SlashCommandType.bulletedList: '⌘⇧B',
     },
     lastCommand: last,
     search: search,
@@ -110,9 +109,11 @@ void main() {
     for (var index = 1; index < tops.length; index++) {
       expect(tops[index], greaterThan(tops[index - 1]));
     }
-    expect(find.text('WRITE'), findsOneWidget);
-    expect(find.text('BLOCKS'), findsOneWidget);
-    expect(find.text('INSERT'), findsNothing);
+    expect(find.text('Write'), findsOneWidget);
+    expect(find.text('Blocks'), findsOneWidget);
+    expect(find.text('WRITE'), findsNothing);
+    expect(find.text('BLOCKS'), findsNothing);
+    expect(find.text('Insert'), findsNothing);
 
     final inserts = tester.getRect(
       find.byKey(const ValueKey('slash-command-inserts')),
@@ -138,8 +139,24 @@ void main() {
       expect(find.text(label), findsNothing, reason: 'icons only');
     }
     expect(find.text('Drawing'), findsNothing);
-    // Every row shows its key or its Markdown.
-    expect(find.text('⌘⇧C'), findsOneWidget);
+    // Every row shows what typing it takes, as plain text, as D06 has it.
+    expect(find.text('[ ]'), findsOneWidget);
+    expect(find.text('-'), findsOneWidget);
+    for (final cap in tester.widgetList<Keycap>(find.byType(Keycap))) {
+      expect(cap.plain, isTrue, reason: cap.label);
+    }
+    expect(
+      [
+        for (final cap in tester.widgetList<Keycap>(
+          find.descendant(
+            of: find.byKey(const ValueKey('slash-command-keys')),
+            matching: find.byType(Keycap),
+          ),
+        ))
+          cap.label,
+      ],
+      ['↑↓', '↵', 'esc'],
+    );
     expect(find.text('###'), findsOneWidget);
     expect(find.text(r'$$'), findsOneWidget);
     expect(find.text('|'), findsOneWidget);
