@@ -4096,6 +4096,52 @@ void main() {
       expect(more.right, bar.right - 12);
     });
 
+    testWidgets("D01's window, the list open at its width, shows the month "
+        'and all seven days, and the band gives way at 720', (tester) async {
+      await library(tester);
+      final month = find.byKey(const ValueKey('day-strip-month'));
+      final chip = find.byKey(const ValueKey('day-strip-date'));
+      int days() => [
+        for (var date = 16; date <= 22; date++)
+          if (day(date).evaluate().isNotEmpty) date,
+      ].length;
+      double band() =>
+          tester.getSize(find.byKey(const ValueKey('page-toolbar'))).width;
+      Future<void> window(double width) async {
+        tester.view.physicalSize = Size(width, 900);
+        await tester.pumpAndSettle();
+      }
+
+      for (final width in [1440.0, 1490.0]) {
+        await window(width);
+        expect(
+          find.descendant(of: month, matching: find.text('November')),
+          findsOneWidget,
+          reason: '$width',
+        );
+        expect(days(), 7, reason: '$width');
+        expect(chip, findsNothing, reason: '$width');
+      }
+
+      // With the list open, the strip holds until the band is 720.
+      await window(1132);
+      expect(band(), 720);
+      expect(days(), 3);
+      expect(chip, findsNothing);
+      await window(1131);
+      expect(band(), 719);
+      expect(chip, findsOneWidget);
+      expect(days(), 0);
+
+      // With it hidden, the band keeps 36 for the + beside show-list.
+      prefs.toggleSidebar();
+      await window(832);
+      expect(band(), 756);
+      expect(days(), 3);
+      await window(831);
+      expect(chip, findsOneWidget);
+    });
+
     testWidgets('on a narrow page the week is one button, and When no longer '
         'points to it', (tester) async {
       await library(tester);
