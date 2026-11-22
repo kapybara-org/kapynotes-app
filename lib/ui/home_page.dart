@@ -3657,6 +3657,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _openSpace(tasks ? LibrarySpace.tasks : LibrarySpace.notes);
   }
 
+  /// Back on a phone's list, from Android's back or a swipe right: the picks
+  /// let go, then Tasks, Pinned or Shared returns to Notes.
+  void _phoneListBack() {
+    if (_tasksMode) {
+      _showHome(tasks: false);
+    } else if (_picks.on) {
+      _picks.clear();
+    } else if (_showingPinnedOnly) {
+      setState(() => _pinnedOnly = false);
+    } else {
+      _showSpace(LibrarySpace.notes);
+    }
+  }
+
   /// What opening [space] sets up, whether or not the list was reset.
   void _openSpace(LibrarySpace space) {
     setState(() {
@@ -4672,14 +4686,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (didPop) return;
             if (pageOpen) {
               _phoneNavigator.currentState?.maybePop();
-            } else if (_tasksMode) {
-              _showHome(tasks: false);
-            } else if (_picks.on) {
-              _picks.clear();
-            } else if (_showingPinnedOnly) {
-              setState(() => _pinnedOnly = false);
             } else {
-              _showSpace(LibrarySpace.notes);
+              _phoneListBack();
             }
           },
           child: Navigator(
@@ -4748,6 +4756,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         listenable: _toolbarSources,
         builder: (context, _) {
           final tasks = _tasksMode ? _taskController : null;
+          // A swipe left turns Home to Tasks; a swipe right goes back out of
+          // Tasks, Pinned or Shared, as iOS's edge swipe does out of a page,
+          // since none of them is a page of its own to swipe away.
+          final turns = _taskController != null && _phoneHome;
+          final back =
+              _tasksMode || _showingPinnedOnly || _space == LibrarySpace.shared;
           // The Notes list stays built under Tasks, out of sight, so it comes
           // back scrolled and narrowed as it was left.
           final page = Stack(
@@ -4826,9 +4840,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: SafeArea(
               bottom: false,
               child: PhoneHomeSwipe(
-                onTurn: _taskController != null && _phoneHome
-                    ? (tasks) => _showHome(tasks: tasks)
+                onTurn: turns || back
+                    ? (tasks) {
+                        if (tasks && turns) _showHome(tasks: true);
+                        if (!tasks && back) _phoneListBack();
+                      }
                     : null,
+                backFromEdge: back,
                 child: page,
               ),
             ),
