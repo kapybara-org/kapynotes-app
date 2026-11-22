@@ -31,6 +31,7 @@ class PhoneNoteHeader extends StatelessWidget {
     this.currentUserId = '',
     this.onMembers,
     this.assistant,
+    this.typing = false,
   });
 
   final VoidCallback onHome;
@@ -62,6 +63,10 @@ class PhoneNoteHeader extends StatelessWidget {
 
   /// Kapy AI's button, between the day and More. Null where it is off.
   final Widget? assistant;
+
+  /// While the note is being typed in (M08) the row of buttons steps back,
+  /// and the week and the tasks line stay as they are.
+  final bool typing;
 
   /// The row of buttons, and the line that opens the tasks.
   static const double rowHeight = 52;
@@ -95,50 +100,55 @@ class PhoneNoteHeader extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              height: rowHeight,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 12, right: 6),
-                child: Row(
-                  children: [
-                    _HomeButton(onPressed: onHome),
-                    const Spacer(),
-                    if (members.isNotEmpty)
-                      Flexible(
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: MemberAvatars(
-                            members: members,
-                            present: present,
-                            currentUserId: currentUserId,
-                            onPressed: onMembers,
+            AnimatedOpacity(
+              key: const ValueKey('phone-note-header-row'),
+              opacity: typing ? 0.5 : 1,
+              duration: const Duration(milliseconds: 150),
+              child: SizedBox(
+                height: rowHeight,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 6),
+                  child: Row(
+                    children: [
+                      _HomeButton(onPressed: onHome),
+                      const Spacer(),
+                      if (members.isNotEmpty)
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: MemberAvatars(
+                              members: members,
+                              present: present,
+                              currentUserId: currentUserId,
+                              onPressed: onMembers,
+                            ),
+                          ),
+                        ),
+                      if (day != null && today != null)
+                        _DayButton(
+                          day: day,
+                          today: day == today,
+                          open: open,
+                          onPressed: onWeekToggled,
+                        ),
+                      ?assistant,
+                      Builder(
+                        builder: (button) => CompactIconButton(
+                          key: const ValueKey('page-more'),
+                          tooltip: 'More',
+                          extent: AppControlMetrics.iconButtonExtent,
+                          radius: 10,
+                          onPressed: menu.groups.every((group) => group.isEmpty)
+                              ? null
+                              : () => _showMenu(button),
+                          icon: KapyIcon(
+                            KapyIcons.moreVerticalRounded,
+                            size: AppControlMetrics.iconAction,
                           ),
                         ),
                       ),
-                    if (day != null && today != null)
-                      _DayButton(
-                        day: day,
-                        today: day == today,
-                        open: open,
-                        onPressed: onWeekToggled,
-                      ),
-                    ?assistant,
-                    Builder(
-                      builder: (button) => CompactIconButton(
-                        key: const ValueKey('page-more'),
-                        tooltip: 'More',
-                        extent: AppControlMetrics.iconButtonExtent,
-                        radius: 10,
-                        onPressed: menu.groups.every((group) => group.isEmpty)
-                            ? null
-                            : () => _showMenu(button),
-                        icon: KapyIcon(
-                          KapyIcons.moreVerticalRounded,
-                          size: AppControlMetrics.iconAction,
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

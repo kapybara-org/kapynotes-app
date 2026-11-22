@@ -209,6 +209,7 @@ class NoteEditor extends StatefulWidget {
     this.onCaretChanged,
     this.ensureKeyboardVisible = false,
     this.lastUpdatedAt,
+    this.createdAt,
     this.dailySeparatorsEnabled = false,
     this.paperStyle = PaperStyle.notepad,
     this.now,
@@ -411,6 +412,10 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<int>? onCaretChanged;
   final bool ensureKeyboardVisible;
   final DateTime? lastUpdatedAt;
+
+  /// When the note was written, which a phone's line under the title gives
+  /// rather than the last edit, so typing leaves the line as it was.
+  final DateTime? createdAt;
   final bool dailySeparatorsEnabled;
 
   /// The sheet behind the writing. Only [PaperStyle.ruled] needs anything of
@@ -7498,7 +7503,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           onHeight: widget.phone ? _onPhoneMetaHeight : null,
           child: NoteMetaRow(
             day: NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
-            edited: displayTime(widget.lastUpdatedAt ?? now),
+            edited: displayTime(
+              (widget.phone ? widget.createdAt : null) ??
+                  widget.lastUpdatedAt ??
+                  now,
+            ),
             today: displayTime(now),
             done: checklist.done,
             tasks: checklist.total,
@@ -8167,6 +8176,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                         style: textStyle,
                                         strut: strut,
                                         writingFont: widget.writingFont,
+                                        phone: widget.phone,
                                       ),
                                     // A note with a table always needs it, even
                                     // on a device with markdown switched off. A
@@ -8770,12 +8780,17 @@ class _Placeholder extends StatelessWidget {
     required this.style,
     required this.strut,
     required this.writingFont,
+    this.phone = false,
   });
 
   final EdgeInsets padding;
   final TextStyle style;
   final StrutStyle strut;
   final WritingFont writingFont;
+
+  /// A phone's blank page (M11) says only "Start typing…", in the body's
+  /// own size.
+  final bool phone;
 
   @override
   Widget build(BuildContext context) {
@@ -8786,56 +8801,63 @@ class _Placeholder extends StatelessWidget {
           padding: padding,
           child: Align(
             alignment: Alignment.topLeft,
-            child: Text.rich(
-              TextSpan(
-                style: style.copyWith(color: palette.textTertiary),
-                children: [
-                  TextSpan(
-                    text: 'Start typing…\n',
-                    style: paragraphTextStyle(
-                      style,
-                      NoteParagraphStyle.heading,
-                      writingFont: writingFont,
-                      primaryColor: palette.textTertiary,
+            child: phone
+                ? Text(
+                    'Start typing…',
+                    key: const ValueKey('note-placeholder'),
+                    style: style.copyWith(color: palette.textTertiary),
+                    strutStyle: strut,
+                  )
+                : Text.rich(
+                    TextSpan(
+                      style: style.copyWith(color: palette.textTertiary),
+                      children: [
+                        TextSpan(
+                          text: 'Start typing…\n',
+                          style: paragraphTextStyle(
+                            style,
+                            NoteParagraphStyle.heading,
+                            writingFont: writingFont,
+                            primaryColor: palette.textTertiary,
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'Notes and quick calculations\n\n',
+                          style: paragraphTextStyle(
+                            style,
+                            NoteParagraphStyle.subtitle,
+                            writingFont: writingFont,
+                            secondaryColor: palette.textTertiary,
+                          ),
+                        ),
+                        const TextSpan(text: 'Try a few things\n'),
+                        const TextSpan(text: 'Make text '),
+                        const TextSpan(
+                          text: 'bold',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const TextSpan(text: ' or '),
+                        const TextSpan(
+                          text: 'italic',
+                          style: TextStyle(fontStyle: FontStyle.italic),
+                        ),
+                        const TextSpan(text: '.\n'),
+                        const TextSpan(text: '• Keep ideas easy to scan\n'),
+                        const TextSpan(text: '☐ Add a checklist\n\n'),
+                        const TextSpan(text: '20% of 80\n'),
+                        const TextSpan(text: '10rs to usd\n'),
+                        const TextSpan(text: 'Idea details '),
+                        TextSpan(
+                          text: '// inline note',
+                          style: TextStyle(
+                            color: palette.comment,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
                     ),
+                    strutStyle: strut,
                   ),
-                  TextSpan(
-                    text: 'Notes and quick calculations\n\n',
-                    style: paragraphTextStyle(
-                      style,
-                      NoteParagraphStyle.subtitle,
-                      writingFont: writingFont,
-                      secondaryColor: palette.textTertiary,
-                    ),
-                  ),
-                  const TextSpan(text: 'Try a few things\n'),
-                  const TextSpan(text: 'Make text '),
-                  const TextSpan(
-                    text: 'bold',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const TextSpan(text: ' or '),
-                  const TextSpan(
-                    text: 'italic',
-                    style: TextStyle(fontStyle: FontStyle.italic),
-                  ),
-                  const TextSpan(text: '.\n'),
-                  const TextSpan(text: '• Keep ideas easy to scan\n'),
-                  const TextSpan(text: '☐ Add a checklist\n\n'),
-                  const TextSpan(text: '20% of 80\n'),
-                  const TextSpan(text: '10rs to usd\n'),
-                  const TextSpan(text: 'Idea details '),
-                  TextSpan(
-                    text: '// inline note',
-                    style: TextStyle(
-                      color: palette.comment,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-              strutStyle: strut,
-            ),
           ),
         ),
       ),

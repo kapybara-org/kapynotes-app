@@ -1995,7 +1995,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _writeOnDay(DateTime day) {
     final days = widget.days;
     if (days == null) return;
-    _createNote(onMade: (id) => _dayOfFreshNote[id] = day);
+    _createNote(titled: false, onMade: (id) => _dayOfFreshNote[id] = day);
   }
 
   /// Gives the note whose page is open another day, or none at all.
@@ -2009,6 +2009,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       today: today,
       filled: days.dayOf(note.id) ?? noteDay(note, displayTime),
       firstWeekday: firstWeekday(context),
+      sheet:
+          AppPlatform.isMobile &&
+          MediaQuery.sizeOf(context).width < kTwoPaneBreakpoint,
     );
     if (picked == null || !mounted) return;
     if (days.setDay(note.id, picked) == false) {
@@ -2025,6 +2028,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _createNote({
     bool drawing = false,
     String body = '',
+    bool titled = true,
     ValueChanged<String>? onMade,
   }) {
     final recording = widget.recording;
@@ -2032,7 +2036,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(
         recording.finishRecordingAndFlush().then((_) {
           if (mounted) {
-            _createNoteNow(drawing: drawing, body: body, onMade: onMade);
+            _createNoteNow(
+              drawing: drawing,
+              body: body,
+              titled: titled,
+              onMade: onMade,
+            );
           }
         }),
       );
@@ -2040,7 +2049,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // will not be blank by the time this runs and a new one will follow.
       return true;
     }
-    return _createNoteNow(drawing: drawing, body: body, onMade: onMade);
+    return _createNoteNow(
+      drawing: drawing,
+      body: body,
+      titled: titled,
+      onMade: onMade,
+    );
   }
 
   /// What New makes in the space on screen: a drawing in Drawings, a note
@@ -2070,10 +2084,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// [body] is the note's first words, from the ⌘K menu's field. A note made
-  /// while a folder's tab is in front goes into that folder.
+  /// while a folder's tab is in front goes into that folder. One that isn't
+  /// [titled] starts as an empty page rather than under "New Note", as a day
+  /// tapped on a phone's week opens it (M11).
   bool _createNoteNow({
     bool drawing = false,
     String body = '',
+    bool titled = true,
     ValueChanged<String>? onMade,
   }) {
     final creatingHidden = _hiddenMode;
@@ -2086,14 +2103,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final note =
         blank ??
         widget.notes.create(
-          body: drawing || body.isNotEmpty ? body : Note.blankBody,
+          body: drawing || body.isNotEmpty || !titled ? body : Note.blankBody,
           authored: body.isNotEmpty,
           hidden: creatingHidden,
           drawing: drawing,
         );
     if (blank == null) {
       _freshNoteIds.add(note.id);
-    } else {
+    } else if (titled) {
       widget.notes.startAsNew(blank.id);
     }
     onMade?.call(note.id);
@@ -5122,7 +5139,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             // The bar steps aside on its side with the keyboard up, so the
             // lines take its room; Back is still the phone's gesture.
             if (!cramped)
-              SafeArea(bottom: false, child: _phoneNoteHeader(note)),
+              SafeArea(
+                bottom: false,
+                child: _phoneNoteHeader(
+                  note,
+                  // The Scaffold takes the keyboard out of its own body's
+                  // insets, so the page's are read from above it.
+                  typing: MediaQuery.viewInsetsOf(this.context).bottom > 0,
+                ),
+              ),
             Expanded(
               child: SafeArea(
                 top: false,
@@ -5140,7 +5165,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A phone note's header: Home, its day, Kapy AI and More, then its week
   /// and its day's tasks. The week is only for My notes, as on a Mac.
-  Widget _phoneNoteHeader(Note note) {
+  Widget _phoneNoteHeader(Note note, {required bool typing}) {
     final displayTime = widget.prefs.displayTime;
     final today = dayShown(widget.notes.now(), displayTime);
     final day = noteDay(
@@ -5152,6 +5177,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final tasks = hasDays ? _phoneTasksOn(day, today) : 0;
     return PhoneNoteHeader(
       onHome: _phoneGoHome,
+      typing: typing,
       day: hasDays ? day : null,
       today: today,
       weekOpen: _phoneWeekOpen,
@@ -5362,6 +5388,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
+          createdAt: note.createdAt,
           idlePeekHeld: () => _kapyAi?.answering ?? false,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
           paperStyle: widget.prefs.paperStyle,

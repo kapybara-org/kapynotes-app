@@ -28,7 +28,8 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
 import 'package:kapy_notes/ui/editor/note_editor.dart' show NoteEditor;
-import 'package:kapy_notes/ui/editor/note_field.dart' show NoteField;
+import 'package:kapy_notes/ui/editor/note_field.dart'
+    show NoteField, NoteFieldState;
 import 'package:material_ui/material_ui.dart';
 
 import 'screenshot.dart';
@@ -146,12 +147,13 @@ void main() {
     }
 
     // The open note's text lives in its field, not in a Text a finder sees.
-    NoteField field() => tester.widget<NoteField>(
-      find.descendant(
-        of: find.byType(NoteEditor),
-        matching: find.byType(NoteField),
-      ),
+    final fieldFinder = find.descendant(
+      of: find.byType(NoteEditor),
+      matching: find.byType(NoteField),
     );
+    NoteField field() => tester.widget<NoteField>(fieldFinder);
+    String timeLine() =>
+        tester.widget<Text>(find.byKey(const ValueKey('note-edited'))).data!;
 
     Future<void> tap(Finder target) async {
       await tester.tap(target);
@@ -166,9 +168,39 @@ void main() {
     expect(find.byKey(const ValueKey('note-path')), findsOneWidget);
     await shot('m07-a-note');
 
-    // M08: typing in it, the keyboard up.
-    await tap(find.byWidget(field()));
+    // M08: typing at the end of the first paragraph, as the board does, the
+    // keyboard up. The header's buttons step back, the path and the title
+    // stay in view, and the line keeps the note's own time.
+    const typed = ' Then send the draft to Finance';
+    final paragraphEnd =
+        field().controller.text.indexOf('smaller.') + 'smaller.'.length;
+    final caret = tester
+        .state<NoteFieldState>(fieldFinder)
+        .caretRectAt(TextPosition(offset: paragraphEnd))!;
+    final box = tester.getRect(fieldFinder);
+    await tester.tapAt(
+      Offset(
+        box.right - 4,
+        box.top + caret.center.dy - field().scrollController.offset,
+      ),
+    );
     await keyboard(up: true);
+    expect(field().controller.selection.baseOffset, paragraphEnd);
+    final controller = field().controller;
+    controller.value = TextEditingValue(
+      text: controller.text.replaceRange(paragraphEnd, paragraphEnd, typed),
+      selection: TextSelection.collapsed(offset: paragraphEnd + typed.length),
+    );
+    await tester.pumpAndSettle();
+    expect(timeLine(), '8:55');
+    final header = tester.getRect(
+      find.byKey(const ValueKey('phone-note-header')),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('note-path'))).top,
+      greaterThanOrEqualTo(header.bottom),
+      reason: 'the path stays in view while typing',
+    );
     await shot('m08-a-note-typing');
 
     // M12: More › Move to another day, the calendar open over the note.

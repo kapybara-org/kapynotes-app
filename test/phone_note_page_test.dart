@@ -26,7 +26,7 @@ import 'package:kapy_notes/ui/tag_ui.dart' show TagPicker;
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'app_test.dart' show MemoryStore, openNoteBody;
+import 'app_test.dart' show MemoryStore, openNoteBody, openNoteField;
 import 'kapy_icon_finder.dart';
 import 'support/note_driver.dart';
 import 'sync/fake_server.dart';
@@ -261,6 +261,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(day(19), findsOneWidget);
     });
+
+    testWidgets('while the keyboard is up its buttons step back, and the '
+        'week, its tasks line and the path stay (M08)', (tester) async {
+      seed();
+      await pump(tester);
+      final row = find.byKey(const ValueKey('phone-note-header-row'));
+      double opacity() => tester.widget<AnimatedOpacity>(row).opacity;
+      expect(opacity(), 1);
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+      expect(opacity(), 0.5);
+      expect(day(19), findsOneWidget);
+      expect(tasksLine, findsOneWidget);
+      expect(find.byKey(const ValueKey('note-path')), findsOneWidget);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(opacity(), 1);
+    });
   });
 
   group('the week', () {
@@ -320,6 +340,40 @@ void main() {
         findsOneWidget,
       );
       expect(day(20), findsOneWidget);
+    });
+
+    testWidgets('a note given a day in another week opens on that week, '
+        'with its day picked and filled', (tester) async {
+      seed();
+      days.setDay('arjun', DateTime(2025, 11, 14));
+      await pump(tester);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(find.descendant(of: header, matching: day(14)), findsOneWidget);
+      expect(day(19), findsNothing);
+      expect(tester.getSemantics(day(14)), isSemantics(isSelected: true));
+      final shown = tester.widget(day(14)) as dynamic;
+      expect(shown.filled, isTrue);
+    });
+
+    testWidgets('a day with none opens a blank page: no title and no time, '
+        'only "Start typing…", and the first words give it that day (M11)', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      await open(tester, 20);
+      expect(openNoteBody(tester), isEmpty);
+      expect(find.text('New Note'), findsNothing);
+      expect(find.byKey(const ValueKey('note-edited')), findsNothing);
+      expect(find.text('Start typing…'), findsOneWidget);
+
+      await tester.enterNote('Lunch');
+      await tester.pumpAndSettle();
+      final lunch = notes
+          .search('')
+          .singleWhere((note) => note.body.startsWith('Lunch'));
+      expect(days.dayOf(lunch.id), DateTime(2025, 11, 20));
+      expect(find.text('Start typing…'), findsNothing);
     });
 
     testWidgets('at 360 every day keeps 44 to tap, the arrows narrower', (
@@ -461,6 +515,24 @@ void main() {
       await open(tester, 21);
       expect(edited(), 'Fri 21');
       expect(find.byKey(const ValueKey('note-path')), findsNothing);
+    });
+
+    testWidgets("typing leaves the note's own time on the line, not the "
+        'edit (M08)', (tester) async {
+      seed();
+      await pump(tester);
+      String edited() =>
+          tester.widget<Text>(find.byKey(const ValueKey('note-edited'))).data!;
+      expect(edited(), '8:55');
+
+      await tester.enterNote(
+        openNoteField(
+          tester,
+        ).controller.text.replaceFirst('Friday.', 'Friday. Then Finance.'),
+      );
+      await tester.pumpAndSettle();
+      expect(notes.byId('arjun')!.updatedAt, _now);
+      expect(edited(), '8:55');
     });
 
     for (final (width, count) in [(360.0, 4), (390.0, 6)]) {
@@ -617,6 +689,43 @@ void main() {
       await pick('share');
       expect(find.byType(SettingsDialog), findsOneWidget);
       expect(find.text('Sign in first to share this note'), findsOneWidget);
+    });
+
+    testWidgets('Move to another day is a sheet under its name, with the '
+        "month, Today, and the note's day filled (M12)", (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 21);
+      await openMore(tester);
+      await tester.tap(item('day'));
+      await tester.pumpAndSettle();
+
+      final sheet = find.byKey(const ValueKey('day-sheet'));
+      expect(sheet, findsOneWidget);
+      expect(
+        find.descendant(of: sheet, matching: find.text('Move to another day')),
+        findsOneWidget,
+      );
+      final month = find.byKey(const ValueKey('day-month-name'));
+      expect(tester.widget<Text>(month).data, 'November');
+      expect(find.byKey(const ValueKey('day-month-back')), findsNothing);
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey('day-month-2025-11-21'))),
+        isSemantics(isSelected: true),
+      );
+
+      await tester.fling(
+        find.byKey(const ValueKey('day-month-2025-11-12')),
+        const Offset(-300, 0),
+        1000,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(month).data, 'December');
+
+      await tester.tap(find.byKey(const ValueKey('day-month-today')));
+      await tester.pumpAndSettle();
+      expect(sheet, findsNothing);
+      expect(days.dayOf('renewal'), DateTime(2025, 11, 19));
     });
 
     testWidgets('Archive and Delete note… take the note away', (tester) async {

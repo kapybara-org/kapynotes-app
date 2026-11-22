@@ -119,7 +119,8 @@ class NoteMetaRow extends StatelessWidget {
     this.phone = false,
   });
 
-  /// When the note was last edited, and today, both on the reader's clock.
+  /// When the note was last edited, or on a phone when it was written, and
+  /// today, both on the reader's clock.
   final DateTime edited;
   final DateTime today;
 
@@ -152,7 +153,7 @@ class NoteMetaRow extends StatelessWidget {
 
   static const double _gap = 10;
 
-  /// A phone's line under the title: the note's day and the time it was last
+  /// A phone's line under the title: the note's day and the time it was
   /// written, "Fri 21 · 9:41", or the time alone today. A note given a day
   /// other than the one it was written on says the day alone, since the time
   /// belongs to another day.
