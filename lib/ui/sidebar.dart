@@ -1040,7 +1040,7 @@ extension on Sidebar {
     required bool shared,
     bool pinned = false,
     NoteRowStyle style = NoteRowStyle.row,
-    int depth = 0,
+    double inset = 0,
     bool clockOnly = false,
   }) => MetaData(
     metaData: NotePickTarget(note.id),
@@ -1049,7 +1049,7 @@ extension on Sidebar {
       shared: shared,
       pinned: pinned,
       style: style,
-      depth: depth,
+      inset: inset,
       clockOnly: clockOnly,
     ),
   );
@@ -1059,13 +1059,13 @@ extension on Sidebar {
     required bool shared,
     required bool pinned,
     required NoteRowStyle style,
-    required int depth,
+    required double inset,
     bool clockOnly = false,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
     style: style,
-    depth: depth,
+    inset: inset,
     clockOnly: clockOnly,
     folders: _files(note) ? folders?.store : null,
     engine: engine,
@@ -1475,15 +1475,15 @@ extension on Sidebar {
         phone: phone,
         newFolder: folders.newFolder,
         looseHeading: phone ? (label) => _PhoneDayHeading(lead: label) : null,
-        noteRow: (note, depth) => _row(
+        noteRow: (note, inset) => _row(
           note,
           shared: sharing != null && note.isShared,
-          style: switch (depth) {
+          style: switch (inset) {
             null when phone => NoteRowStyle.touch,
             null => NoteRowStyle.loose,
             _ => NoteRowStyle.filed,
           },
-          depth: depth ?? 0,
+          inset: inset ?? 0,
         ),
       ),
     );
@@ -2777,7 +2777,7 @@ class NoteRow extends StatefulWidget {
     this.pickedActions,
     this.onPickedAction,
     this.style = NoteRowStyle.row,
-    this.depth = 0,
+    this.inset = 0,
     this.clockOnly = false,
     this.engine,
     this.now = DateTime.now,
@@ -2787,8 +2787,8 @@ class NoteRow extends StatefulWidget {
   final Note note;
   final NoteRowStyle style;
 
-  /// How deep a [NoteRowStyle.filed] note sits in the folder tree.
-  final int depth;
+  /// How far in a [NoteRowStyle.filed] note's icon sits in the folder tree.
+  final double inset;
 
   /// Whether the row sits under a heading that already names its day, so it
   /// gives only the time it was last changed, even while others have it open.
@@ -3284,7 +3284,7 @@ class _NoteRowState extends State<NoteRow> {
       ),
       NoteRowStyle.filed => TreeNoteFace(
         note: note,
-        depth: widget.depth,
+        inset: widget.inset,
         selected: widget.selected,
         hovering: lit,
         ringed: ringed,
