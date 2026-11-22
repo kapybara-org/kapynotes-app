@@ -4106,108 +4106,98 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       child: _withKapyAi(
                         PagePane(
                           divided: listFits && listShown,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (tasks != null)
-                                      ..._buildTasksPage(
-                                        tasks,
-                                        listVisible: listFits && listShown,
-                                        underList: !listFits && listShown,
-                                        create: create,
-                                      )
-                                    else ...[
-                                      if (!cramped)
-                                        PageToolbar(
-                                          path: pageDays == null
-                                              ? _pagePath(selected)
-                                              : null,
-                                          days: pageDays,
-                                          onOpenFolder: widget.folders == null
-                                              ? null
-                                              : _openFolder,
-                                          listVisible: listFits && listShown,
-                                          underList: !listFits && listShown,
-                                          onShowList: _toggleList,
-                                          showListShortcut: _sidebarShortcut,
-                                          create: create,
-                                          noteOpen: selected != null,
-                                          syncStatus:
-                                              widget.account?.syncStatus,
-                                          unloadedPictures: unloaded.length,
-                                          onShowUnloadedPicture:
-                                              unloaded.isEmpty
-                                              ? null
-                                              : () => _selectedEditor
-                                                    ?.showAttachment(
-                                                      unloaded.first.offset,
-                                                    ),
-                                          members: _selectedMembers,
-                                          present: _selectedPresence,
-                                          currentUserId:
-                                              widget.account?.sharing?.userId ??
-                                              '',
-                                          noteShared:
-                                              selected?.isShared ?? false,
-                                          onShare: _shareSelected,
-                                          assistant: assistant,
-                                          actions: _folderInFront == null
-                                              ? null
-                                              : const [],
-                                          moreActions: moreActions,
-                                          onMore: moreActions.isEmpty
-                                              ? null
-                                              : (action, at) => _runPageAction(
-                                                  action,
-                                                  selected,
-                                                  at,
-                                                ),
-                                          updates: widget.updates,
-                                        ),
-                                      TabRowReveal(
-                                        shown:
-                                            !_specialMode &&
-                                            _workspace.tabs.length > 1,
-                                        child: _buildTabRow(),
-                                      ),
-                                      Expanded(
-                                        child: LayoutBuilder(
-                                          builder: (context, page) =>
-                                              DateLineSaved(
-                                                saved: _savedOnDateLine(
-                                                  selected,
-                                                  page.maxWidth,
-                                                  unloadedPictures:
-                                                      unloaded.length,
-                                                  withNew: !listShown,
-                                                ),
-                                                child: switch ((
-                                                  widget.folders,
-                                                  pageDays,
-                                                )) {
-                                                  (final folders?, _?) =>
-                                                    NoteFolders(
-                                                      tree: folders.tree,
-                                                      onOpenFolder: _openFolder,
-                                                      child:
-                                                          _buildWideWorkspace(
-                                                            sidebar,
-                                                            cramped: cramped,
-                                                          ),
-                                                    ),
-                                                  _ => _buildWideWorkspace(
-                                                    sidebar,
-                                                    cramped: cramped,
-                                                  ),
-                                                },
-                                              ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (tasks != null)
+                                ..._buildTasksPage(
+                                  tasks,
+                                  listVisible: listFits && listShown,
+                                  underList: !listFits && listShown,
+                                  create: create,
+                                )
+                              else ...[
+                                if (!cramped)
+                                  PageToolbar(
+                                    path: pageDays == null
+                                        ? _pagePath(selected)
+                                        : null,
+                                    days: pageDays,
+                                    onOpenFolder: widget.folders == null
+                                        ? null
+                                        : _openFolder,
+                                    listVisible: listFits && listShown,
+                                    underList: !listFits && listShown,
+                                    onShowList: _toggleList,
+                                    showListShortcut: _sidebarShortcut,
+                                    create: create,
+                                    noteOpen: selected != null,
+                                    syncStatus: widget.account?.syncStatus,
+                                    unloadedPictures: unloaded.length,
+                                    onShowUnloadedPicture: unloaded.isEmpty
+                                        ? null
+                                        : () => _selectedEditor?.showAttachment(
+                                            unloaded.first.offset,
+                                          ),
+                                    members: _selectedMembers,
+                                    present: _selectedPresence,
+                                    currentUserId:
+                                        widget.account?.sharing?.userId ?? '',
+                                    noteShared: selected?.isShared ?? false,
+                                    onShare: _shareSelected,
+                                    assistant: assistant,
+                                    actions: _folderInFront == null
+                                        ? null
+                                        : const [],
+                                    moreActions: moreActions,
+                                    onMore: moreActions.isEmpty
+                                        ? null
+                                        : (action, at) => _runPageAction(
+                                            action,
+                                            selected,
+                                            at,
+                                          ),
+                                    updates: widget.updates,
+                                  ),
+                                TabRowReveal(
+                                  shown:
+                                      !_specialMode &&
+                                      _workspace.tabs.length > 1,
+                                  child: _buildTabRow(),
                                 ),
-                              ),
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, page) => DateLineSaved(
+                                      saved: _savedOnDateLine(
+                                        selected,
+                                        page.maxWidth,
+                                        unloadedPictures: unloaded.length,
+                                        withNew: !listShown,
+                                      ),
+                                      child: switch ((
+                                        widget.folders,
+                                        pageDays,
+                                      )) {
+                                        (final folders?, _?) => NoteFolders(
+                                          tree: folders.tree,
+                                          onOpenFolder: _openFolder,
+                                          child: _buildWideWorkspace(
+                                            sidebar,
+                                            cramped: cramped,
+                                          ),
+                                        ),
+                                        _ => _buildWideWorkspace(
+                                          sidebar,
+                                          cramped: cramped,
+                                        ),
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
