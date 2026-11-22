@@ -194,6 +194,11 @@ void main() {
     await tester.pumpAndSettle();
     await tap(start);
     expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+    // Back to the top of the list, so the shot opens on Today and Do now.
+    final sheet = find.byKey(const ValueKey('phone-tasks-sheet'));
+    final today = find.descendant(of: sheet, matching: find.text('Today'));
+    await tester.ensureVisible(today);
+    await tester.pumpAndSettle();
     await shot('m15-tasks-sheet');
     await tap(find.byKey(const ValueKey('phone-tasks-sheet-close')));
     expect(find.byKey(const ValueKey('phone-tasks-sheet')), findsNothing);
