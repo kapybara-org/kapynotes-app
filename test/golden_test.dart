@@ -1787,9 +1787,9 @@ void main() {
             withTodayRows: true,
             markdownTasks: true,
           );
-          final back = find.byKey(const ValueKey('page-back'));
+          final back = find.byKey(const ValueKey('page-home'));
           if (back.evaluate().isNotEmpty) {
-            await tapAndSettle(tester, 'page-back');
+            await tapAndSettle(tester, 'page-home');
           }
           final renewal = find.widgetWithText(NoteRow, 'Renewal notes');
           expect(
@@ -1872,7 +1872,7 @@ void main() {
           final days = await boardDays();
           await pumpPhone(tester, days: days);
           await seedBoardTasks(tester, days);
-          await tapAndSettle(tester, 'page-back');
+          await tapAndSettle(tester, 'page-home');
           await tapAndSettle(tester, 'home-title-tasks');
         }
 
