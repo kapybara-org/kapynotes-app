@@ -830,6 +830,29 @@ void main() {
       );
     });
 
+    testWidgets("a note moved to a later day leaves Home's list and waits "
+        'under Upcoming', (tester) async {
+      seed();
+      await pump(tester);
+      final arjun = find.widgetWithText(NoteRow, 'Call with Arjun');
+      await tap(tester, 'page-home');
+      expect(arjun, findsOneWidget);
+      await tester.tap(arjun);
+      await tester.pumpAndSettle();
+
+      await openMore(tester);
+      await tap(tester, 'page-more-day');
+      await tap(tester, 'day-month-2025-11-25');
+      expect(days.dayOf('arjun'), DateTime(2025, 11, 25));
+
+      await tap(tester, 'page-home');
+      expect(arjun, findsNothing);
+      await tap(tester, 'bar-folders');
+      await tap(tester, 'folders-upcoming-tile');
+      expect(find.byKey(const ValueKey('phone-upcoming')), findsOneWidget);
+      expect(arjun, findsOneWidget);
+    });
+
     testWidgets('from a drawing goes to Home, not back to Drawings', (
       tester,
     ) async {
