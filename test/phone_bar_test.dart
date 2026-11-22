@@ -179,6 +179,7 @@ void main() {
     }, variant: android);
 
     for (final (mode, inset, lift) in [
+      ('no', 0.0, 30.0),
       ('three-button', 48.0, 56.0),
       ('gesture', 24.0, 32.0),
     ]) {

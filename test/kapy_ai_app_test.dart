@@ -1575,6 +1575,28 @@ void main() {
       expect(home, findsOneWidget);
     });
 
+    testWidgets("on Android over three buttons, its composer ends above the "
+        'pill', (tester) async {
+      tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+      tester.view.padding = const FakeViewPadding(bottom: 48);
+      await _pump(
+        tester,
+        size: const Size(412, 915),
+        platform: TargetPlatform.android,
+      );
+      final back = find.byKey(const ValueKey('page-back'));
+      if (back.evaluate().isNotEmpty) await tap(tester, back);
+      await tap(tester, tab);
+
+      final pill = tester.getRect(find.byKey(const ValueKey('phone-bar')));
+      // The send button sits on the composer's last row, at its foot.
+      final composer = tester.getRect(
+        find.byKey(const ValueKey('kapy-ai-page-send')),
+      );
+      expect(pill.bottom, lessThanOrEqualTo(915 - 48));
+      expect(composer.bottom, lessThanOrEqualTo(pill.top));
+    });
+
     testWidgets('New chat opens the conversation over it', (tester) async {
       await pumpPhone(tester);
       await tap(tester, tab);
