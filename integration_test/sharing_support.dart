@@ -11,6 +11,7 @@ import 'package:kapy_notes/sync/sharing.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test/sync/fake_server.dart' show FakeServer;
+import 'screenshot.dart';
 
 /// Sam is the person under test; Priya and Carol share with him. Each has a
 /// whole name, so a question that names someone in full can be checked.
@@ -70,6 +71,19 @@ Future<void> pumpUntil(WidgetTester tester, bool Function() done) async {
     );
     await tester.pump();
   }
+}
+
+/// Takes [name]'s screenshot once the frame has caught up with the last tap:
+/// the live binding's marker where the test pressed has faded, and a toast
+/// the tap brought up has finished fading in.
+Future<void> settledShot(WidgetTester tester, String name) async {
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 300)),
+  );
+  for (var frame = 0; frame < 3; frame++) {
+    await tester.pump();
+  }
+  await screenshot(name);
 }
 
 /// Taps [target], then pumps on the real clock until [done], leaving any

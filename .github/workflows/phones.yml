@@ -72,11 +72,7 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
-          # No touch crosshair or tap dots in the screenshots.
-          script: |
-            adb -s emulator-5554 shell settings put system pointer_location 0
-            adb -s emulator-5554 shell settings put system show_touches 0
-            bash tool/ci/phone_screenshots.sh emulator-5554
+          script: bash tool/ci/phone_screenshots.sh emulator-5554
 
       - name: List the screenshots
         if: ${{ !cancelled() }}

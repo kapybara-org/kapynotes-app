@@ -45,7 +45,6 @@ import 'package:material_ui/material_ui.dart';
 import '../test/support/sharing_devices.dart'
     show Device, FakeSend, joiningOver, opener;
 import '../test/sync/fake_server.dart' show FakeApi, FakeAuth, FakeServer;
-import 'screenshot.dart';
 import 'sharing_support.dart';
 
 class _Store extends LocalStore {
@@ -281,18 +280,18 @@ void main() {
       expect(listed('Trip budget'), isTrue);
       expect(listed('Packing list'), isTrue);
       expect(listed('Bank details'), isFalse);
-      await screenshot('phone-sharing-shared-page');
+      await settledShot(tester, 'phone-sharing-shared-page');
 
       await longPressRow(tester, 'Trip budget');
       expect(menuAction('Sharing'), findsOneWidget);
-      await screenshot('phone-sharing-shared-row-menu');
+      await settledShot(tester, 'phone-sharing-shared-row-menu');
 
       await tester.tap(menuAction('Sharing'));
       await settleOnClock(tester);
       expect(sheet, findsOneWidget);
       expect(memberRow('user-2'), findsOneWidget);
       expect(memberRow('user-3'), findsOneWidget);
-      await screenshot('phone-sharing-owner-sheet-from-shared-page');
+      await settledShot(tester, 'phone-sharing-owner-sheet-from-shared-page');
     }, skip: !phone);
 
     // The app builds its invite link service only over the real server, so
@@ -343,7 +342,7 @@ void main() {
       expect(find.textContaining('Off · Turn on'), findsOneWidget);
       expect(memberRow('user-2'), findsOneWidget);
       expect(find.byKey(const ValueKey('stop-sharing')), findsOneWidget);
-      await screenshot('phone-sharing-owner-sheet');
+      await settledShot(tester, 'phone-sharing-owner-sheet');
 
       await tester.tap(segment('Can view'));
       await tester.pumpAndSettle();
@@ -351,7 +350,7 @@ void main() {
         find.byKey(const ValueKey('share-role-viewer')),
       );
       expect(viewer.style!.backgroundColor?.resolve({}), isNotNull);
-      await screenshot('phone-sharing-owner-sheet-can-view');
+      await settledShot(tester, 'phone-sharing-owner-sheet-can-view');
     }, skip: !phone);
 
     testWidgets('the viewer’s sheet, and the sheet for a whole share', (
@@ -367,7 +366,7 @@ void main() {
       expect(find.byKey(const ValueKey('leave-space')), findsOneWidget);
       expect(find.byKey(const ValueKey('share-email')), findsNothing);
       expect(find.byKey(const ValueKey('stop-sharing')), findsNothing);
-      await screenshot('phone-sharing-viewer-sheet');
+      await settledShot(tester, 'phone-sharing-viewer-sheet');
       await tester.tap(done);
       await tester.pumpAndSettle();
       expect(sheet, findsNothing);
@@ -377,7 +376,7 @@ void main() {
       expect(memberRow('user-3'), findsOneWidget);
       expect(find.byKey(const ValueKey('stop-sharing')), findsOneWidget);
       expect(find.byKey(const ValueKey('leave-space')), findsNothing);
-      await screenshot('phone-sharing-share-wide-sheet');
+      await settledShot(tester, 'phone-sharing-share-wide-sheet');
     }, skip: !phone);
 
     testWidgets('Remove a person, then Undo after the sheet has closed '
@@ -392,7 +391,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('stops seeing this note'), findsOneWidget);
       expectNeutral(tester, askOk, 'Remove');
-      await screenshot('phone-sharing-remove-ask');
+      await settledShot(tester, 'phone-sharing-remove-ask');
 
       final removed = find.textContaining('Removed Carol');
       await tapUntil(
@@ -407,7 +406,7 @@ void main() {
       await closeSheetIfOpen(tester);
       expect(sheet, findsNothing);
       expect(removed, findsOneWidget);
-      await screenshot('phone-sharing-removed-toast');
+      await settledShot(tester, 'phone-sharing-removed-toast');
 
       await tester.tap(find.text('Undo'));
       final sent = find.text('Invitation sent to ${carol.email}');
@@ -419,7 +418,7 @@ void main() {
         {for (final invite in space.invites) invite.email: invite.role},
         {carol.email: SpaceRole.viewer},
       );
-      await screenshot('phone-sharing-remove-undone');
+      await settledShot(tester, 'phone-sharing-remove-undone');
     }, skip: !phone);
 
     testWidgets('Stop sharing, then Undo after the sheet has closed shares '
@@ -435,7 +434,7 @@ void main() {
         findsOneWidget,
       );
       expectNeutral(tester, askOk, 'Stop sharing');
-      await screenshot('phone-sharing-stop-ask');
+      await settledShot(tester, 'phone-sharing-stop-ask');
 
       final stopped = find.textContaining('Stopped sharing');
       await tapUntil(
@@ -450,7 +449,7 @@ void main() {
       await pumpUntil(tester, () => !listed('Trip budget'));
       expect(listed('Trip budget'), isFalse);
       expect(stopped, findsOneWidget);
-      await screenshot('phone-sharing-stopped-toast');
+      await settledShot(tester, 'phone-sharing-stopped-toast');
 
       await tester.tap(find.text('Undo'));
       final again = find.textContaining(RegExp('Shared again with|sent to'));
@@ -462,7 +461,7 @@ void main() {
       expect(again, findsOneWidget);
       expect(notes.byId(tripId)!.isShared, isTrue);
       expect(listed('Trip budget'), isTrue);
-      await screenshot('phone-sharing-stop-undone');
+      await settledShot(tester, 'phone-sharing-stop-undone');
     }, skip: !phone);
 
     testWidgets('the asks and the sheets stay out of the warning colour, '
@@ -480,7 +479,7 @@ void main() {
       await tester.pumpAndSettle();
       expectNeutral(tester, menuItem('Remove from this note'), 'Remove');
       expectNeutral(tester, menuItem('Block…'), 'Block…');
-      await screenshot('phone-sharing-member-menu');
+      await settledShot(tester, 'phone-sharing-member-menu');
       await tester.tap(menuItem('Block…'));
       await tester.pumpAndSettle();
       expectNeutral(tester, askOk, 'Block');
@@ -512,7 +511,7 @@ void main() {
             (item.widget as KapyMenuActionRow).action.label,
       ];
       expect(red, ['Remove note…']);
-      await screenshot('phone-sharing-viewer-page-menu');
+      await settledShot(tester, 'phone-sharing-viewer-page-menu');
     }, skip: !phone);
 
     testWidgets('an invitation waits on the Shared page as a card, and its '
@@ -538,11 +537,11 @@ void main() {
         find.byKey(ValueKey('sidebar-invite-decline-$token')),
         findsOneWidget,
       );
-      await screenshot('phone-sharing-invitation-card');
+      await settledShot(tester, 'phone-sharing-invitation-card');
 
       await tester.tap(find.byKey(ValueKey('sidebar-invite-more-$token')));
       await tester.pumpAndSettle();
-      await screenshot('phone-sharing-invitation-menu');
+      await settledShot(tester, 'phone-sharing-invitation-menu');
       await tester.tap(find.byKey(ValueKey('invite-block-$token')));
       await tester.pumpAndSettle();
       expect(find.text('Block Carol Diaz?'), findsOneWidget);
@@ -554,13 +553,13 @@ void main() {
         findsOneWidget,
       );
       expectNeutral(tester, askOk, 'Block');
-      await screenshot('phone-sharing-invitation-block-ask');
+      await settledShot(tester, 'phone-sharing-invitation-block-ask');
 
       await tapAndSettle(tester, askOk);
       await pumpUntil(tester, () => card.evaluate().isEmpty);
       expect(card, findsNothing);
       expect(account.sharing!.hasBlocked(carol.email), isTrue);
-      await screenshot('phone-sharing-invitation-blocked');
+      await settledShot(tester, 'phone-sharing-invitation-blocked');
     }, skip: !phone);
   });
 
@@ -576,7 +575,7 @@ void main() {
         findsOneWidget,
       );
       expectNeutral(tester, askOk, 'Block');
-      await screenshot('phone-sharing-block-ask-$sheetName');
+      await settledShot(tester, 'phone-sharing-block-ask-$sheetName');
       final blocked = find.text('Blocked Priya Nair');
       await tapUntil(
         tester,
@@ -589,7 +588,7 @@ void main() {
       expect(account.sharing!.hasBlocked(priya.email), isTrue);
       expect(memberRow('user-2'), findsNothing);
       expect(sharedPage, findsOneWidget, reason: 'Shared stays');
-      await screenshot('phone-sharing-blocked-$sheetName');
+      await settledShot(tester, 'phone-sharing-blocked-$sheetName');
     }
 
     /// Priya is gone from the note's people, and Carol is still there.
@@ -598,7 +597,7 @@ void main() {
       await openSheetFor(tester, 'Trip budget');
       expect(memberRow('user-2'), findsNothing);
       expect(memberRow('user-3'), findsOneWidget);
-      await screenshot('phone-sharing-blocked-gone-$sheetName');
+      await settledShot(tester, 'phone-sharing-blocked-gone-$sheetName');
     }
 
     testWidgets('Block from the owner’s note sheet asks by the whole name, '
@@ -629,7 +628,7 @@ void main() {
       expect(find.text('Leave “Packing list”?'), findsOneWidget);
       expect(find.text('Keep a private copy in my notes'), findsOneWidget);
       expectNeutral(tester, askOk, 'Leave');
-      await screenshot('phone-sharing-leave-ask-$sheetName');
+      await settledShot(tester, 'phone-sharing-leave-ask-$sheetName');
 
       await tapAndSettle(tester, askOk);
       await pumpUntil(tester, () => !listed('Packing list'));
@@ -643,7 +642,7 @@ void main() {
         notes.notes.where((n) => n.body == 'Packing list' && !n.isShared),
         hasLength(1),
       );
-      await screenshot('phone-sharing-left-$sheetName');
+      await settledShot(tester, 'phone-sharing-left-$sheetName');
     }
 
     testWidgets('Leave from the viewer’s note sheet asks, then the note '

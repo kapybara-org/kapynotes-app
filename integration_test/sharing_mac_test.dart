@@ -29,7 +29,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../test/support/sharing_devices.dart' show Device;
 import '../test/sync/fake_server.dart' show FakeServer;
-import 'screenshot.dart';
 import 'sharing_support.dart';
 
 void main() {
@@ -222,7 +221,7 @@ void main() {
         findsOneWidget,
       );
       expectNeutral(tester, askOk, 'Block');
-      await screenshot('mac-sharing-block-ask-$dialogName');
+      await settledShot(tester, 'mac-sharing-block-ask-$dialogName');
       final blocked = find.text('Blocked Priya Nair');
       await tapUntil(
         tester,
@@ -234,19 +233,23 @@ void main() {
       expect(blocked, findsOneWidget);
       expect(sam.sharing.hasBlocked(priya.email), isTrue);
       expect(memberRow('user-2'), findsNothing);
-      await screenshot('mac-sharing-blocked-$dialogName');
+      await settledShot(tester, 'mac-sharing-blocked-$dialogName');
     }
 
-    /// Priya is gone from the note's people, and Carol is still there.
+    /// Priya is gone from the note's people, and Carol is still there; and
+    /// Packing list, which Block left, is gone from Shared.
     Future<void> expectPriyaGone(WidgetTester tester, String dialogName) async {
       if (dialog.evaluate().isNotEmpty) {
         await tester.tap(find.byKey(const ValueKey('share-done')));
         await tester.pumpAndSettle();
       }
+      await tester.runAsync(sam.sync.syncNow);
+      await pumpUntil(tester, () => !listed('Packing list'));
+      expect(listed('Packing list'), isFalse);
       await open(tester, 'note');
       expect(memberRow('user-2'), findsNothing);
       expect(memberRow('user-3'), findsOneWidget);
-      await screenshot('mac-sharing-blocked-gone-$dialogName');
+      await settledShot(tester, 'mac-sharing-blocked-gone-$dialogName');
     }
 
     testWidgets('Block from the owner’s note dialog asks by the whole name, '
@@ -277,7 +280,7 @@ void main() {
       expect(find.text('Leave “Packing list”?'), findsOneWidget);
       expect(find.text('Keep a private copy in my notes'), findsOneWidget);
       expectNeutral(tester, askOk, 'Leave');
-      await screenshot('mac-sharing-leave-ask-$dialogName');
+      await settledShot(tester, 'mac-sharing-leave-ask-$dialogName');
 
       await tapAndSettle(tester, askOk);
       // The app syncs soon after a leave; this device waits an hour, so the
@@ -296,7 +299,7 @@ void main() {
         sam.notes.notes.where((n) => n.body == 'Packing list' && !n.isShared),
         hasLength(1),
       );
-      await screenshot('mac-sharing-left-$dialogName');
+      await settledShot(tester, 'mac-sharing-left-$dialogName');
     }
 
     testWidgets('Leave from the viewer’s note dialog asks, then the note '
@@ -370,7 +373,7 @@ void main() {
             expect(find.byKey(const ValueKey('stop-sharing')), findsNothing);
           }
           expect(tester.takeException(), isNull);
-          await screenshot('mac-sharing-s02-$who');
+          await settledShot(tester, 'mac-sharing-s02-$who');
           await tester.tap(done);
           await tester.pumpAndSettle();
           expect(dialog, findsNothing, reason: who);
@@ -388,7 +391,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(dialog, findsNothing);
-      await screenshot('mac-sharing-escape-closed');
+      await settledShot(tester, 'mac-sharing-escape-closed');
     }, skip: !mac);
 
     testWidgets('a click outside closes the dialog', (tester) async {
@@ -402,7 +405,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(dialog, findsNothing);
-      await screenshot('mac-sharing-click-outside-closed');
+      await settledShot(tester, 'mac-sharing-click-outside-closed');
     }, skip: !mac);
 
     testWidgets('the header ⋮ opens the menu with Report this note, for the '
@@ -414,7 +417,7 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('share-more')));
         await tester.pumpAndSettle();
         expect(find.text('Report this note'), findsOneWidget, reason: who);
-        await screenshot('mac-sharing-more-menu-$who');
+        await settledShot(tester, 'mac-sharing-more-menu-$who');
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
         expect(find.text('Report this note'), findsNothing, reason: who);
@@ -445,7 +448,7 @@ void main() {
       for (var press = 0; press <= order.length; press++) {
         await tab(tester);
         reached.add(focused(order));
-        if (press == 0) await screenshot('mac-sharing-first-tab');
+        if (press == 0) await settledShot(tester, 'mac-sharing-first-tab');
       }
       expect(reached, [...order, order.first]);
       expect(dialog, findsOneWidget);
@@ -461,7 +464,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('Report this note'), findsOneWidget);
-      await screenshot('mac-sharing-more-menu-from-enter');
+      await settledShot(tester, 'mac-sharing-more-menu-from-enter');
     }, skip: !mac);
   });
 }
