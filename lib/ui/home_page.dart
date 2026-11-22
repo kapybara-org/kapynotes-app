@@ -3721,13 +3721,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Back on a phone's list, from Android's back or the edge swipe: one level
-  /// up at a time. Tasks returns to Notes and picks let go, then a folder or
-  /// Drawings returns to Folders, another tab to Notes, and on Notes Pinned
-  /// or Shared to its Home.
+  /// up at a time. Tasks returns to Notes and picks let go, though not on
+  /// Kapy AI, which doesn't show them; then a folder or Drawings returns to
+  /// Folders, another tab to Notes, and on Notes Pinned or Shared to its Home.
   void _phoneListBack() {
     if (_tasksMode) {
       _showHome(tasks: false);
-    } else if (_picks.on) {
+    } else if (_picks.on && _phoneTab != PhoneTab.kapyAi) {
       _picks.clear();
     } else if (_phoneTab == PhoneTab.folders &&
         (_drawingsOnly || _phoneFolderShown != null)) {

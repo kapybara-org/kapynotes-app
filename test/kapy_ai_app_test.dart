@@ -1257,6 +1257,28 @@ void main() {
       expect(page, findsNothing);
     });
 
+    testWidgets('Back from it lands on Notes with the picks made there kept, '
+        'as the bar does', (tester) async {
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      await pumpPhone(tester);
+      await tester.longPress(find.text('Groceries'));
+      await tester.pumpAndSettle();
+      await tap(tester, find.text('Select'));
+      final picked = find.text('1 selected');
+      expect(picked, findsOneWidget);
+
+      await tap(tester, tab);
+      expect(page, findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(
+        tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+        PhoneTab.notes,
+      );
+      expect(picked, findsOneWidget);
+    });
+
     testWidgets("with Kapy AI on, Folders' and Drawings' fields still name "
         'what they search', (tester) async {
       Finder field(String words) => find.descendant(
