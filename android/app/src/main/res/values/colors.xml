@@ -4,11 +4,14 @@
          or squircle OEM mask never exposes a different colour. -->
     <color name="ic_launcher_background">#E8772E</color>
     <color name="launch_background">#FAF9F7</color>
-    <!-- The widgets wear the same paper and ink as the surface they open
-         onto, so a tap looks like the app growing rather than replacing it.
-         Matches InstantCaptureApp in lib/ui/instant_capture.dart. -->
-    <color name="widget_paper">#F7F0DE</color>
-    <color name="widget_ink">#26364A</color>
-    <!-- Ink at a tenth, for the cells of the wide widget. -->
-    <color name="widget_cell">#1A26364A</color>
+    <!-- The widgets wear Phone · v2, so a tap looks like the app it opens
+         unfolding: its background and text, and its round sage buttons, one
+         disc per tap. Write is on the primary disc everywhere; on the wide
+         widget Dictate and Capture sit on the quieter tonal one. -->
+    <color name="widget_background">#FCFAF4</color>
+    <color name="widget_text">#2A2620</color>
+    <color name="widget_primary">#56703C</color>
+    <color name="widget_on_primary">#FCFAF4</color>
+    <color name="widget_tonal">#E6ECDB</color>
+    <color name="widget_on_tonal">#445A2F</color>
 </resources>

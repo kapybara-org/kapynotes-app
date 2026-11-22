@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launch_background">#181817</color>
-    <color name="widget_paper">#242018</color>
-    <color name="widget_ink">#EDE2CA</color>
-    <color name="widget_cell">#1AEDE2CA</color>
+    <color name="widget_background">#23201C</color>
+    <color name="widget_text">#E2DCCF</color>
+    <color name="widget_primary">#7D9468</color>
+    <color name="widget_on_primary">#1C1A17</color>
+    <color name="widget_tonal">#2E3828</color>
+    <color name="widget_on_tonal">#C2D6AC</color>
 </resources>

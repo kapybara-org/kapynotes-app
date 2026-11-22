@@ -3,6 +3,7 @@ package com.kapybara.kapynotes
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 
 /**
@@ -21,36 +22,47 @@ class QuickActionsWidget : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        val views = RemoteViews(context.packageName, R.layout.widget_quick_actions)
-        for ((cell, action) in cells.zip(QuickAction.entries)) {
-            views.setImageViewResource(cell.icon, action.icon)
-            views.setTextViewText(cell.label, context.getString(action.label))
-            views.setContentDescription(cell.root, context.getString(action.label))
-            views.setOnClickPendingIntent(cell.root, quickActionIntent(context, action))
-        }
+        val views = views(context)
         for (id in appWidgetIds) {
             appWidgetManager.updateAppWidget(id, views)
         }
     }
 
-    private data class Cell(val root: Int, val icon: Int, val label: Int)
+    companion object {
+        fun views(context: Context): RemoteViews =
+            labelledWhenTall { labelled -> layout(context, labelled) }
 
-    private val cells =
-        listOf(
-            Cell(
-                R.id.widget_quick_actions_first,
-                R.id.widget_quick_actions_first_icon,
-                R.id.widget_quick_actions_first_label,
-            ),
-            Cell(
-                R.id.widget_quick_actions_second,
-                R.id.widget_quick_actions_second_icon,
-                R.id.widget_quick_actions_second_label,
-            ),
-            Cell(
-                R.id.widget_quick_actions_third,
-                R.id.widget_quick_actions_third_icon,
-                R.id.widget_quick_actions_third_label,
-            ),
-        )
+        /** One of the two layouts [views] offers: the discs, with or without their words. */
+        fun layout(context: Context, labelled: Boolean): RemoteViews =
+            RemoteViews(context.packageName, R.layout.widget_quick_actions).apply {
+                for ((cell, action) in cells.zip(QuickAction.entries)) {
+                    setImageViewResource(cell.icon, action.icon)
+                    setTextViewText(cell.label, context.getString(action.label))
+                    if (!labelled) setViewVisibility(cell.label, View.GONE)
+                    setContentDescription(cell.root, context.getString(action.label))
+                    setOnClickPendingIntent(cell.root, quickActionIntent(context, action))
+                }
+            }
+
+        private data class Cell(val root: Int, val icon: Int, val label: Int)
+
+        private val cells =
+            listOf(
+                Cell(
+                    R.id.widget_quick_actions_first,
+                    R.id.widget_quick_actions_first_icon,
+                    R.id.widget_quick_actions_first_label,
+                ),
+                Cell(
+                    R.id.widget_quick_actions_second,
+                    R.id.widget_quick_actions_second_icon,
+                    R.id.widget_quick_actions_second_label,
+                ),
+                Cell(
+                    R.id.widget_quick_actions_third,
+                    R.id.widget_quick_actions_third_icon,
+                    R.id.widget_quick_actions_third_label,
+                ),
+            )
+    }
 }
