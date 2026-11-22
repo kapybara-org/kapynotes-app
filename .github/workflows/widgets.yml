@@ -1,0 +1,117 @@
+# Renders of the Home Screen and Lock Screen widgets, for a reviewer to hold
+# against their boards. Add the `widgets` label to a pull request, or run
+# `gh workflow run widgets.yml --ref <branch>`. A label run uses the pull
+# request's merge commit, which has main's copy of this file.
+#
+# Each job uploads every render it makes, and fails when a check in it does.
+# android draws both widgets from their own RemoteViews on an Android 16
+# emulator and follows every tap on them into the app, as the android-widgets
+# artifact (tool/ci/android_widget_renders.sh). ios draws the extension's own
+# SwiftUI views on an iOS 27.2 iPhone, as ios-widgets
+# (tool/ci/ios_widget_renders.sh). The ios job holds one of the five macOS
+# jobs the organization can run at once, if only for minutes, so nothing here
+# runs on a push.
+name: Widgets
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Adding any label starts this workflow, so the group names the label: a run
+# for another label, which skips its jobs, never cancels a widgets run.
+concurrency:
+  group: widgets-${{ github.ref }}-${{ github.event.label.name }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  android:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'widgets'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # The emulator needs hardware acceleration, and the runner's /dev/kvm
+      # belongs to root until this rule opens it.
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get --enforce-lockfile
+
+      - name: Build the app and its widget tests
+        run: |
+          flutter build apk --debug --target-platform android-x64 --dart-define=KAPYNOTES_SYNC=false
+          cd android && ./gradlew --no-daemon :app:assembleDebugAndroidTest -Ptarget-platform=android-x64
+
+      - name: Render the widgets on an Android 16 emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash tool/ci/android_widget_renders.sh emulator-5554
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-widgets
+          path: build/widget-renders/
+          if-no-files-found: error
+
+  ios:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'widgets'
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      # The runner defaults to Xcode 27.1; 27.2 brings the iOS 27.2 runtime.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # A fresh iPhone, booting in the background while the renders build.
+      - name: Create an iOS 27.2 iPhone
+        id: simulator
+        run: |
+          udid=$(xcrun simctl create widgets "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-27-2)
+          xcrun simctl boot "$udid" >/dev/null 2>&1 &
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Render the widgets on the iPhone
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: bash tool/ci/ios_widget_renders.sh "$UDID"
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-widgets
+          path: build/widget-renders/ios/
+          if-no-files-found: error

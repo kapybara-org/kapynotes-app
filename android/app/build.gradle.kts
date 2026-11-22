@@ -56,6 +56,9 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Runs the widget renders in src/androidTest, through
+        // tool/ci/android_widget_renders.sh.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -123,6 +126,10 @@ dependencies {
     // Gemini Nano through AICore, for automatic note titles. Its minSdk is 26
     // against the app's 24: see the overrideLibrary in AndroidManifest.xml.
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta5")
+
+    // The version integration_test already puts in every debug build, so
+    // the widget renders run against the same runner the app carries.
+    androidTestImplementation("androidx.test:runner:1.2.0")
 }
 
 kotlin {
