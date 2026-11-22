@@ -548,6 +548,39 @@ void main() {
       }
     }
 
+    for (final (name, details, field, edit, after) in [
+      (
+        'emptying words that end on a picture\'s line keeps its mark',
+        '  Before.\n  \uFFFC\n  Middle.\uFFFC\n  After.',
+        1,
+        '',
+        '  Before.\n  \uFFFC\n  \uFFFC\n  After.',
+      ),
+      (
+        'emptying words that start on a picture\'s line keeps the next '
+            'picture on a line of its own',
+        '  Before.\n  \uFFFCMiddle.\n  \uFFFC\n  After.',
+        1,
+        '',
+        '  Before.\n  \uFFFC\n  \uFFFC\n  After.',
+      ),
+      (
+        'a blank line read between two pictures stays through another edit',
+        '  Before.\n  \uFFFC\n\n  \uFFFC\n  After.',
+        0,
+        'Before!',
+        '  Before!\n  \uFFFC\n\n  \uFFFC\n  After.',
+      ),
+    ]) {
+      testWidgets(name, (tester) async {
+        await openWith(tester, details);
+        await tester.enterText(fields.at(field), edit);
+        await tester.pumpAndSettle();
+        expectNote(after, 2);
+        await tester.pump(const Duration(seconds: 3));
+      });
+    }
+
     testWidgets('sits between the lines around its mark, 12 pt from each', (
       tester,
     ) async {
