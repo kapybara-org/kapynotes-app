@@ -5,7 +5,8 @@ import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'share_dialog_test.dart' show Device, FakeSend, joiningOver, opener;
+import 'support/sharing_devices.dart'
+    show Device, FakeSend, joiningOver, opener;
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 

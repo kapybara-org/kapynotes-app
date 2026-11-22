@@ -84,6 +84,10 @@ void main() {
         ('Tue 17', null, 'tax'),
       ]);
       expect(
+        [for (final group in groups) group.day],
+        [null, DateTime(2026, 11, 19), DateTime(2026, 11, 17)],
+      );
+      expect(
         noteDay(notes[1], shown, ownDay: DateTime(2026, 11, 21)),
         DateTime(2026, 11, 21),
       );
@@ -106,6 +110,23 @@ void main() {
       [('Today', null, 'call')],
     );
   });
+
+  test(
+    'a group by tag or by letter names no day, though its notes share one',
+    () {
+      final notes = [_note('call', 'Call', DateTime(2026, 11, 19, 11, 40))];
+      for (final grouping in [NotesGrouping.byTag, NotesGrouping.aToZ]) {
+        final groups = groupNotes(
+          notes,
+          grouping,
+          today: today,
+          displayTime: shown,
+          firstTag: (_) => null,
+        );
+        expect(groups.single.day, isNull, reason: grouping.name);
+      }
+    },
+  );
 
   test('by tag: each first tag by name, then the untagged', () {
     final at = DateTime(2026, 11, 19);

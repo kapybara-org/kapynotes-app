@@ -82,14 +82,22 @@ DateTime noteDay(
   DateTime? ownDay,
 }) => ownDay ?? dayShown(note.updatedAt, displayTime);
 
+/// Whether a note given the day [own] waits for a day after [today], under
+/// Upcoming rather than in the list.
+bool waitsForLaterDay(DateTime? own, DateTime today) =>
+    own != null && own.isAfter(DateTime(today.year, today.month, today.day));
+
 /// A heading in the notes list, and the notes under it. [upcoming] marks the
 /// one grouping by day gives the notes waiting for a later day, which the
 /// list beside the rail folds; no other group is it, whatever its label.
+/// [day] is the one day a group by day holds, so its notes need give only
+/// their time; null for Upcoming and every other grouping.
 typedef NoteGroup = ({
   String label,
   String? detail,
   List<Note> notes,
   bool upcoming,
+  DateTime? day,
 });
 
 /// [notes] under the headings [grouping] gives them, each group keeping the
@@ -109,28 +117,33 @@ List<NoteGroup> groupNotes(
   DateTime? Function(Note note)? ownDay,
 }) {
   final groups = <Object?, NoteGroup>{};
-  void add(Object? key, String label, Note note) => groups
+  void add(Object? key, String label, Note note, {DateTime? day}) => groups
       .putIfAbsent(
         key,
-        () => (label: label, detail: null, notes: <Note>[], upcoming: false),
+        () => (
+          label: label,
+          detail: null,
+          notes: <Note>[],
+          upcoming: false,
+          day: day,
+        ),
       )
       .notes
       .add(note);
 
   switch (grouping) {
     case NotesGrouping.byDate:
-      final from = DateTime(today.year, today.month, today.day);
       final waiting = <Note>[];
       for (final note in notes) {
         final own = ownDay?.call(note);
-        if (own != null && own.isAfter(from)) {
+        if (waitsForLaterDay(own, today)) {
           waiting.add(note);
           continue;
         }
         final day = noteDay(note, displayTime, ownDay: own);
         // The page's week already says which day Today and Yesterday are.
         final (label, _) = SidebarTimestamp.dayHeading(day, today: today);
-        add(day, label, note);
+        add(day, label, note, day: day);
       }
       final days = groups.keys.cast<DateTime>().toList()
         ..sort((a, b) => b.compareTo(a));
@@ -141,6 +154,7 @@ List<NoteGroup> groupNotes(
             detail: '${waiting.length}',
             notes: waiting,
             upcoming: true,
+            day: null,
           ),
         for (final day in days) groups[day]!,
       ];

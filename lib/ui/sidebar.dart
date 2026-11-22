@@ -12,7 +12,7 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../calc/engine.dart';
 import '../data/folders.dart';
-import '../data/layout_prefs.dart' show NotesGrouping;
+import '../data/layout_prefs.dart' show LayoutPrefs, NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../sync/presence.dart';
@@ -437,7 +437,8 @@ class Sidebar extends StatelessWidget {
               placeholder: searchPlaceholder,
               phone: phone,
               trailing: phone && controls != null && onFiltersToggled != null
-                  ? _FiltersButton(
+                  ? PhoneFiltersButton(
+                      key: const ValueKey('phone-filters'),
                       active: filtersActive,
                       onPressed: onFiltersToggled!,
                     )
@@ -532,12 +533,14 @@ class Sidebar extends StatelessWidget {
   }
 
   /// A note's card, or its row in the list view, away from the list: on a
-  /// folder's page, with the face, clicks and menu it has here.
-  Widget noteTile(Note note) => _row(
+  /// folder's page, with the face, clicks and menu it has here, giving only
+  /// its time under a heading that names its day ([clockOnly]).
+  Widget noteTile(Note note, {bool clockOnly = false}) => _row(
     note,
     shared: sharing != null && note.isShared,
     pinned: pinnedNoteIds.contains(note.id),
     style: cards ? NoteRowStyle.card : NoteRowStyle.row,
+    clockOnly: clockOnly,
   );
 }
 
@@ -1067,6 +1070,7 @@ extension on Sidebar {
     style: style,
     inset: inset,
     clockOnly: clockOnly,
+    laterDay: clockOnly ? null : _laterDay(note),
     folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
@@ -1076,7 +1080,9 @@ extension on Sidebar {
     shared: shared,
     pinned: pinned,
     locked: lockedNoteIds.contains(note.id),
-    collaborators: shared ? collaborators[note.id] ?? const [] : const [],
+    collaborators: shared && !(phone && clockOnly)
+        ? collaborators[note.id] ?? const []
+        : const [],
     // Shared's own list leaves the faces off: its headings name them.
     shareGroup: phone && shared && !_onSharedTab
         ? sharing?.groupOf(note)
@@ -1379,11 +1385,13 @@ extension on Sidebar {
         }
       } else {
         // A day at a time, newest first, under the day the note was last
-        // edited.
+        // edited, each note giving its time alone, even while others have it
+        // open.
         for (final day in _phoneDays(
           groups.mine,
           now: now(),
           displayTime: displayTime,
+          ownDay: ownDay,
         )) {
           heading(_PhoneDayHeading(lead: day.lead, date: day.date));
           section(day.notes, clockOnly: true);
@@ -1433,7 +1441,9 @@ extension on Sidebar {
             onTap: fold ? onUpcomingToggled : null,
           ),
         );
-        if (!fold || upcomingOpen) section(group.notes);
+        if (!fold || upcomingOpen) {
+          section(group.notes, clockOnly: group.day != null);
+        }
       }
     }
 
@@ -1449,14 +1459,23 @@ extension on Sidebar {
     );
   }
 
+  /// The day [note] was given, when that is a later one, for its row to name.
+  DateTime? _laterDay(Note note) {
+    final own = ownDay?.call(note);
+    return waitsForLaterDay(own, dayShown(now(), displayTime)) ? own : null;
+  }
+
   /// The Folders tab: the folder tree, then the notes in no folder.
   Widget _buildFolders(BuildContext context) {
     final folders = this.folders!;
     final today = dayShown(now(), displayTime);
-    final upcoming = [
-      for (final note in notes)
-        if (ownDay?.call(note) case final day? when day.isAfter(today)) note,
-    ];
+    // A phone's Upcoming is a tile in [phoneCards], with a page of its own.
+    final upcoming = phone
+        ? const <Note>[]
+        : [
+            for (final note in notes)
+              if (waitsForLaterDay(ownDay?.call(note), today)) note,
+          ];
     return _fading(
       context,
       FoldersTab(
@@ -1952,6 +1971,14 @@ class SidebarWindowBar extends StatelessWidget {
 
   static const double height = 52;
 
+  /// The narrowest desktop list that keeps the count and New's word: the
+  /// list's own width, which a 1440 pt window gives it and where D01 and D03
+  /// draw both, with the sparkle, New and the toggle side by side. Below it
+  /// they fold away, and sooner wherever the reader's text size or a longer
+  /// name leaves them no room. A tablet keeps 8 between the buttons and
+  /// folds only for room.
+  static const double fullWidth = LayoutPrefs.defaultSidebarWidth;
+
   /// New's name and chord on hover, as the page's + names it while this bar
   /// is hidden.
   static String newTooltip(String noun, ShortcutBinding? shortcut) =>
@@ -2016,13 +2043,15 @@ class SidebarWindowBar extends StatelessWidget {
                   // count, so the space's name keeps its room on a list
                   // dragged narrow. Everything is measured as it prints, at
                   // the reader's text size and with this platform's chord.
+                  final desktop = AppPlatform.hasPointer;
+                  final gap = desktop ? 0 : 8;
                   final room =
                       constraints.maxWidth -
                       widthOf(title, titleStyle) -
                       8 -
-                      8 -
+                      gap -
                       32 -
-                      (onAskKapy == null ? 0 : 32 + 8);
+                      (onAskKapy == null ? 0 : 32 + gap);
                   final chord = noun == 'drawing'
                       ? null
                       : newNoteShortcut?.keycapLabel;
@@ -2034,8 +2063,12 @@ class SidebarWindowBar extends StatelessWidget {
                         shortcut: shortcut,
                         tall: true,
                       );
-                  final keycap = chord != null && fits(shortcut: chord);
-                  final label = fits();
+                  final label =
+                      (!desktop ||
+                          constraints.maxWidth + 2 * 16 >= fullWidth) &&
+                      fits();
+                  final keycap =
+                      label && chord != null && fits(shortcut: chord);
                   return Row(
                     children: [
                       Expanded(
@@ -2081,7 +2114,7 @@ class SidebarWindowBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      if (onAskKapy != null) ...[
+                      if (onAskKapy != null)
                         CompactIconButton(
                           key: const ValueKey('sidebar-ask-kapy'),
                           tooltip: askKapyShortcut == null
@@ -2095,8 +2128,8 @@ class SidebarWindowBar extends StatelessWidget {
                             size: 16,
                           ),
                         ),
+                      if (onAskKapy != null && !desktop)
                         const SizedBox(width: 8),
-                      ],
                       TonalButton(
                         key: const ValueKey('sidebar-new-note'),
                         tall: true,
@@ -2112,7 +2145,7 @@ class SidebarWindowBar extends StatelessWidget {
                             : newTooltip(noun, newNoteShortcut),
                         onPressed: onCreate,
                       ),
-                      const SizedBox(width: 8),
+                      if (!desktop) const SizedBox(width: 8),
                       CompactIconButton(
                         key: const ValueKey('sidebar-hide'),
                         tooltip: hideShortcut == null
@@ -2512,10 +2545,16 @@ class SidebarSearchField extends StatelessWidget {
     this.placeholder = 'Search',
     this.phone = false,
     this.trailing,
+    this.field,
   });
 
   /// A phone's field: a quiet well, the entry to Quick find.
   final bool phone;
+
+  /// A phone's text field in the well in place of the placeholder, for a
+  /// page that narrows its own list as you type, as Tasks does. A tap
+  /// elsewhere in the well calls [onSearch].
+  final Widget? field;
 
   /// A phone's filter button, beside the well. It stands outside the well's
   /// own tap area, so pressing it never starts a search.
@@ -2531,14 +2570,18 @@ class SidebarSearchField extends StatelessWidget {
   Widget? _end(CalcPalette palette, double extent) {
     final onClear = this.onClear;
     if (query.isNotEmpty && onClear != null) {
-      return CompactIconButton(
-        tooltip: 'Clear search',
-        extent: extent,
-        foregroundColor: palette.textTertiary,
-        onPressed: onClear,
-        icon: KapyIcon(
-          KapyIcons.cancelRounded,
-          size: AppControlMetrics.iconAdornment,
+      // Inside the field's tap region, so Clear keeps the keyboard up.
+      return TextFieldTapRegion(
+        child: CompactIconButton(
+          tooltip: 'Clear search',
+          extent: extent,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: palette.textTertiary,
+          onPressed: onClear,
+          icon: KapyIcon(
+            KapyIcons.cancelRounded,
+            size: AppControlMetrics.iconAdornment,
+          ),
         ),
       );
     }
@@ -2570,7 +2613,7 @@ class SidebarSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final searching = query.isNotEmpty;
-    final end = _end(palette, 20);
+    final end = _end(palette, phone ? 32 : 20);
     if (!phone) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -2624,59 +2667,69 @@ class SidebarSearchField extends StatelessWidget {
     }
 
     final trailing = this.trailing;
+    final field = this.field;
+    final well = MouseRegion(
+      cursor: SystemMouseCursors.text,
+      child: Container(
+        key: const ValueKey('sidebar-search-box'),
+        // A phone's well is a 44 pt target, as every touch target is, and
+        // grows with the text size rather than cutting the placeholder's
+        // letters off.
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
+        decoration: BoxDecoration(
+          color: palette.fillRest,
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
+        child: Row(
+          children: [
+            KapyIcon(
+              KapyIcons.searchRounded,
+              size: 16,
+              color: palette.textTertiary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child:
+                  field ??
+                  Text(
+                    searching ? query : placeholder,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: searching
+                          ? palette.textPrimary
+                          : palette.textTertiary,
+                    ),
+                  ),
+            ),
+            ?end,
+          ],
+        ),
+      ),
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6),
       child: Row(
         children: [
           Expanded(
-            child: Semantics(
-              button: true,
-              label: searching ? 'Search, $query' : placeholder,
-              child: GestureDetector(
-                key: const ValueKey('sidebar-search-field'),
-                behavior: HitTestBehavior.opaque,
-                onTap: onSearch,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.text,
-                  child: Container(
-                    key: const ValueKey('sidebar-search-box'),
-                    // A phone's well is a 44 pt target, as every touch target
-                    // is, and grows with the text size rather than cutting
-                    // the placeholder's letters off.
-                    constraints: const BoxConstraints(minHeight: 44),
-                    padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
-                    decoration: BoxDecoration(
-                      color: palette.fillRest,
-                      borderRadius: BorderRadius.circular(AppRadii.control),
-                    ),
-                    child: Row(
-                      children: [
-                        KapyIcon(
-                          KapyIcons.searchRounded,
-                          size: 16,
-                          color: palette.textTertiary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            searching ? query : placeholder,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: searching
-                                  ? palette.textPrimary
-                                  : palette.textTertiary,
-                            ),
-                          ),
-                        ),
-                        ?end,
-                      ],
+            child: field != null
+                ? GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onSearch,
+                    child: well,
+                  )
+                : Semantics(
+                    button: true,
+                    label: searching ? 'Search, $query' : placeholder,
+                    child: GestureDetector(
+                      key: const ValueKey('sidebar-search-field'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onSearch,
+                      child: well,
                     ),
                   ),
-                ),
-              ),
-            ),
           ),
           if (trailing != null) ...[const SizedBox(width: 8), trailing],
         ],
@@ -2685,14 +2738,21 @@ class SidebarSearchField extends StatelessWidget {
   }
 }
 
-/// The button beside a phone's search well. The filter row shows while it is
-/// open, and it carries a dot while a filter it holds out of sight narrows
-/// the list.
-class _FiltersButton extends StatelessWidget {
-  const _FiltersButton({required this.active, required this.onPressed});
+/// The button beside a phone's search well. It opens the list's filters,
+/// and it carries a dot while a filter out of sight narrows the list.
+class PhoneFiltersButton extends StatelessWidget {
+  const PhoneFiltersButton({
+    super.key,
+    required this.active,
+    required this.onPressed,
+    this.tooltip = 'Filters',
+  });
 
   final bool active;
   final VoidCallback onPressed;
+
+  /// What a screen reader and a long press say it does.
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -2706,8 +2766,7 @@ class _FiltersButton extends StatelessWidget {
           Semantics(
             selected: active,
             child: CompactIconButton(
-              key: const ValueKey('phone-filters'),
-              tooltip: 'Filters',
+              tooltip: tooltip,
               extent: 44,
               onPressed: onPressed,
               icon: KapyIcon(
@@ -2780,6 +2839,7 @@ class NoteRow extends StatefulWidget {
     this.style = NoteRowStyle.row,
     this.inset = 0,
     this.clockOnly = false,
+    this.laterDay,
     this.engine,
     this.now = DateTime.now,
     this.folders,
@@ -2792,8 +2852,12 @@ class NoteRow extends StatefulWidget {
   final double inset;
 
   /// Whether the row sits under a heading that already names its day, so it
-  /// gives only the time it was last changed, even while others have it open.
+  /// gives only the time it was last changed, unless others have it open.
   final bool clockOnly;
+
+  /// The later day the note was given, which the row names in place of when
+  /// it was changed, as no heading over it does.
+  final DateTime? laterDay;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -3047,7 +3111,7 @@ class _NoteRowState extends State<NoteRow> {
               value: 'archive',
               label: 'Archive note',
               icon: archiveIcon,
-              hint: archiveShortcut?.displayLabel,
+              hint: archiveShortcut?.keycapLabel,
             ),
           if (widget.onDelete != null)
             KapyMenuAction(
@@ -3055,7 +3119,7 @@ class _NoteRowState extends State<NoteRow> {
               label: widget.deleteLabel,
               icon: deleteIcon,
               hint: widget.onArchive == null
-                  ? archiveShortcut?.displayLabel
+                  ? archiveShortcut?.keycapLabel
                   : null,
               destructive: true,
             ),
@@ -3224,23 +3288,31 @@ class _NoteRowState extends State<NoteRow> {
     final card =
         widget.style == NoteRowStyle.card ||
         widget.style == NoteRowStyle.drawingCard;
-    String stamp({bool clock = true}) => SidebarTimestamp.glance(
-      note.updatedAt,
-      now: widget.now(),
-      displayTime: widget.displayTime,
-      today: card,
-      clock: clock,
-    );
-    final day = card && people.isEmpty ? stamp(clock: false) : null;
-    final date = widget.clockOnly
-        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
-        : people.isEmpty
-        ? stamp()
-        : typingStatusText([
+    String stamp({bool clock = true}) => switch (widget.laterDay) {
+      final day? => SidebarTimestamp.briefDay(
+        day,
+        today: dayShown(widget.now(), widget.displayTime),
+      ),
+      null => SidebarTimestamp.glance(
+        note.updatedAt,
+        now: widget.now(),
+        displayTime: widget.displayTime,
+        today: card,
+        clock: clock,
+      ),
+    };
+    final day = card && people.isEmpty && widget.laterDay == null
+        ? stamp(clock: false)
+        : null;
+    final date = people.isNotEmpty
+        ? typingStatusText([
                 for (final person in people)
                   if (person.typing) person.name,
               ]) ??
-              presenceStatusText([for (final person in people) person.name])!;
+              presenceStatusText([for (final person in people) person.name])!
+        : widget.clockOnly
+        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
+        : stamp();
     final glance = NoteGlance.of(note, widget.engine);
     final picking = widget.selecting ? widget.checked : null;
     // While picking, what is lit is what is picked: the open note keeps its
@@ -3776,20 +3848,31 @@ List<({String? lead, String date, List<Note> notes})> _phoneDays(
   List<Note> notes, {
   required DateTime now,
   required DateTime Function(DateTime) displayTime,
+  DateTime? Function(Note note)? ownDay,
 }) {
   final today = dayShown(now, displayTime);
   final days = <DateTime, List<Note>>{};
   for (final note in notes) {
-    final day = dayShown(note.updatedAt, displayTime);
-    (days[day.isAfter(today) ? today : day] ??= []).add(note);
+    final own = ownDay?.call(note);
+    final day = noteDay(note, displayTime, ownDay: own);
+    // An edit from a clock ahead of this one counts as today's; a day given
+    // ahead is that day, as Upcoming's notes are.
+    (days[own == null && day.isAfter(today) ? today : day] ??= []).add(note);
   }
+  // Later days soonest first, then today and the days before, newest first.
+  final order = days.keys.toList()
+    ..sort(
+      (a, b) => a.isAfter(today) && b.isAfter(today)
+          ? a.compareTo(b)
+          : b.compareTo(a),
+    );
   return [
-    for (final MapEntry(key: day, value: notes) in days.entries)
+    for (final day in order)
       if (SidebarTimestamp.phoneDay(day, now: today) case (
         :final lead,
         :final date,
       ))
-        (lead: lead, date: date, notes: notes),
+        (lead: lead, date: date, notes: days[day]!),
   ];
 }
 

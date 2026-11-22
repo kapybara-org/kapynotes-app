@@ -9,6 +9,8 @@ import '../../data/note_attachment.dart';
 import '../../data/task_board.dart';
 import '../../data/task_details.dart';
 import '../../images/note_image_provider.dart';
+import '../page_toolbar.dart';
+import '../window_drag_area.dart';
 import 'task_marks.dart';
 import 'tasks_controller.dart';
 
@@ -84,143 +86,175 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       alignment: Alignment.centerLeft,
     );
-    final body = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (phone)
+    final picture = details == null
+        ? null
+        : TaskDetailPicture(
+            item: item,
+            details: details,
+            images: widget.images,
+          );
+    final words = empty && editable
+        ? Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: link,
+              onPressed: () {
+                setState(() => _adding = true);
+                unawaited(widget.tasks.openDetails(widget.item));
+                _focus.requestFocus();
+              },
+              child: Text(
+                'Add details',
+                style: uiStyle(
+                  phone ? 14 : 13,
+                  phone ? 22 : 20,
+                  FontWeight.w500,
+                  palette.accentText,
+                ),
+              ),
+            ),
+          )
+        : empty
+        ? null
+        : TextField(
+            controller: _words,
+            focusNode: _focus,
+            readOnly: !editable,
+            minLines: phone ? 3 : 1,
+            maxLines: phone ? 8 : null,
+            style: phone
+                ? uiStyle(14, 22, FontWeight.w400, palette.textPrimary)
+                : uiStyle(13, 20, FontWeight.w400, palette.textSecondary),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              filled: false,
+              isCollapsed: true,
+              contentPadding: EdgeInsets.zero,
+              hintText: editable ? 'Add details' : null,
+            ),
+            onChanged: (value) => widget.tasks.setDetails(widget.item, value),
+          );
+    final hint = empty || !editable
+        ? Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              editable
+                  ? 'Writes under the task, in its note.'
+                  : 'You can view this note, not change it.',
+              style: uiStyle(13, 18, FontWeight.w400, palette.textTertiary),
+            ),
+          )
+        : null;
+    final openNote = Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton(
+        style: link,
+        onPressed: widget.onOpenNote,
+        child: Text(
+          'Open in note',
+          style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
+        ),
+      ),
+    );
+    if (phone) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               _PhoneTaskName(
                 item: item,
                 tasks: widget.tasks,
                 editable: editable,
-              )
-            else ...[
-              Row(
-                children: [
-                  Text(
-                    'Details',
-                    style: uiStyle(
-                      12,
-                      16,
-                      FontWeight.w600,
-                      palette.textTertiary,
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: widget.onClose,
-                    child: Text(
-                      'Close',
-                      style: uiStyle(
-                        13,
-                        16,
-                        FontWeight.w500,
-                        palette.textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
               ),
+              const SizedBox(height: 8),
+              ?picture,
+              ?words,
+              ?hint,
+            ],
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              openNote,
               Text(
-                item.words,
-                style: uiStyle(15, 24, FontWeight.w500, palette.textPrimary),
+                item.note.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: uiStyle(12, 16, FontWeight.w400, palette.textTertiary),
               ),
             ],
-            const SizedBox(height: 8),
-            if (details != null)
-              TaskDetailPicture(
-                item: item,
-                details: details,
-                images: widget.images,
-              ),
-            if (empty && editable)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  style: link,
-                  onPressed: () {
-                    setState(() => _adding = true);
-                    unawaited(widget.tasks.openDetails(widget.item));
-                    _focus.requestFocus();
-                  },
+          ),
+        ],
+      );
+    }
+    // D09: a column against the window's right edge, its header in the page
+    // bar's row, and Open in note straight under the words.
+    final edge = BorderSide(color: palette.railBorder);
+    return DecoratedBox(
+      key: const ValueKey('tasks-details'),
+      decoration: BoxDecoration(border: Border(left: edge)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: const ValueKey('tasks-details-header'),
+            height: AppControlMetrics.scaleBar(context, PageToolbar.height),
+            padding: const EdgeInsets.only(left: 20, right: 12),
+            foregroundDecoration: BoxDecoration(border: Border(bottom: edge)),
+            child: Row(
+              children: [
+                Text(
+                  'Details',
+                  style: uiStyle(13, 18, FontWeight.w500, palette.textPrimary),
+                ),
+                const Expanded(child: WindowDragArea(child: SizedBox.expand())),
+                TextButton(
+                  onPressed: widget.onClose,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                   child: Text(
-                    'Add details',
-                    style: uiStyle(14, 22, FontWeight.w500, palette.accentText),
+                    'Close',
+                    style: uiStyle(
+                      13,
+                      18,
+                      FontWeight.w500,
+                      palette.textSecondary,
+                    ),
                   ),
                 ),
-              )
-            else if (!empty)
-              TextField(
-                controller: _words,
-                focusNode: _focus,
-                readOnly: !editable,
-                minLines: 3,
-                maxLines: 8,
-                style: uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  filled: false,
-                  isCollapsed: true,
-                  contentPadding: EdgeInsets.zero,
-                  hintText: editable ? 'Add details' : null,
-                ),
-                onChanged: (value) =>
-                    widget.tasks.setDetails(widget.item, value),
-              ),
-            if (empty || !editable)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  editable
-                      ? 'Writes under the task, in its note.'
-                      : 'You can view this note, not change it.',
-                  style: uiStyle(13, 18, FontWeight.w400, palette.textTertiary),
-                ),
-              ),
-          ],
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                style: link,
-                onPressed: widget.onOpenNote,
-                child: Text(
-                  'Open in note',
-                  style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
-                ),
-              ),
+              ],
             ),
-            Text(
-              item.note.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: uiStyle(12, 16, FontWeight.w400, palette.textTertiary),
-            ),
-          ],
-        ),
-      ],
-    );
-    if (phone) return body;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        border: Border.all(color: palette.separator),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight - 26),
-            child: body,
           ),
-        ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    item.words,
+                    style: uiStyle(
+                      15,
+                      24,
+                      FontWeight.w500,
+                      palette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ?picture,
+                  ?words,
+                  ?hint,
+                  const SizedBox(height: 8),
+                  openNote,
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -14,7 +14,7 @@ import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../share_dialog_test.dart' show Device;
+import '../support/sharing_devices.dart' show Device;
 import 'fake_server.dart';
 
 class MemoryStore extends LocalStore {
