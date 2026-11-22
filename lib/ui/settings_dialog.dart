@@ -686,9 +686,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   bool _isAvailable(SettingsSection section) => switch (section) {
     SettingsSection.window ||
     SettingsSection.shortcuts => AppPlatform.isDesktop,
-    // A phone has no updater, but the notes still live here, the same place a
-    // computer keeps them. Closing the notice at the top of the list must not
-    // be the last way in.
+    // A phone has no updater, but its release notes still live here, the same
+    // place a computer keeps them, and the list marks the row while this
+    // version's are unread.
     SettingsSection.about => widget.updates != null || AppPlatform.isMobile,
     SettingsSection.account ||
     SettingsSection.sharing => widget.account != null,
@@ -4346,8 +4346,8 @@ class _AccountRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
               if (signedIn)
@@ -4379,8 +4379,6 @@ class _AccountRow extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 15,
                         height: 20 / 15,
@@ -4391,8 +4389,6 @@ class _AccountRow extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 13,
                         height: 16 / 13,
@@ -4444,45 +4440,59 @@ class _IndexRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
               KapyIcon(section.icon, size: 18, color: palette.textSecondary),
               const SizedBox(width: 12),
+              // The value keeps to the end of the line while there is room
+              // for it beside the name, and drops under it at the largest text
+              // sizes rather than squeezing the name.
               Expanded(
-                child: Text(
-                  section.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15,
-                    height: 20 / 15,
-                    color: palette.textPrimary,
-                  ),
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      section.label,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 20 / 15,
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    if (value != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              value,
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 16 / 13,
+                                color: palette.textTertiary,
+                              ),
+                            ),
+                          ),
+                          if (!quiet) ...[
+                            const SizedBox(width: 12),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: palette.clay,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const SizedBox.square(dimension: 8),
+                            ),
+                          ],
+                        ],
+                      ),
+                  ],
                 ),
               ),
-              if (value != null) ...[
-                const SizedBox(width: 12),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 16 / 13,
-                    color: palette.textTertiary,
-                  ),
-                ),
-                if (!quiet) ...[
-                  const SizedBox(width: 12),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: palette.clay,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const SizedBox.square(dimension: 8),
-                  ),
-                ],
-              ],
               const SizedBox(width: 12),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
@@ -5411,9 +5421,9 @@ class _ReleaseRow extends StatelessWidget {
   }
 }
 
-/// The phone's lasting way to the notes. The notice at the top of Settings
-/// can be closed; this row cannot, and it lives in About, where a computer
-/// keeps the same route.
+/// The phone's way to the release notes, in About, where a computer keeps
+/// the same route. The list marks About & updates until it is opened for
+/// this version.
 class _QuietWhatsNewRow extends StatelessWidget {
   const _QuietWhatsNewRow();
 

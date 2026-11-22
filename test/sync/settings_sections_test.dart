@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/billing/billing.dart';
@@ -21,9 +22,11 @@ import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 
+import '../test_fonts.dart';
 import 'fake_server.dart';
 
 class _Store extends LocalStore {
@@ -71,7 +74,8 @@ class _ReadyDevice implements Transcriber {
 }
 
 /// Settings, opened with an account that has been signed in and unlocked —
-/// the only state where both halves of an account have anything to show.
+/// the only state where both halves of an account have anything to show —
+/// and invited into a space by each of [invitedBy].
 Future<void> pumpSettings(
   WidgetTester tester, {
   required Size size,
@@ -79,12 +83,28 @@ Future<void> pumpSettings(
   SettingsSection? section,
   Entitlements? entitlements,
   bool withCloudAccess = false,
+  List<String> invitedBy = const [],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
   final server = FakeServer();
+  for (final name in invitedBy) {
+    final owner = server.user('user-$name')..name = name;
+    server.spaces['space-$name'] =
+        FakeSpace(
+            id: 'space-$name',
+            kind: SpaceKind.team,
+            name: '$name’s notes',
+            ownerId: owner.id,
+          )
+          ..members[owner.id] = SpaceRole.owner
+          ..invites['invite-$name'] = (
+            email: server.user('user-1').email,
+            role: SpaceRole.member,
+          );
+  }
   final store = _Store();
   final notes = NotesStore(store);
   final syncState = SyncState(store);
@@ -124,6 +144,7 @@ Future<void> pumpSettings(
     await account.restore();
     await account.signIn(email: 'a@b.co', password: 'x');
     await account.createPassphrase('a good passphrase');
+    if (invitedBy.isNotEmpty) await account.sharing!.refresh();
   });
   final cloudAccess = withCloudAccess
       ? CloudAccess(
@@ -389,5 +410,54 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('join-row')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('join-code')), findsOneWidget);
+  });
+
+  group('in the app\'s own fonts', () {
+    setUpAll(loadTestFonts);
+
+    // Twice the text, as iOS's accessibility sizes give: the phone's list
+    // grows rather than clipping, every name stays whole, and a value too
+    // wide to sit beside its name drops under it.
+    testWidgets('the phone list grows with large text', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await pumpSettings(
+        tester,
+        size: const Size(390, 844),
+        asSheet: true,
+        invitedBy: const ['Priya', 'Arjun'],
+      );
+
+      expect(tester.takeException(), isNull);
+      for (final name in [
+        'Sharing',
+        'Notes',
+        'Appearance',
+        'Voice & AI',
+        'About & updates',
+      ]) {
+        final label = tester.renderObject<RenderParagraph>(find.text(name));
+        expect(
+          label.size.width,
+          greaterThanOrEqualTo(label.getMaxIntrinsicWidth(double.infinity)),
+          reason: '$name is cut short',
+        );
+      }
+      final waiting = find.text('2 invitations waiting');
+      expect(waiting, findsOneWidget);
+      expect(
+        tester.getTopLeft(waiting).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(find.text('Sharing')).dy),
+      );
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('settings-section-account')))
+            .height,
+        greaterThan(64),
+      );
+    });
   });
 }

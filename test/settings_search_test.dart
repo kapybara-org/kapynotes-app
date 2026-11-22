@@ -480,6 +480,13 @@ void main() {
       expect(_found(index, "what's new"), contains('changelog'));
     });
 
+    testWidgets('Search on Home lands AI assistants on the AI apps group', (
+      tester,
+    ) async {
+      final index = await _phoneIndex(tester);
+      expect(_found(index, 'AI assistants'), contains('mcp-apps'));
+    });
+
     testWidgets('offers nothing a phone does not have', (tester) async {
       final index = await _phoneIndex(tester);
       expect(
