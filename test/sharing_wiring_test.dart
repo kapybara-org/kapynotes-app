@@ -383,6 +383,38 @@ void main() {
     for (final value in ['day', 'folder', 'tags', 'hide', 'archive']) {
       expect(item(value), findsNothing, reason: value);
     }
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+
+    // Home goes to Home, not back to the Shared list it was opened from.
+    await tester.tap(find.byKey(const ValueKey('page-home')));
+    await tester.pumpAndSettle();
+    expect(find.byType(PhoneNoteHeader), findsNothing);
+    expect(find.byKey(const ValueKey('shared-page')), findsNothing);
+    expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('on a phone, a note of your own that you share can be '
+      'archived but not moved to Hidden Notes', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.text('Trip budget'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    Finder item(String value) => find.byKey(ValueKey('page-more-$value'));
+    expect(item('archive'), findsOneWidget);
+    expect(item('hide'), findsNothing);
     await tester.pump(const Duration(seconds: 2));
   });
 

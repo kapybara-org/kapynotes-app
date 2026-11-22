@@ -707,7 +707,6 @@ class EditorMetrics {
   static const double metaBottom = 24;
   static double get titleReserve => metaGap + metaRow + metaBottom;
   static const double phoneMetaRow = 22;
-  static const double phoneTitleReserve = metaGap + phoneMetaRow + metaBottom;
 
   /// While the page's days have the bar's top left, a filed note's folders
   /// sit in a line of their own [pathGap] above its title.

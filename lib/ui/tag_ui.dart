@@ -655,32 +655,35 @@ class _NoteTagChipsState extends State<NoteTagChips> {
         ),
       ),
     );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Past this the chips scroll, so + Tag stays in reach.
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final tag in tags) ...[
-                  _TagChip(
-                    tag: tag,
-                    onFilter: () => shelf.onFilter(tag.id),
-                    onRemove: () =>
-                        shelf.store.removeTag(widget.noteId, tag.id),
-                    onDropped: (dragged) => move(dragged, tag.id),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-              ],
-            ),
-          ),
+    // Past 360, or the width there is, the chips scroll, so + Tag stays in
+    // reach and nothing runs off the line.
+    final chips = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 360),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final tag in tags) ...[
+              _TagChip(
+                tag: tag,
+                onFilter: () => shelf.onFilter(tag.id),
+                onRemove: () => shelf.store.removeTag(widget.noteId, tag.id),
+                onDropped: (dragged) => move(dragged, tag.id),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ],
         ),
-        if (widget.adds) add,
-      ],
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          constraints.hasBoundedWidth ? Flexible(child: chips) : chips,
+          if (widget.adds) add,
+        ],
+      ),
     );
   }
 }

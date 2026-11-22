@@ -67,12 +67,14 @@ class PhoneNoteHeader extends StatelessWidget {
   static const double rowHeight = 52;
   static const double tasksHeight = 44;
 
-  /// "2 tasks on Fri 21", or "6 tasks today".
+  /// "2 tasks on Fri 21" for a day still to come, whose waiting tasks it
+  /// counts, or "6 tasks today" for today and any day before it, which count
+  /// today's list.
   static String tasksLine(int count, DateTime day, DateTime today) {
     final tasks = count == 1 ? '1 task' : '$count tasks';
-    return day == today
-        ? '$tasks today'
-        : '$tasks on ${SidebarTimestamp.weekdayAndDay(day)}';
+    return day.isAfter(today)
+        ? '$tasks on ${SidebarTimestamp.weekdayAndDay(day)}'
+        : '$tasks today';
   }
 
   @override

@@ -265,9 +265,9 @@ class NoteMetaRow extends StatelessWidget {
         ),
     ];
     if (phone) {
-      // One line that wraps with the text size: the facts a dot apart, then
-      // the tags after a gap, as M07 draws them. The editor keeps a second
-      // line's room under the title, so a wrap never runs into the note.
+      // One line, as M07 draws it: the facts a dot apart, then the tags after
+      // a gap. It wraps when they don't fit, and the editor makes room for
+      // as many lines as it takes, so a wrap never runs into the note.
       return Wrap(
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: _gap + 4,

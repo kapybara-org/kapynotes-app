@@ -13,6 +13,7 @@ import 'package:flutter/gestures.dart'
         kPrimaryButton,
         kSecondaryButton,
         kTouchSlop;
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7506,49 +7507,72 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             ],
           );
         },
-        child: NoteMetaRow(
-          day: widget.phone
-              ? null
-              : NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
-          edited: widget.phone
-              ? _dayAndTime(now)
-              : SidebarTimestamp.edited(
-                  widget.lastUpdatedAt ?? now,
-                  now: now,
-                  displayTime: widget.displayTime ?? (time) => time.toLocal(),
-                ),
-          done: checklist.done,
-          tasks: checklist.total,
-          total: _totalText,
-          describeTotal: _describeTotal,
-          typing: widget.typing,
-          readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
-          readOnlyIcon: widget.readOnlyIcon,
-          onReadOnlyPressed: widget.onReadOnlyPressed,
-          tags: TagShelf.maybeOf(context) == null
-              ? null
-              : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
-          phone: widget.phone,
+        child: _ReportsHeight(
+          onHeight: widget.phone ? _onPhoneMetaHeight : null,
+          child: NoteMetaRow(
+            day: widget.phone
+                ? null
+                : NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
+            edited: widget.phone
+                ? _dayAndTime(now)
+                : SidebarTimestamp.edited(
+                    widget.lastUpdatedAt ?? now,
+                    now: now,
+                    displayTime: widget.displayTime ?? (time) => time.toLocal(),
+                  ),
+            done: checklist.done,
+            tasks: checklist.total,
+            total: _totalText,
+            describeTotal: _describeTotal,
+            typing: widget.typing,
+            readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
+            readOnlyIcon: widget.readOnlyIcon,
+            onReadOnlyPressed: widget.onReadOnlyPressed,
+            tags: TagShelf.maybeOf(context) == null
+                ? null
+                : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
+            phone: widget.phone,
+          ),
         ),
       ),
     );
   }
 
-  /// The room between the title and the body, for the meta row: one line on
-  /// a phone.
-  double get _titleReserve => widget.phone
-      ? EditorMetrics.phoneTitleReserve
-      : EditorMetrics.titleReserve;
+  /// The room between the title and the body, for the meta row. On a phone
+  /// that is its one line, or as many lines as it wraps onto.
+  double _titleRoom(TextScaler textScaler) {
+    final scale = widget.editorTextScale;
+    if (!widget.phone) {
+      return textScaler.scale(EditorMetrics.titleReserve * scale);
+    }
+    return textScaler.scale(
+          (EditorMetrics.metaGap + EditorMetrics.metaBottom) * scale,
+        ) +
+        math.max(
+          _phoneMetaHeight,
+          textScaler.scale(EditorMetrics.phoneMetaRow * scale),
+        );
+  }
+
+  /// How tall a phone's meta row came out, once its facts and tags wrapped.
+  double _phoneMetaHeight = 0;
+
+  void _onPhoneMetaHeight(double height) {
+    if (!mounted || height == _phoneMetaHeight) return;
+    setState(() => _phoneMetaHeight = height);
+  }
 
   /// The note's day and the time it was last written, as a phone's line
   /// under the title says them: "Fri 21 · 9:41", or the time alone today.
+  /// A note given a day other than the one it was written on says the day
+  /// alone, since the time belongs to another day.
   String _dayAndTime(DateTime now) {
     final displayTime = widget.displayTime ?? (time) => time.toLocal();
     final edited = displayTime(widget.lastUpdatedAt ?? now);
     final clock = SidebarTimestamp.clock(edited);
-    final day =
-        NoteDayScope.maybeOf(context)?.dayOf(widget.noteId) ??
-        DateTime(edited.year, edited.month, edited.day);
+    final written = DateTime(edited.year, edited.month, edited.day);
+    final day = NoteDayScope.maybeOf(context)?.dayOf(widget.noteId) ?? written;
+    if (day != written) return SidebarTimestamp.weekdayAndDay(day);
     return day == dayShown(now, displayTime)
         ? clock
         : '${SidebarTimestamp.weekdayAndDay(day)} · $clock';
@@ -8120,9 +8144,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   final height =
                       title.row.height -
                       title.spacerTop +
-                      textScaler.scale(
-                        _titleReserve * widget.editorTextScale,
-                      );
+                      _titleRoom(textScaler);
                   // The field scales the placeholder's widget once more, so
                   // its lengths go in unscaled.
                   final inline = title.inline;
@@ -8195,10 +8217,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     (title == null
                                         ? 0
                                         : title.row.bottom +
-                                              textScaler.scale(
-                                                _titleReserve *
-                                                    widget.editorTextScale,
-                                              )),
+                                              _titleRoom(textScaler)),
                                 scroll: _scrollController,
                                 child: Stack(
                                   children: [
@@ -9471,5 +9490,40 @@ class _CodeBlockHeader extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Tells [onHeight] how tall its child came out, after each layout that
+/// changes it.
+class _ReportsHeight extends SingleChildRenderObjectWidget {
+  const _ReportsHeight({required this.onHeight, required super.child});
+
+  final ValueChanged<double>? onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderReportsHeight(onHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderReportsHeight renderObject,
+  ) => renderObject.onHeight = onHeight;
+}
+
+class _RenderReportsHeight extends RenderProxyBox {
+  _RenderReportsHeight(this.onHeight);
+
+  ValueChanged<double>? onHeight;
+  double? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final onHeight = this.onHeight;
+    final height = size.height;
+    if (onHeight == null || height == _reported) return;
+    _reported = height;
+    WidgetsBinding.instance.addPostFrameCallback((_) => onHeight(height));
   }
 }

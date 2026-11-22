@@ -112,8 +112,10 @@ class DayStrip extends StatefulWidget {
   /// write on it.
   final bool phone;
 
-  /// A phone's arrows: the strip's height to press, and this wide.
+  /// A phone's arrows: the strip's height to press, and this wide, or down
+  /// to the least where a narrower phone needs the room for its days.
   static const double _phoneArrowWidth = 28;
+  static const double _phoneArrowMin = 20;
 
   /// The chip a day sits in, and the room the whole week needs at [days] of
   /// them: the chips, 2 between them, and an arrow with 2 clear at each end.
@@ -568,61 +570,77 @@ class _DayStripState extends State<DayStrip> {
     final counts = _counts(shown);
     final picked = _picked;
     final filled = _listing ?? picked ?? today;
-    // As narrow as M09 draws them, so each of the seven days keeps 44 to
-    // tap; the arrows keep the strip's whole height.
-    Widget arrow(String key, String label, KapyIconData icon, int by) =>
-        Semantics(
-          button: true,
-          label: label,
-          excludeSemantics: true,
-          child: InkResponse(
-            key: ValueKey(key),
-            onTap: () => setState(() => _shift += by),
-            radius: DayStrip._phoneArrowWidth,
-            child: SizedBox(
-              width: DayStrip._phoneArrowWidth,
-              height: _Day.phoneHeight,
-              child: Center(
-                child: KapyIcon(
-                  icon,
-                  size: 16,
-                  color: context.palette.textSecondary,
+    // As narrow as M09 draws them, and narrower on a small phone, so each of
+    // the seven days keeps 44 to tap; the arrows keep the strip's whole
+    // height.
+    Widget arrow(
+      String key,
+      String label,
+      KapyIconData icon,
+      int by,
+      double width,
+    ) => Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: InkResponse(
+        key: ValueKey(key),
+        onTap: () => setState(() => _shift += by),
+        radius: width,
+        child: SizedBox(
+          width: width,
+          height: _Day.phoneHeight,
+          child: Center(
+            child: KapyIcon(
+              icon,
+              size: 16,
+              color: context.palette.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = ((constraints.maxWidth - 7 * 44) / 2).clamp(
+          DayStrip._phoneArrowMin,
+          DayStrip._phoneArrowWidth,
+        );
+        return Row(
+          key: _weekRow,
+          children: [
+            arrow(
+              'day-strip-back',
+              'The week before',
+              KapyIcons.chevronLeftRounded,
+              -7,
+              width,
+            ),
+            for (final day in shown)
+              Expanded(
+                child: Builder(
+                  builder: (tapped) => _Day(
+                    key: ValueKey('day-strip-${_date(day)}'),
+                    day: day,
+                    today: day == today,
+                    picked: day == picked,
+                    filled: day == filled,
+                    count: counts[day]!,
+                    stacked: true,
+                    onTap: () => _choose(day, notes: counts[day]!, at: tapped),
+                  ),
                 ),
               ),
+            arrow(
+              'day-strip-forward',
+              'The week after',
+              KapyIcons.chevronRightRounded,
+              7,
+              width,
             ),
-          ),
+          ],
         );
-    return Row(
-      key: _weekRow,
-      children: [
-        arrow(
-          'day-strip-back',
-          'The week before',
-          KapyIcons.chevronLeftRounded,
-          -7,
-        ),
-        for (final day in shown)
-          Expanded(
-            child: Builder(
-              builder: (tapped) => _Day(
-                key: ValueKey('day-strip-${_date(day)}'),
-                day: day,
-                today: day == today,
-                picked: day == picked,
-                filled: day == filled,
-                count: counts[day]!,
-                stacked: true,
-                onTap: () => _choose(day, notes: counts[day]!, at: tapped),
-              ),
-            ),
-          ),
-        arrow(
-          'day-strip-forward',
-          'The week after',
-          KapyIcons.chevronRightRounded,
-          7,
-        ),
-      ],
+      },
     );
   }
 

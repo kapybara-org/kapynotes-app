@@ -16,9 +16,11 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:kapy_notes/ui/tag_ui.dart' show TagPicker;
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
 import 'package:material_ui/material_ui.dart';
@@ -303,6 +305,21 @@ void main() {
       expect(day(20), findsOneWidget);
     });
 
+    testWidgets('at 360 every day keeps 44 to tap, the arrows narrower', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester, width: 360);
+      expect(tester.takeException(), isNull);
+      for (var date = 16; date <= 22; date++) {
+        expect(tester.getSize(day(date)).width, greaterThanOrEqualTo(44));
+      }
+      expect(
+        tester.getSize(find.byKey(const ValueKey('day-strip-back'))).width,
+        lessThan(28),
+      );
+    });
+
     testWidgets('the arrows move a week at a time', (tester) async {
       seed();
       await pump(tester);
@@ -362,6 +379,18 @@ void main() {
       );
     });
 
+    testWidgets("on an earlier day's note it says today, as the list it "
+        'counts is today\'s', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(
+        find.descendant(of: tasksLine, matching: find.text('2 tasks today')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('is left out on a day with no tasks', (tester) async {
       seed();
       days.setDay('tue', DateTime(2025, 11, 22));
@@ -401,16 +430,51 @@ void main() {
       expect(tester.getRect(path).bottom, lessThan(tester.getRect(edited).top));
     });
 
-    testWidgets("another day's note says its day and time", (tester) async {
+    testWidgets("an earlier day's note says its day and time, and a note "
+        'given another day says the day alone', (tester) async {
       seed();
       await pump(tester);
+      String edited() =>
+          tester.widget<Text>(find.byKey(const ValueKey('note-edited'))).data!;
+
+      await open(tester, 18);
+      expect(edited(), 'Tue 18 · 10:05');
+
+      // Written Mon 17 at 21:00 and given Fri 21: that time is not Friday's.
       await open(tester, 21);
-      expect(
-        tester.widget<Text>(find.byKey(const ValueKey('note-edited'))).data,
-        'Fri 21 · 21:00',
-      );
+      expect(edited(), 'Fri 21');
       expect(find.byKey(const ValueKey('note-path')), findsNothing);
     });
+
+    for (final (width, count) in [(360.0, 4), (390.0, 6)]) {
+      testWidgets('$count tags at $width wrap onto a line of their own, and '
+          'the writing starts under them', (tester) async {
+        seed();
+        for (final name in ['Travel', 'Money', 'Home', 'Errands']) {
+          if (tags.tagsOf('arjun').length >= count) break;
+          tags.addTag('arjun', tags.create(name)!.id);
+        }
+        await pump(tester, width: width);
+        expect(tester.takeException(), isNull);
+        final facts = tester.getRect(find.byKey(const ValueKey('note-facts')));
+        final meta = tester.getRect(find.byType(NoteMetaRow));
+        expect(meta.bottom, greaterThan(facts.bottom + 10), reason: 'wrapped');
+        expect(meta.right, lessThanOrEqualTo(width));
+        final body = openNoteBody(tester);
+        final driver = NoteDriver(tester);
+        final at = body.indexOf('Pricing');
+        final first = driver
+            .boxesFor(TextSelection(baseOffset: at, extentOffset: at + 1))
+            .first;
+        // The gap under the row stays, rather than the second line eating
+        // into it.
+        expect(
+          driver.state.box!.localToGlobal(Offset(0, first.top)).dy -
+              meta.bottom,
+          greaterThanOrEqualTo(EditorMetrics.metaBottom - 4),
+        );
+      });
+    }
 
     testWidgets('a long path folds its middle at 375 and nothing overflows', (
       tester,
@@ -572,6 +636,53 @@ void main() {
       expect(item('share'), findsNothing);
       expect(item('day'), findsOneWidget);
       expect(item('undate'), findsNothing);
+    });
+  });
+
+  group('Home', () {
+    Future<void> tap(WidgetTester tester, String key) async {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> homeFrom(WidgetTester tester, String title) async {
+      await tester.tap(find.widgetWithText(NoteRow, title));
+      await tester.pumpAndSettle();
+      expect(header, findsOneWidget);
+      await tap(tester, 'page-home');
+      expect(header, findsNothing);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    }
+
+    for (final filter in ['archive', 'hidden']) {
+      testWidgets('from a note in the $filter list goes to Home, not back to '
+          'that list', (tester) async {
+        seed();
+        await pump(tester);
+        filter == 'archive' ? notes.archive('mon-a') : notes.hide('mon-a');
+        await tap(tester, 'page-home');
+        await tap(tester, 'phone-filters');
+        await tap(tester, 'sidebar-notes-filter');
+        await tap(tester, 'notes-filter-$filter');
+        await homeFrom(tester, 'Gym plan');
+      });
+    }
+
+    testWidgets('from a drawing goes to Home, not back to Drawings', (
+      tester,
+    ) async {
+      (store.data['notes.v1']! as List).add({
+        'id': 'sketch',
+        'body': 'Floor plan',
+        'createdAt': DateTime(2025, 11, 18, 9).millisecondsSinceEpoch,
+        'updatedAt': DateTime(2025, 11, 18, 9).millisecondsSinceEpoch,
+        'drawing': {'elements': <Object?>[]},
+      });
+      seed();
+      await pump(tester);
+      await tap(tester, 'page-home');
+      await tap(tester, 'bar-drawings');
+      await homeFrom(tester, 'Floor plan');
     });
   });
 
