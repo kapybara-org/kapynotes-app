@@ -8314,6 +8314,80 @@ void main() {
         }
       });
 
+      testWidgets('the Folders title has no clay mark under it (M02)', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        final clay = tester.element(title).palette.clay;
+        expect(
+          find.descendant(
+            of: find.byType(PhoneListTitle),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Container && widget.color == clay,
+            ),
+          ),
+          findsNothing,
+        );
+      });
+
+      testWidgets('Not in a folder is a serif heading over Home rows (M02)', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        final heading = find.byKey(const ValueKey('folders-loose-heading'));
+        final words = tester.widget<Text>(
+          find.descendant(
+            of: heading,
+            matching: find.byKey(const ValueKey('phone-day-heading')),
+          ),
+        );
+        expect(words.textSpan!.toPlainText(), 'Not in a folder');
+        final style = words.textSpan!.style!;
+        expect(style.fontFamily, AppFonts.title);
+        expect(style.fontSize, 19);
+        expect(
+          find.descendant(of: heading, matching: find.text('1')),
+          findsNothing,
+        );
+        expect(tester.widget<NoteRow>(groceries).style, NoteRowStyle.touch);
+      });
+
+      testWidgets('New folder sits beside Search folders, 44 pt, and names '
+          'a folder at the top of the tree (M02)', (tester) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        expect(find.byKey(const ValueKey('folders-new')), findsNothing);
+        final button = find.byKey(const ValueKey('phone-new-folder'));
+        expect(tester.getSize(button), const Size(44, 44));
+        final field = tester.getRect(
+          find.byKey(const ValueKey('sidebar-search-box')),
+        );
+        expect(tester.getCenter(button).dy, closeTo(field.center.dy, 0.5));
+        expect(tester.getRect(button).left, greaterThan(field.right));
+        expect(find.bySemanticsLabel('New folder'), findsOneWidget);
+        final glass = find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-box')),
+          matching: find.byType(KapyIcon),
+        );
+        expect(
+          tester.widget<KapyIcon>(glass).color,
+          tester.element(glass).palette.textTertiary,
+        );
+
+        await tap(tester, button);
+        await tester.enterText(
+          find.byKey(const ValueKey('folder-name-field')),
+          'Travel',
+        );
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect([
+          for (final folder in folders.tree.top) folder.name,
+        ], contains('Travel'));
+      });
+
       testWidgets('Back from Folders goes to Notes with its Pinned still on', (
         tester,
       ) async {
@@ -8843,7 +8917,7 @@ void main() {
 
         await tester.tap(find.byKey(const ValueKey('bar-folders')));
         await tester.pumpAndSettle();
-        expect(underline(), findsOneWidget, reason: "Folders is a tab's page");
+        expect(underline(), findsNothing, reason: "the clay mark is Home's");
 
         await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
         await tester.pumpAndSettle();

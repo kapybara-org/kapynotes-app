@@ -331,6 +331,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// The folder whose notes a phone's Folders shows, or null for the tree.
   String? _phoneFolder;
+
+  /// Bumped by New folder beside a phone's Search folders, for the tree to
+  /// name a new folder.
+  final _phoneNewFolder = ValueNotifier(0);
+
   final GlobalKey<NavigatorState> _phoneNavigator = GlobalKey();
 
   /// Whether the notes list is open over the page, in a desktop window too
@@ -534,6 +539,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.desktopIntegration?.onOpenRequested = null;
     widget.desktopIntegration?.window = null;
     _desktopShortcutFocus.dispose();
+    _phoneNewFolder.dispose();
     _kapyAi?.removeListener(_onKapyAi);
     _kapyPanel.dispose();
     _taskAddFocus.dispose();
@@ -4095,6 +4101,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   onOpen: widget.prefs.setFolderOpen,
                   inFront: _folderInFront,
                   onTab: _openFolder,
+                  newFolder: null,
                 ),
                 null => null,
               },
@@ -5141,6 +5148,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               inFront: null,
               onTab: (folderId, {required behind}) =>
                   setState(() => _phoneFolder = folderId),
+              newFolder: _phoneNewFolder,
             )
           : null,
       phoneCards: tree
