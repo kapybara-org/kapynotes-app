@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
@@ -23,7 +24,11 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
+import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/spaces.dart';
+import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
@@ -35,8 +40,10 @@ import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
+import 'billing/billing_fakes.dart';
 import 'fake_update_installer.dart';
 import 'support/note_driver.dart';
+import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
 const _body = '''
@@ -119,6 +126,10 @@ Future<void> pumpForGolden(
   /// M01's Today: three notes written this morning, one holding a
   /// recording, one a checklist and a tag, one words alone.
   bool withTodayRows = false,
+
+  /// Signed in to an account on Pro with two invitations waiting, so that
+  /// Settings has its account, its sharing and every one of its categories.
+  bool signedIn = false,
 
   /// Which build the image is of.
   ///
@@ -352,6 +363,7 @@ Future<void> pumpForGolden(
   }
   // Publish the cached rates without going near the network.
   rates.loadCache();
+  final account = signedIn ? await _signIn(tester, store, notes) : null;
 
   await tester.pumpWidget(
     KapyNotesApp(
@@ -360,6 +372,7 @@ Future<void> pumpForGolden(
       rates: rates,
       prefs: prefs,
       shortcuts: shortcuts,
+      account: account,
       updates: updates,
       tags: goldenTags,
       folders: goldenFolders,
@@ -387,6 +400,96 @@ Future<void> pumpForGolden(
     ]),
   );
   await tester.pumpAndSettle();
+}
+
+/// Sam, signed in on Pro against a server of the test's own, with Priya and
+/// Arjun each waiting on an answer to an invitation.
+///
+/// The account loads its own tags and tasks, on the real clock its sign-in
+/// needs: the image's own were loaded on the test's, and a load awaited
+/// across the two never finishes.
+Future<Account> _signIn(
+  WidgetTester tester,
+  MemoryStore store,
+  NotesStore notes,
+) async {
+  final server = FakeServer();
+  final sam = server.user('user-1')..name = 'Sam';
+  for (final (index, name) in const ['Priya', 'Arjun'].indexed) {
+    final owner = server.user('user-${index + 2}')..name = name;
+    server.spaces['space-$name'] =
+        FakeSpace(
+            id: 'space-$name',
+            kind: SpaceKind.team,
+            name: '$name’s notes',
+            ownerId: owner.id,
+          )
+          ..members[owner.id] = SpaceRole.owner
+          ..invites['invite-$name'] = (
+            email: sam.email,
+            role: SpaceRole.member,
+          );
+  }
+  final state = SyncState(store);
+  final account = _SignedInAccount(
+    auth: FakeAuth(id: sam.id, email: sam.email, name: sam.name),
+    syncApi: (_) => FakeApi(server, device: 'device-1', userId: sam.id),
+    keys: KeyStore(InMemorySecureStore()),
+    notes: notes,
+    state: state,
+    store: store,
+    tags: TagStore(store),
+    tasks: TaskLibrary(
+      notes: notes,
+      store: store,
+      state: state,
+      storage: MemoryDocStorage(),
+    ),
+  );
+  final plans = FakeBillingApi()..answer = () => entitlementsFor(pro: true);
+  account.billing = Billing(
+    session: account,
+    userId: () => account.user?.id,
+    token: () => account.token,
+    api: (_) => plans,
+    store: FakePurchaseStore(supported: false),
+    cache: store,
+  );
+  addTearDown(account.dispose);
+  await tester.runAsync(() async {
+    await account.restore();
+    await account.signIn(email: sam.email, password: 'x');
+    await account.createPassphrase('a good passphrase');
+    await account.billing!.refresh();
+    await account.sharing!.refresh();
+  });
+  return account;
+}
+
+/// An account signed in before the app is pumped. The app restores the
+/// account it is given off its first frames; this one has nothing left to
+/// restore, and a second pass would start its sync again on the test's clock,
+/// leaving a timer behind once the image is taken.
+class _SignedInAccount extends Account {
+  _SignedInAccount({
+    required super.auth,
+    required super.syncApi,
+    required super.keys,
+    required super.notes,
+    required super.state,
+    required super.store,
+    required super.tasks,
+    required super.tags,
+  });
+
+  bool _restored = false;
+
+  @override
+  Future<void> restore() async {
+    if (_restored) return;
+    _restored = true;
+    await super.restore();
+  }
 }
 
 /// Five drawings, the first pinned: boxes, an arrow, a scribble and a word,
@@ -1495,21 +1598,42 @@ void main() {
     );
   });
 
-  testWidgets('desktop light settings, appearance', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(760, 520),
-      brightness: Brightness.light,
-    );
-    await tapSettings(tester);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('settings-section-appearance')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_light_settings_appearance.png'),
-    );
-  });
+  // D13 and D12, the final boards for Settings, at the window they are drawn
+  // in: signed in, so the rail has every category, with the update card and
+  // the version at its foot.
+  for (final (pane, brightness) in const [
+    ('appearance', Brightness.light),
+    ('appearance', Brightness.dark),
+    ('notes', Brightness.dark),
+  ]) {
+    testWidgets('desktop ${brightness.name} settings, $pane', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(1440, 900),
+        brightness: brightness,
+        withUpdates: true,
+        signedIn: true,
+      );
+      await tapSettings(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('settings-section-$pane')));
+      await tester.pumpAndSettle();
+      for (final key in const [
+        'settings-section-account',
+        'settings-section-sharing',
+        'settings-section-about',
+        'settings-version-status',
+      ]) {
+        expect(find.byKey(ValueKey(key)), findsOneWidget);
+      }
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile(
+          'goldens/desktop_${brightness.name}_settings_$pane.png',
+        ),
+      );
+    });
+  }
 
   // Phone · v2 on the three phones it is drawn for, an iPhone 15, a Pixel 8
   // and an iPhone SE, every screen and menu in both themes. A golden has no
@@ -1525,6 +1649,7 @@ void main() {
       Future<void> pumpPhone(
         WidgetTester tester, {
         bool firstRun = false,
+        bool signedIn = false,
       }) async {
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
@@ -1544,6 +1669,7 @@ void main() {
           withTasks: !firstRun,
           withDrawings: !firstRun,
           withYesterday: !firstRun,
+          signedIn: signedIn,
         );
       }
 
@@ -1674,14 +1800,24 @@ void main() {
         await matches('drawings');
       });
 
+      // M16: signed in, with the mode chosen rather than followed, as the
+      // board has it, and this version's notes not yet looked at.
       testWidgets('phone settings, $name', (tester) async {
-        await pumpPhone(tester);
+        await pumpPhone(tester, signedIn: true);
+        goldenPrefs.appearance = brightness == Brightness.dark
+            ? AppearanceMode.dark
+            : AppearanceMode.light;
         await tapAndSettle(tester, 'page-back');
         await tapAndSettle(tester, 'bar-settings');
-        expect(
-          find.byKey(const ValueKey('settings-whats-new-row')),
-          findsOneWidget,
-        );
+        for (final text in [
+          'Sam',
+          'Account & sync · Pro',
+          '2 invitations waiting',
+          "What's new",
+          'Version 1.34.0',
+        ]) {
+          expect(find.text(text), findsOneWidget);
+        }
         await matches('settings');
       });
 

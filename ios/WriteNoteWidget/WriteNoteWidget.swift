@@ -48,35 +48,76 @@ struct QuickActionView: View {
 
   @ViewBuilder private var content: some View {
     switch family {
-    // The Lock Screen pair. Both are tinted by the system, so they set no
-    // colour of their own and take no background but the one it draws.
-    case .accessoryCircular:
-      ZStack {
-        AccessoryWidgetBackground()
-        Image(systemName: action.symbol)
-          .font(.system(size: 20, weight: .medium))
-      }
-      .containerBackground(.clear, for: .widget)
-
-    case .accessoryRectangular:
-      HStack(spacing: 6) {
-        Image(systemName: action.symbol)
-        Text(action.title)
-          .font(.headline)
-        Spacer(minLength: 0)
-      }
-      .containerBackground(.clear, for: .widget)
-
-    default:
-      VStack(spacing: 8) {
-        Image(systemName: action.symbol)
-          .font(.system(size: 30, weight: .regular))
-        Text(action.title)
-          .font(.system(size: 16, weight: .semibold, design: .rounded))
-      }
-      .foregroundStyle(ink)
-      .containerBackground(paper, for: .widget)
+    case .accessoryCircular: QuickActionCircular(action: action)
+    case .accessoryRectangular: QuickActionRectangular(action: action)
+    default: QuickActionSmall(action: action)
     }
+  }
+}
+
+/// The Home Screen square: the disc at the top, and along the bottom the
+/// action and the note it works on.
+struct QuickActionSmall: View {
+  let action: QuickAction
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      QuickActionDisc(action: action, fill: widgetPrimary, ink: widgetOnPrimary)
+      Spacer(minLength: 0)
+      Text(action.title)
+        .font(Figtree.semibold(17))
+        .foregroundStyle(widgetText)
+        .frame(height: 22)
+      Text(QuickAction.lastNote)
+        .font(Figtree.regular(13))
+        .foregroundStyle(widgetTextSecondary)
+        .frame(height: 18)
+    }
+    .lineLimit(1)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    .containerBackground(widgetBackground, for: .widget)
+  }
+}
+
+/// The Lock Screen pair. iOS draws them vibrant, from the wallpaper, so they
+/// set no colour of their own and take no background but the one it draws.
+struct QuickActionCircular: View {
+  let action: QuickAction
+
+  var body: some View {
+    ZStack {
+      AccessoryWidgetBackground()
+      Image(action.glyph, label: Text(action.title))
+        .renderingMode(.template)
+        .resizable()
+        .frame(width: 28, height: 28)
+    }
+    .containerBackground(.clear, for: .widget)
+  }
+}
+
+struct QuickActionRectangular: View {
+  let action: QuickAction
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(decorative: action.glyph)
+        .renderingMode(.template)
+        .resizable()
+        .frame(width: 24, height: 24)
+      VStack(alignment: .leading, spacing: 0) {
+        Text(action.title)
+          .font(Figtree.semibold(16))
+          .frame(height: 20)
+        Text(QuickAction.lastNote)
+          .font(Figtree.regular(13))
+          .foregroundStyle(.secondary)
+          .frame(height: 18)
+      }
+      .lineLimit(1)
+      Spacer(minLength: 0)
+    }
+    .containerBackground(.clear, for: .widget)
   }
 }
 
@@ -140,18 +181,5 @@ struct CaptureControl: ControlWidget {
     }
     .displayName("Capture")
     .description(QuickAction.capture.summary)
-  }
-}
-
-@main
-struct WriteNoteWidgetBundle: WidgetBundle {
-  var body: some Widget {
-    WriteNoteWidget()
-    QuickActionsWidget()
-    if #available(iOS 18.0, *) {
-      WriteNoteControl()
-      DictateControl()
-      CaptureControl()
-    }
   }
 }
