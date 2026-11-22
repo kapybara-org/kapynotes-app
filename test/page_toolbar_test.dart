@@ -761,8 +761,8 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-    testWidgets('a ${platform.name} note header draws Back as an arrow and '
-        'More as ⋮, both at 20', (tester) async {
+    testWidgets('a ${platform.name} note header draws Back as an arrow at 18 '
+        'and More as ⋮ at 20', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
       await tester.pumpWidget(
         harness(
@@ -787,7 +787,7 @@ void main() {
         matching: findKapyIcon(KapyIcons.arrowBackRounded),
       );
       expect(arrow, findsOneWidget);
-      expect(tester.widget<KapyIcon>(arrow).size, 20);
+      expect(tester.widget<KapyIcon>(arrow).size, 18);
       expect(findKapyIcon(KapyIcons.chevronLeftRounded), findsNothing);
 
       final dots = find.descendant(
@@ -816,6 +816,8 @@ void main() {
       matching: findKapyIcon(KapyIcons.arrowBackRounded),
     );
     expect(tester.widget<KapyIcon>(arrow).color, palette.textPrimary);
+    expect(tester.widget<KapyIcon>(arrow).size, 18);
+    expect(tester.getSize(arrow).width, 18);
     expect(
       tester
           .widget<Text>(find.descendant(of: back, matching: find.text('Notes')))

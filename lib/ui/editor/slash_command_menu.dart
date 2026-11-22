@@ -705,8 +705,10 @@ class _CommandList extends StatelessWidget {
                             style: TextStyle(
                               color: palette.textTertiary,
                               fontSize: AppTypeScale.badge,
-                              fontWeight: FontWeight.w500,
-                              fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                              fontWeight: AppWeight.font(AppWeight.rowTitle),
+                              fontVariations: AppWeight.wght(
+                                AppWeight.rowTitle,
+                              ),
                               letterSpacing: 0.44,
                             ),
                           ),
@@ -781,7 +783,8 @@ class _SearchField extends StatelessWidget {
     final style = TextStyle(
       color: palette.textPrimary,
       fontSize: AppTypeScale.body,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
     );
     return Container(
       height: 36,
@@ -859,7 +862,8 @@ class _CommandRow extends StatelessWidget {
     final quiet = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
     );
     return Semantics(
       button: true,
@@ -903,7 +907,8 @@ class _CommandRow extends StatelessWidget {
                               style: TextStyle(
                                 color: palette.textPrimary,
                                 fontSize: AppTypeScale.body,
-                                fontWeight: FontWeight.w400,
+                                fontWeight: AppWeight.font(AppWeight.body),
+                                fontVariations: AppWeight.wght(AppWeight.body),
                               ),
                             ),
                           ),
@@ -1023,7 +1028,8 @@ class _KeyHints extends StatelessWidget {
     final style = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: FontWeight.w400,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
     );
     return ExcludeSemantics(
       child: Container(
@@ -1106,8 +1112,8 @@ class _TableSizePicker extends StatelessWidget {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: AppTypeScale.control,
-                          fontWeight: FontWeight.w500,
-                          fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                          fontWeight: AppWeight.font(AppWeight.rowTitle),
+                          fontVariations: AppWeight.wght(AppWeight.rowTitle),
                         ),
                       ),
                     ),

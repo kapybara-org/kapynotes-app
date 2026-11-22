@@ -180,4 +180,42 @@ void main() {
     );
     expect(keycap.style!.color, palette.textTertiary);
   });
+
+  testWidgets('the Mac search field is 32 high, 10 in, radius 9, with its '
+      '14 px icon in T3', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    const palette = KapyTheme.darkPalette;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Material(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 344,
+              child: SidebarSearchField(onSearch: () {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    final search = find.byKey(const ValueKey('sidebar-search-box'));
+    final box = tester.widget<Container>(search);
+    expect(tester.getSize(search).height, 32);
+    expect(box.padding, const EdgeInsets.symmetric(horizontal: 10));
+    expect(
+      (box.decoration! as BoxDecoration).borderRadius,
+      BorderRadius.circular(9),
+    );
+    final icon = tester.widget<KapyIcon>(
+      find.descendant(of: search, matching: find.byType(KapyIcon)),
+    );
+    expect(icon.size, 14);
+    expect(icon.color, palette.textTertiary);
+    expect(
+      tester.getTopLeft(find.byType(KapyIcon)).dx -
+          tester.getTopLeft(search).dx,
+      10,
+    );
+  });
 }

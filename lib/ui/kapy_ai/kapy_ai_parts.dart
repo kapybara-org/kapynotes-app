@@ -37,7 +37,8 @@ TextStyle kapyText(
   fontFamilyFallback: AppFonts.uiFallback,
   fontSize: size,
   height: line / size,
-  fontWeight: weight,
+  fontWeight: AppWeight.font(AppWeight.axisOf(weight)),
+  fontVariations: AppWeight.wght(AppWeight.axisOf(weight)),
   color: color,
 );
 

@@ -114,7 +114,8 @@ class _Panel extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: AppTypeScale.title,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             color: palette.textPrimary,
           ),
         ),

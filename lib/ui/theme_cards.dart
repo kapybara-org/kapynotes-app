@@ -125,8 +125,10 @@ class _ThemeCard extends StatelessWidget {
                                 color: ground.textPrimary,
                                 fontSize: 13.5,
                                 height: 18 / 13.5,
-                                fontWeight: FontWeight.w600,
-                                fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.section)),
+                                fontWeight: AppWeight.font(AppWeight.section),
+                                fontVariations: AppWeight.wght(
+                                  AppWeight.section,
+                                ),
                               ),
                             ),
                           ),
@@ -153,8 +155,12 @@ class _ThemeCard extends StatelessWidget {
                                     color: ground.textSecondary,
                                     fontSize: 11,
                                     height: 15 / 11,
-                                    fontWeight: FontWeight.w500,
-                                    fontVariations: AppWeight.variations(AppWeight.bold(AppWeight.rowTitle)),
+                                    fontWeight: AppWeight.font(
+                                      AppWeight.rowTitle,
+                                    ),
+                                    fontVariations: AppWeight.wght(
+                                      AppWeight.rowTitle,
+                                    ),
                                   ),
                                 ),
                               ),

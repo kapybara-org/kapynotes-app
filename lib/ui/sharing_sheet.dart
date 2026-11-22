@@ -214,7 +214,8 @@ class _AskFirstState extends State<_AskFirst> {
             style: TextStyle(
               fontSize: 17,
               height: 22 / 17,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppWeight.font(AppWeight.section),
+              fontVariations: AppWeight.wght(AppWeight.section),
               color: palette.textPrimary,
             ),
           ),

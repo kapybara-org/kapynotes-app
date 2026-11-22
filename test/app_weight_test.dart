@@ -25,4 +25,29 @@ void main() {
     expect(style.letterSpacing, 0);
     expect(style.fontFamily, AppFonts.ui);
   });
+
+  test('font and wght give a style its step, and Bold Text raises both', () {
+    expect(AppWeight.font(AppWeight.section), FontWeight.w600);
+    expect(AppWeight.wght(AppWeight.section), [
+      const FontVariation('wght', 520),
+    ]);
+    expect(
+      AppWeight.wght(
+        AppWeight.button,
+        extra: const [FontVariation('INFM', 0), FontVariation('wght', 300)],
+      ),
+      [const FontVariation('INFM', 0), const FontVariation('wght', 500)],
+    );
+
+    final binding = TestWidgetsFlutterBinding.instance;
+    binding.platformDispatcher.accessibilityFeaturesTestValue =
+        FakeAccessibilityFeatures.allOn;
+    addTearDown(binding.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    expect(AppWeight.font(AppWeight.body), FontWeight.w700);
+    expect(AppWeight.wght(AppWeight.body), [const FontVariation('wght', 600)]);
+    expect(AppWeight.font(AppWeight.section), FontWeight.w700);
+    expect(AppWeight.wght(AppWeight.section), [
+      const FontVariation('wght', 700),
+    ]);
+  });
 }

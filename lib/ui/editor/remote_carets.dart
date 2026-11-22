@@ -169,7 +169,8 @@ class _RemoteCaretLayerState extends State<RemoteCaretLayer> {
         labelStyle: DefaultTextStyle.of(context).style.merge(
           TextStyle(
             fontSize: AppTypeScale.caption,
-            fontWeight: FontWeight.w400,
+            fontWeight: AppWeight.font(AppWeight.body),
+            fontVariations: AppWeight.wght(AppWeight.body),
             color: const Color(0xFFFFFFFF),
             height: 1.25,
             letterSpacing: 0.1,

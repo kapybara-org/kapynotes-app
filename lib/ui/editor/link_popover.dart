@@ -165,7 +165,8 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                           'Open link',
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w400,
+                            fontWeight: AppWeight.font(AppWeight.body),
+                            fontVariations: AppWeight.wght(AppWeight.body),
                           ),
                         ),
                       ),

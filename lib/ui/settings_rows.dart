@@ -12,8 +12,6 @@ import 'control_surface.dart';
 /// and sharing ones — are made of the same rows, groups and headings as the
 /// rest. Built out of their own forms and paragraphs, they read as a
 /// different app wedged into the middle of settings.
-const _mediumWeight = FontWeight.w400;
-
 /// How big a settings row is allowed to be.
 ///
 /// A pointer can hit an eight-pixel gap and read eleven-point type; a thumb
@@ -142,7 +140,8 @@ class SettingsLabel extends StatelessWidget {
       text.toUpperCase(),
       style: TextStyle(
         fontSize: SettingsMetrics.sectionLabelSize,
-        fontWeight: _mediumWeight,
+        fontWeight: AppWeight.font(AppWeight.body),
+        fontVariations: AppWeight.wght(AppWeight.body),
         letterSpacing: 0.65,
         color: palette.textTertiary,
       ),
@@ -558,7 +557,8 @@ class SettingsRowButton extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: SettingsMetrics.buttonLabelSize,
-          fontWeight: _mediumWeight,
+          fontWeight: AppWeight.font(AppWeight.body),
+          fontVariations: AppWeight.wght(AppWeight.body),
           height: pointer ? 16 / 12.5 : null,
         ),
       ),
@@ -885,7 +885,8 @@ class SettingsStepper extends StatelessWidget {
                 fontFamily: AppPlatform.monoFontFallback.first,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
                 fontSize: 12,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
                 fontFeatures: const [FontFeature.tabularFigures()],
                 color: palette.textPrimary,
               ),

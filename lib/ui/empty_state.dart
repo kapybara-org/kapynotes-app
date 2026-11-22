@@ -46,9 +46,12 @@ class EmptyState extends StatelessWidget {
               style: TextStyle(
                 fontFamily: handwritten.fontFamily,
                 fontFamilyFallback: handwritten.fontFamilyFallback,
-                fontVariations: handwritten.fontVariations,
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
+                fontWeight: AppWeight.font(AppWeight.button),
+                fontVariations: AppWeight.wght(
+                  AppWeight.button,
+                  extra: handwritten.fontVariations ?? const [],
+                ),
                 color: palette.textPrimary,
               ),
             ),
@@ -63,7 +66,8 @@ class EmptyState extends StatelessWidget {
                       : 'Start one with New drawing or',
                   style: TextStyle(
                     fontSize: AppTypeScale.small,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: AppWeight.font(AppWeight.body),
+                    fontVariations: AppWeight.wght(AppWeight.body),
                     color: palette.textTertiary,
                   ),
                 ),
@@ -99,7 +103,8 @@ class EmptyState extends StatelessWidget {
             'No note selected',
             style: TextStyle(
               fontSize: AppTypeScale.title,
-              fontWeight: FontWeight.w400,
+              fontWeight: AppWeight.font(AppWeight.body),
+              fontVariations: AppWeight.wght(AppWeight.body),
               color: palette.textPrimary,
             ),
           ),
@@ -125,7 +130,8 @@ class EmptyState extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w400,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
               ),
             ),
           ),

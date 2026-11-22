@@ -741,6 +741,57 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('the card with First on the list is radius 12 on the 4% fill, '
+        '14 in at the top and 16 at the sides and bottom', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+
+      final pair = find.byKey(const ValueKey('tasks-pair'));
+      expect(
+        find.descendant(of: pair, matching: find.text('First on the list')),
+        findsOneWidget,
+      );
+      final card = tester.widget<Container>(pair);
+      expect(card.padding, const EdgeInsets.fromLTRB(16, 14, 16, 16));
+      final fill = card.decoration! as BoxDecoration;
+      expect(fill.borderRadius, BorderRadius.circular(12));
+      expect(fill.color, KapyTheme.darkPalette.cardBackground);
+      expect(fill.color, const Color(0xFF24221E));
+      await settle(tester);
+    });
+
+    testWidgets('the note picker sits inside Add a task at its right end: a '
+        '32 high, radius 9 control on the 6% fill, in a 44 high, radius 9, '
+        '4% field', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+
+      const palette = KapyTheme.darkPalette;
+      final row = find.byKey(const ValueKey('tasks-add-row'));
+      final field = tester.widget<Container>(row).decoration! as BoxDecoration;
+      expect(tester.getSize(row).height, 44);
+      expect(field.borderRadius, BorderRadius.circular(9));
+      expect(field.color, palette.cardBackground);
+      final chip = find
+          .descendant(
+            of: find.byKey(const ValueKey('tasks-note-picker')),
+            matching: find.byType(Container),
+          )
+          .first;
+      final control =
+          tester.widget<Container>(chip).decoration! as BoxDecoration;
+      expect(tester.getSize(chip).height, 32);
+      expect(control.borderRadius, BorderRadius.circular(9));
+      // 6% over the 4% field, as the spec composes it.
+      expect(control.color, const Color(0xFF2F2D29));
+      final outer = tester.getRect(row);
+      final inner = tester.getRect(chip);
+      expect(outer.contains(inner.topLeft), isTrue);
+      expect(outer.contains(inner.bottomRight - const Offset(1, 1)), isTrue);
+      expect(outer.right - inner.right, lessThanOrEqualTo(8));
+      await settle(tester);
+    });
+
     testWidgets('Do now puts Done first, then Not finished', (tester) async {
       await setUpTasks(tester, errands);
       tasks.doNow(tasks.read().open[0]);

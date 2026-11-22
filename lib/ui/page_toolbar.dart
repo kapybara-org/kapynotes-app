@@ -982,7 +982,7 @@ class _BackButton extends StatelessWidget {
         tooltip: 'Back',
         onPressed: onPressed,
         color: palette.textPrimary,
-        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 20),
+        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 18),
       );
     }
     return Semantics(
@@ -1004,7 +1004,7 @@ class _BackButton extends StatelessWidget {
           children: [
             KapyIcon(
               KapyIcons.arrowBackRounded,
-              size: 20,
+              size: 18,
               color: palette.textPrimary,
             ),
             Text(
@@ -1013,7 +1013,8 @@ class _BackButton extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: AppTypeScale.body,
-                fontWeight: FontWeight.w500,
+                fontWeight: AppWeight.font(AppWeight.button),
+                fontVariations: AppWeight.wght(AppWeight.button),
                 color: palette.textPrimary,
               ),
             ),
