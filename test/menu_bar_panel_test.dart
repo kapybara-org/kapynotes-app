@@ -23,6 +23,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/menu_bar_panel.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
@@ -80,6 +81,7 @@ void main() {
   late Set<String> viewOnly;
   late _SilentRecorder recorder;
   late VoiceRecordingController recording;
+  late Set<ShortcutAction> taken;
 
   setUp(() async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
@@ -95,6 +97,7 @@ void main() {
     await notes.load();
     limit = _Limit(limit: 20);
     viewOnly = {};
+    taken = {};
     bool canEdit(Note note) => panelCanEdit(
       note,
       limit: limit,
@@ -173,6 +176,7 @@ void main() {
           openSettings: () => window.add('settings'),
           explainNoteLimit: () => window.add('limit'),
         )),
+        isTaken: taken.contains,
         noteLimit: limit,
         recording: recording,
         now: () => clock,
@@ -595,6 +599,86 @@ void main() {
       expect(find.text('5m'), findsOneWidget);
       await tester.tap(find.text('Trip to Goa'));
       expect(window, ['note ${trip.id}']);
+    });
+
+    testWidgets("a pinned row's pin is the grey of a recent row's icon", (
+      tester,
+    ) async {
+      final budget = notes.create(body: 'Home budget');
+      later();
+      final trip = notes.create(body: 'Trip to Goa');
+      notes.togglePinned(budget.id);
+      await pumpPanel(tester, brightness: Brightness.dark);
+
+      KapyIcon iconOf(Note note) => tester.widget<KapyIcon>(
+        find.descendant(
+          of: find.byKey(ValueKey('menu-bar-note-${note.id}')),
+          matching: find.byType(KapyIcon),
+        ),
+      );
+      expect(iconOf(budget).icon, KapyIcons.pinOutlined);
+      expect(iconOf(budget).color, iconOf(trip).color);
+      expect(
+        iconOf(trip).color,
+        KapyTheme.dark().extension<CalcPalette>()!.textTertiary,
+      );
+    });
+
+    testWidgets('the footer names the registered shortcut in plain text', (
+      tester,
+    ) async {
+      await pumpPanel(tester);
+      final footer = find.byKey(const ValueKey('menu-bar-open-app'));
+      expect(
+        find.descendant(of: footer, matching: find.byType(Keycap)),
+        findsNothing,
+      );
+      // Shift+Option+Command+X, written in the order a Mac's menus use.
+      expect(
+        find.descendant(of: footer, matching: find.text('⌥⇧⌘X')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the footer follows a shortcut the user changed', (
+      tester,
+    ) async {
+      shortcuts.update(
+        ShortcutAction.openApp,
+        const ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyJ,
+          physicalKey: PhysicalKeyboardKey.keyJ,
+          meta: true,
+          control: true,
+        ),
+      );
+      await pumpPanel(tester);
+      final footer = find.byKey(const ValueKey('menu-bar-open-app'));
+      expect(
+        find.descendant(of: footer, matching: find.text('⌃⌘J')),
+        findsOneWidget,
+      );
+      expect(find.text('⌥⇧⌘X'), findsNothing);
+    });
+
+    testWidgets('it names no shortcut another app holds', (tester) async {
+      await pumpPanel(tester);
+      expect(find.text('Open this from anywhere with'), findsOneWidget);
+      expect(find.text('⌥⇧⌘X'), findsOneWidget);
+
+      taken.add(ShortcutAction.openApp);
+      await pumpPanel(tester, opening: 1);
+      expect(find.byKey(const ValueKey('menu-bar-open-app')), findsOneWidget);
+      expect(find.text('⌥⇧⌘X'), findsNothing);
+      expect(find.text('Open this from anywhere with'), findsOneWidget);
+
+      taken
+        ..clear()
+        ..add(ShortcutAction.openMenuBarPanel);
+      await pumpPanel(tester, opening: 2);
+      expect(find.byKey(const ValueKey('menu-bar-empty')), findsOneWidget);
+      expect(find.text('Open this from anywhere with'), findsNothing);
+      expect(find.text('⌥⇧⌘X'), findsOneWidget);
     });
 
     testWidgets('the footer opens the window and Find', (tester) async {

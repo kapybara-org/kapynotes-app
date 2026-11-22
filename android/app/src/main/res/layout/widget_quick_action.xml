@@ -1,34 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Deliberately static: an icon and a word, no note text. Nothing here is
+<!-- Deliberately static: a disc and a word, no note text. Nothing here is
      redrawn unless the widget's action is changed, which is what lets the
      widget cost nothing to keep and show nothing private on a locked screen.
-     Both are set by WriteNoteWidget; what is here is the placeholder the
-     launcher previews. -->
+     Both are set by WriteNoteWidget, which hides the word when the widget is
+     too short to hold it; what is here is the placeholder the launcher
+     previews. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_quick_action_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
     android:gravity="center"
-    android:orientation="vertical"
-    android:padding="8dp">
+    android:orientation="vertical">
 
     <ImageView
         android:id="@+id/widget_quick_action_icon"
-        android:layout_width="26dp"
-        android:layout_height="26dp"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/widget_disc_primary"
         android:importantForAccessibility="no"
+        android:padding="11dp"
         android:src="@drawable/ic_write_note"
-        android:tint="@color/widget_ink" />
+        android:tint="@color/widget_on_primary" />
 
     <TextView
         android:id="@+id/widget_quick_action_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:includeFontPadding="false"
+        android:lineHeight="16sp"
         android:maxLines="1"
         android:text="@string/widget_action_write"
-        android:textColor="@color/widget_ink"
-        android:textSize="13sp" />
+        android:textColor="@color/widget_text"
+        android:textSize="12sp" />
 </LinearLayout>
