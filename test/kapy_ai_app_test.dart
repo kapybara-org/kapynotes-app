@@ -8,6 +8,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -837,6 +838,105 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('rail-notes')));
       await tester.pumpAndSettle();
       expect(sidebarField('Search'), findsOneWidget);
+    });
+
+    final noteRow = find.byKey(const ValueKey('command-menu-row-Sintra trip'));
+    final drawingRow = find.byKey(
+      const ValueKey('command-menu-row-Sintra map'),
+    );
+
+    void tripAndMap() {
+      final drawing = notes.create(drawing: true);
+      notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Sintra map');
+      notes.create(body: 'Sintra trip\nTrain at nine');
+    }
+
+    Future<void> searchFromField(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+    }
+
+    void findsEverything() {
+      expect(noteRow, findsOneWidget);
+      expect(drawingRow, findsOneWidget);
+      expect(askRow, findsOneWidget);
+    }
+
+    void findsDrawingsAlone() {
+      expect(drawingRow, findsOneWidget);
+      expect(noteRow, findsNothing);
+      expect(askRow, findsNothing);
+    }
+
+    testWidgets('Drawings\' field searches drawings alone, where Notes\' '
+        'searches everything', (tester) async {
+      tripAndMap();
+      await _pump(tester, sidebar: true);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      await searchFromField(tester);
+      expect(find.text('Search or Ask Kapy AI…'), findsNothing);
+      expect(find.text('Search drawings…'), findsOneWidget);
+      await type(tester, 'sintra');
+      findsDrawingsAlone();
+      expect(
+        find.descendant(of: menu, matching: find.text('Ask Kapy AI')),
+        findsNothing,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(ai.calls.where((call) => call.startsWith('ask:')), isEmpty);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('rail-notes')));
+      await tester.pumpAndSettle();
+      await searchFromField(tester);
+      await type(tester, 'sintra');
+      findsEverything();
+    });
+
+    testWidgets('on a phone, Drawings\' field opens on the Drawings pill, '
+        'where Notes\' opens on All', (tester) async {
+      tripAndMap();
+      await _pump(
+        tester,
+        size: const Size(402, 874),
+        platform: TargetPlatform.iOS,
+      );
+      final back = find.byKey(const ValueKey('page-back'));
+      if (back.evaluate().isNotEmpty) {
+        await tester.tap(back);
+        await tester.pumpAndSettle();
+      }
+      await searchFromField(tester);
+      await type(tester, 'sintra');
+      findsEverything();
+      await tester.tap(find.byKey(const ValueKey('command-menu-cancel')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('bar-folders')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
+      await tester.pumpAndSettle();
+      await searchFromField(tester);
+      expect(
+        find.descendant(of: menu, matching: find.text('Search drawings')),
+        findsOneWidget,
+      );
+      await type(tester, 'sintra');
+      findsDrawingsAlone();
+      expect(
+        find.byKey(const ValueKey('command-menu-row-New drawing')),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(
+          find.byKey(const ValueKey('command-scope-drawings')),
+        ),
+        isSemantics(isSelected: true),
+      );
     });
 
     testWidgets('⌘K offers to ask, the list’s field reads as D01 draws it, '
