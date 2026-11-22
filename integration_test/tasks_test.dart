@@ -160,12 +160,12 @@ void main() {
     // macOS keeps a window inside the screen's visible frame, so on a runner
     // whose display is shorter than 900 the window is as tall as it fits.
     debugPrint('Tasks walk window: ${window.width} × ${window.height}');
+    await tap(tester, 'rail-tasks');
     expect(
-      find.byKey(const ValueKey('tasks-filter-all')),
+      find.byKey(const ValueKey('tasks-filter-all')).hitTestable(),
       findsOneWidget,
       reason: "D09 draws Tasks' list beside the page",
     );
-    await tap(tester, 'rail-tasks');
 
     // Ask Ana comes back: Start with makes it Do now, and Not finished sends
     // it to the end of the list with ↺.
