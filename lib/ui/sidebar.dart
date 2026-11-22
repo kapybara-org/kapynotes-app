@@ -1903,6 +1903,8 @@ class SidebarWindowBar extends StatelessWidget {
   final VoidCallback onHide;
 
   /// Printed on New note's keycap, so the chord is learnt from the button.
+  /// New drawing has no keycap, as D08 draws it, and names the chord on
+  /// hover.
   final ShortcutBinding? newNoteShortcut;
   final ShortcutBinding? hideShortcut;
 
@@ -1985,7 +1987,9 @@ class SidebarWindowBar extends StatelessWidget {
                       8 -
                       32 -
                       (onAskKapy == null ? 0 : 32 + 8);
-                  final chord = newNoteShortcut?.keycapLabel;
+                  final chord = noun == 'drawing'
+                      ? null
+                      : newNoteShortcut?.keycapLabel;
                   bool fits({String? shortcut}) =>
                       room - 8 - widthOf(countText, countStyle) >=
                       TonalButton.widthOf(
