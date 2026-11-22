@@ -40,6 +40,7 @@ Future<void> _open(
   required TargetPlatform platform,
   Size size = const Size(1000, 800),
   SettingsSection? section,
+  String? reveal,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -77,6 +78,7 @@ Future<void> _open(
               voicePrefs: VoicePrefs(store)..load(),
               updates: platform == TargetPlatform.macOS ? updates : null,
               section: section,
+              reveal: reveal,
             ),
             child: const Text('open'),
           ),
@@ -89,6 +91,32 @@ Future<void> _open(
 }
 
 Finder get _field => find.byKey(const ValueKey('settings-search'));
+
+/// The index a phone's Search on Home borrows from settings.
+Future<SettingsIndex> _phoneIndex(WidgetTester tester) async {
+  AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+  addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+  late SettingsIndex index;
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: KapyTheme.dark(),
+      home: SettingsDialog(
+        layoutPrefs: prefs,
+        shortcuts: shortcuts,
+        rates: RatesRepository(store),
+        notes: notes,
+        voicePrefs: VoicePrefs(store)..load(),
+        onIndex: (lent) => index = lent,
+      ),
+    ),
+  );
+  return index;
+}
+
+/// What [query] finds in [index], as the rows it leads to.
+List<String?> _found(SettingsIndex index, String query) => [
+  for (final entry in searchSettings(index(), query)) entry.target,
+];
 
 Future<void> _type(WidgetTester tester, String query) async {
   await tester.enterText(_field, query);
@@ -245,7 +273,7 @@ void main() {
         find.descendant(
           of: _result('mode-setting'),
           matching: find.text(
-            'Appearance › Look · follow your computer, or choose one.',
+            'Appearance · follow your computer, or choose one.',
           ),
         ),
         findsOneWidget,
@@ -425,60 +453,50 @@ void main() {
   });
 
   group('on a phone', () {
-    testWidgets('searches from the list of categories, and back returns to '
-        'the results', (tester) async {
+    testWidgets('has no field of its own: a setting found on Home opens the '
+        'sheet on its row', (tester) async {
       await _open(
         tester,
         platform: TargetPlatform.iOS,
         size: const Size(390, 844),
       );
-      // A keyboard that rose on its own would cover the list it searches.
-      expect(tester.widget<TextField>(_field).focusNode!.hasFocus, isFalse);
-
-      await _type(tester, 'spell');
-      expect(
-        find.byKey(const ValueKey('settings-section-notes')),
-        findsNothing,
-      );
-      await tester.tap(_result('spell-check-toggle'));
+      expect(_field, findsNothing);
+      await tester.tap(find.byKey(const ValueKey('settings-sheet-done')));
       await tester.pumpAndSettle();
 
+      await _open(
+        tester,
+        platform: TargetPlatform.iOS,
+        size: const Size(390, 844),
+        section: SettingsSection.notes,
+        reveal: 'spell-check-toggle',
+      );
       expect(find.byKey(const ValueKey('spell-check-toggle')), findsOneWidget);
       expect(find.text('Notes'), findsOneWidget);
-
-      await tester.tap(find.byKey(const ValueKey('settings-sheet-back')));
-      await tester.pumpAndSettle();
-      expect(_result('spell-check-toggle'), findsOneWidget);
     });
 
-    testWidgets('finds the release notes, which stay after the notice is '
-        'closed', (tester) async {
-      await _open(
-        tester,
-        platform: TargetPlatform.iOS,
-        size: const Size(390, 844),
-      );
-      await _type(tester, "what's new");
-      await tester.tap(_result('changelog'));
-      await tester.pumpAndSettle();
+    testWidgets('Search on Home finds the release notes', (tester) async {
+      final index = await _phoneIndex(tester);
+      expect(_found(index, "what's new"), contains('changelog'));
+    });
 
-      expect(find.text("What's new"), findsOneWidget);
-      expect(find.text('See what changed'), findsOneWidget);
+    testWidgets('Search on Home lands AI assistants on the AI apps group', (
+      tester,
+    ) async {
+      final index = await _phoneIndex(tester);
+      expect(_found(index, 'AI assistants'), contains('mcp-apps'));
     });
 
     testWidgets('offers nothing a phone does not have', (tester) async {
-      await _open(
-        tester,
-        platform: TargetPlatform.iOS,
-        size: const Size(390, 844),
-      );
-      await _type(tester, 'shortcut');
+      final index = await _phoneIndex(tester);
       expect(
-        _resultTargets(tester).where((t) => t.startsWith('shortcut-row-')),
+        _found(
+          index,
+          'shortcut',
+        ).where((target) => target?.startsWith('shortcut-row-') ?? false),
         isEmpty,
       );
-      await _type(tester, 'menu bar');
-      expect(_result('keep-running-toggle'), findsNothing);
+      expect(_found(index, 'menu bar'), isNot(contains('keep-running-toggle')));
     });
   });
 }
