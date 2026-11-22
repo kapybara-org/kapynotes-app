@@ -17,12 +17,18 @@ class Toast {
   static OverlayEntry? _current;
   static int _generation = 0;
 
+  /// What a toast keeps above, such as a phone's bar and its +.
+  static _ToastClearanceState? _clearance;
+
   /// Widget tests usually call `pumpAndSettle` before inspecting a toast. A
   /// production lifetime animation would make that helper advance all the way
   /// through dismissal, so tests keep transient messages still unless the
   /// toast-specific suite opts in to exercising their lifetime.
   @visibleForTesting
   static bool debugAnimateLifetimeInTests = false;
+
+  /// How long a toast with an action stays: time enough to reach it.
+  static const Duration actionLifetime = Duration(seconds: 4);
 
   /// [action] names a button at the toast's end that runs [onAction], such
   /// as View after a note is filed away. A toast with one stays a little
@@ -65,7 +71,9 @@ class Toast {
           icon ?? (isError ? KapyIcons.errorOutlined : KapyIcons.checkRounded),
       isError: isError,
       progress: false,
-      duration: Duration(milliseconds: action == null ? 1800 : 4000),
+      duration: action == null
+          ? const Duration(milliseconds: 1800)
+          : actionLifetime,
       action: action == null || onAction == null ? null : (action, onAction),
     );
   }
@@ -274,10 +282,16 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
 
     final media = MediaQuery.of(context);
+    final below = Toast._clearance?.context.findRenderObject();
+    final clear = below is RenderBox && below.hasSize
+        ? media.size.height - below.localToGlobal(Offset.zero).dy + 16
+        : 0.0;
     return Positioned(
-      bottom:
-          (compact ? 24 : 16) +
-          math.max(media.padding.bottom, media.viewInsets.bottom),
+      bottom: math.max(
+        clear,
+        (compact ? 24 : 16) +
+            math.max(media.padding.bottom, media.viewInsets.bottom),
+      ),
       left: 16,
       right: 16,
       child: IgnorePointer(
@@ -416,4 +430,37 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       ),
     );
   }
+}
+
+/// Keeps toasts above [child], such as a phone's bar and its +, while its
+/// route is the one on top. A sheet over it takes the toast back down to the
+/// bottom edge, over the sheet's footer.
+class ToastClearance extends StatefulWidget {
+  const ToastClearance({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<ToastClearance> createState() => _ToastClearanceState();
+}
+
+class _ToastClearanceState extends State<ToastClearance> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.of(context)?.isCurrent ?? true) {
+      Toast._clearance = this;
+    } else if (identical(Toast._clearance, this)) {
+      Toast._clearance = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (identical(Toast._clearance, this)) Toast._clearance = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

@@ -309,6 +309,53 @@ void main() {
     });
   }
 
+  /// Opens Packing list from Shared on a phone, so its page is on screen.
+  Future<String> openPackingPage(WidgetTester tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    final space = await priyaShares(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.text('Packing list'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsNothing);
+    return space;
+  }
+
+  testWidgets('on a phone, Leave without a copy from the open page goes back '
+      'to Shared', (tester) async {
+    final space = await openPackingPage(tester);
+
+    await tester.runAsync(
+      () => account.sharing!.leave(space, keepCopies: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+    expect(find.byType(Sidebar), findsOneWidget);
+    expect(listed(tester, 'Packing list'), isFalse);
+    // Past the presence HomePage writes for the shared note now selected.
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('on a phone, Leave keeping a copy from the open page stays on '
+      'the page, showing the copy', (tester) async {
+    final space = await openPackingPage(tester);
+
+    await tester.runAsync(() => account.sharing!.leave(space));
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsNothing);
+    final shown = notes.byId(prefs.lastOpenedNoteId);
+    expect(shown?.body, 'Packing list');
+    expect(shown?.isShared, isFalse);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('beside a window, the list follows the selection to My notes '
       'when Leave takes away the shared note it was on', (tester) async {
     await signIn(tester);

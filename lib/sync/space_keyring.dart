@@ -45,6 +45,9 @@ class SpaceKeyring extends ChangeNotifier {
   IdentityKeys? get identity => _identity;
   TrustStore get trust => _trust;
 
+  /// The account's local store, which [Sharing] keeps its held removals in.
+  LocalStore get store => _store;
+
   /// True once a sync has talked to the server about spaces.
   bool get isFresh => _fresh;
   bool _fresh = false;

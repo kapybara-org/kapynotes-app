@@ -324,6 +324,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// note the opening-note setting chooses, ready to type, with the list
   /// under it; back shows the list.
   bool _phonePageOpen = true;
+
+  /// The notes as [_reconcileSelection] last saw them, to tell what the note
+  /// it had open was once it has gone.
+  List<Note> _notesSeen = const [];
   final GlobalKey<NavigatorState> _phoneNavigator = GlobalKey();
 
   /// Whether the notes list is open over the page, in a desktop window too
@@ -1285,6 +1289,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       widget.notes.notes.map((note) => note.id),
     );
     final previous = _selectedId;
+    final seen = _notesSeen;
+    _notesSeen = widget.notes.allNotes;
+    final gone = widget.notes.byId(previous) == null
+        ? seen.where((note) => note.id == previous).firstOrNull
+        : null;
+    // Leaving a note shared with you, with no copy kept, takes its page back
+    // to the list, as archiving, hiding and deleting do. A copy kept stays
+    // on the page in its place.
+    if (_usesCompactLayout &&
+        gone?.spaceId != null &&
+        widget.account?.sharing?.spaceById(gone!.spaceId)?.isOwner != true &&
+        !widget.notes.notes.any(
+          (note) => !note.isShared && note.createdAt == gone!.createdAt,
+        )) {
+      _phonePageOpen = false;
+    }
     _workspace.reconcile(
       available.map((note) => note.id),
       fallbackId: preferred ?? available.firstOrNull?.id,

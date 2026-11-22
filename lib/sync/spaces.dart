@@ -359,7 +359,9 @@ class Space {
       return rest == address || rest == address.split('@').first;
     }
 
-    return members.any((m) => matches(m.email)) ||
+    // One made from an address keeps that shape after its person has gone.
+    return RegExp(r"^[a-z0-9._%+'-]+$").hasMatch(raw.substring(5).trim()) ||
+        members.any((m) => matches(m.email)) ||
         invites.any((i) => matches(i.email));
   }
 

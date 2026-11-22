@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 import '../core/window_chrome.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -774,11 +775,14 @@ class PhoneSpaces extends StatelessWidget {
     ];
     void choose(LibrarySpace? to) =>
         to == null ? onSettingsPressed() : onSelected(to);
-    final plus = Builder(
-      builder: (context) => _PlusButton(
-        label: createLabel,
-        onPressed: onCreate,
-        onLongPress: () => _showCreateMenu(context),
+    // The + reaches as high as anything here, so toasts keep above it.
+    final plus = ToastClearance(
+      child: Builder(
+        builder: (context) => _PlusButton(
+          label: createLabel,
+          onPressed: onCreate,
+          onLongPress: () => _showCreateMenu(context),
+        ),
       ),
     );
 

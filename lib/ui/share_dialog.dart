@@ -137,6 +137,17 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     _focus.dispose();
     _rows.dispose();
     _email.dispose();
+    // A removal held for Undo goes out once the sheet closes: after this
+    // frame, since sending tells listeners at once and the tree is locked.
+    final sharing = _sharing;
+    final noteId = widget.note.id;
+    scheduleMicrotask(() async {
+      try {
+        await sharing.sendHeldRemovals(noteId);
+      } on Object catch (error) {
+        debugPrint('KapyNotes: a removal was not sent: $error');
+      }
+    });
     super.dispose();
   }
 
@@ -162,6 +173,9 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     });
     try {
       try {
+        // A removal still held goes first, so nothing else is worked out
+        // from people the sheet already shows gone.
+        await _sharing.sendHeldRemovals(_note.id);
         await action();
       } on SyncRefusedException catch (error) {
         if (error.code != termsRequiredCode || !mounted) rethrow;
@@ -356,8 +370,9 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     });
   }
 
-  /// A person taken off one note, with one tap to put them back where they
-  /// were.
+  /// A person taken off one note. The removal is held on this device while
+  /// the toast offers Undo, so Undo puts them back with nothing sent; it goes
+  /// out when the toast does, or when the sheet closes first.
   Future<void> _removePerson(SpaceMember member) async {
     final name = member.firstName;
     final role = member.role;
@@ -371,10 +386,10 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
     );
     if (ok != true || !mounted) return;
     await _run(() async {
-      await _sharing.removeFromNote(_note.id, member.email);
       if (!mounted) return;
       final sharing = _sharing;
       final noteId = _note.id;
+      sharing.holdRemoval(noteId, member.email, Toast.actionLifetime);
       final overlay = Overlay.of(context, rootOverlay: true);
       Toast.show(
         context,
@@ -382,9 +397,14 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         action: 'Undo',
         onAction: () => unawaited(
           undoSharing(overlay, () async {
+            if (sharing.cancelRemoval(noteId, member.email)) {
+              return '$name can see this note again';
+            }
+            await sharing.sendHeldRemovals(noteId);
             await sharing.addPerson(noteId, member.email, role: role);
             return sharing.memberOn(noteId, member.email) == null
-                ? 'Invitation sent to ${member.email}'
+                ? 'Invited $name again. They can see the note once they '
+                      'accept.'
                 : '$name can see this note again';
           }),
         ),
@@ -393,9 +413,12 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
   }
 
   Future<void> _stopSharing() async {
+    // Sends a removal still held first, so the ask names who is really on it.
+    await _run(() async {});
     final space = _space;
-    if (space == null) return;
+    if (space == null || _error != null || !mounted) return;
     final audience = _sharing.audienceOf(space);
+    final names = {for (final email in audience.keys) email: _nameOf(email)};
     final people = space.othersThan(_sharing.userId).length;
     final who = _peoplePhrase(space);
     final ok = await askFirst(
@@ -420,7 +443,13 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         onAction: () => unawaited(
           undoSharing(overlay, () async {
             await sharing.shareNoteWithPeople(noteId, audience);
-            return 'Shared again with $who';
+            final invited = [
+              for (final email in audience.keys)
+                if (sharing.memberOn(noteId, email) == null) names[email]!,
+            ];
+            if (invited.isEmpty) return '$who can see this note again';
+            return 'Invited ${_listedNames(invited)} again. They can see the '
+                'note once they accept.';
           }),
         ),
       );
@@ -751,6 +780,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         _PeopleWithAccess(
           sharing: _sharing,
           space: space,
+          noteId: _note.id,
           busy: !enabled,
           onAccess: _changeAccess,
           removeLabel: 'Remove from this note',
@@ -1632,6 +1662,7 @@ class _PeopleWithAccess extends StatelessWidget {
   const _PeopleWithAccess({
     required this.sharing,
     required this.space,
+    this.noteId,
     required this.busy,
     required this.onAccess,
     required this.removeLabel,
@@ -1645,6 +1676,9 @@ class _PeopleWithAccess extends StatelessWidget {
 
   final Sharing sharing;
   final Space space;
+
+  /// The note this list is for, whose removals held for Undo it leaves out.
+  final String? noteId;
   final bool busy;
   final void Function(String email, SpaceRole role) onAccess;
 
@@ -1665,14 +1699,15 @@ class _PeopleWithAccess extends StatelessWidget {
       for (final person in sharing.presentIn(space.id)) person.userId: person,
     };
     final warnings = sharing.trust.warningsFor(space.id);
+    final members = [
+      for (final member in space.members)
+        if (noteId == null || !sharing.isRemovalHeld(noteId!, member.email))
+          member,
+    ];
     final here = [
-      ...space.members.where((m) => m.userId == me),
-      ...space.members.where(
-        (m) => m.userId != me && present.containsKey(m.userId),
-      ),
-      ...space.members.where(
-        (m) => m.userId != me && !present.containsKey(m.userId),
-      ),
+      ...members.where((m) => m.userId == me),
+      ...members.where((m) => m.userId != me && present.containsKey(m.userId)),
+      ...members.where((m) => m.userId != me && !present.containsKey(m.userId)),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

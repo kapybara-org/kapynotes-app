@@ -117,6 +117,15 @@ void main() {
       );
     });
 
+    test('keeps going by its people once the one its placeholder names has '
+        'gone', () {
+      final carol = member('carol', 'carol@example.com', name: 'Carol Diaz');
+      final left = space(name: 'With priya.nair', members: [me, carol]);
+      expect(left.hasGeneratedName, isTrue);
+      expect(left.chosenName, isNull);
+      expect(left.titleFor('me'), 'Shared with Carol');
+    });
+
     test('keeps a name somebody chose', () {
       final family = space(
         name: 'Family',
