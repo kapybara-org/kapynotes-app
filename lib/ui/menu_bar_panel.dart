@@ -1007,6 +1007,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     Text(
                       open.keycapLabel,
                       style: TextStyle(
+                        fontFamily: AppFonts.mono,
+                        fontFamilyFallback: AppFonts.monoFallback,
                         fontSize: 11,
                         height: 14 / 11,
                         color: palette.textSecondary,
