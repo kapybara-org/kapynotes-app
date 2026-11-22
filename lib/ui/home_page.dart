@@ -3749,7 +3749,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// replaces did. Choosing the space already open is how the list goes back
   /// to All notes, as the filter's ✕ does.
   void _showSpace(LibrarySpace space) {
-    _tasksNavigator.currentState?.popUntil((route) => route.isFirst);
     _pinnedOnly = false;
     _clearFilter();
     _picks.clear();
@@ -3802,12 +3801,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Back on a phone's list, from Android's back or the edge swipe: one level
-  /// up at a time. Tasks returns to Notes and picks let go, though not on
-  /// Kapy AI, which doesn't show them; then a folder, Upcoming or Drawings
-  /// returns to Folders, another tab to Notes, and on Notes Pinned or Shared
-  /// to its Home.
+  /// up at a time. A task's page returns to Tasks, Tasks returns to Notes
+  /// and picks let go, though not on Kapy AI, which doesn't show them; then
+  /// a folder, Upcoming or Drawings returns to Folders, another tab to Notes,
+  /// and on Notes Pinned or Shared to its Home.
   void _phoneListBack() {
-    if (_tasksMode) {
+    if (_tasksNavigator.currentState?.canPop() ?? false) {
+      _tasksNavigator.currentState?.maybePop();
+    } else if (_tasksMode) {
       _showHome(tasks: false);
     } else if (_picks.on && _phoneTab != PhoneTab.kapyAi) {
       _picks.clear();
@@ -4816,8 +4817,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (didPop) return;
             if (pageOpen) {
               _phoneNavigator.currentState?.maybePop();
-            } else if (_tasksNavigator.currentState?.canPop() ?? false) {
-              _tasksNavigator.currentState?.maybePop();
             } else {
               _phoneListBack();
             }

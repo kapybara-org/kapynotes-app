@@ -4281,10 +4281,7 @@ void main() {
           ),
           findsOneWidget,
         );
-        expect(
-          tester.widget<NoteCardFace>(card('October plan')).date,
-          '7 Dec',
-        );
+        expect(tester.widget<NoteCardFace>(card('October plan')).date, '7 Dec');
         expect(ring('October plan'), findsNothing);
         expect(
           tester.widget<NoteCardFace>(card('Standup notes')).date,
@@ -8926,6 +8923,40 @@ void main() {
           await tester.pumpAndSettle();
           expect(doNow, findsNothing);
           expect(bar.hitTestable(), findsOneWidget);
+        });
+
+        for (final (name, opener) in [
+          ('the filter menu', 'tasks-filters'),
+          ('the note chooser', 'tasks-note-picker'),
+        ]) {
+          testWidgets('$name covers the whole screen, the bar too, and a '
+              'tap anywhere closes it', (tester) async {
+            await pumpHome(tester, also: trip);
+            await tester.tap(tasksTitle);
+            await tester.pumpAndSettle();
+            await tester.tap(find.byKey(ValueKey(opener)));
+            await tester.pumpAndSettle();
+            final items = find.byWidgetPredicate(
+              (widget) => widget is PopupMenuItem,
+            );
+            expect(items, findsWidgets);
+            expect(bar.hitTestable(), findsNothing);
+            await tester.tapAt(const Offset(8, 8));
+            await tester.pumpAndSettle();
+            expect(items, findsNothing);
+            expect(bar.hitTestable(), findsOneWidget);
+          });
+        }
+
+        testWidgets("a swipe from the page's left edge comes back to Tasks, "
+            'not Notes', (tester) async {
+          AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          await openTask(tester);
+          await tester.dragFrom(const Offset(5, 400), const Offset(300, 0));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage.hitTestable(), findsOneWidget);
         });
 
         testWidgets("the system back comes back to Tasks, and only then "

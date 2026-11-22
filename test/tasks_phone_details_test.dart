@@ -141,6 +141,16 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  testWidgets("a task added yesterday says so on its page, with the day", (
+    tester,
+  ) async {
+    await pumpPhone(tester);
+    clock = clock.add(const Duration(days: 1));
+    await openListed(tester);
+    expect(find.text('Errands · Yesterday, Fri 20'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('← Tasks goes back to the list where it was scrolled to', (
     tester,
   ) async {
