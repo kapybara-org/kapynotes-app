@@ -8274,6 +8274,28 @@ void main() {
         expect(lit(tester), PhoneTab.folders);
       }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
+      testWidgets('Back from Folders goes to Notes with its Pinned still on', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await tap(tester, barNotes);
+        notes.togglePinned(
+          notes.notes.firstWhere((note) => note.title == 'Groceries').id,
+        );
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(const ValueKey('home-pinned-card')));
+        final pinned = find.byKey(const ValueKey('sidebar-pinned-back'));
+        expect(pinned, findsOneWidget);
+
+        await tap(tester, barFolders);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(lit(tester), PhoneTab.notes);
+        expect(pinned, findsOneWidget);
+        expect(groceries, findsOneWidget);
+        expect(brief, findsNothing);
+      });
+
       testWidgets('Back in a folder lets the picks go first, then goes to '
           'Folders', (tester) async {
         await pumpFolders(tester);
