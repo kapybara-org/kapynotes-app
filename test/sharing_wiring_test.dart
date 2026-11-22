@@ -389,7 +389,9 @@ void main() {
     };
 
     final watch = Stopwatch()..start();
-    await tester.runAsync(account.signOut);
+    await tester.runAsync(
+      () => account.signOut().timeout(const Duration(seconds: 10)),
+    );
     expect(asked, isTrue);
     expect(account.state, AccountState.signedOut);
     expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
@@ -416,7 +418,7 @@ void main() {
         server.onRemoval = null;
         return answer.future;
       };
-      await account.signOut();
+      await account.signOut().timeout(const Duration(seconds: 10));
       answer.complete();
       await Future<void>.delayed(const Duration(milliseconds: 200));
     });
@@ -457,7 +459,7 @@ void main() {
         server.onRemoval = null;
         return answer.future;
       };
-      await account.signOut();
+      await account.signOut().timeout(const Duration(seconds: 10));
       answer.completeError(const SyncRefusedException(409, 'conflict', {}));
       await Future<void>.delayed(const Duration(milliseconds: 200));
     });
