@@ -138,7 +138,7 @@ void main() {
     }
 
     await tap('page-back');
-    await tap('bar-tasks');
+    await tap('home-title-tasks');
 
     expect(find.text('What do you want to work on next?'), findsOneWidget);
     expect(find.text('First on the list'), findsOneWidget);
@@ -299,7 +299,7 @@ void main() {
     if (find.byKey(const ValueKey('page-back')).evaluate().isNotEmpty) {
       await tap('page-back');
     }
-    await tap('bar-tasks');
+    await tap('home-title-tasks');
     expect(find.text('Search tasks'), findsOneWidget);
     expect(find.text('6'), findsWidgets, reason: 'Tasks 6, Later left out');
     await shot('m13');
