@@ -34,7 +34,7 @@ navbar() {
   sleep 3
 }
 
-for test in phone_v2 phone_format_bar phone_home kapy_ai_page kapy_ai_sheet phone_tasks; do
+for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_tasks; do
   drive "$test"
 done
 
