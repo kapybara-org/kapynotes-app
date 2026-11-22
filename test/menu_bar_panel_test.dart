@@ -81,6 +81,7 @@ void main() {
   late Set<String> viewOnly;
   late _SilentRecorder recorder;
   late VoiceRecordingController recording;
+  late Set<ShortcutAction> taken;
 
   setUp(() async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
@@ -96,6 +97,7 @@ void main() {
     await notes.load();
     limit = _Limit(limit: 20);
     viewOnly = {};
+    taken = {};
     bool canEdit(Note note) => panelCanEdit(
       note,
       limit: limit,
@@ -174,6 +176,7 @@ void main() {
           openSettings: () => window.add('settings'),
           explainNoteLimit: () => window.add('limit'),
         )),
+        isTaken: taken.contains,
         noteLimit: limit,
         recording: recording,
         now: () => clock,
@@ -655,6 +658,19 @@ void main() {
         find.descendant(of: footer, matching: find.text('⌃⌘J')),
         findsOneWidget,
       );
+      expect(find.text('⌥⇧⌘X'), findsNothing);
+    });
+
+    testWidgets('it names no shortcut another app holds', (tester) async {
+      await pumpPanel(tester);
+      expect(find.text('Open this from anywhere with'), findsOneWidget);
+      expect(find.text('⌥⇧⌘X'), findsOneWidget);
+
+      taken.addAll([ShortcutAction.openApp, ShortcutAction.openMenuBarPanel]);
+      await pumpPanel(tester, opening: 1);
+      expect(find.byKey(const ValueKey('menu-bar-empty')), findsOneWidget);
+      expect(find.text('Open this from anywhere with'), findsNothing);
+      expect(find.byKey(const ValueKey('menu-bar-open-app')), findsOneWidget);
       expect(find.text('⌥⇧⌘X'), findsNothing);
     });
 

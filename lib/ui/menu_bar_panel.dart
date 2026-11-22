@@ -121,6 +121,7 @@ class MenuBarPanel extends StatefulWidget {
     required this.shortcuts,
     required this.canEdit,
     required this.inWindow,
+    required this.isTaken,
     this.noteLimit,
     this.recording,
     this.now = DateTime.now,
@@ -139,6 +140,9 @@ class MenuBarPanel extends StatefulWidget {
   /// Closes the panel, brings the window forward and has it act.
   final Future<void> Function(void Function(MenuBarWindowActions window))
   inWindow;
+
+  /// Whether another app holds [action]'s chord, so this one never got it.
+  final bool Function(ShortcutAction action) isTaken;
 
   final NoteLimit? noteLimit;
   final VoiceRecordingController? recording;
@@ -936,7 +940,9 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final quiet = TextStyle(color: palette.textTertiary);
     final soft = TextStyle(color: palette.textSecondary);
     final meta = AppPlatform.isMacOS;
-    final summon = widget.shortcuts.bindingFor(ShortcutAction.openMenuBarPanel);
+    final summon = widget.isTaken(ShortcutAction.openMenuBarPanel)
+        ? null
+        : widget.shortcuts.bindingFor(ShortcutAction.openMenuBarPanel);
     Widget line(List<Widget> children) => Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(children: children),
@@ -979,7 +985,9 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
 
   Widget _footer(BuildContext context) {
     final palette = context.palette;
-    final open = widget.shortcuts.bindingFor(ShortcutAction.openApp);
+    final open = widget.isTaken(ShortcutAction.openApp)
+        ? null
+        : widget.shortcuts.bindingFor(ShortcutAction.openApp);
     final find = widget.shortcuts.bindingFor(ShortcutAction.findNotes);
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),

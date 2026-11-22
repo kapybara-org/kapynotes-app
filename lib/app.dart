@@ -853,6 +853,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           shortcuts: widget.shortcuts,
           canEdit: _panelCanEdit,
           inWindow: integration.openInWindow,
+          isTaken: integration.isTaken,
           noteLimit: widget.account?.noteLimit,
           recording: _recording,
           now: widget.notes.now,
