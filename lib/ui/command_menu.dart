@@ -134,7 +134,8 @@ class AskKapyAiChoice extends CommandChoice {
 /// dot of the first of [marksOf]'s tags for its note: the dialog is a route
 /// of its own, so the page's own marks don't reach it. [askKapyAi] is whether
 /// Kapy AI is there to be asked: it adds the Ask row and Tab, and "Ask Kapy
-/// AI" to the field.
+/// AI" to the field, while the menu searches everything. With [drawings] it
+/// opens on the Drawings scope, as Drawings' own search field does.
 Future<CommandChoice?> showCommandMenu(
   BuildContext context, {
   required NotesStore notes,
@@ -155,6 +156,7 @@ Future<CommandChoice?> showCommandMenu(
   Note? fileNote,
   List<TagMark> Function(String noteId)? marksOf,
   bool phone = false,
+  bool drawings = false,
   Future<void> Function(TaskItem item, {required bool done})? onSetTaskDone,
 }) {
   final palette = context.palette;
@@ -178,6 +180,7 @@ Future<CommandChoice?> showCommandMenu(
       tagNote: tagNote,
       fileNote: fileNote,
       phone: phone,
+      drawings: drawings,
       onSetTaskDone: onSetTaskDone,
       onChosen: (choice) => Navigator.of(context).pop(choice),
     );
@@ -239,12 +242,16 @@ class CommandMenu extends StatefulWidget {
     this.tagNote,
     this.fileNote,
     this.phone = false,
+    this.drawings = false,
     this.onSetTaskDone,
   });
 
   /// A phone's Quick find: full height, with Cancel (or Android's back
   /// arrow), scope pills, and tasks that check off in place.
   final bool phone;
+
+  /// Opens on the Drawings scope rather than All.
+  final bool drawings;
 
   /// Checks a task off, or back on, without leaving Quick find.
   final Future<void> Function(TaskItem item, {required bool done})?
@@ -358,13 +365,16 @@ class _CommandMenuState extends State<CommandMenu> {
 
   SettingsIndex? _settings;
 
-  /// What a phone's scope pills narrow the results to.
-  _Scope _scope = _Scope.all;
+  /// What the results are narrowed to: a phone's pills change it.
+  late _Scope _scope = widget.drawings ? _Scope.drawings : _Scope.all;
 
   /// Tasks checked off here, which keep their rows until Quick find closes.
   final Set<String> _done = {};
 
   bool _shows(_Scope scope) => _scope == _Scope.all || _scope == scope;
+
+  /// Kapy AI is offered only while the menu searches everything.
+  bool get _asks => widget.askKapyAi && _scope == _Scope.all;
 
   /// The tag list for the open note, once Tag note... is chosen: it takes
   /// the place of the menu's results and of its field.
@@ -673,7 +683,7 @@ class _CommandMenuState extends State<CommandMenu> {
           title: 'New drawing',
           choice: NewDrawingChoice(),
         ),
-      if (all && widget.askKapyAi)
+      if (_asks)
         _Line.row(
           icon: KapyIcons.sparklesOutlined,
           title: 'Ask Kapy AI: $text',
@@ -767,7 +777,7 @@ class _CommandMenuState extends State<CommandMenu> {
           when event is KeyDownEvent:
         picker == null ? _choose(_highlight) : picker.activate();
       case LogicalKeyboardKey.tab
-          when widget.askKapyAi && _asking && event is KeyDownEvent:
+          when _asks && _asking && event is KeyDownEvent:
         widget.onChosen(AskKapyAiChoice(_field.text.trim()));
       default:
         return KeyEventResult.ignored;
@@ -868,7 +878,7 @@ class _CommandMenuState extends State<CommandMenu> {
                       ),
                     ),
                   if (AppPlatform.hasPointer && _picker == null)
-                    _footer(palette, ask: widget.askKapyAi && _asking),
+                    _footer(palette, ask: _asks && _asking),
                 ],
               ),
             ),
@@ -1100,7 +1110,7 @@ class _CommandMenuState extends State<CommandMenu> {
                     ? InputDecoration.collapsed(
                         hintText: picker != null
                             ? ''
-                            : widget.askKapyAi
+                            : _asks
                             ? 'Search or Ask Kapy AI…'
                             : 'Search…',
                         hintStyle: style.copyWith(color: palette.textTertiary),
@@ -1109,7 +1119,7 @@ class _CommandMenuState extends State<CommandMenu> {
                         border: InputBorder.none,
                         hintText: picker != null
                             ? ''
-                            : widget.askKapyAi
+                            : _asks
                             ? 'Search or Ask Kapy AI…'
                             : 'Search…',
                         hintStyle: style.copyWith(color: palette.textTertiary),
