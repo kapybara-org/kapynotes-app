@@ -4132,6 +4132,45 @@ void main() {
       expect(more.right, bar.right - 12);
     });
 
+    testWidgets("the band's empty space drags the window, up to its top edge, "
+        'with the list shown or hidden', (tester) async {
+      await library(tester);
+      final toolbar = find.byKey(const ValueKey('page-toolbar'));
+      final drag = find.descendant(
+        of: toolbar,
+        matching: find.byType(WindowDragArea),
+      );
+      for (final shown in [true, false]) {
+        if (!shown) {
+          prefs.toggleSidebar();
+          await tester.pumpAndSettle();
+        }
+        final bar = tester.getRect(toolbar);
+        expect(bar.top, 0, reason: 'shown: $shown');
+        expect(tester.getRect(drag), bar, reason: 'shown: $shown');
+        final month = tester.getRect(
+          find.byKey(const ValueKey('day-strip-month')),
+        );
+        final back = tester.getRect(
+          find.byKey(const ValueKey('day-strip-back')),
+        );
+        final result = HitTestResult();
+        tester.binding.hitTestInView(
+          result,
+          Offset((month.right + back.left) / 2, bar.top + 1),
+          tester.view.viewId,
+        );
+        final area = tester.renderObject(
+          find.descendant(of: drag, matching: find.byType(Listener)).first,
+        );
+        expect(
+          result.path.any((entry) => entry.target == area),
+          isTrue,
+          reason: 'shown: $shown',
+        );
+      }
+    });
+
     testWidgets("D01's window, the list open at its width, shows the month "
         'and all seven days, and the band gives way at 720', (tester) async {
       await library(tester);
