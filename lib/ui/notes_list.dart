@@ -773,8 +773,21 @@ class NoteListRowFace extends StatelessWidget {
                     key: const ValueKey('note-row-holds'),
                     spacing: 12,
                     children: [
-                      ...holds,
-                      if (people != null) ...[const Spacer(), people],
+                      // At large text the last holds are cut off at the
+                      // edge, so the people at the end stay whole.
+                      Expanded(
+                        child: UnconstrainedBox(
+                          alignment: AlignmentDirectional.centerStart,
+                          constrainedAxis: Axis.vertical,
+                          clipBehavior: Clip.hardEdge,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 12,
+                            children: holds,
+                          ),
+                        ),
+                      ),
+                      ?people,
                     ],
                   ),
                 ],
