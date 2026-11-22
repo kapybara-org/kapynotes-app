@@ -136,6 +136,10 @@ Future<void> pumpForGolden(
   /// recording, one a checklist and a tag, one words alone.
   bool withTodayRows = false,
 
+  /// Those three with the words-alone note given two open markdown tasks,
+  /// `- [ ]` as the boards' seed writes them.
+  bool markdownTasks = false,
+
   /// Signed in to an account on Pro with two invitations waiting, so that
   /// Settings has its account, its sharing and every one of its categories.
   bool signedIn = false,
@@ -338,7 +342,10 @@ Future<void> pumpForGolden(
       ).toJson(),
       Note(
         id: 'renewal',
-        body: 'Renewal notes\nFor the call with Acme on Friday.',
+        body: markdownTasks
+            ? 'Renewal notes\nFor the call with Acme on Friday.\n'
+                  '- [ ] Send the renewal scope\n- [ ] Read the signed contract'
+            : 'Renewal notes\nFor the call with Acme on Friday.',
         createdAt: at(8, 20),
         updatedAt: at(8, 20),
       ).toJson(),
@@ -1741,6 +1748,38 @@ void main() {
             reason: 'the recording and the checklist each take a third line',
           );
           await matches('note_rows');
+        });
+
+        testWidgets('phone note rows with markdown tasks, $name', (
+          tester,
+        ) async {
+          await pumpForGolden(
+            tester,
+            size: size,
+            brightness: brightness,
+            platform: platform,
+            withNote: false,
+            withTasks: true,
+            withTodayRows: true,
+            markdownTasks: true,
+          );
+          final back = find.byKey(const ValueKey('page-back'));
+          if (back.evaluate().isNotEmpty) {
+            await tapAndSettle(tester, 'page-back');
+          }
+          final renewal = find.widgetWithText(NoteRow, 'Renewal notes');
+          expect(
+            find.descendant(
+              of: renewal,
+              matching: find.byKey(const ValueKey('note-row-holds')),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(of: renewal, matching: find.text('0 of 2')),
+            findsOneWidget,
+          );
+          await matches('note_rows_markdown');
         });
       }
 

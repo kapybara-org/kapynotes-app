@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/tag_colours.dart';
 import 'package:kapy_notes/ui/tag_ui.dart' show TagDot;
@@ -406,5 +407,353 @@ void main() {
 
     expect(await square(const []), const Color(0xFF3A3530));
     expect(await square(const [travel]), TagColour.sage.dot(palette));
+  });
+
+  group('on a desktop', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    Future<void> pumpHeading(WidgetTester tester, {required bool folded}) =>
+        tester.pumpWidget(
+          MaterialApp(
+            theme: KapyTheme.dark(),
+            home: Material(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 300,
+                  child: NotesGroupHeading(
+                    label: 'Upcoming',
+                    detail: '1',
+                    folded: folded,
+                    onTap: () {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    Finder chevron(KapyIconData icon) => find.byWidgetPredicate(
+      (widget) => widget is KapyIcon && widget.icon == icon,
+    );
+
+    for (final (folded, icon) in [
+      (true, KapyIcons.chevronRightRounded),
+      (false, KapyIcons.chevronDownRounded),
+    ]) {
+      testWidgets('Upcoming reads "Upcoming 1 ${folded ? '›' : '⌄'}" '
+          '${folded ? 'folded' : 'open'}, its chevron after the count', (
+        tester,
+      ) async {
+        await pumpHeading(tester, folded: folded);
+        final label = tester.getRect(find.text('Upcoming'));
+        final count = tester.getRect(find.text('1'));
+        final mark = tester.getRect(chevron(icon));
+        expect(chevron(icon), findsOneWidget);
+        expect(count.left, greaterThan(label.right));
+        expect(mark.left - count.right, 6);
+        expect(mark.center.dy, moreOrLessEquals(count.center.dy, epsilon: 1));
+        expect(
+          tester.getSemantics(
+            find
+                .descendant(
+                  of: find.byType(NotesGroupHeading),
+                  matching: find.byType(Semantics),
+                )
+                .first,
+          ),
+          isSemantics(
+            label: 'Upcoming\n1',
+            textDirection: TextDirection.ltr,
+            isHeader: true,
+            isButton: true,
+            isImage: true,
+            hasExpandedState: true,
+            isExpanded: !folded,
+            hasTapAction: true,
+          ),
+        );
+      });
+    }
+
+    testWidgets('on a phone the chevron still leads the words', (tester) async {
+      for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        await pumpHeading(tester, folded: true);
+        final mark = tester.getRect(chevron(KapyIcons.chevronRightRounded));
+        expect(
+          tester.getRect(find.text('Upcoming')).left - mark.right,
+          4,
+          reason: platform.name,
+        );
+      }
+    });
+
+    Future<void> pumpControls(
+      WidgetTester tester, {
+      NotesShow show = NotesShow.all,
+      bool cards = false,
+      ValueChanged<bool>? onCardsChanged,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Material(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 304,
+              child: NotesListControls(
+                show: show,
+                onShowChanged: (_) {},
+                hiddenListed: true,
+                archivedCount: 0,
+                onClear: () {},
+                media: NoteMedia.values.toSet(),
+                today: DateTime(2026, 11, 19),
+                cards: cards,
+                onCardsChanged: onCardsChanged ?? (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Container box(WidgetTester tester, String key) =>
+        tester.widget<Container>(find.byKey(ValueKey(key)));
+
+    BoxDecoration? fill(WidgetTester tester, String key) =>
+        tester
+                .widget<Container>(
+                  find.descendant(
+                    of: find.byKey(ValueKey(key)),
+                    matching: find.byType(Container),
+                  ),
+                )
+                .decoration
+            as BoxDecoration?;
+
+    testWidgets('"All notes ▾" is plain words and its chevron, with the '
+        "filter's 32 pt target and name", (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpControls(tester);
+      final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
+      final button = tester.widget<Container>(
+        find.descendant(of: filter, matching: find.byType(Container)).first,
+      );
+      expect(button.decoration, isNull);
+      expect(tester.getSize(filter).height, 32);
+      expect(find.text('All notes'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: filter,
+          matching: chevron(KapyIcons.chevronDownRounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(filter),
+        isSemantics(
+          label: 'Notes filter, All notes',
+          textDirection: TextDirection.ltr,
+          isButton: true,
+          hasExpandedState: true,
+          hasTapAction: true,
+        ),
+      );
+
+      await pumpControls(tester, show: NotesShow.hidden);
+      expect(
+        tester
+            .widget<Container>(
+              find
+                  .descendant(of: filter, matching: find.byType(Container))
+                  .first,
+            )
+            .decoration,
+        isNull,
+      );
+      expect(
+        tester.widget<Text>(find.text('Hidden')).style?.color,
+        palette.tonalForeground,
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('the view icons stand on their own, only the chosen one on '
+        'a fill, each a 28 pt target with its tooltip', (tester) async {
+      bool? asked;
+      await pumpControls(tester, onCardsChanged: (cards) => asked = cards);
+      final framing = box(tester, 'sidebar-view-switch');
+      expect(framing.decoration, isNull);
+      expect(framing.padding, isNull);
+      final chosen = fill(tester, 'sidebar-view-list')!;
+      expect(chosen.color, palette.selectedBackground);
+      expect(chosen.boxShadow, isNull);
+      expect(fill(tester, 'sidebar-view-cards'), isNull);
+      for (final key in ['sidebar-view-list', 'sidebar-view-cards']) {
+        expect(tester.getSize(find.byKey(ValueKey(key))), const Size(28, 28));
+      }
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('sidebar-view-cards'))).dx -
+            tester
+                .getTopRight(find.byKey(const ValueKey('sidebar-view-list')))
+                .dx,
+        2,
+      );
+      expect(find.byTooltip('List view'), findsOneWidget);
+      expect(find.byTooltip('Card view'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('sidebar-view-cards')));
+      expect(asked, isTrue);
+
+      await pumpControls(tester, cards: true);
+      expect(fill(tester, 'sidebar-view-list'), isNull);
+      expect(
+        fill(tester, 'sidebar-view-cards')!.color,
+        palette.selectedBackground,
+      );
+    });
+
+    testWidgets("an iPad's filter row keeps its frames", (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await pumpControls(tester);
+      final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
+      final button = tester.widget<Container>(
+        find.descendant(of: filter, matching: find.byType(Container)).first,
+      );
+      expect(
+        (button.decoration! as BoxDecoration).border,
+        Border.all(color: palette.controlBorder),
+      );
+      final framing = box(tester, 'sidebar-view-switch');
+      expect(framing.padding, const EdgeInsets.all(1));
+      expect(
+        (framing.decoration! as BoxDecoration).border,
+        Border.all(color: palette.controlBorder),
+      );
+      expect(fill(tester, 'sidebar-view-list')!.boxShadow, hasLength(1));
+    });
+  });
+
+  group('markdown tasks, read as the header and Tasks read them', () {
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    Future<void> pumpRow(
+      WidgetTester tester,
+      Note note, {
+      bool touch = false,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Material(
+          child: TagMarks(
+            marksOf: (_) => const [],
+            child: Center(
+              child: SizedBox(
+                width: 360,
+                child: NoteListRowFace(
+                  note: note,
+                  glance: NoteGlance.of(note, null),
+                  date: '11:15',
+                  selected: false,
+                  hovering: false,
+                  touch: touch,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    test('every task line counts, ☐ and ☑ with markdown boxes, and a bare '
+        'box counts as none', () {
+      final glance = NoteGlance.of(
+        note(
+          'Launch\n☐ Write notes\n- [x] Ship it\n* [ ] Tell Nadia\n'
+          '+ [X] Tag it\n☑ Book the room\n- [ ]\n☐ ',
+        ),
+        null,
+      );
+      expect((glance.done, glance.boxes), (3, 5));
+      expect(glance.line, 'Write notes');
+    });
+
+    for (final (box, done) in [
+      ('- [ ]', false),
+      ('- [x]', true),
+      ('* [ ]', false),
+      ('+ [X]', true),
+    ]) {
+      test('a preview drops the "$box" box', () {
+        final glance = NoteGlance.of(
+          note('Renewal notes\n$box Send the renewal scope'),
+          null,
+        );
+        expect(glance.line, 'Send the renewal scope');
+        expect((glance.done, glance.boxes), (done ? 1 : 0, 1));
+      });
+    }
+
+    testWidgets('a card with markdown tasks carries the ring', (tester) async {
+      await pumpCard(
+        tester,
+        note(
+          'Renewal notes\nFor the call with Acme on Friday.\n'
+          '- [ ] Send the renewal scope\n- [ ] Read the signed contract',
+        ),
+      );
+      final pie = tester.widget<ChecklistPie>(find.byType(ChecklistPie));
+      expect((pie.done, pie.total), (0, 2));
+      expect(find.text('For the call with Acme on Friday.'), findsOneWidget);
+    });
+
+    testWidgets('a desktop row says "0 of 2 done" of markdown tasks', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      await pumpRow(
+        tester,
+        note('Renewal notes\n- [ ] Send the renewal scope\n- [ ] Read it'),
+      );
+      expect(find.text('0 of 2 done · Send the renewal scope'), findsOneWidget);
+    });
+
+    testWidgets("a phone row shows markdown tasks as it shows ☐ ones", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      Future<(int, int, String)> holds(String body) async {
+        await pumpRow(tester, note(body), touch: true);
+        final hold = find.byKey(const ValueKey('note-row-holds'));
+        final pie = tester.widget<ChecklistPie>(
+          find.descendant(of: hold, matching: find.byType(ChecklistPie)),
+        );
+        expect(
+          find.descendant(of: hold, matching: find.text('1 of 2')),
+          findsOneWidget,
+        );
+        return (
+          pie.done,
+          pie.total,
+          [
+            for (final text in tester.widgetList<RichText>(
+              find.byType(RichText),
+            ))
+              text.text.toPlainText(),
+          ].join(' | '),
+        );
+      }
+
+      expect(
+        await holds('Renewal notes\n- [ ] Send the scope\n- [x] Read it'),
+        await holds('Renewal notes\n☐ Send the scope\n☑ Read it'),
+      );
+      expect(
+        await holds('Renewal notes\n- [ ] Send the scope\n- [x] Read it'),
+        (1, 2, 'Renewal notes | 11:15 | Send the scope | 1 of 2'),
+      );
+    });
   });
 }

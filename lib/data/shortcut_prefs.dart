@@ -249,7 +249,8 @@ class ShortcutBinding {
   }
 
   /// The binding as a keycap prints it: ⌘F, and ⌃⌥⇧⌘ in the order a Mac's
-  /// menus list them, or Ctrl+F elsewhere.
+  /// menus list them, with ⌫ and ⌦ for its two delete keys as they print
+  /// them too, or Ctrl+F elsewhere.
   String get keycapLabel {
     if (AppPlatform.isMacOS) {
       return [
@@ -257,7 +258,11 @@ class ShortcutBinding {
         if (alt) '⌥',
         if (shift) '⇧',
         if (meta) '⌘',
-        keyLabel,
+        switch (logicalKey) {
+          LogicalKeyboardKey.backspace => '⌫',
+          LogicalKeyboardKey.delete => '⌦',
+          _ => keyLabel,
+        },
       ].join();
     }
     return displayLabel.replaceAll(' + ', '+');

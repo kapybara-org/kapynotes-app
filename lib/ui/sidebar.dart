@@ -12,7 +12,7 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../calc/engine.dart';
 import '../data/folders.dart';
-import '../data/layout_prefs.dart' show NotesGrouping;
+import '../data/layout_prefs.dart' show LayoutPrefs, NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../sync/presence.dart';
@@ -533,12 +533,14 @@ class Sidebar extends StatelessWidget {
   }
 
   /// A note's card, or its row in the list view, away from the list: on a
-  /// folder's page, with the face, clicks and menu it has here.
-  Widget noteTile(Note note) => _row(
+  /// folder's page, with the face, clicks and menu it has here, giving only
+  /// its time under a heading that names its day ([clockOnly]).
+  Widget noteTile(Note note, {bool clockOnly = false}) => _row(
     note,
     shared: sharing != null && note.isShared,
     pinned: pinnedNoteIds.contains(note.id),
     style: cards ? NoteRowStyle.card : NoteRowStyle.row,
+    clockOnly: clockOnly,
   );
 }
 
@@ -1078,7 +1080,9 @@ extension on Sidebar {
     shared: shared,
     pinned: pinned,
     locked: lockedNoteIds.contains(note.id),
-    collaborators: shared ? collaborators[note.id] ?? const [] : const [],
+    collaborators: shared && !(phone && clockOnly)
+        ? collaborators[note.id] ?? const []
+        : const [],
     // Shared's own list leaves the faces off: its headings name them.
     shareGroup: phone && shared && !_onSharedTab
         ? sharing?.groupOf(note)
@@ -1381,7 +1385,8 @@ extension on Sidebar {
         }
       } else {
         // A day at a time, newest first, under the day the note was last
-        // edited.
+        // edited, each note giving its time alone, even while others have it
+        // open.
         for (final day in _phoneDays(
           groups.mine,
           now: now(),
@@ -1436,7 +1441,9 @@ extension on Sidebar {
             onTap: fold ? onUpcomingToggled : null,
           ),
         );
-        if (!fold || upcomingOpen) section(group.notes);
+        if (!fold || upcomingOpen) {
+          section(group.notes, clockOnly: group.day != null);
+        }
       }
     }
 
@@ -1964,6 +1971,14 @@ class SidebarWindowBar extends StatelessWidget {
 
   static const double height = 52;
 
+  /// The narrowest desktop list that keeps the count and New's word: the
+  /// list's own width, which a 1440 pt window gives it and where D01 and D03
+  /// draw both, with the sparkle, New and the toggle side by side. Below it
+  /// they fold away, and sooner wherever the reader's text size or a longer
+  /// name leaves them no room. A tablet keeps 8 between the buttons and
+  /// folds only for room.
+  static const double fullWidth = LayoutPrefs.defaultSidebarWidth;
+
   /// New's name and chord on hover, as the page's + names it while this bar
   /// is hidden.
   static String newTooltip(String noun, ShortcutBinding? shortcut) =>
@@ -2028,13 +2043,15 @@ class SidebarWindowBar extends StatelessWidget {
                   // count, so the space's name keeps its room on a list
                   // dragged narrow. Everything is measured as it prints, at
                   // the reader's text size and with this platform's chord.
+                  final desktop = AppPlatform.hasPointer;
+                  final gap = desktop ? 0 : 8;
                   final room =
                       constraints.maxWidth -
                       widthOf(title, titleStyle) -
                       8 -
-                      8 -
+                      gap -
                       32 -
-                      (onAskKapy == null ? 0 : 32 + 8);
+                      (onAskKapy == null ? 0 : 32 + gap);
                   final chord = noun == 'drawing'
                       ? null
                       : newNoteShortcut?.keycapLabel;
@@ -2046,8 +2063,12 @@ class SidebarWindowBar extends StatelessWidget {
                         shortcut: shortcut,
                         tall: true,
                       );
-                  final keycap = chord != null && fits(shortcut: chord);
-                  final label = fits();
+                  final label =
+                      (!desktop ||
+                          constraints.maxWidth + 2 * 16 >= fullWidth) &&
+                      fits();
+                  final keycap =
+                      label && chord != null && fits(shortcut: chord);
                   return Row(
                     children: [
                       Expanded(
@@ -2093,7 +2114,7 @@ class SidebarWindowBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      if (onAskKapy != null) ...[
+                      if (onAskKapy != null)
                         CompactIconButton(
                           key: const ValueKey('sidebar-ask-kapy'),
                           tooltip: askKapyShortcut == null
@@ -2107,8 +2128,8 @@ class SidebarWindowBar extends StatelessWidget {
                             size: 16,
                           ),
                         ),
+                      if (onAskKapy != null && !desktop)
                         const SizedBox(width: 8),
-                      ],
                       TonalButton(
                         key: const ValueKey('sidebar-new-note'),
                         tall: true,
@@ -2124,7 +2145,7 @@ class SidebarWindowBar extends StatelessWidget {
                             : newTooltip(noun, newNoteShortcut),
                         onPressed: onCreate,
                       ),
-                      const SizedBox(width: 8),
+                      if (!desktop) const SizedBox(width: 8),
                       CompactIconButton(
                         key: const ValueKey('sidebar-hide'),
                         tooltip: hideShortcut == null
@@ -2826,7 +2847,7 @@ class NoteRow extends StatefulWidget {
   final double inset;
 
   /// Whether the row sits under a heading that already names its day, so it
-  /// gives only the time it was last changed, even while others have it open.
+  /// gives only the time it was last changed, unless others have it open.
   final bool clockOnly;
 
   /// The later day the note was given, which the row names in place of when
@@ -3085,7 +3106,7 @@ class _NoteRowState extends State<NoteRow> {
               value: 'archive',
               label: 'Archive note',
               icon: archiveIcon,
-              hint: archiveShortcut?.displayLabel,
+              hint: archiveShortcut?.keycapLabel,
             ),
           if (widget.onDelete != null)
             KapyMenuAction(
@@ -3093,7 +3114,7 @@ class _NoteRowState extends State<NoteRow> {
               label: widget.deleteLabel,
               icon: deleteIcon,
               hint: widget.onArchive == null
-                  ? archiveShortcut?.displayLabel
+                  ? archiveShortcut?.keycapLabel
                   : null,
               destructive: true,
             ),
@@ -3275,16 +3296,18 @@ class _NoteRowState extends State<NoteRow> {
         clock: clock,
       ),
     };
-    final day = card && people.isEmpty ? stamp(clock: false) : null;
-    final date = widget.clockOnly
-        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
-        : people.isEmpty
-        ? stamp()
-        : typingStatusText([
+    final day = card && people.isEmpty && widget.laterDay == null
+        ? stamp(clock: false)
+        : null;
+    final date = people.isNotEmpty
+        ? typingStatusText([
                 for (final person in people)
                   if (person.typing) person.name,
               ]) ??
-              presenceStatusText([for (final person in people) person.name])!;
+              presenceStatusText([for (final person in people) person.name])!
+        : widget.clockOnly
+        ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
+        : stamp();
     final glance = NoteGlance.of(note, widget.engine);
     final picking = widget.selecting ? widget.checked : null;
     // While picking, what is lit is what is picked: the open note keeps its

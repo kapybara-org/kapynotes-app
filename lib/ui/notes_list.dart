@@ -13,6 +13,7 @@ import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
 import '../data/tags.dart';
+import '../data/task_lines.dart';
 import 'checklist_pie.dart';
 import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
@@ -78,7 +79,9 @@ class NoteGlance {
     return line != null && _amount.hasMatch(line) ? line : null;
   }
 
-  /// Ticked boxes, of [boxes] checkboxes in the whole note.
+  /// Ticked boxes, of [boxes] tasks in the whole note: its checklist lines
+  /// as [taskLines] reads them for the header and Tasks, ☐ and ☑ or markdown
+  /// boxes, each with words after it.
   final int done;
   final int boxes;
   final Set<NoteMedia> media;
@@ -94,30 +97,38 @@ class NoteGlance {
     final cached = _read[note];
     if (cached != null && identical(cached.$1, engine)) return cached.$2;
     final lines = note.body.split('\n');
+    final tasks = taskLines(note.body);
     var titled = false;
     int? at;
-    var done = 0;
-    var boxes = 0;
+    var atStart = 0;
+    var start = 0;
     for (var i = 0; i < lines.length; i++) {
       final text = lines[i]
           .replaceAll(NoteAttachmentRef.placeholder, '')
           .trim();
-      if (text.startsWith('☑')) done++;
-      if (text.startsWith('☐') || text.startsWith('☑')) boxes++;
-      if (text.isEmpty) continue;
-      if (titled) {
-        at ??= i;
-      } else {
-        titled = true;
+      if (text.isNotEmpty) {
+        if (!titled) {
+          titled = true;
+        } else if (at == null) {
+          at = i;
+          atStart = start;
+        }
       }
+      start += lines[i].length + 1;
+    }
+    String? line;
+    if (at != null) {
+      final task = tasks.where((task) => task.start == atStart).firstOrNull;
+      final text =
+          (task == null
+                  ? lines[at]
+                  : note.body.substring(task.textStart, task.end))
+              .replaceAll(NoteAttachmentRef.placeholder, '')
+              .trim();
+      line = task == null ? text.replaceFirst(_marks, '') : text;
     }
     final glance = NoteGlance._(
-      line: at == null
-          ? null
-          : lines[at]
-                .replaceAll(NoteAttachmentRef.placeholder, '')
-                .trim()
-                .replaceFirst(_marks, ''),
+      line: line,
       result: at == null || engine == null
           ? null
           : engine
@@ -126,8 +137,8 @@ class NoteGlance {
                   titled: true,
                 )[at]
                 ?.text,
-      done: done,
-      boxes: boxes,
+      done: tasks.where((task) => task.done).length,
+      boxes: tasks.length,
       media: NoteMedia.inNote(note),
     );
     _read[note] = (engine, glance);
@@ -1271,12 +1282,23 @@ class NotesGroupHeading extends StatelessWidget {
   final VoidCallback? onTap;
 
   /// Whether the notes under this heading are folded away: null when the
-  /// heading folds nothing.
+  /// heading folds nothing. Its chevron follows the count on a desktop, as
+  /// D03 and D04 draw "Upcoming 1 ›", and leads the words elsewhere.
   final bool? folded;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final detail = this.detail;
+    final trailing = AppPlatform.hasPointer;
+    final chevron = switch (folded) {
+      null => null,
+      final folded => KapyIcon(
+        folded ? KapyIcons.chevronRightRounded : KapyIcons.chevronDownRounded,
+        size: 12,
+        color: palette.textTertiary,
+      ),
+    };
     final heading = SizedBox(
       height: MediaQuery.textScalerOf(context).scale(16),
       child: CustomMultiChildLayout(
@@ -1291,15 +1313,10 @@ class NotesGroupHeading extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (folded case final folded?)
-                    KapyIcon(
-                      folded
-                          ? KapyIcons.chevronRightRounded
-                          : KapyIcons.chevronDownRounded,
-                      size: 12,
-                      color: palette.textTertiary,
-                    ),
-                  if (folded != null) const SizedBox(width: 4),
+                  if (chevron != null && !trailing) ...[
+                    chevron,
+                    const SizedBox(width: 4),
+                  ],
                   Flexible(
                     child: Text(
                       label,
@@ -1308,18 +1325,33 @@ class NotesGroupHeading extends StatelessWidget {
                       style: _sectionLabel(palette),
                     ),
                   ),
+                  if (chevron != null && trailing && detail == null) ...[
+                    const SizedBox(width: 6),
+                    chevron,
+                  ],
                 ],
               ),
             ),
           ),
-          if (detail case final detail?)
+          if (detail != null)
             LayoutId(
               id: _GroupHeadingPart.detail,
-              child: Text(
-                detail,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _sectionDetail(palette),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _sectionDetail(palette),
+                    ),
+                  ),
+                  if (chevron != null && trailing) ...[
+                    const SizedBox(width: 6),
+                    chevron,
+                  ],
+                ],
               ),
             ),
         ],
@@ -1706,15 +1738,17 @@ class NotesListControls extends StatelessWidget {
   final bool alignEnd;
 
   /// The row's narrowest that holds the sort beside the switch: the filter
-  /// with its label (72), the sort's longest (64) and the switch (60), with
-  /// the gaps between them.
-  static const double _sortBesideWidth = 72 + 4 + 64 + 8 + 60;
+  /// with its label (72), the sort's longest (64) and the switch (60 in its
+  /// frame, 58 on a desktop), with the gaps between them.
+  static double get _sortBesideWidth =>
+      72 + 4 + 64 + 8 + (AppPlatform.hasPointer ? 58 : 60);
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final onCardsChanged = this.onCardsChanged;
     final onWhenChanged = this.onWhenChanged;
+    final framed = !AppPlatform.hasPointer;
     Widget segment(bool forCards, ValueChanged<bool> onCardsChanged) {
       final on = cards == forCards;
       return Tooltip(
@@ -1739,13 +1773,15 @@ class NotesListControls extends StatelessWidget {
                     ? BoxDecoration(
                         color: palette.selectedBackground,
                         borderRadius: BorderRadius.circular(AppRadii.compact),
-                        boxShadow: [
-                          BoxShadow(
-                            color: palette.shadowAt(0x4D),
-                            offset: Offset(0, 1),
-                            blurRadius: 2,
-                          ),
-                        ],
+                        boxShadow: framed
+                            ? [
+                                BoxShadow(
+                                  color: palette.shadowAt(0x4D),
+                                  offset: Offset(0, 1),
+                                  blurRadius: 2,
+                                ),
+                              ]
+                            : null,
                       )
                     : null,
                 alignment: Alignment.center,
@@ -1871,13 +1907,17 @@ class NotesListControls extends StatelessWidget {
                   ],
                   if (onCardsChanged != null)
                     Container(
-                      padding: const EdgeInsets.all(1),
-                      decoration: BoxDecoration(
-                        color: palette.cardBackground,
-                        border: Border.all(color: palette.controlBorder),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      key: const ValueKey('sidebar-view-switch'),
+                      padding: framed ? const EdgeInsets.all(1) : null,
+                      decoration: framed
+                          ? BoxDecoration(
+                              color: palette.cardBackground,
+                              border: Border.all(color: palette.controlBorder),
+                              borderRadius: BorderRadius.circular(8),
+                            )
+                          : null,
                       child: Row(
+                        spacing: framed ? 0 : 2,
                         children: [
                           segment(false, onCardsChanged),
                           segment(true, onCardsChanged),
@@ -2217,9 +2257,10 @@ class _NotesFilterState extends State<_NotesFilter> {
         if (constraints.maxWidth < 28) return const SizedBox.shrink();
         final roomy = constraints.maxWidth >= 72;
         final bar = AppPlatform.hasPointer;
-        // The padding, border, filter icon and chevron around the label.
+        // The padding, filter icon and chevron around the label, and the
+        // frame's border off a desktop.
         final chrome = bar
-            ? 8 + 8 + 2 + 16 + 4 + 4 + 12
+            ? 8 + 8 + 16 + 4 + 4 + 12
             : 9 + 8 + 2 + 14 + 6 + 6 + 13;
         final (:text, :dot) = roomy
             ? _label(style, constraints.maxWidth - chrome)
@@ -2242,21 +2283,21 @@ class _NotesFilterState extends State<_NotesFilter> {
                 padding: roomy
                     ? EdgeInsets.only(left: bar ? 8 : 9, right: 8)
                     : const EdgeInsets.symmetric(horizontal: 6),
-                decoration: BoxDecoration(
-                  color: narrowed
-                      ? palette.tonalBackground
-                      : palette.controlBackground,
-                  border: Border.all(
-                    color: open
-                        ? palette.selectedBorder
-                        : narrowed
-                        ? palette.tonalKeyBackground
-                        : palette.controlBorder,
-                  ),
-                  borderRadius: BorderRadius.circular(
-                    bar ? 8 : AppRadii.control,
-                  ),
-                ),
+                decoration: bar
+                    ? null
+                    : BoxDecoration(
+                        color: narrowed
+                            ? palette.tonalBackground
+                            : palette.controlBackground,
+                        border: Border.all(
+                          color: open
+                              ? palette.selectedBorder
+                              : narrowed
+                              ? palette.tonalKeyBackground
+                              : palette.controlBorder,
+                        ),
+                        borderRadius: BorderRadius.circular(AppRadii.control),
+                      ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

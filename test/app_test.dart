@@ -45,7 +45,12 @@ import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/presence.dart';
+import 'package:kapy_notes/sync/sharing.dart';
+import 'package:kapy_notes/sync/space_keyring.dart';
+import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
@@ -4226,6 +4231,317 @@ void main() {
       expect(chip, findsOneWidget);
     });
 
+    for (final (device, platform) in [
+      ('a desktop', null),
+      ('an iPad', TargetPlatform.iOS),
+    ]) {
+      testWidgets("on $device, an Upcoming note names its own day, not its "
+          'last edit, with its task ring only when it has boxes', (
+        tester,
+      ) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final days = NoteDayStore(store);
+        await days.load();
+        await library(tester, days: days);
+        prefs.noteCards = true;
+        notes.updateBody(
+          'Pricing ideas',
+          'Pricing ideas\n☐ Send the deck\n☑ Draft the deck',
+        );
+        days
+          ..setDay('Standup notes', DateTime(2026, 11, 20))
+          ..setDay('Pricing ideas', DateTime(2026, 11, 21))
+          ..setDay('October plan', DateTime(2026, 12, 7));
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(const ValueKey('sidebar-group-Upcoming')));
+
+        Finder card(String title) => find.byWidgetPredicate(
+          (widget) => widget is NoteCardFace && widget.note.title == title,
+        );
+        Finder ring(String title) => find.descendant(
+          of: card(title),
+          matching: find.byType(ChecklistPie),
+        );
+        final edited = notes.allNotes
+            .firstWhere((n) => n.id == 'Pricing ideas')
+            .updatedAt;
+        expect((edited.month, edited.day), (11, 19));
+        expect(
+          tester.widget<NoteCardFace>(card('Pricing ideas')).date,
+          'Sat 21',
+        );
+        expect(tester.widget<NoteCardFace>(card('Pricing ideas')).day, isNull);
+        final pie = tester.widget<ChecklistPie>(ring('Pricing ideas'));
+        expect((pie.done, pie.total), (1, 2));
+        expect(
+          find.descendant(
+            of: card('Pricing ideas'),
+            matching: find.text('Sat 21'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester.widget<NoteCardFace>(card('October plan')).date,
+          '7 Dec',
+        );
+        expect(ring('October plan'), findsNothing);
+        expect(
+          tester.widget<NoteCardFace>(card('Standup notes')).date,
+          'Tomorrow',
+        );
+        expect(
+          tester.widget<NoteCardFace>(card('Call with Arjun')).date,
+          '11:00',
+        );
+
+        prefs.noteCards = false;
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<NoteListRowFace>(
+                find.byWidgetPredicate(
+                  (widget) =>
+                      widget is NoteListRowFace &&
+                      widget.note.title == 'October plan',
+                ),
+              )
+              .date,
+          '7 Dec',
+        );
+      });
+
+      testWidgets('on $device, a card or row under a day heading gives only '
+          'its time, after its ring, and its day and time under Pinned, by '
+          "tag and on a folder's page by tag", (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final folders = FolderStore(store);
+        await folders.load();
+        await library(tester, folders: folders);
+        prefs.noteCards = true;
+        notes.updateBody(
+          'Call with Arjun',
+          'Call with Arjun\n☐ Send the deck\n☑ Book a room',
+        );
+        await tester.pumpAndSettle();
+
+        Finder card(String title) => find.byWidgetPredicate(
+          (widget) => widget is NoteCardFace && widget.note.title == title,
+        );
+        String cardDate(String title) =>
+            tester.widget<NoteCardFace>(card(title)).date;
+        Finder row(String title) => find.byWidgetPredicate(
+          (widget) => widget is NoteListRowFace && widget.note.title == title,
+        );
+        String rowDate(String title) =>
+            tester.widget<NoteListRowFace>(row(title)).date;
+
+        expect(headings(tester), [
+          'Today',
+          'Yesterday',
+          'Tue 17',
+          'Tue 20 Oct',
+        ]);
+        expect(cardDate('Call with Arjun'), '12:00');
+        expect(cardDate('Standup notes'), '17:00');
+        expect(cardDate('October plan'), '8:00');
+        final ring = find.descendant(
+          of: card('Call with Arjun'),
+          matching: find.byType(ChecklistPie),
+        );
+        expect(
+          tester.getRect(ring).right,
+          lessThan(
+            tester
+                .getRect(
+                  find.descendant(
+                    of: card('Call with Arjun'),
+                    matching: find.text('12:00'),
+                  ),
+                )
+                .left,
+          ),
+        );
+
+        notes.togglePinned('Call with Arjun');
+        await tester.pumpAndSettle();
+        expect(cardDate('Call with Arjun'), 'Today, 12:00');
+        expect(ring, findsOneWidget);
+
+        prefs.noteCards = false;
+        await tester.pumpAndSettle();
+        expect(rowDate('Standup notes'), '17:00');
+        expect(rowDate('Pricing ideas'), '8:00');
+        notes.togglePinned('Standup notes');
+        await tester.pumpAndSettle();
+        expect(rowDate('Standup notes'), 'Yesterday');
+
+        prefs.notesGrouping = NotesGrouping.byTag;
+        await tester.pumpAndSettle();
+        expect(headings(tester), ['No tag']);
+        expect(rowDate('Pricing ideas'), 'Tue');
+        prefs.noteCards = true;
+        await tester.pumpAndSettle();
+        expect(cardDate('October plan'), '20 Oct');
+
+        prefs.notesGrouping = NotesGrouping.byDate;
+        notes
+          ..togglePinned('Call with Arjun')
+          ..togglePinned('Standup notes');
+        final work = folders.create('Work')!;
+        folders.file(['Call with Arjun', 'Pricing ideas'], work.id);
+        prefs.foldersShown = true;
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+        final page = find.byKey(ValueKey('folder-page-${work.id}'));
+        String pageDate(String title) => tester
+            .widget<NoteCardFace>(
+              find.descendant(of: page, matching: card(title)),
+            )
+            .date;
+        expect(pageDate('Call with Arjun'), '12:00');
+        expect(pageDate('Pricing ideas'), '8:00');
+        prefs.notesGrouping = NotesGrouping.byTag;
+        await tester.pumpAndSettle();
+        expect(pageDate('Call with Arjun'), 'Today, 12:00');
+        expect(pageDate('Pricing ideas'), 'Tue');
+      });
+
+      testWidgets('on $device, someone in a shared note under a day heading '
+          'shows where its time would be', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final note = Note(
+          id: 'shared',
+          body: 'Shared\n☐ Send the deck',
+          createdAt: DateTime(2026, 11, 1),
+          updatedAt: DateTime(2026, 11, 19, 11, 32),
+        );
+        for (final style in [NoteRowStyle.card, NoteRowStyle.row]) {
+          for (final people in [
+            const <Collaborator>[],
+            const [Collaborator(userId: 'ana', name: 'Ana', fullName: 'Ana')],
+          ]) {
+            await tester.pumpWidget(
+              MaterialApp(
+                theme: KapyTheme.dark(),
+                home: Material(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: 300,
+                      height: style == NoteRowStyle.card
+                          ? NoteCardFace.height
+                          : null,
+                      child: NoteRow(
+                        note: note,
+                        query: '',
+                        displayTime: (time) => time,
+                        selected: false,
+                        onTap: () {},
+                        style: style,
+                        clockOnly: true,
+                        shared: true,
+                        collaborators: people,
+                        now: () => DateTime(2026, 11, 19, 12),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            await tester.pumpAndSettle();
+            expect(
+              find.text(
+                people.isEmpty ? '11:32' : presenceStatusText(['Ana'])!,
+              ),
+              findsOneWidget,
+              reason: '$style',
+            );
+          }
+        }
+      });
+    }
+
+    testWidgets("on a phone, a shared row in My notes' day list gives its time "
+        'while someone is in the note', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view
+        ..physicalSize = const Size(393, 852)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final server = FakeServer()..seedBundle('user-1');
+      final api = FakeApi(server, device: 'device-1', userId: 'user-1');
+      final keyring = SpaceKeyring(
+        userId: 'user-1',
+        store: store,
+        trust: TrustStore(store),
+      );
+      final sync = SyncService(
+        notes: notes,
+        state: SyncState(store),
+        api: api,
+        keyring: keyring,
+        docs: DocStore(MemoryDocStorage(), replica: 'device-1'),
+        vault: vaultFor('user-1'),
+        sendDelay: const Duration(hours: 1),
+      );
+      final sharing = Sharing(
+        api: api,
+        vault: vaultFor('user-1'),
+        keyring: keyring,
+        notes: notes,
+        sync: sync,
+      );
+      addTearDown(() {
+        sharing.dispose();
+        sync.dispose();
+      });
+      final note = Note(
+        id: 'shared',
+        body: 'Shared\nThe deck',
+        spaceId: 'space-1',
+        createdAt: DateTime(2026, 11, 1),
+        updatedAt: DateTime(2026, 11, 19, 11, 32),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Sidebar(
+              phone: true,
+              notes: [note],
+              selectedId: null,
+              query: '',
+              displayTime: (time) => time,
+              now: () => DateTime(2026, 11, 19, 12),
+              onSearch: () {},
+              onSelect: (_) {},
+              windowBar: const SizedBox(),
+              sharing: sharing,
+              onTabChanged: (_) {},
+              collaborators: const {
+                'shared': [
+                  Collaborator(userId: 'ana', name: 'Ana', fullName: 'Ana'),
+                ],
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final row = find.widgetWithText(NoteRow, 'Shared');
+      expect(row, findsOneWidget);
+      expect(tester.widget<NoteRow>(row).clockOnly, isTrue);
+      expect(
+        find.descendant(of: row, matching: find.text('11:32')),
+        findsOneWidget,
+      );
+      expect(find.text(presenceStatusText(['Ana'])!), findsNothing);
+    });
+
     testWidgets("When's spans count a note by its own day, and one with none "
         'by the day it was last edited', (tester) async {
       final days = NoteDayStore(store);
@@ -5903,8 +6219,8 @@ void main() {
         .map((row) => row.note.title)
         .toList();
     expect(rowTitles(), ['Latest', 'Older']);
-    expect(find.widgetWithText(NoteRow, 'Yesterday'), findsOneWidget);
-    expect(find.widgetWithText(NoteRow, 'Tue'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, '8:05'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, '12:00'), findsOneWidget);
     expect(find.widgetWithText(NoteRow, 'latest details'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NoteRow, 'Older'));
@@ -5922,7 +6238,7 @@ void main() {
             ),
           )
           .date,
-      'Today, 9:10',
+      '9:10',
     );
   });
 
@@ -6666,7 +6982,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Archive note'), findsOneWidget);
-      expect(find.text('Cmd + Delete'), findsOneWidget);
+      expect(find.text('⌘⌫'), findsOneWidget);
     });
 
     // The card view's menu used to cut "Archive note" to "Archive…" beside
@@ -6688,7 +7004,7 @@ void main() {
         final lines = find.byType(KapyMenuActionRow);
         final shortcut = shortcuts
             .bindingFor(ShortcutAction.deleteNote)!
-            .displayLabel;
+            .keycapLabel;
         expect(
           find.descendant(of: lines, matching: find.text('Archive note')),
           findsOneWidget,
