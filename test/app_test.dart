@@ -4627,6 +4627,66 @@ void main() {
       }
     });
 
+    testWidgets('New drawing has no keycap and names its chord on hover, where '
+        'New note keeps its keycap', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      final chord = shortcuts.hintFor(ShortcutAction.newNote)!;
+      expect(tester.widget<TonalButton>(plus()).shortcut, chord.keycapLabel);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      final newDrawing = tester.widget<TonalButton>(plus());
+      expect(newDrawing.label, 'New drawing');
+      expect(newDrawing.shortcut, isNull);
+      expect(newDrawing.tooltip, SidebarWindowBar.newTooltip('drawing', chord));
+      expect(
+        find.descendant(
+          of: find.byType(SidebarWindowBar),
+          matching: find.text(chord.keycapLabel),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-field')),
+          matching: find.text('Search drawings'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an open drawing\'s header reads Drawings › its title, and '
+        'its title follows the writing font as a note\'s does', (tester) async {
+      final drawing = notes.create(drawing: true);
+      notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Shelf plan');
+      await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shelf plan').first);
+      await tester.pumpAndSettle();
+
+      final path = find.byKey(const ValueKey('page-path'));
+      for (final text in ['Drawings', 'Shelf plan']) {
+        expect(
+          find.descendant(of: path, matching: find.text(text)),
+          findsOneWidget,
+          reason: text,
+        );
+      }
+      TextStyle title() => tester
+          .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
+          .style!;
+      expect(title().fontFamily, AppFonts.title);
+      expect(title().fontWeight, FontWeight.w400);
+
+      prefs.writingFont = WritingFont.handwritten;
+      await tester.pumpAndSettle();
+      expect(title().fontFamily, WritingFont.handwritten.fontFamily);
+      expect(title().fontWeight, EditorMetrics.titleWeight);
+    });
+
     testWidgets('a new note has no Write | Draw, and New in Drawings starts a '
         'drawing', (tester) async {
       await pumpApp(tester);
