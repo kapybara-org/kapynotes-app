@@ -150,7 +150,7 @@ struct WidgetRenders {
         rectangular(.write)
       }
       .foregroundStyle(.white)
-      .offset(x: 32, y: 56)
+      .offset(x: 32, y: 72)
     }
     .frame(width: 540, height: 180)
   }

@@ -76,10 +76,12 @@ class WidgetRendersTest {
         val closed = LinkedBlockingQueue<Activity>()
         val watcher =
             object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityPreCreated(activity: Activity, savedInstanceState: Bundle?) {
+                    if (activity is MainActivity) opened.add(activity.intent.action.orEmpty())
+                }
+
                 override fun onActivityPostCreated(activity: Activity, savedInstanceState: Bundle?) {
-                    if (activity !is MainActivity) return
-                    opened.add(activity.intent.action.orEmpty())
-                    activity.finish()
+                    if (activity is MainActivity) activity.finish()
                 }
 
                 override fun onActivityDestroyed(activity: Activity) {
