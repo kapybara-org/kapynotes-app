@@ -36,7 +36,8 @@ import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
-import 'tasks/task_marks.dart' show dayTitleStyle, metaStyle;
+import 'tasks/task_marks.dart'
+    show dayTitleStyle, handStyle, metaStyle, uiStyle;
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -113,6 +114,10 @@ typedef SidebarFolders = ({
   void Function(String folderId, bool open) onOpen,
   String? inFront,
   void Function(String folderId, {required bool behind})? onTab,
+
+  /// On a phone, what New folder beside the search field (M02) bumps to
+  /// have the tree name a new folder at its top. Null elsewhere.
+  ValueNotifier<int>? newFolder,
 });
 
 /// What can be done to many picked notes at once.
@@ -358,7 +363,8 @@ class Sidebar extends StatelessWidget {
   final bool phone;
 
   /// The cards a phone's Notes puts over its days in place of the pinned
-  /// notes, which are behind one of them.
+  /// notes, which are behind one of them, or the tiles a phone's Folders
+  /// puts over its tree.
   final Widget? phoneCards;
 
   /// The notes filter and the list/cards switch, under the search beside the
@@ -435,7 +441,25 @@ class Sidebar extends StatelessWidget {
                       active: filtersActive,
                       onPressed: onFiltersToggled!,
                     )
-                  : null,
+                  : switch (folders?.newFolder) {
+                      final newFolder? when phone && _foldersTab =>
+                        SizedBox.square(
+                          dimension: 44,
+                          child: CompactIconButton(
+                            key: const ValueKey('phone-new-folder'),
+                            tooltip: 'New folder',
+                            semanticLabel: 'New folder',
+                            extent: 44,
+                            onPressed: () => newFolder.value++,
+                            icon: KapyIcon(
+                              KapyIcons.folderAddOutlined,
+                              size: 18,
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ),
+                      _ => null,
+                    },
             ),
             if (controls != null && !_foldersTab)
               if (phone && onFiltersToggled != null)
@@ -1018,7 +1042,7 @@ extension on Sidebar {
     required bool shared,
     bool pinned = false,
     NoteRowStyle style = NoteRowStyle.row,
-    int depth = 0,
+    double inset = 0,
     bool clockOnly = false,
     DateTime? dayAhead,
   }) => MetaData(
@@ -1028,7 +1052,7 @@ extension on Sidebar {
       shared: shared,
       pinned: pinned,
       style: style,
-      depth: depth,
+      inset: inset,
       clockOnly: clockOnly,
       dayAhead: dayAhead,
     ),
@@ -1039,14 +1063,14 @@ extension on Sidebar {
     required bool shared,
     required bool pinned,
     required NoteRowStyle style,
-    required int depth,
+    required double inset,
     bool clockOnly = false,
     DateTime? dayAhead,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
     style: style,
-    depth: depth,
+    inset: inset,
     clockOnly: clockOnly,
     dayAhead: dayAhead,
     folders: _files(note) ? folders?.store : null,
@@ -1362,11 +1386,7 @@ extension on Sidebar {
         // Drawings stay one grid of thumbnails, two to a row, which a day
         // heading would break into short rows.
         if (groups.mine.isNotEmpty) {
-          if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
-            heading(const _PhoneHeading('Recent'));
-          } else {
-            gap(8);
-          }
+          heading(const _PhoneHeading('Recent'));
           section(groups.mine);
         }
       } else {
@@ -1462,11 +1482,19 @@ extension on Sidebar {
         inFront: folders.inFront,
         onTab: folders.onTab,
         upcoming: upcoming,
-        noteRow: (note, depth) => _row(
+        header: phoneCards,
+        phone: phone,
+        newFolder: folders.newFolder,
+        looseHeading: phone ? (label) => _PhoneDayHeading(lead: label) : null,
+        noteRow: (note, inset) => _row(
           note,
           shared: sharing != null && note.isShared,
-          style: depth == null ? NoteRowStyle.loose : NoteRowStyle.filed,
-          depth: depth ?? 0,
+          style: switch (inset) {
+            null when phone => NoteRowStyle.touch,
+            null => NoteRowStyle.loose,
+            _ => NoteRowStyle.filed,
+          },
+          inset: inset ?? 0,
         ),
       ),
     );
@@ -2650,9 +2678,9 @@ class SidebarSearchField extends StatelessWidget {
                         KapyIcon(
                           KapyIcons.searchRounded,
                           size: 16,
-                          color: palette.textSecondary,
+                          color: palette.textTertiary,
                         ),
-                        const SizedBox(width: 9),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             searching ? query : placeholder,
@@ -2774,7 +2802,7 @@ class NoteRow extends StatefulWidget {
     this.pickedActions,
     this.onPickedAction,
     this.style = NoteRowStyle.row,
-    this.depth = 0,
+    this.inset = 0,
     this.clockOnly = false,
     this.dayAhead,
     this.engine,
@@ -2785,8 +2813,8 @@ class NoteRow extends StatefulWidget {
   final Note note;
   final NoteRowStyle style;
 
-  /// How deep a [NoteRowStyle.filed] note sits in the folder tree.
-  final int depth;
+  /// How far in a [NoteRowStyle.filed] note's icon sits in the folder tree.
+  final double inset;
 
   /// Whether the row sits under a heading that already names its day, so it
   /// gives only the time it was last changed, unless others have it open.
@@ -3295,7 +3323,7 @@ class _NoteRowState extends State<NoteRow> {
       ),
       NoteRowStyle.filed => TreeNoteFace(
         note: note,
-        depth: widget.depth,
+        inset: widget.inset,
         selected: widget.selected,
         hovering: lit,
         ringed: ringed,
@@ -3871,26 +3899,30 @@ class _SharePeople extends StatelessWidget {
 
 /// A day's heading on a phone's list, as Tasks draws its own: "Today" in
 /// the serif, then the date 8 after it in small quiet sans. A day with no
-/// name is headed by its date alone, in the serif, muted.
+/// name is headed by its date alone, in the serif, muted. Folders heads its
+/// notes in no folder with it too (M02): the words alone, unmuted.
 class _PhoneDayHeading extends StatelessWidget {
-  const _PhoneDayHeading({required this.lead, required this.date});
+  const _PhoneDayHeading({required this.lead, this.date});
 
   final String? lead;
-  final String date;
+  final String? date;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final lead = this.lead;
+    final date = this.date;
     return Semantics(
       header: true,
-      label: lead == null ? date : '$lead, $date',
+      label: [?lead, ?date].join(', '),
       excludeSemantics: true,
-      child: lead == null
+      child: lead == null || date == null
           ? Text(
-              date,
+              lead ?? date ?? '',
               key: const ValueKey('phone-day-heading'),
-              style: dayTitleStyle(palette.textTertiary),
+              style: dayTitleStyle(
+                lead == null ? palette.textTertiary : palette.textPrimary,
+              ),
             )
           : Row(
               key: const ValueKey('phone-day-heading'),
@@ -3924,33 +3956,40 @@ class _PhoneHeading extends StatelessWidget {
     header: true,
     child: Text(
       label,
-      style: TextStyle(
-        fontFamily: AppFonts.ui,
-        fontSize: 15,
-        height: 20 / 15,
-        fontWeight: AppWeight.font(AppWeight.button),
-        fontVariations: AppWeight.wght(AppWeight.button),
-        color: context.palette.textSecondary,
+      style: uiStyle(
+        13,
+        18,
+        FontWeight.w500,
+        context.palette.textTertiary,
+        axis: 520,
       ),
     ),
   );
 }
 
-/// A phone list's title: the space's name large, its count beside it, and
-/// the clay underline the note page draws.
+/// A phone list's title: the space's name large in the hand face, its count
+/// small beside it (M02, M03). The clay mark is Home's alone, under the title
+/// its swipe has on screen.
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
     required this.title,
-    required this.count,
+    this.count,
     this.onBack,
+    this.trailing,
   });
 
   final String title;
-  final int count;
 
-  /// Set for a page reached from Home, such as Shared: its arrow goes back.
+  /// Left out where the page counts nothing, as Folders does.
+  final int? count;
+
+  /// Set for a page reached from Home or Folders, such as Shared or
+  /// Drawings: its arrow goes back.
   final VoidCallback? onBack;
+
+  /// At the row's end, such as the S that opens Settings.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -3958,67 +3997,60 @@ class PhoneListTitle extends StatelessWidget {
     final onBack = this.onBack;
     final heading = Semantics(
       header: true,
-      label: '$title, $count',
+      label: count == null ? title : '$title, $count',
       excludeSemantics: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Flexible(
-                child: Text(
-                  title,
-                  key: const ValueKey('phone-list-title'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: AppFonts.title,
-                    fontFamilyFallback: AppFonts.uiFallback,
-                    fontSize: 28,
-                    height: 36 / 28,
-                    color: palette.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '$count',
-                style: TextStyle(
-                  fontFamily: AppFonts.ui,
-                  fontSize: 15,
-                  color: palette.textTertiary,
-                ),
-              ),
-            ],
+          Flexible(
+            child: Text(
+              title,
+              key: const ValueKey('phone-list-title'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: handStyle(26, 32, FontWeight.w600, palette.textPrimary),
+            ),
           ),
-          const SizedBox(height: 8),
-          Container(width: 44, height: 2, color: palette.clay),
+          if (count != null) ...[
+            const SizedBox(width: 6),
+            Text(
+              '$count',
+              style: uiStyle(
+                13,
+                16,
+                FontWeight.w400,
+                palette.textTertiary,
+                tabular: true,
+              ),
+            ),
+          ],
         ],
       ),
     );
-    if (onBack == null) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-        child: heading,
-      );
-    }
+    final trailing = this.trailing;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 12, 20, 14),
+      padding: EdgeInsets.fromLTRB(
+        onBack == null ? 20 : 6,
+        12,
+        trailing == null ? 20 : 14,
+        14,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconButton(
-            key: const ValueKey('page-back'),
-            tooltip: 'Back',
-            onPressed: onBack,
-            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-            padding: EdgeInsets.zero,
-            color: palette.textPrimary,
-            icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
-          ),
+          if (onBack != null)
+            IconButton(
+              key: const ValueKey('page-back'),
+              tooltip: 'Back',
+              onPressed: onBack,
+              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+              padding: EdgeInsets.zero,
+              color: palette.textPrimary,
+              icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
+            ),
           Expanded(child: heading),
+          if (trailing != null) ...[const SizedBox(width: 6), trailing],
         ],
       ),
     );
