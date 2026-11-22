@@ -93,11 +93,11 @@ TaskBlock? taskBlockOf(String text, TaskLine task) {
 /// when there was one, so a note with no indented details that is given
 /// nothing comes back identical.
 String replaceTaskDetails(String text, TaskLine task, String plain) {
-  final column = task.textStart - task.start;
   final details = taskBlockOf(text, task)?.details;
   final was = details == null
       ? const <String>[]
       : text.substring(details.start, details.end).split('\n');
+  final column = _blockIndent(was, task.textStart - task.start);
   final rebuilt = _indentedWords(plain, column, was).join('\n');
   if (details == null) {
     if (rebuilt.isEmpty) return text;
@@ -120,9 +120,9 @@ String replaceTaskDetails(String text, TaskLine task, String plain) {
   return text.replaceRange(details.start, details.end, rebuilt);
 }
 
-/// The details under [task] with the task's indent taken off, so a line
-/// indented further keeps the rest, for an editor that draws the pictures
-/// itself.
+/// The details under [task] with the block's indent taken off, so they
+/// start flush and a line indented further keeps the rest, for an editor that
+/// draws the pictures itself.
 ///
 /// A picture or video stays a placeholder, so writing these words back with
 /// [replaceTaskDetails] after an edit keeps the note's pictures exactly where
@@ -130,12 +130,21 @@ String replaceTaskDetails(String text, TaskLine task, String plain) {
 String taskDetailsWords(String text, TaskLine task) {
   final details = taskBlockOf(text, task)?.details;
   if (details == null) return '';
-  final column = task.textStart - task.start;
-  return text
-      .substring(details.start, details.end)
-      .split('\n')
-      .map((line) => _unindented(line, column))
-      .join('\n');
+  final lines = text.substring(details.start, details.end).split('\n');
+  final column = _blockIndent(lines, task.textStart - task.start);
+  return lines.map((line) => _unindented(line, column)).join('\n');
+}
+
+/// How far a block of details is indented: as far as its least indented
+/// line, and never less than where the task's words start. So details
+/// indented further than they need come out flush, and a line indented past
+/// the rest keeps the difference.
+int _blockIndent(List<String> lines, int column) {
+  final indents = [
+    for (final line in lines)
+      if (line.trim().isNotEmpty) _indentOf(line),
+  ];
+  return indents.isEmpty ? column : math.max(column, indents.reduce(math.min));
 }
 
 /// What a line of a folded task's details draws.

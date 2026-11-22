@@ -67,6 +67,11 @@ total to usd''';
 
 const _rates = <String, double>{'EUR': 0.861401, 'GBP': 0.738359};
 final _goldenNow = DateTime(2026, 9, 1, 15, 38);
+
+/// The task list's clock: [_goldenNow] unless a fixture moves it on, so the
+/// tasks of notes added one after another keep that order rather than
+/// tying and falling back to their random ids.
+var _goldenTaskNow = _goldenNow;
 final _goldenRatesFetchedAt = DateTime(2026, 9, 2, 12);
 
 /// Renders the whole app at a fixed size for visual review.
@@ -129,9 +134,16 @@ Future<void> pumpForGolden(
   /// another day.
   bool withDays = false,
 
+  /// The notes' own days, for Tasks' Later row.
+  NoteDayStore? days,
+
   /// M01's Today: three notes written this morning, one holding a
   /// recording, one a checklist and a tag, one words alone.
   bool withTodayRows = false,
+
+  /// Those three with the words-alone note given two open markdown tasks,
+  /// `- [ ]` as the boards' seed writes them.
+  bool markdownTasks = false,
 
   /// Signed in to an account on Pro with two invitations waiting, so that
   /// Settings has its account, its sharing and every one of its categories.
@@ -253,18 +265,19 @@ Future<void> pumpForGolden(
   await goldenTags.load();
   goldenFolders = FolderStore(store);
   await goldenFolders.load();
-  final days = withDays
-      ? goldenDays = NoteDayStore(store, now: () => _goldenNow)
-      : null;
-  await days?.load();
+  if (withDays) {
+    goldenDays = NoteDayStore(store, now: () => _goldenNow);
+    await goldenDays.load();
+  }
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
+  _goldenTaskNow = _goldenNow;
   final tasks = withTasks
       ? goldenTasks = TaskLibrary(
           notes: notes,
           store: store,
           storage: MemoryDocStorage(),
-          now: () => _goldenNow,
+          now: () => _goldenTaskNow,
         )
       : null;
 
@@ -338,7 +351,10 @@ Future<void> pumpForGolden(
       ).toJson(),
       Note(
         id: 'renewal',
-        body: 'Renewal notes\nFor the call with Acme on Friday.',
+        body: markdownTasks
+            ? 'Renewal notes\nFor the call with Acme on Friday.\n'
+                  '- [ ] Send the renewal scope\n- [ ] Read the signed contract'
+            : 'Renewal notes\nFor the call with Acme on Friday.',
         createdAt: at(8, 20),
         updatedAt: at(8, 20),
       ).toJson(),
@@ -386,7 +402,7 @@ Future<void> pumpForGolden(
       updates: updates,
       tags: goldenTags,
       folders: goldenFolders,
-      days: days,
+      days: withDays ? goldenDays : days,
       tasks: tasks,
       titleModel: _GoldenTitles(),
     ),
@@ -411,6 +427,47 @@ Future<void> pumpForGolden(
     ]),
   );
   await tester.pumpAndSettle();
+}
+
+/// The final boards' Tasks (D09, M13): Lisbon trip's three, Call Arjun with
+/// no note, Book the room and Send the deck, in that order; Lisbon trip in
+/// green and the two work notes in mustard; and Renewal notes' two waiting
+/// in [days] for Fri 4, so Later shows.
+Future<void> seedBoardTasks(WidgetTester tester, NoteDayStore days) async {
+  final notes = goldenNotes;
+  Future<Note> add(String body) async {
+    final note = notes.create(body: body);
+    await tester.runAsync(goldenTasks.reconcileNow);
+    _goldenTaskNow = _goldenTaskNow.add(const Duration(seconds: 1));
+    return note;
+  }
+
+  final lisbon = await add(
+    'Lisbon trip\n☐ Ask Ana which Sintra palace to skip\n'
+    '☐ Renew passport before the trip\n☐ Book the Sintra train tickets',
+  );
+  await add('Tasks\n☐ Call Arjun');
+  final quote = await add('Quote for the deck\n☐ Book the room');
+  final call = await add('Call with Arjun\n☐ Send the deck');
+  final renewal = await add(
+    'Renewal notes\n☐ Renew the domain\n☐ Renew the van insurance',
+  );
+  final travel = goldenTags.create('Travel')!;
+  goldenTags.recolour(travel.id, 'sage');
+  final work = goldenTags.create('Work')!;
+  goldenTags.recolour(work.id, 'mustard');
+  goldenTags.setTags(lisbon.id, [travel.id]);
+  goldenTags.setTags(quote.id, [work.id]);
+  goldenTags.setTags(call.id, [work.id]);
+  days.setDay(renewal.id, DateTime(2026, 9, 4));
+  await tester.pumpAndSettle();
+}
+
+/// An empty set of note days, for [seedBoardTasks].
+Future<NoteDayStore> boardDays() async {
+  final days = NoteDayStore(MemoryStore(), now: () => _goldenNow);
+  await days.load();
+  return days;
 }
 
 /// Sam, signed in on Pro against a server of the test's own, with Priya and
@@ -948,51 +1005,6 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_note_pinned.png'),
-    );
-  });
-
-  testWidgets('Tasks keeps Keep on top under More, with its shortcut', (
-    tester,
-  ) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(1000, 640),
-      brightness: Brightness.dark,
-      withTasks: true,
-      platform: TargetPlatform.macOS,
-    );
-    await tester.tap(find.byKey(const ValueKey('rail-tasks')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Tooltip &&
-            (widget.message ?? '').startsWith('Keep on top'),
-      ),
-      findsNothing,
-    );
-
-    final more = find.byKey(const ValueKey('page-more'));
-    final onTop = find.byKey(const ValueKey('page-more-on-top'));
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(of: onTop, matching: find.text('Keep on top')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: onTop, matching: find.text('⌃⌘T')),
-      findsOneWidget,
-    );
-    await tester.tap(onTop);
-    await tester.pumpAndSettle();
-    expect(goldenPrefs.alwaysOnTop, isTrue);
-
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(of: onTop, matching: find.text('Stop keeping on top')),
-      findsOneWidget,
     );
   });
 
@@ -1660,6 +1672,7 @@ void main() {
       Future<void> pumpPhone(
         WidgetTester tester, {
         bool firstRun = false,
+        NoteDayStore? days,
         bool signedIn = false,
         bool withDays = false,
       }) async {
@@ -1681,6 +1694,7 @@ void main() {
           withTasks: !firstRun,
           withDrawings: !firstRun,
           withYesterday: !firstRun,
+          days: days,
           signedIn: signedIn,
           withDays: withDays,
         );
@@ -1759,6 +1773,38 @@ void main() {
           );
           await matches('note_rows');
         });
+
+        testWidgets('phone note rows with markdown tasks, $name', (
+          tester,
+        ) async {
+          await pumpForGolden(
+            tester,
+            size: size,
+            brightness: brightness,
+            platform: platform,
+            withNote: false,
+            withTasks: true,
+            withTodayRows: true,
+            markdownTasks: true,
+          );
+          final back = find.byKey(const ValueKey('page-back'));
+          if (back.evaluate().isNotEmpty) {
+            await tapAndSettle(tester, 'page-back');
+          }
+          final renewal = find.widgetWithText(NoteRow, 'Renewal notes');
+          expect(
+            find.descendant(
+              of: renewal,
+              matching: find.byKey(const ValueKey('note-row-holds')),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(of: renewal, matching: find.text('0 of 2')),
+            findsOneWidget,
+          );
+          await matches('note_rows_markdown');
+        });
       }
 
       testWidgets('phone notes, two picked, $name', (tester) async {
@@ -1819,6 +1865,36 @@ void main() {
         await matches('tasks');
       });
 
+      // M13 with a search typed, and M13a: Do now over Up next, the line
+      // after it and Later. The boards are drawn on an iPhone.
+      if (phone == 'iphone') {
+        Future<void> openBoardTasks(WidgetTester tester) async {
+          final days = await boardDays();
+          await pumpPhone(tester, days: days);
+          await seedBoardTasks(tester, days);
+          await tapAndSettle(tester, 'page-back');
+          await tapAndSettle(tester, 'home-title-tasks');
+        }
+
+        testWidgets('phone tasks, searching, $name', (tester) async {
+          await openBoardTasks(tester);
+          await tester.enterText(
+            find.byKey(const ValueKey('tasks-search-field')),
+            'sintra',
+          );
+          await tester.pumpAndSettle();
+          await matches('tasks_search');
+        });
+
+        testWidgets('phone tasks, Do now and Up next, $name', (tester) async {
+          await openBoardTasks(tester);
+          await tapAndSettle(tester, 'tasks-pair-right');
+          await tapAndSettle(tester, 'tasks-pair-right');
+          await tapAndSettle(tester, 'tasks-start');
+          await matches('tasks_up_next');
+        });
+      }
+
       testWidgets('phone drawings, $name', (tester) async {
         await pumpPhone(tester);
         await tapAndSettle(tester, 'page-home');
@@ -1876,6 +1952,74 @@ void main() {
       );
     });
   }
+
+  // The whole Tasks window, for its sidebar (Today, Done, From notes, How
+  // Tasks works and the credit) and Later, which the page's own images
+  // crop out.
+  group('desktop Tasks (D09)', () {
+    Future<void> openTasks(WidgetTester tester) async {
+      final days = await boardDays();
+      await pumpForGolden(
+        tester,
+        size: const Size(1440, 900),
+        brightness: Brightness.dark,
+        withTasks: true,
+        withNote: false,
+        platform: TargetPlatform.macOS,
+        days: days,
+      );
+      await seedBoardTasks(tester, days);
+      await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('first visit, with How Tasks works', (tester) async {
+      await openTasks(tester);
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/desktop_dark_tasks_first_visit.png'),
+      );
+    });
+
+    testWidgets('after Got it', (tester) async {
+      await openTasks(tester);
+      await tester.tap(find.byKey(const ValueKey('tasks-got-it')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/desktop_dark_tasks.png'),
+      );
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    // D09: Send the deck's details in the column at the window's right edge.
+    testWidgets("a task's details open", (tester) async {
+      await openTasks(tester);
+      final call = goldenNotes.notes.firstWhere(
+        (note) => note.title == 'Call with Arjun',
+      );
+      goldenNotes.updateBody(
+        call.id,
+        '${call.body}\n'
+        '    Slides 1 to 6 are done. The charts need the new numbers from '
+        'Finance.',
+      );
+      await tester.runAsync(goldenTasks.reconcileNow);
+      final gotIt = find.byKey(const ValueKey('tasks-got-it'));
+      if (gotIt.evaluate().isNotEmpty) {
+        await tester.tap(gotIt);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('Send the deck').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tasks-details')), findsOneWidget);
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/desktop_dark_tasks_details.png'),
+      );
+      await tester.pump(const Duration(seconds: 3));
+    });
+  });
 
   group('⌘K menu', () {
     /// The trip notes p-7-0 searches: two notes, two tasks in one of them, a

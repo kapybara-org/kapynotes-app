@@ -5,11 +5,13 @@ import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/keycap.dart';
+import 'package:kapy_notes/ui/note_day_scope.dart';
 import 'package:kapy_notes/ui/tasks/task_choice.dart';
 import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
@@ -50,6 +52,8 @@ void main() {
     bool phone = false,
     ValueChanged<String>? onOpenNote,
     VoidCallback? onOpenDone,
+    ValueChanged<TaskFilter>? onFilter,
+    NoteDayStore? days,
     double textScale = 1,
     Size? size,
   }) async {
@@ -67,15 +71,19 @@ void main() {
           child: child!,
         ),
         home: Scaffold(
-          body: TasksScreen(
-            controller: tasks,
-            filter: filter,
-            addFocus: addFocus,
-            labelOf: (note) => note.title,
-            onOpenNote: onOpenNote ?? (_) {},
-            onOpenDone: onOpenDone ?? () {},
-            newTaskShortcut: '⌘N',
-            phone: phone,
+          body: withNoteDays(
+            days,
+            TasksScreen(
+              controller: tasks,
+              filter: filter,
+              addFocus: addFocus,
+              labelOf: (note) => note.title,
+              onOpenNote: onOpenNote ?? (_) {},
+              onOpenDone: onOpenDone ?? () {},
+              onFilter: onFilter,
+              newTaskShortcut: '⌘N',
+              phone: phone,
+            ),
           ),
         ),
       ),
@@ -149,6 +157,438 @@ void main() {
   const errands =
       'Errands\n☐ Send the report\n☐ Book flights\n☐ Call the garage\n'
       '☐ Pay the rent';
+
+  group('search, the filter and Later (M13, M13a, D09)', () {
+    Future<void> addNotes(List<String> bodies) async {
+      for (final body in bodies) {
+        notes.create(body: body);
+      }
+      await tasks.reconcileNow();
+    }
+
+    Future<NoteDayStore> waitingFor(String title, DateTime day) async {
+      final days = NoteDayStore(_MemoryStore(), now: () => clock);
+      await days.load();
+      days.setDay(notes.allNotes.firstWhere((n) => n.title == title).id, day);
+      return days;
+    }
+
+    Finder phoneRow(String words) =>
+        find.byKey(ValueKey('phone-task-${item(words).id}'));
+
+    testWidgets('a phone searches by the task\'s words and its note\'s name, '
+        'across Up next, the pair and the rest of the list', (tester) async {
+      await setUpTasks(tester, errands);
+      await addNotes(['Lisbon trip\n☐ Book the Sintra train\n☐ Pack adapters']);
+      await pumpScreen(tester, phone: true);
+      await tester.tap(find.byKey(const ValueKey('tasks-pair-right')));
+      await settle(tester);
+      expect(find.text('Up next'), findsOneWidget);
+      final upNext = tasks.choiceIn(null).upNext.single.words;
+
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+      await tester.enterText(field, 'lisbon');
+      await settle(tester);
+      expect(phoneRow('Book the Sintra train'), findsOneWidget);
+      expect(phoneRow('Pack adapters'), findsOneWidget);
+      expect(phoneRow('Pay the rent'), findsNothing);
+      expect(find.text('Up next'), findsNothing, reason: '$upNext is no match');
+      expect(find.byKey(const ValueKey('tasks-pair')), findsNothing);
+
+      await tester.enterText(field, 'BOOK  sintra');
+      await settle(tester);
+      expect(phoneRow('Book the Sintra train'), findsOneWidget);
+      expect(phoneRow('Pack adapters'), findsNothing);
+
+      await tester.enterText(field, upNext.split(' ').last);
+      await settle(tester);
+      expect(find.text('Up next'), findsOneWidget);
+
+      await tester.enterText(field, 'passport');
+      await settle(tester);
+      expect(find.text('No tasks match “passport”.'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Clear search'));
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
+      expect(phoneRow('Pack adapters'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-search-empty')), findsNothing);
+    });
+
+    testWidgets('the pair stays while either card matches, and Do now while '
+        'its task does', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+      await tester.enterText(field, 'flights');
+      await settle(tester);
+      expect(inPair('right', 'Book flights'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('tasks-start')));
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-do-now')), findsNothing);
+      await tester.enterText(field, 'report');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+    });
+
+    testWidgets('on a touch phone, typing never makes the well taller, so the '
+        'list stays put', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final well = find.byKey(const ValueKey('sidebar-search-box'));
+      final empty = tester.getSize(well).height;
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-search-field')),
+        'sintra',
+      );
+      await settle(tester);
+      expect(find.byTooltip('Clear search'), findsOneWidget);
+      expect(tester.getSize(well).height, empty);
+    });
+
+    testWidgets('the search well is a 44 pt target read as Search tasks, and '
+        'the filter beside it is 44 pt and says what it does', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true, onFilter: (_) {});
+      expect(
+        tester.getSize(find.byKey(const ValueKey('sidebar-search-box'))).height,
+        greaterThanOrEqualTo(44),
+      );
+      expect(find.bySemanticsLabel('Search tasks'), findsOneWidget);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('tasks-filters'))),
+        const Size.square(44),
+      );
+      expect(find.byTooltip('Filter tasks'), findsOneWidget);
+      await settle(tester);
+      semantics.dispose();
+    });
+
+    testWidgets('a desktop has no search over the page and no filter button', (
+      tester,
+    ) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, onFilter: (_) {});
+      expect(find.byKey(const ValueKey('tasks-search-field')), findsNothing);
+      expect(find.byKey(const ValueKey('tasks-filters')), findsNothing);
+      await settle(tester);
+    });
+
+    testWidgets('the filter offers Today, Done and each note with its count, '
+        'ticks the one showing, and narrows to the one picked', (tester) async {
+      await setUpTasks(tester, errands);
+      await addNotes([
+        'Lisbon trip\n☐ Book the Sintra train\n☐ Pack adapters',
+        'Tasks\n☐ Call Arjun',
+      ]);
+      final picked = <TaskFilter>[];
+      await pumpScreen(tester, phone: true, onFilter: picked.add);
+      await tester.tap(find.byKey(const ValueKey('tasks-filters')));
+      await settle(tester);
+
+      String row(String key) => [
+        for (final text in tester.widgetList<Text>(
+          find.descendant(
+            of: find.byKey(ValueKey('tasks-filter-menu-$key')),
+            matching: find.byType(Text),
+          ),
+        ))
+          text.data!,
+      ].join(' ');
+      final lisbon = item('Pack adapters').note.id;
+      final errandsNote = item('Pay the rent').note.id;
+      expect(row('all'), 'Today 7');
+      expect(row('done'), 'Done 0');
+      expect(row(errandsNote), 'Errands 4');
+      expect(row(lisbon), 'Lisbon trip 2');
+      expect(row('no-note'), 'No note 1');
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('tasks-filter-menu-all')))
+            .height,
+        greaterThanOrEqualTo(44),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('tasks-filter-menu-all')),
+          matching: find.byType(KapyIcon),
+        ),
+        findsNWidgets(2),
+        reason: 'Today\'s mark and its tick',
+      );
+
+      await tester.tap(find.byKey(ValueKey('tasks-filter-menu-$lisbon')));
+      await settle(tester);
+      expect(picked, [TaskFilter.note(lisbon)]);
+
+      await pumpScreen(
+        tester,
+        phone: true,
+        filter: TaskFilter.note(lisbon),
+        onFilter: picked.add,
+      );
+      expect(phoneRow('Pay the rent'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('tasks-filters')));
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('tasks-filter-menu-done')));
+      await settle(tester);
+      expect(picked.last, const TaskFilter.done());
+    });
+
+    testWidgets('Later counts the tasks whose note waits for its day, names '
+        'the soonest day, and opens that note', (tester) async {
+      await setUpTasks(tester, errands);
+      await addNotes(['Renewal notes\n☐ Renew the domain\n☐ Renew the van']);
+      final days = await waitingFor('Renewal notes', DateTime(2026, 11, 20));
+      final opened = <String>[];
+      await pumpScreen(tester, days: days, onOpenNote: opened.add);
+
+      expect(find.text('Later'), findsOneWidget);
+      expect(find.text('2 tasks wait for their day'), findsOneWidget);
+      expect(find.text('Fri 20'), findsOneWidget);
+      expect(find.text('Renew the domain'), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('tasks-later'))).height,
+        36,
+      );
+      await tester.tap(find.byKey(const ValueKey('tasks-later')));
+      await settle(tester);
+      expect(opened, [item('Renew the domain').note.id]);
+    });
+
+    testWidgets('a phone\'s Later is a 44 pt row, and goes while searching', (
+      tester,
+    ) async {
+      await setUpTasks(tester, errands);
+      await addNotes(['Renewal notes\n☐ Renew the domain']);
+      final days = await waitingFor('Renewal notes', DateTime(2026, 11, 20));
+      await pumpScreen(tester, phone: true, days: days);
+      final later = find.byKey(const ValueKey('tasks-later'));
+      await tester.ensureVisible(later);
+      expect(find.text('1 task waits for its day'), findsOneWidget);
+      expect(tester.getSize(later).height, 44);
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-search-field')),
+        'rent',
+      );
+      await settle(tester);
+      expect(later, findsNothing);
+    });
+
+    testWidgets('while a waiting task matches the search, Later stays with '
+        'the matching count rather than "No tasks match"', (tester) async {
+      await setUpTasks(tester, errands);
+      await addNotes(['Renewal notes\n☐ Renew the domain\n☐ Renew the van']);
+      final days = await waitingFor('Renewal notes', DateTime(2026, 11, 20));
+      await pumpScreen(tester, phone: true, days: days);
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-search-field')),
+        'domain',
+      );
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-later')), findsOneWidget);
+      expect(find.text('1 task waits for its day'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-search-empty')), findsNothing);
+    });
+
+    testWidgets('Later with two waiting notes names the soonest day and '
+        'opens the soonest note', (tester) async {
+      await setUpTasks(tester, errands);
+      await addNotes([
+        'Renewal notes\n☐ Renew the domain',
+        'Garden\n☐ Plant the bulbs',
+      ]);
+      final days = await waitingFor('Renewal notes', DateTime(2026, 11, 24));
+      days.setDay(
+        notes.allNotes.firstWhere((n) => n.title == 'Garden').id,
+        DateTime(2026, 11, 20),
+      );
+      final opened = <String>[];
+      await pumpScreen(tester, days: days, onOpenNote: opened.add);
+      expect(find.text('2 tasks wait for their day'), findsOneWidget);
+      expect(find.text('Fri 20'), findsOneWidget);
+      expect(find.text('Tue 24'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('tasks-later')));
+      await settle(tester);
+      expect(opened, [item('Plant the bulbs').note.id]);
+    });
+
+    testWidgets('every typed word must match, not any one of them', (
+      tester,
+    ) async {
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Pay the rent\n☐ Call the bank\n☐ Book flights\n'
+        '☐ Book the Sintra train\n☐ Pack for Sintra',
+      );
+      await pumpScreen(tester, phone: true);
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-search-field')),
+        'book sintra',
+      );
+      await settle(tester);
+      expect(phoneRow('Book the Sintra train'), findsOneWidget);
+      expect(phoneRow('Book flights'), findsNothing);
+      expect(phoneRow('Pack for Sintra'), findsNothing);
+    });
+
+    testWidgets('"No tasks match" never shows beside a matching pair or Do '
+        'now', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+      final empty = find.byKey(const ValueKey('tasks-search-empty'));
+      await tester.enterText(field, 'flights');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
+      expect(empty, findsNothing);
+
+      await tester.enterText(field, '');
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('tasks-start')));
+      await settle(tester);
+      await tester.enterText(field, 'report');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      expect(empty, findsNothing);
+    });
+
+    testWidgets('in the evening, search narrows the card\'s rows, and the card '
+        'goes once none match', (tester) async {
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Done one\n☐ Left one\n☐ Left two',
+        at: DateTime(2026, 11, 19, 18, 30),
+      );
+      await tester.runAsync(
+        () => tasks.setDone(tasks.read().open.first, done: true),
+      );
+      await pumpScreen(tester, phone: true);
+      expect(find.byKey(const ValueKey('tasks-evening')), findsOneWidget);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+
+      await tester.enterText(field, 'two');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-evening')), findsOneWidget);
+      expect(phoneRow('Left two'), findsOneWidget);
+      expect(phoneRow('Left one'), findsNothing);
+      expect(find.byKey(const ValueKey('tasks-search-empty')), findsNothing);
+
+      await tester.enterText(field, 'garage');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-evening')), findsNothing);
+      expect(find.text('No tasks match “garage”.'), findsOneWidget);
+    });
+
+    testWidgets('search narrows Done too, and says so when nothing matches; '
+        'the well and its filter stay', (tester) async {
+      await setUpTasks(tester, errands);
+      for (final words in ['Pay the rent', 'Book flights']) {
+        await tester.runAsync(() => tasks.setDone(item(words), done: true));
+      }
+      await pumpScreen(
+        tester,
+        phone: true,
+        filter: const TaskFilter.done(),
+        onFilter: (_) {},
+      );
+      expect(find.text('Pay the rent'), findsOneWidget);
+      expect(find.text('Book flights'), findsOneWidget);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+
+      await tester.enterText(field, 'rent');
+      await settle(tester);
+      expect(find.text('Pay the rent'), findsOneWidget);
+      expect(find.text('Book flights'), findsNothing);
+
+      await tester.enterText(field, 'garage');
+      await settle(tester);
+      expect(find.text('Pay the rent'), findsNothing);
+      expect(find.text('No tasks match “garage”.'), findsOneWidget);
+      expect(field, findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-filters')), findsOneWidget);
+    });
+
+    testWidgets('Clear empties the search and keeps the keyboard up, from a '
+        '32 pt button', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+      await tester.tap(field);
+      await tester.enterText(field, 'rent');
+      await settle(tester);
+      final focus = tester.widget<TextField>(field).focusNode!;
+      expect(focus.hasFocus, isTrue);
+      final clear = find.byTooltip('Clear search');
+      expect(tester.getSize(clear), const Size.square(32));
+
+      await tester.tap(clear);
+      await settle(tester);
+      expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+      expect(focus.hasFocus, isTrue);
+    });
+
+    testWidgets('the filter button carries its dot while a filter is on', (
+      tester,
+    ) async {
+      await setUpTasks(tester, errands);
+      final dot = find.byKey(const ValueKey('phone-filters-dot'));
+      await pumpScreen(tester, phone: true, onFilter: (_) {});
+      expect(dot, findsNothing);
+      await pumpScreen(
+        tester,
+        phone: true,
+        filter: TaskFilter.note(item('Pay the rent').note.id),
+        onFilter: (_) {},
+      );
+      expect(dot, findsOneWidget);
+      await pumpScreen(
+        tester,
+        phone: true,
+        filter: const TaskFilter.done(),
+        onFilter: (_) {},
+      );
+      expect(dot, findsOneWidget);
+    });
+
+    testWidgets('M13a: one hairline, after the last Up next row, full width', (
+      tester,
+    ) async {
+      await setUpTasks(tester, '$errands\n☐ Water the plants\n☐ Fix the bike');
+      await pumpScreen(tester, phone: true);
+      await tester.tap(find.byKey(const ValueKey('tasks-pair-right')));
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('tasks-pair-right')));
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('tasks-start')));
+      await settle(tester);
+      final choice = tasks.choiceIn(null);
+      expect(choice.upNext, hasLength(2));
+
+      final palette = tester.element(find.byType(TasksScreen)).palette;
+      final lines = find.byWidgetPredicate(
+        (widget) => switch (widget) {
+          Container(
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(:final color, :final width)),
+            ),
+          ) =>
+            color == palette.separator && width == 1,
+          _ => false,
+        },
+      );
+      expect(lines, findsOneWidget);
+      final line = tester.getRect(lines);
+      final lastUpNext = tester.getRect(
+        find.byKey(ValueKey('phone-task-${choice.upNext.last.id}')),
+      );
+      expect(line.top, greaterThanOrEqualTo(lastUpNext.bottom));
+      expect(line.width, 393 - 42);
+    });
+  });
 
   group('the pair', () {
     testWidgets('with nothing chosen: the first task on the list against the '

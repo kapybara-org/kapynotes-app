@@ -678,6 +678,7 @@ void main() {
       [true, false, false, false],
     );
     expect(mac.displayLabel, 'Cmd + Delete');
+    expect(mac.keycapLabel, '⌘⌫');
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     final windows = ShortcutPrefs.defaultFor(ShortcutAction.deleteNote);
@@ -687,6 +688,35 @@ void main() {
       [false, false, false, true],
     );
     expect(windows.displayLabel, 'Shift + Delete');
+    expect(windows.keycapLabel, 'Shift+Delete');
+  });
+
+  test("a Mac's keycap prints its delete keys as its menus do, and Settings "
+      'keeps their names', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    const forward = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.delete,
+      physicalKey: PhysicalKeyboardKey.delete,
+      alt: true,
+      meta: true,
+    );
+    const back = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.backspace,
+      physicalKey: PhysicalKeyboardKey.backspace,
+      control: true,
+    );
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    expect(forward.keycapLabel, '⌥⌘⌦');
+    expect(forward.displayLabel, 'Cmd + Option + Forward Delete');
+    expect(back.keycapLabel, '⌃⌫');
+    expect(back.displayLabel, 'Ctrl + Delete');
+
+    for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      expect(back.keycapLabel, 'Ctrl+Backspace', reason: platform.name);
+      expect(back.displayLabel, 'Ctrl + Backspace', reason: platform.name);
+    }
   });
 
   test('a keycap prints a chord the way the keyboard does', () {

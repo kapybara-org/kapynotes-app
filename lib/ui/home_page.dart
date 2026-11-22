@@ -40,6 +40,7 @@ import '../data/note_days.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/tags.dart';
+import '../data/task_board.dart';
 import '../data/task_library.dart';
 import '../data/note.dart';
 import '../data/note_drawing.dart';
@@ -2094,6 +2095,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _taskNoteLabel(Note note) =>
       taskNoteLabel(note, widget.account?.sharing?.spaceById(note.spaceId));
 
+  /// Today's open tasks: every open one but those whose note waits for a
+  /// later day, as the Tasks page lists them and its counts count them.
+  List<TaskItem> _todayTasks(TasksController tasks) {
+    tasks.waits = taskWaitsToday(context, tasks, widget.prefs.displayTime);
+    return tasks.openIn(null);
+  }
+
   /// Opens a task's note where it lives, leaving Tasks.
   void _openTaskNote(String id) {
     final note = widget.notes.byId(id);
@@ -3072,7 +3080,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? get _pinShortcut =>
       widget.shortcuts.hintFor(ShortcutAction.toggleAlwaysOnTop)?.keycapLabel;
 
-  /// Keep on top as More offers it, on the note's page and on Tasks alike.
+  /// Keep on top as More offers it on the note's page and a folder's.
   KapyMenuAction? get _onTopAction => _pinToggle == null
       ? null
       : KapyMenuAction(
@@ -4075,6 +4083,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 if (ref case NoteImageRef(src: _?, isPreparing: false)) ref,
             ];
             final taskBoard = _taskController?.read();
+            final taskToday = switch (_taskController) {
+              final controller? => _todayTasks(controller),
+              null => const <TaskItem>[],
+            };
             final tasks = _tasksMode ? _taskController : null;
             final createNoun = tasks != null && taskBoard != null
                 ? 'task'
@@ -4240,6 +4252,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     sidebar: tasks != null && taskBoard != null
                         ? TasksSidebar(
                             board: taskBoard,
+                            today: taskToday,
                             filter: _taskFilter,
                             onFilter: (filter) =>
                                 setState(() => _taskFilter = filter),
@@ -4256,7 +4269,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             },
                             windowBar: SidebarWindowBar(
                               title: space.title,
-                              count: taskBoard.open.length,
+                              count: taskToday.length,
                               countLabel: 'open',
                               noun: createNoun,
                               onCreate: _createInSpace,
@@ -4281,7 +4294,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               if (tasks != null)
-                                ..._buildTasksPage(
+                                _buildTasksPage(
                                   tasks,
                                   listVisible: listFits && listShown,
                                   underList: !listFits && listShown,
@@ -4670,7 +4683,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Tasks on the page: Today and its date, how much is done and Choose
   /// again over Today, or the breadcrumb over the Done view.
-  List<Widget> _buildTasksPage(
+  Widget _buildTasksPage(
     TasksController tasks, {
     required bool listVisible,
     required bool underList,
@@ -4681,57 +4694,51 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? null
         : widget.notes.byId(filter.noteId);
     final home = note != null && tasks.read().home?.id == note.id;
-    return [
-      PageToolbar(
-        path: filter.done
-            ? PagePath(
-                icon: KapyIcons.tasksOutlined,
-                root: LibrarySpace.tasks.title,
-                levels: const [(name: 'Done', folderId: null)],
-              )
-            : null,
-        crumb: filter.done
-            ? null
-            : TasksTodayCrumb(
-                title: note == null || home ? 'Today' : _taskNoteLabel(note),
-                now: tasks.now(),
+    return Expanded(
+      child: TasksScreen(
+        key: _tasksPage,
+        controller: tasks,
+        filter: filter,
+        addFocus: _taskAddFocus,
+        labelOf: _taskNoteLabel,
+        onOpenNote: _openTaskNote,
+        onOpenDone: _openTasksDone,
+        images: widget.notes.blobs,
+        displayTime: widget.prefs.displayTime,
+        newTaskShortcut: widget.shortcuts
+            .hintFor(ShortcutAction.newNote)
+            ?.keycapLabel,
+        toolbar: PageToolbar(
+          path: filter.done
+              ? PagePath(
+                  icon: KapyIcons.tasksOutlined,
+                  root: LibrarySpace.tasks.title,
+                  levels: const [(name: 'Done', folderId: null)],
+                )
+              : null,
+          crumb: filter.done
+              ? null
+              : TasksTodayCrumb(
+                  title: note == null || home ? 'Today' : _taskNoteLabel(note),
+                  now: tasks.now(),
+                ),
+          listVisible: listVisible,
+          underList: underList,
+          onShowList: _toggleList,
+          showListShortcut: _sidebarShortcut,
+          create: create,
+          updates: widget.updates,
+          actions: [
+            if (!filter.done)
+              TasksBandActions(
+                controller: tasks,
+                filter: filter,
+                onChooseAgain: () => _tasksPage.currentState?.chooseAgain(),
               ),
-        listVisible: listVisible,
-        underList: underList,
-        onShowList: _toggleList,
-        showListShortcut: _sidebarShortcut,
-        create: create,
-        updates: widget.updates,
-        moreActions: [?_onTopAction],
-        onMore: _pinToggle == null
-            ? null
-            : (action, at) => _runPageAction(action, null, at),
-        actions: [
-          if (!filter.done)
-            TasksBandActions(
-              controller: tasks,
-              filter: filter,
-              onChooseAgain: () => _tasksPage.currentState?.chooseAgain(),
-            ),
-        ],
-      ),
-      Expanded(
-        child: TasksScreen(
-          key: _tasksPage,
-          controller: tasks,
-          filter: filter,
-          addFocus: _taskAddFocus,
-          labelOf: _taskNoteLabel,
-          onOpenNote: _openTaskNote,
-          onOpenDone: _openTasksDone,
-          images: widget.notes.blobs,
-          displayTime: widget.prefs.displayTime,
-          newTaskShortcut: widget.shortcuts
-              .hintFor(ShortcutAction.newNote)
-              ?.keycapLabel,
+          ],
         ),
       ),
-    ];
+    );
   }
 
   /// The open tabs, under the toolbar while there is more than one.
@@ -5058,10 +5065,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         phone: true,
                         controller: tasks,
                         filter: _taskFilter,
+                        onFilter: (filter) =>
+                            setState(() => _taskFilter = filter),
                         addFocus: _taskAddFocus,
                         labelOf: _taskNoteLabel,
                         onOpenNote: _openTaskNote,
                         onOpenDone: _openTasksDone,
+                        images: widget.notes.blobs,
+                        displayTime: widget.prefs.displayTime,
                       ),
                     ),
                   ],
@@ -5206,7 +5217,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _phoneHomeHeader() => PhoneHomeHeader(
     tasks: _tasksMode,
     notesCount: _phoneHomeNotes.length,
-    tasksCount: _taskController?.read().open.length ?? 0,
+    tasksCount: switch (_taskController) {
+      final tasks? => _todayTasks(tasks).length,
+      null => 0,
+    },
     onNotes: () => _showHome(tasks: false),
     onTasks: _taskController == null ? null : () => _showHome(tasks: true),
     streak: widget.notes.streak,

@@ -12,6 +12,10 @@
 // with a task added since you chose, and the evening. The mid-pair (D6) and
 // Do now (D7) are also taken at 1.3× and 2× text, and Do now with a row's
 // menu open from a long press.
+//
+// A second walk takes the final boards dark, over their own notes: M13 with
+// the search field, a search typed and the filter open; M13a, Do now over
+// Up next with the line after it and Later; and M14, a task opened.
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -19,6 +23,7 @@ import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -132,7 +137,7 @@ void main() {
       return labels;
     }
 
-    await tap('page-home');
+    await tap('page-back');
     await tap('home-title-tasks');
 
     expect(find.text('What do you want to work on next?'), findsOneWidget);
@@ -216,5 +221,124 @@ void main() {
     await tap('tasks-keep-going');
     expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
     semantics.dispose();
+  });
+
+  testWidgets('a phone shows the boards M13, M13a and M14, dark', (
+    tester,
+  ) async {
+    var clock = DateTime(2026, 11, 19, 9);
+    final store = _MemoryStore();
+    store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
+    final prefs = LayoutPrefs(store)..load();
+    prefs.appearance = AppearanceMode.dark;
+    final notes = NotesStore(store, now: () => clock);
+    final library = TaskLibrary(
+      notes: notes,
+      store: store,
+      storage: MemoryDocStorage(),
+      now: () => clock,
+    );
+    final tags = TagStore(store);
+    final days = NoteDayStore(store, now: () => clock);
+    await notes.load();
+    await library.load();
+    await tags.load();
+    await days.load();
+    Future<String> add(String body) async {
+      final id = notes.create(body: body).id;
+      await library.reconcileNow();
+      clock = clock.add(const Duration(minutes: 1));
+      return id;
+    }
+
+    final lisbon = await add(
+      'Lisbon trip\n☐ Ask Ana which Sintra palace to skip\n'
+      '☐ Renew passport before the trip\n☐ Book the Sintra train tickets',
+    );
+    await add('Tasks\n☐ Call Arjun');
+    final quote = await add('Quote for the deck\n☐ Book the room');
+    final call = await add(
+      'Call with Arjun\n☐ Send the deck\n'
+      '    Slides 1 to 6 are done. The charts need the new numbers.',
+    );
+    final renewal = await add(
+      'Renewal notes\n☐ Send the renewal scope\n☐ Read the signed contract',
+    );
+    days.setDay(renewal, DateTime(2026, 11, 21));
+    final travel = tags.create('Travel')!;
+    tags.recolour(travel.id, 'sage');
+    final work = tags.create('Work')!;
+    tags.recolour(work.id, 'mustard');
+    tags.setTags(lisbon, [travel.id]);
+    tags.setTags(quote, [work.id]);
+    tags.setTags(call, [work.id]);
+    await tester.pumpWidget(
+      KapyNotesApp(
+        store: store,
+        notes: notes,
+        rates: RatesRepository(store),
+        prefs: prefs,
+        shortcuts: ShortcutPrefs(store)..load(),
+        tags: tags,
+        tasks: library,
+        days: days,
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+
+    Future<void> tap(String key) async {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> shot(String name) async {
+      expect(tester.takeException(), isNull, reason: name);
+      await screenshot('tasks-$name-dark', device: true);
+    }
+
+    if (find.byKey(const ValueKey('page-back')).evaluate().isNotEmpty) {
+      await tap('page-back');
+    }
+    await tap('home-title-tasks');
+    expect(find.text('Search tasks'), findsOneWidget);
+    expect(find.text('6'), findsWidgets, reason: 'Tasks 6, Later left out');
+    await shot('m13');
+
+    final field = find.byKey(const ValueKey('tasks-search-field'));
+    await tester.tap(field);
+    await tester.enterText(field, 'sintra');
+    await tester.pumpAndSettle();
+    expect(find.text('Book the Sintra train tickets'), findsOneWidget);
+    expect(find.text('Book the room'), findsNothing);
+    await shot('m13-search');
+    await tester.tap(find.byTooltip('Clear search'));
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    await tap('tasks-filters');
+    expect(find.byKey(const ValueKey('tasks-filter-menu-all')), findsOneWidget);
+    expect(find.byKey(ValueKey('tasks-filter-menu-$lisbon')), findsOneWidget);
+    await shot('m13-filter');
+    await tap('tasks-filter-menu-$quote');
+    expect(find.text('Ask Ana which Sintra palace to skip'), findsNothing);
+    await shot('m13-filter-one-note');
+    await tap('tasks-filters');
+    await tap('tasks-filter-menu-all');
+
+    await tap('tasks-pair-right');
+    await tap('tasks-pair-right');
+    await tap('tasks-start');
+    expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+    expect(find.text('Up next'), findsOneWidget);
+    expect(find.text('Later'), findsOneWidget);
+    await shot('m13a-up-next');
+
+    final deck = find.text('Send the deck');
+    await tester.ensureVisible(deck);
+    await tester.pumpAndSettle();
+    await tester.tap(deck);
+    await tester.pumpAndSettle();
+    expect(find.text('Open in note'), findsOneWidget);
+    await shot('m14-task-opened');
   });
 }
