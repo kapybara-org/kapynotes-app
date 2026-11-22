@@ -146,8 +146,17 @@ void main() {
     await launch(tester);
 
     final days = [
-      for (final heading in tester.widgetList<Text>(headings))
-        heading.textSpan!.toPlainText(),
+      for (var i = 0; i < headings.evaluate().length; i++)
+        tester
+            .widgetList<Text>(
+              find.descendant(
+                of: headings.at(i),
+                matching: find.byType(Text),
+                matchRoot: true,
+              ),
+            )
+            .map((text) => text.data ?? text.textSpan!.toPlainText())
+            .join(' '),
     ];
     expect(days, hasLength(3));
     expect(days[0], startsWith('Today '));
