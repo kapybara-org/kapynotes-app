@@ -334,6 +334,20 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('Drawings\' field says Search drawings, even with Kapy AI on', (
+      tester,
+    ) async {
+      await _pump(tester, sidebar: true);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      expect(sidebarField('Search drawings'), findsOneWidget);
+      expect(sidebarField('Search or Ask Kapy AI'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('rail-notes')));
+      await tester.pumpAndSettle();
+      expect(sidebarField('Search'), findsOneWidget);
+    });
+
     testWidgets('⌘K offers to ask, the list’s field reads as D01 draws it, '
         'and Tab asks with the note’s chip', (tester) async {
       final id = await openMenuOverNote(tester);

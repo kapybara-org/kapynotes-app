@@ -189,18 +189,32 @@ class _Title extends StatelessWidget {
 }
 
 /// Home on a phone, which a sideways swipe turns between Notes and Tasks.
-/// A row's own swipe, deeper in the tree, wins the gesture first.
+/// A row's own swipe, deeper in the tree, wins the gesture first, except
+/// from the left edge while there's a level to go back to, where iOS's back
+/// swipe starts.
 class PhoneHomeSwipe extends StatefulWidget {
-  const PhoneHomeSwipe({super.key, required this.onTurn, required this.child});
+  const PhoneHomeSwipe({
+    super.key,
+    required this.onTurn,
+    this.backFromEdge = false,
+    required this.child,
+  });
 
   /// Called with true for a swipe left, to Tasks, and false for a swipe
   /// right, to Notes. Null away from Home, where a swipe does nothing.
   final ValueChanged<bool>? onTurn;
+
+  /// Whether a swipe from the left edge goes back ahead of a row's own. Off
+  /// on plain Home, where the edge's drags belong to the tag chips and rows.
+  final bool backFromEdge;
   final Widget child;
 
   /// How far, or how fast, a swipe has to go to turn the page.
   static const double distance = 64;
   static const double speed = 600;
+
+  /// How far in from the left a swipe starts at the edge, ahead of a row's.
+  static const double edge = 20;
 
   @override
   State<PhoneHomeSwipe> createState() => _PhoneHomeSwipeState();
@@ -219,13 +233,34 @@ class _PhoneHomeSwipeState extends State<PhoneHomeSwipe> {
   @override
   Widget build(BuildContext context) {
     final on = widget.onTurn != null;
-    return GestureDetector(
-      onHorizontalDragStart: on ? (_) => _dx = 0 : null,
-      onHorizontalDragUpdate: on
-          ? (details) => _dx += details.primaryDelta ?? 0
-          : null,
-      onHorizontalDragEnd: on ? _end : null,
-      child: widget.child,
+    GestureDetector swipe({HitTestBehavior? behavior, required Widget child}) =>
+        GestureDetector(
+          behavior: behavior,
+          onHorizontalDragStart: on ? (_) => _dx = 0 : null,
+          onHorizontalDragUpdate: on
+              ? (details) => _dx += details.primaryDelta ?? 0
+              : null,
+          onHorizontalDragEnd: on ? _end : null,
+          child: child,
+        );
+    return swipe(
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          widget.child,
+          if (on && widget.backFromEdge)
+            PositionedDirectional(
+              start: 0,
+              top: 0,
+              bottom: 0,
+              width: PhoneHomeSwipe.edge,
+              child: swipe(
+                behavior: HitTestBehavior.translucent,
+                child: const SizedBox.expand(),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
