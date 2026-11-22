@@ -8052,6 +8052,68 @@ void main() {
         expect(underlineOf(notesTitle), findsOneWidget);
       });
 
+      // Plain Home has no level to go back to, so its left edge keeps the
+      // tag chips' and the rows' own drags.
+      testWidgets('on plain Home, a right drag from the left edge scrolls '
+          'the tag chips back', (tester) async {
+        final tags = TagStore(store);
+        await pumpHome(tester, tags: tags);
+        for (var i = 1; i <= 8; i++) {
+          tags.addTag(groceriesId, tags.create('Travel plans $i')!.id);
+        }
+        await tester.pumpAndSettle();
+        await openPhoneFilters(tester);
+        final row = find.byKey(const ValueKey('phone-filter-row'));
+        final chips = tester.state<ScrollableState>(
+          find.descendant(of: row, matching: find.byType(Scrollable)),
+        );
+        await tester.drag(row, const Offset(-300, 0));
+        await tester.pumpAndSettle();
+        final scrolled = chips.position.pixels;
+        expect(scrolled, greaterThan(100));
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(row).dy),
+          const Offset(100, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(chips.position.pixels, lessThan(scrolled - 50));
+        expect(tasksPage, findsNothing);
+      });
+
+      testWidgets('on plain Home, a right drag from the left edge closes an '
+          'open row', (tester) async {
+        await pumpHome(tester);
+        await tester.drag(groceries, const Offset(-200, 0));
+        await tester.pumpAndSettle();
+        final pin = find.byKey(ValueKey('swipe-pin-$groceriesId'));
+        expect(pin.hitTestable(), findsOneWidget);
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(groceries).dy),
+          const Offset(200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(pin.hitTestable(), findsNothing);
+        expect(tester.getTopLeft(groceries).dx, 0);
+      });
+
+      testWidgets('on plain Home, a left drag from the left edge over a row '
+          "opens the row's actions rather than turning to Tasks", (
+        tester,
+      ) async {
+        await pumpHome(tester);
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(groceries).dy),
+          const Offset(-200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
+        expect(tasksPage, findsNothing);
+        expect(underlineOf(notesTitle), findsOneWidget);
+      });
+
       testWidgets('Back from Tasks goes to Notes rather than leaving', (
         tester,
       ) async {
@@ -8162,8 +8224,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
 
-      // Over a row, whose own swipe the edge has to win.
+      // A tap on the edge passes through to the row under it.
       final row = find.widgetWithText(NoteRow, 'Lisbon trip');
+      await tester.tapAt(Offset(10, tester.getCenter(row).dy));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsNothing);
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+
+      // Over a row, whose own swipe the edge has to win.
       await tester.dragFrom(
         Offset(2, tester.getCenter(row).dy),
         const Offset(200, 0),

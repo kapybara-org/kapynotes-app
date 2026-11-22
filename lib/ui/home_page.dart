@@ -4846,6 +4846,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         if (!tasks && back) _phoneListBack();
                       }
                     : null,
+                backFromEdge: back,
                 child: page,
               ),
             ),
