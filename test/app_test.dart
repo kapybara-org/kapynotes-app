@@ -2084,7 +2084,7 @@ void main() {
       matching: find.byKey(const ValueKey('compact-switch-indicator')),
     );
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(tester.getSize(compactSwitch), const Size(34, 20));
+    expect(tester.getSize(compactSwitch), const Size(38, 22));
 
     final readyToType = find.byKey(
       const ValueKey('ready-to-type-on-open-toggle'),
