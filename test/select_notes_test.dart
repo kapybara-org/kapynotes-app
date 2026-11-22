@@ -82,7 +82,7 @@ Future<void> _pump(
 /// button, and the list is under it.
 Future<void> _pumpPhone(WidgetTester tester, TargetPlatform platform) async {
   await _pump(tester, platform: platform, size: const Size(390, 760));
-  final back = find.byKey(const ValueKey('page-back'));
+  final back = find.byKey(const ValueKey('page-home'));
   if (back.evaluate().isNotEmpty) {
     await tester.tap(back);
     await tester.pumpAndSettle();

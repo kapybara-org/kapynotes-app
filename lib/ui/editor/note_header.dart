@@ -77,15 +77,16 @@ class NoteFolders extends InheritedWidget {
   const NoteFolders({
     super.key,
     required this.tree,
-    required this.onOpenFolder,
+    this.onOpenFolder,
     required super.child,
   });
 
   final FolderTree tree;
 
   /// Shows a folder from the line in this tab, or with behind in a new tab
-  /// behind it.
-  final void Function(String folderId, {required bool behind}) onOpenFolder;
+  /// behind it. Null on a phone, which has no folder to show it on, so the
+  /// line only says where the note is.
+  final void Function(String folderId, {required bool behind})? onOpenFolder;
 
   static NoteFolders? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<NoteFolders>();
@@ -115,9 +116,11 @@ class NoteMetaRow extends StatelessWidget {
     this.readOnlyIcon,
     this.onReadOnlyPressed,
     this.tags,
+    this.phone = false,
   });
 
-  /// When the note was last edited, and today, both on the reader's clock.
+  /// When the note was last edited, or on a phone when it was written, and
+  /// today, both on the reader's clock.
   final DateTime edited;
   final DateTime today;
 
@@ -144,7 +147,25 @@ class NoteMetaRow extends StatelessWidget {
   /// The note's tag chips and + Tag, at the end of the line.
   final Widget? tags;
 
+  /// On a phone's note page (M07): the facts and tags share one line that
+  /// wraps, where a tablet keeps the tags on a line of their own.
+  final bool phone;
+
   static const double _gap = 10;
+
+  /// A phone's line under the title: the note's day and the time it was
+  /// written, "Fri 21 · 9:41", or the time alone today. A note given a day
+  /// other than the one it was written on says the day alone, since the time
+  /// belongs to another day.
+  String _phoneLine() {
+    final written = DateTime(edited.year, edited.month, edited.day);
+    final shown = day ?? written;
+    final clock = SidebarTimestamp.clock(edited);
+    if (shown != written) return SidebarTimestamp.weekdayAndDay(shown);
+    return shown == DateTime(today.year, today.month, today.day)
+        ? clock
+        : '${SidebarTimestamp.weekdayAndDay(shown)} · $clock';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +184,7 @@ class NoteMetaRow extends StatelessWidget {
       fontVariations: AppWeight.wght(AppWeight.rowTitle),
       color: palette.textSecondary,
     );
-    final phone = AppPlatform.isMobile;
+    final mobile = AppPlatform.isMobile;
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done';
@@ -172,10 +193,18 @@ class NoteMetaRow extends StatelessWidget {
         ? null
         : Text(saved.label, key: const ValueKey('note-saved'), style: quiet);
     final items = <Widget>[
-      if (!phone)
+      if (!mobile)
         Text(
           '${SidebarTimestamp.shortDay(day ?? edited, now: today)} · '
           '${SidebarTimestamp.clock(edited)}',
+          key: const ValueKey('note-edited'),
+          style: quiet.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        )
+      else if (phone)
+        Text(
+          _phoneLine(),
           key: const ValueKey('note-edited'),
           style: quiet.copyWith(
             fontFeatures: const [FontFeature.tabularFigures()],
@@ -198,7 +227,7 @@ class NoteMetaRow extends StatelessWidget {
             ),
           ),
         ),
-      if (phone)
+      if (mobile && !phone)
         Text(
           SidebarTimestamp.edited(
             edited,
@@ -213,7 +242,7 @@ class NoteMetaRow extends StatelessWidget {
           final tooltip? => Tooltip(message: tooltip, child: savedLabel),
           null => savedLabel,
         },
-      if (tasks > 0 && !phone)
+      if (tasks > 0 && !mobile)
         Text(progress, key: const ValueKey('note-progress'), style: quiet)
       else if (tasks > 0)
         Semantics(
@@ -284,6 +313,36 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
+    if (phone) {
+      // One line, as M07 draws it: the facts a dot apart, then the tags after
+      // a gap. It wraps when they don't fit, and the editor makes room for
+      // as many lines as it takes, so a wrap never runs into the note.
+      return Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: _gap + 4,
+        children: [
+          Wrap(
+            key: const ValueKey('note-facts'),
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final (index, item) in items.indexed)
+                index == 0
+                    ? item
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: _gap),
+                          dot,
+                          const SizedBox(width: _gap),
+                          item,
+                        ],
+                      ),
+            ],
+          ),
+          ?tags,
+        ],
+      );
+    }
     if (AppPlatform.isMobile) {
       // Grows with the text size and the tags' 44 pt targets rather than
       // clipping them to a fixed row.

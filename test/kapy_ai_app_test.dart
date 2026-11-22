@@ -14,6 +14,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
@@ -469,8 +470,20 @@ void main() {
       for (final gone in [chip, picker, chats, newChat]) {
         expect(gone, findsNothing);
       }
+      expect(
+        tester
+            .widget<CompactIconButton>(
+              find.descendant(
+                of: _button,
+                matching: find.byType(CompactIconButton),
+              ),
+            )
+            .selected,
+        isFalse,
+        reason: 'M10 keeps Kapy AI a bare icon while its sheet is up',
+      );
       for (final above in [
-        find.byKey(const ValueKey('page-back')),
+        find.byKey(const ValueKey('page-home')),
         _button,
         find.byType(NoteField),
       ]) {
@@ -596,7 +609,7 @@ void main() {
       notes.create(body: 'Call with Arjun');
       ai = FakeKapyAi(pro: true)..set(model: KapyModel.cloud);
       await _pump(tester, size: screen, platform: TargetPlatform.iOS);
-      final back = find.byKey(const ValueKey('page-back'));
+      final back = find.byKey(const ValueKey('page-home'));
       if (back.evaluate().isNotEmpty) {
         await tester.tap(back);
         await tester.pumpAndSettle();
@@ -892,7 +905,7 @@ void main() {
         size: const Size(402, 874),
         platform: TargetPlatform.iOS,
       );
-      final back = find.byKey(const ValueKey('page-back'));
+      final back = find.byKey(const ValueKey('page-home'));
       if (back.evaluate().isNotEmpty) {
         await tester.tap(back);
         await tester.pumpAndSettle();
@@ -1734,7 +1747,7 @@ void main() {
         platform: TargetPlatform.iOS,
         folders: folders,
       );
-      final back = find.byKey(const ValueKey('page-back'));
+      final back = find.byKey(const ValueKey('page-home'));
       if (back.evaluate().isNotEmpty) {
         await tester.tap(back);
         await tester.pumpAndSettle();
@@ -1783,7 +1796,7 @@ void main() {
         size: const Size(412, 915),
         platform: TargetPlatform.android,
       );
-      final back = find.byKey(const ValueKey('page-back'));
+      final back = find.byKey(const ValueKey('page-home'));
       if (back.evaluate().isNotEmpty) await tap(tester, back);
       await tap(tester, tab);
 
@@ -1912,7 +1925,7 @@ void main() {
       expect(page, findsNothing);
       expect(notes.notes.where((note) => note.isDrawing), isEmpty);
 
-      await tap(tester, find.byKey(const ValueKey('page-back')));
+      await tap(tester, find.byKey(const ValueKey('page-home')));
       await tap(tester, find.byKey(const ValueKey('bar-folders')));
       expect(
         tester

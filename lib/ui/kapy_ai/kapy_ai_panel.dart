@@ -814,6 +814,7 @@ class KapyAiToolbarButton extends StatelessWidget {
     this.iconSize = 17,
     this.trailingGap = 6,
     this.divided = false,
+    this.showsOpen = true,
   });
 
   final KapyAi kapyAi;
@@ -832,13 +833,17 @@ class KapyAiToolbarButton extends StatelessWidget {
   /// end of the page's bar. The hairline hides with the button.
   final bool divided;
 
+  /// Whether it turns tonal while the panel is open. A phone's sheet covers
+  /// the note instead, and its button stays a bare icon (M10).
+  final bool showsOpen;
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([kapyAi, controller]),
     builder: (context, _) {
       if (!kapyAi.enabled) return const SizedBox.shrink();
       final palette = context.palette;
-      final open = controller.isOpen;
+      final open = showsOpen && controller.isOpen;
       final button = KapyAiIconButton(
         key: const ValueKey('page-kapy-ai'),
         icon: KapyIcons.sparklesOutlined,

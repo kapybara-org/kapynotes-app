@@ -56,6 +56,7 @@ Widget _page(
   ValueChanged<List<NoteFormatRange>>? onFormats,
   ValueChanged<String>? onBody,
   WritingFont writingFont = WritingFont.mixed,
+  bool phone = false,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
@@ -68,6 +69,7 @@ Widget _page(
           key: ValueKey(body),
           noteId: 'page',
           initialBody: body,
+          phone: phone,
           initialFormats: formats,
           engine: _engine,
           highlighter: Highlighter(_engine.registry),
@@ -429,23 +431,45 @@ void main() {
     window(tester);
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await tester.pumpWidget(_page(_body, width: 390));
+    await tester.pumpWidget(_page(_body, width: 390, phone: true));
     await tester.pumpAndSettle();
 
     expect(find.byType(NoteFooter), findsNothing);
-    // Taller than a window's row: the tags under the facts are 44 pt
-    // targets on a phone, so the row grows with them (KAP-115).
+    // One line under the title on a phone, the tags after the facts (M07),
+    // inside the room the page keeps for it to wrap into.
     expect(
       tester.getSize(find.byType(NoteMetaRow)).height,
-      greaterThanOrEqualTo(EditorMetrics.metaRow),
+      lessThanOrEqualTo(EditorMetrics.metaRow),
     );
-    // The facts and the tags on their two lines sit between the title and
-    // the writing, over neither.
+    // The facts and the tags sit between the title and the writing, over
+    // neither.
     final field = _editable(tester);
     final meta = tester.getRect(find.byType(NoteMetaRow));
     final title = field.caretRect(const TextPosition(offset: 1));
     final first = field.caretRect(TextPosition(offset: _body.indexOf('☐')));
     expect(meta.top, greaterThanOrEqualTo(field.toGlobal(title.bottomLeft).dy));
+    expect(meta.bottom, lessThanOrEqualTo(field.toGlobal(first.topLeft).dy));
+    // One line's room, as M07 and M08 draw it: the gap under the row and the
+    // first line's leading, with no second row kept under it (KAPY-35).
+    expect(field.toGlobal(first.topLeft).dy - meta.bottom, lessThan(40));
+  });
+
+  testWidgets('a tablet keeps the tags on a line of their own', (tester) async {
+    window(tester);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await tester.pumpWidget(_page(_body, width: 744));
+    await tester.pumpAndSettle();
+
+    // Taller than a window's row: the tags under the facts are 44 pt
+    // targets on a touch screen, so the row grows with them (KAP-115).
+    expect(
+      tester.getSize(find.byType(NoteMetaRow)).height,
+      greaterThanOrEqualTo(EditorMetrics.metaRow),
+    );
+    final field = _editable(tester);
+    final meta = tester.getRect(find.byType(NoteMetaRow));
+    final first = field.caretRect(TextPosition(offset: _body.indexOf('☐')));
     expect(meta.bottom, lessThanOrEqualTo(field.toGlobal(first.topLeft).dy));
   });
 

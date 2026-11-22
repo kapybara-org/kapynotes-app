@@ -68,6 +68,7 @@ Widget harness(
   bool resultsVisible = true,
   double? width,
   DateTime? lastUpdatedAt,
+  DateTime? createdAt,
   bool dailySeparatorsEnabled = false,
   DateTime Function()? now,
   DateTime Function(DateTime)? displayTime,
@@ -97,6 +98,7 @@ Widget harness(
     keepResultRoom: keepResultRoom,
     resultsVisible: resultsVisible,
     lastUpdatedAt: lastUpdatedAt,
+    createdAt: createdAt,
     dailySeparatorsEnabled: dailySeparatorsEnabled,
     now: now,
     displayTime: displayTime,
@@ -3523,6 +3525,24 @@ total to usd''';
     expect(field.controller.selection.baseOffset, 'Yesterday\n\n'.length);
     expect(changes, isEmpty);
     expect(field.controller.text, isNot(contains('// ─')));
+  });
+
+  testWidgets("off a phone the meta line keeps the note's last edit, not the "
+      'time it was written (D01)', (tester) async {
+    await tester.pumpWidget(
+      harness(
+        'Plan\nCall Ana',
+        createdAt: DateTime(2026, 9, 1, 8, 55),
+        lastUpdatedAt: DateTime(2026, 9, 1, 9, 30),
+        now: () => DateTime(2026, 9, 1, 10),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final line = tester
+        .widget<Text>(find.byKey(const ValueKey('note-edited')))
+        .data!;
+    expect(line, contains('9:30'));
+    expect(line, isNot(contains('8:55')));
   });
 
   testWidgets('same-day reopen starts after one empty line', (tester) async {

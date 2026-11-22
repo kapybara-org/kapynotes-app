@@ -13,6 +13,7 @@ import 'package:flutter/gestures.dart'
         kPrimaryButton,
         kSecondaryButton,
         kTouchSlop;
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -189,6 +190,7 @@ class NoteEditor extends StatefulWidget {
     required this.highlighter,
     this.keepResultRoom = false,
     this.cramped = false,
+    this.phone = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -207,6 +209,7 @@ class NoteEditor extends StatefulWidget {
     this.onCaretChanged,
     this.ensureKeyboardVisible = false,
     this.lastUpdatedAt,
+    this.createdAt,
     this.dailySeparatorsEnabled = false,
     this.paperStyle = PaperStyle.notepad,
     this.now,
@@ -345,6 +348,11 @@ class NoteEditor extends StatefulWidget {
   /// padding, as on a phone on its side with the keyboard up. The lines take
   /// that room instead.
   final bool cramped;
+
+  /// On a phone's note page (M09): its folders in the line above the title,
+  /// and under it the note's day and time with its tags, which are added
+  /// from More rather than from a + Tag of their own.
+  final bool phone;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -404,6 +412,10 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<int>? onCaretChanged;
   final bool ensureKeyboardVisible;
   final DateTime? lastUpdatedAt;
+
+  /// When the note was written, which a phone's line under the title gives
+  /// rather than the last edit, so typing leaves the line as it was.
+  final DateTime? createdAt;
   final bool dailySeparatorsEnabled;
 
   /// The sheet behind the writing. Only [PaperStyle.ruled] needs anything of
@@ -7439,7 +7451,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// The note's folders in the line above its title, scrolled with it.
   Widget _pathLine(
     List<PagePlace> folders,
-    void Function(String folderId, {required bool behind}) onOpenFolder,
+    void Function(String folderId, {required bool behind})? onOpenFolder,
     EdgeInsets padding,
   ) => ClipRect(
     child: ListenableBuilder(
@@ -7487,24 +7499,56 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             ],
           );
         },
-        child: NoteMetaRow(
-          day: NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
-          edited: displayTime(widget.lastUpdatedAt ?? now),
-          today: displayTime(now),
-          done: checklist.done,
-          tasks: checklist.total,
-          total: _totalText,
-          describeTotal: _describeTotal,
-          typing: widget.typing,
-          readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
-          readOnlyIcon: widget.readOnlyIcon,
-          onReadOnlyPressed: widget.onReadOnlyPressed,
-          tags: TagShelf.maybeOf(context) == null
-              ? null
-              : NoteTagChips(noteId: widget.noteId),
+        child: _ReportsHeight(
+          onHeight: widget.phone ? _onPhoneMetaHeight : null,
+          child: NoteMetaRow(
+            day: NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
+            edited: displayTime(
+              (widget.phone ? widget.createdAt : null) ??
+                  widget.lastUpdatedAt ??
+                  now,
+            ),
+            today: displayTime(now),
+            done: checklist.done,
+            tasks: checklist.total,
+            total: _totalText,
+            describeTotal: _describeTotal,
+            typing: widget.typing,
+            readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
+            readOnlyIcon: widget.readOnlyIcon,
+            onReadOnlyPressed: widget.onReadOnlyPressed,
+            tags: TagShelf.maybeOf(context) == null
+                ? null
+                : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
+            phone: widget.phone,
+          ),
         ),
       ),
     );
+  }
+
+  /// The room between the title and the body, for the meta row. On a phone
+  /// that is its one line, or as many lines as it wraps onto.
+  double _titleRoom(TextScaler textScaler) {
+    final scale = widget.editorTextScale;
+    if (!widget.phone) {
+      return textScaler.scale(EditorMetrics.titleReserve * scale);
+    }
+    return textScaler.scale(
+          (EditorMetrics.metaGap + EditorMetrics.metaBottom) * scale,
+        ) +
+        math.max(
+          _phoneMetaHeight,
+          textScaler.scale(EditorMetrics.phoneMetaRow * scale),
+        );
+  }
+
+  /// How tall a phone's meta row came out, once its facts and tags wrapped.
+  double _phoneMetaHeight = 0;
+
+  void _onPhoneMetaHeight(double height) {
+    if (!mounted || height == _phoneMetaHeight) return;
+    setState(() => _phoneMetaHeight = height);
   }
 
   /// The faint "+" beside an empty line, the caret's or the pointer's, that
@@ -7857,7 +7901,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A phone on its side, with the keyboard up, has no room to spare: the
     // lines take the padding rather than being pushed out of sight.
     if (widget.cramped) basePadding = basePadding.copyWith(top: 0, bottom: 0);
-    final noteFolders = EditorMetrics.page
+    final noteFolders = EditorMetrics.page || widget.phone
         ? NoteFolders.maybeOf(context)
         : null;
     final folders = <PagePlace>[
@@ -8049,9 +8093,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   final height =
                       title.row.height -
                       title.spacerTop +
-                      textScaler.scale(
-                        EditorMetrics.titleReserve * widget.editorTextScale,
-                      );
+                      _titleRoom(textScaler);
                   // The field scales the placeholder's widget once more, so
                   // its lengths go in unscaled.
                   final inline = title.inline;
@@ -8124,10 +8166,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     (title == null
                                         ? 0
                                         : title.row.bottom +
-                                              textScaler.scale(
-                                                EditorMetrics.titleReserve *
-                                                    widget.editorTextScale,
-                                              )),
+                                              _titleRoom(textScaler)),
                                 scroll: _scrollController,
                                 child: Stack(
                                   children: [
@@ -8137,6 +8176,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                         style: textStyle,
                                         strut: strut,
                                         writingFont: widget.writingFont,
+                                        phone: widget.phone,
                                       ),
                                     // A note with a table always needs it, even
                                     // on a device with markdown switched off. A
@@ -8740,12 +8780,17 @@ class _Placeholder extends StatelessWidget {
     required this.style,
     required this.strut,
     required this.writingFont,
+    this.phone = false,
   });
 
   final EdgeInsets padding;
   final TextStyle style;
   final StrutStyle strut;
   final WritingFont writingFont;
+
+  /// A phone's blank page (M11) says only "Start typing…", in the body's
+  /// own size.
+  final bool phone;
 
   @override
   Widget build(BuildContext context) {
@@ -8756,56 +8801,63 @@ class _Placeholder extends StatelessWidget {
           padding: padding,
           child: Align(
             alignment: Alignment.topLeft,
-            child: Text.rich(
-              TextSpan(
-                style: style.copyWith(color: palette.textTertiary),
-                children: [
-                  TextSpan(
-                    text: 'Start typing…\n',
-                    style: paragraphTextStyle(
-                      style,
-                      NoteParagraphStyle.heading,
-                      writingFont: writingFont,
-                      primaryColor: palette.textTertiary,
+            child: phone
+                ? Text(
+                    'Start typing…',
+                    key: const ValueKey('note-placeholder'),
+                    style: style.copyWith(color: palette.textTertiary),
+                    strutStyle: strut,
+                  )
+                : Text.rich(
+                    TextSpan(
+                      style: style.copyWith(color: palette.textTertiary),
+                      children: [
+                        TextSpan(
+                          text: 'Start typing…\n',
+                          style: paragraphTextStyle(
+                            style,
+                            NoteParagraphStyle.heading,
+                            writingFont: writingFont,
+                            primaryColor: palette.textTertiary,
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'Notes and quick calculations\n\n',
+                          style: paragraphTextStyle(
+                            style,
+                            NoteParagraphStyle.subtitle,
+                            writingFont: writingFont,
+                            secondaryColor: palette.textTertiary,
+                          ),
+                        ),
+                        const TextSpan(text: 'Try a few things\n'),
+                        const TextSpan(text: 'Make text '),
+                        const TextSpan(
+                          text: 'bold',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const TextSpan(text: ' or '),
+                        const TextSpan(
+                          text: 'italic',
+                          style: TextStyle(fontStyle: FontStyle.italic),
+                        ),
+                        const TextSpan(text: '.\n'),
+                        const TextSpan(text: '• Keep ideas easy to scan\n'),
+                        const TextSpan(text: '☐ Add a checklist\n\n'),
+                        const TextSpan(text: '20% of 80\n'),
+                        const TextSpan(text: '10rs to usd\n'),
+                        const TextSpan(text: 'Idea details '),
+                        TextSpan(
+                          text: '// inline note',
+                          style: TextStyle(
+                            color: palette.comment,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
                     ),
+                    strutStyle: strut,
                   ),
-                  TextSpan(
-                    text: 'Notes and quick calculations\n\n',
-                    style: paragraphTextStyle(
-                      style,
-                      NoteParagraphStyle.subtitle,
-                      writingFont: writingFont,
-                      secondaryColor: palette.textTertiary,
-                    ),
-                  ),
-                  const TextSpan(text: 'Try a few things\n'),
-                  const TextSpan(text: 'Make text '),
-                  const TextSpan(
-                    text: 'bold',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const TextSpan(text: ' or '),
-                  const TextSpan(
-                    text: 'italic',
-                    style: TextStyle(fontStyle: FontStyle.italic),
-                  ),
-                  const TextSpan(text: '.\n'),
-                  const TextSpan(text: '• Keep ideas easy to scan\n'),
-                  const TextSpan(text: '☐ Add a checklist\n\n'),
-                  const TextSpan(text: '20% of 80\n'),
-                  const TextSpan(text: '10rs to usd\n'),
-                  const TextSpan(text: 'Idea details '),
-                  TextSpan(
-                    text: '// inline note',
-                    style: TextStyle(
-                      color: palette.comment,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-              strutStyle: strut,
-            ),
           ),
         ),
       ),
@@ -9393,5 +9445,40 @@ class _CodeBlockHeader extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Tells [onHeight] how tall its child came out, after each layout that
+/// changes it.
+class _ReportsHeight extends SingleChildRenderObjectWidget {
+  const _ReportsHeight({required this.onHeight, required super.child});
+
+  final ValueChanged<double>? onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderReportsHeight(onHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderReportsHeight renderObject,
+  ) => renderObject.onHeight = onHeight;
+}
+
+class _RenderReportsHeight extends RenderProxyBox {
+  _RenderReportsHeight(this.onHeight);
+
+  ValueChanged<double>? onHeight;
+  double? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final onHeight = this.onHeight;
+    final height = size.height;
+    if (onHeight == null || height == _reported) return;
+    _reported = height;
+    WidgetsBinding.instance.addPostFrameCallback((_) => onHeight(height));
   }
 }

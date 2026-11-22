@@ -256,7 +256,7 @@ void main() {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
-      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('phone-account')));
       await tester.pumpAndSettle();
