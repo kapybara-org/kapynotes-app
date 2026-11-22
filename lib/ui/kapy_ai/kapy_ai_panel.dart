@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import 'kapy_ai_chats.dart';
 import 'kapy_ai_conversation.dart';
@@ -443,53 +444,72 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     );
   }
 
+  /// D10's header on a desktop. A phone's full panel has no board of its
+  /// own, so it keeps the hand-lettered title and the clock.
   Widget _header() {
     final palette = context.palette;
+    final desktop = AppPlatform.isDesktop;
     return SizedBox(
-      height: 56,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 16, right: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                _chats ? 'Chats' : 'Kapy AI',
-                maxLines: 1,
-                style: TextStyle(
-                  fontFamily: 'Shantell Sans',
-                  fontSize: 17,
-                  height: 22 / 17,
-                  fontWeight: AppWeight.font(AppWeight.section),
-                  fontVariations: AppWeight.wght(AppWeight.section),
-                  color: palette.textPrimary,
+      height: desktop ? 52 : 56,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: desktop
+              ? Border(bottom: BorderSide(color: palette.separator))
+              : null,
+        ),
+        child: Padding(
+          padding: EdgeInsets.only(left: 16, right: desktop ? 10 : 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _chats ? 'Chats' : 'Kapy AI',
+                  maxLines: 1,
+                  style: desktop
+                      ? kapyText(
+                          13,
+                          18,
+                          palette.textPrimary,
+                          weight: FontWeight.w500,
+                        )
+                      : TextStyle(
+                          fontFamily: 'Shantell Sans',
+                          fontSize: 17,
+                          height: 22 / 17,
+                          fontWeight: AppWeight.font(AppWeight.section),
+                          fontVariations: AppWeight.wght(AppWeight.section),
+                          color: palette.textPrimary,
+                        ),
                 ),
               ),
-            ),
-            KapyAiIconButton(
-              key: const ValueKey('kapy-ai-chats'),
-              icon: KapyIcons.scheduleRounded,
-              tooltip: 'Chats',
-              selected: _chats,
-              onPressed: () => setState(() {
-                _chats = !_chats;
-                _picking = false;
-              }),
-            ),
-            const SizedBox(width: 2),
-            KapyAiIconButton(
-              key: const ValueKey('kapy-ai-new-chat'),
-              icon: KapyIcons.chatAddOutlined,
-              tooltip: 'New chat',
-              onPressed: _newChat,
-            ),
-            const SizedBox(width: 2),
-            KapyAiIconButton(
-              key: const ValueKey('kapy-ai-close'),
-              icon: KapyIcons.closeRounded,
-              tooltip: 'Close',
-              onPressed: widget.onClose,
-            ),
-          ],
+              KapyAiIconButton(
+                key: const ValueKey('kapy-ai-chats'),
+                icon: desktop
+                    ? KapyIcons.chatHistoryOutlined
+                    : KapyIcons.scheduleRounded,
+                tooltip: 'Chats',
+                selected: _chats,
+                onPressed: () => setState(() {
+                  _chats = !_chats;
+                  _picking = false;
+                }),
+              ),
+              const SizedBox(width: 2),
+              KapyAiIconButton(
+                key: const ValueKey('kapy-ai-new-chat'),
+                icon: KapyIcons.chatAddOutlined,
+                tooltip: 'New chat',
+                onPressed: _newChat,
+              ),
+              const SizedBox(width: 2),
+              KapyAiIconButton(
+                key: const ValueKey('kapy-ai-close'),
+                icon: KapyIcons.closeRounded,
+                tooltip: 'Close',
+                onPressed: widget.onClose,
+              ),
+            ],
+          ),
         ),
       ),
     );
