@@ -3,7 +3,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../core/platform.dart';
 import '../core/theme.dart';
 import 'compact_icon_button.dart';
 import 'control_surface.dart';
@@ -165,7 +164,7 @@ class SettingsSearchField extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.onSubmitted,
-    this.onMove,
+    required this.onMove,
     this.autofocus = false,
   });
 
@@ -173,8 +172,8 @@ class SettingsSearchField extends StatelessWidget {
   final FocusNode focusNode;
   final VoidCallback onSubmitted;
 
-  /// The arrow keys, moving which result Return opens. Null on a phone.
-  final ValueChanged<int>? onMove;
+  /// The arrow keys, moving which result Return opens.
+  final ValueChanged<int> onMove;
   final bool autofocus;
 
   @override
@@ -185,16 +184,13 @@ class SettingsSearchField extends StatelessWidget {
       canRequestFocus: false,
       skipTraversal: true,
       onKeyEvent: (node, event) {
-        final move = onMove;
-        if (move != null &&
-            event is! KeyUpEvent &&
-            controller.text.isNotEmpty) {
+        if (event is! KeyUpEvent && controller.text.isNotEmpty) {
           if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-            move(1);
+            onMove(1);
             return KeyEventResult.handled;
           }
           if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-            move(-1);
+            onMove(-1);
             return KeyEventResult.handled;
           }
         }
@@ -208,10 +204,9 @@ class SettingsSearchField extends StatelessWidget {
       },
       child: ValueListenableBuilder<TextEditingValue>(
         valueListenable: controller,
-        builder: (context, value, _) {
-          final pointer = AppPlatform.hasPointer;
-          final size = pointer ? 13.0 : AppTypeScale.control;
-          final field = TextField(
+        builder: (context, value, _) => SizedBox(
+          height: 34,
+          child: TextField(
             key: const ValueKey('settings-search'),
             controller: controller,
             focusNode: focusNode,
@@ -221,62 +216,54 @@ class SettingsSearchField extends StatelessWidget {
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => onSubmitted(),
             style: TextStyle(
-              fontSize: size,
-              height: pointer ? 16 / 13 : null,
+              fontSize: 13,
+              height: 16 / 13,
               color: palette.textPrimary,
             ),
-            cursorHeight: size + 2,
+            cursorHeight: 15,
             decoration: kapyFieldDecoration(
               context,
               hintText: 'Search settings',
               hintStyle: TextStyle(
-                fontSize: size,
-                height: pointer ? 16 / 13 : null,
+                fontSize: 13,
+                height: 16 / 13,
                 color: palette.textTertiary,
               ),
-              fillColor: pointer ? palette.surfaceBackground : null,
-              borderWidth: pointer ? 1.5 : null,
-              radius: pointer ? 10 : null,
-              neutralFocus: pointer,
+              fillColor: palette.fillRest,
+              borderColor: Colors.transparent,
+              radius: 10,
+              neutralFocus: true,
               // InputDecorator gives its prefix the whole adornment slot.
               // Center loosens those constraints so the glyph keeps its
               // intended size.
               prefixIcon: Padding(
-                padding: EdgeInsets.only(
-                  left: pointer ? 9 : 0,
-                  right: pointer ? 8 : 0,
-                ),
+                padding: const EdgeInsets.only(left: 9, right: 8),
                 child: Center(
                   widthFactor: 1,
                   heightFactor: 1,
                   child: KapyIcon(
                     KapyIcons.searchRounded,
                     size: AppControlMetrics.iconSearch,
-                    color: pointer
-                        ? palette.textSecondary
-                        : palette.textTertiary,
+                    color: palette.textTertiary,
                   ),
                 ),
               ),
-              prefixIconConstraints: pointer
-                  ? const BoxConstraints(minHeight: 31)
-                  : BoxConstraints(
-                      minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
-                      minHeight: AppControlMetrics.fieldAdornmentSlot,
-                    ),
+              prefixIconConstraints: const BoxConstraints(minHeight: 31),
               suffixIcon: value.text.isEmpty
-                  ? (pointer
-                        ? const Padding(
-                            padding: EdgeInsets.only(right: 9),
-                            child: Keycap('/'),
-                          )
-                        : null)
+                  ? const Padding(
+                      padding: EdgeInsets.only(right: 12),
+                      child: SizedBox(
+                        height: 28,
+                        child: Center(
+                          widthFactor: 1,
+                          child: Keycap('/', plain: true),
+                        ),
+                      ),
+                    )
                   : CompactIconButton(
                       key: const ValueKey('settings-search-clear'),
                       tooltip: 'Clear search',
-                      extent: pointer
-                          ? 28
-                          : AppControlMetrics.fieldAdornmentSlot,
+                      extent: 28,
                       foregroundColor: palette.textTertiary,
                       onPressed: () {
                         controller.clear();
@@ -287,19 +274,18 @@ class SettingsSearchField extends StatelessWidget {
                         size: AppControlMetrics.iconAdornment,
                       ),
                     ),
-              suffixIconConstraints: BoxConstraints(
-                minWidth: pointer ? 30 : AppControlMetrics.fieldAdornmentSlot,
-                minHeight: pointer ? 28 : AppControlMetrics.fieldAdornmentSlot,
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 30,
+                minHeight: 28,
               ),
-              contentPadding: pointer
-                  ? const EdgeInsets.only(right: 10, top: 8.5, bottom: 8.5)
-                  : EdgeInsets.symmetric(
-                      vertical: AppControlMetrics.fieldVerticalPadding,
-                    ),
+              contentPadding: const EdgeInsets.only(
+                right: 10,
+                top: 8.5,
+                bottom: 8.5,
+              ),
             ),
-          );
-          return pointer ? SizedBox(height: 34, child: field) : field;
-        },
+          ),
+        ),
       ),
     );
   }
@@ -313,16 +299,15 @@ class SettingsSearchResults<S> extends StatelessWidget {
     required this.query,
     required this.results,
     required this.onOpen,
-    this.marked,
+    required this.marked,
   });
 
   final String query;
   final List<SettingsSearchEntry<S>> results;
   final ValueChanged<SettingsSearchEntry<S>> onOpen;
 
-  /// The result Return opens, lit so a keyboard can see which. Null on a
-  /// phone, where a thumb picks.
-  final int? marked;
+  /// The result Return opens, lit so a keyboard can see which.
+  final int marked;
 
   @override
   Widget build(BuildContext context) {
@@ -366,15 +351,9 @@ class SettingsSearchResults<S> extends StatelessWidget {
       );
     }
 
-    final pointer = AppPlatform.hasPointer;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // The dialog's heading already counts them; the phone has no heading.
-        if (!pointer)
-          SettingsLabel(
-            results.length == 1 ? '1 setting' : '${results.length} settings',
-          ),
         SettingsGroup(
           children: [
             for (var index = 0; index < results.length; index++)
@@ -388,14 +367,13 @@ class SettingsSearchResults<S> extends StatelessWidget {
               ),
           ],
         ),
-        if (pointer)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(3, 16, 3, 0),
-            child: Text(
-              'Also try “dark”, “hotkey”, “backup” or a key like “⌘H”.',
-              style: TextStyle(fontSize: 12.5, color: palette.textDescription),
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(3, 16, 3, 0),
+          child: Text(
+            'Also try “dark”, “hotkey”, “backup” or a key like “⌘H”.',
+            style: TextStyle(fontSize: 12.5, color: palette.textDescription),
           ),
+        ),
       ],
     );
   }

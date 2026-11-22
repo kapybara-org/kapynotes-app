@@ -41,8 +41,7 @@ class SettingsMetrics {
   static double get noteSize =>
       AppPlatform.isWindows ? AppTypeScale.caption : 11;
   static double get buttonLabelSize => _touch ? 12 : 13;
-  static FontWeight get titleWeight =>
-      AppWeight.named(AppWeight.rowTitle);
+  static FontWeight get titleWeight => AppWeight.named(AppWeight.rowTitle);
   static double get chevronSize => _touch ? 21 : 13;
 
   /// The height of a control at the end of a row: a button, a menu, a well.
@@ -169,7 +168,9 @@ class SettingsLabel extends StatelessWidget {
   }
 }
 
-/// A card of rows with hairlines between them.
+/// A card of rows with hairlines between them: a fill with no outline, as
+/// the crisp Settings draws it (D12), and each hairline starting where the
+/// rows' words do.
 class SettingsGroup extends StatelessWidget {
   const SettingsGroup({super.key, required this.children});
 
@@ -179,28 +180,23 @@ class SettingsGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final pointer = AppPlatform.hasPointer;
-    final rows = Column(
-      children: [
-        for (var index = 0; index < children.length; index++) ...[
-          if (index > 0)
-            Divider(
-              height: pointer ? 1 : 0.5,
-              thickness: pointer ? 1 : 0.5,
-              color: palette.separator,
-            ),
-          children[index],
-        ],
-      ],
-    );
-    if (!pointer) return KapyControlSurface(child: rows);
-    // The outline is drawn inside the card's box, as the design measures it,
-    // so the rows sit a hairline in from it.
     return KapyControlSurface(
-      radius: AppRadii.surface,
-      padding: const EdgeInsets.all(1),
       color: palette.cardBackground,
-      borderColor: palette.controlBorder,
-      child: rows,
+      borderColor: Colors.transparent,
+      child: Column(
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            if (index > 0)
+              Divider(
+                height: pointer ? 1 : 0.5,
+                thickness: pointer ? 1 : 0.5,
+                indent: SettingsMetrics.padding.left,
+                color: palette.separator,
+              ),
+            children[index],
+          ],
+        ],
+      ),
     );
   }
 }
@@ -357,6 +353,7 @@ class SettingsRow extends StatelessWidget {
     this.onReset,
     this.onTap,
     this.destructive = false,
+    this.flush = false,
   });
 
   final String title;
@@ -381,6 +378,10 @@ class SettingsRow extends StatelessWidget {
 
   /// Red, for the one or two rows that cannot be taken back.
   final bool destructive;
+
+  /// Straight on the pane rather than in a card: no padding and no least
+  /// height, so its words line up with the headings around it.
+  final bool flush;
 
   @override
   Widget build(BuildContext context) {
@@ -409,8 +410,10 @@ class SettingsRow extends StatelessWidget {
           );
     final below = this.below;
     final row = Container(
-      constraints: BoxConstraints(minHeight: SettingsMetrics.minRowHeight),
-      padding: SettingsMetrics.padding,
+      constraints: BoxConstraints(
+        minHeight: flush ? 0 : SettingsMetrics.minRowHeight,
+      ),
+      padding: flush ? EdgeInsets.zero : SettingsMetrics.padding,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -439,7 +442,10 @@ class SettingsRow extends StatelessWidget {
             const SizedBox(height: 10),
             control,
           ],
-          if (below != null) ...[const SizedBox(height: 10), below],
+          if (below != null) ...[
+            SizedBox(height: flush ? SettingsMetrics.groupGap : 10),
+            below,
+          ],
         ],
       ),
     );
@@ -713,6 +719,7 @@ class SettingsSegmented<T> extends StatelessWidget {
     required this.onSelected,
     this.styleFor,
     this.enabledFor,
+    this.width,
   });
 
   final List<T> options;
@@ -730,10 +737,15 @@ class SettingsSegmented<T> extends StatelessWidget {
   /// so the choice reads the same everywhere.
   final bool Function(T option)? enabledFor;
 
+  /// How wide the track is beside a pointer, its options sharing it equally,
+  /// as Appearance's mode is drawn. Null fits the track to its labels.
+  final double? width;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final pointer = AppPlatform.hasPointer;
+    final fitted = pointer && width == null;
     Widget segment(T option) {
       final chosen = option == selected;
       final enabled = enabledFor?.call(option) ?? true;
@@ -785,18 +797,18 @@ class SettingsSegmented<T> extends StatelessWidget {
     }
 
     return Container(
+      width: pointer ? width : null,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: palette.wellBackground,
+        color: Color.alphaBlend(palette.fillControl, palette.cardBackground),
         borderRadius: BorderRadius.circular(AppRadii.control),
-        border: Border.all(color: palette.controlBorder),
       ),
       child: Row(
-        mainAxisSize: pointer ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: fitted ? MainAxisSize.min : MainAxisSize.max,
         children: [
           for (final option in options) ...[
             if (option != options.first) const SizedBox(width: 2),
-            if (pointer)
+            if (fitted)
               Flexible(child: segment(option))
             else
               Expanded(child: segment(option)),

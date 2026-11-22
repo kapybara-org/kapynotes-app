@@ -273,28 +273,46 @@ void main() {
     );
   });
 
-  test('a phone’s MCP row in Settings says what its pane says', () {
+  testWidgets('a phone has the AI apps at the end of Voice & AI, and says '
+      'where they connect', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    for (final phone in [TargetPlatform.android, TargetPlatform.iOS]) {
-      AppPlatform.debugTargetPlatformOverride = phone;
-      expect(
-        SettingsSection.mcp.summary,
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSettings(
+                context,
+                layoutPrefs: LayoutPrefs(f.store),
+                shortcuts: ShortcutPrefs(f.store),
+                rates: RatesRepository(f.store),
+                notes: f.notes,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // A phone sets its headings in capitals.
+    expect(find.text('AI APPS'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('settings-section-voice')));
+    await tester.pumpAndSettle();
+    expect(find.text('AI APPS'), findsOneWidget);
+    expect(
+      find.text(
         'Assistants connect through Kapy Notes on your Mac, Windows PC or '
-        'Linux computer',
-      );
-    }
-    for (final desktop in [
-      TargetPlatform.macOS,
-      TargetPlatform.windows,
-      TargetPlatform.linux,
-    ]) {
-      AppPlatform.debugTargetPlatformOverride = desktop;
-      expect(
-        SettingsSection.mcp.summary,
-        'Let the AI apps you use read and change your notes, on this computer '
-        'only',
-      );
-    }
+        'Linux computer.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('settings search finds it by the words people use', (
