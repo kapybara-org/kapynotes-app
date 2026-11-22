@@ -694,7 +694,7 @@ late Directory _imageDir;
 late BlobStore _imageStore;
 late List<String> _imageHashes;
 
-/// The chart in Send the deck's details, M14's picture at three times its
+/// The chart in Send the deck's details, [_chart], at three times M14's
 /// 200 × 96.
 late String _deckHash;
 
@@ -716,6 +716,47 @@ Uint8List _swatch(int width, int height, img.ColorRgb8 colour) {
       (colour.b * 0.7).round(),
     ),
   );
+  return Uint8List.fromList(img.encodePng(image, level: 1));
+}
+
+/// M14's chart, so the task page's golden pins the picture itself and not
+/// only its place: a slate sky over darker ground, a pale sun and five bars,
+/// in flat colours like the swatches.
+Uint8List _chart() {
+  final image = img.Image(width: 600, height: 288, numChannels: 3);
+  img.fill(image, color: img.ColorRgb8(67, 78, 87));
+  img.fillRect(
+    image,
+    x1: 0,
+    y1: 156,
+    x2: 600,
+    y2: 288,
+    color: img.ColorRgb8(46, 58, 64),
+  );
+  img.fillCircle(
+    image,
+    x: 504,
+    y: 68,
+    radius: 39,
+    color: img.ColorRgb8(232, 226, 214),
+  );
+  final pale = img.ColorRgb8(196, 217, 168);
+  for (final (left, top, colour) in [
+    (42, 186, pale),
+    (90, 156, pale),
+    (138, 174, pale),
+    (186, 120, img.ColorRgb8(138, 166, 118)),
+    (234, 96, img.ColorRgb8(214, 122, 86)),
+  ]) {
+    img.fillRect(
+      image,
+      x1: left,
+      y1: top,
+      x2: left + 30,
+      y2: 252,
+      color: colour,
+    );
+  }
   return Uint8List.fromList(img.encodePng(image, level: 1));
 }
 
@@ -763,9 +804,7 @@ void main() {
       await _imageStore.put(_swatch(600, 600, img.ColorRgb8(104, 168, 128))),
       await _imageStore.put(_swatch(600, 600, img.ColorRgb8(158, 130, 198))),
     ];
-    _deckHash = await _imageStore.put(
-      _swatch(600, 288, img.ColorRgb8(67, 78, 87)),
-    );
+    _deckHash = await _imageStore.put(_chart());
   });
 
   tearDownAll(() async {
