@@ -723,28 +723,30 @@ class _Dot extends StatelessWidget {
   );
 }
 
-/// A phone's way around: the rail's destinations along the bottom, Settings
-/// at the end, and the + beside them. A tap on the + makes what [space] holds
-/// (on Tasks it adds a task); a long press offers [createActions], the rest of
-/// the desktop's New. iOS floats a quiet pill over [child]; Android uses
-/// Material's navigation bar and a floating action button.
-class PhoneSpaces extends StatelessWidget {
+/// The tabs along a phone's bar (M01): Notes, which holds Home and the Tasks
+/// title beside it, Folders, which holds Drawings, and Kapy AI.
+enum PhoneTab { notes, folders, kapyAi }
+
+/// A phone's way around: Notes, Folders and Kapy AI along the bottom, and the
+/// + on its own beside them. A tap on the + makes what the page on screen
+/// holds (on Tasks it adds a task); a long press offers [createActions], the
+/// rest of the desktop's New. iOS floats a quiet pill over [child]; Android
+/// uses Material's navigation bar and a floating action button.
+class PhoneSpaces extends StatefulWidget {
   const PhoneSpaces({
     super.key,
-    required this.space,
+    required this.tab,
     required this.onSelected,
-    required this.onSettingsPressed,
     required this.createLabel,
     required this.onCreate,
     required this.createActions,
     required this.onCreateAction,
     required this.child,
-    this.showTasks = true,
+    this.showKapyAi = true,
   });
 
-  final LibrarySpace space;
-  final ValueChanged<LibrarySpace> onSelected;
-  final VoidCallback onSettingsPressed;
+  final PhoneTab tab;
+  final ValueChanged<PhoneTab> onSelected;
 
   /// What a tap on the + makes, such as "New note".
   final String createLabel;
@@ -752,66 +754,85 @@ class PhoneSpaces extends StatelessWidget {
   final List<KapyMenuAction> createActions;
   final ValueChanged<String> onCreateAction;
   final Widget child;
-  final bool showTasks;
+
+  /// Whether the build carries Kapy AI, for its tab.
+  final bool showKapyAi;
 
   static const double _barHeight = 56;
   static const double _barLift = 30;
   static const double _plusExtent = 56;
 
+  /// From the bottom of the page to the top of what floats over it: iOS's
+  /// pill, or Android's +, which sits over the page above Material's bar.
+  static double clearance() => AppPlatform.isAndroid
+      ? _plusExtent + kFloatingActionButtonMargin
+      : _barLift + _barHeight;
+
+  @override
+  State<PhoneSpaces> createState() => _PhoneSpacesState();
+}
+
+class _PhoneSpacesState extends State<PhoneSpaces> {
+  final _bar = GlobalKey();
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final items = <({LibrarySpace? to, KapyIconData icon, String label})>[
-      (to: LibrarySpace.notes, icon: KapyIcons.noteOutlined, label: 'Notes'),
-      if (showTasks)
-        (to: LibrarySpace.tasks, icon: KapyIcons.tasksOutlined, label: 'Tasks'),
-      (
-        to: LibrarySpace.drawings,
-        icon: KapyIcons.penRounded,
-        label: 'Drawings',
-      ),
-      (to: null, icon: KapyIcons.settingsGearOutlined, label: 'Settings'),
+    final items = <({PhoneTab to, KapyIconData icon, String label})>[
+      (to: PhoneTab.notes, icon: KapyIcons.noteOutlined, label: 'Notes'),
+      (to: PhoneTab.folders, icon: KapyIcons.folderOutlined, label: 'Folders'),
+      if (widget.showKapyAi)
+        (
+          to: PhoneTab.kapyAi,
+          icon: KapyIcons.sparklesOutlined,
+          label: 'Kapy AI',
+        ),
     ];
-    void choose(LibrarySpace? to) =>
-        to == null ? onSettingsPressed() : onSelected(to);
     final plus = Builder(
       builder: (context) => _PlusButton(
-        label: createLabel,
-        onPressed: onCreate,
+        key: const ValueKey('phone-new'),
+        label: widget.createLabel,
+        onPressed: widget.onCreate,
         onLongPress: () => _showCreateMenu(context),
       ),
     );
 
     if (AppPlatform.isAndroid) {
-      final selected = items.indexWhere((item) => item.to == space);
       return Scaffold(
         backgroundColor: Colors.transparent,
-        body: child,
+        body: widget.child,
         floatingActionButton: plus,
-        bottomNavigationBar: NavigationBar(
-          key: const ValueKey('phone-bar'),
-          selectedIndex: math.max(0, selected),
-          backgroundColor: palette.railBackground,
-          indicatorColor: palette.fillSelected,
-          surfaceTintColor: Colors.transparent,
-          onDestinationSelected: (index) => choose(items[index].to),
-          destinations: [
-            for (final item in items)
-              NavigationDestination(
-                key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
-                icon: KapyIcon(
-                  item.icon,
-                  size: 20,
-                  color: palette.textTertiary,
+        bottomNavigationBar: KeyedSubtree(
+          key: _bar,
+          child: NavigationBar(
+            key: const ValueKey('phone-bar'),
+            selectedIndex: math.max(
+              0,
+              items.indexWhere((item) => item.to == widget.tab),
+            ),
+            backgroundColor: palette.railBackground,
+            indicatorColor: palette.fillSelected,
+            surfaceTintColor: Colors.transparent,
+            onDestinationSelected: (index) =>
+                widget.onSelected(items[index].to),
+            destinations: [
+              for (final item in items)
+                NavigationDestination(
+                  key: ValueKey('bar-${item.to.name}'),
+                  icon: KapyIcon(
+                    item.icon,
+                    size: 20,
+                    color: palette.textTertiary,
+                  ),
+                  selectedIcon: KapyIcon(
+                    item.icon,
+                    size: 20,
+                    color: palette.textPrimary,
+                  ),
+                  label: item.label,
                 ),
-                selectedIcon: KapyIcon(
-                  item.icon,
-                  size: 20,
-                  color: palette.textPrimary,
-                ),
-                label: item.label,
-              ),
-          ],
+            ],
+          ),
         ),
       );
     }
@@ -819,47 +840,44 @@ class PhoneSpaces extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      body: child,
+      body: widget.child,
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, _barLift),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, PhoneSpaces._barLift),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Flexible(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: items.length > 4 ? 360 : 300,
+            Expanded(
+              key: _bar,
+              // Opaque, because it floats over the list.
+              child: Container(
+                key: const ValueKey('phone-bar'),
+                height: PhoneSpaces._barHeight,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Color.alphaBlend(
+                    palette.fillRest,
+                    palette.sidebarBackground,
+                  ),
+                  borderRadius: BorderRadius.circular(
+                    PhoneSpaces._barHeight / 2,
+                  ),
+                  border: Border.all(
+                    color: palette.edge,
+                    width: AppHairline.of(context),
+                  ),
                 ),
-                // Opaque, because it floats over the list.
-                child: Container(
-                  key: const ValueKey('phone-bar'),
-                  height: _barHeight,
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Color.alphaBlend(
-                      palette.fillRest,
-                      palette.sidebarBackground,
-                    ),
-                    borderRadius: BorderRadius.circular(_barHeight / 2),
-                    border: Border.all(
-                      color: palette.edge,
-                      width: AppHairline.of(context),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      for (final item in items)
-                        Expanded(
-                          child: _BarItem(
-                            key: ValueKey('bar-${item.to?.name ?? 'settings'}'),
-                            icon: item.icon,
-                            label: item.label,
-                            selected: item.to == space,
-                            onPressed: () => choose(item.to),
-                          ),
+                child: Row(
+                  children: [
+                    for (final item in items)
+                      Expanded(
+                        child: _BarItem(
+                          key: ValueKey('bar-${item.to.name}'),
+                          icon: item.icon,
+                          label: item.label,
+                          selected: item.to == widget.tab,
+                          onPressed: () => widget.onSelected(item.to),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -871,28 +889,32 @@ class PhoneSpaces extends StatelessWidget {
     );
   }
 
-  /// The rest of New, rising from the + where the thumb already is.
+  /// The rest of New (M05): the page dims behind it, all but the bar, and
+  /// the + turns into a × that closes it, as a tap anywhere else does.
   void _showCreateMenu(BuildContext context) {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || createActions.isEmpty) return;
+    final plus = _globalRect(context);
+    final bar = _bar.currentContext;
+    if (plus == null || bar == null || widget.createActions.isEmpty) return;
     unawaited(
-      showKapyContextMenu<String>(
-        context: context,
-        globalPosition: box.localToGlobal(Offset(box.size.width, 0)),
-        items: [
-          for (final action in createActions)
-            PopupMenuItem(
-              key: ValueKey('phone-new-${action.value}'),
-              value: action.value,
-              enabled: action.enabled,
-              height: 44,
-              child: KapyMenuActionRow(action, touch: true),
+      Navigator.of(context, rootNavigator: true)
+          .push(
+            _CreateMenuRoute(
+              actions: widget.createActions,
+              plus: plus,
+              bar: _globalRect(bar)!,
+              barRadius: AppPlatform.isAndroid ? 0 : PhoneSpaces._barHeight / 2,
             ),
-        ],
-      ).then((choice) {
-        if (choice != null) onCreateAction(choice);
-      }),
+          )
+          .then((choice) {
+            if (choice != null) widget.onCreateAction(choice);
+          }),
     );
+  }
+
+  static Rect? _globalRect(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
   }
 }
 
@@ -969,17 +991,21 @@ class _BarItem extends StatelessWidget {
   }
 }
 
-/// The phone's one main action: a round + in the accent.
+/// The phone's one main action: a round + in the accent, or the × that
+/// closes New's menu while it is open.
 class _PlusButton extends StatelessWidget {
   const _PlusButton({
+    super.key,
     required this.label,
+    this.icon = KapyIcons.addRounded,
     required this.onPressed,
-    required this.onLongPress,
+    this.onLongPress,
   });
 
   final String label;
+  final KapyIconData icon;
   final VoidCallback onPressed;
-  final VoidCallback onLongPress;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -987,10 +1013,9 @@ class _PlusButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: label,
-      onLongPressHint: 'More to make',
+      onLongPressHint: onLongPress == null ? null : 'More to make',
       excludeSemantics: true,
       child: Material(
-        key: const ValueKey('phone-new'),
         color: scheme.primary,
         shape: const CircleBorder(),
         elevation: AppPlatform.isAndroid ? 3 : 0,
@@ -1002,15 +1027,194 @@ class _PlusButton extends StatelessWidget {
           child: SizedBox.square(
             dimension: PhoneSpaces._plusExtent,
             child: Center(
-              child: KapyIcon(
-                KapyIcons.addRounded,
-                size: 22,
-                color: scheme.onPrimary,
-              ),
+              child: KapyIcon(icon, size: 22, color: scheme.onPrimary),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// New's menu over a phone (M05): a card of what the + makes above it, the
+/// page dimmed behind all but the bar, and a × over the + that closes it.
+class _CreateMenuRoute extends PopupRoute<String> {
+  _CreateMenuRoute({
+    required this.actions,
+    required this.plus,
+    required this.bar,
+    required this.barRadius,
+  });
+
+  final List<KapyMenuAction> actions;
+
+  /// Where the + and the bar are on screen.
+  final Rect plus;
+  final Rect bar;
+  final double barRadius;
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  bool get barrierDismissible => true;
+
+  @override
+  String get barrierLabel => 'Close';
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 150);
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => FadeTransition(opacity: animation, child: child);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    final palette = context.palette;
+    final screen = MediaQuery.sizeOf(context);
+    void close() => Navigator.of(context).pop();
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: ExcludeSemantics(
+            child: GestureDetector(
+              key: const ValueKey('phone-new-dim'),
+              behavior: HitTestBehavior.opaque,
+              onTap: close,
+              child: CustomPaint(
+                painter: _DimPainter(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xA30C0B09)
+                      : const Color(0x402A2620),
+                  hole: RRect.fromRectAndRadius(
+                    bar,
+                    Radius.circular(barRadius),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          right: screen.width - plus.right,
+          bottom: screen.height - plus.top + 12,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: 200,
+              maxWidth: math.max(200, plus.right - 16),
+            ),
+            child: IntrinsicWidth(
+              child: Material(
+                key: const ValueKey('phone-new-menu'),
+                color: Color.alphaBlend(
+                  palette.fillRest,
+                  palette.sidebarBackground,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: palette.edge,
+                    width: AppHairline.of(context),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final action in actions)
+                        Semantics(
+                          button: true,
+                          enabled: action.enabled,
+                          label: action.label,
+                          excludeSemantics: true,
+                          child: InkWell(
+                            key: ValueKey('phone-new-${action.value}'),
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: action.enabled
+                                ? () => Navigator.of(context).pop(action.value)
+                                : null,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 44),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                child: Row(
+                                  spacing: 10,
+                                  children: [
+                                    KapyIcon(
+                                      action.icon,
+                                      size: 18,
+                                      color: palette.textSecondary,
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        action.label,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          height: 20 / 15,
+                                          color: palette.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned.fromRect(
+          rect: plus,
+          child: _PlusButton(
+            key: const ValueKey('phone-new-close'),
+            label: 'Close',
+            icon: KapyIcons.closeRounded,
+            onPressed: close,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The dim behind New's menu, all but the bar, which stays as it was.
+class _DimPainter extends CustomPainter {
+  const _DimPainter({required this.color, required this.hole});
+
+  final Color color;
+  final RRect hole;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawPath(
+      Path.combine(
+        PathOperation.difference,
+        Path()..addRect(Offset.zero & size),
+        Path()..addRRect(hole),
+      ),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DimPainter old) => old.color != color || old.hole != hole;
 }

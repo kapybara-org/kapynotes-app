@@ -114,14 +114,20 @@ void main() {
       tester,
       cancel.evaluate().isEmpty ? 'command-menu-back' : 'command-menu-cancel',
     );
-    await tap(tester, 'bar-tasks');
+    await tap(tester, 'home-title-tasks');
     await check('tasks');
-    await tap(tester, 'bar-drawings');
+    await tap(tester, 'bar-folders');
+    await check('folders');
+    await tap(tester, 'folders-drawings-tile');
     await check('drawings');
-    await tap(tester, 'bar-settings');
+    await tap(tester, 'phone-account');
     await check('settings');
     await tap(tester, 'settings-sheet-done');
     await tap(tester, 'bar-notes');
+    await tester.longPress(find.byKey(const ValueKey('phone-new')));
+    await tester.pumpAndSettle();
+    await check('new menu');
+    await tap(tester, 'phone-new-close');
     await tap(tester, 'phone-new');
     await check('new note', keyboard: true);
     // A device with a hardware keyboard attached raises no software one, so
@@ -148,8 +154,9 @@ void main() {
     for (final key in [
       'page-back',
       'phone-filters',
-      'bar-tasks',
-      'bar-drawings',
+      'home-title-tasks',
+      'bar-folders',
+      'folders-drawings-tile',
       'bar-notes',
       'sidebar-search-field',
     ]) {

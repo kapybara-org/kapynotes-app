@@ -1593,21 +1593,22 @@ void main() {
         await tester.runAsync(goldenTasks.reconcileNow);
         await tester.pumpAndSettle();
         await tapAndSettle(tester, 'page-back');
-        await tapAndSettle(tester, 'bar-tasks');
+        await tapAndSettle(tester, 'home-title-tasks');
         await matches('tasks');
       });
 
       testWidgets('phone drawings, $name', (tester) async {
         await pumpPhone(tester);
         await tapAndSettle(tester, 'page-back');
-        await tapAndSettle(tester, 'bar-drawings');
+        await tapAndSettle(tester, 'bar-folders');
+        await tapAndSettle(tester, 'folders-drawings-tile');
         await matches('drawings');
       });
 
       testWidgets('phone settings, $name', (tester) async {
         await pumpPhone(tester);
         await tapAndSettle(tester, 'page-back');
-        await tapAndSettle(tester, 'bar-settings');
+        await tapAndSettle(tester, 'phone-account');
         expect(
           find.byKey(const ValueKey('settings-whats-new-row')),
           findsOneWidget,
@@ -1618,7 +1619,7 @@ void main() {
       testWidgets('phone settings, a category opened, $name', (tester) async {
         await pumpPhone(tester);
         await tapAndSettle(tester, 'page-back');
-        await tapAndSettle(tester, 'bar-settings');
+        await tapAndSettle(tester, 'phone-account');
         await tapAndSettle(tester, 'settings-section-appearance');
         await matches('settings_appearance');
       });
@@ -1853,7 +1854,7 @@ void main() {
       await tester.pumpAndSettle();
       for (final key in [
         'page-back',
-        'bar-settings',
+        'phone-account',
         'settings-section-appearance',
       ]) {
         await tester.tap(find.byKey(ValueKey(key)));

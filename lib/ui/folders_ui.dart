@@ -223,9 +223,18 @@ class FoldersTab extends StatefulWidget {
     this.upcoming = const [],
     this.inFront,
     this.onTab,
+    this.header,
+    this.phone = false,
   });
 
   final FolderStore store;
+
+  /// What a phone's Folders puts over the tree: its Drawings tile.
+  final Widget? header;
+
+  /// A phone's Folders (M02): rows a finger's height, and a long press for a
+  /// folder's actions.
+  final bool phone;
 
   /// The notes waiting for a day after today, folded above the tree as
   /// Upcoming, beside Drawings (Sanjay, 20 Nov: the phone home shows no note
@@ -394,6 +403,7 @@ class _FoldersTabState extends State<FoldersTab> {
       );
     }
 
+    if (widget.header case final header?) rows.add((_) => header);
     if (widget.upcoming.isNotEmpty) {
       final count = widget.upcoming.length;
       add(
@@ -426,6 +436,7 @@ class _FoldersTabState extends State<FoldersTab> {
                 ? field(folder.depth, folder.name)
                 : _FolderRow(
                     key: ValueKey('folder-${folder.id}'),
+                    phone: widget.phone,
                     line: line,
                     selected: folder.id == widget.inFront,
                     onToggle: () => widget.onOpen(folder.id, !line.open),
@@ -452,7 +463,7 @@ class _FoldersTabState extends State<FoldersTab> {
     add(
       (_) => _naming && _namingIn == null
           ? field(1)
-          : _NewFolderRow(onTap: _newFolder),
+          : _NewFolderRow(phone: widget.phone, onTap: _newFolder),
     );
     if (loose.isNotEmpty) {
       add(
@@ -484,6 +495,7 @@ class _FoldersTabState extends State<FoldersTab> {
 class _FolderRow extends StatefulWidget {
   const _FolderRow({
     super.key,
+    required this.phone,
     required this.line,
     required this.selected,
     required this.onToggle,
@@ -491,6 +503,7 @@ class _FolderRow extends StatefulWidget {
     required this.onMenu,
   });
 
+  final bool phone;
   final FolderLine line;
 
   /// Whether the tab in front shows it.
@@ -513,6 +526,7 @@ class _FolderRowState extends State<_FolderRow> {
     final folder = line.folder;
     final onTab = widget.onTab;
     final selected = widget.selected;
+    final phone = widget.phone;
     final chevron = SizedBox(
       width: 12,
       child: line.empty
@@ -544,8 +558,11 @@ class _FolderRowState extends State<_FolderRow> {
               : widget.onToggle,
           onTertiaryTapUp: onTab == null ? null : (_) => onTab(behind: true),
           onSecondaryTapUp: (details) => widget.onMenu(details.globalPosition),
+          onLongPressStart: phone
+              ? (details) => widget.onMenu(details.globalPosition)
+              : null,
           child: Container(
-            height: AppControlMetrics.scaleBar(context, 32),
+            height: AppControlMetrics.scaleBar(context, phone ? 48 : 32),
             padding: EdgeInsets.only(
               left: _indent(folder.depth),
               right: _hovering ? 4 : 8,
@@ -574,7 +591,7 @@ class _FolderRowState extends State<_FolderRow> {
                       behavior: HitTestBehavior.opaque,
                       onTap: widget.onToggle,
                       child: SizedBox(
-                        width: 20,
+                        width: phone ? 44 : 20,
                         height: double.infinity,
                         child: Align(
                           alignment: Alignment.centerLeft,
@@ -585,18 +602,18 @@ class _FolderRowState extends State<_FolderRow> {
                   ),
                 KapyIcon(
                   KapyIcons.folderOutlined,
-                  size: 16,
+                  size: phone ? 20 : 16,
                   color: palette.textSecondary,
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: phone ? 10 : 8),
                 Expanded(
                   child: Text(
                     folder.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: _figtree(
-                      13,
-                      16,
+                      phone ? 16 : 13,
+                      phone ? 22 : 16,
                       FontWeight.w400,
                       selected ? palette.textPrimary : palette.textSecondary,
                       axis: selected ? AppWeight.selected : AppWeight.body,
@@ -658,8 +675,9 @@ class _FolderRowState extends State<_FolderRow> {
 
 /// New folder, under the tree.
 class _NewFolderRow extends StatefulWidget {
-  const _NewFolderRow({required this.onTap});
+  const _NewFolderRow({required this.phone, required this.onTap});
 
+  final bool phone;
   final VoidCallback onTap;
 
   @override
@@ -683,7 +701,7 @@ class _NewFolderRowState extends State<_NewFolderRow> {
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
           child: Container(
-            height: AppControlMetrics.scaleBar(context, 32),
+            height: AppControlMetrics.scaleBar(context, widget.phone ? 48 : 32),
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,

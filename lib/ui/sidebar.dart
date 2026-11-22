@@ -352,7 +352,8 @@ class Sidebar extends StatelessWidget {
   final bool phone;
 
   /// The cards a phone's Notes puts over its days in place of the pinned
-  /// notes, which are behind one of them.
+  /// notes, which are behind one of them, or the tiles a phone's Folders
+  /// puts over its tree.
   final Widget? phoneCards;
 
   /// The notes filter and the list/cards switch, under the search beside the
@@ -1343,11 +1344,7 @@ extension on Sidebar {
         // Drawings stay one grid of thumbnails, two to a row, which a day
         // heading would break into short rows.
         if (groups.mine.isNotEmpty) {
-          if (groups.pinned.isNotEmpty || groups.byGroup.isNotEmpty) {
-            heading(const _PhoneHeading('Recent'));
-          } else {
-            gap(8);
-          }
+          heading(const _PhoneHeading('Recent'));
           section(groups.mine);
         }
       } else {
@@ -1440,6 +1437,8 @@ extension on Sidebar {
         inFront: folders.inFront,
         onTab: folders.onTab,
         upcoming: upcoming,
+        header: phoneCards,
+        phone: phone,
         noteRow: (note, depth) => _row(
           note,
           shared: sharing != null && note.isShared,
@@ -3850,20 +3849,28 @@ class _PhoneHeading extends StatelessWidget {
 }
 
 /// A phone list's title: the space's name large, its count beside it, and
-/// the clay underline the note page draws.
+/// the clay underline the note page draws. A page under a tab, reached by
+/// its arrow, has no underline (M03).
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
     required this.title,
-    required this.count,
+    this.count,
     this.onBack,
+    this.trailing,
   });
 
   final String title;
-  final int count;
 
-  /// Set for a page reached from Home, such as Shared: its arrow goes back.
+  /// Left out where the page counts nothing, as Folders does.
+  final int? count;
+
+  /// Set for a page reached from Home or Folders, such as Shared or
+  /// Drawings: its arrow goes back.
   final VoidCallback? onBack;
+
+  /// At the row's end, such as the S that opens Settings.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -3871,7 +3878,7 @@ class PhoneListTitle extends StatelessWidget {
     final onBack = this.onBack;
     final heading = Semantics(
       header: true,
-      label: '$title, $count',
+      label: count == null ? title : '$title, $count',
       excludeSemantics: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3895,43 +3902,49 @@ class PhoneListTitle extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Text(
-                '$count',
-                style: TextStyle(
-                  fontFamily: AppFonts.ui,
-                  fontSize: 15,
-                  color: palette.textTertiary,
+              if (count != null) ...[
+                const SizedBox(width: 10),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontFamily: AppFonts.ui,
+                    fontSize: 15,
+                    color: palette.textTertiary,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
-          const SizedBox(height: 8),
-          Container(width: 44, height: 2, color: palette.clay),
+          if (onBack == null) ...[
+            const SizedBox(height: 8),
+            Container(width: 44, height: 2, color: palette.clay),
+          ],
         ],
       ),
     );
-    if (onBack == null) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-        child: heading,
-      );
-    }
+    final trailing = this.trailing;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 12, 20, 14),
+      padding: EdgeInsets.fromLTRB(
+        onBack == null ? 20 : 6,
+        12,
+        trailing == null ? 20 : 14,
+        14,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconButton(
-            key: const ValueKey('page-back'),
-            tooltip: 'Back',
-            onPressed: onBack,
-            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-            padding: EdgeInsets.zero,
-            color: palette.textPrimary,
-            icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
-          ),
+          if (onBack != null)
+            IconButton(
+              key: const ValueKey('page-back'),
+              tooltip: 'Back',
+              onPressed: onBack,
+              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+              padding: EdgeInsets.zero,
+              color: palette.textPrimary,
+              icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
+            ),
           Expanded(child: heading),
+          if (trailing != null) ...[const SizedBox(width: 6), trailing],
         ],
       ),
     );
