@@ -2136,6 +2136,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _freshNoteIds.add(note.id);
     } else if (titled) {
       widget.notes.startAsNew(blank.id);
+    } else {
+      widget.notes.startAsEmpty(blank.id);
     }
     onMade?.call(note.id);
     if (folderId != null) {
@@ -5397,48 +5399,51 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A note's page on a phone: back, then the note's own actions, over the
   /// editor.
-  Widget _phonePage(Note note) => Scaffold(
-    backgroundColor: context.palette.paperColor,
-    body: ListenableBuilder(
-      listenable: _toolbarSources,
-      builder: (context, _) {
-        // A phone on its side with the keyboard up has no room to spare: the
-        // bar steps aside and the lines take its room and the padding's.
-        final cramped = isCrampedPage(
-          MediaQuery.sizeOf(context),
-          MediaQuery.viewInsetsOf(context).bottom,
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // The bar steps aside on its side with the keyboard up, so the
-            // lines take its room; Back is still the phone's gesture.
-            if (!cramped)
-              SafeArea(
-                bottom: false,
-                child: _phoneNoteHeader(
-                  note,
-                  // The Scaffold takes the keyboard out of its own body's
-                  // insets, so the page's are read from above it. A blank
-                  // page (M11) keeps its header as it is until the first
-                  // words.
-                  typing:
-                      note.body.isNotEmpty &&
-                      MediaQuery.viewInsetsOf(this.context).bottom > 0,
+  Widget _phonePage(Note note) => Builder(
+    builder: (outer) => Scaffold(
+      backgroundColor: context.palette.paperColor,
+      body: ListenableBuilder(
+        listenable: _toolbarSources,
+        builder: (context, _) {
+          // A phone on its side with the keyboard up has no room to spare: the
+          // bar steps aside and the lines take its room and the padding's.
+          final cramped = isCrampedPage(
+            MediaQuery.sizeOf(context),
+            MediaQuery.viewInsetsOf(context).bottom,
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The bar steps aside on its side with the keyboard up, so the
+              // lines take its room; Back is still the phone's gesture.
+              if (!cramped)
+                SafeArea(
+                  bottom: false,
+                  child: _phoneNoteHeader(
+                    note,
+                    // The Scaffold takes the keyboard out of its own body's
+                    // insets, so the page's are read from above it, where only
+                    // this page rebuilds as the keyboard slides. A blank
+                    // page (M11) keeps its header as it is until the first
+                    // words.
+                    typing:
+                        note.body.isNotEmpty &&
+                        MediaQuery.viewInsetsOf(outer).bottom > 0,
+                  ),
+                ),
+              Expanded(
+                child: SafeArea(
+                  top: false,
+                  // The footer insets its own controls past the home indicator,
+                  // as the page bar does past the status bar.
+                  bottom: false,
+                  child: _phoneEditor(note, cramped: cramped),
                 ),
               ),
-            Expanded(
-              child: SafeArea(
-                top: false,
-                // The footer insets its own controls past the home indicator,
-                // as the page bar does past the status bar.
-                bottom: false,
-                child: _phoneEditor(note, cramped: cramped),
-              ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     ),
   );
 

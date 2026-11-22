@@ -19,6 +19,7 @@ import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
+import 'package:kapy_notes/ui/home_page.dart' show HomePage;
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
@@ -356,6 +357,30 @@ void main() {
       expect(shown.filled, isTrue);
     });
 
+    testWidgets('the keyboard sliding in rebuilds the page, not the whole '
+        'app (M08)', (tester) async {
+      seed();
+      await pump(tester);
+      var rebuilds = 0;
+      debugOnRebuildDirtyWidget = (element, _) {
+        if (element.widget is HomePage) rebuilds++;
+      };
+      addTearDown(() => debugOnRebuildDirtyWidget = null);
+      for (var step = 1; step <= 10; step++) {
+        tester.view.viewInsets = FakeViewPadding(bottom: 30.0 * step);
+        await tester.pump();
+      }
+      expect(rebuilds, 0);
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('phone-note-header-row')),
+            )
+            .opacity,
+        0.5,
+      );
+    });
+
     testWidgets("a blank day's page keeps the header's buttons at full "
         'strength with the keyboard up, until its first words (M11)', (
       tester,
@@ -394,6 +419,24 @@ void main() {
           .singleWhere((note) => note.body.startsWith('Lunch'));
       expect(days.dayOf(lunch.id), DateTime(2025, 11, 20));
       expect(find.text('Start typing…'), findsNothing);
+    });
+
+    testWidgets('a day with none, tapped while a New Note is still blank, '
+        'opens that page empty, with no second note (M11)', (tester) async {
+      seed();
+      await pump(tester);
+      await tester.tap(find.byKey(const ValueKey('page-home')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('phone-new')));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'New Note');
+      final count = notes.notes.length;
+
+      await open(tester, 20);
+      expect(notes.notes.length, count);
+      expect(openNoteBody(tester), isEmpty);
+      expect(find.text('New Note'), findsNothing);
+      expect(find.text('Start typing…'), findsOneWidget);
     });
 
     testWidgets('at 360 every day keeps 44 to tap, the arrows narrower', (
