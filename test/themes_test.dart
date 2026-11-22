@@ -6,6 +6,7 @@ import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/system_contrast.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/tag_colours.dart';
+import 'package:kapy_notes/ui/theme_cards.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// Themes r2 (KAP-144; the Captain's handoffs/KAPY-14/themes-r2.md and Paper
@@ -339,6 +340,80 @@ void main() {
       addTearDown(contrast.dispose);
       await contrast.start();
       expect(contrast.value, isFalse);
+    });
+  });
+
+  group('the previews in Settings', () {
+    Future<void> pumpCards(WidgetTester tester, ThemeData theme) =>
+        tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: Scaffold(
+              body: SizedBox(
+                width: 640,
+                child: ThemeCards(
+                  selected: AppTheme.riverbank,
+                  onSelected: (_) {},
+                ),
+              ),
+            ),
+          ),
+        );
+
+    List<Color> fills(WidgetTester tester, AppTheme theme) => [
+      for (final box in tester.widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byKey(ValueKey('theme-${theme.name}')),
+          matching: find.byType(DecoratedBox),
+        ),
+      ))
+        ?(box.decoration as BoxDecoration).color,
+    ];
+
+    // D13's tints on each dark side: the list's notes, tagged mustard, plain
+    // and tagged sage, then the totals' rust.
+    const d13 = {
+      AppTheme.riverbank: [0xFF393425, 0xFF2F2D29, 0xFF25332A, 0xFF372B26],
+      AppTheme.graphite: [0xFF342F23, 0xFF212121, 0xFF252F28, 0xFF352924],
+      AppTheme.midnight: [0xFF28210E, 0xFF0F0F0F, 0xFF132017, 0xFF271710],
+      AppTheme.dusk: [0xFF322F30, 0xFF20202C, 0xFF292F35, 0xFF332A31],
+      AppTheme.lamplight: [0xFF3D3018, 0xFF261D13, 0xFF312F1B, 0xFF3C2618],
+      AppTheme.fjord: [0xFF30362C, 0xFF182729, 0xFF213632, 0xFF30302D],
+    };
+
+    testWidgets('each dark side is tinted as D13 draws it', (tester) async {
+      await pumpCards(tester, KapyTheme.dark());
+      for (final MapEntry(key: theme, value: tints) in d13.entries) {
+        final colours = fills(tester, theme);
+        for (final tint in tints) {
+          expect(
+            colours,
+            anyElement(isSameColorAs(Color(tint))),
+            reason: '${theme.name} lacks ${Color(tint)}',
+          );
+        }
+      }
+    });
+
+    // Riverbank's light side, which D13 doesn't draw: its mustard, sage and
+    // rust dots at 15% on its page, and its card for the plain note.
+    testWidgets('a light side mixes its tag dots into its page', (
+      tester,
+    ) async {
+      await pumpCards(tester, KapyTheme.light());
+      final colours = fills(tester, AppTheme.riverbank);
+      for (final tint in const [
+        0xFFEFE8D5,
+        0xFFF6F2E8,
+        0xFFE1E9DD,
+        0xFFF1E4D9,
+      ]) {
+        expect(
+          colours,
+          anyElement(isSameColorAs(Color(tint))),
+          reason: 'Riverbank light lacks ${Color(tint)}',
+        );
+      }
     });
   });
 }

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/appearance.dart';
 import '../core/theme.dart';
+import 'tag_colours.dart';
 
 /// The six themes as cards in Settings › Appearance, each a small window in
 /// its own colours (Themes r2, p-N-0: 20RJ-0 on a computer, 20YF-0 on a
@@ -114,7 +115,7 @@ class _ThemeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _ThemePreview(palette),
+                _ThemePreview(theme, palette),
                 const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -195,12 +196,41 @@ class _ThemeCard extends StatelessWidget {
 /// A window in miniature: the spaces rail, the notes list with two tagged
 /// notes, and a page with a heading, lines, a checked task and the totals.
 class _ThemePreview extends StatelessWidget {
-  const _ThemePreview(this.p);
+  const _ThemePreview(this.theme, this.p);
 
+  final AppTheme theme;
   final CalcPalette p;
+
+  /// The list's three notes, tagged mustard, plain and tagged sage, then the
+  /// rust the second total takes beside the first's sage. D13 picks
+  /// Riverbank's dark side by hand and mixes every other dark side's tag dots
+  /// into its page, Midnight's at 20% and the rest at 15%. A light side,
+  /// which D13 doesn't draw, is mixed the same way at 15%.
+  List<Color> get _tints {
+    if (theme == AppTheme.riverbank && p.brightness == Brightness.dark) {
+      return const [
+        Color(0xFF393425),
+        Color(0xFF2F2D29),
+        Color(0xFF25332A),
+        Color(0xFF372B26),
+      ];
+    }
+    final strength = theme == AppTheme.midnight ? 0.2 : 0.15;
+    Color tint(TagColour tag) => Color.alphaBlend(
+      tag.dot(p).withValues(alpha: strength),
+      p.editorBackground,
+    );
+    return [
+      tint(TagColour.mustard),
+      p.cardBackground,
+      tint(TagColour.sage),
+      tint(TagColour.rust),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final [mustard, plain, sage, rust] = _tints;
     Widget block(Color color, double width, double height, double radius) =>
         Container(
           width: width,
@@ -216,11 +246,10 @@ class _ThemePreview extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: block(color, double.infinity, height, height / 2),
         );
-    Widget note() => Expanded(
-      child: Container(
+    Widget note(Color color) => Expanded(
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          color: p.cardBackground,
-          border: Border.all(color: p.controlBorder),
+          color: color,
           borderRadius: BorderRadius.circular(4),
         ),
       ),
@@ -257,11 +286,11 @@ class _ThemePreview extends StatelessWidget {
                 children: [
                   line(p.textHeading, 0.6),
                   const SizedBox(height: 4),
-                  note(),
+                  note(mustard),
                   const SizedBox(height: 4),
-                  note(),
+                  note(plain),
                   const SizedBox(height: 4),
-                  note(),
+                  note(sage),
                 ],
               ),
             ),
@@ -300,9 +329,9 @@ class _ThemePreview extends StatelessWidget {
                       final room = constraints.maxWidth >= 62;
                       return Row(
                         children: [
-                          block(p.resultPillBackground, room ? 16 : 10, 6, 3),
+                          block(sage, room ? 16 : 10, 6, 3),
                           const SizedBox(width: 4),
-                          block(p.resultPillBackground, room ? 16 : 10, 6, 3),
+                          block(rust, room ? 16 : 10, 6, 3),
                           const Spacer(),
                           block(p.accent, room ? 18 : 12, 7, 3),
                         ],
