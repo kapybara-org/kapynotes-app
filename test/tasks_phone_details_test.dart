@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
+import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
@@ -47,6 +49,7 @@ void main() {
     WidgetTester tester, {
     bool editable = true,
     bool narrowed = false,
+    BlobStore? images,
   }) async {
     clock = DateTime(2026, 11, 20, 9);
     final store = _MemoryStore();
@@ -93,6 +96,7 @@ void main() {
             labelOf: (note) => note.title,
             onOpenNote: opened.add,
             onOpenDone: () {},
+            images: images,
             phone: true,
           ),
         ),
@@ -477,8 +481,12 @@ void main() {
 
     // Puts [details] under Hide the menu, a picture at each mark, numbered
     // in order, and opens its page.
-    Future<void> openWith(WidgetTester tester, String details) async {
-      await pumpPhone(tester);
+    Future<void> openWith(
+      WidgetTester tester,
+      String details, {
+      BlobStore? images,
+    }) async {
+      await pumpPhone(tester, images: images);
       final note = notes.allNotes.first;
       final body = note.body.replaceFirst('  It shrinks to a pill.', details);
       final marks = [
@@ -549,6 +557,9 @@ void main() {
       );
       expect(words(tester), ['It shrinks to a pill.', 'Then it fades.']);
       expect(drawn(tester), ['picture-0']);
+      for (final field in tester.widgetList<TextField>(fields)) {
+        expect(field.decoration?.hintText, isNull);
+      }
       final above = tester.getRect(fields.at(0));
       final picture = pictureAt(tester, 0);
       final below = tester.getRect(fields.at(1));
@@ -687,6 +698,43 @@ void main() {
       expectNote('  \uFFFC\n  Back again.', 1);
       expect(words(tester), ['', 'Back again.']);
       expect(drawn(tester), ['picture-0']);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('emptying the words between two pictures keeps both marks, '
+        'with no blank line left', (tester) async {
+      await openWith(tester, '  Before.\n  ￼\n  Middle.\n  ￼\n  After.');
+      await tester.enterText(fields.at(1), '');
+      await tester.pumpAndSettle();
+      expectNote('  Before.\n  ￼\n  ￼\n  After.', 2);
+      expect(words(tester), ['Before.', '', 'After.']);
+      await tester.enterText(fields.at(1), 'Middle again.');
+      await tester.pumpAndSettle();
+      expectNote('  Before.\n  ￼\n  Middle again.\n  ￼\n  After.', 2);
+      expect(drawn(tester), ['picture-0', 'picture-1']);
+      await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets('each picture draws its own mark\'s image', (tester) async {
+      await openWith(
+        tester,
+        '  One.\n  ￼\n  Two.\n  ￼\n  Three.',
+        images: BlobStore(),
+      );
+      final shown = [
+        for (var k = 0; k < 2; k++)
+          (tester
+                      .widget<Image>(
+                        find.descendant(
+                          of: pictures.at(k),
+                          matching: find.byType(Image),
+                        ),
+                      )
+                      .image
+                  as NoteImageProvider)
+              .hash,
+      ];
+      expect(shown, ['picture-0', 'picture-1']);
       await tester.pump(const Duration(seconds: 3));
     });
 

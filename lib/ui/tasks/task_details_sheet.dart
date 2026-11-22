@@ -54,9 +54,8 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
   List<FocusNode> _focuses = const [];
   List<String> _marks = const [];
 
-  /// Whether the words before the first run and after the last were empty
-  /// when the details were last read.
-  ({bool first, bool last}) _wereEmpty = (first: false, last: false);
+  /// Which fields were empty when the details were last read.
+  List<bool> _wereEmpty = const [];
   bool _adding = false;
 
   @override
@@ -104,7 +103,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
     }
     parts.add(plain.substring(from));
     final marks = [for (final run in runs) run[0]!];
-    _wereEmpty = (first: parts.first.isEmpty, last: parts.last.isEmpty);
+    _wereEmpty = [for (final part in parts) part.isEmpty];
     if (listEquals(marks, _marks) && parts.length == _parts.length) {
       for (var i = 0; i < parts.length; i++) {
         if (_parts[i].text != parts[i]) _parts[i].text = parts[i];
@@ -123,24 +122,32 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
   }
 
   /// The details as the fields hold them, each run of marks back in its
-  /// place. Before the first run and after the last, the line break goes
-  /// with the words: emptied, they take it, so no blank line is left in the
-  /// note, and written where there were none, they bring one, so they never
-  /// share the picture's line.
+  /// place. Words emptied take a line break with them, so no blank line is
+  /// left in the note, and words written before the first run or after the
+  /// last where there were none bring one, so they never share the
+  /// picture's line. A field left as it was read puts back exactly what
+  /// was there.
   String get _text {
     final parts = [for (final part in _parts) part.text];
     final marks = [..._marks];
-    if (marks.isNotEmpty) {
-      final first = marks.first.startsWith('\n')
-          ? marks.first.substring(1)
-          : marks.first;
-      final opens = first != marks.first || _wereEmpty.first;
-      marks.first = parts.first.isNotEmpty && opens ? '\n$first' : first;
-      final last = marks.last.endsWith('\n')
-          ? marks.last.substring(0, marks.last.length - 1)
-          : marks.last;
-      final closes = last != marks.last || _wereEmpty.last;
-      marks.last = parts.last.isNotEmpty && closes ? '$last\n' : last;
+    for (var i = 0; i < parts.length && marks.isNotEmpty; i++) {
+      final emptied = parts[i].isEmpty && !_wereEmpty[i];
+      final written = parts[i].isNotEmpty && _wereEmpty[i];
+      if (i == 0) {
+        final run = marks.first;
+        if (emptied && run.startsWith('\n')) marks.first = run.substring(1);
+        if (written && !run.startsWith('\n')) marks.first = '\n$run';
+      } else if (i == parts.length - 1) {
+        final run = marks.last;
+        if (emptied && run.endsWith('\n')) {
+          marks.last = run.substring(0, run.length - 1);
+        }
+        if (written && !run.endsWith('\n')) marks.last = '$run\n';
+      } else if (emptied &&
+          marks[i - 1].endsWith('\n') &&
+          marks[i].startsWith('\n')) {
+        marks[i] = marks[i].substring(1);
+      }
     }
     return [
       for (var i = 0; i < parts.length; i++) ...[
