@@ -27,6 +27,8 @@ import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/editor/note_editor.dart' show NoteEditor;
+import 'package:kapy_notes/ui/editor/note_field.dart' show NoteField;
 import 'package:material_ui/material_ui.dart';
 
 import 'screenshot.dart';
@@ -143,6 +145,14 @@ void main() {
       await screenshot('note-page-$board', device: true);
     }
 
+    // The open note's text lives in its field, not in a Text a finder sees.
+    NoteField field() => tester.widget<NoteField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(NoteField),
+      ),
+    );
+
     Future<void> tap(Finder target) async {
       await tester.tap(target);
       await tester.pumpAndSettle();
@@ -151,13 +161,13 @@ void main() {
     // M07: the note at rest, the week open and the day's tasks under it.
     FocusManager.instance.primaryFocus?.unfocus();
     await keyboard(up: false);
-    expect(find.textContaining('Call with Arjun'), findsWidgets);
+    expect(field().controller.text, startsWith('Call with Arjun'));
     expect(find.byKey(const ValueKey('page-tasks-line')), findsOneWidget);
     expect(find.byKey(const ValueKey('note-path')), findsOneWidget);
     await shot('m07-a-note');
 
     // M08: typing in it, the keyboard up.
-    await tap(find.textContaining('Send the deck').first);
+    await tap(find.byWidget(field()));
     await keyboard(up: true);
     await shot('m08-a-note-typing');
 
@@ -177,8 +187,12 @@ void main() {
     await tap(find.byKey(const ValueKey('page-tasks-line')));
     expect(find.byKey(const ValueKey('phone-tasks-sheet')), findsOneWidget);
     await tap(find.byKey(const ValueKey('tasks-pair-right')));
+    // Five tasks take more than one pair: Start sits under the half-height
+    // sheet's fold, so it is brought into view before it is pressed.
     final start = find.byKey(const ValueKey('tasks-start'));
-    if (start.evaluate().isNotEmpty) await tap(start);
+    await tester.ensureVisible(start);
+    await tester.pumpAndSettle();
+    await tap(start);
     expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
     await shot('m15-tasks-sheet');
     await tap(find.byKey(const ValueKey('phone-tasks-sheet-close')));
