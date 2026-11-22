@@ -98,7 +98,7 @@ class NoteFolders extends InheritedWidget {
 /// The row under a note's title: when it was edited, how far its checklist
 /// has got, its running total, and who else is in it or why it cannot be
 /// changed. On the desktop it is Sanjay's date-and-time line, "Wed 19 Nov ·
-/// 08:55 · 0 of 1 done" then the tags; a phone keeps "Edited today, 08:55"
+/// 8:55 · 0 of 1 done" then the tags; a phone keeps "Edited today, 8:55"
 /// with the day as a pill.
 class NoteMetaRow extends StatelessWidget {
   const NoteMetaRow({
@@ -122,7 +122,7 @@ class NoteMetaRow extends StatelessWidget {
   final DateTime today;
 
   /// The day the note was given, where it has one, so the line reads "Fri 21
-  /// Nov · 09:41" rather than the day it was last edited.
+  /// Nov · 9:41" rather than the day it was last edited.
   final DateTime? day;
 
   /// Ticked boxes out of every box in the note. No boxes, no progress.
@@ -165,6 +165,8 @@ class NoteMetaRow extends StatelessWidget {
     );
     final phone = AppPlatform.isMobile;
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
+    // A phone's items sit _gap either side of that dot.
+    final gap = [const SizedBox(width: _gap), dot, const SizedBox(width: _gap)];
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done';
     final saved = DateLineSaved.of(context);
@@ -326,14 +328,19 @@ class NoteMetaRow extends StatelessWidget {
       child: Row(
         children: [
           for (final (index, item) in items.indexed) ...[
-            if (index > 0)
+            if (index > 0 && phone)
+              ...gap
+            else if (index > 0)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text('·', style: quiet),
               ),
             item,
           ],
-          if (tags case final tags?) ...[const SizedBox(width: 6), tags],
+          if (tags case final tags?) ...[
+            if (phone) ...gap else const SizedBox(width: 6),
+            tags,
+          ],
         ],
       ),
     );

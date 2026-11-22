@@ -448,4 +448,58 @@ void main() {
     expect(meta.top, greaterThanOrEqualTo(field.toGlobal(title.bottomLeft).dy));
     expect(meta.bottom, lessThanOrEqualTo(field.toGlobal(first.topLeft).dy));
   });
+
+  group('the date line', () {
+    Future<void> pumpLine(WidgetTester tester, TargetPlatform platform) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: NoteMetaRow(
+                edited: DateTime(2026, 11, 19, 8, 55),
+                today: DateTime(2026, 11, 19),
+                tasks: 1,
+                tags: const Text('Work'),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    List<Text> dots(WidgetTester tester) =>
+        tester.widgetList<Text>(find.text('·')).toList();
+
+    testWidgets('a phone keeps its dots in the divider colour, 10 clear', (
+      tester,
+    ) async {
+      await pumpLine(tester, TargetPlatform.iOS);
+      final palette = KapyTheme.darkPalette;
+      expect(find.text('Edited today, 8:55'), findsOneWidget);
+      for (final dot in dots(tester)) {
+        expect(dot.style!.color, palette.textDivider);
+      }
+      final edited = tester.getRect(find.text('Edited today, 8:55'));
+      final first = tester.getRect(find.text('·').first);
+      expect(first.left - edited.right, 10);
+    });
+
+    testWidgets('the desktop reads day · time, its dots quiet and 4 clear, '
+        'and the tags 6 after', (tester) async {
+      await pumpLine(tester, TargetPlatform.macOS);
+      final palette = KapyTheme.darkPalette;
+      expect(find.text('Thu 19 Nov · 8:55'), findsOneWidget);
+      for (final dot in dots(tester)) {
+        expect(dot.style!.color, palette.textTertiary);
+      }
+      final edited = tester.getRect(find.text('Thu 19 Nov · 8:55'));
+      expect(tester.getRect(find.text('·').first).left - edited.right, 4);
+      final progress = tester.getRect(find.text('0 of 1 done'));
+      expect(tester.getRect(find.text('Work')).left - progress.right, 6);
+    });
+  });
 }
