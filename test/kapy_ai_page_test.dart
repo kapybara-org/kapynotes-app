@@ -115,9 +115,9 @@ void main() {
       containsAllInOrder([
         'Today',
         'What is left on Call with Arjun',
-        '08:58',
+        '8:58',
         'What did I plan for this week?',
-        '07:40',
+        '7:40',
         'Yesterday',
         'Find my notes about Lisbon',
         '18:20',
