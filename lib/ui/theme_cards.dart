@@ -91,121 +91,100 @@ class _ThemeCard extends StatelessWidget {
     return Semantics(
       selected: selected,
       inMutuallyExclusiveGroup: true,
+      // The chosen card is a step lighter, with no outline or tick (D13).
+      // Increase contrast outlines every card and rings the chosen one.
       child: Material(
-        color: ground.cardBackground,
+        color: selected
+            ? Color.alphaBlend(ground.fillControl, ground.cardBackground)
+            : ground.cardBackground,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.surface),
-          side: selected
+          side: !ground.increasedContrast
+              ? BorderSide.none
+              : selected
               ? BorderSide(color: ground.accent, width: 2)
               : BorderSide(color: ground.controlBorder),
         ),
         child: InkWell(
           key: ValueKey('theme-${theme.name}'),
           onTap: onTap,
-          child: Stack(
-            children: [
-              Padding(
-                padding: EdgeInsets.all(selected ? 7 : 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _ThemePreview(palette),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              theme.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: ground.textPrimary,
-                                fontSize: 13.5,
-                                height: 18 / 13.5,
-                                fontWeight: AppWeight.font(AppWeight.section),
-                                fontVariations: AppWeight.wght(
-                                  AppWeight.section,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (badge != null)
-                            Flexible(
-                              child: Container(
-                                height: 18,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: ground.controlBackground,
-                                  border: Border.all(
-                                    color: ground.controlBorder,
-                                  ),
-                                  borderRadius: BorderRadius.circular(5),
-                                ),
-                                child: Text(
-                                  badge,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: ground.textSecondary,
-                                    fontSize: 11,
-                                    height: 15 / 11,
-                                    fontWeight: AppWeight.font(
-                                      AppWeight.rowTitle,
-                                    ),
-                                    fontVariations: AppWeight.wght(
-                                      AppWeight.rowTitle,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (described) ...[
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(2, 0, 2, 2),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ThemePreview(palette),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
                         child: Text(
-                          theme.description,
-                          maxLines: 2,
+                          theme.label,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: ground.textDescription,
-                            fontSize: 12,
-                            height: 16 / 12,
+                            color: ground.textPrimary,
+                            fontSize: 13.5,
+                            height: 18 / 13.5,
+                            fontWeight: AppWeight.font(AppWeight.section),
+                            fontVariations: AppWeight.wght(AppWeight.section),
                           ),
                         ),
                       ),
+                      if (badge != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          height: 18,
+                          constraints: const BoxConstraints(maxWidth: 80),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Color.alphaBlend(
+                              ground.fillControl,
+                              ground.cardBackground,
+                            ),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            badge,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: ground.textSecondary,
+                              fontSize: 11,
+                              height: 15 / 11,
+                              fontWeight: AppWeight.font(AppWeight.rowTitle),
+                              fontVariations: AppWeight.wght(
+                                AppWeight.rowTitle,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ),
-              if (selected)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: ground.accent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: KapyIcon(
-                      KapyIcons.checkRounded,
-                      size: 13,
-                      color: ground.onAccent,
-                    ),
                   ),
                 ),
-            ],
+                if (described) ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 0, 2, 2),
+                    child: Text(
+                      theme.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: ground.textTertiary,
+                        fontSize: 12,
+                        height: 16 / 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),

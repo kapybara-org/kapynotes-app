@@ -4240,12 +4240,13 @@ void main() {
   testWidgets('desktop Settings has room for a calm two-pane layout', (
     tester,
   ) async {
-    await pumpApp(tester, size: const Size(1100, 860));
+    // D13's dialog, in a window as tall as the board's.
+    await pumpApp(tester, size: const Size(1100, 900));
     await openSettings(tester);
 
     expect(
       tester.getSize(find.byKey(const ValueKey('settings-dialog-content'))),
-      const Size(940, 760),
+      const Size(940, 860),
     );
   });
 
@@ -4626,6 +4627,66 @@ void main() {
           }
         }
       }
+    });
+
+    testWidgets('New drawing has no keycap and names its chord on hover, where '
+        'New note keeps its keycap', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      final chord = shortcuts.hintFor(ShortcutAction.newNote)!;
+      expect(tester.widget<TonalButton>(plus()).shortcut, chord.keycapLabel);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      final newDrawing = tester.widget<TonalButton>(plus());
+      expect(newDrawing.label, 'New drawing');
+      expect(newDrawing.shortcut, isNull);
+      expect(newDrawing.tooltip, SidebarWindowBar.newTooltip('drawing', chord));
+      expect(
+        find.descendant(
+          of: find.byType(SidebarWindowBar),
+          matching: find.text(chord.keycapLabel),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-field')),
+          matching: find.text('Search drawings'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an open drawing\'s header reads Drawings › its title, and '
+        'its title follows the writing font as a note\'s does', (tester) async {
+      final drawing = notes.create(drawing: true);
+      notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Shelf plan');
+      await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shelf plan').first);
+      await tester.pumpAndSettle();
+
+      final path = find.byKey(const ValueKey('page-path'));
+      for (final text in ['Drawings', 'Shelf plan']) {
+        expect(
+          find.descendant(of: path, matching: find.text(text)),
+          findsOneWidget,
+          reason: text,
+        );
+      }
+      TextStyle title() => tester
+          .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
+          .style!;
+      expect(title().fontFamily, AppFonts.title);
+      expect(title().fontWeight, FontWeight.w400);
+
+      prefs.writingFont = WritingFont.handwritten;
+      await tester.pumpAndSettle();
+      expect(title().fontFamily, WritingFont.handwritten.fontFamily);
+      expect(title().fontWeight, EditorMetrics.titleWeight);
     });
 
     testWidgets('a new note has no Write | Draw, and New in Drawings starts a '
@@ -8139,6 +8200,68 @@ void main() {
         expect(underlineOf(notesTitle), findsOneWidget);
       });
 
+      // Plain Home has no level to go back to, so its left edge keeps the
+      // tag chips' and the rows' own drags.
+      testWidgets('on plain Home, a right drag from the left edge scrolls '
+          'the tag chips back', (tester) async {
+        final tags = TagStore(store);
+        await pumpHome(tester, tags: tags);
+        for (var i = 1; i <= 8; i++) {
+          tags.addTag(groceriesId, tags.create('Travel plans $i')!.id);
+        }
+        await tester.pumpAndSettle();
+        await openPhoneFilters(tester);
+        final row = find.byKey(const ValueKey('phone-filter-row'));
+        final chips = tester.state<ScrollableState>(
+          find.descendant(of: row, matching: find.byType(Scrollable)),
+        );
+        await tester.drag(row, const Offset(-300, 0));
+        await tester.pumpAndSettle();
+        final scrolled = chips.position.pixels;
+        expect(scrolled, greaterThan(100));
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(row).dy),
+          const Offset(100, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(chips.position.pixels, lessThan(scrolled - 50));
+        expect(tasksPage, findsNothing);
+      });
+
+      testWidgets('on plain Home, a right drag from the left edge closes an '
+          'open row', (tester) async {
+        await pumpHome(tester);
+        await tester.drag(groceries, const Offset(-200, 0));
+        await tester.pumpAndSettle();
+        final pin = find.byKey(ValueKey('swipe-pin-$groceriesId'));
+        expect(pin.hitTestable(), findsOneWidget);
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(groceries).dy),
+          const Offset(200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(pin.hitTestable(), findsNothing);
+        expect(tester.getTopLeft(groceries).dx, 0);
+      });
+
+      testWidgets('on plain Home, a left drag from the left edge over a row '
+          "opens the row's actions rather than turning to Tasks", (
+        tester,
+      ) async {
+        await pumpHome(tester);
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(groceries).dy),
+          const Offset(-200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
+        expect(tasksPage, findsNothing);
+        expect(underlineOf(notesTitle), findsOneWidget);
+      });
+
       testWidgets('Back from Tasks goes to Notes rather than leaving', (
         tester,
       ) async {
@@ -8235,6 +8358,40 @@ void main() {
       expect(ends.first, [1, 0, 0, 0]);
       expect(ends.last, ends.first);
     });
+
+    testWidgets('on an iPhone, a swipe in from the left edge takes Pinned '
+        'back to Home', (tester) async {
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+
+      // A tap on the edge passes through to the row under it.
+      final row = find.widgetWithText(NoteRow, 'Lisbon trip');
+      await tester.tapAt(Offset(10, tester.getCenter(row).dy));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsNothing);
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+
+      // Over a row, whose own swipe the edge has to win.
+      await tester.dragFrom(
+        Offset(2, tester.getCenter(row).dy),
+        const Offset(200, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsNothing);
+      expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
     testWidgets("Home's Pinned card says so while nothing is pinned", (
       tester,
