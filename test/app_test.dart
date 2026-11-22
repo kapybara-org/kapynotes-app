@@ -8616,6 +8616,33 @@ void main() {
         await tester.pumpAndSettle();
       }
 
+      testWidgets('a tap on + opens a new note and no menu; holding it opens '
+          'the menu, and after its × a tap still opens a note', (tester) async {
+        await pumpPlus(tester);
+        final before = notes.notes.length;
+        await tester.tap(plus);
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+        expect(notes.notes.length, before + 1);
+        expect(find.byType(NoteField), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('page-back')));
+        await tester.pumpAndSettle();
+        await open(tester);
+        expect(menu, findsOneWidget);
+        expect(notes.notes.length, before + 1);
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+
+        // The new note was left blank, so + opens it again rather than a
+        // second one.
+        await tester.tap(plus);
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+        expect(find.byType(NoteField), findsOneWidget);
+      });
+
       testWidgets("offers New note, New task, New voice note and New drawing, "
           "in M05's order, each at least 44 pt, and no Quick find", (
         tester,
