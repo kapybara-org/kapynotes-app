@@ -1178,7 +1178,7 @@ void main() {
       );
       expect(
         tester.widget<KapyAiPage>(find.byType(KapyAiPage)).barClearance,
-        PhoneSpaces.clearance(),
+        PhoneSpaces.clearance(tester.element(page)),
       );
 
       await tap(tester, find.byKey(const ValueKey('bar-notes')));

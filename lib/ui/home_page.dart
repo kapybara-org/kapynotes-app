@@ -4897,7 +4897,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         : kapyAccountRowId(ai.accounts.first.kind),
                   ),
                   account: _phoneAccount(),
-                  barClearance: PhoneSpaces.clearance(),
+                  barClearance: PhoneSpaces.clearance(context),
                   now: widget.notes.now,
                 ),
               if (tasks != null)
