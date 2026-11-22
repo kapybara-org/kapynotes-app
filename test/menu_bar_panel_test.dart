@@ -666,12 +666,19 @@ void main() {
       expect(find.text('Open this from anywhere with'), findsOneWidget);
       expect(find.text('⌥⇧⌘X'), findsOneWidget);
 
-      taken.addAll([ShortcutAction.openApp, ShortcutAction.openMenuBarPanel]);
+      taken.add(ShortcutAction.openApp);
       await pumpPanel(tester, opening: 1);
-      expect(find.byKey(const ValueKey('menu-bar-empty')), findsOneWidget);
-      expect(find.text('Open this from anywhere with'), findsNothing);
       expect(find.byKey(const ValueKey('menu-bar-open-app')), findsOneWidget);
       expect(find.text('⌥⇧⌘X'), findsNothing);
+      expect(find.text('Open this from anywhere with'), findsOneWidget);
+
+      taken
+        ..clear()
+        ..add(ShortcutAction.openMenuBarPanel);
+      await pumpPanel(tester, opening: 2);
+      expect(find.byKey(const ValueKey('menu-bar-empty')), findsOneWidget);
+      expect(find.text('Open this from anywhere with'), findsNothing);
+      expect(find.text('⌥⇧⌘X'), findsOneWidget);
     });
 
     testWidgets('the footer opens the window and Find', (tester) async {
