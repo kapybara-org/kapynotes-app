@@ -4899,9 +4899,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _phoneHomeHeader() => PhoneHomeHeader(
     tasks: _tasksMode,
-    count: _tasksMode
-        ? _taskController?.read().open.length ?? 0
-        : _matchingCount,
+    notesCount: _matchingCount,
+    tasksCount: _taskController?.read().open.length ?? 0,
     onNotes: () => _showHome(tasks: false),
     onTasks: _taskController == null ? null : () => _showHome(tasks: true),
     streak: widget.notes.streak,

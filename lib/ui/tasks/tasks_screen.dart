@@ -1614,14 +1614,8 @@ class _PhoneTodayTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
-    final titleStyle = TextStyle(
-      fontFamily: AppFonts.title,
-      fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: 19,
-      height: 24 / 19,
-      color: ink.text,
-    );
-    final quiet = taskText(13, 16, ink.quiet);
+    final titleStyle = dayTitleStyle(ink.text);
+    final quiet = metaStyle(13, 16, ink.quiet);
     final dayText = SidebarTimestamp.dayAndDate(now);
     final countText = '$done of $total done';
     final title = Semantics(
