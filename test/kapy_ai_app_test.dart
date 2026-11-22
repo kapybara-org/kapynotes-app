@@ -334,11 +334,11 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the fields offer to ask, and Tab asks with the note’s chip', (
-      tester,
-    ) async {
+    testWidgets('⌘K offers to ask, the list’s field reads as D01 draws it, '
+        'and Tab asks with the note’s chip', (tester) async {
       final id = await openMenuOverNote(tester);
-      expect(sidebarField('Search or Ask Kapy AI'), findsOneWidget);
+      expect(sidebarField('Search'), findsOneWidget);
+      expect(sidebarField('Search or Ask Kapy AI'), findsNothing);
       expect(find.text('Search or Ask Kapy AI…'), findsOneWidget);
 
       await type(tester, 'sintra');
@@ -479,16 +479,18 @@ void main() {
       expect(_panel, findsNothing);
     });
 
-    testWidgets('the fields follow the switch while the app is open', (
-      tester,
-    ) async {
+    testWidgets('the list’s field reads the same as the switch flips, and '
+        '⌘K follows it', (tester) async {
       notes.create(body: 'Trip budget');
       await _pump(tester, sidebar: true);
-      expect(sidebarField('Search or Ask Kapy AI'), findsOneWidget);
+      expect(sidebarField('Search'), findsOneWidget);
 
       ai.enabled = false;
       await tester.pumpAndSettle();
       expect(sidebarField('Search'), findsOneWidget);
+      await _chord(tester, LogicalKeyboardKey.keyK);
+      expect(find.text('Search…'), findsOneWidget);
+      expect(find.text('Search or Ask Kapy AI…'), findsNothing);
     });
 
     testWidgets('in a build without Kapy AI, ⌘K is exactly as it was', (

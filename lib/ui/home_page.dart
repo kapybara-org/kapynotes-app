@@ -3135,9 +3135,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What the search fields read: they offer to ask Kapy AI only while it
   /// can be asked.
-  String get _searchPlaceholder => _kapyAiOn
-      ? 'Search or Ask Kapy AI'
-      : _offersFolders && !_usesCompactLayout
+  String get _searchPlaceholder =>
+      _kapyAiOn ? 'Search or Ask Kapy AI' : _listSearchPlaceholder;
+
+  /// What the desktop list's field reads, Kapy AI or not, as D01 draws it:
+  /// Ask Kapy has its own button beside it, and ⌘K's results still offer to
+  /// ask.
+  String get _listSearchPlaceholder =>
+      _offersFolders && !_usesCompactLayout
       ? 'Search notes and folders'
       : 'Search';
 
@@ -3959,7 +3964,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               searchShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.findNotes,
               ),
-              searchPlaceholder: _searchPlaceholder,
+              searchPlaceholder: _listSearchPlaceholder,
               archiveShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.deleteNote,
               ),
