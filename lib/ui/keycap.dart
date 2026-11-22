@@ -9,7 +9,8 @@ import '../core/theme.dart';
 /// One look for every shortcut the app shows beside a control, so a hint
 /// reads as a key to press rather than as more text to read.
 class Keycap extends StatelessWidget {
-  const Keycap(this.label, {super.key, this.tonal = false});
+  const Keycap(this.label, {super.key, this.tonal = false, this.plain = false})
+    : assert(!(tonal && plain), 'A keycap is tonal or plain, not both.');
 
   final String label;
 
@@ -18,6 +19,11 @@ class Keycap extends StatelessWidget {
   /// second control beside it.
   final bool tonal;
 
+  /// The legend alone, in faint mono with no chip round it: the key beside
+  /// a neutral button's label, as Settings' Done esc is drawn, and inside a
+  /// filled field such as its search.
+  final bool plain;
+
   /// How wide a keycap printing [label] is, padding and border included, at
   /// the reader's text size, for a layout that has to know before it builds
   /// one.
@@ -25,6 +31,7 @@ class Keycap extends StatelessWidget {
     BuildContext context,
     String label, {
     bool tonal = false,
+    bool plain = false,
   }) {
     final painter = TextPainter(
       text: TextSpan(
@@ -37,6 +44,7 @@ class Keycap extends StatelessWidget {
     )..layout();
     final width = painter.width;
     painter.dispose();
+    if (plain) return width;
     return tonal ? width + 2 * 5 : math.max(20, width + 2 * 6 + 2);
   }
 
@@ -56,6 +64,14 @@ class Keycap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (plain) {
+      return Text(
+        label,
+        maxLines: 1,
+        softWrap: false,
+        style: _style(tonal: false, color: palette.textTertiary),
+      );
+    }
     return Container(
       constraints: tonal
           ? const BoxConstraints(minHeight: 18)

@@ -31,6 +31,9 @@ class _NativeRecorder {
   /// saying no.
   final Set<String> refuses = {};
 
+  /// Single calls the host refuses, such as one chord among several.
+  final List<bool Function(MethodCall call)> refusesCalls = [];
+
   /// Shared across the recorders, for the assertions that are about the order
   /// two different runners were spoken to in.
   final List<String> sequence;
@@ -42,7 +45,8 @@ class _NativeRecorder {
           log.add(call);
           lastArguments[call.method] = call.arguments;
           sequence.add('$channel.${call.method}');
-          if (refuses.contains(call.method)) {
+          if (refuses.contains(call.method) ||
+              refusesCalls.any((refused) => refused(call))) {
             throw PlatformException(code: 'refused', message: call.method);
           }
           return answers[call.method];
@@ -730,6 +734,60 @@ void main() {
       expect(subject.isTaken(ShortcutAction.openMenuBarPanel), isTrue);
       await subject.panel.click();
       expect(panel.calls, contains('show'));
+    });
+
+    test('a chord taken at launch leaves the tooltip without one', () async {
+      hotKeys.refuses.add('register');
+      await subject.initialize(ShortcutPrefs(_MemoryStore())..load());
+
+      expect(subject.isTaken(ShortcutAction.openMenuBarPanel), isTrue);
+      expect(tray.lastArguments['setToolTip'], {'toolTip': 'Kapy Notes'});
+    });
+
+    test('a refused change leaves the tooltip on the chord still held, and '
+        'an accepted one moves it', () async {
+      await subject.initialize(ShortcutPrefs(_MemoryStore())..load());
+      expect(tray.lastArguments['setToolTip'], {
+        'toolTip': 'Kapy Notes  ⌥⇧⌘Space',
+      });
+
+      const refused = ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyJ,
+        physicalKey: PhysicalKeyboardKey.keyJ,
+        meta: true,
+        control: true,
+      );
+      hotKeys.refusesCalls.add(
+        (call) =>
+            call.method == 'register' &&
+            ((call.arguments as Map)['key'] as Map)['usageCode'] ==
+                refused.physicalKey.usbHidUsage,
+      );
+      expect(
+        await subject.trySystemShortcut(
+          ShortcutAction.openMenuBarPanel,
+          refused,
+        ),
+        isNotNull,
+      );
+      expect(subject.isTaken(ShortcutAction.openMenuBarPanel), isFalse);
+      expect(tray.lastArguments['setToolTip'], {
+        'toolTip': 'Kapy Notes  ⌥⇧⌘Space',
+      });
+
+      expect(
+        await subject.trySystemShortcut(
+          ShortcutAction.openMenuBarPanel,
+          const ShortcutBinding(
+            logicalKey: LogicalKeyboardKey.keyK,
+            physicalKey: PhysicalKeyboardKey.keyK,
+            meta: true,
+            control: true,
+          ),
+        ),
+        isNull,
+      );
+      expect(tray.lastArguments['setToolTip'], {'toolTip': 'Kapy Notes  ⌃⌘K'});
     });
 
     test('with no multi-view switch in the engine there is no panel, and a '

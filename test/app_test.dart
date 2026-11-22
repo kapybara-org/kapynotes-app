@@ -4249,12 +4249,13 @@ void main() {
   testWidgets('desktop Settings has room for a calm two-pane layout', (
     tester,
   ) async {
-    await pumpApp(tester, size: const Size(1100, 860));
+    // D13's dialog, in a window as tall as the board's.
+    await pumpApp(tester, size: const Size(1100, 900));
     await openSettings(tester);
 
     expect(
       tester.getSize(find.byKey(const ValueKey('settings-dialog-content'))),
-      const Size(940, 760),
+      const Size(940, 860),
     );
   });
 
