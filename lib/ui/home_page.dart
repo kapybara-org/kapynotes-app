@@ -3511,7 +3511,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       behind ? _openInNewTabs([id]) : _select(id);
 
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
-  Future<void> _openCommandMenu() async {
+  /// From a list's own search field ([field]), Drawings' searches drawings
+  /// alone.
+  Future<void> _openCommandMenu({bool field = false}) async {
     final shown = _tasksMode ? null : _shownNote(_selectedId);
     final choice = await showCommandMenu(
       context,
@@ -3543,6 +3545,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       phone:
           AppPlatform.isMobile &&
           MediaQuery.sizeOf(context).width < kTwoPaneBreakpoint,
+      drawings: field && _space == LibrarySpace.drawings,
       onSetTaskDone: _taskController?.setDone,
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,
@@ -4067,7 +4070,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               selectedId: _selectedId,
               query: _archiveQuery,
               displayTime: widget.prefs.displayTime,
-              onSearch: _openCommandMenu,
+              onSearch: () => unawaited(_openCommandMenu(field: true)),
               onClearQuery: () => setState(() => _archiveQuery = ''),
               onSelect: AppPlatform.isDesktop ? _selectFromSidebar : _select,
               onMoveSelect: AppPlatform.isDesktop ? _previewFromSidebar : null,
@@ -5104,7 +5107,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       selectedId: _phonePageOpen ? _selectedId : null,
       query: _archiveQuery,
       displayTime: widget.prefs.displayTime,
-      onSearch: _openCommandMenu,
+      onSearch: () => unawaited(_openCommandMenu(field: true)),
       onClearQuery: () => setState(() => _archiveQuery = ''),
       onSelect: _select,
       onArchive: _archiveNote,
