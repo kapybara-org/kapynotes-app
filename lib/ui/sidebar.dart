@@ -1422,7 +1422,7 @@ extension on Sidebar {
           ),
         );
         if (!fold || upcomingOpen) {
-          section(group.notes, upcoming: fold && AppPlatform.hasPointer);
+          section(group.notes, upcoming: fold);
         }
       }
     }
