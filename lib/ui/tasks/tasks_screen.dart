@@ -69,7 +69,12 @@ class TasksScreen extends StatefulWidget {
     this.sheet = false,
     this.scrollController,
     this.onFilter,
+    this.toolbar,
   });
+
+  /// A window's page bar over the list. A task's details stand beside the
+  /// two, the full height of the page, as D09 has them.
+  final Widget? toolbar;
 
   /// Narrows a phone's Tasks to Today, Done or one note, from the filter
   /// beside its search. Null leaves the filter out.
@@ -432,7 +437,7 @@ class TasksScreenState extends State<TasksScreen> {
                       ),
                     ),
             );
-      return LayoutBuilder(
+      final page = LayoutBuilder(
         builder: (context, constraints) {
           final phone = widget.phone;
           final width = phone
@@ -458,7 +463,11 @@ class TasksScreenState extends State<TasksScreen> {
                       width: width,
                       child: widget.filter.done
                           ? _done(board)
-                          : _withSheet(board, _today(board)),
+                          : Focus(
+                              focusNode: _listFocus,
+                              onKeyEvent: _listKey,
+                              child: _today(board),
+                            ),
                     ),
                   ),
                 ),
@@ -466,6 +475,36 @@ class TasksScreenState extends State<TasksScreen> {
             ),
           );
         },
+      );
+      final details = _detailsOf(board);
+      if (widget.phone || (widget.toolbar == null && details == null)) {
+        return page;
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ?widget.toolbar,
+                Expanded(child: page),
+              ],
+            ),
+          ),
+          if (details != null)
+            SizedBox(
+              width: 300,
+              child: TaskDetailsSheet(
+                key: ValueKey(details.id),
+                item: details,
+                tasks: _tasks,
+                onClose: () => setState(() => _sheetId = null),
+                onOpenNote: () => widget.onOpenNote(details.note.id),
+                images: widget.images,
+              ),
+            ),
+        ],
       );
     },
   );
@@ -555,40 +594,15 @@ class TasksScreenState extends State<TasksScreen> {
     return KeyEventResult.ignored;
   }
 
-  Widget _withSheet(TaskBoard board, Widget list) {
+  /// The task whose details are open beside the list, while it is still on
+  /// the board.
+  TaskItem? _detailsOf(TaskBoard board) {
     final id = _sheetId;
-    TaskItem? item;
-    if (id != null) {
-      for (final candidate in [...board.open, ...board.done]) {
-        if (candidate.id == id) item = candidate;
-      }
+    if (id == null || !EditorMetrics.page) return null;
+    for (final candidate in [...board.open, ...board.done]) {
+      if (candidate.id == id) return candidate;
     }
-    final shown = Focus(
-      focusNode: _listFocus,
-      onKeyEvent: _listKey,
-      child: list,
-    );
-    if (item == null || !EditorMetrics.page) return shown;
-    final openItem = item;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: 3, child: shown),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 300,
-          height: 440,
-          child: TaskDetailsSheet(
-            key: ValueKey(openItem.id),
-            item: openItem,
-            tasks: _tasks,
-            onClose: () => setState(() => _sheetId = null),
-            onOpenNote: () => widget.onOpenNote(openItem.note.id),
-            images: widget.images,
-          ),
-        ),
-      ],
-    );
+    return null;
   }
 
   String? _labelOf(TaskBoard board, TaskItem item) =>

@@ -107,6 +107,7 @@ void main() {
     double scale = 1,
     TextScaler? scaler,
     TaskFilter filter = const TaskFilter.all(),
+    bool scroll = true,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -120,16 +121,19 @@ void main() {
           child: child!,
         ),
         home: Scaffold(
-          body: SingleChildScrollView(
-            child: TasksScreen(
-              controller: tasks,
-              filter: filter,
-              addFocus: _focus,
-              labelOf: (_) => label,
-              onOpenNote: (_) {},
-              onOpenDone: () {},
-              phone: phone,
-            ),
+          body: Builder(
+            builder: (context) {
+              final screen = TasksScreen(
+                controller: tasks,
+                filter: filter,
+                addFocus: _focus,
+                labelOf: (_) => label,
+                onOpenNote: (_) {},
+                onOpenDone: () {},
+                phone: phone,
+              );
+              return scroll ? SingleChildScrollView(child: screen) : screen;
+            },
           ),
         ),
       ),
@@ -659,11 +663,14 @@ void main() {
         (tester) async {
           await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two');
           tasks.doNow(tasks.read().open.first);
+          // The details are a column the page's full height, so the page
+          // has one.
           await pumpTasks(
             tester,
             size: const Size(560, 700),
             phone: false,
             label: label,
+            scroll: false,
           );
           final second = tasks.read().open[1];
           await tester.tap(

@@ -100,10 +100,10 @@ void main() {
 ''';
     final blocks = taskBlocks(note);
     expect(blocks, hasLength(4));
-    expect(
-      blocks.first.details!.children.map((child) => child.start),
-      [blocks[1].task.start, blocks[2].task.start],
-    );
+    expect(blocks.first.details!.children.map((child) => child.start), [
+      blocks[1].task.start,
+      blocks[2].task.start,
+    ]);
     expect(blocks[1].details, isNull);
     expect(blocks[2].details, isNull);
 
@@ -147,6 +147,27 @@ void main() {
     final written = replaceTaskDetails(note, task, 'Oat, if they have it.');
     expect(written, '☐ Buy milk\n  Oat, if they have it.\n☐ Call the garage\n');
     expect(written.substring(0, task.end), note.substring(0, task.end));
+  });
+
+  test('details indented further than the task come out flush, keep '
+      'their inner indent, and write back at the note\'s own indent', () {
+    const note =
+        'Call with Arjun\n☐ Send the deck\n'
+        '    Slides 1 to 6 are done.\n      The charts wait.\n'
+        '    Send it by five.\n☐ Book the room\n';
+    final task = taskLines(note).first;
+    final words = taskDetailsWords(note, task);
+    expect(
+      words,
+      'Slides 1 to 6 are done.\n  The charts wait.\nSend it by five.',
+    );
+    expect(replaceTaskDetails(note, task, words), note);
+    expect(
+      replaceTaskDetails(note, task, '$words\nAnd the notes.'),
+      'Call with Arjun\n☐ Send the deck\n'
+      '    Slides 1 to 6 are done.\n      The charts wait.\n'
+      '    Send it by five.\n    And the notes.\n☐ Book the room\n',
+    );
   });
 
   test('clearing details that were never there leaves the note identical', () {

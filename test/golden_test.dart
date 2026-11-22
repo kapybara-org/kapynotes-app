@@ -1903,6 +1903,34 @@ void main() {
       );
       await tester.pump(const Duration(seconds: 3));
     });
+
+    // D09: Send the deck's details in the column at the window's right edge.
+    testWidgets("a task's details open", (tester) async {
+      await openTasks(tester);
+      final call = goldenNotes.notes.firstWhere(
+        (note) => note.title == 'Call with Arjun',
+      );
+      goldenNotes.updateBody(
+        call.id,
+        '${call.body}\n'
+        '    Slides 1 to 6 are done. The charts need the new numbers from '
+        'Finance.',
+      );
+      await tester.runAsync(goldenTasks.reconcileNow);
+      final gotIt = find.byKey(const ValueKey('tasks-got-it'));
+      if (gotIt.evaluate().isNotEmpty) {
+        await tester.tap(gotIt);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('Send the deck').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tasks-details')), findsOneWidget);
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/desktop_dark_tasks_details.png'),
+      );
+      await tester.pump(const Duration(seconds: 3));
+    });
   });
 
   group('⌘K menu', () {

@@ -1063,8 +1063,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await queue.drain();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
     }
   }
 
@@ -4154,7 +4155,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       CrossAxisAlignment.stretch,
                                   children: [
                                     if (tasks != null)
-                                      ..._buildTasksPage(
+                                      _buildTasksPage(
                                         tasks,
                                         listVisible: listFits && listShown,
                                         underList: !listFits && listShown,
@@ -4467,7 +4468,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Tasks on the page: Today and its date, how much is done and Choose
   /// again over Today, or the breadcrumb over the Done view.
-  List<Widget> _buildTasksPage(
+  Widget _buildTasksPage(
     TasksController tasks, {
     required bool listVisible,
     required bool underList,
@@ -4478,53 +4479,51 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? null
         : widget.notes.byId(filter.noteId);
     final home = note != null && tasks.read().home?.id == note.id;
-    return [
-      PageToolbar(
-        path: filter.done
-            ? PagePath(
-                icon: KapyIcons.tasksOutlined,
-                root: LibrarySpace.tasks.title,
-                levels: const [(name: 'Done', folderId: null)],
-              )
-            : null,
-        crumb: filter.done
-            ? null
-            : TasksTodayCrumb(
-                title: note == null || home ? 'Today' : _taskNoteLabel(note),
-                now: tasks.now(),
+    return Expanded(
+      child: TasksScreen(
+        key: _tasksPage,
+        controller: tasks,
+        filter: filter,
+        addFocus: _taskAddFocus,
+        labelOf: _taskNoteLabel,
+        onOpenNote: _openTaskNote,
+        onOpenDone: _openTasksDone,
+        images: widget.notes.blobs,
+        displayTime: widget.prefs.displayTime,
+        newTaskShortcut: widget.shortcuts
+            .hintFor(ShortcutAction.newNote)
+            ?.keycapLabel,
+        toolbar: PageToolbar(
+          path: filter.done
+              ? PagePath(
+                  icon: KapyIcons.tasksOutlined,
+                  root: LibrarySpace.tasks.title,
+                  levels: const [(name: 'Done', folderId: null)],
+                )
+              : null,
+          crumb: filter.done
+              ? null
+              : TasksTodayCrumb(
+                  title: note == null || home ? 'Today' : _taskNoteLabel(note),
+                  now: tasks.now(),
+                ),
+          listVisible: listVisible,
+          underList: underList,
+          onShowList: _toggleList,
+          showListShortcut: _sidebarShortcut,
+          create: create,
+          updates: widget.updates,
+          actions: [
+            if (!filter.done)
+              TasksBandActions(
+                controller: tasks,
+                filter: filter,
+                onChooseAgain: () => _tasksPage.currentState?.chooseAgain(),
               ),
-        listVisible: listVisible,
-        underList: underList,
-        onShowList: _toggleList,
-        showListShortcut: _sidebarShortcut,
-        create: create,
-        updates: widget.updates,
-        actions: [
-          if (!filter.done)
-            TasksBandActions(
-              controller: tasks,
-              filter: filter,
-              onChooseAgain: () => _tasksPage.currentState?.chooseAgain(),
-            ),
-        ],
-      ),
-      Expanded(
-        child: TasksScreen(
-          key: _tasksPage,
-          controller: tasks,
-          filter: filter,
-          addFocus: _taskAddFocus,
-          labelOf: _taskNoteLabel,
-          onOpenNote: _openTaskNote,
-          onOpenDone: _openTasksDone,
-          images: widget.notes.blobs,
-          displayTime: widget.prefs.displayTime,
-          newTaskShortcut: widget.shortcuts
-              .hintFor(ShortcutAction.newNote)
-              ?.keycapLabel,
+          ],
         ),
       ),
-    ];
+    );
   }
 
   /// The open tabs, under the toolbar while there is more than one.
