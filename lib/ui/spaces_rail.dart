@@ -52,7 +52,7 @@ class SpacesRail extends StatelessWidget {
     required this.onSelected,
     required this.onSettingsPressed,
     this.invitations,
-    this.openTasks,
+    this.tasks = false,
     this.streak,
     this.settingsShortcut,
     this.updates,
@@ -73,9 +73,9 @@ class SpacesRail extends StatelessWidget {
   /// for their second half.
   final int? invitations;
 
-  /// How many tasks are on the list, counted on Tasks' badge. Null leaves
-  /// Tasks off the rail, as a build with no task index has none.
-  final int? openTasks;
+  /// Whether Tasks is on the rail: a build with no task index has none. It
+  /// carries no count, as D01 draws it; only Shared has a badge.
+  final bool tasks;
 
   /// The run of days something has been written. Left out while there is no
   /// run to show: a zero would be a reproach rather than a record.
@@ -110,7 +110,6 @@ class SpacesRail extends StatelessWidget {
     final invitations = this.invitations;
     final streak = this.streak;
     final onAccountPressed = this.onAccountPressed;
-    final openTasks = this.openTasks;
 
     Widget destination(
       LibrarySpace destination, {
@@ -165,18 +164,12 @@ class SpacesRail extends StatelessWidget {
                               icon: KapyIcons.noteOutlined,
                               label: 'Notes',
                             ),
-                            if (openTasks != null) ...[
+                            if (tasks) ...[
                               const SizedBox(height: 16),
                               destination(
                                 LibrarySpace.tasks,
                                 icon: KapyIcons.tasksOutlined,
                                 label: 'Tasks',
-                                semanticLabel: switch (openTasks) {
-                                  0 => 'Tasks',
-                                  1 => 'Tasks, 1 open',
-                                  _ => 'Tasks, $openTasks open',
-                                },
-                                badge: openTasks,
                               ),
                             ],
                             const SizedBox(height: 16),
@@ -363,8 +356,7 @@ class _RailItemState extends State<_RailItem> {
   }
 }
 
-/// A count on a space's corner: invitations waiting under Shared, tasks
-/// open under Tasks.
+/// A count on a space's corner: invitations waiting under Shared.
 class _Badge extends StatelessWidget {
   const _Badge({super.key, required this.count});
 

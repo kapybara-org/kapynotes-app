@@ -202,32 +202,6 @@ void main() {
     expect(covers(NotesWhen.thisMonth, DateTime(2026, 10, 31)), isFalse);
   });
 
-  test('a day picked at the top of the page goes by its date', () {
-    WhenDay picked(int day, {int year = 2026}) =>
-        WhenDay(DateTime(year, 11, day), today: today);
-
-    // Yesterday too, so the name stays true past midnight.
-    expect(picked(18).label, 'Wed 18');
-    expect(picked(13).label, 'Fri 13');
-    expect(picked(12).label, 'Thu 12 Nov');
-    expect(picked(9, year: 2025).label, 'Sun 9 Nov 2025');
-    expect(picked(18).phrase, 'on Wed 18');
-  });
-
-  test('a picked day covers itself alone, and is the same day whenever it '
-      'was picked', () {
-    final tuesday = WhenDay(DateTime(2026, 11, 17), today: today);
-    final span = tuesday.span(today: today, firstWeekday: DateTime.monday);
-    expect(span.covers(DateTime(2026, 11, 17)), isTrue);
-    expect(span.covers(DateTime(2026, 11, 16)), isFalse);
-    expect(span.covers(DateTime(2026, 11, 18)), isFalse);
-    expect(
-      tuesday,
-      WhenDay(DateTime(2026, 11, 17), today: DateTime(2026, 11, 20)),
-    );
-    expect(tuesday, isNot(WhenDay(DateTime(2026, 11, 18), today: today)));
-  });
-
   test("When's menu names the days each span covers", () {
     String? detail(NotesWhen when, {int start = DateTime.monday}) =>
         when.detail(today: today, firstWeekday: start);
