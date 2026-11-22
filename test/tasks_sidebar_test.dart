@@ -160,6 +160,39 @@ void main() {
     );
   });
 
+  testWidgets('the chosen list sits on the selected fill, drawn over the '
+      "sidebar's colour, and the others on none", (tester) async {
+    await setUpTasks();
+    await pumpSidebar(tester);
+    final palette = tester.element(find.byType(TasksSidebar)).palette;
+    final today = find.byKey(const ValueKey('tasks-filter-all'));
+    Color? fill(Finder row) =>
+        (tester
+                    .widget<Ink>(
+                      find.descendant(of: row, matching: find.byType(Ink)),
+                    )
+                    .decoration
+                as BoxDecoration?)
+            ?.color;
+
+    expect(fill(today), palette.selectedBackground);
+    expect(fill(find.byKey(const ValueKey('tasks-filter-done'))), isNull);
+    expect(
+      fill(find.byKey(ValueKey('tasks-filter-${note('Lisbon trip').id}'))),
+      isNull,
+    );
+    final ink = find.ancestor(of: today, matching: find.byType(Material)).first;
+    expect(
+      find.descendant(of: find.byType(TasksSidebar), matching: ink),
+      findsOneWidget,
+      reason: 'the fill lands on a Material over the sidebar, not under it',
+    );
+    expect(
+      tester.renderObject(ink),
+      paints..rrect(color: palette.selectedBackground),
+    );
+  });
+
   Color swatchColour(WidgetTester tester, Finder swatch) {
     final box = tester.widget<Container>(
       find.descendant(of: swatch, matching: find.byType(Container)),

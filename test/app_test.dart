@@ -4991,6 +4991,24 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets("Tasks' header has no More, as D09a draws it, and Keep on "
+        'top still answers its keys there', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpWithPair(tester);
+      expect(find.byKey(const ValueKey('page-more')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tasks-done-today')), findsOneWidget);
+      expect(find.byKey(const ValueKey('page-more')), findsNothing);
+
+      final before = prefs.alwaysOnTop;
+      await press(tester, ShortcutAction.toggleAlwaysOnTop);
+      expect(prefs.alwaysOnTop, !before);
+      await press(tester, ShortcutAction.toggleAlwaysOnTop);
+      expect(prefs.alwaysOnTop, before);
+    });
+
     for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
       testWidgets('on ${platform.name}, the pair answers its keys as soon as '
           'a click on the rail opens Tasks', (tester) async {

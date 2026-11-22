@@ -1067,9 +1067,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await queue.drain();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
     }
   }
 
@@ -3000,7 +2999,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? get _pinShortcut =>
       widget.shortcuts.hintFor(ShortcutAction.toggleAlwaysOnTop)?.keycapLabel;
 
-  /// Keep on top as More offers it, on the note's page and on Tasks alike.
+  /// Keep on top as More offers it on the note's page and a folder's.
   KapyMenuAction? get _onTopAction => _pinToggle == null
       ? null
       : KapyMenuAction(
@@ -4480,10 +4479,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         showListShortcut: _sidebarShortcut,
         create: create,
         updates: widget.updates,
-        moreActions: [?_onTopAction],
-        onMore: _pinToggle == null
-            ? null
-            : (action, at) => _runPageAction(action, null, at),
         actions: [
           if (!filter.done)
             TasksBandActions(

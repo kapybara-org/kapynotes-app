@@ -68,9 +68,9 @@ List<TaskFilterChoice> taskFilterChoices({
       final byCount = counts[b]!.compareTo(counts[a]!);
       return byCount != 0
           ? byCount
-          : labelOf(
-              notes[a]!,
-            ).toLowerCase().compareTo(labelOf(notes[b]!).toLowerCase());
+          : labelOf(notes[a]!)
+                .toLowerCase()
+                .compareTo(labelOf(notes[b]!).toLowerCase());
     });
   return [
     TaskFilterChoice(const TaskFilter.all(), 'Today', today.length),
@@ -164,29 +164,35 @@ class TasksSidebar extends StatelessWidget {
               placeholder: searchPlaceholder,
             ),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-                children: [
-                  for (final (index, choice) in choices.indexed) ...[
-                    if (index == 2)
-                      Container(
-                        height: 36,
-                        alignment: Alignment.bottomLeft,
-                        padding: const EdgeInsets.only(left: 10, bottom: 6),
-                        child: Text(
-                          'From notes',
-                          style: taskText(12, 16, palette.textTertiary, 520),
+              // The rows' fill and hover are ink, which lands on the nearest
+              // Material: this one, over the sidebar's colour, not the
+              // window's under it.
+              child: Material(
+                type: MaterialType.transparency,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+                  children: [
+                    for (final (index, choice) in choices.indexed) ...[
+                      if (index == 2)
+                        Container(
+                          height: 36,
+                          alignment: Alignment.bottomLeft,
+                          padding: const EdgeInsets.only(left: 10, bottom: 6),
+                          child: Text(
+                            'From notes',
+                            style: taskText(12, 16, palette.textTertiary, 520),
+                          ),
                         ),
+                      _FilterRow(
+                        key: ValueKey('tasks-filter-${choice.key}'),
+                        choice: choice,
+                        selected: filter == choice.filter,
+                        onPressed: () => onFilter(choice.filter),
                       ),
-                    _FilterRow(
-                      key: ValueKey('tasks-filter-${choice.key}'),
-                      choice: choice,
-                      selected: filter == choice.filter,
-                      onPressed: () => onFilter(choice.filter),
-                    ),
-                    const SizedBox(height: 2),
+                      const SizedBox(height: 2),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
             if (onGotIt case final onGotIt?)
