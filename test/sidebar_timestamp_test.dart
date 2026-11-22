@@ -11,7 +11,7 @@ void main() {
         instant,
         displayTime: (value) => AppTimeZones.convert(value, 'Asia/Kolkata'),
       ),
-      '2 Sep 2026 · 0:15',
+      '2 Sep 2026 · 00:15',
     );
     expect(
       SidebarTimestamp.format(
