@@ -165,8 +165,6 @@ class NoteMetaRow extends StatelessWidget {
     );
     final phone = AppPlatform.isMobile;
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
-    // A phone's items sit _gap either side of that dot.
-    final gap = [const SizedBox(width: _gap), dot, const SizedBox(width: _gap)];
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done';
     final saved = DateLineSaved.of(context);
@@ -328,19 +326,14 @@ class NoteMetaRow extends StatelessWidget {
       child: Row(
         children: [
           for (final (index, item) in items.indexed) ...[
-            if (index > 0 && phone)
-              ...gap
-            else if (index > 0)
+            if (index > 0)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text('·', style: quiet),
               ),
             item,
           ],
-          if (tags case final tags?) ...[
-            if (phone) ...gap else const SizedBox(width: 6),
-            tags,
-          ],
+          if (tags case final tags?) ...[const SizedBox(width: 6), tags],
         ],
       ),
     );
