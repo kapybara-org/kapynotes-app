@@ -110,9 +110,11 @@ void main() {
     for (var index = 1; index < tops.length; index++) {
       expect(tops[index], greaterThan(tops[index - 1]));
     }
-    expect(find.text('WRITE'), findsOneWidget);
-    expect(find.text('BLOCKS'), findsOneWidget);
-    expect(find.text('INSERT'), findsNothing);
+    expect(find.text('Write'), findsOneWidget);
+    expect(find.text('Blocks'), findsOneWidget);
+    expect(find.text('WRITE'), findsNothing);
+    expect(find.text('BLOCKS'), findsNothing);
+    expect(find.text('Insert'), findsNothing);
 
     final inserts = tester.getRect(
       find.byKey(const ValueKey('slash-command-inserts')),

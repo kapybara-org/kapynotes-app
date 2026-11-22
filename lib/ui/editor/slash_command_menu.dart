@@ -701,7 +701,7 @@ class _CommandList extends StatelessWidget {
                           label: command.group.label,
                           excludeSemantics: true,
                           child: Text(
-                            command.group.label.toUpperCase(),
+                            command.group.label,
                             style: TextStyle(
                               color: palette.textTertiary,
                               fontSize: AppTypeScale.badge,
@@ -709,7 +709,6 @@ class _CommandList extends StatelessWidget {
                               fontVariations: AppWeight.wght(
                                 AppWeight.rowTitle,
                               ),
-                              letterSpacing: 0.44,
                             ),
                           ),
                         ),
