@@ -122,6 +122,7 @@ Future<_Panel> _pumpPanel(WidgetTester tester, {required bool takesKey}) async {
             openSettings: () => opened.add('settings'),
             explainNoteLimit: () => opened.add('limit'),
           )),
+          isTaken: (_) => false,
           now: notes.now,
         ),
       ),
