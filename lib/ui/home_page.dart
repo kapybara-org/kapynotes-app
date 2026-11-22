@@ -5349,8 +5349,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 child: _phoneNoteHeader(
                   note,
                   // The Scaffold takes the keyboard out of its own body's
-                  // insets, so the page's are read from above it.
-                  typing: MediaQuery.viewInsetsOf(this.context).bottom > 0,
+                  // insets, so the page's are read from above it. A blank
+                  // page (M11) keeps its header as it is until the first
+                  // words.
+                  typing:
+                      note.body.isNotEmpty &&
+                      MediaQuery.viewInsetsOf(this.context).bottom > 0,
                 ),
               ),
             Expanded(

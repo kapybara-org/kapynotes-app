@@ -356,6 +356,25 @@ void main() {
       expect(shown.filled, isTrue);
     });
 
+    testWidgets("a blank day's page keeps the header's buttons at full "
+        'strength with the keyboard up, until its first words (M11)', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      await open(tester, 20);
+      final row = find.byKey(const ValueKey('phone-note-header-row'));
+      double opacity() => tester.widget<AnimatedOpacity>(row).opacity;
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+      expect(opacity(), 1);
+
+      await tester.enterNote('Lunch');
+      await tester.pumpAndSettle();
+      expect(opacity(), 0.5);
+    });
+
     testWidgets('a day with none opens a blank page: no title and no time, '
         'only "Start typing…", and the first words give it that day (M11)', (
       tester,

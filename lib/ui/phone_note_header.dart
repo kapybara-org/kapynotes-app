@@ -64,8 +64,8 @@ class PhoneNoteHeader extends StatelessWidget {
   /// Kapy AI's button, between the day and More. Null where it is off.
   final Widget? assistant;
 
-  /// While the note is being typed in (M08) the row of buttons steps back,
-  /// and the week and the tasks line stay as they are.
+  /// While a note with words in it is being typed in (M08) the row of
+  /// buttons steps back, and the week and the tasks line stay as they are.
   final bool typing;
 
   /// The row of buttons, and the line that opens the tasks.
