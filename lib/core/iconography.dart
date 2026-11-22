@@ -251,7 +251,7 @@ class KapyIcons {
     HugeIcons.strokeRoundedLeftToRightListBullet,
   );
   static const homeOutlined = KapyIconData(
-    0xE0EB,
+    0xE0EC,
     HugeIcons.strokeRoundedHome03,
   );
   static const hourglassRounded = KapyIconData(
@@ -573,6 +573,10 @@ class KapyIcons {
   static const chatEditOutlined = KapyIconData(
     0xE0DE,
     HugeIcons.strokeRoundedBubbleChatEdit,
+  );
+  static const chatHistoryOutlined = KapyIconData(
+    0xE0EB,
+    HugeIcons.strokeRoundedTransactionHistory,
   );
   static const sendRounded = KapyIconData(
     0xE0DF,

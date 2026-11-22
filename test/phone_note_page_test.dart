@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -26,6 +27,7 @@ import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore, openNoteBody;
+import 'kapy_icon_finder.dart';
 import 'support/note_driver.dart';
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
@@ -189,6 +191,21 @@ void main() {
         expect(size.height, greaterThanOrEqualTo(44), reason: key);
         expect(size.width, greaterThanOrEqualTo(44), reason: key);
       }
+
+      // ⌂ is Hugeicons' house, on a code point of its own: #303's chat
+      // history took the one it had.
+      expect(
+        find.descendant(
+          of: home,
+          matching: findKapyIcon(KapyIcons.homeOutlined),
+        ),
+        findsOneWidget,
+      );
+      expect(KapyIcons.homeOutlined.paths, same(HugeIcons.strokeRoundedHome03));
+      expect(
+        KapyIcons.homeOutlined.codePoint,
+        isNot(KapyIcons.chatHistoryOutlined.codePoint),
+      );
 
       await tester.tap(home);
       await tester.pumpAndSettle();
