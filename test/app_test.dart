@@ -5068,6 +5068,22 @@ void main() {
       expect(find.byType(DrawingCanvas), findsOneWidget);
 
       await search('Garden');
+      expect(row('Garden plan'), findsOneWidget);
+      expect(row('Garden tools'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Garden plan'));
+      await tester.pumpAndSettle();
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'Garden',
+      );
+      await tester.pumpAndSettle();
       await tester.tap(row('Garden tools'));
       await tester.pumpAndSettle();
       expect(spaceTitle(tester), 'My notes');
@@ -9951,10 +9967,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(
-          tester.getTopLeft(find.byType(PagePane)).dy,
-          phone.padding.top,
-        );
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, phone.padding.top);
       });
     }
 
@@ -10039,10 +10052,7 @@ void main() {
 
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(
-          tester.getTopLeft(find.byType(PagePane)).dy,
-          tablet.padding.top,
-        );
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, tablet.padding.top);
         expect(statusBar, isEmpty);
       });
     }
