@@ -17,6 +17,7 @@ import 'checklist_pie.dart';
 import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
+import 'editor/voice_chip.dart' show formatVoiceDuration;
 import 'notes_grouping.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'tag_colours.dart';
@@ -133,18 +134,21 @@ class NoteGlance {
     return glance;
   }
 
-  /// The line a list row gives the note: how far its checklist has got, then
-  /// its first line, with the answer when that line is a sum.
-  String get summary {
+  /// The note's first line, with the answer when that line is a sum.
+  String? get preview {
     final line = this.line;
     final result = this.result;
-    final said = line == null
+    return line == null
         ? null
         : result == null
         ? line
         : '${line.split('=').first.trim()} = $result';
-    return [if (boxes > 0) '$done of $boxes done', ?said].join(' · ');
   }
+
+  /// The line a list row gives the note: how far its checklist has got, then
+  /// its [preview].
+  String get summary =>
+      [if (boxes > 0) '$done of $boxes done', ?preview].join(' · ');
 }
 
 const _cardRadius = BorderRadius.only(
@@ -597,12 +601,24 @@ class NoteListRowFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final marks = _marksOf(
-      glance.media,
-      locked: locked,
-      shared: shared && people == null,
-    );
-    final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
+    final people = this.people;
+    final marks = touch
+        ? const <KapyIconData>[]
+        : _marksOf(
+            glance.media,
+            locked: locked,
+            shared: shared && people == null,
+          );
+    final holds = touch
+        ? _holdsOf(palette, shared: shared && people == null)
+        : const <Widget>[];
+    final summary =
+        snippet ??
+        (note.isEmpty
+            ? 'Empty'
+            : touch
+            ? glance.preview ?? ''
+            : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
     final tagMarks = TagMarks.of(context, note.id);
@@ -711,7 +727,7 @@ class NoteListRowFace extends StatelessWidget {
                       ),
                   ],
                 ),
-                SizedBox(height: touch ? 4 : 3),
+                const SizedBox(height: 3),
                 Row(
                   children: [
                     if (!touch) SizedBox(width: TagDots.size + 8),
@@ -734,27 +750,97 @@ class NoteListRowFace extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: _figtree(
-                          touch ? 13.5 : AppTypeScale.body,
-                          touch ? 18 : 16,
+                          touch ? 14 : AppTypeScale.body,
+                          touch ? 20 : 16,
                           FontWeight.w400,
                           note.isEmpty
                               ? palette.textTertiary
+                              : touch
+                              ? palette.textSecondary
                               : palette.textMuted,
                         ),
                       ),
                     ),
-                    if (people case final people?) ...[
+                    if (people != null && holds.isEmpty) ...[
                       const SizedBox(width: 8),
                       people,
                     ],
                   ],
                 ),
+                if (holds.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    key: const ValueKey('note-row-holds'),
+                    spacing: 12,
+                    children: [
+                      ...holds,
+                      if (people != null) ...[const Spacer(), people],
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// A phone row's third line, what the note holds: how far its checklist
+  /// has got, how long its recordings and videos run, how many pictures it
+  /// has, then whether it is read-only or [shared]. Each is a 14 pt icon 6
+  /// from its words, 12 from the next. Empty when it holds only words.
+  List<Widget> _holdsOf(CalcPalette palette, {required bool shared}) {
+    final ink = palette.textTertiary;
+    final words = chromeStyle(
+      size: 12,
+      line: 16,
+      weight: AppWeight.axisOf(FontWeight.w400),
+      color: ink,
+      tabular: true,
+    );
+    var voice = Duration.zero;
+    var video = Duration.zero;
+    var pictures = 0;
+    for (final ref in note.attachments) {
+      switch (ref) {
+        case NoteVoiceRef():
+          voice += ref.duration;
+        case NoteVideoRef():
+          video += ref.duration;
+        case NoteImageRef():
+          pictures++;
+        default:
+      }
+    }
+    Widget hold(Widget icon, [String? text]) => Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 6,
+      children: [
+        icon,
+        if (text != null) Text(text, maxLines: 1, style: words),
+      ],
+    );
+    Widget mark(KapyIconData icon) => KapyIcon(icon, size: 14, color: ink);
+    return [
+      if (glance.boxes > 0)
+        hold(
+          ChecklistPie(
+            done: glance.done,
+            total: glance.boxes,
+            fill: ink,
+            check: palette.sidebarBackground,
+          ),
+          '${glance.done} of ${glance.boxes}',
+        ),
+      if (glance.media.contains(NoteMedia.voice))
+        hold(mark(NoteMedia.voice.icon), formatVoiceDuration(voice)),
+      if (glance.media.contains(NoteMedia.video))
+        hold(mark(NoteMedia.video.icon), formatVoiceDuration(video)),
+      if (pictures > 0) hold(mark(NoteMedia.image.icon), '$pictures'),
+      if (locked) hold(mark(KapyIcons.lockRounded)),
+      if (shared) hold(mark(KapyIcons.groupOutlined)),
+    ];
   }
 }
 

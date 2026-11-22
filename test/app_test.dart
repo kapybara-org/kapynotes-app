@@ -8527,6 +8527,55 @@ void main() {
       );
     });
 
+    testWidgets('a row with a preview and what it holds is 91 from hairline '
+        'to hairline, and one with words alone keeps two lines', (
+      tester,
+    ) async {
+      int at(int hour) => DateTime(2026, 11, 19, hour).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        for (final (id, body, hour) in [
+          (
+            'arjun',
+            'Call with Arjun\nPricing page by Friday\n☐ Send the deck',
+            9,
+          ),
+          ('quote', 'Quote for the deck\nBook it\n☐ Book the room', 8),
+          ('renewal', 'Renewal notes\nFor the call with Acme on Friday.', 7),
+        ])
+          {
+            'id': id,
+            'body': body,
+            'createdAt': at(hour),
+            'updatedAt': at(hour),
+          },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final lines = find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.byType(Divider),
+      );
+      expect(lines, findsNWidgets(2));
+      expect(
+        tester.getTopLeft(lines.at(1)).dy - tester.getTopLeft(lines.at(0)).dy,
+        91,
+      );
+      Finder holdsOf(String title) => find.descendant(
+        of: find.widgetWithText(NoteRow, title),
+        matching: find.byKey(const ValueKey('note-row-holds')),
+      );
+      expect(
+        find.descendant(
+          of: holdsOf('Quote for the deck'),
+          matching: find.text('0 of 1'),
+        ),
+        findsOneWidget,
+      );
+      expect(holdsOf('Renewal notes'), findsNothing);
+    });
+
     testWidgets('a row swipes left to Pin and Archive', (tester) async {
       final groceries = notes.create(body: 'Groceries\nOat milk');
       final offsite = notes.create(body: 'Team offsite');
