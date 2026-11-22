@@ -151,13 +151,13 @@ void main() {
     // M07: the note at rest, the week open and the day's tasks under it.
     FocusManager.instance.primaryFocus?.unfocus();
     await keyboard(up: false);
-    expect(find.text('Call with Arjun'), findsWidgets);
+    expect(find.textContaining('Call with Arjun'), findsWidgets);
     expect(find.byKey(const ValueKey('page-tasks-line')), findsOneWidget);
     expect(find.byKey(const ValueKey('note-path')), findsOneWidget);
     await shot('m07-a-note');
 
     // M08: typing in it, the keyboard up.
-    await tap(find.text('Send the deck'));
+    await tap(find.textContaining('Send the deck').first);
     await keyboard(up: true);
     await shot('m08-a-note-typing');
 

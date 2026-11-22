@@ -289,6 +289,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
           ? _shortcuts?.bindingFor(ShortcutAction.openMenuBarPanel)
           : null,
     );
+    await _tray.setToolTip(_toolTip);
     if (!_disposed) notifyListeners();
     await windowManager.setPreventClose(_hidesOnClose);
 
@@ -364,14 +365,17 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     final error = await _replaceHotKey(action, panelOff ? null : binding);
     _registrationError = error;
     if (action == ShortcutAction.openMenuBarPanel) {
-      await _tray.setToolTip(_toolTipFor(binding));
+      await _tray.setToolTip(error == null ? _toolTipFor(binding) : _toolTip);
     }
     notifyListeners();
     return error;
   }
 
-  String get _toolTip =>
-      _toolTipFor(_shortcuts?.bindingFor(ShortcutAction.openMenuBarPanel));
+  String get _toolTip => _toolTipFor(
+    isTaken(ShortcutAction.openMenuBarPanel)
+        ? null
+        : _shortcuts?.bindingFor(ShortcutAction.openMenuBarPanel),
+  );
 
   String _toolTipFor(ShortcutBinding? panelKeys) =>
       AppPlatform.isMacOS && panelKeys != null

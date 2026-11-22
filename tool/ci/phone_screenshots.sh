@@ -14,7 +14,7 @@ set -u
 device=$1
 status=0
 export KAPYNOTES_DEVICE_SHOTS=$device
-for test in phone_v2 phone_format_bar phone_home kapy_ai_page phone_tasks phone_note_page; do
+for test in phone_v2 phone_format_bar phone_home kapy_ai_page kapy_ai_sheet phone_tasks phone_note_page; do
   flutter drive --no-pub -d "$device" \
     --driver test_driver/integration_test.dart \
     --target "integration_test/${test}_test.dart" \

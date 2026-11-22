@@ -207,6 +207,10 @@ class _Suggestion extends StatelessWidget {
 /// The chat: each question on the right, each answer under it, and whatever
 /// holds up the last question beneath it. Anchored to the bottom, the way a
 /// conversation grows.
+///
+/// [compact] is a phone's sheet resting over the note (M10): larger type, the
+/// chat from the top, and each answer without its Copy and source line, which
+/// the sheet shows at full height.
 class KapyAiConversation extends StatelessWidget {
   const KapyAiConversation({
     super.key,
@@ -217,7 +221,10 @@ class KapyAiConversation extends StatelessWidget {
     required this.onPickAnother,
     required this.onManageAccounts,
     required this.now,
+    this.compact = false,
   });
+
+  final bool compact;
 
   final KapyAi kapyAi;
   final KapyChat chat;
@@ -237,13 +244,14 @@ class KapyAiConversation extends StatelessWidget {
     final children = [
       for (final message in chat.messages)
         message.role == KapyRole.user
-            ? _Question(message.text)
+            ? _Question(message.text, compact: compact)
             : _Answer(
                 message: message,
                 sources: kapyAi.linkSources(chat, message),
                 noteTitle: noteTitle,
                 onOpenNote: onOpenNote,
                 now: now,
+                compact: compact,
               ),
       if (pending != null)
         KapyAiNotice(
@@ -254,30 +262,68 @@ class KapyAiConversation extends StatelessWidget {
         ),
       if (waiting) const _Thinking(),
     ];
-    return SingleChildScrollView(
-      reverse: true,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final child in children) ...[
-            if (child != children.first) const SizedBox(height: 18),
-            child,
-          ],
+    final column = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final child in children) ...[
+          if (child != children.first) SizedBox(height: compact ? 16 : 18),
+          child,
         ],
+      ],
+    );
+    if (!compact) {
+      return SingleChildScrollView(
+        reverse: true,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: column,
+      );
+    }
+    const padding = EdgeInsets.fromLTRB(20, 20, 20, 12);
+    return LayoutBuilder(
+      builder: (context, box) => SingleChildScrollView(
+        reverse: true,
+        padding: padding,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: (box.maxHeight - padding.vertical).clamp(
+              0,
+              double.infinity,
+            ),
+          ),
+          child: Align(alignment: Alignment.topCenter, child: column),
+        ),
       ),
     );
   }
 }
 
 class _Question extends StatelessWidget {
-  const _Question(this.text);
+  const _Question(this.text, {required this.compact});
 
   final String text;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 40),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: palette.hover,
+              borderRadius: BorderRadius.circular(AppRadii.surface),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Text(text, style: kapyText(15, 20, palette.textPrimary)),
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(left: 40),
       child: Align(
@@ -317,6 +363,7 @@ class _Answer extends StatelessWidget {
     required this.noteTitle,
     required this.onOpenNote,
     required this.now,
+    required this.compact,
   });
 
   final KapyMessage message;
@@ -324,6 +371,7 @@ class _Answer extends StatelessWidget {
   final String? Function(String noteId) noteTitle;
   final ValueChanged<String> onOpenNote;
   final DateTime now;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -332,44 +380,52 @@ class _Answer extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        KapyAiMarkdown(message.text, sources: sources),
-        const SizedBox(height: 10),
+        KapyAiMarkdown(
+          message.text,
+          sources: sources,
+          style: compact ? kapyText(15, 22, palette.textPrimary) : null,
+        ),
         if (message.read.isNotEmpty) ...[
+          const SizedBox(height: 10),
           _NotesRead(
             message: message,
             noteTitle: noteTitle,
             onOpenNote: onOpenNote,
             now: now,
           ),
-          const SizedBox(height: 10),
         ],
-        Row(
-          children: [
-            KapyAiIconButton(
-              key: const ValueKey('kapy-ai-copy'),
-              icon: KapyIcons.copyRounded,
-              tooltip: 'Copy',
-              extent: 28,
-              iconSize: 15,
-              radius: AppRadii.control,
-              color: palette.textTertiary,
-              onPressed: () {
-                unawaited(Clipboard.setData(ClipboardData(text: message.text)));
-                Toast.show(context, 'Copied', icon: KapyIcons.copyRounded);
-              },
-            ),
-            const SizedBox(width: 6),
-            if (source != null)
-              Flexible(
-                child: Text(
-                  source,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: kapyText(11.5, 16, palette.textTertiary),
-                ),
+        if (!compact) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              KapyAiIconButton(
+                key: const ValueKey('kapy-ai-copy'),
+                icon: KapyIcons.copyRounded,
+                tooltip: 'Copy',
+                extent: 28,
+                iconSize: 15,
+                radius: AppRadii.control,
+                color: palette.textTertiary,
+                onPressed: () {
+                  unawaited(
+                    Clipboard.setData(ClipboardData(text: message.text)),
+                  );
+                  Toast.show(context, 'Copied', icon: KapyIcons.copyRounded);
+                },
               ),
-          ],
-        ),
+              const SizedBox(width: 6),
+              if (source != null)
+                Flexible(
+                  child: Text(
+                    source,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: kapyText(11.5, 16, palette.textTertiary),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ],
     );
   }
