@@ -3138,7 +3138,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _kapyPanel.close();
       return;
     }
-    _openKapyAi();
+    _openKapyAi(fromNote: true);
   }
 
   /// Whether Kapy AI is there to be asked: in this build, and switched on.
@@ -3171,8 +3171,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Opens the panel, or the phone's sheet, from the note on screen so its
   /// chip is attached. With [question] it first starts a new chat and asks
-  /// it there, which is how ⌘K's Ask row and its Tab reach Kapy AI.
-  void _openKapyAi({String? question}) {
+  /// it there, which is how ⌘K's Ask row and its Tab reach Kapy AI. On a
+  /// phone, the note's own button ([fromNote]) has the sheet rest over the
+  /// note; everything else opens it at full height.
+  void _openKapyAi({String? question, bool fromNote = false}) {
     final ai = _kapyAi;
     if (ai == null || !ai.enabled) return;
     final shown = _shownNote(_selectedId)?.id;
@@ -3193,9 +3195,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(
       showKapyAiSheet(
         context,
-        panel: (close) => _kapyAiPanel(
+        rest: fromNote && noteId != null,
+        panel: (close, expand, compact) => _kapyAiPanel(
           ai,
           onClose: close,
+          compact: compact,
+          onExpand: expand,
           onOpenNote: (id) {
             close();
             _select(id);
@@ -3209,8 +3214,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     KapyAi ai, {
     required VoidCallback onClose,
     required ValueChanged<String> onOpenNote,
+    bool compact = false,
+    VoidCallback? onExpand,
   }) => KapyAiPanel(
     kapyAi: ai,
+    compact: compact,
+    onExpand: onExpand,
     controller: _kapyPanel,
     noteTitle: _kapyNoteTitle,
     onOpenNote: onOpenNote,
