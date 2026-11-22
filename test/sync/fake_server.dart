@@ -2556,6 +2556,7 @@ class FakeApi implements SyncApi {
   @override
   Future<void> revokeInvite(String spaceId, String token) async {
     _gate();
+    if (server.onRemoval case final hook?) await hook();
     server._member(userId, spaceId).invites.remove(token);
   }
 

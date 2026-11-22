@@ -3060,10 +3060,58 @@ void main() {
 
         await alice.sharing.sendHeldRemovalsQuietly();
         await Future<void>.delayed(Duration.zero);
-        expect(heard.single.refusal, isA<SyncRefusedException>());
+        final bobName = alice.sharing.memberOn(note.id, bob.email)!.firstName;
+        expect(heard.single.message, "Couldn't remove $bobName from “Ours”.");
+        expect(heard.single.isError, isTrue);
         expect(bobIn(space), isTrue);
         expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
       });
+
+      for (final count in [1, 2, 3, 4]) {
+        test('$count refused in one go once nothing can say so are one notice '
+            'naming them', () async {
+          final (note, _) = await withBobAndCarol();
+          for (final address in ['dave@example.com', 'erin@example.com']) {
+            await alice.sharing.addPerson(note.id, address, allNotes: true);
+          }
+          final heard = <SharingNotice>[];
+          final subscription = alice.sharing.notices.listen(heard.add);
+          addTearDown(subscription.cancel);
+          server.onRemoval = () async =>
+              throw const SyncRefusedException(403, 'view-only', {});
+          addTearDown(() => server.onRemoval = null);
+          final people = [
+            bob.email,
+            carol(),
+            'dave@example.com',
+            'erin@example.com',
+          ].take(count);
+          for (final email in people) {
+            alice.sharing.holdRemoval(note.id, email, const Duration(hours: 1));
+          }
+
+          await alice.sharing.sendHeldRemovalsQuietly();
+          await Future<void>.delayed(Duration.zero);
+          final bobName = alice.sharing.memberOn(note.id, bob.email)!.firstName;
+          expect(heard.map((notice) => notice.message), [
+            switch (count) {
+              1 => "Couldn't remove $bobName from “Ours”.",
+              2 => "Couldn't remove $bobName and ${carol()} from “Ours”.",
+              3 =>
+                "Couldn't remove $bobName, ${carol()} and 1 other from "
+                    '“Ours”.',
+              _ =>
+                "Couldn't remove $bobName, ${carol()} and 2 others from "
+                    '“Ours”.',
+            },
+          ]);
+          expect(heard.single.isError, isTrue);
+          expect(heard.single.leaveSpaceId, isNull);
+          for (final email in people) {
+            expect(alice.sharing.isRemovalHeld(note.id, email), isFalse);
+          }
+        });
+      }
 
       test(
         'put off by a lost connection waits to go again, shown as such',

@@ -890,6 +890,7 @@ class Sharing extends ChangeNotifier {
     bool Function(String key, String noteId) pick, {
     required bool quietly,
   }) async {
+    final unsaid = <({String noteId, String name})>[];
     for (final held in _held) {
       // Signing out stopped waiting: what is left goes at the next sign-in.
       if (_disposed) return;
@@ -909,8 +910,11 @@ class Sharing extends ChangeNotifier {
         final say = _onRefused.remove(key);
         _forgetHeld(key);
         if (!quietly) rethrow;
-        if (!(say?.call(error) ?? false) && !_notices.isClosed) {
-          _notices.add(SharingNotice.refused(error));
+        if (!(say?.call(error) ?? false)) {
+          unsaid.add((
+            noteId: held.noteId,
+            name: memberOn(held.noteId, held.email)?.firstName ?? held.email,
+          ));
         }
         continue;
       } finally {
@@ -919,6 +923,18 @@ class Sharing extends ChangeNotifier {
       }
       _onRefused.remove(key);
       _forgetHeld(key);
+    }
+    for (final noteId in {for (final refused in unsaid) refused.noteId}) {
+      if (_notices.isClosed) return;
+      _notices.add(
+        SharingNotice.notRemoved(
+          names: [
+            for (final refused in unsaid)
+              if (refused.noteId == noteId) refused.name,
+          ],
+          title: _notes.byId(noteId)?.title ?? '',
+        ),
+      );
     }
   }
 
@@ -1187,7 +1203,11 @@ class Sharing extends ChangeNotifier {
 /// Something that happened to the notes shared with this account, said in
 /// one line.
 class SharingNotice {
-  const SharingNotice._(this.message, {this.leaveSpaceId, this.refusal});
+  const SharingNotice._(
+    this.message, {
+    this.leaveSpaceId,
+    this.isError = false,
+  });
 
   factory SharingNotice.shared({
     required String from,
@@ -1220,10 +1240,23 @@ class SharingNotice {
         : '${notes.length} notes from $from are no longer shared with you',
   );
 
-  /// A removal held for Undo that the server refused once the sheet it was
-  /// made in had closed, said in the sheet's own words for [refusal].
-  factory SharingNotice.refused(Object refusal) =>
-      SharingNotice._('', refusal: refusal);
+  /// Removals held for Undo from the note titled [title] that the server
+  /// refused once the sheet they were made in had closed, naming everyone
+  /// still on it.
+  factory SharingNotice.notRemoved({
+    required List<String> names,
+    required String title,
+  }) {
+    final others = names.length - 2;
+    final who = names.length == 1
+        ? names.single
+        : names.length == 2
+        ? '${names[0]} and ${names[1]}'
+        : '${names[0]}, ${names[1]} and $others '
+              '${others == 1 ? 'other' : 'others'}';
+    final note = title.trim().isEmpty ? 'a note' : '“${title.trim()}”';
+    return SharingNotice._("Couldn't remove $who from $note.", isError: true);
+  }
 
   final String message;
 
@@ -1231,8 +1264,8 @@ class SharingNotice {
   /// to leave again.
   final String? leaveSpaceId;
 
-  /// Why the server refused a removal; said in place of [message].
-  final Object? refusal;
+  /// Whether it says something went wrong.
+  final bool isError;
 
   static String _named(Note note) {
     final title = note.title.trim();
