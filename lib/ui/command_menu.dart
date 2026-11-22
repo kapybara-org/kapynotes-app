@@ -953,6 +953,8 @@ class _CommandMenuState extends State<CommandMenu> {
                       decoration: InputDecoration.collapsed(
                         hintText: picker != null
                             ? ''
+                            : _scope == _Scope.drawings
+                            ? 'Search drawings'
                             : widget.tasks == null
                             ? 'Search notes'
                             : 'Search notes and tasks',
@@ -1110,6 +1112,8 @@ class _CommandMenuState extends State<CommandMenu> {
                     ? InputDecoration.collapsed(
                         hintText: picker != null
                             ? ''
+                            : _scope == _Scope.drawings
+                            ? 'Search drawings…'
                             : _asks
                             ? 'Search or Ask Kapy AI…'
                             : 'Search…',
@@ -1119,6 +1123,8 @@ class _CommandMenuState extends State<CommandMenu> {
                         border: InputBorder.none,
                         hintText: picker != null
                             ? ''
+                            : _scope == _Scope.drawings
+                            ? 'Search drawings…'
                             : _asks
                             ? 'Search or Ask Kapy AI…'
                             : 'Search…',

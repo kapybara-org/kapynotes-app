@@ -163,9 +163,7 @@ void main() {
       expect(
         tester
             .widget<Tooltip>(
-              find
-                  .descendant(of: _button, matching: find.byType(Tooltip))
-                  .first,
+              find.descendant(of: _button, matching: find.byType(Tooltip)).first,
             )
             .message,
         contains('J'),
@@ -860,6 +858,7 @@ void main() {
       await tester.pumpAndSettle();
       await searchFromField(tester);
       expect(find.text('Search or Ask Kapy AI…'), findsNothing);
+      expect(find.text('Search drawings…'), findsOneWidget);
       await type(tester, 'sintra');
       findsDrawingsAlone();
       expect(
@@ -901,6 +900,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('bar-drawings')));
       await tester.pumpAndSettle();
       await searchFromField(tester);
+      expect(
+        find.descendant(of: menu, matching: find.text('Search drawings')),
+        findsOneWidget,
+      );
       await type(tester, 'sintra');
       findsDrawingsAlone();
       expect(

@@ -9967,7 +9967,10 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(tester.getTopLeft(find.byType(PagePane)).dy, phone.padding.top);
+        expect(
+          tester.getTopLeft(find.byType(PagePane)).dy,
+          phone.padding.top,
+        );
       });
     }
 
@@ -10052,7 +10055,10 @@ void main() {
 
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(tester.getTopLeft(find.byType(PagePane)).dy, tablet.padding.top);
+        expect(
+          tester.getTopLeft(find.byType(PagePane)).dy,
+          tablet.padding.top,
+        );
         expect(statusBar, isEmpty);
       });
     }
