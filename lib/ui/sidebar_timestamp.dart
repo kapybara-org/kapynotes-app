@@ -139,6 +139,21 @@ class SidebarTimestamp {
     };
   }
 
+  /// A day as briefly as a tile, or a row with no day heading over it, can
+  /// say it: "Today", "Yesterday" or "Tomorrow", the weekday and the day
+  /// within a week either way ("Tue 24"), then the date ("12 Nov"), with the
+  /// year only when it is not this one.
+  static String briefDay(DateTime day, {required DateTime today}) {
+    final date = '${day.day} ${_months[day.month - 1]}';
+    return switch (_daysBetween(day, today)) {
+      0 => 'Today',
+      1 => 'Yesterday',
+      -1 => 'Tomorrow',
+      > -7 && < 7 => weekdayAndDay(day),
+      _ => day.year == today.year ? date : '$date ${day.year}',
+    };
+  }
+
   /// A weekday in three letters: "Wed".
   static String shortWeekday(DateTime day) => _weekdays[day.weekday - 1];
 

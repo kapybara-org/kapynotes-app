@@ -1067,6 +1067,7 @@ extension on Sidebar {
     style: style,
     inset: inset,
     clockOnly: clockOnly,
+    laterDay: clockOnly ? null : _laterDay(note),
     folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
@@ -1448,6 +1449,12 @@ extension on Sidebar {
         itemBuilder: (context, index) => rows[index](context),
       ),
     );
+  }
+
+  /// The day [note] was given, when that is a later one, for its row to name.
+  DateTime? _laterDay(Note note) {
+    final own = ownDay?.call(note);
+    return waitsForLaterDay(own, dayShown(now(), displayTime)) ? own : null;
   }
 
   /// The Folders tab: the folder tree, then the notes in no folder.
@@ -2779,6 +2786,7 @@ class NoteRow extends StatefulWidget {
     this.style = NoteRowStyle.row,
     this.inset = 0,
     this.clockOnly = false,
+    this.laterDay,
     this.engine,
     this.now = DateTime.now,
     this.folders,
@@ -2793,6 +2801,10 @@ class NoteRow extends StatefulWidget {
   /// Whether the row sits under a heading that already names its day, so it
   /// gives only the time it was last changed, even while others have it open.
   final bool clockOnly;
+
+  /// The later day the note was given, which the row names in place of when
+  /// it was changed, as no heading over it does.
+  final DateTime? laterDay;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -3223,13 +3235,19 @@ class _NoteRowState extends State<NoteRow> {
     final card =
         widget.style == NoteRowStyle.card ||
         widget.style == NoteRowStyle.drawingCard;
-    String stamp({bool clock = true}) => SidebarTimestamp.glance(
-      note.updatedAt,
-      now: widget.now(),
-      displayTime: widget.displayTime,
-      today: card,
-      clock: clock,
-    );
+    String stamp({bool clock = true}) => switch (widget.laterDay) {
+      final day? => SidebarTimestamp.briefDay(
+        day,
+        today: dayShown(widget.now(), widget.displayTime),
+      ),
+      null => SidebarTimestamp.glance(
+        note.updatedAt,
+        now: widget.now(),
+        displayTime: widget.displayTime,
+        today: card,
+        clock: clock,
+      ),
+    };
     final day = card && people.isEmpty ? stamp(clock: false) : null;
     final date = widget.clockOnly
         ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))

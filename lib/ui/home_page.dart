@@ -3201,8 +3201,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What the search fields read: Drawings' names what it finds, and the
   /// rest offer to ask Kapy AI only while it can be asked.
-  String get _searchPlaceholder =>
-      _kapyAiOn && _space != LibrarySpace.drawings
+  String get _searchPlaceholder => _kapyAiOn && _space != LibrarySpace.drawings
       ? 'Search or Ask Kapy AI'
       : _listSearchPlaceholder;
 
@@ -3488,11 +3487,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 MediaQuery.sizeOf(context).width < kapyAiOverlayBelow),
         today: dayShown(widget.notes.now(), displayTime),
         picked: _pickedDay,
-        onPick: (day, notes) => _pickDay(
-          day,
-          notes,
-          write: widget.days != null && listVisible,
-        ),
+        onPick: (day, notes) =>
+            _pickDay(day, notes, write: widget.days != null && listVisible),
         notes: folderId == null
             ? _filtered(widget.notes.search(''), anyTime: true)
             : widget.folders!.tree.notesIn(
@@ -5255,17 +5251,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
     final newest = drawings.firstOrNull;
     final displayTime = widget.prefs.displayTime;
+    final today = dayShown(widget.notes.now(), displayTime);
     final upcoming = _upcomingNotes;
     return PhoneFolderTiles(
       drawings: drawings,
       newest: newest == null
           ? null
-          : '${newest.title} · ${SidebarTimestamp.dayHeading(noteDay(newest, displayTime), today: dayShown(widget.notes.now(), displayTime)).$1}',
+          : '${newest.title} · '
+                '${SidebarTimestamp.briefDay(noteDay(newest, displayTime), today: today)}',
       onOpenDrawings: () => _showSpace(LibrarySpace.drawings),
       upcoming: widget.days == null ? null : upcoming,
       soonest: switch (upcoming.firstOrNull) {
         final soon? =>
-          '${soon.title} · ${_phoneDayLabel(widget.days!.dayOf(soon.id)!)}',
+          '${soon.title} · '
+              '${SidebarTimestamp.briefDay(widget.days!.dayOf(soon.id)!, today: today)}',
         null => null,
       },
       onOpenUpcoming: () => setState(() {
@@ -5274,15 +5273,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _phoneUpcoming = true;
       }),
     );
-  }
-
-  /// A day as a phone's list heads it: "Tomorrow", or "Fri 21 Nov".
-  String _phoneDayLabel(DateTime day) {
-    final (:lead, :date) = SidebarTimestamp.phoneDay(
-      day,
-      now: dayShown(widget.notes.now(), widget.prefs.displayTime),
-    );
-    return lead ?? date;
   }
 
   /// A note's page on a phone: back, then the note's own actions, over the
