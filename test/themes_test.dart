@@ -360,8 +360,9 @@ void main() {
           ),
         );
 
-    // Each tint is drawn somewhere in [theme]'s card, and never with an
-    // outline, which D13's notes and totals don't have.
+    // [theme]'s card draws the list's notes, mustard, plain and sage, one
+    // after another, and the totals' sage and rust side by side, none of
+    // them outlined, as D13 draws them.
     void expectTints(
       WidgetTester tester,
       AppTheme theme,
@@ -377,13 +378,24 @@ void main() {
         ))
           if (box.decoration case final BoxDecoration face) face,
       ];
-      for (final tint in tints) {
-        final colour = exact ? equals(Color(tint)) : isSameColorAs(Color(tint));
-        final tinted = faces.where((face) => colour.matches(face.color, {}));
-        final reason = '${theme.name}, ${Color(tint)}';
-        expect(tinted, isNotEmpty, reason: reason);
+      Matcher colour(int tint) =>
+          exact ? equals(Color(tint)) : isSameColorAs(Color(tint));
+      final [mustard, plain, sage, rust] = tints;
+      for (final run in [
+        [mustard, plain, sage],
+        [sage, rust],
+      ]) {
+        final starts = [
+          for (var i = 0; i + run.length <= faces.length; i++)
+            if (run.indexed.every(
+              (step) => colour(step.$2).matches(faces[i + step.$1].color, {}),
+            ))
+              i,
+        ];
+        final reason = '${theme.name}, ${run.map(Color.new).join(', ')}';
+        expect(starts, hasLength(1), reason: reason);
         expect(
-          tinted.map((face) => face.border),
+          [for (final (k, _) in run.indexed) faces[starts.single + k].border],
           everyElement(isNull),
           reason: reason,
         );
@@ -410,14 +422,15 @@ void main() {
     });
 
     // Riverbank's light side, which D13 doesn't draw: its mustard, sage and
-    // rust dots at 15% on its page, and its card for the plain note.
+    // rust dots at 15% on its page, and the control fill on its card for the
+    // plain note.
     testWidgets('a light side mixes its tag dots into its page', (
       tester,
     ) async {
       await pumpCards(tester, KapyTheme.light());
       expectTints(tester, AppTheme.riverbank, const [
         0xFFEFE8D5,
-        0xFFF6F2E8,
+        0xFFEAE6DC,
         0xFFE1E9DD,
         0xFFF1E4D9,
       ]);

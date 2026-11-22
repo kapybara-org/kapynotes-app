@@ -205,7 +205,9 @@ class _ThemePreview extends StatelessWidget {
   /// rust the second total takes beside the first's sage. D13 picks
   /// Riverbank's dark side by hand and mixes every other dark side's tag dots
   /// into its page, Midnight's at 20% and the rest at 15%. A light side,
-  /// which D13 doesn't draw, is mixed the same way at 15%.
+  /// which D13 doesn't draw, is mixed the same way at 15%, and its plain note
+  /// takes the control fill on its card, as Riverbank's dark one does in
+  /// D13, since a bare light card vanishes into the list.
   List<Color> get _tints {
     if (theme == AppTheme.riverbank && p.brightness == Brightness.dark) {
       return const [
@@ -222,7 +224,9 @@ class _ThemePreview extends StatelessWidget {
     );
     return [
       tint(TagColour.mustard),
-      p.cardBackground,
+      p.brightness == Brightness.dark
+          ? p.cardBackground
+          : Color.alphaBlend(p.fillControl, p.cardBackground),
       tint(TagColour.sage),
       tint(TagColour.rust),
     ];
