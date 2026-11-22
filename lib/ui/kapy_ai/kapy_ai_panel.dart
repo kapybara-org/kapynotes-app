@@ -922,6 +922,10 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
   late double _size = widget.rest ? kapyAiSheetRest : 1;
   double _keyboard = 0;
 
+  /// Set when a drag puts the keyboard away: the sheet stays where the drag
+  /// leaves it rather than following the keyboard down.
+  bool _letGo = false;
+
   @override
   void initState() {
     super.initState();
@@ -935,7 +939,7 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
   }
 
   void _resized() {
-    if (_keyboard > 0) return;
+    if (_keyboard > 0 && !_letGo) return;
     final wasCompact = _size < _kapyAiSheetFull;
     _size = _sheet.size;
     if (wasCompact != _size < _kapyAiSheetFull) setState(() {});
@@ -946,6 +950,10 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
   void _follow(double keyboard, double screen) {
     if (keyboard == _keyboard) return;
     _keyboard = keyboard;
+    if (_letGo) {
+      if (keyboard == 0) _letGo = false;
+      return;
+    }
     final size = (_size + keyboard / screen).clamp(0.0, 1.0);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _sheet.isAttached && _sheet.size > 0) {
@@ -956,6 +964,7 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
 
   void _expand() {
     if (!_sheet.isAttached) return;
+    if (_keyboard > 0) setState(() => _size = 1);
     unawaited(
       _sheet.animateTo(
         1,
@@ -963,6 +972,16 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
         curve: Curves.easeOutCubic,
       ),
     );
+  }
+
+  /// A drag on the sheet puts the keyboard away, as people expect of a sheet.
+  bool _dragged(ScrollStartNotification notification) {
+    if (notification.depth > 0 || notification.dragDetails == null) {
+      return false;
+    }
+    if (_keyboard > 0) _letGo = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    return false;
   }
 
   @override
@@ -989,6 +1008,17 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
             0.0,
             widget.statusBar - (media.size.height - box.maxHeight),
           );
+          // The keyboard reaches this layout a frame before the sheet has
+          // risen for it, so the field is lifted only as far as the sheet
+          // already is, and the sheet's layout never has to squeeze.
+          final risen = math.min(
+            media.size.height,
+            _size * media.size.height + keyboard,
+          );
+          final lift = (keyboard - (risen - box.maxHeight)).clamp(
+            0.0,
+            keyboard,
+          );
           return ClipRRect(
             key: const ValueKey('kapy-ai-sheet'),
             borderRadius: const BorderRadius.vertical(
@@ -1001,53 +1031,58 @@ class _KapyAiSheetState extends State<_KapyAiSheet> {
                   top: BorderSide(color: palette.textPrimary.withAlpha(0x14)),
                 ),
               ),
-              child: CustomScrollView(
-                controller: scroll,
-                slivers: [
-                  SliverFillRemaining(
-                    // Pulled below its rest on the way out, the sheet
-                    // keeps its rest layout and slides away clipped.
-                    child: OverflowBox(
-                      alignment: Alignment.topCenter,
-                      minHeight: height,
-                      maxHeight: height,
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          top: under,
-                          bottom: compact
-                              ? keyboard
-                              : math.max(keyboard, media.padding.bottom),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Center(
-                                child: Container(
-                                  key: const ValueKey('kapy-ai-grabber'),
-                                  width: 36,
-                                  height: 5,
-                                  decoration: BoxDecoration(
-                                    color: palette.textPrimary.withAlpha(0x33),
-                                    borderRadius: BorderRadius.circular(3),
+              child: NotificationListener<ScrollStartNotification>(
+                onNotification: _dragged,
+                child: CustomScrollView(
+                  controller: scroll,
+                  slivers: [
+                    SliverFillRemaining(
+                      // Pulled below its rest on the way out, the sheet
+                      // keeps its rest layout and slides away clipped.
+                      child: OverflowBox(
+                        alignment: Alignment.topCenter,
+                        minHeight: height,
+                        maxHeight: height,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            top: under,
+                            bottom: compact
+                                ? lift
+                                : math.max(lift, media.padding.bottom),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Center(
+                                  child: Container(
+                                    key: const ValueKey('kapy-ai-grabber'),
+                                    width: 36,
+                                    height: 5,
+                                    decoration: BoxDecoration(
+                                      color: palette.textPrimary.withAlpha(
+                                        0x33,
+                                      ),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            Expanded(
-                              child: widget.panel(
-                                () => Navigator.of(context).pop(),
-                                _expand,
-                                compact,
+                              Expanded(
+                                child: widget.panel(
+                                  () => Navigator.of(context).pop(),
+                                  _expand,
+                                  compact,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );

@@ -466,6 +466,159 @@ void main() {
       await tester.pumpAndSettle();
       expect(sheetTop(tester), moreOrLessEquals(rest, epsilon: 1));
     });
+
+    testWidgets(
+      'at 2× text a tall keyboard lifts it with nothing overflowing',
+      (tester) async {
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await open(tester);
+        final rest = sheetTop(tester);
+        await tester.tap(field);
+        // The keyboard's full height in one frame, as a phone may report it,
+        // reaches the sheet a frame before the sheet has risen.
+        tester.view.viewInsets = const FakeViewPadding(bottom: 360);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        await tester.pumpAndSettle();
+        expect(sheetTop(tester), moreOrLessEquals(rest - 360, epsilon: 1));
+        expect(
+          tester.getRect(field).bottom,
+          lessThanOrEqualTo(screen.height - 360),
+        );
+      },
+    );
+
+    testWidgets('Pick another with the keyboard up opens the full panel '
+        'with the picker', (tester) async {
+      final id = await open(tester);
+      await tester.tap(field);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+      await tester.enterText(field, question);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-send')));
+      await tester.pumpAndSettle();
+      expect(ai.calls.last, 'ask:$question:$id');
+      ai.set(
+        current: KapyChat(
+          id: 'm10',
+          title: question,
+          createdAt: DateTime(2026, 11, 17, 16, 41),
+          updatedAt: DateTime(2026, 11, 17, 16, 41),
+          model: KapyModel.cloud,
+          messages: [
+            KapyMessage(
+              id: 'q',
+              role: KapyRole.user,
+              text: question,
+              at: DateTime(2026, 11, 17, 16, 41),
+            ),
+          ],
+        ),
+        pending: const KapyAccountConsent(KapyAccountKind.codex),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Pick another'));
+      await tester.pumpAndSettle();
+
+      expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
+      expect(chats, findsOneWidget);
+      expect(find.byKey(const ValueKey('kapy-ai-picker')), findsOneWidget);
+    });
+
+    testWidgets('a drag with the keyboard up puts it away, and the sheet '
+        'stays where it was dropped', (tester) async {
+      await open(tester);
+      await tester.tap(field);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+
+      await tester.drag(grabber, const Offset(0, -300));
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(field).focusNode!.hasFocus,
+        isFalse,
+        reason: 'the drag puts the keyboard away',
+      );
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
+      expect(chats, findsOneWidget);
+
+      await tester.tap(field);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+      final hold = await tester.startGesture(tester.getCenter(grabber));
+      for (var step = 0; step < 10; step++) {
+        await hold.moveBy(const Offset(0, 33));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pump(const Duration(milliseconds: 300));
+      await hold.up();
+      await tester.pump();
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(
+        sheetTop(tester),
+        moreOrLessEquals(screen.height * 0.423, epsilon: 1),
+      );
+      expect(find.text('About Call with Arjun'), findsOneWidget);
+    });
+
+    testWidgets('at rest the field takes no keyboard', (tester) async {
+      await open(tester);
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(tester.testTextInput.hasAnyClients, isFalse);
+    });
+
+    testWidgets('a short drag up or down settles back at rest', (tester) async {
+      await open(tester);
+      final rest = sheetTop(tester);
+      for (final dy in [-150.0, 150.0]) {
+        await tester.timedDrag(
+          grabber,
+          Offset(0, dy),
+          const Duration(seconds: 1),
+        );
+        await tester.pumpAndSettle();
+        expect(sheetTop(tester), moreOrLessEquals(rest, epsilon: 1));
+      }
+    });
+
+    testWidgets('from Quick find’s Ask row it opens at full height', (
+      tester,
+    ) async {
+      notes.create(body: 'Call with Arjun');
+      ai = FakeKapyAi(pro: true)..set(model: KapyModel.cloud);
+      await _pump(tester, size: screen, platform: TargetPlatform.iOS);
+      final back = find.byKey(const ValueKey('page-back'));
+      if (back.evaluate().isNotEmpty) {
+        await tester.tap(back);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'sintra',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('command-menu-row-Ask Kapy AI: sintra')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(ai.calls, hasLength(2));
+      expect(ai.calls.first, 'newChat');
+      expect(ai.calls.last, startsWith('ask:sintra:'));
+      expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
+      expect(chats, findsOneWidget);
+      expect(find.text('Ask about this note'), findsNothing);
+    });
   });
 
   group('in ⌘K', () {
