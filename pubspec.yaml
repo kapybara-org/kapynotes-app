@@ -219,6 +219,10 @@ dev_dependencies:
   # way to find out whether the microphone actually works on a platform.
   integration_test:
     sdk: flutter
+  # The host side of a flutter drive run. test_driver/integration_test.dart
+  # uses it to hear when a test wants the device's own screen saved.
+  flutter_driver:
+    sdk: flutter
   flutter_lints: ^6.0.0
 
 flutter:
