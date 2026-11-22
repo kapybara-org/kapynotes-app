@@ -10,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/note_drawing.dart';
 import '../../data/notes_store.dart';
 import '../compact_icon_button.dart';
+import '../editor/editor_formatting.dart';
 import '../sidebar_swipe.dart';
 import 'drawing_geometry.dart';
 import 'drawing_painter.dart';
@@ -78,6 +79,7 @@ class DrawingCanvas extends StatefulWidget {
     this.edited,
     this.readOnly = false,
     this.onFocus,
+    this.writingFont = WritingFont.clean,
   });
 
   final NoteDrawing drawing;
@@ -91,6 +93,9 @@ class DrawingCanvas extends StatefulWidget {
   final bool readOnly;
 
   final VoidCallback? onFocus;
+
+  /// The person's writing font, which sets the title as it sets a note's.
+  final WritingFont writingFont;
 
   @override
   State<DrawingCanvas> createState() => DrawingCanvasState();
@@ -858,7 +863,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
                   pan: _pan,
                   zoom: _zoom,
                   ink: ink,
-                  grid: palette.controlBorder,
+                  grid: palette.textPrimary.withValues(alpha: 0.08),
                   accent: Theme.of(context).colorScheme.primary,
                   textStyle: _textStyle(context),
                 ),
@@ -910,7 +915,6 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   Widget _buildHeader(BuildContext context) {
     final palette = context.palette;
     final touch = !AppPlatform.hasPointer;
-    const handwritten = WritingFont.handwritten;
     final edited = widget.edited;
     final shapes = _drawing.elements.length;
     final title = TextField(
@@ -926,17 +930,9 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               fontWeight: AppWeight.font(AppWeight.section),
               fontVariations: AppWeight.wght(AppWeight.section),
             )
-          : TextStyle(
-              fontFamily: handwritten.fontFamily,
-              fontFamilyFallback: handwritten.fontFamilyFallback,
-              fontSize: 28,
-              height: 36 / 28,
-              fontWeight: AppWeight.font(AppWeight.section),
-              fontVariations: AppWeight.wght(
-                AppWeight.section,
-                extra: handwritten.fontVariations ?? const [],
-              ),
-              color: palette.textPrimary,
+          : noteTitleStyle(
+              EditorMetrics.textStyle(palette.textPrimary, widget.writingFont),
+              writingFont: widget.writingFont,
             ),
       decoration: InputDecoration(
         hintText: 'Untitled drawing',
