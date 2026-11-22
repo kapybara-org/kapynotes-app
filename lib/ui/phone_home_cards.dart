@@ -123,7 +123,7 @@ class _HomeCard extends StatelessWidget {
                           height: 32,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: palette.controlBackground,
+                            color: palette.selectedBackground,
                             borderRadius: BorderRadius.circular(9),
                           ),
                           child: KapyIcon(
@@ -205,7 +205,7 @@ class _HomeCard extends StatelessWidget {
                       size: 13,
                       line: 18,
                       weight: 400,
-                      color: palette.textMuted,
+                      color: palette.textSecondary,
                     ),
                   ),
                 ),

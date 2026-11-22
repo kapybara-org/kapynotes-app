@@ -10,11 +10,15 @@ import 'tasks/task_marks.dart';
 /// Home's header on a phone: the Notes and Tasks titles, the one on screen
 /// in ink with its count and the note title's clay underline, then the
 /// writing streak and the avatar that opens Settings.
+///
+/// Notes keeps its count's room while Tasks is on screen, so Tasks sits 12
+/// after the count on both pages and stays put when you swipe between them.
 class PhoneHomeHeader extends StatelessWidget {
   const PhoneHomeHeader({
     super.key,
     required this.tasks,
-    required this.count,
+    required this.notesCount,
+    this.tasksCount = 0,
     required this.onNotes,
     this.onTasks,
     this.streak,
@@ -25,8 +29,9 @@ class PhoneHomeHeader extends StatelessWidget {
   /// Whether Tasks is on screen rather than Notes.
   final bool tasks;
 
-  /// How many the title on screen holds.
-  final int count;
+  /// How many notes Notes holds, and how many open tasks Tasks holds.
+  final int notesCount;
+  final int tasksCount;
   final VoidCallback onNotes;
 
   /// Null leaves Tasks out, for a phone without them.
@@ -55,20 +60,19 @@ class PhoneHomeHeader extends StatelessWidget {
         child: Row(
           spacing: 12,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 100),
-              child: _Title(
-                key: const ValueKey('home-title-notes'),
-                label: 'Notes',
-                count: tasks ? null : count,
-                onPressed: onNotes,
-              ),
+            _Title(
+              key: const ValueKey('home-title-notes'),
+              label: 'Notes',
+              count: notesCount,
+              selected: !tasks,
+              onPressed: onNotes,
             ),
             if (onTasks != null)
               _Title(
                 key: const ValueKey('home-title-tasks'),
                 label: 'Tasks',
-                count: tasks ? count : null,
+                count: tasksCount,
+                selected: tasks,
                 onPressed: onTasks,
               ),
             Expanded(
@@ -104,18 +108,20 @@ class PhoneHomeHeader extends StatelessWidget {
   }
 }
 
-/// One of Home's titles. [count] is set on the one on screen, which is in
-/// ink and underlined; the other waits in grey.
+/// One of Home's titles. The one on screen is in ink with its count and
+/// underlined; the other waits in grey, keeping its count's room unseen.
 class _Title extends StatelessWidget {
   const _Title({
     super.key,
     required this.label,
     required this.count,
+    required this.selected,
     required this.onPressed,
   });
 
   final String label;
-  final int? count;
+  final int count;
+  final bool selected;
   final VoidCallback onPressed;
 
   /// Paper's 40 × 4 mark: a 2 pt stroke over 38, drawn by the note title's
@@ -125,8 +131,6 @@ class _Title extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final count = this.count;
-    final selected = count != null;
     return Semantics(
       button: true,
       selected: selected,
@@ -160,8 +164,9 @@ class _Title extends StatelessWidget {
                       selected ? palette.textPrimary : palette.textTertiary,
                     ),
                   ),
-                  if (selected)
-                    Text(
+                  Visibility.maintain(
+                    visible: selected,
+                    child: Text(
                       '$count',
                       maxLines: 1,
                       softWrap: false,
@@ -173,6 +178,7 @@ class _Title extends StatelessWidget {
                         tabular: true,
                       ),
                     ),
+                  ),
                 ],
               ),
               SizedBox(
