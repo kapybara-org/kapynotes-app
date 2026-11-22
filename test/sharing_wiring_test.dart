@@ -345,6 +345,26 @@ void main() {
     expect(listed(tester, 'Bank details'), isTrue);
   });
 
+  testWidgets('on an iPhone, a swipe in from the left edge takes Shared '
+      'back to Home', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+    expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+
+    await tester.dragFrom(
+      Offset(2, tester.getCenter(find.byType(NoteRow).first).dy),
+      const Offset(200, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-page')), findsNothing);
+    expect(find.byKey(const ValueKey('home-shared-card')), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   testWidgets('on a phone, Shared is a page whose arrow goes back to the '
       'notes', (tester) async {
     await signIn(tester);
