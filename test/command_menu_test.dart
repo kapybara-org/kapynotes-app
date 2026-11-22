@@ -332,7 +332,7 @@ void main() {
     await type(tester, 'text size');
 
     expect(find.text('Settings'), findsOneWidget);
-    expect(find.text('Appearance › Text'), findsWidgets);
+    expect(find.text('Appearance › Paper and text'), findsWidgets);
     expect(find.text('Open in Settings'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     final choice = chosen! as RevealSettingChoice;

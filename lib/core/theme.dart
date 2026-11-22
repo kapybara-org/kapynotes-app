@@ -658,6 +658,11 @@ extension CrispFills on CalcPalette {
 
   /// The 1 px edge round something that floats, as the phone's bar does.
   Color get edge => textPrimary.withValues(alpha: 0.08);
+
+  /// The outline of a filled card, field or track: none, as the crisp boards
+  /// draw them, until Increase contrast asks for borders.
+  Color get fillEdge =>
+      increasedContrast ? controlBorder : const Color(0x00000000);
 }
 
 /// Editor metrics shared by the text field, its measurer and the gutter.
