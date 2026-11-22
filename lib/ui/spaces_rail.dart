@@ -730,8 +730,8 @@ enum PhoneTab { notes, folders, kapyAi }
 /// A phone's way around: Notes, Folders and Kapy AI along the bottom, and the
 /// + on its own beside them. A tap on the + makes what the page on screen
 /// holds (on Tasks it adds a task); a long press offers [createActions], the
-/// rest of the desktop's New. iOS floats a quiet pill over [child]; Android
-/// uses Material's navigation bar and a floating action button.
+/// rest of the desktop's New. Both phones float the same quiet pill over
+/// [child] (M01), Android's just clear of its own navigation.
 class PhoneSpaces extends StatefulWidget {
   const PhoneSpaces({
     super.key,
@@ -762,11 +762,15 @@ class PhoneSpaces extends StatefulWidget {
   static const double _barLift = 30;
   static const double _plusExtent = 56;
 
-  /// From the bottom of the page to the top of what floats over it: iOS's
-  /// pill, or Android's +, which sits over the page above Material's bar.
-  static double clearance() => AppPlatform.isAndroid
-      ? _plusExtent + kFloatingActionButtonMargin
-      : _barLift + _barHeight;
+  /// From the bottom of the screen to the top of the pill.
+  static double clearance(BuildContext context) => _lift(context) + _barHeight;
+
+  /// From the bottom of the screen to the pill: M01's 30 on an iPhone, over
+  /// its home indicator, and on Android 8 above the system's navigation,
+  /// whether three buttons or the gesture handle, but never lower than 30.
+  static double _lift(BuildContext context) => AppPlatform.isAndroid
+      ? math.max(_barLift, MediaQuery.viewPaddingOf(context).bottom + 8)
+      : _barLift;
 
   @override
   State<PhoneSpaces> createState() => _PhoneSpacesState();
@@ -797,52 +801,12 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
       ),
     );
 
-    if (AppPlatform.isAndroid) {
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        body: widget.child,
-        floatingActionButton: plus,
-        bottomNavigationBar: KeyedSubtree(
-          key: _bar,
-          child: NavigationBar(
-            key: const ValueKey('phone-bar'),
-            selectedIndex: math.max(
-              0,
-              items.indexWhere((item) => item.to == widget.tab),
-            ),
-            backgroundColor: palette.railBackground,
-            indicatorColor: palette.fillSelected,
-            surfaceTintColor: Colors.transparent,
-            onDestinationSelected: (index) =>
-                widget.onSelected(items[index].to),
-            destinations: [
-              for (final item in items)
-                NavigationDestination(
-                  key: ValueKey('bar-${item.to.name}'),
-                  icon: KapyIcon(
-                    item.icon,
-                    size: 20,
-                    color: palette.textTertiary,
-                  ),
-                  selectedIcon: KapyIcon(
-                    item.icon,
-                    size: 20,
-                    color: palette.textPrimary,
-                  ),
-                  label: item.label,
-                ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
       body: widget.child,
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, PhoneSpaces._barLift),
+        padding: EdgeInsets.fromLTRB(16, 0, 16, PhoneSpaces._lift(context)),
         child: Row(
           children: [
             Expanded(
@@ -902,7 +866,6 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
               actions: widget.createActions,
               plus: plus,
               bar: _globalRect(bar)!,
-              barRadius: AppPlatform.isAndroid ? 0 : PhoneSpaces._barHeight / 2,
             ),
           )
           .then((choice) {
@@ -1018,12 +981,11 @@ class _PlusButton extends StatelessWidget {
       child: Material(
         color: scheme.primary,
         shape: const CircleBorder(),
-        elevation: AppPlatform.isAndroid ? 3 : 0,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onPressed,
           onLongPress: onLongPress,
-          splashFactory: AppPlatform.isAndroid ? null : NoSplash.splashFactory,
+          splashFactory: NoSplash.splashFactory,
           child: SizedBox.square(
             dimension: PhoneSpaces._plusExtent,
             child: Center(
@@ -1043,7 +1005,6 @@ class _CreateMenuRoute extends PopupRoute<String> {
     required this.actions,
     required this.plus,
     required this.bar,
-    required this.barRadius,
   });
 
   final List<KapyMenuAction> actions;
@@ -1051,7 +1012,6 @@ class _CreateMenuRoute extends PopupRoute<String> {
   /// Where the + and the bar are on screen.
   final Rect plus;
   final Rect bar;
-  final double barRadius;
 
   @override
   Color? get barrierColor => null;
@@ -1097,7 +1057,7 @@ class _CreateMenuRoute extends PopupRoute<String> {
                       : const Color(0x402A2620),
                   hole: RRect.fromRectAndRadius(
                     bar,
-                    Radius.circular(barRadius),
+                    const Radius.circular(PhoneSpaces._barHeight / 2),
                   ),
                 ),
               ),

@@ -36,6 +36,7 @@ import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
+import 'tasks/task_marks.dart';
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -3840,13 +3841,12 @@ class _PhoneHeading extends StatelessWidget {
     header: true,
     child: Text(
       label,
-      style: TextStyle(
-        fontFamily: AppFonts.ui,
-        fontSize: 15,
-        height: 20 / 15,
-        fontWeight: AppWeight.font(AppWeight.button),
-        fontVariations: AppWeight.wght(AppWeight.button),
-        color: context.palette.textSecondary,
+      style: uiStyle(
+        13,
+        18,
+        FontWeight.w500,
+        context.palette.textTertiary,
+        axis: 520,
       ),
     ),
   );
@@ -3897,23 +3897,24 @@ class PhoneListTitle extends StatelessWidget {
                   key: const ValueKey('phone-list-title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: AppFonts.title,
-                    fontFamilyFallback: AppFonts.uiFallback,
-                    fontSize: 28,
-                    height: 36 / 28,
-                    color: palette.textPrimary,
+                  style: handStyle(
+                    26,
+                    32,
+                    FontWeight.w600,
+                    palette.textPrimary,
                   ),
                 ),
               ),
               if (count != null) ...[
-                const SizedBox(width: 10),
+                const SizedBox(width: 6),
                 Text(
                   '$count',
-                  style: TextStyle(
-                    fontFamily: AppFonts.ui,
-                    fontSize: 15,
-                    color: palette.textTertiary,
+                  style: uiStyle(
+                    13,
+                    16,
+                    FontWeight.w400,
+                    palette.textTertiary,
+                    tabular: true,
                   ),
                 ),
               ],

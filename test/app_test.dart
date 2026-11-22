@@ -7592,7 +7592,7 @@ void main() {
       expect(find.widgetWithText(NoteRow, 'Lisbon trip'), findsOneWidget);
     });
 
-    testWidgets('Android uses Material\'s navigation bar and a back arrow', (
+    testWidgets("Android's page has a back arrow, and its list the pill", (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -7601,7 +7601,8 @@ void main() {
       expect(find.text('Notes'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('page-back')));
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byKey(const ValueKey('phone-bar')), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
     });
   });
 
@@ -8273,6 +8274,44 @@ void main() {
         expect(tree, findsOneWidget);
         expect(lit(tester), PhoneTab.folders);
       }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+      testWidgets("Drawings' title is in the hand face, its count small beside "
+          'it, and its Pinned and Recent labels 13 pt in muted grey (M03)', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        final shelf = notes.create(drawing: true);
+        notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+        notes.togglePinned(shelf.id);
+        await tap(tester, barFolders);
+        await tap(tester, tile);
+        final palette = tester.element(title).palette;
+
+        final heading = tester.widget<Text>(title).style!;
+        expect(heading.fontFamily, WritingFont.handwritten.fontFamily);
+        expect(heading.fontSize, 26);
+        expect(heading.height, 32 / 26);
+        expect(heading.color, palette.textPrimary);
+        final count = tester
+            .widget<Text>(
+              find.descendant(
+                of: find.byType(PhoneListTitle),
+                matching: find.text('2'),
+              ),
+            )
+            .style!;
+        expect(count.fontFamily, AppFonts.ui);
+        expect(count.fontSize, 13);
+        expect(count.color, palette.textTertiary);
+
+        for (final label in ['Pinned', 'Recent']) {
+          final style = tester.widget<Text>(find.text(label)).style!;
+          expect(style.fontFamily, AppFonts.ui, reason: label);
+          expect(style.fontSize, 13, reason: label);
+          expect(style.height, 18 / 13, reason: label);
+          expect(style.color, palette.textTertiary, reason: label);
+        }
+      });
 
       testWidgets('Back from Folders goes to Notes with its Pinned still on', (
         tester,

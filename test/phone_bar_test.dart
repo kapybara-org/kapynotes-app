@@ -52,8 +52,6 @@ void main() {
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
         await pumpBar(tester, scale: scale, size: size);
         expect(tester.takeException(), isNull);
-        // Android's bar is the platform's own and sizes its labels itself.
-        if (platform != TargetPlatform.iOS) return;
         for (final label in ['Notes', 'Folders', 'Kapy AI']) {
           final text = find.text(label);
           expect(text, findsOneWidget, reason: label);
@@ -126,18 +124,74 @@ void main() {
     }
   });
 
-  testWidgets("Android's bar keeps Material's shape on the crisp surface, and "
-      'the open tab is the 7% fill', (tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await pumpBar(tester, scale: 1, size: const Size(393, 852));
-    const palette = KapyTheme.darkPalette;
-    final bar = tester.widget<NavigationBar>(
-      find.byKey(const ValueKey('phone-bar')),
+  group("Android's bar", () {
+    final android = TargetPlatformVariant.only(TargetPlatform.android);
+    setUp(
+      () => AppPlatform.debugTargetPlatformOverride = TargetPlatform.android,
     );
-    expect(bar.backgroundColor, palette.railBackground);
-    expect(bar.backgroundColor, palette.sidebarBackground);
-    expect(bar.indicatorColor, palette.fillSelected);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final bar = find.byKey(const ValueKey('phone-bar'));
+    final plus = find.byKey(const ValueKey('phone-new'));
+
+    testWidgets("is M01's pill with the + on its own beside it, and not "
+        "Material's bar and button", (tester) async {
+      await pumpBar(tester, scale: 1, size: const Size(412, 915));
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(tester.getSize(bar).height, 56);
+      expect(
+        (tester.widget<Container>(bar).decoration! as BoxDecoration)
+            .borderRadius,
+        BorderRadius.circular(28),
+      );
+      expect(tester.getSize(plus), const Size.square(56));
+      expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
+      expect(tester.getCenter(plus).dy, tester.getCenter(bar).dy);
+    }, variant: android);
+
+    testWidgets('reads each tab to TalkBack as a button by its name, the '
+        'open one selected', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpBar(
+        tester,
+        scale: 1,
+        size: const Size(412, 915),
+        tab: PhoneTab.folders,
+      );
+      for (final (tab, label) in [
+        (PhoneTab.notes, 'Notes'),
+        (PhoneTab.folders, 'Folders'),
+        (PhoneTab.kapyAi, 'Kapy AI'),
+      ]) {
+        expect(
+          tester.getSemantics(find.byKey(ValueKey('bar-${tab.name}'))),
+          matchesSemantics(
+            label: label,
+            isButton: true,
+            hasSelectedState: true,
+            isSelected: tab == PhoneTab.folders,
+            hasTapAction: true,
+          ),
+          reason: label,
+        );
+      }
+      semantics.dispose();
+    }, variant: android);
+
+    for (final (mode, inset, lift) in [
+      ('three-button', 48.0, 56.0),
+      ('gesture', 24.0, 32.0),
+    ]) {
+      testWidgets('clears $mode navigation, $lift above the bottom', (
+        tester,
+      ) async {
+        tester.view.viewPadding = FakeViewPadding(bottom: inset);
+        tester.view.padding = FakeViewPadding(bottom: inset);
+        await pumpBar(tester, scale: 1, size: const Size(412, 915));
+        expect(915 - tester.getRect(bar).bottom, lift);
+        expect(915 - tester.getRect(plus).bottom, lift);
+      }, variant: android);
+    }
   });
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
@@ -201,25 +255,20 @@ void main() {
         expect(find.byKey(ValueKey('bar-$gone')), findsNothing, reason: gone);
       }
       expect(find.descendant(of: bar, matching: plus), findsNothing);
-      if (platform == TargetPlatform.iOS) {
-        expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
-        expect(tester.getRect(plus).right, 393 - 16);
-        expect(tester.getRect(bar).left, 16);
-        expect(
-          tester.getCenter(plus).dy,
-          closeTo(tester.getCenter(bar).dy, 0.5),
-        );
-        expect(
-          tester.getSemantics(tabs[1]),
-          matchesSemantics(
-            label: 'Folders',
-            isButton: true,
-            isSelected: true,
-            hasSelectedState: true,
-            hasTapAction: true,
-          ),
-        );
-      }
+      expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
+      expect(tester.getRect(plus).right, 393 - 16);
+      expect(tester.getRect(bar).left, 16);
+      expect(tester.getCenter(plus).dy, closeTo(tester.getCenter(bar).dy, 0.5));
+      expect(
+        tester.getSemantics(tabs[1]),
+        matchesSemantics(
+          label: 'Folders',
+          isButton: true,
+          isSelected: true,
+          hasSelectedState: true,
+          hasTapAction: true,
+        ),
+      );
       expect(tester.getSize(plus), const Size.square(56));
 
       for (final tab in tabs) {
