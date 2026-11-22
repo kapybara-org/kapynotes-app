@@ -36,6 +36,7 @@ void main() {
           notes: const [],
           docOf: (_) => null,
         ),
+        today: const [],
         filter: const TaskFilter.all(),
         onFilter: (_) {},
         labelOf: (note) => note.title,

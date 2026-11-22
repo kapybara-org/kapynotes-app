@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -9,6 +10,8 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/editor/image_insertion.dart';
 import 'package:kapy_notes/ui/editor/task_details_editing.dart';
+import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/window_drag_area.dart';
 import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
@@ -84,6 +87,7 @@ void main() {
     WidgetTester tester, {
     String? noteId,
     ValueChanged<String>? onOpenNote,
+    Widget? toolbar,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1200, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -101,6 +105,7 @@ void main() {
             onOpenNote: onOpenNote ?? (_) {},
             onOpenDone: () {},
             newTaskShortcut: '⌘N',
+            toolbar: toolbar,
           ),
         ),
       ),
@@ -151,6 +156,115 @@ void main() {
     expect(sheetOpen(), isTrue);
     expect(find.text('Open in note'), findsOneWidget);
     expect(sheetDetails(tester), 'It shrinks to a pill after a few seconds.');
+    await settle(tester);
+  });
+
+  testWidgets('D09: the details are a column the page\'s full height at its '
+      'right edge, with their header in the bar\'s row, a hairline on their '
+      'left, the words flush and Open in note under them', (tester) async {
+    await setUpTasks(
+      tester,
+      'Errands\n☐ Hide the menu\n    It shrinks to a pill.\n      Then fades.\n'
+      '☐ Book flights',
+    );
+    const bar = ValueKey('test-bar');
+    await pumpScreen(tester, toolbar: const SizedBox(key: bar, height: 51));
+    final hide = tasks.read().open.first;
+    await tester.tap(nameIn(hide.id, 'Hide the menu'));
+    await tester.pumpAndSettle();
+
+    final column = find.byKey(const ValueKey('tasks-details'));
+    expect(tester.getRect(column), const Rect.fromLTRB(900, 0, 1200, 1000));
+    final palette = tester.element(column).palette;
+    expect(
+      (tester.widget<DecoratedBox>(column).decoration as BoxDecoration).border,
+      Border(left: BorderSide(color: palette.railBorder)),
+    );
+    final toolbar = tester.getRect(find.byKey(bar));
+    expect(toolbar.right, 900, reason: 'the bar narrows with the list');
+    for (final words in ['Details', 'Close']) {
+      final at = tester.getCenter(
+        find.descendant(of: column, matching: find.text(words)),
+      );
+      expect(at.dy, inExclusiveRange(toolbar.top, toolbar.bottom));
+    }
+    expect(sheetDetails(tester), 'It shrinks to a pill.\n  Then fades.');
+    final field = tester.getRect(
+      find.descendant(of: column, matching: find.byType(TextField)),
+    );
+    final open = tester.getRect(find.text('Open in note'));
+    expect(open.top - field.bottom, inInclusiveRange(0, 24));
+    expect(
+      tester.getRect(rowOf(tasks.read().open[1].id)).right,
+      lessThanOrEqualTo(900),
+    );
+    await settle(tester);
+  });
+
+  testWidgets('the Details header is as tall as the bar at a larger text '
+      'size, and drags the window everywhere but Close', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Book flights');
+    await pumpScreen(tester);
+    await tester.tap(nameIn(tasks.read().open.first.id, 'Hide the menu'));
+    await tester.pumpAndSettle();
+
+    final header = find.byKey(const ValueKey('tasks-details-header'));
+    expect(
+      tester.getSize(header).height,
+      closeTo(PageToolbar.height * 1.2, .01),
+    );
+    final drag = find.descendant(
+      of: header,
+      matching: find.byType(WindowDragArea),
+    );
+    expect(drag, findsOneWidget);
+    final area = tester.getRect(drag);
+    final details = tester.getRect(
+      find.descendant(of: header, matching: find.text('Details')),
+    );
+    final close = tester.getRect(
+      find.descendant(of: header, matching: find.byType(TextButton)),
+    );
+    expect(area.left, closeTo(details.right, .01));
+    expect(area.right, closeTo(close.left, .01));
+    expect(area.height, closeTo(tester.getSize(header).height - 1, 1));
+    expect(find.text('Close').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(sheetOpen(), isFalse);
+    await settle(tester);
+  });
+
+  testWidgets('with the details open, a long title shows in full and its '
+      'note\'s name sits to its right', (tester) async {
+    await setUpTasks(
+      tester,
+      'Lisbon trip\n☐ Hide the menu\n☐ Renew passport before the trip',
+    );
+    await pumpScreen(tester);
+    final open = tasks.read().open;
+    await tester.tap(nameIn(open.first.id, 'Hide the menu'));
+    await tester.pumpAndSettle();
+    expect(sheetOpen(), isTrue);
+
+    final renew = open.firstWhere(
+      (item) => item.words == 'Renew passport before the trip',
+    );
+    final title = nameIn(renew.id, 'Renew passport before the trip');
+    final paragraph = tester.renderObject<RenderParagraph>(title);
+    expect(paragraph.didExceedMaxLines, isFalse);
+    expect(
+      paragraph.size.width,
+      greaterThanOrEqualTo(paragraph.getMaxIntrinsicWidth(double.infinity)),
+    );
+    expect(
+      tester.getRect(nameIn(renew.id, 'Lisbon trip')).left,
+      greaterThan(tester.getRect(title).right),
+    );
     await settle(tester);
   });
 
