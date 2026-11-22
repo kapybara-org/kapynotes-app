@@ -45,8 +45,9 @@ class _OpenGate implements HiddenNotesGate {
 Future<void> _pump(
   WidgetTester tester, {
   List<String> bodies = const ['First', 'Second', 'Third'],
+  TargetPlatform platform = TargetPlatform.macOS,
 }) async {
-  AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+  AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
   store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
   tester.view.physicalSize = const Size(1100, 760);
@@ -131,7 +132,7 @@ void main() {
     expect(_action(tester, archive).destructive, isFalse);
     // The key archives in the list, so only Archive names it.
     expect(_action(tester, delete).hint, isNull);
-    expect(_action(tester, archive).hint, 'Cmd + Delete');
+    expect(_action(tester, archive).hint, '⌘⌫');
     expect(
       tester.getTopLeft(delete).dy,
       greaterThan(tester.getTopLeft(archive).dy),
@@ -322,6 +323,71 @@ void main() {
     expect(notes.archivedNotes, hasLength(1));
   });
 
+  for (final (platform, binding, label) in [
+    (
+      TargetPlatform.macOS,
+      const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyD,
+        physicalKey: PhysicalKeyboardKey.keyD,
+        meta: true,
+        shift: true,
+      ),
+      '⇧⌘D',
+    ),
+    (
+      TargetPlatform.windows,
+      const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.backspace,
+        physicalKey: PhysicalKeyboardKey.backspace,
+        control: true,
+      ),
+      'Ctrl+Backspace',
+    ),
+    (
+      TargetPlatform.linux,
+      const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.backspace,
+        physicalKey: PhysicalKeyboardKey.backspace,
+        control: true,
+      ),
+      'Ctrl+Backspace',
+    ),
+  ]) {
+    testWidgets('on ${platform.name}, Archive note names the chord the '
+        'person bound, as the menu names Open in new tab', (tester) async {
+      (ShortcutPrefs(store)..load()).update(ShortcutAction.deleteNote, binding);
+      await _pump(tester, platform: platform);
+      final second = _note('Second');
+
+      await _rightClick(tester, 'Second');
+
+      expect(_action(tester, _item('archive', second)).hint, label);
+      expect(
+        _action(tester, _item('open-tab', second)).hint,
+        platform == TargetPlatform.macOS ? '⌘↵' : 'Ctrl+Enter',
+      );
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+
+      await tester.tap(_row('Second'));
+      await tester.pumpAndSettle();
+      final modifier = binding.meta
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      if (binding.shift) {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      }
+      await tester.sendKeyEvent(binding.logicalKey);
+      if (binding.shift) {
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      }
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      expect(notes.archivedNotes.single.title, 'Second');
+    });
+  }
+
   testWidgets('the archive and Hidden Notes keep their permanent delete, '
       'named with the question', (tester) async {
     await _pump(tester);
@@ -334,7 +400,7 @@ void main() {
     final delete = _item('delete', third);
     expect(_action(tester, delete).label, 'Delete permanently…');
     // There the key deletes, so the item names it, after Restore.
-    expect(_action(tester, delete).hint, 'Cmd + Delete');
+    expect(_action(tester, delete).hint, '⌘⌫');
     expect(
       tester.getTopLeft(delete).dy,
       greaterThan(tester.getTopLeft(_item('restore', third)).dy),
