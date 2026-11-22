@@ -1106,9 +1106,9 @@ void main() {
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, See all at the heading's end, and amounts in mono.
-  // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so the
-  // list is narrowed to it with its chip beside the filter, and the fill has
-  // left today, whose weekday stays sage.
+  // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so its
+  // note opens, lit in the whole list, and the fill has left today, whose
+  // weekday stays sage.
   for (final brightness in Brightness.values) {
     testWidgets('desktop ${brightness.name} week, a day picked', (
       tester,

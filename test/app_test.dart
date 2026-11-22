@@ -3828,7 +3828,11 @@ void main() {
 
     // Thursday 19 November, at noon. Call with Arjun was started on the 2nd
     // and last edited today.
-    Future<void> library(WidgetTester tester, {FolderStore? folders}) async {
+    Future<void> library(
+      WidgetTester tester, {
+      FolderStore? folders,
+      NoteDayStore? days,
+    }) async {
       int at(int month, int day, int hour) =>
           DateTime(2026, month, day, hour).millisecondsSinceEpoch;
       Map<String, Object?> note(String body, int created, int updated) => {
@@ -3844,7 +3848,12 @@ void main() {
         note('October plan', at(10, 20, 8), at(10, 20, 8)),
       ];
       notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
-      await pumpApp(tester, size: const Size(1400, 800), folders: folders);
+      await pumpApp(
+        tester,
+        size: const Size(1400, 800),
+        folders: folders,
+        days: days,
+      );
     }
 
     List<String> headings(WidgetTester tester) => [
@@ -3940,54 +3949,92 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('a day in the week narrows the list, a second click or its '
-        'chip lets it go, and a day and a span replace each other', (
-      tester,
-    ) async {
+    /// The list's row for [title], and whether it is open and lit for the day
+    /// picked in the week.
+    NoteRow rowOf(WidgetTester tester, String title) => tester.widget<NoteRow>(
+      find
+          .ancestor(
+            of: find.descendant(
+              of: find.byType(Sidebar),
+              matching: find.text(title),
+            ),
+            matching: find.byType(NoteRow),
+          )
+          .first,
+    );
+    List<String> lit(WidgetTester tester) => [
+      for (final row in tester.widgetList<NoteRow>(find.byType(NoteRow)))
+        if (row.ofPickedDay) row.note.title,
+    ];
+
+    testWidgets('a day in the week opens its note, lit, and the list stays '
+        'whole', (tester) async {
       await library(tester);
       expect(find.byType(DayStrip), findsOneWidget);
 
       await tap(tester, day(18));
-      expect(headings(tester), ['Yesterday']);
-      expect(
-        find.descendant(of: whenChip, matching: find.text('Wed 18')),
-        findsOneWidget,
-      );
-      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(rowOf(tester, 'Standup notes').selected, isTrue);
+      expect(lit(tester), ['Standup notes']);
       expect(headings(tester), hasLength(4));
       expect(whenChip, findsNothing);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+    });
+
+    testWidgets('a day with several notes opens the latest and lights them '
+        'all, until another day is picked or another day\'s note opens', (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      days.setDay('October plan', DateTime(2026, 11, 18));
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
+
+      // Another of the day's notes keeps the day lit.
+      await tap(tester, find.widgetWithText(NoteRow, 'October plan'));
+      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
 
       await tap(tester, day(17));
-      expect(headings(tester), ['Tue 17']);
-      await tap(tester, whenChip);
-      expect(headings(tester), hasLength(4));
+      expect(openNoteBody(tester), 'Pricing ideas');
+      expect(lit(tester), ['Pricing ideas']);
 
-      // When's menu points to the week for one day, and a span picked there
-      // takes the day's place.
-      await tap(tester, day(17));
-      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
-      await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
-      expect(
-        find.text('For one day, click it in the week at the top of the page'),
-        findsOneWidget,
-      );
-      await tap(
-        tester,
-        find.byKey(const ValueKey('notes-filter-when-thisWeek')),
-      );
-      expect(
-        find.descendant(of: whenChip, matching: find.text('This week')),
-        findsOneWidget,
-      );
-      expect(headings(tester), hasLength(3));
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      expect(lit(tester), isEmpty);
+      expect(tester.getSemantics(day(17)), isSemantics(isSelected: false));
+    });
 
-      // Today in the week is When's Today.
+    testWidgets("a later day's note opens Upcoming to show it, lit, with "
+        'Today still under it, and Upcoming stays open', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      days.setDay('Pricing ideas', DateTime(2026, 11, 21));
+      await tester.pumpAndSettle();
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+
+      await tap(tester, day(21));
+      expect(openNoteBody(tester), 'Pricing ideas');
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isFalse);
+      expect(rowOf(tester, 'Pricing ideas').selected, isTrue);
+      expect(lit(tester), ['Pricing ideas']);
+      expect(headings(tester), contains('Today'));
+      expect(
+        tester.getTopLeft(upcoming).dy,
+        lessThan(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('sidebar-group-Today')))
+              .dy,
+        ),
+      );
+
       await tap(tester, day(19));
-      expect(
-        find.descendant(of: whenChip, matching: find.text('Today')),
-        findsOneWidget,
-      );
-      expect(headings(tester), ['Today']);
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isFalse);
     });
 
     testWidgets('the week counts what the filter shows, and is only in My '
@@ -4035,8 +4082,8 @@ void main() {
       expect(whenChip, findsNothing);
     });
 
-    testWidgets('on a folder in front the week counts and narrows that folder '
-        'alone, with the list shown or hidden', (tester) async {
+    testWidgets('on a folder in front the week counts that folder alone, and '
+        'a day opens its note', (tester) async {
       final folders = FolderStore(store);
       await folders.load();
       await library(tester, folders: folders);
@@ -4045,24 +4092,13 @@ void main() {
       prefs.foldersShown = true;
       await tester.pumpAndSettle();
       await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
-      final page = find.byKey(ValueKey('folder-page-${work.id}'));
-      expect(page, findsOneWidget);
-      Finder onPage(String title) =>
-          find.descendant(of: page, matching: find.text(title));
+      expect(find.byKey(ValueKey('folder-page-${work.id}')), findsOneWidget);
 
       // Today's note is in no folder.
       expect(dots(19), findsNothing);
       expect(dots(18), findsOneWidget);
       await tap(tester, day(18));
-      expect(onPage('Standup notes'), findsOneWidget);
-      expect(onPage('Pricing ideas'), findsNothing);
-
-      prefs.toggleSidebar();
-      await tester.pumpAndSettle();
-      await tap(tester, day(17));
-      expect(find.text('Tuesday, 17 November'), findsNothing);
-      expect(onPage('Pricing ideas'), findsOneWidget);
-      expect(onPage('Standup notes'), findsNothing);
+      expect(openNoteBody(tester), 'Standup notes');
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "
@@ -4142,8 +4178,47 @@ void main() {
       expect(chip, findsOneWidget);
     });
 
-    testWidgets('on a narrow page the week is one button, and When no longer '
-        'points to it', (tester) async {
+    testWidgets("When's spans count a note by its own day, and one with none "
+        'by the day it was last edited', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      days
+        ..setDay('October plan', DateTime(2026, 11, 21))
+        ..setDay('Standup notes', DateTime(2026, 10, 30));
+      await tester.pumpAndSettle();
+      final list = find.byType(Sidebar);
+      Set<String> listed() => {
+        for (final row in tester.widgetList<NoteRow>(
+          find.descendant(of: list, matching: find.byType(NoteRow)),
+        ))
+          row.note.title,
+      };
+      Future<void> when(String span) async {
+        await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
+        await tap(tester, find.byKey(ValueKey('notes-filter-when-$span')));
+      }
+
+      // Picked in the week, the day after tomorrow's note is not under Today.
+      await tap(tester, day(21));
+      expect(openNoteBody(tester), 'October plan');
+      await when('today');
+      expect(listed(), {'Call with Arjun'});
+
+      for (final span in ['thisWeek', 'thisMonth']) {
+        await when(span);
+        expect(listed(), {
+          'Call with Arjun',
+          'Pricing ideas',
+          'October plan',
+        }, reason: span);
+      }
+      await when('lastWeek');
+      expect(listed(), isEmpty);
+    });
+
+    testWidgets('on a narrow page the week is one button', (tester) async {
       await library(tester);
       tester.view.physicalSize = const Size(1040, 800);
       await tester.pumpAndSettle();
@@ -4153,7 +4228,6 @@ void main() {
       await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
       await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
       expect(find.byKey(const ValueKey('notes-when-menu')), findsOneWidget);
-      expect(find.byKey(const ValueKey('notes-when-footnote')), findsNothing);
     });
 
     testWidgets('the narrowest list keeps the grouping menu and the chip', (
@@ -10001,9 +10075,8 @@ void main() {
       final today = DateTime(later.year, later.month, later.day - 2);
       final todayDots = dotsOn(today);
 
-      // Let the day go: the page is still no note, in the list or the week.
-      await tester.tap(chip(later));
-      await tester.pumpAndSettle();
+      // The page is no note yet, in the list or the week.
+      expect(find.byType(NoteEditor), findsOneWidget);
       expect(blankRow, findsNothing);
       expect(dotsOn(today), todayDots);
       await tester.tap(

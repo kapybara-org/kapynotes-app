@@ -305,7 +305,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   TagFilter _tagFilter = const TagFilter();
 
   /// How far back that list reaches, kept the same way.
-  WhenFilter _when = NotesWhen.anyTime;
+  NotesWhen _when = NotesWhen.anyTime;
 
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
@@ -393,7 +393,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
 
   /// The page's days, keyed so they keep their place in the week wherever
-  /// the bar is built, and so When can ask whether the week is on show.
+  /// the bar is built.
   final _dayStrip = GlobalKey();
   late final TasksController? _taskController = switch (widget.tasks) {
     final tasks? => TasksController(
@@ -1381,6 +1381,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!keepList) _showTabOf(next);
     }
     _selectedId = next;
+    if (_pickedDay case final day?
+        when next == null || _dayOfNoteId(next) != day) {
+      _pickedDay = null;
+    }
     final open = _workspace.openNoteIds;
     _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
     if (!selectionPreview) _scheduleDiscardAbandonedBlanks();
@@ -1939,6 +1943,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Whether the list's Upcoming fold is open.
   bool _upcomingOpen = false;
+
+  /// The day last picked in the page's week. Its notes are lit in the list
+  /// until another day is picked or a note from another day opens.
+  DateTime? _pickedDay;
+
+  /// The day [id] sits on: the one it was started from, its own, or the day
+  /// it was last edited.
+  DateTime? _dayOfNoteId(String id) {
+    if (_dayOfFreshNote[id] case final day?) return day;
+    final note = widget.notes.byId(id);
+    if (note == null) return null;
+    return noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
+  }
+
+  /// A day picked in the page's week. Its latest note opens, with Upcoming
+  /// opened when the day is still to come; with no notes, a page to write on
+  /// it opens where [write] allows one. The list stays whole.
+  void _pickDay(DateTime day, List<Note> notes, {required bool write}) {
+    if (notes.isEmpty) {
+      if (!write) return;
+      _writeOnDay(day);
+      setState(() => _pickedDay = day);
+      return;
+    }
+    final today = dayShown(widget.notes.now(), widget.prefs.displayTime);
+    setState(() {
+      _pickedDay = day;
+      if (day.isAfter(today)) _upcomingOpen = true;
+    });
+    _select(
+      notes.reduce((a, b) => b.updatedAt.isAfter(a.updatedAt) ? b : a).id,
+    );
+  }
 
   /// The day a note started from a tapped day will be given once it has its
   /// first words: a page left untouched writes neither the note nor a day.
@@ -2687,7 +2724,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  void _setWhen(WhenFilter when) => setState(() => _when = when);
+  void _setWhen(NotesWhen when) => setState(() => _when = when);
 
   /// The tags the lists offer, in the person's order, each with how many
   /// notes carry it: the archived ones in Archive, and otherwise the rest,
@@ -3373,7 +3410,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     when: _when,
     onWhenChanged: _setWhen,
     today: dayShown(widget.notes.now(), widget.prefs.displayTime),
-    weekShown: () => DayStrip.showsWeek(_dayStrip),
     cards: widget.prefs.noteCards,
     onCardsChanged: phone ? null : (cards) => widget.prefs.noteCards = cards,
     grouping: sort ? widget.prefs.notesGrouping : null,
@@ -3384,9 +3420,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     phone: phone,
   );
 
-  /// The page's days, in My notes and on a folder in front, counting and
-  /// narrowing what the list shows or what the folder holds. With the list
-  /// hidden and no folder in front, a day lists its notes instead. Their
+  /// The page's days, in My notes and on a folder in front, counting what
+  /// the list shows or what the folder holds; a day picked there opens its
+  /// latest note. With the list hidden and no folder in front, a day lists
+  /// its notes instead. Their
   /// month takes the bar's top left, so the open note's folders go in the
   /// line above its title. Kapy AI open over the page's right edge leaves
   /// them the one button for the day.
@@ -3409,8 +3446,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 (_kapyAi?.enabled ?? false) &&
                 MediaQuery.sizeOf(context).width < kapyAiOverlayBelow),
         today: dayShown(widget.notes.now(), displayTime),
-        when: _when,
-        onWhenChanged: _setWhen,
+        picked: _pickedDay,
+        onPick: (day, notes) => _pickDay(
+          day,
+          notes,
+          write: widget.days != null && listVisible,
+        ),
         notes: folderId == null
             ? _filtered(widget.notes.search(''), anyTime: true)
             : widget.folders!.tree.notesIn(
@@ -3421,7 +3462,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         displayTime: displayTime,
         firstWeekday: firstWeekday(context),
         ownDay: widget.days == null ? null : _ownDayOf,
-        onWriteOn: widget.days == null || !listVisible ? null : _writeOnDay,
         onOpenNote: listVisible || folderId != null ? null : _openFromDay,
       ),
     );
@@ -3623,7 +3663,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return [
       for (final note in _narrowed(notes))
         if (!_dayOfFreshNote.containsKey(note.id) &&
-            (span == null || span.covers(noteDay(note, displayTime))) &&
+            (span == null ||
+                span.covers(
+                  noteDay(note, displayTime, ownDay: _ownDayOf(note)),
+                )) &&
             (!byMedia || NoteMedia.shows(note, _mediaFilter)) &&
             (!byTag.narrowed ||
                 byTag.matches([
@@ -3999,6 +4042,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               upcomingOpen: _upcomingOpen,
               onUpcomingToggled: () =>
                   setState(() => _upcomingOpen = !_upcomingOpen),
+              dayIds: switch (_pickedDay) {
+                null => const {},
+                final day => {
+                  for (final note in widget.notes.notes)
+                    if (_dayOfNoteId(note.id) == day) note.id,
+                },
+              },
               when: _when,
               onWhenChanged: _setWhen,
               folders: switch (widget.folders) {

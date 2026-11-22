@@ -9,7 +9,6 @@ import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_service.dart' show SyncStatus;
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
-import 'package:kapy_notes/ui/notes_grouping.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
@@ -965,8 +964,8 @@ void main() {
       place: place,
       compact: compact,
       today: DateTime(2026, 11, 19),
-      when: NotesWhen.anyTime,
-      onWhenChanged: (_) {},
+      picked: null,
+      onPick: (_, _) {},
       notes: [
         for (final (index, edited) in [
           DateTime(2026, 11, 17, 9),
