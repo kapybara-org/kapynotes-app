@@ -410,4 +410,36 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // D13's switch on a computer: 38 × 22, with the same light 18 pt knob on
+  // and off, so off never reads as disabled.
+  for (final value in const [false, true]) {
+    testWidgets('the switch is D13\'s when ${value ? 'on' : 'off'}', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Center(child: SettingsSwitch(value: value)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final palette = tester.element(find.byType(SettingsSwitch)).palette;
+      expect(tester.getSize(find.byType(SettingsSwitch)), const Size(38, 22));
+      final knob = find
+          .descendant(
+            of: find.byType(SettingsSwitch),
+            matching: find.byType(DecoratedBox),
+          )
+          .last;
+      expect(tester.getSize(knob), const Size.square(18));
+      final face =
+          tester.widget<DecoratedBox>(knob).decoration as BoxDecoration;
+      expect(face.color, palette.switchThumb);
+      expect(face.boxShadow, isNull);
+    });
+  }
 }
