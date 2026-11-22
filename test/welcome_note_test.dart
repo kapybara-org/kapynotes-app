@@ -258,7 +258,7 @@ void main() {
       await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
       await tester.tap(find.byKey(const ValueKey('page-back')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('bar-settings')));
+      await tester.tap(find.byKey(const ValueKey('phone-account')));
       await tester.pumpAndSettle();
 
       expect(find.byType(SettingsDialog), findsOneWidget);

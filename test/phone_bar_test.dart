@@ -11,6 +11,10 @@ void main() {
     WidgetTester tester, {
     required double scale,
     required Size size,
+    PhoneTab tab = PhoneTab.notes,
+    ValueChanged<PhoneTab>? onSelected,
+    VoidCallback? onCreate,
+    bool showKapyAi = true,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -21,11 +25,11 @@ void main() {
       MaterialApp(
         theme: KapyTheme.dark(),
         home: PhoneSpaces(
-          space: LibrarySpace.notes,
-          onSelected: (_) {},
-          onSettingsPressed: () {},
+          tab: tab,
+          onSelected: onSelected ?? (_) {},
           createLabel: 'New note',
-          onCreate: () {},
+          onCreate: onCreate ?? () {},
+          showKapyAi: showKapyAi,
           createActions: const [],
           onCreateAction: (_) {},
           child: const SizedBox.expand(),
@@ -48,11 +52,9 @@ void main() {
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
         await pumpBar(tester, scale: scale, size: size);
         expect(tester.takeException(), isNull);
-        // Android's bar is the platform's own and sizes its labels itself.
-        if (platform != TargetPlatform.iOS) return;
-        for (final label in ['Notes', 'Tasks', 'Drawings', 'Settings']) {
+        for (final label in ['Notes', 'Folders', 'Kapy AI']) {
           final text = find.text(label);
-          if (text.evaluate().isEmpty) continue;
+          expect(text, findsOneWidget, reason: label);
           expect(
             tester.getSize(text).height,
             lessThanOrEqualTo(13 * 1.3 + 0.5),
@@ -88,7 +90,8 @@ void main() {
           .first,
     ).color;
     expect(tab('notes'), palette.fillSelected);
-    expect(tab('drawings'), isNull);
+    expect(tab('folders'), isNull);
+    expect(tab('kapyAi'), isNull);
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
@@ -104,7 +107,7 @@ void main() {
       (tester.widget<Container>(bar).decoration! as BoxDecoration).borderRadius,
       BorderRadius.circular(28),
     );
-    for (final name in ['notes', 'tasks', 'drawings', 'settings']) {
+    for (final name in ['notes', 'folders', 'kapyAi']) {
       final tab = find
           .descendant(
             of: find.byKey(ValueKey('bar-$name')),
@@ -121,18 +124,75 @@ void main() {
     }
   });
 
-  testWidgets("Android's bar keeps Material's shape on the crisp surface, and "
-      'the open tab is the 7% fill', (tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await pumpBar(tester, scale: 1, size: const Size(393, 852));
-    const palette = KapyTheme.darkPalette;
-    final bar = tester.widget<NavigationBar>(
-      find.byKey(const ValueKey('phone-bar')),
+  group("Android's bar", () {
+    final android = TargetPlatformVariant.only(TargetPlatform.android);
+    setUp(
+      () => AppPlatform.debugTargetPlatformOverride = TargetPlatform.android,
     );
-    expect(bar.backgroundColor, palette.railBackground);
-    expect(bar.backgroundColor, palette.sidebarBackground);
-    expect(bar.indicatorColor, palette.fillSelected);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final bar = find.byKey(const ValueKey('phone-bar'));
+    final plus = find.byKey(const ValueKey('phone-new'));
+
+    testWidgets("is M01's pill with the + on its own beside it, and not "
+        "Material's bar and button", (tester) async {
+      await pumpBar(tester, scale: 1, size: const Size(412, 915));
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(tester.getSize(bar).height, 56);
+      expect(
+        (tester.widget<Container>(bar).decoration! as BoxDecoration)
+            .borderRadius,
+        BorderRadius.circular(28),
+      );
+      expect(tester.getSize(plus), const Size.square(56));
+      expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
+      expect(tester.getCenter(plus).dy, tester.getCenter(bar).dy);
+    }, variant: android);
+
+    testWidgets('reads each tab to TalkBack as a button by its name, the '
+        'open one selected', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpBar(
+        tester,
+        scale: 1,
+        size: const Size(412, 915),
+        tab: PhoneTab.folders,
+      );
+      for (final (tab, label) in [
+        (PhoneTab.notes, 'Notes'),
+        (PhoneTab.folders, 'Folders'),
+        (PhoneTab.kapyAi, 'Kapy AI'),
+      ]) {
+        expect(
+          tester.getSemantics(find.byKey(ValueKey('bar-${tab.name}'))),
+          matchesSemantics(
+            label: label,
+            isButton: true,
+            hasSelectedState: true,
+            isSelected: tab == PhoneTab.folders,
+            hasTapAction: true,
+          ),
+          reason: label,
+        );
+      }
+      semantics.dispose();
+    }, variant: android);
+
+    for (final (mode, inset, lift) in [
+      ('no', 0.0, 30.0),
+      ('three-button', 48.0, 56.0),
+      ('gesture', 24.0, 32.0),
+    ]) {
+      testWidgets('clears $mode navigation, $lift above the bottom', (
+        tester,
+      ) async {
+        tester.view.viewPadding = FakeViewPadding(bottom: inset);
+        tester.view.padding = FakeViewPadding(bottom: inset);
+        await pumpBar(tester, scale: 1, size: const Size(412, 915));
+        expect(915 - tester.getRect(bar).bottom, lift);
+        expect(915 - tester.getRect(plus).bottom, lift);
+      }, variant: android);
+    }
   });
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
@@ -152,13 +212,102 @@ void main() {
       expect(icon('notes', KapyIcons.noteOutlined).color, palette.textPrimary);
       expect(icon('notes', KapyIcons.noteOutlined).size, 20);
       expect(
-        icon('drawings', KapyIcons.penRounded).color,
+        icon('folders', KapyIcons.folderOutlined).color,
         palette.textTertiary,
       );
       expect(
-        icon('settings', KapyIcons.settingsGearOutlined).color,
+        icon('kapyAi', KapyIcons.sparklesOutlined).color,
         palette.textTertiary,
       );
     });
+
+    testWidgets('on ${platform.name} the bar is Notes, Folders and Kapy AI, '
+        'each tab handing back its own, with + on its own', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final chosen = <PhoneTab>[];
+      var made = 0;
+      await pumpBar(
+        tester,
+        scale: 1,
+        size: const Size(393, 852),
+        tab: PhoneTab.folders,
+        onSelected: chosen.add,
+        onCreate: () => made++,
+      );
+      final bar = find.byKey(const ValueKey('phone-bar'));
+      final plus = find.byKey(const ValueKey('phone-new'));
+      final tabs = [
+        for (final tab in PhoneTab.values)
+          find.byKey(ValueKey('bar-${tab.name}')),
+      ];
+      expect(
+        tester.getCenter(tabs[0]).dx,
+        lessThan(tester.getCenter(tabs[1]).dx),
+      );
+      expect(
+        tester.getCenter(tabs[1]).dx,
+        lessThan(tester.getCenter(tabs[2]).dx),
+      );
+      for (final tab in tabs) {
+        expect(find.descendant(of: bar, matching: tab), findsOneWidget);
+      }
+      for (final gone in ['tasks', 'drawings', 'settings']) {
+        expect(find.byKey(ValueKey('bar-$gone')), findsNothing, reason: gone);
+      }
+      expect(find.descendant(of: bar, matching: plus), findsNothing);
+      expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
+      expect(tester.getRect(plus).right, 393 - 16);
+      expect(tester.getRect(bar).left, 16);
+      expect(tester.getCenter(plus).dy, closeTo(tester.getCenter(bar).dy, 0.5));
+      expect(
+        tester.getSemantics(tabs[1]),
+        matchesSemantics(
+          label: 'Folders',
+          isButton: true,
+          isSelected: true,
+          hasSelectedState: true,
+          hasTapAction: true,
+        ),
+      );
+      expect(tester.getSize(plus), const Size.square(56));
+
+      for (final tab in tabs) {
+        await tester.tap(tab);
+      }
+      await tester.tap(plus);
+      await tester.pumpAndSettle();
+      expect(chosen, PhoneTab.values);
+      expect(made, 1);
+    });
+
+    testWidgets('on ${platform.name} a build without Kapy AI leaves its tab '
+        'out', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpBar(
+        tester,
+        scale: 1,
+        size: const Size(393, 852),
+        showKapyAi: false,
+      );
+      expect(find.byKey(const ValueKey('bar-notes')), findsOneWidget);
+      expect(find.byKey(const ValueKey('bar-folders')), findsOneWidget);
+      expect(find.byKey(const ValueKey('bar-kapyAi')), findsNothing);
+      expect(find.text('Kapy AI'), findsNothing);
+    });
   }
+
+  testWidgets('every tab and the + are at least 44 pt each way, on an SE at '
+      '3.1× text', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpBar(tester, scale: 3.1, size: const Size(375, 667));
+    expect(tester.takeException(), isNull);
+    for (final key in ['bar-notes', 'bar-folders', 'bar-kapyAi', 'phone-new']) {
+      final size = tester.getSize(find.byKey(ValueKey(key)));
+      expect(size.width, greaterThanOrEqualTo(44), reason: key);
+      expect(size.height, greaterThanOrEqualTo(44), reason: key);
+    }
+  });
 }
