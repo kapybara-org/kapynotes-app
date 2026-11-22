@@ -5,6 +5,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -13,7 +14,10 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
+import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
@@ -51,6 +55,7 @@ Future<void> _pump(
   Size size = const Size(1500, 800),
   TargetPlatform platform = TargetPlatform.macOS,
   bool sidebar = false,
+  FolderStore? folders,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -70,6 +75,7 @@ Future<void> _pump(
       prefs: prefs,
       shortcuts: shortcuts,
       kapyAi: ai,
+      folders: folders,
     ),
   );
   await tester.pumpAndSettle();
@@ -1613,6 +1619,214 @@ void main() {
         find.byKey(const ValueKey('settings-dialog-content')),
         matchesGoldenFile('goldens/kapy_ai_settings_free_dark.png'),
       );
+    });
+  });
+
+  group("a phone's Kapy AI tab", () {
+    final tab = find.byKey(const ValueKey('bar-kapyAi'));
+    final page = find.byKey(const ValueKey('kapy-ai-page'));
+    final home = find.byKey(const ValueKey('home-title-notes'));
+
+    Future<void> pumpPhone(WidgetTester tester, {FolderStore? folders}) async {
+      await _pump(
+        tester,
+        size: const Size(390, 844),
+        platform: TargetPlatform.iOS,
+        folders: folders,
+      );
+      final back = find.byKey(const ValueKey('page-back'));
+      if (back.evaluate().isNotEmpty) {
+        await tester.tap(back);
+        await tester.pumpAndSettle();
+      }
+    }
+
+    Future<void> tap(WidgetTester tester, Finder finder) async {
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets("mounts Kapy AI's page clear of the bar, lit in it; Notes and "
+        'Back both go Home', (tester) async {
+      await pumpPhone(tester);
+      expect(page, findsNothing);
+
+      await tap(tester, tab);
+      expect(page, findsOneWidget);
+      expect(home, findsNothing);
+      expect(
+        tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+        PhoneTab.kapyAi,
+      );
+      expect(
+        tester.widget<KapyAiPage>(find.byType(KapyAiPage)).barClearance,
+        PhoneSpaces.clearance(tester.element(page)),
+      );
+
+      await tap(tester, find.byKey(const ValueKey('bar-notes')));
+      expect(page, findsNothing);
+      expect(home, findsOneWidget);
+
+      await tap(tester, tab);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(home, findsOneWidget);
+    });
+
+    testWidgets("on Android over three buttons, its composer ends above the "
+        'pill', (tester) async {
+      tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+      tester.view.padding = const FakeViewPadding(bottom: 48);
+      await _pump(
+        tester,
+        size: const Size(412, 915),
+        platform: TargetPlatform.android,
+      );
+      final back = find.byKey(const ValueKey('page-back'));
+      if (back.evaluate().isNotEmpty) await tap(tester, back);
+      await tap(tester, tab);
+
+      final pill = tester.getRect(find.byKey(const ValueKey('phone-bar')));
+      // The send button sits on the composer's last row, at its foot.
+      final composer = tester.getRect(
+        find.byKey(const ValueKey('kapy-ai-page-send')),
+      );
+      expect(pill.bottom, lessThanOrEqualTo(915 - 48));
+      expect(composer.bottom, lessThanOrEqualTo(pill.top));
+    });
+
+    testWidgets('New chat opens the conversation over it', (tester) async {
+      await pumpPhone(tester);
+      await tap(tester, tab);
+
+      await tap(tester, find.byKey(const ValueKey('kapy-ai-page-new-chat')));
+      expect(_panel, findsOneWidget);
+    });
+
+    testWidgets("an account's Add row opens Settings at that account", (
+      tester,
+    ) async {
+      ai.accountList = const [
+        KapyAccountState(
+          kind: KapyAccountKind.openRouter,
+          status: KapyAccountStatus.notConnected,
+        ),
+      ];
+      await pumpPhone(tester);
+      await tap(tester, tab);
+
+      await tap(tester, find.byKey(const ValueKey('kapy-ai-model-button')));
+      // With no account yet, the picker's way to one is its Add row.
+      await tap(
+        tester,
+        find.byKey(const ValueKey('kapy-ai-connect-openRouter')),
+      );
+      final settings = tester.widget<SettingsDialog>(
+        find.byType(SettingsDialog),
+      );
+      expect(settings.section, SettingsSection.voice);
+      expect(settings.reveal, kapyAccountRowId(KapyAccountKind.openRouter));
+    });
+
+    testWidgets('S on it opens Settings', (tester) async {
+      await pumpPhone(tester);
+      await tap(tester, tab);
+
+      final account = find.descendant(
+        of: page,
+        matching: find.byKey(const ValueKey('phone-account')),
+      );
+      expect(tester.getSize(account), const Size(44, 44));
+      await tap(tester, account);
+      expect(find.byType(SettingsDialog), findsOneWidget);
+    });
+
+    testWidgets('switched off, the tab goes, and the bar is back on Notes', (
+      tester,
+    ) async {
+      await pumpPhone(tester);
+      await tap(tester, tab);
+      expect(page, findsOneWidget);
+
+      ai.enabled = false;
+      await tester.pumpAndSettle();
+      expect(tab, findsNothing);
+      expect(page, findsNothing);
+      expect(home, findsOneWidget);
+
+      ai.enabled = true;
+      await tester.pumpAndSettle();
+      expect(tab, findsOneWidget);
+      expect(page, findsNothing);
+    });
+
+    testWidgets('Back from it lands on Notes with the picks made there kept, '
+        'as the bar does', (tester) async {
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      await pumpPhone(tester);
+      await tester.longPress(find.text('Groceries'));
+      await tester.pumpAndSettle();
+      await tap(tester, find.text('Select'));
+      final picked = find.text('1 selected');
+      expect(picked, findsOneWidget);
+
+      await tap(tester, tab);
+      expect(page, findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(
+        tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+        PhoneTab.notes,
+      );
+      expect(picked, findsOneWidget);
+    });
+
+    testWidgets("with Kapy AI on, Folders' and Drawings' fields still name "
+        'what they search', (tester) async {
+      Finder field(String words) => find.descendant(
+        of: find.byKey(const ValueKey('sidebar-search-field')),
+        matching: find.text(words),
+      );
+      await pumpPhone(tester, folders: FolderStore(store));
+      expect(field('Search or Ask Kapy AI'), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(field('Search folders'), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('folders-drawings-tile')));
+      expect(field('Search drawings'), findsOneWidget);
+      expect(field('Search or Ask Kapy AI'), findsNothing);
+    });
+
+    testWidgets("after a visit to Drawings, + on it makes a note, and Folders "
+        'is back on its tree', (tester) async {
+      await pumpPhone(tester);
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      await tap(tester, find.byKey(const ValueKey('folders-drawings-tile')));
+      await tap(tester, tab);
+
+      // The blank note the app opens on is the one + reuses, as for a note.
+      await tap(tester, find.byKey(const ValueKey('phone-new')));
+      expect(page, findsNothing);
+      expect(notes.notes.where((note) => note.isDrawing), isEmpty);
+
+      await tap(tester, find.byKey(const ValueKey('page-back')));
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('phone-list-title')))
+            .data,
+        'Folders',
+      );
+    });
+
+    testWidgets('a build without Kapy AI has no tab for it', (tester) async {
+      kapyAiAvailable = false;
+      await pumpPhone(tester);
+      expect(tab, findsNothing);
+      expect(find.byKey(const ValueKey('bar-folders')), findsOneWidget);
     });
   });
 }
