@@ -1289,7 +1289,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       available.map((note) => note.id),
       fallbackId: preferred ?? available.firstOrNull?.id,
     );
-    _adoptWorkspaceSelection(previous);
+    _adoptWorkspaceSelection(
+      previous,
+      keepList: _usesCompactLayout && !_phonePageOpen,
+    );
     final parked = widget.notes.byId(_noteBeforeSpace);
     if (parked == null || parked.isHidden || parked.isArchived) {
       _noteBeforeSpace = _openedBySpace = null;
@@ -1364,17 +1367,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Takes up whatever the panes now have focused, after any change to them,
-  /// and lets go of the editors of notes no longer on screen.
+  /// and lets go of the editors of notes no longer on screen. With [keepList]
+  /// the list on screen stays as it is rather than following the selection.
   void _adoptWorkspaceSelection(
     String? previous, {
     bool selectionPreview = false,
+    bool keepList = false,
   }) {
     final next = _workspace.selectedNoteId;
     if (previous != next) {
       widget.account?.sync?.leaveNote(previous);
       _namer?.left(previous);
       _phoneEditorKey = GlobalKey<NoteEditorState>();
-      _showTabOf(next);
+      if (!keepList) _showTabOf(next);
     }
     _selectedId = next;
     final open = _workspace.openNoteIds;

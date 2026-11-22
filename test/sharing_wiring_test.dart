@@ -12,6 +12,7 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
@@ -243,6 +244,86 @@ void main() {
       expect(find.byKey(const ValueKey('share-with-someone')), findsOneWidget);
     });
   }
+
+  /// Priya shares Packing list with Sam, who can view it.
+  Future<String> priyaShares(WidgetTester tester) async {
+    late String spaceId;
+    await tester.runAsync(() async {
+      final packing = priya.notes.create(body: 'Packing list');
+      await priya.sync.syncNow();
+      final space = await priya.sharing.shareNoteWith(
+        packing.id,
+        email: server.user('user-1').email,
+        role: SpaceRole.viewer,
+      );
+      spaceId = space.id;
+      await account.sharing!.acceptInvite(server.outbox.last.token);
+      await priya.sharing.refresh();
+      await priya.sync.syncNow();
+      await account.sharing!.refresh();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await account.sync!.syncNow();
+    });
+    return spaceId;
+  }
+
+  /// Opens Packing list from Shared and comes back to the list, so it is
+  /// the note selected behind it.
+  Future<void> openPackingAndBack(
+    WidgetTester tester, {
+    required bool phone,
+  }) async {
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.text('Packing list'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await showList(tester, phone: phone);
+  }
+
+  for (final block in [false, true]) {
+    final what = block ? 'Block' : 'Leave';
+    testWidgets('on a phone, Shared stays when $what takes away the note '
+        'selected behind it', (tester) async {
+      await signIn(tester);
+      await shareWithPriya(tester);
+      final space = await priyaShares(tester);
+      await pumpApp(tester, phone: true);
+      await showList(tester, phone: true);
+      await openTab(tester, SidebarTab.shared, phone: true);
+      await openPackingAndBack(tester, phone: true);
+      expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+
+      await tester.runAsync(
+        () => block
+            ? account.sharing!.blockEverywhere(priya.email)
+            : account.sharing!.leave(space),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+      expect(listed(tester, 'Packing list'), isFalse);
+      expect(listed(tester, 'Trip budget'), !block);
+      await tester.pump(const Duration(seconds: 2));
+    });
+  }
+
+  testWidgets('beside a window, the list follows the selection to My notes '
+      'when Leave takes away the shared note it was on', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    final space = await priyaShares(tester);
+    await pumpApp(tester, phone: false);
+    await openTab(tester, SidebarTab.shared, phone: false);
+    await openPackingAndBack(tester, phone: false);
+    expect(listed(tester, 'Bank details'), isFalse);
+
+    await tester.runAsync(() => account.sharing!.leave(space));
+    await tester.pumpAndSettle();
+    expect(listed(tester, 'Bank details'), isTrue);
+    await tester.pump(const Duration(seconds: 2));
+  });
 
   testWidgets("Back from Shared comes home to Notes, with Home's cards and "
       'Notes chosen in the bar, on a phone', (tester) async {
