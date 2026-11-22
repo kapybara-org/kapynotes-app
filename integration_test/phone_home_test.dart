@@ -21,6 +21,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
@@ -83,9 +84,15 @@ void main() {
     notes.togglePinned(reading);
     tags.addTag(groceries, tags.create('Errands')!.id);
 
-    // M02's tree, opened down to Acme, with two drawings for its tile.
+    // M02's tree, opened down to Acme, with two drawings for its tile and a
+    // note for a later day for Upcoming's.
     FolderStore? folderStore;
+    NoteDayStore? days;
     if (folders) {
+      days = NoteDayStore(store);
+      await days.load();
+      final renewal = write('Renewal notes\nRead the contract first', 0, 8, 30);
+      days.setDay(renewal, DateTime(today.year, today.month, today.day + 2));
       folderStore = FolderStore(store);
       await folderStore.load();
       final work = folderStore.create('Work')!;
@@ -115,6 +122,7 @@ void main() {
         shortcuts: ShortcutPrefs(store)..load(),
         tags: tags,
         folders: folderStore,
+        days: days,
       ),
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
@@ -244,8 +252,9 @@ void main() {
     await shot(tester, 'large-text');
   });
 
-  testWidgets("the bar's boards, dark: Folders (M02), Drawings from Folders "
-      '(M03) and the + menu open (M05)', (tester) async {
+  testWidgets("the bar's boards, dark: Folders with Drawings and Upcoming "
+      "(M02), Upcoming's page, Drawings from Folders (M03) and the + menu "
+      'open (M05)', (tester) async {
     await launch(tester, folders: true);
     prefs.appearance = AppearanceMode.dark;
     await tester.pumpAndSettle();
@@ -269,7 +278,15 @@ void main() {
       expect(find.text(name), findsOneWidget, reason: name);
     }
     expect(find.text('Not in a folder'), findsOneWidget);
-    await board('m02-folders');
+    expect(find.byKey(const ValueKey('folders-upcoming-tile')), findsOneWidget);
+    expect(find.textContaining('Renewal notes · '), findsOneWidget);
+    await board('m02-folders-upcoming');
+
+    await tap('folders-upcoming-tile');
+    expect(tester.widget<Text>(title).data, 'Upcoming');
+    expect(find.text('Renewal notes'), findsOneWidget);
+    await board('upcoming');
+    await tap('page-back');
 
     await tap('folders-drawings-tile');
     expect(tester.widget<Text>(title).data, 'Drawings');

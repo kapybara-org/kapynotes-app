@@ -331,6 +331,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// The folder whose notes a phone's Folders shows, or null for the tree.
   String? _phoneFolder;
+
+  /// Whether a phone's Folders shows Upcoming's page, from its tile.
+  bool _phoneUpcoming = false;
   final GlobalKey<NavigatorState> _phoneNavigator = GlobalKey();
 
   /// Whether the notes list is open over the page, in a desktop window too
@@ -3685,6 +3688,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {
       _phoneTab = PhoneTab.folders;
       _phoneFolder = null;
+      _phoneUpcoming = false;
     });
   }
 
@@ -4737,7 +4741,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (pageOpen) {
               _phoneNavigator.currentState?.maybePop();
             } else if (_phoneTab == PhoneTab.folders &&
-                (_drawingsOnly || _phoneFolder != null)) {
+                (_drawingsOnly || _phoneFolder != null || _phoneUpcoming)) {
               _showFolders();
             } else if (_phoneTab != PhoneTab.notes) {
               setState(() => _phoneTab = PhoneTab.notes);
@@ -4831,6 +4835,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 child:
                     _phoneTab == PhoneTab.folders &&
                         !_drawingsOnly &&
+                        !_phoneUpcomingShown &&
                         widget.folders == null
                     // A build without folders still has Drawings to open.
                     ? Column(
@@ -4968,7 +4973,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// A phone's Folders: the tree, or with [_phoneFolder] one folder's notes.
   /// Drawings, reached from it, is the drawings list.
   bool get _phoneFolders =>
-      _phoneTab == PhoneTab.folders && !_drawingsOnly && widget.folders != null;
+      _phoneTab == PhoneTab.folders &&
+      !_drawingsOnly &&
+      !_phoneUpcomingShown &&
+      widget.folders != null;
+
+  /// Whether a phone's Folders shows Upcoming's page.
+  bool get _phoneUpcomingShown =>
+      _phoneTab == PhoneTab.folders &&
+      !_drawingsOnly &&
+      _phoneUpcoming &&
+      widget.days != null;
+
+  /// The notes given a later day, which a phone keeps under Folders'
+  /// Upcoming rather than on Home, soonest first.
+  List<Note> get _upcomingNotes {
+    final days = widget.days;
+    if (days == null) return const [];
+    final today = dayShown(widget.notes.now(), widget.prefs.displayTime);
+    return [
+      for (final note in _folderNotes)
+        if (waitsForLaterDay(days.dayOf(note.id), today)) note,
+    ]..sort((a, b) => days.dayOf(a.id)!.compareTo(days.dayOf(b.id)!));
+  }
 
   /// The folder whose notes a phone's Folders shows, while it still exists.
   Folder? get _phoneFolderShown => _phoneFolders && _phoneFolder != null
@@ -5003,38 +5030,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _phoneNotes() {
     final folders = _phoneFolders;
     final folder = _phoneFolderShown;
+    final upcoming = _phoneUpcomingShown;
     final tree = folders && folder == null;
-    final notes = folder != null
+    final notes = upcoming
+        ? _upcomingNotes
+        : folder != null
         ? _filtered(
             widget.folders!.tree.notesIn(_folderNotes, folder.id, deep: true),
           )
         : tree
         ? _folderNotes
+        : _space == LibrarySpace.notes && !_specialMode && widget.days != null
+        // A note for a later day waits under Upcoming, off Home's days; a
+        // pinned one stays with Pinned.
+        ? [
+            for (final note in _visibleNotes)
+              if (widget.notes.pinnedNoteIds.contains(note.id) ||
+                  !waitsForLaterDay(
+                    _ownDayOf(note),
+                    dayShown(widget.notes.now(), widget.prefs.displayTime),
+                  ))
+                note,
+          ]
         : _visibleNotes;
+    final page = upcoming || folder != null || _drawingsOnly;
     return Sidebar(
       key: _sharedPage
           ? const ValueKey('shared-page')
+          : upcoming
+          ? const ValueKey('phone-upcoming')
           : folder != null
           ? ValueKey('phone-folder-${folder.id}')
           : tree
           ? const ValueKey('phone-folders')
           : null,
       phone: true,
+      ownDay: widget.days == null ? null : _ownDayOf,
       windowBar: _phoneHome
           ? _phoneHomeHeader()
           : tree
           ? PhoneListTitle(title: 'Folders', trailing: _phoneAccount())
           : PhoneListTitle(
-              title: folder?.name ?? _listTitle,
-              count: folder != null ? notes.length : _matchingCount,
+              title: upcoming ? 'Upcoming' : folder?.name ?? _listTitle,
+              count: upcoming || folder != null ? notes.length : _matchingCount,
               onBack: _sharedPage
                   ? () => _showSpace(LibrarySpace.notes)
-                  : folder != null || _drawingsOnly
+                  : page
                   ? _showFolders
                   : null,
-              trailing: folder != null || _drawingsOnly
-                  ? _phoneAccount()
-                  : null,
+              trailing: page ? _phoneAccount() : null,
             ),
       notes: notes,
       pinnedNoteIds: widget.notes.pinnedNoteIds,
@@ -5079,7 +5123,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onNewDrawing: () => _createNote(drawing: true),
       engine: widget.engines.engine,
       now: widget.notes.now,
-      controls: tree ? null : _notesControls(_space, phone: true),
+      controls: tree || upcoming ? null : _notesControls(_space, phone: true),
       filtersOpen: _phoneFiltersOpen,
       filtersActive: filtersNarrowed(
         show: _show,
@@ -5088,7 +5132,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       onFiltersToggled: () =>
           setState(() => _phoneFiltersOpen = !_phoneFiltersOpen),
-      pinnedOnly: !folders && _showingPinnedOnly,
+      pinnedOnly: !folders && !upcoming && _showingPinnedOnly,
       onPinnedOnlyChanged: (value) => setState(() => _pinnedOnly = value),
       folders: tree
           ? (
@@ -5107,7 +5151,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
               child: _phoneFolderTiles(),
             )
-          : folders || _space != LibrarySpace.notes || _specialMode
+          : folders || upcoming || _space != LibrarySpace.notes || _specialMode
           ? null
           : switch ([
               for (final note in _narrowed(widget.notes.search('')))
@@ -5142,13 +5186,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
     final newest = drawings.firstOrNull;
     final displayTime = widget.prefs.displayTime;
+    final upcoming = _upcomingNotes;
     return PhoneFolderTiles(
       drawings: drawings,
       newest: newest == null
           ? null
           : '${newest.title} · ${SidebarTimestamp.dayHeading(noteDay(newest, displayTime), today: dayShown(widget.notes.now(), displayTime)).$1}',
       onOpenDrawings: () => _showSpace(LibrarySpace.drawings),
+      upcoming: widget.days == null ? null : upcoming,
+      soonest: switch (upcoming.firstOrNull) {
+        final soon? =>
+          '${soon.title} · ${_phoneDayLabel(widget.days!.dayOf(soon.id)!)}',
+        null => null,
+      },
+      onOpenUpcoming: () => setState(() {
+        _phoneTab = PhoneTab.folders;
+        _phoneFolder = null;
+        _phoneUpcoming = true;
+      }),
     );
+  }
+
+  /// A day as a phone's list heads it: "Tomorrow", or "Fri 21 Nov".
+  String _phoneDayLabel(DateTime day) {
+    final (:lead, :date) = SidebarTimestamp.phoneDay(
+      day,
+      now: dayShown(widget.notes.now(), widget.prefs.displayTime),
+    );
+    return lead ?? date;
   }
 
   /// A note's page on a phone: back, then the note's own actions, over the

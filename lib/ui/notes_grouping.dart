@@ -127,6 +127,11 @@ DateTime noteDay(
   DateTime? ownDay,
 }) => ownDay ?? dayShown(note.updatedAt, displayTime);
 
+/// Whether a note given the day [own] waits for a day after [today], under
+/// Upcoming rather than in the list.
+bool waitsForLaterDay(DateTime? own, DateTime today) =>
+    own != null && own.isAfter(DateTime(today.year, today.month, today.day));
+
 /// A heading in the notes list, and the notes under it. [upcoming] marks the
 /// one grouping by day gives the notes waiting for a later day, which the
 /// list beside the rail folds; no other group is it, whatever its label.
@@ -164,11 +169,10 @@ List<NoteGroup> groupNotes(
 
   switch (grouping) {
     case NotesGrouping.byDate:
-      final from = DateTime(today.year, today.month, today.day);
       final waiting = <Note>[];
       for (final note in notes) {
         final own = ownDay?.call(note);
-        if (own != null && own.isAfter(from)) {
+        if (waitsForLaterDay(own, today)) {
           waiting.add(note);
           continue;
         }

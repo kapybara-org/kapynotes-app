@@ -171,16 +171,17 @@ class SidebarTimestamp {
 
   /// A day's heading on a phone's list: "Today" or "Yesterday" leading
   /// "Wed 19", then "Mon 17 Nov" alone, where the day alone could be any
-  /// month's. A day still to come is Today: a note edited on another device
-  /// with its clock ahead files under today rather than above it.
+  /// month's. Ahead, as Upcoming lists its notes, "Tomorrow" leads "Thu 20",
+  /// and later days have their date alone.
   static ({String? lead, String date}) phoneDay(
     DateTime shown, {
     required DateTime now,
   }) {
     final date = weekdayAndDay(shown);
     return switch (_daysBetween(shown, now)) {
-      <= 0 => (lead: 'Today', date: date),
+      0 => (lead: 'Today', date: date),
       1 => (lead: 'Yesterday', date: date),
+      -1 => (lead: 'Tomorrow', date: date),
       _ => (lead: null, date: '$date ${_months[shown.month - 1]}'),
     };
   }

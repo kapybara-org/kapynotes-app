@@ -1354,6 +1354,7 @@ extension on Sidebar {
           groups.mine,
           now: now(),
           displayTime: displayTime,
+          ownDay: ownDay,
         )) {
           heading(_PhoneDayHeading(lead: day.lead, date: day.date));
           section(day.notes, clockOnly: true);
@@ -1423,10 +1424,13 @@ extension on Sidebar {
   Widget _buildFolders(BuildContext context) {
     final folders = this.folders!;
     final today = dayShown(now(), displayTime);
-    final upcoming = [
-      for (final note in notes)
-        if (ownDay?.call(note) case final day? when day.isAfter(today)) note,
-    ];
+    // A phone's Upcoming is a tile in [phoneCards], with a page of its own.
+    final upcoming = phone
+        ? const <Note>[]
+        : [
+            for (final note in notes)
+              if (waitsForLaterDay(ownDay?.call(note), today)) note,
+          ];
     return _fading(
       context,
       FoldersTab(
@@ -3704,20 +3708,31 @@ List<({String? lead, String date, List<Note> notes})> _phoneDays(
   List<Note> notes, {
   required DateTime now,
   required DateTime Function(DateTime) displayTime,
+  DateTime? Function(Note note)? ownDay,
 }) {
   final today = dayShown(now, displayTime);
   final days = <DateTime, List<Note>>{};
   for (final note in notes) {
-    final day = dayShown(note.updatedAt, displayTime);
-    (days[day.isAfter(today) ? today : day] ??= []).add(note);
+    final own = ownDay?.call(note);
+    final day = noteDay(note, displayTime, ownDay: own);
+    // An edit from a clock ahead of this one counts as today's; a day given
+    // ahead is that day, as Upcoming's notes are.
+    (days[own == null && day.isAfter(today) ? today : day] ??= []).add(note);
   }
+  // Later days soonest first, then today and the days before, newest first.
+  final order = days.keys.toList()
+    ..sort(
+      (a, b) => a.isAfter(today) && b.isAfter(today)
+          ? a.compareTo(b)
+          : b.compareTo(a),
+    );
   return [
-    for (final MapEntry(key: day, value: notes) in days.entries)
+    for (final day in order)
       if (SidebarTimestamp.phoneDay(day, now: today) case (
         :final lead,
         :final date,
       ))
-        (lead: lead, date: date, notes: notes),
+        (lead: lead, date: date, notes: days[day]!),
   ];
 }
 
