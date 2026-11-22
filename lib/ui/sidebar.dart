@@ -1068,6 +1068,7 @@ extension on Sidebar {
     style: style,
     inset: inset,
     clockOnly: clockOnly,
+    laterDay: clockOnly ? null : _laterDay(note),
     folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
@@ -1385,6 +1386,7 @@ extension on Sidebar {
           groups.mine,
           now: now(),
           displayTime: displayTime,
+          ownDay: ownDay,
         )) {
           heading(_PhoneDayHeading(lead: day.lead, date: day.date));
           section(day.notes, clockOnly: true);
@@ -1450,14 +1452,23 @@ extension on Sidebar {
     );
   }
 
+  /// The day [note] was given, when that is a later one, for its row to name.
+  DateTime? _laterDay(Note note) {
+    final own = ownDay?.call(note);
+    return waitsForLaterDay(own, dayShown(now(), displayTime)) ? own : null;
+  }
+
   /// The Folders tab: the folder tree, then the notes in no folder.
   Widget _buildFolders(BuildContext context) {
     final folders = this.folders!;
     final today = dayShown(now(), displayTime);
-    final upcoming = [
-      for (final note in notes)
-        if (ownDay?.call(note) case final day? when day.isAfter(today)) note,
-    ];
+    // A phone's Upcoming is a tile in [phoneCards], with a page of its own.
+    final upcoming = phone
+        ? const <Note>[]
+        : [
+            for (final note in notes)
+              if (waitsForLaterDay(ownDay?.call(note), today)) note,
+          ];
     return _fading(
       context,
       FoldersTab(
@@ -2802,6 +2813,7 @@ class NoteRow extends StatefulWidget {
     this.style = NoteRowStyle.row,
     this.inset = 0,
     this.clockOnly = false,
+    this.laterDay,
     this.engine,
     this.now = DateTime.now,
     this.folders,
@@ -2816,6 +2828,10 @@ class NoteRow extends StatefulWidget {
   /// Whether the row sits under a heading that already names its day, so it
   /// gives only the time it was last changed, even while others have it open.
   final bool clockOnly;
+
+  /// The later day the note was given, which the row names in place of when
+  /// it was changed, as no heading over it does.
+  final DateTime? laterDay;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -3246,13 +3262,19 @@ class _NoteRowState extends State<NoteRow> {
     final card =
         widget.style == NoteRowStyle.card ||
         widget.style == NoteRowStyle.drawingCard;
-    String stamp({bool clock = true}) => SidebarTimestamp.glance(
-      note.updatedAt,
-      now: widget.now(),
-      displayTime: widget.displayTime,
-      today: card,
-      clock: clock,
-    );
+    String stamp({bool clock = true}) => switch (widget.laterDay) {
+      final day? => SidebarTimestamp.briefDay(
+        day,
+        today: dayShown(widget.now(), widget.displayTime),
+      ),
+      null => SidebarTimestamp.glance(
+        note.updatedAt,
+        now: widget.now(),
+        displayTime: widget.displayTime,
+        today: card,
+        clock: clock,
+      ),
+    };
     final day = card && people.isEmpty ? stamp(clock: false) : null;
     final date = widget.clockOnly
         ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
@@ -3798,20 +3820,31 @@ List<({String? lead, String date, List<Note> notes})> _phoneDays(
   List<Note> notes, {
   required DateTime now,
   required DateTime Function(DateTime) displayTime,
+  DateTime? Function(Note note)? ownDay,
 }) {
   final today = dayShown(now, displayTime);
   final days = <DateTime, List<Note>>{};
   for (final note in notes) {
-    final day = dayShown(note.updatedAt, displayTime);
-    (days[day.isAfter(today) ? today : day] ??= []).add(note);
+    final own = ownDay?.call(note);
+    final day = noteDay(note, displayTime, ownDay: own);
+    // An edit from a clock ahead of this one counts as today's; a day given
+    // ahead is that day, as Upcoming's notes are.
+    (days[own == null && day.isAfter(today) ? today : day] ??= []).add(note);
   }
+  // Later days soonest first, then today and the days before, newest first.
+  final order = days.keys.toList()
+    ..sort(
+      (a, b) => a.isAfter(today) && b.isAfter(today)
+          ? a.compareTo(b)
+          : b.compareTo(a),
+    );
   return [
-    for (final MapEntry(key: day, value: notes) in days.entries)
+    for (final day in order)
       if (SidebarTimestamp.phoneDay(day, now: today) case (
         :final lead,
         :final date,
       ))
-        (lead: lead, date: date, notes: notes),
+        (lead: lead, date: date, notes: days[day]!),
   ];
 }
 
