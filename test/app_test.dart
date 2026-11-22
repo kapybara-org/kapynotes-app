@@ -46,6 +46,7 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
@@ -813,6 +814,104 @@ void main() {
       await typeAndEnter(tester, 'TRAVEL');
       expect(tags.tags, hasLength(1));
       expect(namesOn(note.id), ['Travel']);
+    });
+
+    testWidgets('the date line reads the day and the time, the tasks while '
+        'the note has some, then each tag as its dot and its name', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Call with Arjun\n☐ Send the deck');
+      final work = tags.create('Work')!;
+      final acme = tags.create('Acme')!;
+      tags
+        ..addTag(note.id, work.id)
+        ..addTag(note.id, acme.id);
+      await pumpApp(tester, tags: tags);
+
+      final line = find.byType(NoteMetaRow);
+      Finder onLine(Finder finder) =>
+          find.descendant(of: line, matching: finder);
+      final today = prefs.displayTime(notes.now());
+      final date = onLine(
+        find.text(
+          '${SidebarTimestamp.shortDay(today, now: today)} · '
+          '${SidebarTimestamp.clock(prefs.displayTime(note.updatedAt))}',
+        ),
+      );
+      final progress = onLine(find.text('0 of 1 done'));
+      expect(date, findsOneWidget);
+      expect(progress, findsOneWidget);
+      expect(onLine(find.textContaining('Edited')), findsNothing);
+      expect(onLine(find.byType(ChecklistPie)), findsNothing);
+      expect(onLine(find.text('·')), findsOneWidget);
+      final chips = [
+        for (final tag in [work, acme])
+          find.byKey(ValueKey('tag-chip-${tag.id}')),
+      ];
+      for (final (index, tag) in [work, acme].indexed) {
+        final dot = find.descendant(
+          of: chips[index],
+          matching: find.byType(TagDot),
+        );
+        expect(tester.widget<TagDot>(dot).colour, tagColourOf(tag.colour.v));
+        expect(
+          find.descendant(of: chips[index], matching: find.text(tag.name.v)),
+          findsOneWidget,
+        );
+      }
+      final add = find.byKey(const ValueKey('note-add-tag'));
+      final order = [date, progress, ...chips, add];
+      for (var index = 1; index < order.length; index++) {
+        expect(
+          tester.getRect(order[index]).left,
+          greaterThan(tester.getRect(order[index - 1]).right),
+        );
+      }
+    });
+
+    testWidgets("a note from another day, with no tasks or tags, reads that "
+        "day and its time alone, and a note given a day reads that day", (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final now = notes.now();
+      final at = DateTime(now.year, now.month, now.day - 3, 8, 55);
+      await notes.load();
+      notes.importNotes([
+        Note(id: 'old', body: 'Spare keys', createdAt: at, updatedAt: at),
+      ]);
+      await pumpApp(tester, tags: tags, days: days);
+
+      final line = find.byType(NoteMetaRow);
+      Finder onLine(Finder finder) =>
+          find.descendant(of: line, matching: finder);
+      final today = prefs.displayTime(now);
+      final shown = prefs.displayTime(at);
+      final clock = SidebarTimestamp.clock(shown);
+      expect(
+        onLine(
+          find.text('${SidebarTimestamp.shortDay(shown, now: today)} · $clock'),
+        ),
+        findsOneWidget,
+      );
+      expect(onLine(find.textContaining('done')), findsNothing);
+      expect(onLine(find.text('·')), findsNothing);
+      expect(onLine(find.byType(TagDot)), findsNothing);
+      expect(
+        onLine(find.byKey(const ValueKey('note-add-tag'))),
+        findsOneWidget,
+      );
+
+      final later = DateTime(today.year, today.month, today.day + 2);
+      days.setDay('old', later);
+      await tester.pumpAndSettle();
+      expect(
+        onLine(
+          find.text('${SidebarTimestamp.shortDay(later, now: today)} · $clock'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets("a note's tag reads as its dot and its name in T2, with no "
@@ -9812,12 +9911,14 @@ void main() {
         ),
       );
       expect(days.dayOf(plan.id), later);
-      expect(find.byKey(const ValueKey('note-day-pill')), findsOneWidget);
+      final line = find.byKey(const ValueKey('note-edited'));
+      String day(DateTime shown) => SidebarTimestamp.shortDay(shown, now: now);
+      expect(tester.widget<Text>(line).data, startsWith('${day(later)} · '));
 
       await tap(find.byKey(const ValueKey('page-more')));
       await tap(find.byKey(const ValueKey('page-more-undate')));
       expect(days.dayOf(plan.id), isNull);
-      expect(find.byKey(const ValueKey('note-day-pill')), findsNothing);
+      expect(tester.widget<Text>(line).data, startsWith('${day(now)} · '));
     });
 
     testWidgets('a note for a later day waits, folded, under Upcoming', (

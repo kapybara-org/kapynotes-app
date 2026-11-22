@@ -5075,8 +5075,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
-          slashHint: widget.prefs.slashHint,
-          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
           lastSlashCommand: SlashCommandType.values
               .asNameMap()[widget.prefs.lastSlashCommand],
           onSlashCommandChosen: (command) =>
@@ -5172,8 +5170,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
-          slashHint: widget.prefs.slashHint,
-          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
           lastSlashCommand: SlashCommandType.values
               .asNameMap()[widget.prefs.lastSlashCommand],
           onSlashCommandChosen: (command) =>

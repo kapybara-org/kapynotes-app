@@ -53,7 +53,6 @@ Widget _page(
   List<NoteFormatRange> formats = const [],
   bool readOnly = false,
   VoidCallback? onRecordVoice,
-  bool slashHint = false,
   ValueChanged<List<NoteFormatRange>>? onFormats,
   ValueChanged<String>? onBody,
   WritingFont writingFont = WritingFont.mixed,
@@ -83,7 +82,6 @@ Widget _page(
           },
           onSettingsPressed: () {},
           onRecordVoice: onRecordVoice,
-          slashHint: slashHint,
           writingFont: writingFont,
           shortcuts: ShortcutPrefs(_MemoryStore())..load(),
         ),
@@ -138,7 +136,7 @@ void main() {
     expect(title.fontWeight, EditorMetrics.titleWeight);
     final (firstLine, secondLine) = _rows(tester, 1);
     expect(secondLine - firstLine, moreOrLessEquals(EditorMetrics.lineHeight));
-    expect(find.text('Edited today, 15:38'), findsOneWidget);
+    expect(find.text('Tue 1 Sep · 15:38'), findsOneWidget);
     expect(find.text('1 of 3 done'), findsOneWidget);
     final semantics = tester.ensureSemantics();
     await tester.pump();
@@ -290,12 +288,10 @@ void main() {
     expect(link.fontSize, 12.5);
   });
 
-  testWidgets('scrolled, the "+" and the hint stay on the caret\'s line', (
-    tester,
-  ) async {
+  testWidgets('scrolled, the "+" stays on the caret\'s line', (tester) async {
     window(tester);
     final long = '$_body\n${List.filled(40, 'more').join('\n')}\n';
-    await tester.pumpWidget(_page(long, slashHint: true));
+    await tester.pumpWidget(_page(long));
     await tester.pumpAndSettle();
 
     await tester.showNoteKeyboard();
@@ -309,21 +305,19 @@ void main() {
     final caret = editable.toGlobal(
       editable.caretRect(TextPosition(offset: long.length)).center,
     );
-    final hint = find.byKey(const ValueKey('slash-hint'));
-    expect(tester.getRect(hint).center.dy, closeTo(caret.dy, 2));
     expect(
       tester.getRect(find.byKey(const ValueKey('line-commands'))).center.dy,
       closeTo(caret.dy, 2),
     );
   });
 
-  testWidgets('no bar: an empty line has the "+" and the hint, which open '
-      'Commands', (tester) async {
+  testWidgets('no bar: an empty line has the "+", which opens Commands, and '
+      'no "Type / for commands" hint', (tester) async {
     window(tester);
     String? body;
     final empty = _body.length + 1;
     await tester.pumpWidget(
-      _page('$_body\n\n', slashHint: true, onBody: (value) => body = value),
+      _page('$_body\n\n', onBody: (value) => body = value),
     );
     await tester.pumpAndSettle();
     expect(find.byType(NoteFooter), findsNothing);
@@ -333,35 +327,30 @@ void main() {
     field.controller.selection = TextSelection.collapsed(offset: empty);
     await tester.pumpAndSettle();
     final plus = find.byKey(const ValueKey('line-commands'));
-    final hint = find.byKey(const ValueKey('slash-hint'));
     expect(plus, findsOneWidget);
-    expect(hint, findsOneWidget);
-    // In the margin, level with the hint, which starts where the words do.
-    expect(tester.getRect(plus).right, lessThan(tester.getRect(hint).left));
-    expect(
-      tester.getRect(plus).center.dy,
-      closeTo(tester.getRect(hint).center.dy, 2),
+    expect(find.text('Type / for commands'), findsNothing);
+    // In the margin, level with the caret's empty line.
+    final editable = _editable(tester);
+    final line = editable.toGlobal(
+      editable.caretRect(TextPosition(offset: empty)).center,
     );
+    expect(tester.getRect(plus).right, lessThan(line.dx));
+    expect(tester.getRect(plus).center.dy, closeTo(line.dy, 2));
     expect(tester.widget<CompactIconButton>(plus).selected, isFalse);
 
     // A line with words has neither.
     field.controller.selection = const TextSelection.collapsed(offset: 3);
     await tester.pumpAndSettle();
     expect(plus, findsNothing);
-    expect(hint, findsNothing);
 
-    // The pointer over an empty line brings the "+" alone, lit.
-    final editable = _editable(tester);
-    final line = editable.toGlobal(
-      editable.caretRect(TextPosition(offset: empty)).center,
-    );
+    // The pointer over an empty line brings the "+", lit.
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: line + const Offset(80, 0));
     addTearDown(mouse.removePointer);
     await mouse.moveBy(const Offset(1, 0));
     await tester.pumpAndSettle();
     expect(plus, findsOneWidget);
-    expect(hint, findsNothing);
+    expect(find.text('Type / for commands'), findsNothing);
     expect(tester.widget<CompactIconButton>(plus).selected, isTrue);
 
     // Pressed as a screen reader would, it opens Commands with a search of

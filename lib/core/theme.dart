@@ -122,9 +122,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// The "+" beside an empty line that opens Commands, at rest.
   final Color lineCommand;
 
-  /// What an empty line says before anything is typed on it.
-  final Color writingHint;
-
   /// The title on a note's sticky card or list row, and the sage that marks
   /// a link inside the list, such as See all.
   final Color cardTitle;
@@ -368,7 +365,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.switchTrackOff,
     required this.checkboxBorder,
     required this.lineCommand,
-    required this.writingHint,
     required this.cardTitle,
     required this.accentText,
     required this.pageBorder,
@@ -450,7 +446,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? switchTrackOff,
     Color? checkboxBorder,
     Color? lineCommand,
-    Color? writingHint,
     Color? cardTitle,
     Color? accentText,
     Color? pageBorder,
@@ -529,7 +524,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     switchTrackOff: switchTrackOff ?? this.switchTrackOff,
     checkboxBorder: checkboxBorder ?? this.checkboxBorder,
     lineCommand: lineCommand ?? this.lineCommand,
-    writingHint: writingHint ?? this.writingHint,
     cardTitle: cardTitle ?? this.cardTitle,
     accentText: accentText ?? this.accentText,
     pageBorder: pageBorder ?? this.pageBorder,
@@ -617,7 +611,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       switchTrackOff: mix(switchTrackOff, other.switchTrackOff),
       checkboxBorder: mix(checkboxBorder, other.checkboxBorder),
       lineCommand: mix(lineCommand, other.lineCommand),
-      writingHint: mix(writingHint, other.writingHint),
       cardTitle: mix(cardTitle, other.cardTitle),
       accentText: mix(accentText, other.accentText),
       pageBorder: mix(pageBorder, other.pageBorder),
@@ -1488,7 +1481,6 @@ class KapyTheme {
     switchTrackOff: Color(0xFF3A362F),
     checkboxBorder: Color(0xFF645D51),
     lineCommand: Color(0xFF6B6458),
-    writingHint: Color(0xFF4F4A42),
     cardTitle: Color(0xFFD9D3C6),
     accentText: Color(0xFF9DB384),
     pageBorder: Color(0x0FE2DCCF),
@@ -1582,7 +1574,6 @@ class KapyTheme {
     switchTrackOff: Color(0xFFDCD5C4),
     checkboxBorder: Color(0xFFB1A996),
     lineCommand: Color(0xFFA39B8A),
-    writingHint: Color(0xFFBDB6A6),
     cardTitle: Color(0xFF2A2620),
     accentText: Color(0xFF56703C),
     pageBorder: Color(0xFFE6E0D0),
@@ -1695,7 +1686,6 @@ class KapyTheme {
     faint: Color(0xFF979797),
     dim: Color(0xFF5A5A5A),
     dim2: Color(0xFF555555),
-    dim3: Color(0xFF434343),
     box: Color(0xFF4B4B4B),
     accent: Color(0xFFC2C2C2),
     link: Color(0xFFB3C2D6),
@@ -1742,7 +1732,6 @@ class KapyTheme {
     faint: Color(0xFF686868),
     dim: Color(0xFFADADAD),
     dim2: Color(0xFFB5B5B5),
-    dim3: Color(0xFFCBCBCB),
     box: Color(0xFFC0C0C0),
     accent: Color(0xFF3A3A3A),
     link: Color(0xFF2F5D99),
@@ -1789,7 +1778,6 @@ class KapyTheme {
     faint: Color(0xFF9A958C),
     dim: Color(0xFF4F4C48),
     dim2: Color(0xFF484641),
-    dim3: Color(0xFF32312E),
     box: Color(0xFF3C3A37),
     accent: Color(0xFF8BA374),
     link: Color(0xFFA6BC8E),
@@ -1836,7 +1824,6 @@ class KapyTheme {
     faint: Color(0xFF9391A6),
     dim: Color(0xFF595869),
     dim2: Color(0xFF535263),
-    dim3: Color(0xFF424150),
     box: Color(0xFF4A4959),
     accent: Color(0xFF9B92C9),
     link: Color(0xFFB2AADA),
@@ -1883,7 +1870,6 @@ class KapyTheme {
     faint: Color(0xFF626072),
     dim: Color(0xFFA4A2AE),
     dim2: Color(0xFFABAAB5),
-    dim3: Color(0xFFC1C0C9),
     box: Color(0xFFB7B5C0),
     accent: Color(0xFF5E569A),
     link: Color(0xFF5E569A),
@@ -1930,7 +1916,6 @@ class KapyTheme {
     faint: Color(0xFFAC8E68),
     dim: Color(0xFF6C583F),
     dim2: Color(0xFF65523B),
-    dim3: Color(0xFF50412D),
     box: Color(0xFF5A4934),
     accent: Color(0xFFC89550),
     link: Color(0xFFDDB173),
@@ -1977,7 +1962,6 @@ class KapyTheme {
     faint: Color(0xFF6E5640),
     dim: Color(0xFFAC9A86),
     dim2: Color(0xFFB3A28E),
-    dim3: Color(0xFFC7B9A5),
     box: Color(0xFFBDAE9A),
     accent: Color(0xFF8A5A1E),
     link: Color(0xFF8A5A1E),
@@ -2024,7 +2008,6 @@ class KapyTheme {
     faint: Color(0xFF86A09C),
     dim: Color(0xFF526766),
     dim2: Color(0xFF4D6160),
-    dim3: Color(0xFF3B4D4E),
     box: Color(0xFF435656),
     accent: Color(0xFF5FB3A6),
     link: Color(0xFF7FC9BD),
@@ -2071,7 +2054,6 @@ class KapyTheme {
     faint: Color(0xFF506C68),
     dim: Color(0xFF9DADAB),
     dim2: Color(0xFFA5B5B2),
-    dim3: Color(0xFFBFCAC8),
     box: Color(0xFFB3C0BE),
     accent: Color(0xFF1F7A70),
     link: Color(0xFF1D6C64),
@@ -2585,7 +2567,6 @@ class _Tones {
     required this.faint,
     required this.dim,
     required this.dim2,
-    required this.dim3,
     required this.box,
     required this.accent,
     required this.link,
@@ -2622,7 +2603,6 @@ class _Tones {
   final Color faint;
   final Color dim;
   final Color dim2;
-  final Color dim3;
   final Color box;
   final Color accent;
   final Color link;
@@ -2707,7 +2687,6 @@ CalcPalette _fromTones(_Tones t) {
     switchTrackOff: t.switchOff,
     checkboxBorder: t.dim2,
     lineCommand: t.dim,
-    writingHint: t.dim3,
     cardTitle: t.cardTitle,
     accentText: t.link,
     pageBorder: t.hair,
