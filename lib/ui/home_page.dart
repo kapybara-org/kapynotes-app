@@ -3194,9 +3194,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : kapyAccountRowId(ai.accounts.first.kind),
     ),
     onClose: onClose,
-    shortcut: AppPlatform.isDesktop
-        ? widget.shortcuts.hintFor(ShortcutAction.toggleKapyAi)?.keycapLabel
-        : null,
     now: widget.notes.now,
   );
 

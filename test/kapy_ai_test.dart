@@ -83,7 +83,6 @@ KapyAiPanel _panel(
   KapyAiPanelController controller, {
   VoidCallback? onClose,
   VoidCallback? onManage,
-  String? shortcut = '⌘J',
   Map<String, String> titles = const {'n1': 'Trip budget'},
   void Function(String)? onOpenNote,
 }) => KapyAiPanel(
@@ -93,7 +92,6 @@ KapyAiPanel _panel(
   onOpenNote: onOpenNote ?? (_) {},
   onManageAccounts: onManage ?? () {},
   onClose: onClose ?? controller.close,
-  shortcut: shortcut,
   now: () => _now,
 );
 
@@ -148,7 +146,7 @@ void main() {
       await tester.pumpWidget(_harness(_panel(ai, controller)));
 
       expect(find.text('This note · Trip budget'), findsOneWidget);
-      expect(find.text('⌘J opens and closes Kapy AI'), findsOneWidget);
+      expect(find.textContaining('opens and closes Kapy AI'), findsNothing);
       expect(find.text('Summarise this note'), findsOneWidget);
 
       await tester.enterText(

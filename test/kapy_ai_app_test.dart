@@ -142,9 +142,8 @@ void main() {
   });
 
   group('on the page', () {
-    testWidgets('the button opens and closes the panel beside the page', (
-      tester,
-    ) async {
+    testWidgets('the button opens and closes the panel beside the page, '
+        'with no line under the composer about its keys', (tester) async {
       notes.create(body: 'Trip budget\n900 flights');
       await _pump(tester);
 
@@ -156,6 +155,15 @@ void main() {
       expect(_panel, findsOneWidget);
       expect(find.byKey(const ValueKey('kapy-ai-overlay')), findsNothing);
       expect(find.text('This note · Trip budget'), findsOneWidget);
+      expect(find.textContaining('opens and closes Kapy AI'), findsNothing);
+      expect(
+        tester
+            .widget<Tooltip>(
+              find.descendant(of: _button, matching: find.byType(Tooltip)).first,
+            )
+            .message,
+        contains('J'),
+      );
 
       await tester.tap(_button);
       await tester.pumpAndSettle();
