@@ -241,6 +241,22 @@ void main() {
       );
     });
 
+    testWidgets('Text ▾ under the selection opens upward when it does not '
+        'fit below and there is more room above', (tester) async {
+      window(tester);
+      await tester.pumpWidget(_app());
+      await _show(tester, above: const Rect.fromLTWH(60, 320, 160, 22));
+      expect(tester.getRect(_bubble).top, 320 + 22 + 8);
+      _standalone.toggleBlocks();
+      await tester.pumpAndSettle();
+      final menu = find.byKey(const ValueKey('selection-block-menu'));
+      expect(
+        tester.getSize(menu).height,
+        greaterThan(480 - 8 - tester.getRect(_bubble).bottom - 6),
+      );
+      expect(tester.getRect(menu).bottom, tester.getRect(_bubble).top - 6);
+    });
+
     testWidgets('keeps to the note\'s pane, menu and all', (tester) async {
       window(tester);
       await tester.pumpWidget(_app());

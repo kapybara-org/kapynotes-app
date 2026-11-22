@@ -289,8 +289,9 @@ class _BubbleLayout extends MultiChildLayoutDelegate {
     final menuSize = layoutChild(menu, loose);
     final roomAbove = y - _menuGap - top;
     final roomBelow = bottom - (y + bubbleSize.height + _menuGap);
-    final upward =
-        !fitsBelow && (menuSize.height <= roomAbove || roomAbove > roomBelow);
+    final upward = fitsBelow
+        ? menuSize.height > roomBelow && roomAbove > roomBelow
+        : menuSize.height <= roomAbove || roomAbove > roomBelow;
     positionChild(
       menu,
       Offset(
