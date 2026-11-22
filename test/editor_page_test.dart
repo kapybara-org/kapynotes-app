@@ -460,6 +460,9 @@ void main() {
     final first = field.caretRect(TextPosition(offset: _body.indexOf('☐')));
     expect(meta.top, greaterThanOrEqualTo(field.toGlobal(title.bottomLeft).dy));
     expect(meta.bottom, lessThanOrEqualTo(field.toGlobal(first.topLeft).dy));
+    // One line's room, as M07 and M08 draw it: the gap under the row and the
+    // first line's leading, with no second row kept under it (KAPY-35).
+    expect(field.toGlobal(first.topLeft).dy - meta.bottom, lessThan(40));
   });
 
   testWidgets('a tablet keeps the tags on a line of their own', (tester) async {

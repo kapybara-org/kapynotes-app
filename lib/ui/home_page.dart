@@ -3237,6 +3237,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required double extent,
     double gap = 0,
     bool pageBar = false,
+    bool showsOpen = true,
   }) {
     final ai = _kapyAi;
     if (ai == null) return null;
@@ -3252,6 +3253,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       iconSize: pageBar ? 16 : 17,
       trailingGap: gap,
       divided: pageBar,
+      showsOpen: showsOpen,
     );
   }
 
@@ -5166,6 +5168,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       assistant: _kapyAiButton(
         extent: AppControlMetrics.iconButtonExtent,
         gap: 2,
+        showsOpen: false,
       ),
       menu: _phoneMenu(note),
       onMenu: (action, at) => _runPageAction(action, note, at),

@@ -16,6 +16,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
@@ -38,7 +39,7 @@ import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'app_test.dart' show MemoryStore;
+import 'app_test.dart' show MemoryStore, openNoteBody;
 import 'billing/billing_fakes.dart';
 import 'fake_update_installer.dart';
 import 'support/note_driver.dart';
@@ -78,6 +79,7 @@ late LayoutPrefs goldenPrefs;
 late NotesStore goldenNotes;
 late TagStore goldenTags;
 late FolderStore goldenFolders;
+late NoteDayStore goldenDays;
 
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
@@ -121,6 +123,10 @@ Future<void> pumpForGolden(
 
   /// A tagged note last edited yesterday, for a phone's list of days.
   bool withYesterday = false,
+
+  /// The days notes are given, in [goldenDays], so a note can be moved to
+  /// another day.
+  bool withDays = false,
 
   /// Signed in to an account on Pro with two invitations waiting, so that
   /// Settings has its account, its sharing and every one of its categories.
@@ -242,6 +248,10 @@ Future<void> pumpForGolden(
   await goldenTags.load();
   goldenFolders = FolderStore(store);
   await goldenFolders.load();
+  final days = withDays
+      ? goldenDays = NoteDayStore(store, now: () => _goldenNow)
+      : null;
+  await days?.load();
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
   final tasks = withTasks
@@ -333,6 +343,7 @@ Future<void> pumpForGolden(
       updates: updates,
       tags: goldenTags,
       folders: goldenFolders,
+      days: days,
       tasks: tasks,
       titleModel: _GoldenTitles(),
     ),
@@ -1607,6 +1618,7 @@ void main() {
         WidgetTester tester, {
         bool firstRun = false,
         bool signedIn = false,
+        bool withDays = false,
       }) async {
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
@@ -1627,6 +1639,7 @@ void main() {
           withDrawings: !firstRun,
           withYesterday: !firstRun,
           signedIn: signedIn,
+          withDays: withDays,
         );
       }
 
@@ -1653,9 +1666,22 @@ void main() {
         await matches('page');
       });
 
+      // As M09 draws it: a note given a day two days on, so the menu opens
+      // on Move to another day and Remove day.
       testWidgets('phone page menu, $name', (tester) async {
-        await pumpPhone(tester);
+        await pumpPhone(tester, withDays: true);
+        final body = openNoteBody(tester);
+        final open = goldenNotes.notes.firstWhere(
+          (note) => note.body.trimRight() == body,
+        );
+        goldenDays.setDay(open.id, DateTime(2026, 9, 3));
+        await tester.pumpAndSettle();
         await tapAndSettle(tester, 'page-more');
+        final items = [
+          for (final value in ['day', 'undate', 'pin'])
+            tester.getRect(find.byKey(ValueKey('page-more-$value'))).top,
+        ];
+        expect(items, orderedEquals([...items]..sort()));
         await matches('page_menu');
       });
 

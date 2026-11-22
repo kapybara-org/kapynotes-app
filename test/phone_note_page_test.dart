@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note_days.dart';
@@ -193,6 +194,38 @@ void main() {
       expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
     });
 
+    testWidgets("the day is a small chip on the control fill, today's "
+        'figure sage, in a 44 pt target', (tester) async {
+      seed();
+      await pump(tester);
+      final palette = tester.element(header).palette;
+      final chip = find.byKey(const ValueKey('page-day-chip'));
+      Color figure(String date) => tester
+          .widget<Text>(find.descendant(of: chip, matching: find.text(date)))
+          .style!
+          .color!;
+
+      final size = tester.getSize(chip);
+      expect(size.width, inInclusiveRange(28, 34));
+      expect(size.height, inInclusiveRange(26, 30));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('page-day'))),
+        const Size(44, 44),
+      );
+      expect(
+        (tester.widget<Container>(chip).decoration! as BoxDecoration).color,
+        palette.controlBackground,
+      );
+      expect(figure('19'), palette.accentText);
+
+      await open(tester, 21);
+      expect(
+        (tester.widget<Container>(chip).decoration! as BoxDecoration).color,
+        palette.controlBackground,
+      );
+      expect(figure('21'), palette.textPrimary);
+    });
+
     testWidgets('the day button hides the week and its tasks line, and '
         'shows them again', (tester) async {
       seed();
@@ -216,7 +249,7 @@ void main() {
         'with today marked', (tester) async {
       seed();
       await pump(tester);
-      // The test's locale starts its weeks on Sunday.
+      // The app's weeks start on Sunday, as the Mac's calendar does.
       for (var date = 16; date <= 22; date++) {
         expect(
           find.descendant(of: header, matching: day(date)),

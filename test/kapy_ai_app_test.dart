@@ -11,6 +11,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
@@ -365,6 +366,18 @@ void main() {
       for (final gone in [chip, picker, chats, newChat]) {
         expect(gone, findsNothing);
       }
+      expect(
+        tester
+            .widget<CompactIconButton>(
+              find.descendant(
+                of: _button,
+                matching: find.byType(CompactIconButton),
+              ),
+            )
+            .selected,
+        isFalse,
+        reason: 'M10 keeps Kapy AI a bare icon while its sheet is up',
+      );
       for (final above in [
         find.byKey(const ValueKey('page-home')),
         _button,

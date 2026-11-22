@@ -39,8 +39,8 @@ class PhoneNoteHeader extends StatelessWidget {
   final KapyMenu menu;
   final void Function(String value, Offset at) onMenu;
 
-  /// The note's day, which the day button shows, and today, which fills it
-  /// sage. Null on a page with no days, such as Shared's, which has no week.
+  /// The note's day, which the day button shows, and today, which turns its
+  /// figure sage. Null on a page with no days, such as Shared's, which has no week.
   final DateTime? day;
   final DateTime? today;
 
@@ -227,8 +227,8 @@ class _HomeButton extends StatelessWidget {
   }
 }
 
-/// The note's date in a small square, sage on today's note: it opens and
-/// closes the week.
+/// The note's date in a small chip on the control fill, its figure sage on
+/// today's note, inside a 44 pt target: it opens and closes the week.
 class _DayButton extends StatelessWidget {
   const _DayButton({
     required this.day,
@@ -259,23 +259,22 @@ class _DayButton extends StatelessWidget {
           dimension: 44,
           child: Center(
             child: Container(
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 30),
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              alignment: Alignment.center,
+              key: const ValueKey('page-day-chip'),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               decoration: BoxDecoration(
-                color: today
-                    ? palette.tonalBackground
-                    : palette.controlBackground,
+                color: palette.controlBackground,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
+                textAlign: TextAlign.center,
                 '${day.day}',
                 maxLines: 1,
                 style: chromeStyle(
                   size: AppTypeScale.control,
                   line: 20,
                   weight: AppWeight.rowTitle,
-                  color: today ? palette.tonalForeground : palette.textPrimary,
+                  color: today ? palette.accentText : palette.textPrimary,
                   tabular: true,
                 ),
               ),

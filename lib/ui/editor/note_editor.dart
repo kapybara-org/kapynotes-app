@@ -7534,6 +7534,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  /// The room between the title and the body, for the meta row: one line on
+  /// a phone.
+  double get _titleReserve => widget.phone
+      ? EditorMetrics.phoneTitleReserve
+      : EditorMetrics.titleReserve;
+
   /// The note's day and the time it was last written, as a phone's line
   /// under the title says them: "Fri 21 · 9:41", or the time alone today.
   String _dayAndTime(DateTime now) {
@@ -8115,7 +8121,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       title.row.height -
                       title.spacerTop +
                       textScaler.scale(
-                        EditorMetrics.titleReserve * widget.editorTextScale,
+                        _titleReserve * widget.editorTextScale,
                       );
                   // The field scales the placeholder's widget once more, so
                   // its lengths go in unscaled.
@@ -8190,7 +8196,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                         ? 0
                                         : title.row.bottom +
                                               textScaler.scale(
-                                                EditorMetrics.titleReserve *
+                                                _titleReserve *
                                                     widget.editorTextScale,
                                               )),
                                 scroll: _scrollController,
