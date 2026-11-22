@@ -8609,6 +8609,42 @@ void main() {
         }
       });
 
+      double iconLeft(WidgetTester tester, Finder row, KapyIconData data) =>
+          tester
+              .getRect(find.descendant(of: row, matching: findKapyIcon(data)))
+              .left;
+      double folderIcon(WidgetTester tester, Folder folder) => iconLeft(
+        tester,
+        find.byKey(ValueKey('folder-${folder.id}')),
+        KapyIcons.folderOutlined,
+      );
+
+      testWidgets("on a phone an empty folder keeps the chevron's 44, so its "
+          'icon lines up with a folder that opens', (tester) async {
+        await pumpFolders(tester);
+        final product = folders.create('Product')!;
+        await tap(tester, barFolders);
+        expect(folderIcon(tester, product), folderIcon(tester, work));
+      });
+
+      testWidgets("on a phone a note in a folder starts where that folder's "
+          'own folders do', (tester) async {
+        await pumpFolders(tester);
+        final offsite = notes.create(body: 'Offsite agenda');
+        folders.file([offsite.id], clients.id);
+        await tap(tester, barFolders);
+        await tap(tester, find.byKey(ValueKey('folder-chevron-${work.id}')));
+        await tap(tester, find.byKey(ValueKey('folder-chevron-${clients.id}')));
+        expect(
+          iconLeft(
+            tester,
+            find.widgetWithText(NoteRow, 'Offsite agenda'),
+            KapyIcons.noteOutlined,
+          ),
+          folderIcon(tester, acme),
+        );
+      });
+
       testWidgets('the Folders title has no clay mark under it (M02)', (
         tester,
       ) async {
@@ -10712,10 +10748,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(
-          tester.getTopLeft(find.byType(PagePane)).dy,
-          phone.padding.top,
-        );
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, phone.padding.top);
       });
     }
 
@@ -10800,10 +10833,7 @@ void main() {
 
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(
-          tester.getTopLeft(find.byType(PagePane)).dy,
-          tablet.padding.top,
-        );
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, tablet.padding.top);
         expect(statusBar, isEmpty);
       });
     }

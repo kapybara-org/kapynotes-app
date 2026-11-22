@@ -31,6 +31,12 @@ TextStyle _figtree(
 /// Where a tree row at [depth] starts: 8 in, and 16 more a level.
 double _indent(int depth) => 8 + (depth - 1) * 16.0;
 
+/// The room a tree row keeps before its icon for the chevron that opens a
+/// folder, its gap included: a 44 pt target on a phone, 12 and 8 beside the
+/// rail. A folder with nothing in it, a note and the naming field keep it
+/// too, so every icon at one depth lines up.
+double _chevronSlot(bool phone) => phone ? 44 : 12 + 8;
+
 /// What a refused folder action says.
 String folderRefusalText(FolderRefusal refusal) => switch (refusal) {
   FolderRefusal.emptyName => 'Give the folder a name',
@@ -260,9 +266,9 @@ class FoldersTab extends StatefulWidget {
   final Set<String> open;
   final void Function(String folderId, bool open) onOpen;
 
-  /// A note's row: in an open folder, indented to [depth], or under Not in
-  /// a folder with a null [depth].
-  final Widget Function(Note note, int? depth) noteRow;
+  /// A note's row: in an open folder, its icon [inset] in, or under Not in
+  /// a folder with a null [inset].
+  final Widget Function(Note note, double? inset) noteRow;
 
   /// The folder the tab in front shows, which the tree marks.
   final String? inFront;
@@ -435,6 +441,8 @@ class _FoldersTabState extends State<FoldersTab> {
       );
     }
 
+    double inset(int depth) => _indent(depth) + _chevronSlot(widget.phone);
+
     if (widget.header case final header?) rows.add((_) => header);
     if (widget.upcoming.isNotEmpty) {
       final count = widget.upcoming.length;
@@ -448,13 +456,13 @@ class _FoldersTabState extends State<FoldersTab> {
       );
       if (_upcomingOpen) {
         for (final note in widget.upcoming) {
-          add((_) => widget.noteRow(note, 1));
+          add((_) => widget.noteRow(note, inset(1)));
         }
       }
     }
 
     Widget field(int depth, [String initial = '']) => _FolderNameField(
-      inset: _indent(depth) + 12 + 8,
+      inset: inset(depth),
       initial: initial,
       onSubmit: _submit,
       onCancel: _stopNaming,
@@ -492,7 +500,7 @@ class _FoldersTabState extends State<FoldersTab> {
             add((_) => field(folder.depth + 1));
           }
         case NoteLine(:final note, :final depth):
-          add((_) => widget.noteRow(note, depth));
+          add((_) => widget.noteRow(note, inset(depth)));
       }
     }
     if (!widget.phone) {
@@ -585,15 +593,19 @@ class _FolderRowState extends State<_FolderRow> {
     final selected = widget.selected;
     final phone = widget.phone;
     final chevron = SizedBox(
-      width: 12,
+      width: _chevronSlot(phone),
+      height: double.infinity,
       child: line.empty
           ? null
-          : KapyIcon(
-              line.open
-                  ? KapyIcons.chevronDownRounded
-                  : KapyIcons.chevronRightRounded,
-              size: 12,
-              color: palette.textTertiary,
+          : Align(
+              alignment: Alignment.centerLeft,
+              child: KapyIcon(
+                line.open
+                    ? KapyIcons.chevronDownRounded
+                    : KapyIcons.chevronRightRounded,
+                size: 12,
+                color: palette.textTertiary,
+              ),
             ),
     );
     return MouseRegion(
@@ -634,10 +646,9 @@ class _FolderRowState extends State<_FolderRow> {
             ),
             child: Row(
               children: [
-                if (onTab == null || line.empty) ...[
-                  chevron,
-                  const SizedBox(width: 8),
-                ] else
+                if (onTab == null || line.empty)
+                  chevron
+                else
                   Semantics(
                     button: true,
                     label: line.open
@@ -647,14 +658,7 @@ class _FolderRowState extends State<_FolderRow> {
                       key: ValueKey('folder-chevron-${folder.id}'),
                       behavior: HitTestBehavior.opaque,
                       onTap: widget.onToggle,
-                      child: SizedBox(
-                        width: phone ? 44 : 20,
-                        height: double.infinity,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: chevron,
-                        ),
-                      ),
+                      child: chevron,
                     ),
                   ),
                 KapyIcon(
@@ -916,21 +920,21 @@ class _FolderNameFieldState extends State<_FolderNameField> {
   }
 }
 
-/// A note inside an open folder: its icon and title on a 32 row, a level
-/// deeper than its folder. The open note's row is raised, with a firmer
-/// title.
+/// A note inside an open folder: its icon [inset] in, as its folder's own
+/// folders', and its title on a 32 row. The open note's row is raised, with
+/// a firmer title.
 class TreeNoteFace extends StatelessWidget {
   const TreeNoteFace({
     super.key,
     required this.note,
-    required this.depth,
+    required this.inset,
     required this.selected,
     required this.hovering,
     this.ringed = false,
   });
 
   final Note note;
-  final int depth;
+  final double inset;
   final bool selected;
   final bool hovering;
   final bool ringed;
@@ -941,7 +945,7 @@ class TreeNoteFace extends StatelessWidget {
     final colour = selected ? palette.textPrimary : palette.textSecondary;
     return Container(
       height: AppControlMetrics.scaleBar(context, 32),
-      padding: EdgeInsets.only(left: _indent(depth) + 12 + 8, right: 8),
+      padding: EdgeInsets.only(left: inset, right: 8),
       decoration: BoxDecoration(
         color: selected
             ? palette.selectedBackground
