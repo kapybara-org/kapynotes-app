@@ -15,6 +15,7 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/spaces.dart';
+import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
@@ -435,6 +436,44 @@ void main() {
     });
     expect(raviInvited(), isFalse);
     expect(account.sharing!.isRemovalHeld(mine, ravi), isFalse);
+  });
+
+  testWidgets('a removal on its way when signing out stops waiting, that then '
+      'fails, stays held and goes at the next sign-in', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    // Someone else stays invited, so taking Priya off asks the server.
+    await tester.runAsync(
+      () => account.sharing!.addPerson(mine, 'ravi@kapy34.test'),
+    );
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+    List<Object?>? held() =>
+        (store.data['sharing.heldRemovals.v1'] as Map?)?['user-1'] as List?;
+
+    await tester.runAsync(() async {
+      final answer = Completer<void>();
+      server.onRemoval = () {
+        server.onRemoval = null;
+        return answer.future;
+      };
+      await account.signOut();
+      answer.completeError(const SyncRefusedException(409, 'conflict', {}));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    expect(priyaIn(space), isTrue);
+    expect(held(), [
+      {'note': mine, 'email': priya.email},
+    ]);
+
+    await tester.runAsync(() async {
+      await account.signIn(email: 'sam@kapy34.test', password: 'x');
+      await account.unlock('a good passphrase');
+      for (var wait = 0; wait < 100 && priyaIn(space); wait++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(priyaIn(space), isFalse);
   });
 
   testWidgets('on a phone, a toast from the share sheet over Home sits at the '

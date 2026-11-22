@@ -907,6 +907,9 @@ class Sharing extends ChangeNotifier {
       } on SyncTransientException {
         continue;
       } catch (error) {
+        // Failing after sign-out says nothing about the server: kept for the
+        // next sign-in, which lets it go if it was applied after all.
+        if (_disposed) return;
         final say = _onRefused.remove(key);
         _forgetHeld(key);
         if (!quietly) rethrow;
