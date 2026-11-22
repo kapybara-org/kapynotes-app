@@ -46,7 +46,11 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/presence.dart';
+import 'package:kapy_notes/sync/sharing.dart';
+import 'package:kapy_notes/sync/space_keyring.dart';
+import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
@@ -4445,6 +4449,84 @@ void main() {
         }
       });
     }
+
+    testWidgets("on a phone, a shared row in My notes' day list gives its time "
+        'while someone is in the note', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view
+        ..physicalSize = const Size(393, 852)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final server = FakeServer()..seedBundle('user-1');
+      final api = FakeApi(server, device: 'device-1', userId: 'user-1');
+      final keyring = SpaceKeyring(
+        userId: 'user-1',
+        store: store,
+        trust: TrustStore(store),
+      );
+      final sync = SyncService(
+        notes: notes,
+        state: SyncState(store),
+        api: api,
+        keyring: keyring,
+        docs: DocStore(MemoryDocStorage(), replica: 'device-1'),
+        vault: vaultFor('user-1'),
+        sendDelay: const Duration(hours: 1),
+      );
+      final sharing = Sharing(
+        api: api,
+        vault: vaultFor('user-1'),
+        keyring: keyring,
+        notes: notes,
+        sync: sync,
+      );
+      addTearDown(() {
+        sharing.dispose();
+        sync.dispose();
+      });
+      final note = Note(
+        id: 'shared',
+        body: 'Shared\nThe deck',
+        spaceId: 'space-1',
+        createdAt: DateTime(2026, 11, 1),
+        updatedAt: DateTime(2026, 11, 19, 11, 32),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Sidebar(
+              phone: true,
+              notes: [note],
+              selectedId: null,
+              query: '',
+              displayTime: (time) => time,
+              now: () => DateTime(2026, 11, 19, 12),
+              onSearch: () {},
+              onSelect: (_) {},
+              windowBar: const SizedBox(),
+              sharing: sharing,
+              onTabChanged: (_) {},
+              collaborators: const {
+                'shared': [
+                  Collaborator(userId: 'ana', name: 'Ana', fullName: 'Ana'),
+                ],
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final row = find.widgetWithText(NoteRow, 'Shared');
+      expect(row, findsOneWidget);
+      expect(tester.widget<NoteRow>(row).clockOnly, isTrue);
+      expect(
+        find.descendant(of: row, matching: find.text('11:32')),
+        findsOneWidget,
+      );
+      expect(find.text(presenceStatusText(['Ana'])!), findsNothing);
+    });
 
     testWidgets("When's spans count a note by its own day, and one with none "
         'by the day it was last edited', (tester) async {
