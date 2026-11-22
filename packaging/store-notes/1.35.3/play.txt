@@ -1,0 +1,8 @@
+A new Tasks page and a calmer look.
+
+- Tasks shows two tasks at a time. Tap the one you'd rather do, and it waits in Up next.
+- Tap or swipe between Notes and Tasks at the top of Home, and tap your picture for Settings.
+- A calmer, crisper look, and people without a photo show the first letter of their name.
+- A note you've just opened stays ready to type.
+- Kapy AI's picker says On this device only once.
+- Blocking someone or leaving a note on Shared keeps you on Shared.

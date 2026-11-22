@@ -1,0 +1,10 @@
+Kapy Notes 1.35.3
+
+- A new Tasks page asks what you want to work on next and shows two tasks. Tap the one you'd rather do, and it waits in Up next.
+- Tasks follows every theme in dark mode, and Increase contrast outlines its cards and buttons.
+- A calmer, crisper look, with text that follows Bold Text everywhere.
+- Tags show as dots side by side.
+- The top of Home has Notes and Tasks side by side. Tap either one, or swipe, to switch, and your notes keep their filter. Tap your picture for Settings.
+- People without a photo show the first letter of their name.
+- Quick find opens with the keyboard up, ready to type.
+- Blocking someone or leaving a note while you're on Shared keeps you on Shared.
