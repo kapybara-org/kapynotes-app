@@ -17,7 +17,7 @@ import 'package:material_ui/material_ui.dart';
 import 'screenshot.dart';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   Future<void> tap(WidgetTester tester, String key) async {
     await tester.tap(find.byKey(ValueKey(key)));
@@ -124,10 +124,17 @@ void main() {
     await check('settings');
     await tap(tester, 'settings-sheet-done');
     await tap(tester, 'bar-notes');
+    // The menu's route cancels the press it opens under, and the live
+    // binding hands that cancel to its finder printer unless device pointer
+    // events reach the app. Without it the + keeps the held press as its own,
+    // and the tap after the × never reaches it.
+    binding.shouldPropagateDevicePointerEvents = true;
+    addTearDown(() => binding.shouldPropagateDevicePointerEvents = false);
     await tester.longPress(find.byKey(const ValueKey('phone-new')));
     await tester.pumpAndSettle();
     await check('new menu');
     await tap(tester, 'phone-new-close');
+    binding.shouldPropagateDevicePointerEvents = false;
     await tap(tester, 'phone-new');
     await check('new note', keyboard: true);
     // A device with a hardware keyboard attached raises no software one, so
