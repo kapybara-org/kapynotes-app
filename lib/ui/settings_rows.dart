@@ -980,7 +980,9 @@ class _PiePainter extends CustomPainter {
 
 /// The switch drawn at the end of a toggle row. Not a [Switch]: the whole row
 /// is the control, and this only shows which way it is set. On a computer it
-/// is D13's: 38 × 22, with the same light 18 pt knob either way.
+/// is D13's 38 × 22 with an 18 pt knob, light both ways on a dark side. D13
+/// draws no light side, where the light knob would vanish into the off
+/// track, so there the off knob stays dark.
 class SettingsSwitch extends StatelessWidget {
   const SettingsSwitch({super.key, required this.value, this.enabled = true});
 
@@ -1021,7 +1023,7 @@ class SettingsSwitch extends StatelessWidget {
           alignment: value ? Alignment.centerRight : Alignment.centerLeft,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: pointer
+              color: pointer && (value || palette.brightness == Brightness.dark)
                   ? palette.switchThumb
                   : value
                   ? scheme.onPrimary

@@ -360,18 +360,39 @@ void main() {
           ),
         );
 
-    List<Color> fills(WidgetTester tester, AppTheme theme) => [
-      for (final box in tester.widgetList<DecoratedBox>(
-        find.descendant(
-          of: find.byKey(ValueKey('theme-${theme.name}')),
-          matching: find.byType(DecoratedBox),
-        ),
-      ))
-        ?(box.decoration as BoxDecoration).color,
-    ];
+    // Each tint is drawn somewhere in [theme]'s card, and never with an
+    // outline, which D13's notes and totals don't have.
+    void expectTints(
+      WidgetTester tester,
+      AppTheme theme,
+      List<int> tints, {
+      bool exact = false,
+    }) {
+      final faces = [
+        for (final box in tester.widgetList<DecoratedBox>(
+          find.descendant(
+            of: find.byKey(ValueKey('theme-${theme.name}')),
+            matching: find.byType(DecoratedBox),
+          ),
+        ))
+          if (box.decoration case final BoxDecoration face) face,
+      ];
+      for (final tint in tints) {
+        final colour = exact ? equals(Color(tint)) : isSameColorAs(Color(tint));
+        final tinted = faces.where((face) => colour.matches(face.color, {}));
+        final reason = '${theme.name}, ${Color(tint)}';
+        expect(tinted, isNotEmpty, reason: reason);
+        expect(
+          tinted.map((face) => face.border),
+          everyElement(isNull),
+          reason: reason,
+        );
+      }
+    }
 
     // D13's tints on each dark side: the list's notes, tagged mustard, plain
-    // and tagged sage, then the totals' rust.
+    // and tagged sage, then the totals' rust. Riverbank's are D13's own
+    // constants; the rest are mixed, so they match to within rounding.
     const d13 = {
       AppTheme.riverbank: [0xFF393425, 0xFF2F2D29, 0xFF25332A, 0xFF372B26],
       AppTheme.graphite: [0xFF342F23, 0xFF212121, 0xFF252F28, 0xFF352924],
@@ -384,14 +405,7 @@ void main() {
     testWidgets('each dark side is tinted as D13 draws it', (tester) async {
       await pumpCards(tester, KapyTheme.dark());
       for (final MapEntry(key: theme, value: tints) in d13.entries) {
-        final colours = fills(tester, theme);
-        for (final tint in tints) {
-          expect(
-            colours,
-            anyElement(isSameColorAs(Color(tint))),
-            reason: '${theme.name} lacks ${Color(tint)}',
-          );
-        }
+        expectTints(tester, theme, tints, exact: theme == AppTheme.riverbank);
       }
     });
 
@@ -401,19 +415,12 @@ void main() {
       tester,
     ) async {
       await pumpCards(tester, KapyTheme.light());
-      final colours = fills(tester, AppTheme.riverbank);
-      for (final tint in const [
+      expectTints(tester, AppTheme.riverbank, const [
         0xFFEFE8D5,
         0xFFF6F2E8,
         0xFFE1E9DD,
         0xFFF1E4D9,
-      ]) {
-        expect(
-          colours,
-          anyElement(isSameColorAs(Color(tint))),
-          reason: 'Riverbank light lacks ${Color(tint)}',
-        );
-      }
+      ]);
     });
   });
 }

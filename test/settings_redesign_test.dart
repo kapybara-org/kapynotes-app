@@ -411,35 +411,43 @@ void main() {
     );
   });
 
-  // D13's switch on a computer: 38 × 22, with the same light 18 pt knob on
-  // and off, so off never reads as disabled.
-  for (final value in const [false, true]) {
-    testWidgets('the switch is D13\'s when ${value ? 'on' : 'off'}', (
-      tester,
-    ) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: KapyTheme.dark(),
-          home: Center(child: SettingsSwitch(value: value)),
-        ),
-      );
-      await tester.pumpAndSettle();
+  // D13's switch on a computer: 38 × 22 with an 18 pt knob. On a dark side
+  // the knob is light both ways, as D13 draws it, so off never reads as
+  // disabled. Either side's off knob stands at least 3:1 off its track.
+  for (final dark in const [true, false]) {
+    for (final value in const [false, true]) {
+      testWidgets('the switch on a ${dark ? 'dark' : 'light'} side, '
+          '${value ? 'on' : 'off'}', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: dark ? KapyTheme.dark() : KapyTheme.light(),
+            home: Center(child: SettingsSwitch(value: value)),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      final palette = tester.element(find.byType(SettingsSwitch)).palette;
-      expect(tester.getSize(find.byType(SettingsSwitch)), const Size(38, 22));
-      final knob = find
-          .descendant(
-            of: find.byType(SettingsSwitch),
-            matching: find.byType(DecoratedBox),
-          )
-          .last;
-      expect(tester.getSize(knob), const Size.square(18));
-      final face =
-          tester.widget<DecoratedBox>(knob).decoration as BoxDecoration;
-      expect(face.color, palette.switchThumb);
-      expect(face.boxShadow, isNull);
-    });
+        final palette = tester.element(find.byType(SettingsSwitch)).palette;
+        expect(tester.getSize(find.byType(SettingsSwitch)), const Size(38, 22));
+        final boxes = find.descendant(
+          of: find.byType(SettingsSwitch),
+          matching: find.byType(DecoratedBox),
+        );
+        expect(tester.getSize(boxes.last), const Size.square(18));
+        BoxDecoration face(Finder box) =>
+            tester.widget<DecoratedBox>(box).decoration as BoxDecoration;
+        final knob = face(boxes.last);
+        expect(knob.boxShadow, isNull);
+        if (dark) expect(knob.color, palette.switchThumb);
+        if (!value) {
+          final [lighter, darker] = [
+            knob.color!.computeLuminance(),
+            face(boxes.first).color!.computeLuminance(),
+          ]..sort((a, b) => b.compareTo(a));
+          expect((lighter + 0.05) / (darker + 0.05), greaterThanOrEqualTo(3));
+        }
+      });
+    }
   }
 }
