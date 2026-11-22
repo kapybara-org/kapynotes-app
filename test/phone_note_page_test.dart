@@ -440,7 +440,7 @@ void main() {
         );
       }
       final edited = find.byKey(const ValueKey('note-edited'));
-      expect(tester.widget<Text>(edited).data, '08:55');
+      expect(tester.widget<Text>(edited).data, '8:55');
       expect(find.byKey(const ValueKey('note-day-pill')), findsNothing);
       expect(find.byKey(const ValueKey('note-add-tag')), findsNothing);
       expect(find.text('Acme'), findsNWidgets(2));

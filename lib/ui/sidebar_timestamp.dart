@@ -195,6 +195,5 @@ class SidebarTimestamp {
   ).difference(DateTime.utc(shown.year, shown.month, shown.day)).inDays;
 
   static String _clock(DateTime shown) =>
-      '${shown.hour.toString().padLeft(2, '0')}:'
-      '${shown.minute.toString().padLeft(2, '0')}';
+      '${shown.hour}:${shown.minute.toString().padLeft(2, '0')}';
 }

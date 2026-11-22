@@ -49,23 +49,22 @@ typedef PlaceDays = Widget Function(Widget month, Widget? week);
 /// is Wed 19), and five, three, or today alone on a narrower page. ‹ and ›
 /// move a week at a time. A day has a dot for each of its notes, up to three.
 ///
-/// A click on a day with notes narrows the list to it, and a click on a day
-/// with none opens a page to write on that day. The month opens a calendar
-/// that picks a day the same way. On a narrow page one button for the day
+/// A click on a day picks it: the page opens its latest note, or a page to
+/// write on that day when it has none, and the list stays whole. The month
+/// opens a calendar that picks a day the same way. On a narrow page one button for the day
 /// stands in the month's place with no week.
 class DayStrip extends StatefulWidget {
   const DayStrip({
     super.key,
     required this.place,
     required this.today,
-    required this.when,
-    required this.onWhenChanged,
+    required this.picked,
+    required this.onPick,
     required this.notes,
     required this.displayTime,
     required this.firstWeekday,
     this.ownDay,
     this.onOpenNote,
-    this.onWriteOn,
     this.compact = false,
     this.phone = false,
   });
@@ -73,10 +72,13 @@ class DayStrip extends StatefulWidget {
   /// The day the list shows as today.
   final DateTime today;
 
-  /// What When narrows the list to. The day it picks is filled, and while it
-  /// picks none, today is, only to mark it.
-  final WhenFilter when;
-  final ValueChanged<WhenFilter> onWhenChanged;
+  /// The day last picked, which is filled; while none is, today is, only to
+  /// mark it.
+  final DateTime? picked;
+
+  /// A day picked in the week or the calendar, with the notes on it, latest
+  /// edit first.
+  final void Function(DateTime day, List<Note> notes) onPick;
 
   /// What the days count: the notes the list or the folder in front shows
   /// with its tags and Show, on any day.
@@ -94,10 +96,6 @@ class DayStrip extends StatefulWidget {
   /// notes under the strip, and the one picked there opens, in a tab behind
   /// on ⌘-click.
   final void Function(String noteId, {required bool behind})? onOpenNote;
-
-  /// A day with no notes picked in the strip or the calendar: a page opens to
-  /// write that day, and no note exists until the first letter.
-  final ValueChanged<DateTime>? onWriteOn;
 
   /// Puts the month and the week where the bar has them.
   final PlaceDays place;
@@ -141,13 +139,6 @@ class DayStrip extends StatefulWidget {
     return 0;
   }
 
-  /// Whether the strip keyed [key] shows its days, rather than its one button
-  /// or nothing.
-  static bool showsWeek(GlobalKey key) => switch (key.currentState) {
-    _DayStripState(days: > 0) => true,
-    _ => false,
-  };
-
   @override
   State<DayStrip> createState() => _DayStripState();
 }
@@ -169,13 +160,6 @@ class _DayStripState extends State<DayStrip> {
   /// under.
   final _weekRow = GlobalKey();
   final _monthButton = GlobalKey();
-
-  /// The day When narrows the list to, if it is one day.
-  DateTime? get _picked => switch (widget.when) {
-    WhenDay(:final day) => day,
-    NotesWhen.today => widget.today,
-    _ => null,
-  };
 
   /// The days on show, oldest first, with today in the middle and the whole
   /// window moved [_shift] days.
@@ -211,14 +195,14 @@ class _DayStripState extends State<DayStrip> {
     super.initState();
     if (!widget.phone) return;
     days = 7;
-    if (_picked case final picked?) _bringIntoView(picked);
+    if (widget.picked case final picked?) _bringIntoView(picked);
   }
 
   /// A day picked in the calendar brings its week into view.
   @override
   void didUpdateWidget(DayStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_picked case final picked? when widget.when != oldWidget.when) {
+    if (widget.picked case final picked? when picked != oldWidget.picked) {
       _bringIntoView(picked);
     }
   }
@@ -260,16 +244,17 @@ class _DayStripState extends State<DayStrip> {
   }
 
   /// A click on [day] in the week or the calendar: lists its notes where
-  /// there is no list to narrow, narrows the list to it, or opens a page to
-  /// write it when it holds none.
-  void _choose(DateTime day, {int notes = 0, BuildContext? at}) {
+  /// there is no list beside the page, and otherwise picks it. On a phone it
+  /// opens a day's one note, lists several, or opens a page to write on a day
+  /// that holds none.
+  void _choose(DateTime day, {BuildContext? at}) {
     if (widget.phone) {
+      final notes = _notesOn(day);
       final onOpen = widget.onOpenNote;
-      final only = notes == 1 ? _notesOn(day).single : null;
-      if (notes == 0) {
-        widget.onWriteOn?.call(day);
-      } else if (only != null && onOpen != null) {
-        onOpen(only.id, behind: false);
+      if (notes.isEmpty) {
+        widget.onPick(day, notes);
+      } else if (notes.length == 1 && onOpen != null) {
+        onOpen(notes.single.id, behind: false);
       } else {
         unawaited(_list(day, at: at));
       }
@@ -279,24 +264,13 @@ class _DayStripState extends State<DayStrip> {
       unawaited(_list(day, at: at));
       return;
     }
-    final today = widget.today;
-    final when = day == today ? NotesWhen.today : WhenDay(day, today: today);
-    if (when == widget.when) {
-      widget.onWhenChanged(NotesWhen.anyTime);
-      return;
-    }
-    widget.onWhenChanged(when);
-    if (notes == 0) widget.onWriteOn?.call(day);
+    widget.onPick(day, _notesOn(day));
   }
 
-  /// The notes that fall on [day].
+  /// The notes on [day], in the order the strip was given them.
   List<Note> _notesOn(DateTime day) => [
     for (final note in widget.notes)
-      if (noteDay(
-            note,
-            widget.displayTime,
-            ownDay: widget.ownDay?.call(note),
-          ) ==
+      if (noteDay(note, widget.displayTime, ownDay: widget.ownDay?.call(note)) ==
           day)
         note,
   ];
@@ -395,12 +369,8 @@ class _DayStripState extends State<DayStrip> {
     final box = button.findRenderObject() as RenderBox?;
     if (box == null) return;
     final today = widget.today;
-    final picked = _picked;
+    final picked = widget.picked;
     final shown = picked ?? _shown.lastOrNull ?? today;
-    final counts = _counts([
-      for (var index = -31; index <= 31; index++)
-        DateTime(shown.year, shown.month, shown.day + index),
-    ]);
     setState(() => _choosing = true);
     final day = await showGeneralDialog<DateTime>(
       context: context,
@@ -424,7 +394,7 @@ class _DayStripState extends State<DayStrip> {
     );
     if (!mounted) return;
     setState(() => _choosing = false);
-    if (day != null) _choose(day, notes: counts[day] ?? 0);
+    if (day != null) _choose(day);
   }
 
   /// The month over the week, or the two its days span: "November",
@@ -471,13 +441,16 @@ class _DayStripState extends State<DayStrip> {
     }
     final palette = context.palette;
     final compact = widget.compact;
-    final when = widget.when;
+    final picked = widget.picked;
     if (compact) days = 0;
     final label = !compact
         ? _monthOver(_shown)
-        : when is WhenDay
-        ? when.label
-        : 'Today';
+        : picked == null || picked == widget.today
+        ? 'Today'
+        : switch (SidebarTimestamp.dayHeading(picked, today: widget.today)) {
+            (_, final date?) => date,
+            (final heading, _) => heading,
+          };
     return widget.place(
       LayoutBuilder(
         builder: (context, constraints) =>
@@ -508,7 +481,6 @@ class _DayStripState extends State<DayStrip> {
                 final today = widget.today;
                 final shown = _shown;
                 final counts = _counts(shown);
-                final picked = _picked;
                 final filled = _listing ?? picked ?? today;
                 return Row(
                   key: _weekRow,
@@ -537,8 +509,7 @@ class _DayStripState extends State<DayStrip> {
                           picked: day == picked,
                           filled: day == filled,
                           count: counts[day]!,
-                          onTap: () =>
-                              _choose(day, notes: counts[day]!, at: tapped),
+                          onTap: () => _choose(day, at: tapped),
                         ),
                       ),
                     ],
@@ -568,7 +539,7 @@ class _DayStripState extends State<DayStrip> {
     final today = widget.today;
     final shown = _shown;
     final counts = _counts(shown);
-    final picked = _picked;
+    final picked = widget.picked;
     final filled = _listing ?? picked ?? today;
     // As narrow as M09 draws them, and narrower on a small phone, so each of
     // the seven days keeps 44 to tap; the arrows keep the strip's whole
@@ -627,7 +598,7 @@ class _DayStripState extends State<DayStrip> {
                     filled: day == filled,
                     count: counts[day]!,
                     stacked: true,
-                    onTap: () => _choose(day, notes: counts[day]!, at: tapped),
+                    onTap: () => _choose(day, at: tapped),
                   ),
                 ),
               ),

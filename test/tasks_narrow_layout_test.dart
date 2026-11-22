@@ -474,7 +474,7 @@ void main() {
         lessThan(16 * 3.1 * 1.5),
         reason: 'the completed count broke apart',
       );
-      final time = find.text('09:00');
+      final time = find.text('9:00');
       expect(time, findsOneWidget);
       expect(
         tester.getSize(time).height,
@@ -598,7 +598,7 @@ void main() {
       );
       expectInside(tester, words, 390);
       expectInside(tester, mark, 390);
-      expectInside(tester, find.text('09:00'), 390);
+      expectInside(tester, find.text('9:00'), 390);
       await tester.pump(const Duration(seconds: 3));
     });
   });
@@ -748,7 +748,7 @@ void main() {
         for (final mark in find.byType(NoteMark).evaluate()) {
           expect(mark.size!.width, lessThanOrEqualTo(220));
         }
-        expectInside(tester, find.text('09:00'), 480);
+        expectInside(tester, find.text('9:00'), 480);
         await tester.pump(const Duration(seconds: 3));
       },
     );

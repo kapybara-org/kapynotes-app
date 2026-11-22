@@ -58,9 +58,7 @@ import 'table_geometry.dart';
 import 'note_footer.dart';
 import 'phone_format_bar.dart';
 import '../note_day_scope.dart';
-import '../notes_grouping.dart' show dayShown;
 import 'note_header.dart';
-import '../sidebar_timestamp.dart';
 import '../tag_ui.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
@@ -164,8 +162,6 @@ class NoteEditor extends StatefulWidget {
     this.onOpenVoiceNote,
     this.recording,
     this.onRecordVoice,
-    this.slashHint = false,
-    this.onSlashCommandUsed,
     this.lastSlashCommand,
     this.onSlashCommandChosen,
     this.voiceActionBusy = false,
@@ -249,13 +245,6 @@ class NoteEditor extends StatefulWidget {
 
   /// Starts a recording, or stops the one running.
   final VoidCallback? onRecordVoice;
-
-  /// Whether an empty line holding the caret says to type "/" for commands.
-  /// Off once someone has used it a few times.
-  final bool slashHint;
-
-  /// Each time "/" typed at the start of a line opens Commands.
-  final VoidCallback? onSlashCommandUsed;
 
   /// The command chosen last, highlighted when Commands opens.
   final SlashCommandType? lastSlashCommand;
@@ -3429,7 +3418,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _slashCommandMenu.hide();
       return;
     }
-    if (!_slashCommandMenu.isVisible) widget.onSlashCommandUsed?.call();
     _slashCommandRange = invocation.range;
     _slashCommandWasTyped = true;
     _manualSlashMenuValue = null;
@@ -3469,8 +3457,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
           (SlashCommandType.video, ShortcutAction.insertVideo),
           (SlashCommandType.file, ShortcutAction.insertFile),
-          (SlashCommandType.checklist, ShortcutAction.formatChecklist),
-          (SlashCommandType.bulletedList, ShortcutAction.formatBullets),
         ])
           if (widget.shortcuts.hintFor(action) case final binding?)
             command: binding.displayLabel,
@@ -7488,6 +7474,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Widget _titleMarks(_TitleLayout title, EdgeInsets padding) {
     final checklist = _checklist();
     final now = (widget.now ?? DateTime.now)();
+    final displayTime = widget.displayTime ?? (time) => time.toLocal();
     final scale = title.row.height / EditorMetrics.titleRow;
     return ClipRect(
       child: ListenableBuilder(
@@ -7510,16 +7497,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         child: _ReportsHeight(
           onHeight: widget.phone ? _onPhoneMetaHeight : null,
           child: NoteMetaRow(
-            day: widget.phone
-                ? null
-                : NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
-            edited: widget.phone
-                ? _dayAndTime(now)
-                : SidebarTimestamp.edited(
-                    widget.lastUpdatedAt ?? now,
-                    now: now,
-                    displayTime: widget.displayTime ?? (time) => time.toLocal(),
-                  ),
+            day: NoteDayScope.maybeOf(context)?.dayOf(widget.noteId),
+            edited: displayTime(widget.lastUpdatedAt ?? now),
+            today: displayTime(now),
             done: checklist.done,
             tasks: checklist.total,
             total: _totalText,
@@ -7562,31 +7542,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     setState(() => _phoneMetaHeight = height);
   }
 
-  /// The note's day and the time it was last written, as a phone's line
-  /// under the title says them: "Fri 21 · 9:41", or the time alone today.
-  /// A note given a day other than the one it was written on says the day
-  /// alone, since the time belongs to another day.
-  String _dayAndTime(DateTime now) {
-    final displayTime = widget.displayTime ?? (time) => time.toLocal();
-    final edited = displayTime(widget.lastUpdatedAt ?? now);
-    final clock = SidebarTimestamp.clock(edited);
-    final written = DateTime(edited.year, edited.month, edited.day);
-    final day = NoteDayScope.maybeOf(context)?.dayOf(widget.noteId) ?? written;
-    if (day != written) return SidebarTimestamp.weekdayAndDay(day);
-    return day == dayShown(now, displayTime)
-        ? clock
-        : '${SidebarTimestamp.weekdayAndDay(day)} · $clock';
-  }
-
   /// The faint "+" beside an empty line, the caret's or the pointer's, that
-  /// opens Commands there, and on the caret's empty line a hint saying what
-  /// "/" does.
-  Widget _emptyLineMarks(
-    EdgeInsets padding,
-    TextStyle style,
-    StrutStyle strut,
-    double rowHeight,
-  ) {
+  /// opens Commands there.
+  Widget _emptyLineMarks(EdgeInsets padding) {
     _scheduleLineMarks();
     return ListenableBuilder(
       listenable: Listenable.merge([_lineMarks, _scrollController]),
@@ -7618,23 +7576,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             : palette.lineCommand,
                         onPressed: () => _openCommandsAt(mark.line),
                         icon: KapyIcon(KapyIcons.addRounded, size: 16),
-                      ),
-                    ),
-                  ),
-                ),
-              if (mark.caret && widget.slashHint)
-                Positioned(
-                  left: padding.left,
-                  top: y + mark.middle - rowHeight / 2,
-                  height: rowHeight,
-                  child: IgnorePointer(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Type / for commands',
-                        key: const ValueKey('slash-hint'),
-                        style: style.copyWith(color: palette.writingHint),
-                        strutStyle: strut,
                       ),
                     ),
                   ),
@@ -7746,7 +7687,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   (
                     line: line,
                     middle: caret.center.dy + scrolled,
-                    caret: line == caretLine,
                     hovered: line == hoverLine,
                   ),
             ];
@@ -8369,14 +8309,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       if (title != null)
                         Positioned.fill(child: _titleMarks(title, padding)),
                       if (!widget.readOnly)
-                        Positioned.fill(
-                          child: _emptyLineMarks(
-                            padding,
-                            textStyle,
-                            strut,
-                            rowHeight,
-                          ),
-                        ),
+                        Positioned.fill(child: _emptyLineMarks(padding)),
                       if (widget.markdownEnabled)
                         Positioned.fill(
                           child: _codeHeaders(
@@ -9419,7 +9352,7 @@ typedef _TitleLayout = ({
 
 /// An empty line with a "+" beside it: where it starts, its middle in the
 /// field, and whether the caret or the pointer is on it.
-typedef _LineMark = ({int line, double middle, bool caret, bool hovered});
+typedef _LineMark = ({int line, double middle, bool hovered});
 
 /// A code block's header on the page: its language, and Copy.
 class _CodeBlockHeader extends StatelessWidget {

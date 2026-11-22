@@ -9,6 +9,7 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
 import 'package:kapy_notes/ui/editor/slash_commands.dart';
+import 'package:kapy_notes/ui/keycap.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'support/desk.dart';
@@ -60,6 +61,33 @@ void main() {
   }
 
   group('choosing from the slash menu with a mouse', () {
+    testWidgets('Checklist and Bulleted list show what typing them takes', (
+      tester,
+    ) async {
+      await openMenu(tester);
+      Keycap keyOf(SlashCommandType command) => tester.widget<Keycap>(
+        find.descendant(
+          of: find.byKey(ValueKey('slash-command-${command.name}')),
+          matching: find.byType(Keycap),
+        ),
+      );
+      expect(keyOf(SlashCommandType.checklist).label, '[ ]');
+      expect(keyOf(SlashCommandType.bulletedList).label, '-');
+      expect(find.textContaining('⌘⇧'), findsNothing);
+      expect(find.textContaining('Ctrl'), findsNothing);
+    }, variant: desktop);
+
+    for (final (typed, made) in [('[ ] ', '- [ ] '), ('- ', '- ')]) {
+      testWidgets('typing "$typed" at the start of a line makes what the menu '
+          'says it does', (tester) async {
+        final desk = Desk(tester);
+        await desk.open('');
+        await desk.type(typed);
+        expect(desk.text, made);
+        expect(menu, findsNothing);
+      }, variant: desktop);
+    }
+
     testWidgets('a click on a row runs it', (tester) async {
       final (desk, chosen) = await openMenu(tester);
 

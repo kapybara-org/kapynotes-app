@@ -1122,7 +1122,7 @@ class _CommandMenuState extends State<CommandMenu> {
               ),
             ),
           ),
-          if (AppPlatform.hasPointer) const Keycap('esc'),
+          if (AppPlatform.hasPointer) const Keycap('esc', plain: true),
         ],
       ),
     );
@@ -1309,7 +1309,8 @@ class _CommandMenuState extends State<CommandMenu> {
                     color: palette.textTertiary,
                   ),
                 ),
-              if (keycap != null && AppPlatform.hasPointer) Keycap(keycap),
+              if (keycap != null && AppPlatform.hasPointer)
+                Keycap(keycap, plain: true),
             ],
           ),
         ),
@@ -1501,7 +1502,7 @@ class _CommandMenuState extends State<CommandMenu> {
       mainAxisSize: MainAxisSize.min,
       spacing: 6,
       children: [
-        Keycap(key),
+        Keycap(key, plain: true),
         Text(
           label,
           style: TextStyle(
