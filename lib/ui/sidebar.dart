@@ -36,6 +36,7 @@ import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
+import 'tasks/task_marks.dart' show dayTitleStyle, metaStyle;
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -154,6 +155,7 @@ class Sidebar extends StatelessWidget {
     this.onEnterSelected,
     this.onOpenToSide,
     this.openElsewhereIds = const {},
+    this.ofPickedDay,
     this.onOpenInNewTab,
     this.onOpenSelectedInNewTab,
     this.tabbedIds = const {},
@@ -240,6 +242,10 @@ class Sidebar extends StatelessWidget {
   /// so the list says what is already on screen before a click there would
   /// only move the focus to it.
   final Set<String> openElsewhereIds;
+
+  /// Whether a note is on the day last picked in the page's week, which
+  /// lights it more quietly than the open one. Asked only of the rows built.
+  final bool Function(Note note)? ofPickedDay;
 
   /// Opens a note in a tab of its own behind the one in front: ⌘-click or
   /// Ctrl-click, a middle click, or the menu. Null in the compact and archive
@@ -391,8 +397,8 @@ class Sidebar extends StatelessWidget {
 
   /// How far back the filter reaches, for an empty list to say so and to
   /// offer any time again.
-  final WhenFilter when;
-  final ValueChanged<WhenFilter>? onWhenChanged;
+  final NotesWhen when;
+  final ValueChanged<NotesWhen>? onWhenChanged;
 
   /// The person's folders: the Folders tab, and Move to folder… on their own
   /// notes. Null leaves folders out. While the tree shows, [notes] are the
@@ -1055,6 +1061,7 @@ extension on Sidebar {
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
     openElsewhere: openElsewhereIds.contains(note.id),
+    ofPickedDay: ofPickedDay?.call(note) ?? false,
     onOpenInNewTab: onOpenInNewTab == null
         ? null
         : () => onOpenInNewTab!(note.id),
@@ -1905,6 +1912,8 @@ class SidebarWindowBar extends StatelessWidget {
   final VoidCallback onHide;
 
   /// Printed on New note's keycap, so the chord is learnt from the button.
+  /// New drawing has no keycap, as D08 draws it, and names the chord on
+  /// hover.
   final ShortcutBinding? newNoteShortcut;
   final ShortcutBinding? hideShortcut;
 
@@ -1987,7 +1996,9 @@ class SidebarWindowBar extends StatelessWidget {
                       8 -
                       32 -
                       (onAskKapy == null ? 0 : 32 + 8);
-                  final chord = newNoteShortcut?.keycapLabel;
+                  final chord = noun == 'drawing'
+                      ? null
+                      : newNoteShortcut?.keycapLabel;
                   bool fits({String? shortcut}) =>
                       room - 8 - widthOf(countText, countStyle) >=
                       TonalButton.widthOf(
@@ -2736,6 +2747,7 @@ class NoteRow extends StatefulWidget {
     required this.onTap,
     this.onOpenToSide,
     this.openElsewhere = false,
+    this.ofPickedDay = false,
     this.onOpenInNewTab,
     this.tabbed = false,
     this.onShare,
@@ -2793,6 +2805,10 @@ class NoteRow extends StatefulWidget {
 
   /// Whether the note is already open in a pane other than the focused one.
   final bool openElsewhere;
+
+  /// Whether the note is on the day last picked in the page's week: lit as
+  /// a hovered row is, and scrolled into view once it opens from there.
+  final bool ofPickedDay;
 
   /// Opens the note in a tab of its own behind the one in front: a middle
   /// click and the menu. A ⌘-click asks [onCommandClick]. Null where there
@@ -2872,6 +2888,27 @@ class NoteRow extends StatefulWidget {
 
 class _NoteRowState extends State<NoteRow> {
   bool _hovering = false;
+
+  bool get _openedFromDay => widget.selected && widget.ofPickedDay;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_openedFromDay) _reveal();
+  }
+
+  @override
+  void didUpdateWidget(NoteRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_openedFromDay && !(oldWidget.selected && oldWidget.ofPickedDay)) {
+      _reveal();
+    }
+  }
+
+  /// Scrolls the list so the row shows, once it is laid out.
+  void _reveal() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted) unawaited(Scrollable.ensureVisible(context));
+  });
 
   /// Not for a note already on screen: a note is only ever open once, so
   /// beside itself is nowhere it can go.
@@ -3204,6 +3241,7 @@ class _NoteRowState extends State<NoteRow> {
     // highlight only once it is one of them.
     final selected = widget.selected && !widget.selecting;
     final ringed = widget.openElsewhere && !widget.selected;
+    final lit = _hovering || widget.ofPickedDay;
     final face = switch (widget.style) {
       NoteRowStyle.card => NoteCardFace(
         note: note,
@@ -3212,7 +3250,7 @@ class _NoteRowState extends State<NoteRow> {
         day: day,
         snippet: snippet,
         selected: selected,
-        hovering: _hovering,
+        hovering: lit,
         ringed: ringed,
         locked: widget.locked,
         shared: widget.shared,
@@ -3223,7 +3261,7 @@ class _NoteRowState extends State<NoteRow> {
         date: date,
         day: day,
         selected: selected,
-        hovering: _hovering,
+        hovering: lit,
         ringed: ringed,
         locked: widget.locked,
         shared: widget.shared,
@@ -3233,7 +3271,7 @@ class _NoteRowState extends State<NoteRow> {
         note: note,
         date: date,
         selected: selected,
-        hovering: _hovering,
+        hovering: lit,
         ringed: ringed,
         locked: widget.locked,
         shared: widget.shared,
@@ -3243,14 +3281,14 @@ class _NoteRowState extends State<NoteRow> {
         note: note,
         depth: widget.depth,
         selected: widget.selected,
-        hovering: _hovering,
+        hovering: lit,
         ringed: ringed,
       ),
       NoteRowStyle.loose => LooseNoteFace(
         note: note,
         date: date,
         selected: widget.selected,
-        hovering: _hovering,
+        hovering: lit,
         ringed: ringed,
       ),
       NoteRowStyle.row || NoteRowStyle.touch => NoteListRowFace(
@@ -3270,7 +3308,7 @@ class _NoteRowState extends State<NoteRow> {
           _ => null,
         },
         selected: selected,
-        hovering: _hovering,
+        hovering: lit,
         ringed: ringed,
         locked: widget.locked,
         shared: widget.shared,
@@ -3815,8 +3853,9 @@ class _SharePeople extends StatelessWidget {
   }
 }
 
-/// A day's heading on a phone's list, in the note title's face at 19/24, as
-/// Home and Tasks both draw it: "Today" with the date after it, muted.
+/// A day's heading on a phone's list, as Tasks draws its own: "Today" in
+/// the serif, then the date 8 after it in small quiet sans. A day with no
+/// name is headed by its date alone, in the serif, muted.
 class _PhoneDayHeading extends StatelessWidget {
   const _PhoneDayHeading({required this.lead, required this.date});
 
@@ -3827,28 +3866,33 @@ class _PhoneDayHeading extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final lead = this.lead;
-    final style = TextStyle(
-      fontFamily: AppFonts.title,
-      fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: 19,
-      height: 24 / 19,
-      color: palette.textPrimary,
-    );
-    final muted = style.copyWith(color: palette.textTertiary);
     return Semantics(
       header: true,
       label: lead == null ? date : '$lead, $date',
       excludeSemantics: true,
-      child: Text.rich(
-        key: const ValueKey('phone-day-heading'),
-        lead == null
-            ? TextSpan(text: date, style: muted)
-            : TextSpan(
-                text: lead,
-                style: style,
-                children: [TextSpan(text: ' $date', style: muted)],
-              ),
-      ),
+      child: lead == null
+          ? Text(
+              date,
+              key: const ValueKey('phone-day-heading'),
+              style: dayTitleStyle(palette.textTertiary),
+            )
+          : Row(
+              key: const ValueKey('phone-day-heading'),
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              spacing: 8,
+              children: [
+                Text(lead, style: dayTitleStyle(palette.textPrimary)),
+                Flexible(
+                  child: Text(
+                    date,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: metaStyle(13, 16, palette.textTertiary),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }

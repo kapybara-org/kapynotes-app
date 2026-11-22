@@ -10,6 +10,7 @@ import '../../data/task_details.dart';
 import '../../images/note_image_provider.dart';
 import '../page_toolbar.dart';
 import '../sidebar_timestamp.dart';
+import '../window_drag_area.dart';
 import 'task_marks.dart';
 import 'tasks_controller.dart';
 
@@ -108,8 +109,8 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
               child: Text(
                 'Add details',
                 style: uiStyle(
-                  phone ? 16 : 14,
-                  22,
+                  phone ? 16 : 13,
+                  phone ? 22 : 20,
                   FontWeight.w500,
                   palette.accentText,
                 ),
@@ -122,11 +123,14 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
             controller: _words,
             focusNode: _focus,
             readOnly: !editable,
-            minLines: phone ? 1 : 3,
-            maxLines: phone ? null : 8,
-            style: phone
-                ? uiStyle(16, 22, FontWeight.w400, palette.textSecondary)
-                : uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
+            minLines: 1,
+            maxLines: null,
+            style: uiStyle(
+              phone ? 16 : 13,
+              phone ? 22 : 20,
+              FontWeight.w400,
+              palette.textSecondary,
+            ),
             decoration: InputDecoration(
               border: InputBorder.none,
               filled: false,
@@ -147,6 +151,17 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
             ),
           )
         : null;
+    final openNote = Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton(
+        style: link,
+        onPressed: widget.onOpenNote,
+        child: Text(
+          'Open in note',
+          style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
+        ),
+      ),
+    );
     if (phone) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -158,27 +173,37 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
         ],
       );
     }
-    final body = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+    // D09: a column against the window's right edge, its header in the page
+    // bar's row, and Open in note straight under the words.
+    final edge = BorderSide(color: palette.railBorder);
+    return DecoratedBox(
+      key: const ValueKey('tasks-details'),
+      decoration: BoxDecoration(border: Border(left: edge)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: const ValueKey('tasks-details-header'),
+            height: AppControlMetrics.scaleBar(context, PageToolbar.height),
+            padding: const EdgeInsets.only(left: 20, right: 12),
+            foregroundDecoration: BoxDecoration(border: Border(bottom: edge)),
+            child: Row(
               children: [
                 Text(
                   'Details',
-                  style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+                  style: uiStyle(13, 18, FontWeight.w500, palette.textPrimary),
                 ),
-                const Spacer(),
+                const Expanded(child: WindowDragArea(child: SizedBox.expand())),
                 TextButton(
                   onPressed: widget.onClose,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                   child: Text(
                     'Close',
                     style: uiStyle(
                       13,
-                      16,
+                      18,
                       FontWeight.w500,
                       palette.textSecondary,
                     ),
@@ -186,54 +211,33 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                 ),
               ],
             ),
-            Text(
-              item.words,
-              style: uiStyle(15, 24, FontWeight.w500, palette.textPrimary),
-            ),
-            const SizedBox(height: 8),
-            ?picture,
-            ?words,
-            ?hint,
-          ],
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                style: link,
-                onPressed: widget.onOpenNote,
-                child: Text(
-                  'Open in note',
-                  style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
-                ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    item.words,
+                    style: uiStyle(
+                      15,
+                      24,
+                      FontWeight.w500,
+                      palette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ?picture,
+                  ?words,
+                  ?hint,
+                  const SizedBox(height: 8),
+                  openNote,
+                ],
               ),
             ),
-            Text(
-              item.note.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: uiStyle(12, 16, FontWeight.w400, palette.textTertiary),
-            ),
-          ],
-        ),
-      ],
-    );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        border: Border.all(color: palette.separator),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight - 26),
-            child: body,
           ),
-        ),
+        ],
       ),
     );
   }

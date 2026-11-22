@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/platform.dart';
@@ -33,93 +32,6 @@ Future<void> openChangelogPage(BuildContext context) async {
     icon: KapyIcons.errorOutlined,
     isError: true,
   );
-}
-
-/// One quiet line at the top of the phone's Settings: what the running
-/// version brought, with the changelog behind it. A phone updates through its
-/// store, so there is no card and nothing to restart, and the row needs no
-/// update checker: it only reads the version this build is.
-///
-/// Closing it hides that version. A later version shows the line again.
-class SettingsWhatsNewRow extends StatefulWidget {
-  const SettingsWhatsNewRow({super.key, required this.prefs});
-
-  final LayoutPrefs prefs;
-
-  @override
-  State<SettingsWhatsNewRow> createState() => _SettingsWhatsNewRowState();
-}
-
-class _SettingsWhatsNewRowState extends State<SettingsWhatsNewRow> {
-  String _version = '';
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_readVersion());
-  }
-
-  Future<void> _readVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      if (mounted) setState(() => _version = info.version);
-    } catch (_) {
-      // No version to name, so no row.
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.prefs,
-      builder: (context, _) {
-        if (_version.isEmpty || !widget.prefs.showWhatsNew(_version)) {
-          return const SizedBox.shrink();
-        }
-        final palette = context.palette;
-        return Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                key: const ValueKey('settings-whats-new-row'),
-                onTap: () => unawaited(openChangelogPage(context)),
-                borderRadius: BorderRadius.circular(AppRadii.control),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "What's new in $_version",
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: AppWeight.font(AppWeight.body),
-                              fontVariations: AppWeight.wght(AppWeight.body),
-                              color: palette.textDescription,
-                            ),
-                          ),
-                        ),
-                        KapyIcon(
-                          KapyIcons.openExternalRounded,
-                          size: 15,
-                          color: palette.textTertiary,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            _HideWhatsNewButton(
-              onPressed: () => widget.prefs.dismissWhatsNew(_version),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 
 /// Closes the "What's new" notice without opening it.

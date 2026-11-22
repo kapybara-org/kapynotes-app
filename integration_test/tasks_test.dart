@@ -6,7 +6,8 @@
 //     --dart-define=KAPYNOTES_SYNC=false
 //
 // The Mac walks the final boards' Tasks states by keys and clicks, in a
-// 1440 × 900 window over the boards' notes: Lisbon trip in green, the two
+// window 1440 wide and as near 900 tall as the screen allows, over the
+// boards' notes: Lisbon trip in green, the two
 // work notes in mustard, a task with no note, a task that came back (↺) and
 // Renewal notes waiting for Sat 21, so Later shows. Each state is the whole
 // window, dark, as screenshots in build/screenshots: D09a, the first pair
@@ -72,6 +73,9 @@ void main() {
     final days = NoteDayStore(store, now: () => clock);
     prefs = LayoutPrefs(store)..load();
     prefs.appearance = AppearanceMode.dark;
+    // A new install starts with the list closed; D09 draws Tasks' own beside
+    // the page.
+    if (!prefs.sidebarVisible) prefs.toggleSidebar();
     await notes.load();
     await library.load();
     await tags.load();
@@ -153,7 +157,15 @@ void main() {
     await launch(tester);
     final window = tester.view.physicalSize / tester.view.devicePixelRatio;
     expect(window.width, 1440, reason: 'the shots are of a 1440 wide window');
+    // macOS keeps a window inside the screen's visible frame, so on a runner
+    // whose display is shorter than 900 the window is as tall as it fits.
+    debugPrint('Tasks walk window: ${window.width} × ${window.height}');
     await tap(tester, 'rail-tasks');
+    expect(
+      find.byKey(const ValueKey('tasks-filter-all')).hitTestable(),
+      findsOneWidget,
+      reason: "D09 draws Tasks' list beside the page",
+    );
 
     // Ask Ana comes back: Start with makes it Do now, and Not finished sends
     // it to the end of the list with ↺.
@@ -201,6 +213,7 @@ void main() {
     await tester.tap(find.text('Send the deck'));
     await tester.pumpAndSettle();
     expect(find.text('Open in note'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tasks-details')), findsOneWidget);
     await shot(tester, 'window-d09');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();

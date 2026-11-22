@@ -19,8 +19,12 @@ InputDecoration kapyFieldDecoration(
   double? borderWidth,
   double? radius,
   bool neutralFocus = false,
+
+  /// The outline at rest, for a field whose fill alone marks it out.
+  Color? borderColor,
 }) {
   final palette = context.palette;
+  final rest = borderColor ?? palette.controlBorder;
   final error = Theme.of(context).colorScheme.error;
   OutlineInputBorder border(Color color, {double? width}) => OutlineInputBorder(
     borderRadius: BorderRadius.circular(radius ?? AppRadii.control),
@@ -43,9 +47,11 @@ InputDecoration kapyFieldDecoration(
     prefixIconConstraints: prefixIconConstraints,
     suffixIcon: suffixIcon,
     suffixIconConstraints: suffixIconConstraints,
-    border: border(palette.controlBorder),
-    enabledBorder: border(palette.controlBorder),
-    disabledBorder: border(palette.controlBorder.withValues(alpha: 0.55)),
+    border: border(rest),
+    enabledBorder: border(rest),
+    disabledBorder: border(
+      borderColor ?? palette.controlBorder.withValues(alpha: 0.55),
+    ),
     focusedBorder: neutralFocus
         ? border(palette.controlBorder)
         : border(

@@ -24,7 +24,9 @@ class TonalButton extends StatelessWidget {
     this.tall = false,
     this.quiet = false,
     this.sageIcon = false,
+    this.neutral = false,
   }) : assert(icon != null || label != null),
+       assert(!(neutral && quiet), 'A button is neutral or quiet, not both.'),
        assert(!sageIcon || quiet, 'Only a quiet button carries a sage icon.'),
        assert(
          label != null || tooltip != null,
@@ -52,6 +54,11 @@ class TonalButton extends StatelessWidget {
   /// A quiet button that is the page's main action, as New note is: its
   /// icon carries the sage and its words the text's own ink.
   final bool sageIcon;
+
+  /// Grey rather than sage, with its key in plain faint mono: the way out of
+  /// a dialog, as Settings' Done is, which should not read as its main
+  /// action.
+  final bool neutral;
 
   /// How wide a button with [label], an icon unless [icon] is false and, if
   /// given, [shortcut]'s keycap lays out at the reader's text size, for a bar
@@ -118,7 +125,11 @@ class TonalButton extends StatelessWidget {
               ? EdgeInsets.zero
               : EdgeInsetsDirectional.only(
                   start: icon == null || tall ? 12 : 9,
-                  end: shortcut == null ? 12 : 6,
+                  end: shortcut == null
+                      ? 12
+                      : neutral
+                      ? 10
+                      : 6,
                 ),
         ),
         backgroundColor: quiet
@@ -126,6 +137,12 @@ class TonalButton extends StatelessWidget {
                 Colors.transparent,
                 ink: palette.textPrimary,
                 disabled: Colors.transparent,
+              )
+            : neutral
+            ? KapyTheme.fillStates(
+                palette.fillSelected,
+                ink: palette.textPrimary,
+                disabled: palette.controlBackground,
               )
             : KapyTheme.fillStates(
                 palette.tonalBackground,
@@ -135,7 +152,7 @@ class TonalButton extends StatelessWidget {
         foregroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? palette.textTertiary
-              : sageIcon
+              : sageIcon || neutral
               ? palette.textPrimary
               : quiet
               ? palette.textSecondary
@@ -166,8 +183,10 @@ class TonalButton extends StatelessWidget {
           if (icon != null && label != null) SizedBox(width: bar ? 4 : 6),
           if (label != null) Text(label),
           if (shortcut != null) ...[
-            const SizedBox(width: 6),
-            ExcludeSemantics(child: Keycap(shortcut, tonal: true)),
+            SizedBox(width: neutral ? 8 : 6),
+            ExcludeSemantics(
+              child: Keycap(shortcut, tonal: !neutral, plain: neutral),
+            ),
           ],
         ],
       ),

@@ -9,8 +9,7 @@ import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_service.dart' show SyncStatus;
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
-import 'package:kapy_notes/ui/notes_grouping.dart';
-import 'package:kapy_notes/ui/page_card.dart';
+import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
 import 'package:material_ui/material_ui.dart';
@@ -23,8 +22,6 @@ void main() {
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-  // The page card's border, on each side of the bar.
-  const border = 1.5;
 
   Widget harness(
     PageToolbar toolbar, {
@@ -38,7 +35,10 @@ void main() {
         child: SizedBox(
           width: width,
           height: 300,
-          child: PageCard(child: Column(children: [toolbar, const Spacer()])),
+          child: PagePane(
+            divided: true,
+            child: Column(children: [toolbar, const Spacer()]),
+          ),
         ),
       ),
     ),
@@ -170,8 +170,8 @@ void main() {
       );
 
       final rect = tester.getRect(bar);
-      final card = tester.getRect(find.byType(PageCard));
-      expect(rect.top, card.top + border);
+      final card = tester.getRect(find.byType(PagePane));
+      expect(rect.top, card.top);
       expect(rect.bottom, card.top + 52);
       expect(showList, findsNothing);
       expect(find.byKey(const ValueKey('page-new-note')), findsNothing);
@@ -237,13 +237,13 @@ void main() {
     expect(compact.last, isFalse);
 
     await tester.pumpWidget(
-      harness(toolbar(days: days), width: 719 + 2 * border),
+      harness(toolbar(days: days), width: 719),
     );
     expect(compact.last, isTrue);
     expect(find.byKey(week), findsNothing);
     expect(tester.getTopLeft(find.byKey(month)).dx, rect.left + 10);
     await tester.pumpWidget(
-      harness(toolbar(days: days), width: 720 + 2 * border),
+      harness(toolbar(days: days), width: 720),
     );
     expect(compact.last, isFalse);
   });
@@ -464,7 +464,7 @@ void main() {
               days: withDays ? days : null,
               assistant: const SizedBox(key: ai, width: 49, height: 32),
             ),
-            width: width + 2 * border,
+            width: width,
           );
 
       await tester.pumpWidget(at(720 + room - 1, withDays: true));
@@ -602,7 +602,7 @@ void main() {
   testWidgets('a narrower page keeps the last level, after a fold, then on '
       'its own, and hovering shows the whole path', (tester) async {
     await tester.pumpWidget(
-      harness(toolbar(listVisible: false), width: 640 + 2 * border),
+      harness(toolbar(listVisible: false), width: 640),
     );
     expect(onPath('Clients'), findsOneWidget);
     expect(onPath('My notes'), findsNothing);
@@ -610,12 +610,51 @@ void main() {
     expect(find.byTooltip('My notes › Work › Clients'), findsOneWidget);
 
     await tester.pumpWidget(
-      harness(toolbar(listVisible: false), width: 520 + 2 * border),
+      harness(toolbar(listVisible: false), width: 520),
     );
     expect(onPath('Clients'), findsOneWidget);
     expect(onPath('My notes'), findsNothing);
     expect(fold, findsNothing);
     expect(find.byTooltip('My notes › Work › Clients'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a drawing\'s path, with nothing to fold, keeps Drawings until '
+      'Saved leaves the bar', (tester) async {
+    const shelf = PagePath(
+      icon: KapyIcons.penRounded,
+      root: 'Drawings',
+      levels: [(name: 'Shelf plan', folderId: null)],
+    );
+    await tester.pumpWidget(
+      harness(toolbar(path: shelf, listVisible: false), width: 640),
+    );
+    expect(onPath('Drawings'), findsOneWidget);
+    expect(onPath('Shelf plan'), findsOneWidget);
+    expect(
+      tester.widget<Text>(onPath('Drawings')).style!.color,
+      KapyTheme.darkPalette.textTertiary,
+    );
+    expect(
+      tester.widget<Text>(onPath('Shelf plan')).style!.fontWeight,
+      FontWeight.w500,
+    );
+    expect(
+      find.descendant(
+        of: path,
+        matching: findKapyIcon(KapyIcons.chevronRightRounded),
+      ),
+      findsOneWidget,
+    );
+    expect(fold, findsNothing);
+    expect(find.byTooltip('Drawings › Shelf plan'), findsNothing);
+
+    await tester.pumpWidget(
+      harness(toolbar(path: shelf, listVisible: false), width: 520),
+    );
+    expect(onPath('Drawings'), findsNothing);
+    expect(onPath('Shelf plan'), findsOneWidget);
+    expect(find.byTooltip('Drawings › Shelf plan'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -743,7 +782,7 @@ void main() {
         listVisible: false,
         assistant: const SizedBox(key: ai, width: 49, height: 32),
       ),
-      width: width + 2 * border,
+      width: width,
     );
 
     await tester.pumpWidget(at(560));
@@ -839,7 +878,7 @@ void main() {
     final count = find.byType(UnloadedPicturesStatus);
     Widget at(double width, {int unloaded = 0}) => harness(
       toolbar(listVisible: false, unloadedPictures: unloaded),
-      width: width + 2 * border,
+      width: width,
     );
 
     await tester.pumpWidget(at(600));
@@ -925,8 +964,8 @@ void main() {
       place: place,
       compact: compact,
       today: DateTime(2026, 11, 19),
-      when: NotesWhen.anyTime,
-      onWhenChanged: (_) {},
+      picked: null,
+      onPick: (_, _) {},
       notes: [
         for (final (index, edited) in [
           DateTime(2026, 11, 17, 9),
@@ -970,7 +1009,7 @@ void main() {
         );
         expect(
           tester.getTopRight(find.byKey(const ValueKey('page-more'))).dx,
-          closeTo(width - 1.5 - 12, 0.01),
+          closeTo(width - 12, 0.01),
         );
         expect(tester.takeException(), isNull);
       }
@@ -1031,7 +1070,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           await expectLater(
-            find.byType(PageCard),
+            find.byType(PagePane),
             matchesGoldenFile(
               'goldens/page_toolbar_shared_${label}_${brightness.name}.png',
             ),

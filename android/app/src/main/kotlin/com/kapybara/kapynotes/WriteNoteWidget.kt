@@ -3,10 +3,11 @@ package com.kapybara.kapynotes
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 
 /**
- * The square widget: one cell, one action, one tap into the note being
+ * The square widget: one disc, one action, one tap into the note being
  * written.
  *
  * Which action is [WidgetActions.of] the widget — Write unless the person who
@@ -39,12 +40,17 @@ class WriteNoteWidget : AppWidgetProvider() {
     companion object {
         /** Shared with the configuration screen, which draws the first one. */
         fun viewsFor(context: Context, action: QuickAction): RemoteViews =
+            labelledWhenTall { labelled -> layoutFor(context, action, labelled) }
+
+        /** One of the two layouts [viewsFor] offers: the disc, with or without its word. */
+        fun layoutFor(context: Context, action: QuickAction, labelled: Boolean): RemoteViews =
             RemoteViews(context.packageName, R.layout.widget_quick_action).apply {
                 setImageViewResource(R.id.widget_quick_action_icon, action.icon)
                 setTextViewText(
                     R.id.widget_quick_action_label,
                     context.getString(action.label),
                 )
+                if (!labelled) setViewVisibility(R.id.widget_quick_action_label, View.GONE)
                 setContentDescription(
                     R.id.widget_quick_action_root,
                     context.getString(action.label),

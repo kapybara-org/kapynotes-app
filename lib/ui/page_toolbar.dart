@@ -15,7 +15,6 @@ import 'context_menu.dart';
 import 'day_strip.dart' show PlaceDays;
 import 'member_avatars.dart';
 import 'note_tabs.dart' show clickOpensTabBehind;
-import 'page_card.dart';
 import 'tonal_button.dart';
 import 'toolbar.dart' show UpdateRestartButton;
 import 'unloaded_pictures_status.dart';
@@ -188,9 +187,8 @@ class PageToolbar extends StatelessWidget {
   /// list, in place of the path and the list's controls.
   final ({String to, VoidCallback onPressed})? back;
 
-  /// The band is 52 from the page's top, the page card's edge included, so
-  /// it lines up with the list's bar beside it.
-  static const double height = 52 - PageCard.borderWidth;
+  /// The band is 52 tall, so it lines up with the list's bar beside it.
+  static const double height = 52;
 
   /// The top left's slot and the actions', each from its edge of the page
   /// with its inset: the week sits centred between them, 12 clear of each.
@@ -200,8 +198,10 @@ class PageToolbar extends StatelessWidget {
   static const double _start = 18;
   static const double _end = 12;
 
-  /// Narrower than this, the path keeps its icon, a fold and its last level,
-  /// and the days give way to one button for the day.
+  /// Narrower than this, a path with levels to fold keeps its icon, a fold
+  /// and its last level, and the days give way to one button for the day. A
+  /// path of one level, such as Drawings › a drawing, has nothing to fold,
+  /// so it stays whole down to [_savedWidth].
   static const double _fullWidth = 720;
 
   /// A phone's page bar: the back button and the note's actions, each 44.
@@ -344,11 +344,11 @@ class PageToolbar extends StatelessWidget {
                 band(
                   _Path(
                     path: path!,
-                    form: room >= _fullWidth
+                    form: room < _savedWidth
+                        ? _PathForm.last
+                        : room >= _fullWidth || path!.levels.length <= 1
                         ? _PathForm.full
-                        : room >= _savedWidth
-                        ? _PathForm.short
-                        : _PathForm.last,
+                        : _PathForm.short,
                     onOpenFolder: onOpenFolder,
                   ),
                 ),

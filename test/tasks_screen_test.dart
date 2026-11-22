@@ -791,7 +791,7 @@ void main() {
       expect(inPair('left', 'One'), findsOneWidget);
       expect(inPair('right', 'New since you chose'), findsOneWidget);
       expect(inPair('right', 'Four'), findsOneWidget);
-      expect(find.textContaining('added 09:'), findsOneWidget);
+      expect(find.textContaining('added 9:'), findsOneWidget);
       await settle(tester);
     });
 

@@ -23,14 +23,8 @@ class McpScope extends InheritedNotifier<McpService> {
       context.dependOnInheritedWidgetOfExactType<McpScope>()?.notifier;
 }
 
+/// The heading of the AI apps groups, at the foot of Voice & AI.
 const String mcpSectionLabel = 'AI apps';
-const KapyIconData mcpSectionIcon = KapyIcons.mcpServer;
-
-/// The line under MCP in Settings. A phone has no server of its own, so it
-/// says where assistants connect instead, as the pane does.
-String get mcpSectionSummary => AppPlatform.isMobile
-    ? _connectElsewhere
-    : 'Let the AI apps you use read and change your notes, on this computer only';
 
 const String _connectElsewhere =
     'Assistants connect through Kapy Notes on your Mac, Windows PC or Linux '
@@ -42,8 +36,8 @@ String get _computer => AppPlatform.isWindows
     ? 'this computer'
     : 'this Mac';
 
-/// What settings search finds in the MCP pane. The words people use for it
-/// lead there too: "assistants", "AI", and the apps by name.
+/// What settings search finds in the AI apps groups. The words people use for
+/// them lead there too: "assistants", "AI", and the apps by name.
 List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
   McpService? service,
 ) {
@@ -63,17 +57,24 @@ List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
     String? value,
     List<String> keywords = words,
   }) => SettingsSearchEntry(
-    section: SettingsSection.mcp,
-    sectionLabel: mcpSectionLabel,
+    section: SettingsSection.voice,
+    sectionLabel: SettingsSection.voice.label,
     title: title,
-    icon: mcpSectionIcon,
+    icon: SettingsSection.voice.icon,
     target: target,
+    group: mcpSectionLabel,
     description: description,
     value: value,
     keywords: keywords,
   );
   if (service == null) {
-    return [entry('AI assistants', description: _connectElsewhere)];
+    return [
+      entry(
+        'AI assistants',
+        target: 'mcp-apps',
+        description: _connectElsewhere,
+      ),
+    ];
   }
   return [
     entry(
@@ -113,8 +114,8 @@ List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
   ];
 }
 
-/// Settings → MCP: the switch, changes, connecting each app, and what the
-/// apps did.
+/// The AI apps groups at the foot of Settings › Voice & AI: the switch,
+/// changes, connecting each app, and what the apps did.
 class McpPane extends StatefulWidget {
   const McpPane({super.key});
 
@@ -134,13 +135,20 @@ class _McpPaneState extends State<McpPane> {
   Widget build(BuildContext context) {
     final service = McpScope.maybeOf(context);
     if (service == null) {
-      return const SettingsNote('$_connectElsewhere.');
+      return const Column(
+        key: ValueKey('mcp-apps'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SettingsLabel(mcpSectionLabel),
+          SettingsNote('$_connectElsewhere.'),
+        ],
+      );
     }
     final activity = service.activity;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SettingsLabel('Access'),
+        const SettingsLabel(mcpSectionLabel),
         SettingsGroup(
           children: [
             SettingsToggleRow(

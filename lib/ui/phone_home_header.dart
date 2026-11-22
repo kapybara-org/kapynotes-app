@@ -10,11 +10,15 @@ import 'tasks/task_marks.dart';
 /// Home's header on a phone: the Notes and Tasks titles, the one on screen
 /// in ink with its count and the note title's clay underline, then the
 /// writing streak and the avatar that opens Settings.
+///
+/// Notes keeps its count's room while Tasks is on screen, so Tasks sits 12
+/// after the count on both pages and stays put when you swipe between them.
 class PhoneHomeHeader extends StatelessWidget {
   const PhoneHomeHeader({
     super.key,
     required this.tasks,
-    required this.count,
+    required this.notesCount,
+    this.tasksCount = 0,
     required this.onNotes,
     this.onTasks,
     this.streak,
@@ -25,8 +29,9 @@ class PhoneHomeHeader extends StatelessWidget {
   /// Whether Tasks is on screen rather than Notes.
   final bool tasks;
 
-  /// How many the title on screen holds.
-  final int count;
+  /// How many notes Notes holds, and how many open tasks Tasks holds.
+  final int notesCount;
+  final int tasksCount;
   final VoidCallback onNotes;
 
   /// Null leaves Tasks out, for a phone without them.
@@ -55,20 +60,19 @@ class PhoneHomeHeader extends StatelessWidget {
         child: Row(
           spacing: 12,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 100),
-              child: _Title(
-                key: const ValueKey('home-title-notes'),
-                label: 'Notes',
-                count: tasks ? null : count,
-                onPressed: onNotes,
-              ),
+            _Title(
+              key: const ValueKey('home-title-notes'),
+              label: 'Notes',
+              count: notesCount,
+              selected: !tasks,
+              onPressed: onNotes,
             ),
             if (onTasks != null)
               _Title(
                 key: const ValueKey('home-title-tasks'),
                 label: 'Tasks',
-                count: tasks ? count : null,
+                count: tasksCount,
+                selected: tasks,
                 onPressed: onTasks,
               ),
             Expanded(
@@ -104,18 +108,20 @@ class PhoneHomeHeader extends StatelessWidget {
   }
 }
 
-/// One of Home's titles. [count] is set on the one on screen, which is in
-/// ink and underlined; the other waits in grey.
+/// One of Home's titles. The one on screen is in ink with its count and
+/// underlined; the other waits in grey, keeping its count's room unseen.
 class _Title extends StatelessWidget {
   const _Title({
     super.key,
     required this.label,
     required this.count,
+    required this.selected,
     required this.onPressed,
   });
 
   final String label;
-  final int? count;
+  final int count;
+  final bool selected;
   final VoidCallback onPressed;
 
   /// Paper's 40 × 4 mark: a 2 pt stroke over 38, drawn by the note title's
@@ -125,8 +131,6 @@ class _Title extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final count = this.count;
-    final selected = count != null;
     return Semantics(
       button: true,
       selected: selected,
@@ -160,8 +164,9 @@ class _Title extends StatelessWidget {
                       selected ? palette.textPrimary : palette.textTertiary,
                     ),
                   ),
-                  if (selected)
-                    Text(
+                  Visibility.maintain(
+                    visible: selected,
+                    child: Text(
                       '$count',
                       maxLines: 1,
                       softWrap: false,
@@ -173,6 +178,7 @@ class _Title extends StatelessWidget {
                         tabular: true,
                       ),
                     ),
+                  ),
                 ],
               ),
               SizedBox(
@@ -189,18 +195,32 @@ class _Title extends StatelessWidget {
 }
 
 /// Home on a phone, which a sideways swipe turns between Notes and Tasks.
-/// A row's own swipe, deeper in the tree, wins the gesture first.
+/// A row's own swipe, deeper in the tree, wins the gesture first, except
+/// from the left edge while there's a level to go back to, where iOS's back
+/// swipe starts.
 class PhoneHomeSwipe extends StatefulWidget {
-  const PhoneHomeSwipe({super.key, required this.onTurn, required this.child});
+  const PhoneHomeSwipe({
+    super.key,
+    required this.onTurn,
+    this.backFromEdge = false,
+    required this.child,
+  });
 
   /// Called with true for a swipe left, to Tasks, and false for a swipe
   /// right, to Notes. Null away from Home, where a swipe does nothing.
   final ValueChanged<bool>? onTurn;
+
+  /// Whether a swipe from the left edge goes back ahead of a row's own. Off
+  /// on plain Home, where the edge's drags belong to the tag chips and rows.
+  final bool backFromEdge;
   final Widget child;
 
   /// How far, or how fast, a swipe has to go to turn the page.
   static const double distance = 64;
   static const double speed = 600;
+
+  /// How far in from the left a swipe starts at the edge, ahead of a row's.
+  static const double edge = 20;
 
   @override
   State<PhoneHomeSwipe> createState() => _PhoneHomeSwipeState();
@@ -219,13 +239,34 @@ class _PhoneHomeSwipeState extends State<PhoneHomeSwipe> {
   @override
   Widget build(BuildContext context) {
     final on = widget.onTurn != null;
-    return GestureDetector(
-      onHorizontalDragStart: on ? (_) => _dx = 0 : null,
-      onHorizontalDragUpdate: on
-          ? (details) => _dx += details.primaryDelta ?? 0
-          : null,
-      onHorizontalDragEnd: on ? _end : null,
-      child: widget.child,
+    GestureDetector swipe({HitTestBehavior? behavior, required Widget child}) =>
+        GestureDetector(
+          behavior: behavior,
+          onHorizontalDragStart: on ? (_) => _dx = 0 : null,
+          onHorizontalDragUpdate: on
+              ? (details) => _dx += details.primaryDelta ?? 0
+              : null,
+          onHorizontalDragEnd: on ? _end : null,
+          child: child,
+        );
+    return swipe(
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          widget.child,
+          if (on && widget.backFromEdge)
+            PositionedDirectional(
+              start: 0,
+              top: 0,
+              bottom: 0,
+              width: PhoneHomeSwipe.edge,
+              child: swipe(
+                behavior: HitTestBehavior.translucent,
+                child: const SizedBox.expand(),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

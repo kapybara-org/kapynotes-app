@@ -97,11 +97,14 @@ class NoteFolders extends InheritedWidget {
 
 /// The row under a note's title: when it was edited, how far its checklist
 /// has got, its running total, and who else is in it or why it cannot be
-/// changed.
+/// changed. On the desktop it is Sanjay's date-and-time line, "Wed 19 Nov ·
+/// 8:55 · 0 of 1 done" then the tags; a phone keeps "Edited today, 8:55"
+/// with the day as a pill.
 class NoteMetaRow extends StatelessWidget {
   const NoteMetaRow({
     super.key,
     required this.edited,
+    required this.today,
     this.day,
     this.done = 0,
     this.tasks = 0,
@@ -114,10 +117,12 @@ class NoteMetaRow extends StatelessWidget {
     this.tags,
   });
 
-  final String edited;
+  /// When the note was last edited, and today, both on the reader's clock.
+  final DateTime edited;
+  final DateTime today;
 
-  /// The day the note was given, where it has one: a pill before the time, so
-  /// the line reads "Fri 21 · 9:41" rather than the day it was last edited.
+  /// The day the note was given, where it has one, so the line reads "Fri 21
+  /// Nov · 9:41" rather than the day it was last edited.
   final DateTime? day;
 
   /// Ticked boxes out of every box in the note. No boxes, no progress.
@@ -158,6 +163,7 @@ class NoteMetaRow extends StatelessWidget {
       fontVariations: AppWeight.wght(AppWeight.rowTitle),
       color: palette.textSecondary,
     );
+    final phone = AppPlatform.isMobile;
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done';
@@ -166,7 +172,16 @@ class NoteMetaRow extends StatelessWidget {
         ? null
         : Text(saved.label, key: const ValueKey('note-saved'), style: quiet);
     final items = <Widget>[
-      if (day case final day?)
+      if (!phone)
+        Text(
+          '${SidebarTimestamp.shortDay(day ?? edited, now: today)} · '
+          '${SidebarTimestamp.clock(edited)}',
+          key: const ValueKey('note-edited'),
+          style: quiet.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        )
+      else if (day case final day?)
         Container(
           key: const ValueKey('note-day-pill'),
           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -183,13 +198,24 @@ class NoteMetaRow extends StatelessWidget {
             ),
           ),
         ),
-      Text(edited, key: const ValueKey('note-edited'), style: quiet),
+      if (phone)
+        Text(
+          SidebarTimestamp.edited(
+            edited,
+            now: today,
+            displayTime: (time) => time,
+          ),
+          key: const ValueKey('note-edited'),
+          style: quiet,
+        ),
       if (savedLabel != null)
         switch (saved?.tooltip) {
           final tooltip? => Tooltip(message: tooltip, child: savedLabel),
           null => savedLabel,
         },
-      if (tasks > 0)
+      if (tasks > 0 && !phone)
+        Text(progress, key: const ValueKey('note-progress'), style: quiet)
+      else if (tasks > 0)
         Semantics(
           label: progress,
           excludeSemantics: true,
@@ -300,19 +326,14 @@ class NoteMetaRow extends StatelessWidget {
       child: Row(
         children: [
           for (final (index, item) in items.indexed) ...[
-            if (index > 0) ...[
-              const SizedBox(width: _gap),
-              dot,
-              const SizedBox(width: _gap),
-            ],
+            if (index > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text('·', style: quiet),
+              ),
             item,
           ],
-          if (tags case final tags?) ...[
-            const SizedBox(width: _gap),
-            dot,
-            const SizedBox(width: _gap),
-            tags,
-          ],
+          if (tags case final tags?) ...[const SizedBox(width: 6), tags],
         ],
       ),
     );

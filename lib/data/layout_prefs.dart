@@ -132,15 +132,12 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
   static const String _menuBarTasksKey = 'menuBarOpensTasks.v1';
-  static const String _slashCommandUsesKey = 'slashCommandUses.v1';
   static const String _lastSlashCommandKey = 'lastSlashCommand.v1';
 
   /// The version whose "What's new" notice was closed. A later version shows
   /// the notice again.
   static const String _whatsNewDismissedKey = 'whatsNewDismissed.v1';
 
-  /// How many times "/" opens Commands before an empty line stops saying so.
-  static const int slashHintUses = 3;
   static const String _lastOpenedNoteKey = 'selectedNote.v1';
   static const String _recentlyOpenedNotesKey = 'recentlyOpenedNotes.v1';
   static const String _caretKey = 'caret.v1';
@@ -206,7 +203,6 @@ class LayoutPrefs extends ChangeNotifier {
   bool _keepRunningInBackground = false;
   bool _loginItemDefaultApplied = false;
   bool _menuBarOpensTasks = false;
-  int _slashCommandUses = 0;
   String? _lastSlashCommand;
   String? _dismissedWhatsNewVersion;
   bool _alwaysOnTop = false;
@@ -490,7 +486,6 @@ class LayoutPrefs extends ChangeNotifier {
         _store.read<bool>(_keepRunningKey) ?? AppPlatform.isDesktop;
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
     _menuBarOpensTasks = _store.read<bool>(_menuBarTasksKey) ?? false;
-    _slashCommandUses = _store.read<int>(_slashCommandUsesKey) ?? 0;
     _lastSlashCommand = _store.read<String>(_lastSlashCommandKey);
     final dismissed = _store.read<String>(_whatsNewDismissedKey)?.trim();
     _dismissedWhatsNewVersion = dismissed == null || dismissed.isEmpty
@@ -891,17 +886,6 @@ class LayoutPrefs extends ChangeNotifier {
     if (_loginItemDefaultApplied) return;
     _loginItemDefaultApplied = true;
     _store.putNow(_loginItemDefaultKey, true);
-  }
-
-  /// Whether an empty line in the editor still says to type "/" for
-  /// commands: until someone has done it [slashHintUses] times.
-  bool get slashHint => _slashCommandUses < slashHintUses;
-
-  void noteSlashCommandUsed() {
-    if (!slashHint) return;
-    _slashCommandUses++;
-    _store.put(_slashCommandUsesKey, _slashCommandUses);
-    if (!slashHint) notifyListeners();
   }
 
   /// The command last chosen from Commands on this device, by name.

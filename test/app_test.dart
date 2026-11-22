@@ -46,6 +46,7 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
@@ -73,7 +74,7 @@ import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tonal_button.dart';
-import 'package:kapy_notes/ui/page_card.dart';
+import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
@@ -814,6 +815,104 @@ void main() {
       await typeAndEnter(tester, 'TRAVEL');
       expect(tags.tags, hasLength(1));
       expect(namesOn(note.id), ['Travel']);
+    });
+
+    testWidgets('the date line reads the day and the time, the tasks while '
+        'the note has some, then each tag as its dot and its name', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Call with Arjun\n☐ Send the deck');
+      final work = tags.create('Work')!;
+      final acme = tags.create('Acme')!;
+      tags
+        ..addTag(note.id, work.id)
+        ..addTag(note.id, acme.id);
+      await pumpApp(tester, tags: tags);
+
+      final line = find.byType(NoteMetaRow);
+      Finder onLine(Finder finder) =>
+          find.descendant(of: line, matching: finder);
+      final today = prefs.displayTime(notes.now());
+      final date = onLine(
+        find.text(
+          '${SidebarTimestamp.shortDay(today, now: today)} · '
+          '${SidebarTimestamp.clock(prefs.displayTime(note.updatedAt))}',
+        ),
+      );
+      final progress = onLine(find.text('0 of 1 done'));
+      expect(date, findsOneWidget);
+      expect(progress, findsOneWidget);
+      expect(onLine(find.textContaining('Edited')), findsNothing);
+      expect(onLine(find.byType(ChecklistPie)), findsNothing);
+      expect(onLine(find.text('·')), findsOneWidget);
+      final chips = [
+        for (final tag in [work, acme])
+          find.byKey(ValueKey('tag-chip-${tag.id}')),
+      ];
+      for (final (index, tag) in [work, acme].indexed) {
+        final dot = find.descendant(
+          of: chips[index],
+          matching: find.byType(TagDot),
+        );
+        expect(tester.widget<TagDot>(dot).colour, tagColourOf(tag.colour.v));
+        expect(
+          find.descendant(of: chips[index], matching: find.text(tag.name.v)),
+          findsOneWidget,
+        );
+      }
+      final add = find.byKey(const ValueKey('note-add-tag'));
+      final order = [date, progress, ...chips, add];
+      for (var index = 1; index < order.length; index++) {
+        expect(
+          tester.getRect(order[index]).left,
+          greaterThan(tester.getRect(order[index - 1]).right),
+        );
+      }
+    });
+
+    testWidgets("a note from another day, with no tasks or tags, reads that "
+        "day and its time alone, and a note given a day reads that day", (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final now = notes.now();
+      final at = DateTime(now.year, now.month, now.day - 3, 8, 55);
+      await notes.load();
+      notes.importNotes([
+        Note(id: 'old', body: 'Spare keys', createdAt: at, updatedAt: at),
+      ]);
+      await pumpApp(tester, tags: tags, days: days);
+
+      final line = find.byType(NoteMetaRow);
+      Finder onLine(Finder finder) =>
+          find.descendant(of: line, matching: finder);
+      final today = prefs.displayTime(now);
+      final shown = prefs.displayTime(at);
+      final clock = SidebarTimestamp.clock(shown);
+      expect(
+        onLine(
+          find.text('${SidebarTimestamp.shortDay(shown, now: today)} · $clock'),
+        ),
+        findsOneWidget,
+      );
+      expect(onLine(find.textContaining('done')), findsNothing);
+      expect(onLine(find.text('·')), findsNothing);
+      expect(onLine(find.byType(TagDot)), findsNothing);
+      expect(
+        onLine(find.byKey(const ValueKey('note-add-tag'))),
+        findsOneWidget,
+      );
+
+      final later = DateTime(today.year, today.month, today.day + 2);
+      days.setDay('old', later);
+      await tester.pumpAndSettle();
+      expect(
+        onLine(
+          find.text('${SidebarTimestamp.shortDay(later, now: today)} · $clock'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets("a note's tag reads as its dot and its name in T2, with no "
@@ -1699,7 +1798,7 @@ void main() {
       expect(prefs.sidebarVisible, isTrue);
       expect(
         tester.getRect(find.byType(Sidebar)).right,
-        lessThanOrEqualTo(tester.getRect(find.byType(PageCard)).left),
+        lessThanOrEqualTo(tester.getRect(find.byType(PagePane)).left),
       );
 
       // Narrowed again, the window folds it away and keeps every action.
@@ -2085,7 +2184,7 @@ void main() {
       matching: find.byKey(const ValueKey('compact-switch-indicator')),
     );
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(tester.getSize(compactSwitch), const Size(34, 20));
+    expect(tester.getSize(compactSwitch), const Size(38, 22));
 
     final readyToType = find.byKey(
       const ValueKey('ready-to-type-on-open-toggle'),
@@ -3730,7 +3829,11 @@ void main() {
 
     // Thursday 19 November, at noon. Call with Arjun was started on the 2nd
     // and last edited today.
-    Future<void> library(WidgetTester tester, {FolderStore? folders}) async {
+    Future<void> library(
+      WidgetTester tester, {
+      FolderStore? folders,
+      NoteDayStore? days,
+    }) async {
       int at(int month, int day, int hour) =>
           DateTime(2026, month, day, hour).millisecondsSinceEpoch;
       Map<String, Object?> note(String body, int created, int updated) => {
@@ -3746,7 +3849,12 @@ void main() {
         note('October plan', at(10, 20, 8), at(10, 20, 8)),
       ];
       notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
-      await pumpApp(tester, size: const Size(1400, 800), folders: folders);
+      await pumpApp(
+        tester,
+        size: const Size(1400, 800),
+        folders: folders,
+        days: days,
+      );
     }
 
     List<String> headings(WidgetTester tester) => [
@@ -3842,54 +3950,92 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('a day in the week narrows the list, a second click or its '
-        'chip lets it go, and a day and a span replace each other', (
-      tester,
-    ) async {
+    /// The list's row for [title], and whether it is open and lit for the day
+    /// picked in the week.
+    NoteRow rowOf(WidgetTester tester, String title) => tester.widget<NoteRow>(
+      find
+          .ancestor(
+            of: find.descendant(
+              of: find.byType(Sidebar),
+              matching: find.text(title),
+            ),
+            matching: find.byType(NoteRow),
+          )
+          .first,
+    );
+    List<String> lit(WidgetTester tester) => [
+      for (final row in tester.widgetList<NoteRow>(find.byType(NoteRow)))
+        if (row.ofPickedDay) row.note.title,
+    ];
+
+    testWidgets('a day in the week opens its note, lit, and the list stays '
+        'whole', (tester) async {
       await library(tester);
       expect(find.byType(DayStrip), findsOneWidget);
 
       await tap(tester, day(18));
-      expect(headings(tester), ['Yesterday']);
-      expect(
-        find.descendant(of: whenChip, matching: find.text('Wed 18')),
-        findsOneWidget,
-      );
-      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(rowOf(tester, 'Standup notes').selected, isTrue);
+      expect(lit(tester), ['Standup notes']);
       expect(headings(tester), hasLength(4));
       expect(whenChip, findsNothing);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+    });
+
+    testWidgets('a day with several notes opens the latest and lights them '
+        'all, until another day is picked or another day\'s note opens', (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      days.setDay('October plan', DateTime(2026, 11, 18));
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
+
+      // Another of the day's notes keeps the day lit.
+      await tap(tester, find.widgetWithText(NoteRow, 'October plan'));
+      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
 
       await tap(tester, day(17));
-      expect(headings(tester), ['Tue 17']);
-      await tap(tester, whenChip);
-      expect(headings(tester), hasLength(4));
+      expect(openNoteBody(tester), 'Pricing ideas');
+      expect(lit(tester), ['Pricing ideas']);
 
-      // When's menu points to the week for one day, and a span picked there
-      // takes the day's place.
-      await tap(tester, day(17));
-      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
-      await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
-      expect(
-        find.text('For one day, click it in the week at the top of the page'),
-        findsOneWidget,
-      );
-      await tap(
-        tester,
-        find.byKey(const ValueKey('notes-filter-when-thisWeek')),
-      );
-      expect(
-        find.descendant(of: whenChip, matching: find.text('This week')),
-        findsOneWidget,
-      );
-      expect(headings(tester), hasLength(3));
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      expect(lit(tester), isEmpty);
+      expect(tester.getSemantics(day(17)), isSemantics(isSelected: false));
+    });
 
-      // Today in the week is When's Today.
+    testWidgets("a later day's note opens Upcoming to show it, lit, with "
+        'Today still under it, and Upcoming stays open', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      days.setDay('Pricing ideas', DateTime(2026, 11, 21));
+      await tester.pumpAndSettle();
+      final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+
+      await tap(tester, day(21));
+      expect(openNoteBody(tester), 'Pricing ideas');
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isFalse);
+      expect(rowOf(tester, 'Pricing ideas').selected, isTrue);
+      expect(lit(tester), ['Pricing ideas']);
+      expect(headings(tester), contains('Today'));
+      expect(
+        tester.getTopLeft(upcoming).dy,
+        lessThan(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('sidebar-group-Today')))
+              .dy,
+        ),
+      );
+
       await tap(tester, day(19));
-      expect(
-        find.descendant(of: whenChip, matching: find.text('Today')),
-        findsOneWidget,
-      );
-      expect(headings(tester), ['Today']);
+      expect(tester.widget<NotesGroupHeading>(upcoming).folded, isFalse);
     });
 
     testWidgets('the week counts what the filter shows, and is only in My '
@@ -3937,8 +4083,8 @@ void main() {
       expect(whenChip, findsNothing);
     });
 
-    testWidgets('on a folder in front the week counts and narrows that folder '
-        'alone, with the list shown or hidden', (tester) async {
+    testWidgets('on a folder in front the week counts that folder alone, and '
+        'a day opens its note', (tester) async {
       final folders = FolderStore(store);
       await folders.load();
       await library(tester, folders: folders);
@@ -3947,24 +4093,13 @@ void main() {
       prefs.foldersShown = true;
       await tester.pumpAndSettle();
       await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
-      final page = find.byKey(ValueKey('folder-page-${work.id}'));
-      expect(page, findsOneWidget);
-      Finder onPage(String title) =>
-          find.descendant(of: page, matching: find.text(title));
+      expect(find.byKey(ValueKey('folder-page-${work.id}')), findsOneWidget);
 
       // Today's note is in no folder.
       expect(dots(19), findsNothing);
       expect(dots(18), findsOneWidget);
       await tap(tester, day(18));
-      expect(onPage('Standup notes'), findsOneWidget);
-      expect(onPage('Pricing ideas'), findsNothing);
-
-      prefs.toggleSidebar();
-      await tester.pumpAndSettle();
-      await tap(tester, day(17));
-      expect(find.text('Tuesday, 17 November'), findsNothing);
-      expect(onPage('Pricing ideas'), findsOneWidget);
-      expect(onPage('Standup notes'), findsNothing);
+      expect(openNoteBody(tester), 'Standup notes');
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "
@@ -3974,7 +4109,7 @@ void main() {
       await library(tester);
       final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
       final list = tester.getRect(find.byType(SidebarWindowBar));
-      expect(tester.getRect(find.byType(PageCard)).top, list.top);
+      expect(tester.getRect(find.byType(PagePane)).top, list.top);
       expect(bar.bottom, list.bottom);
       expect(list.height, 52);
       final month = find.byKey(const ValueKey('day-strip-month'));
@@ -3998,8 +4133,132 @@ void main() {
       expect(more.right, bar.right - 12);
     });
 
-    testWidgets('on a narrow page the week is one button, and When no longer '
-        'points to it', (tester) async {
+    testWidgets("the band's empty space drags the window, up to its top edge, "
+        'with the list shown or hidden', (tester) async {
+      await library(tester);
+      final toolbar = find.byKey(const ValueKey('page-toolbar'));
+      final drag = find.descendant(
+        of: toolbar,
+        matching: find.byType(WindowDragArea),
+      );
+      for (final shown in [true, false]) {
+        if (!shown) {
+          prefs.toggleSidebar();
+          await tester.pumpAndSettle();
+        }
+        final bar = tester.getRect(toolbar);
+        expect(bar.top, 0, reason: 'shown: $shown');
+        expect(tester.getRect(drag), bar, reason: 'shown: $shown');
+        final month = tester.getRect(
+          find.byKey(const ValueKey('day-strip-month')),
+        );
+        final back = tester.getRect(
+          find.byKey(const ValueKey('day-strip-back')),
+        );
+        final result = HitTestResult();
+        tester.binding.hitTestInView(
+          result,
+          Offset((month.right + back.left) / 2, bar.top + 1),
+          tester.view.viewId,
+        );
+        final area = tester.renderObject(
+          find.descendant(of: drag, matching: find.byType(Listener)).first,
+        );
+        expect(
+          result.path.any((entry) => entry.target == area),
+          isTrue,
+          reason: 'shown: $shown',
+        );
+      }
+    });
+
+    testWidgets("D01's window, the list open at its width, shows the month "
+        'and all seven days, and the band gives way at 720', (tester) async {
+      await library(tester);
+      final month = find.byKey(const ValueKey('day-strip-month'));
+      final chip = find.byKey(const ValueKey('day-strip-date'));
+      int days() => [
+        for (var date = 16; date <= 22; date++)
+          if (day(date).evaluate().isNotEmpty) date,
+      ].length;
+      double band() =>
+          tester.getSize(find.byKey(const ValueKey('page-toolbar'))).width;
+      Future<void> window(double width) async {
+        tester.view.physicalSize = Size(width, 900);
+        await tester.pumpAndSettle();
+      }
+
+      for (final width in [1440.0, 1490.0]) {
+        await window(width);
+        expect(
+          find.descendant(of: month, matching: find.text('November')),
+          findsOneWidget,
+          reason: '$width',
+        );
+        expect(days(), 7, reason: '$width');
+        expect(chip, findsNothing, reason: '$width');
+      }
+
+      // With the list open, the strip holds until the band is 720.
+      await window(1132);
+      expect(band(), 720);
+      expect(days(), 3);
+      expect(chip, findsNothing);
+      await window(1131);
+      expect(band(), 719);
+      expect(chip, findsOneWidget);
+      expect(days(), 0);
+
+      // With it hidden, the band keeps 36 for the + beside show-list.
+      prefs.toggleSidebar();
+      await window(832);
+      expect(band(), 756);
+      expect(days(), 3);
+      await window(831);
+      expect(chip, findsOneWidget);
+    });
+
+    testWidgets("When's spans count a note by its own day, and one with none "
+        'by the day it was last edited', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      days
+        ..setDay('October plan', DateTime(2026, 11, 21))
+        ..setDay('Standup notes', DateTime(2026, 10, 30));
+      await tester.pumpAndSettle();
+      final list = find.byType(Sidebar);
+      Set<String> listed() => {
+        for (final row in tester.widgetList<NoteRow>(
+          find.descendant(of: list, matching: find.byType(NoteRow)),
+        ))
+          row.note.title,
+      };
+      Future<void> when(String span) async {
+        await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
+        await tap(tester, find.byKey(ValueKey('notes-filter-when-$span')));
+      }
+
+      // Picked in the week, the day after tomorrow's note is not under Today.
+      await tap(tester, day(21));
+      expect(openNoteBody(tester), 'October plan');
+      await when('today');
+      expect(listed(), {'Call with Arjun'});
+
+      for (final span in ['thisWeek', 'thisMonth']) {
+        await when(span);
+        expect(listed(), {
+          'Call with Arjun',
+          'Pricing ideas',
+          'October plan',
+        }, reason: span);
+      }
+      await when('lastWeek');
+      expect(listed(), isEmpty);
+    });
+
+    testWidgets('on a narrow page the week is one button', (tester) async {
       await library(tester);
       tester.view.physicalSize = const Size(1040, 800);
       await tester.pumpAndSettle();
@@ -4009,7 +4268,6 @@ void main() {
       await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
       await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
       expect(find.byKey(const ValueKey('notes-when-menu')), findsOneWidget);
-      expect(find.byKey(const ValueKey('notes-when-footnote')), findsNothing);
     });
 
     testWidgets('the narrowest list keeps the grouping menu and the chip', (
@@ -4240,12 +4498,13 @@ void main() {
   testWidgets('desktop Settings has room for a calm two-pane layout', (
     tester,
   ) async {
-    await pumpApp(tester, size: const Size(1100, 860));
+    // D13's dialog, in a window as tall as the board's.
+    await pumpApp(tester, size: const Size(1100, 900));
     await openSettings(tester);
 
     expect(
       tester.getSize(find.byKey(const ValueKey('settings-dialog-content'))),
-      const Size(940, 760),
+      const Size(940, 860),
     );
   });
 
@@ -4626,6 +4885,66 @@ void main() {
           }
         }
       }
+    });
+
+    testWidgets('New drawing has no keycap and names its chord on hover, where '
+        'New note keeps its keycap', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      final chord = shortcuts.hintFor(ShortcutAction.newNote)!;
+      expect(tester.widget<TonalButton>(plus()).shortcut, chord.keycapLabel);
+
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      final newDrawing = tester.widget<TonalButton>(plus());
+      expect(newDrawing.label, 'New drawing');
+      expect(newDrawing.shortcut, isNull);
+      expect(newDrawing.tooltip, SidebarWindowBar.newTooltip('drawing', chord));
+      expect(
+        find.descendant(
+          of: find.byType(SidebarWindowBar),
+          matching: find.text(chord.keycapLabel),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-field')),
+          matching: find.text('Search drawings'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an open drawing\'s header reads Drawings › its title, and '
+        'its title follows the writing font as a note\'s does', (tester) async {
+      final drawing = notes.create(drawing: true);
+      notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Shelf plan');
+      await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shelf plan').first);
+      await tester.pumpAndSettle();
+
+      final path = find.byKey(const ValueKey('page-path'));
+      for (final text in ['Drawings', 'Shelf plan']) {
+        expect(
+          find.descendant(of: path, matching: find.text(text)),
+          findsOneWidget,
+          reason: text,
+        );
+      }
+      TextStyle title() => tester
+          .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
+          .style!;
+      expect(title().fontFamily, AppFonts.title);
+      expect(title().fontWeight, FontWeight.w400);
+
+      prefs.writingFont = WritingFont.handwritten;
+      await tester.pumpAndSettle();
+      expect(title().fontFamily, WritingFont.handwritten.fontFamily);
+      expect(title().fontWeight, EditorMetrics.titleWeight);
     });
 
     testWidgets('a new note has no Write | Draw, and New in Drawings starts a '
@@ -5055,7 +5374,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
       await tester.pumpAndSettle();
       expect(
-        tester.widget<PhoneHomeHeader>(find.byType(PhoneHomeHeader)).count,
+        tester.widget<PhoneHomeHeader>(find.byType(PhoneHomeHeader)).tasksCount,
         2,
       );
     });
@@ -5578,7 +5897,7 @@ void main() {
             ),
           )
           .date,
-      'Today, 09:10',
+      'Today, 9:10',
     );
   });
 
@@ -7767,6 +8086,43 @@ void main() {
       Finder underlineOf(Finder title) =>
           find.descendant(of: title, matching: find.byType(NoteTitleUnderline));
 
+      testWidgets('the search field reads "Search notes and tasks" because '
+          'Quick find, which it opens, finds tasks too', (tester) async {
+        notes.create(body: 'Lisbon trip\n☐ Renew passport before the trip');
+        final tasks = TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        );
+        await tasks.load();
+        await tasks.reconcileNow();
+        await pumpApp(tester, size: const Size(393, 852), tasks: tasks);
+        await showNotesList(tester);
+
+        final field = find.byKey(const ValueKey('sidebar-search-field'));
+        expect(
+          find.descendant(
+            of: field,
+            matching: find.text('Search notes and tasks'),
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(field);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          'passport',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('command-menu')),
+            matching: find.text('Renew passport before the trip'),
+          ),
+          findsOneWidget,
+        );
+      });
+
       testWidgets('a tap on Tasks shows Tasks under the same header, and a '
           'tap on Notes comes back', (tester) async {
         await pumpHome(tester);
@@ -8144,6 +8500,68 @@ void main() {
         expect(underlineOf(notesTitle), findsOneWidget);
       });
 
+      // Plain Home has no level to go back to, so its left edge keeps the
+      // tag chips' and the rows' own drags.
+      testWidgets('on plain Home, a right drag from the left edge scrolls '
+          'the tag chips back', (tester) async {
+        final tags = TagStore(store);
+        await pumpHome(tester, tags: tags);
+        for (var i = 1; i <= 8; i++) {
+          tags.addTag(groceriesId, tags.create('Travel plans $i')!.id);
+        }
+        await tester.pumpAndSettle();
+        await openPhoneFilters(tester);
+        final row = find.byKey(const ValueKey('phone-filter-row'));
+        final chips = tester.state<ScrollableState>(
+          find.descendant(of: row, matching: find.byType(Scrollable)),
+        );
+        await tester.drag(row, const Offset(-300, 0));
+        await tester.pumpAndSettle();
+        final scrolled = chips.position.pixels;
+        expect(scrolled, greaterThan(100));
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(row).dy),
+          const Offset(100, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(chips.position.pixels, lessThan(scrolled - 50));
+        expect(tasksPage, findsNothing);
+      });
+
+      testWidgets('on plain Home, a right drag from the left edge closes an '
+          'open row', (tester) async {
+        await pumpHome(tester);
+        await tester.drag(groceries, const Offset(-200, 0));
+        await tester.pumpAndSettle();
+        final pin = find.byKey(ValueKey('swipe-pin-$groceriesId'));
+        expect(pin.hitTestable(), findsOneWidget);
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(groceries).dy),
+          const Offset(200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(pin.hitTestable(), findsNothing);
+        expect(tester.getTopLeft(groceries).dx, 0);
+      });
+
+      testWidgets('on plain Home, a left drag from the left edge over a row '
+          "opens the row's actions rather than turning to Tasks", (
+        tester,
+      ) async {
+        await pumpHome(tester);
+
+        await tester.dragFrom(
+          Offset(10, tester.getCenter(groceries).dy),
+          const Offset(-200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
+        expect(tasksPage, findsNothing);
+        expect(underlineOf(notesTitle), findsOneWidget);
+      });
+
       testWidgets('Back from Tasks goes to Notes rather than leaving', (
         tester,
       ) async {
@@ -8326,6 +8744,40 @@ void main() {
       expect(ends.last, ends.first);
     });
 
+    testWidgets('on an iPhone, a swipe in from the left edge takes Pinned '
+        'back to Home', (tester) async {
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+
+      // A tap on the edge passes through to the row under it.
+      final row = find.widgetWithText(NoteRow, 'Lisbon trip');
+      await tester.tapAt(Offset(10, tester.getCenter(row).dy));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsNothing);
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+
+      // Over a row, whose own swipe the edge has to win.
+      await tester.dragFrom(
+        Offset(2, tester.getCenter(row).dy),
+        const Offset(200, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsNothing);
+      expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets("Home's Pinned card says so while nothing is pinned", (
       tester,
     ) async {
@@ -8402,7 +8854,7 @@ void main() {
       expect(tester.widget<TagDots>(dots).tags, hasLength(2));
       final time = find.descendant(
         of: row('Call with Arjun'),
-        matching: find.text('09:00'),
+        matching: find.text('9:00'),
       );
       expect(
         tester.getTopLeft(dots).dx,
@@ -8417,7 +8869,7 @@ void main() {
         findsNothing,
       );
       for (final (title, clock) in [
-        ('Stamped by a clock ahead', '08:00'),
+        ('Stamped by a clock ahead', '8:00'),
         ('Quote for the deck', '17:00'),
         ('Renewal notes', '11:00'),
       ]) {
@@ -8427,6 +8879,137 @@ void main() {
           reason: 'the heading names the day, so the row gives the time',
         );
       }
+    });
+
+    testWidgets("a day's heading is the serif name, then its date 8 after "
+        'it in small quiet sans, as Tasks draws Today', (tester) async {
+      final nine = DateTime(2026, 11, 19, 9).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        {
+          'id': 'pages',
+          'body': 'Morning pages',
+          'createdAt': nine,
+          'updatedAt': nine,
+        },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final heading = find.byKey(const ValueKey('phone-day-heading'));
+      final palette = tester.element(heading).palette;
+      final today = tester.widget<Text>(
+        find.descendant(of: heading, matching: find.text('Today')),
+      );
+      final date = find.descendant(of: heading, matching: find.text('Thu 19'));
+      expect(today.style?.fontFamily, AppFonts.title);
+      expect(today.style?.fontSize, 19);
+      expect(today.style?.color, palette.textPrimary);
+      final style = tester.widget<Text>(date).style;
+      expect(style?.fontFamily, AppFonts.ui);
+      expect(style?.fontSize, 13);
+      expect(style?.height, 16 / 13);
+      expect(style?.color, palette.textTertiary);
+      expect(
+        tester.getTopLeft(date).dx -
+            tester
+                .getTopRight(
+                  find.descendant(of: heading, matching: find.text('Today')),
+                )
+                .dx,
+        8,
+      );
+    });
+
+    testWidgets('a hairline as wide as the text sits under every row of a '
+        'day but its last', (tester) async {
+      int at(int day, int hour) =>
+          DateTime(2026, 11, day, hour).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        for (final (id, body, day, hour) in [
+          ('pages', 'Morning pages', 19, 9),
+          ('arjun', 'Call with Arjun', 19, 8),
+          ('quote', 'Quote for the deck', 19, 7),
+          ('renewal', 'Renewal notes', 18, 11),
+        ])
+          {
+            'id': id,
+            'body': body,
+            'createdAt': at(day, hour),
+            'updatedAt': at(day, hour),
+          },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final lines = find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.byType(Divider),
+      );
+      expect(lines, findsNWidgets(2));
+      Finder row(String title) => find.widgetWithText(NoteRow, title);
+      final rects = [for (var i = 0; i < 2; i++) tester.getRect(lines.at(i))];
+      for (var i = 0; i < 2; i++) {
+        final line = tester.widget<Divider>(lines.at(i));
+        expect(rects[i].left + line.indent!, 20);
+        expect(rects[i].width - line.indent! - line.endIndent!, 393 - 40);
+      }
+      expect(rects[0].top, tester.getRect(row('Morning pages')).bottom);
+      expect(rects[1].top, tester.getRect(row('Call with Arjun')).bottom);
+      expect(
+        tester.widget<Divider>(lines.first).color,
+        tester.element(lines.first).palette.separator,
+      );
+    });
+
+    testWidgets('a row with a preview and what it holds is 91 from hairline '
+        'to hairline, and one with words alone keeps two lines', (
+      tester,
+    ) async {
+      int at(int hour) => DateTime(2026, 11, 19, hour).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        for (final (id, body, hour) in [
+          (
+            'arjun',
+            'Call with Arjun\nPricing page by Friday\n☐ Send the deck',
+            9,
+          ),
+          ('quote', 'Quote for the deck\nBook it\n☐ Book the room', 8),
+          ('renewal', 'Renewal notes\nFor the call with Acme on Friday.', 7),
+        ])
+          {
+            'id': id,
+            'body': body,
+            'createdAt': at(hour),
+            'updatedAt': at(hour),
+          },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final lines = find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.byType(Divider),
+      );
+      expect(lines, findsNWidgets(2));
+      expect(
+        tester.getTopLeft(lines.at(1)).dy - tester.getTopLeft(lines.at(0)).dy,
+        91,
+      );
+      Finder holdsOf(String title) => find.descendant(
+        of: find.widgetWithText(NoteRow, title),
+        matching: find.byKey(const ValueKey('note-row-holds')),
+      );
+      expect(
+        find.descendant(
+          of: holdsOf('Quote for the deck'),
+          matching: find.text('0 of 1'),
+        ),
+        findsOneWidget,
+      );
+      expect(holdsOf('Renewal notes'), findsNothing);
     });
 
     testWidgets('a row swipes left to Pin and Archive', (tester) async {
@@ -8491,6 +9074,14 @@ void main() {
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
 
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-field')),
+          matching: find.text('Search notes'),
+        ),
+        findsOneWidget,
+        reason: 'without Tasks there are only notes to find',
+      );
       await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
@@ -8577,6 +9168,40 @@ void main() {
 
       expect(spaceTitle(tester), 'My notes');
       expect(spaceCount(tester), '2');
+    });
+
+    testWidgets('the page sits flush on the window, split from the list by '
+        "one hairline, and from the rail by the rail's own edge", (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Call with Arjun');
+      await pumpApp(tester, size: const Size(1440, 900));
+      final pane = find.byType(PagePane);
+      final page = tester.getRect(pane);
+      expect(page.left, tester.getRect(find.byType(Sidebar)).right);
+      expect(page.top, tester.getRect(find.byType(SidebarWindowBar)).top);
+      expect(page.right, 1440);
+      expect(page.bottom, 900);
+      Container box() =>
+          tester.widget<Container>(find.byKey(const ValueKey('page-pane')));
+      final edge = (box().foregroundDecoration! as BoxDecoration).border!;
+      expect(
+        edge,
+        Border(
+          left: BorderSide(color: tester.element(pane).palette.pageBorder),
+        ),
+      );
+      expect(box().decoration, isNull);
+      expect(box().color, tester.element(pane).palette.paperColor);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(pane).left,
+        tester.getRect(find.byType(SpacesRail)).right,
+      );
+      expect(box().foregroundDecoration, isNull);
     });
 
     testWidgets('New note sits in the bar over the search, with its keycap', (
@@ -8669,18 +9294,17 @@ void main() {
       await tester.tap(hide);
       await tester.pumpAndSettle();
       expect(prefs.sidebarVisible, isFalse);
-      // The page moves up to the rail, with the canvas's margin on that side
-      // too now that no list sits against it.
+      // The page moves up to the rail, flush against it.
       expect(
-        tester.getRect(find.byType(PageCard)).left,
-        tester.getRect(find.byType(SpacesRail)).right + 12,
+        tester.getRect(find.byType(PagePane)).left,
+        tester.getRect(find.byType(SpacesRail)).right,
       );
 
       await tester.tap(notesToggleWithLabel('Show notes'));
       await tester.pumpAndSettle();
       expect(prefs.sidebarVisible, isTrue);
       expect(
-        tester.getRect(find.byType(PageCard)).left,
+        tester.getRect(find.byType(PagePane)).left,
         tester.getRect(find.byType(Sidebar)).right,
       );
     });
@@ -9143,11 +9767,11 @@ void main() {
       expect(prefs.sidebarVisible, isTrue);
       expect(find.byType(Sidebar), findsNothing);
       expect(notesToggleWithLabel('Show notes'), findsOneWidget);
-      // The page stands a margin in from the rail, as in Paper's window with
+      // The page stands flush against the rail, as D10 draws the window with
       // the list hidden.
       expect(
-        tester.getRect(find.byType(PageCard)).left,
-        tester.getRect(find.byType(SpacesRail)).right + 12,
+        tester.getRect(find.byType(PagePane)).left,
+        tester.getRect(find.byType(SpacesRail)).right,
       );
     });
 
@@ -9158,7 +9782,7 @@ void main() {
       notes.create(body: 'First note');
       notes.create(body: 'Second note');
       await pumpApp(tester, size: const Size(600, 720));
-      final page = tester.getRect(find.byType(PageCard));
+      final page = tester.getRect(find.byType(PagePane));
 
       Future<void> open() async {
         await tester.tap(notesToggleWithLabel('Show notes'));
@@ -9169,7 +9793,7 @@ void main() {
 
       // Over the page, which keeps its place and its width.
       await open();
-      expect(tester.getRect(find.byType(PageCard)), page);
+      expect(tester.getRect(find.byType(PagePane)), page);
 
       // A click on the page beside it.
       await tester.tapAt(Offset(page.right - 8, page.center.dy));
@@ -9251,7 +9875,7 @@ void main() {
       // aside for controls that are not over it.
       expect(tester.getRect(find.byType(Sidebar)).left, rail.right);
       expect(
-        tester.getRect(find.byType(PageCard)).left,
+        tester.getRect(find.byType(PagePane)).left,
         greaterThanOrEqualTo(rail.right),
       );
 
@@ -9283,15 +9907,15 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('sidebar-search-field'))).top,
         greaterThanOrEqualTo(bar.bottom),
       );
-      // The page stands on the canvas, a margin in from the window's right,
-      // and its band lines up with the list's bar.
-      final page = tester.getRect(find.byType(PageCard));
+      // The page runs flush to the window's right, and its band lines up
+      // with the list's bar.
+      final page = tester.getRect(find.byType(PagePane));
       expect(page.top, bar.top);
       expect(
         tester.getRect(find.byKey(const ValueKey('page-toolbar'))).bottom,
         bar.bottom,
       );
-      expect(page.right, 1100 - 12);
+      expect(page.right, 1100);
     }, skip: !WindowChrome.overlaysContent);
 
     testWidgets('keeps every pane inside the display safe area', (
@@ -9324,7 +9948,7 @@ void main() {
       // The page is level with the bar over the list, so its band lines up
       // with that bar.
       expect(
-        tester.getTopLeft(find.byType(PageCard)).dy,
+        tester.getTopLeft(find.byType(PagePane)).dy,
         tester.getRect(find.byType(SidebarWindowBar)).top,
       );
       expect(
@@ -9348,10 +9972,10 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('note-total'))).bottom,
         lessThanOrEqualTo(size.height - safeBottom),
       );
-      // The page itself runs down to the canvas's margin, and its footer holds
+      // The page itself runs down to the window's edge, and its footer holds
       // the controls above the indicator rather than the page stopping short
       // over a band of canvas.
-      expect(tester.getRect(find.byType(PageCard)).bottom, size.height - 12);
+      expect(tester.getRect(find.byType(PagePane)).bottom, size.height);
     });
 
     testWidgets('lifts the two-pane layout clear of a software keyboard', (
@@ -9456,13 +10080,13 @@ void main() {
 
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsNothing);
-        expect(tester.getTopLeft(find.byType(PageCard)).dy, phone.padding.top);
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, phone.padding.top);
         if (platform == TargetPlatform.android) {
           expect(statusBar, ['hide']);
           // Android takes the bar away, and the page moves up into its room.
           tester.view.padding = FakeViewPadding(left: phone.padding.left);
           await tester.pumpAndSettle();
-          expect(tester.getTopLeft(find.byType(PageCard)).dy, 0);
+          expect(tester.getTopLeft(find.byType(PagePane)).dy, 0);
         } else {
           expect(statusBar, isEmpty);
         }
@@ -9472,7 +10096,7 @@ void main() {
             .caretRect(driver.value.selection.extent)
             .shift(driver.toGlobal(Offset.zero));
         final view = tester.getRect(noteField);
-        final card = tester.getRect(find.byType(PageCard));
+        final card = tester.getRect(find.byType(PagePane));
         final bar = tester.getRect(
           find.byKey(const ValueKey('phone-format-bar')),
         );
@@ -9505,8 +10129,8 @@ void main() {
         }
         expect(find.byType(PageToolbar), findsOneWidget);
         expect(
-          tester.getTopLeft(find.byType(PageCard)).dy,
-          phone.padding.top + 12,
+          tester.getTopLeft(find.byType(PagePane)).dy,
+          phone.padding.top,
         );
       });
     }
@@ -9562,6 +10186,9 @@ void main() {
       tester.view.viewInsets = FakeViewPadding.zero;
       await tester.pumpAndSettle();
       expect(statusBar, ['hide', 'show', 'hide', 'show']);
+      // Resuming asked the platform for a launch intent, which waits up to
+      // 400 ms for its answer; the page no longer animates for that long.
+      await tester.pump(const Duration(milliseconds: 400));
     });
 
     final tablets = {
@@ -9590,8 +10217,8 @@ void main() {
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsOneWidget);
         expect(
-          tester.getTopLeft(find.byType(PageCard)).dy,
-          tablet.padding.top + 12,
+          tester.getTopLeft(find.byType(PagePane)).dy,
+          tablet.padding.top,
         );
         expect(statusBar, isEmpty);
       });
@@ -9627,7 +10254,7 @@ void main() {
           reason: 'cutout on the $side',
         );
         expect(
-          tester.getRect(find.byType(PageCard)).right,
+          tester.getRect(find.byType(PagePane)).right,
           lessThanOrEqualTo(size.width - (left ? 0 : cutout)),
           reason: 'cutout on the $side',
         );
@@ -9841,9 +10468,8 @@ void main() {
       final today = DateTime(later.year, later.month, later.day - 2);
       final todayDots = dotsOn(today);
 
-      // Let the day go: the page is still no note, in the list or the week.
-      await tester.tap(chip(later));
-      await tester.pumpAndSettle();
+      // The page is no note yet, in the list or the week.
+      expect(find.byType(NoteEditor), findsOneWidget);
       expect(blankRow, findsNothing);
       expect(dotsOn(today), todayDots);
       await tester.tap(
@@ -9989,12 +10615,14 @@ void main() {
         ),
       );
       expect(days.dayOf(plan.id), later);
-      expect(find.byKey(const ValueKey('note-day-pill')), findsOneWidget);
+      final line = find.byKey(const ValueKey('note-edited'));
+      String day(DateTime shown) => SidebarTimestamp.shortDay(shown, now: now);
+      expect(tester.widget<Text>(line).data, startsWith('${day(later)} · '));
 
       await tap(find.byKey(const ValueKey('page-more')));
       await tap(find.byKey(const ValueKey('page-more-undate')));
       expect(days.dayOf(plan.id), isNull);
-      expect(find.byKey(const ValueKey('note-day-pill')), findsNothing);
+      expect(tester.widget<Text>(line).data, startsWith('${day(now)} · '));
     });
 
     testWidgets('a note for a later day waits, folded, under Upcoming', (

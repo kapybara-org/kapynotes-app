@@ -295,10 +295,6 @@ class KapyIcons {
     HugeIcons.strokeRoundedSidebarLeft,
   );
   static const micRounded = KapyIconData(0xE03D, HugeIcons.strokeRoundedMic01);
-  static const mcpServer = KapyIconData(
-    0xE0E3,
-    HugeIcons.strokeRoundedMcpServer,
-  );
   static const moreVerticalRounded = KapyIconData(
     0xE069,
     HugeIcons.strokeRoundedMoreVertical,
@@ -573,6 +569,10 @@ class KapyIcons {
   static const chatEditOutlined = KapyIconData(
     0xE0DE,
     HugeIcons.strokeRoundedBubbleChatEdit,
+  );
+  static const chatHistoryOutlined = KapyIconData(
+    0xE0EB,
+    HugeIcons.strokeRoundedTransactionHistory,
   );
   static const sendRounded = KapyIconData(
     0xE0DF,

@@ -3,5 +3,4 @@
     <!-- Overridden on Android 12 and up by the radius the launcher itself
          uses, so a widget matches whatever shape its neighbours have. -->
     <dimen name="widget_corner_radius">16dp</dimen>
-    <dimen name="widget_cell_corner_radius">12dp</dimen>
 </resources>

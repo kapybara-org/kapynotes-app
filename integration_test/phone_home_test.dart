@@ -9,10 +9,11 @@
 // The list comes a day at a time (#203): Today, Yesterday, then the older
 // day, each row under its own day with its time, and a tagged row with its
 // dot after the time. Pinned's card (#230) counts its notes and names them,
-// opens the pinned list, and Back returns to Notes: Pinned's own arrow on
-// both phones, and Android's system back. Without an account there is no
-// Shared card; sharing is KAP-256's. Each state is taken light and dark, and
-// the list again at 2× text, as screenshots in build/screenshots.
+// opens the pinned list, and Back returns to Notes: Pinned's own arrow and a
+// swipe in from the left edge on both phones, and Android's system back.
+// Without an account there is no Shared card; sharing is KAP-256's. Each
+// state is taken light and dark, and the list again at 2× text, as
+// screenshots in build/screenshots.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -119,8 +120,17 @@ void main() {
     await launch(tester);
 
     final days = [
-      for (final heading in tester.widgetList<Text>(headings))
-        heading.textSpan!.toPlainText(),
+      for (var i = 0; i < headings.evaluate().length; i++)
+        tester
+            .widgetList<Text>(
+              find.descendant(
+                of: headings.at(i),
+                matching: find.byType(Text),
+                matchRoot: true,
+              ),
+            )
+            .map((text) => text.data ?? text.textSpan!.toPlainText())
+            .join(' '),
     ];
     expect(days, hasLength(3));
     expect(days[0], startsWith('Today '));
@@ -134,7 +144,7 @@ void main() {
     expect(tester.getBottomLeft(pinnedCard).dy, lessThan(tops.first));
 
     for (final (title, day, time) in [
-      ('Call with Arjun', 0, '09:12'),
+      ('Call with Arjun', 0, '9:12'),
       ('Groceries', 1, '18:40'),
       ('Offsite agenda', 2, '10:00'),
     ]) {
@@ -185,7 +195,11 @@ void main() {
   ) async {
     await launch(tester);
 
-    final ways = ['arrow', if (AppPlatform.isAndroid) 'system back'];
+    final ways = [
+      'arrow',
+      'edge swipe',
+      if (AppPlatform.isAndroid) 'system back',
+    ];
     for (final way in ways) {
       await tester.tap(pinnedCard);
       await tester.pumpAndSettle();
@@ -198,6 +212,14 @@ void main() {
 
       if (way == 'arrow') {
         await tester.tap(pinnedBack);
+      } else if (way == 'edge swipe') {
+        // In from the very edge, as iOS's back swipe starts, over a row
+        // whose own swipe the edge has to win.
+        await tester.timedDragFrom(
+          Offset(2, tester.getCenter(row('Lisbon trip')).dy),
+          const Offset(200, 0),
+          const Duration(milliseconds: 300),
+        );
       } else {
         await tester.binding.handlePopRoute();
       }

@@ -107,6 +107,7 @@ void main() {
     double scale = 1,
     TextScaler? scaler,
     TaskFilter filter = const TaskFilter.all(),
+    bool scroll = true,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -120,16 +121,19 @@ void main() {
           child: child!,
         ),
         home: Scaffold(
-          body: SingleChildScrollView(
-            child: TasksScreen(
-              controller: tasks,
-              filter: filter,
-              addFocus: _focus,
-              labelOf: (_) => label,
-              onOpenNote: (_) {},
-              onOpenDone: () {},
-              phone: phone,
-            ),
+          body: Builder(
+            builder: (context) {
+              final screen = TasksScreen(
+                controller: tasks,
+                filter: filter,
+                addFocus: _focus,
+                labelOf: (_) => label,
+                onOpenNote: (_) {},
+                onOpenDone: () {},
+                phone: phone,
+              );
+              return scroll ? SingleChildScrollView(child: screen) : screen;
+            },
           ),
         ),
       ),
@@ -474,7 +478,7 @@ void main() {
         lessThan(16 * 3.1 * 1.5),
         reason: 'the completed count broke apart',
       );
-      final time = find.text('09:00');
+      final time = find.text('9:00');
       expect(time, findsOneWidget);
       expect(
         tester.getSize(time).height,
@@ -598,7 +602,7 @@ void main() {
       );
       expectInside(tester, words, 390);
       expectInside(tester, mark, 390);
-      expectInside(tester, find.text('09:00'), 390);
+      expectInside(tester, find.text('9:00'), 390);
       await tester.pump(const Duration(seconds: 3));
     });
   });
@@ -659,11 +663,14 @@ void main() {
         (tester) async {
           await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two');
           tasks.doNow(tasks.read().open.first);
+          // The details are a column the page's full height, so the page
+          // has one.
           await pumpTasks(
             tester,
             size: const Size(560, 700),
             phone: false,
             label: label,
+            scroll: false,
           );
           final second = tasks.read().open[1];
           await tester.tap(
@@ -748,7 +755,7 @@ void main() {
         for (final mark in find.byType(NoteMark).evaluate()) {
           expect(mark.size!.width, lessThanOrEqualTo(220));
         }
-        expectInside(tester, find.text('09:00'), 480);
+        expectInside(tester, find.text('9:00'), 480);
         await tester.pump(const Duration(seconds: 3));
       },
     );
