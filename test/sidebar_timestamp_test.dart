@@ -57,26 +57,6 @@ void main() {
     expect(heading(DateTime(2026, 11, 20)), ('Fri 20 Nov', null));
   });
 
-  test('names a day still to come by its weekday within the week ahead, '
-      'then by its date', () {
-    final today = DateTime(2026, 11, 19);
-    String ahead(DateTime day) => SidebarTimestamp.dayAhead(day, today: today);
-
-    expect(ahead(DateTime(2026, 11, 20)), 'Fri 20');
-    expect(ahead(DateTime(2026, 11, 21)), 'Sat 21');
-    expect(ahead(DateTime(2026, 11, 25)), 'Wed 25');
-    expect(ahead(DateTime(2026, 11, 26)), 'Thu 26 Nov');
-    expect(ahead(DateTime(2026, 12, 7)), 'Mon 7 Dec');
-    expect(ahead(DateTime(2027, 1, 8)), 'Fri 8 Jan 2027');
-    expect(
-      SidebarTimestamp.dayAhead(
-        DateTime(2027, 1, 2),
-        today: DateTime(2026, 12, 30),
-      ),
-      'Sat 2',
-    );
-  });
-
   test("heads a phone's day of notes, counting days by the calendar", () {
     ({String? lead, String date}) heading(DateTime day, DateTime now) =>
         SidebarTimestamp.phoneDay(day, now: now);
@@ -94,10 +74,15 @@ void main() {
       lead: null,
       date: 'Tue 17 Nov',
     ));
-    // A day still to come, from a device whose clock runs ahead.
+    // Days still to come, as Upcoming lists its notes. An edit from a clock
+    // running ahead is filed under today before it is headed.
     expect(heading(DateTime(2026, 11, 20), today), (
-      lead: 'Today',
+      lead: 'Tomorrow',
       date: 'Fri 20',
+    ));
+    expect(heading(DateTime(2026, 11, 23), today), (
+      lead: null,
+      date: 'Mon 23 Nov',
     ));
     // Across the night the clocks change, where a day is 23 or 25 hours.
     expect(heading(DateTime(2026, 3, 28), DateTime(2026, 3, 29, 0, 30)), (
@@ -112,5 +97,23 @@ void main() {
       lead: null,
       date: 'Fri 23 Oct',
     ));
+  });
+
+  test('briefDay says today, yesterday and tomorrow, the weekday within a '
+      'week, then the date', () {
+    final today = DateTime(2026, 11, 22);
+    String brief(int days) =>
+        SidebarTimestamp.briefDay(DateTime(2026, 11, 22 + days), today: today);
+    expect(brief(0), 'Today');
+    expect(brief(1), 'Tomorrow');
+    expect(brief(-1), 'Yesterday');
+    expect(brief(6), 'Sat 28');
+    expect(brief(-6), 'Mon 16');
+    expect(brief(7), '29 Nov');
+    expect(brief(-7), '15 Nov');
+    expect(
+      SidebarTimestamp.briefDay(DateTime(2027, 1, 5), today: today),
+      '5 Jan 2027',
+    );
   });
 }

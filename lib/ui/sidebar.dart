@@ -1044,7 +1044,6 @@ extension on Sidebar {
     NoteRowStyle style = NoteRowStyle.row,
     double inset = 0,
     bool clockOnly = false,
-    DateTime? dayAhead,
   }) => MetaData(
     metaData: NotePickTarget(note.id),
     child: _noteRow(
@@ -1054,7 +1053,6 @@ extension on Sidebar {
       style: style,
       inset: inset,
       clockOnly: clockOnly,
-      dayAhead: dayAhead,
     ),
   );
 
@@ -1065,14 +1063,13 @@ extension on Sidebar {
     required NoteRowStyle style,
     required double inset,
     bool clockOnly = false,
-    DateTime? dayAhead,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
     style: style,
     inset: inset,
     clockOnly: clockOnly,
-    dayAhead: dayAhead,
+    laterDay: clockOnly ? null : _laterDay(note),
     folders: _files(note) ? folders?.store : null,
     engine: engine,
     now: now,
@@ -1250,7 +1247,6 @@ extension on Sidebar {
       Iterable<Note> notes, {
       bool pinned = false,
       bool clockOnly = false,
-      bool upcoming = false,
     }) {
       final list = notes.toList();
       Widget note(Note note) => _row(
@@ -1259,9 +1255,6 @@ extension on Sidebar {
         pinned: pinned,
         style: style,
         clockOnly: clockOnly,
-        dayAhead: upcoming
-            ? noteDay(note, displayTime, ownDay: ownDay?.call(note))
-            : null,
       );
       if (phone && !cards) {
         for (final (index, each) in list.indexed) {
@@ -1397,6 +1390,7 @@ extension on Sidebar {
           groups.mine,
           now: now(),
           displayTime: displayTime,
+          ownDay: ownDay,
         )) {
           heading(_PhoneDayHeading(lead: day.lead, date: day.date));
           section(day.notes, clockOnly: true);
@@ -1447,7 +1441,7 @@ extension on Sidebar {
           ),
         );
         if (!fold || upcomingOpen) {
-          section(group.notes, upcoming: fold, clockOnly: group.day != null);
+          section(group.notes, clockOnly: group.day != null);
         }
       }
     }
@@ -1464,14 +1458,23 @@ extension on Sidebar {
     );
   }
 
+  /// The day [note] was given, when that is a later one, for its row to name.
+  DateTime? _laterDay(Note note) {
+    final own = ownDay?.call(note);
+    return waitsForLaterDay(own, dayShown(now(), displayTime)) ? own : null;
+  }
+
   /// The Folders tab: the folder tree, then the notes in no folder.
   Widget _buildFolders(BuildContext context) {
     final folders = this.folders!;
     final today = dayShown(now(), displayTime);
-    final upcoming = [
-      for (final note in notes)
-        if (ownDay?.call(note) case final day? when day.isAfter(today)) note,
-    ];
+    // A phone's Upcoming is a tile in [phoneCards], with a page of its own.
+    final upcoming = phone
+        ? const <Note>[]
+        : [
+            for (final note in notes)
+              if (waitsForLaterDay(ownDay?.call(note), today)) note,
+          ];
     return _fading(
       context,
       FoldersTab(
@@ -2804,7 +2807,7 @@ class NoteRow extends StatefulWidget {
     this.style = NoteRowStyle.row,
     this.inset = 0,
     this.clockOnly = false,
-    this.dayAhead,
+    this.laterDay,
     this.engine,
     this.now = DateTime.now,
     this.folders,
@@ -2820,10 +2823,9 @@ class NoteRow extends StatefulWidget {
   /// gives only the time it was last changed, unless others have it open.
   final bool clockOnly;
 
-  /// The day still to come that the note was given, which an Upcoming row or
-  /// card names in place of when the note was last changed, as D04's "Fri
-  /// 21". Null outside Upcoming.
-  final DateTime? dayAhead;
+  /// The later day the note was given, which the row names in place of when
+  /// it was changed, as no heading over it does.
+  final DateTime? laterDay;
 
   /// Works out the sum a card or row shows under the title.
   final CalcEngine? engine;
@@ -3254,15 +3256,20 @@ class _NoteRowState extends State<NoteRow> {
     final card =
         widget.style == NoteRowStyle.card ||
         widget.style == NoteRowStyle.drawingCard;
-    String stamp({bool clock = true}) => SidebarTimestamp.glance(
-      note.updatedAt,
-      now: widget.now(),
-      displayTime: widget.displayTime,
-      today: card,
-      clock: clock,
-    );
-    final dayAhead = widget.dayAhead;
-    final day = card && people.isEmpty && dayAhead == null
+    String stamp({bool clock = true}) => switch (widget.laterDay) {
+      final day? => SidebarTimestamp.briefDay(
+        day,
+        today: dayShown(widget.now(), widget.displayTime),
+      ),
+      null => SidebarTimestamp.glance(
+        note.updatedAt,
+        now: widget.now(),
+        displayTime: widget.displayTime,
+        today: card,
+        clock: clock,
+      ),
+    };
+    final day = card && people.isEmpty && widget.laterDay == null
         ? stamp(clock: false)
         : null;
     final date = people.isNotEmpty
@@ -3271,11 +3278,6 @@ class _NoteRowState extends State<NoteRow> {
                   if (person.typing) person.name,
               ]) ??
               presenceStatusText([for (final person in people) person.name])!
-        : dayAhead != null
-        ? SidebarTimestamp.dayAhead(
-            dayAhead,
-            today: dayShown(widget.now(), widget.displayTime),
-          )
         : widget.clockOnly
         ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
         : stamp();
@@ -3814,20 +3816,31 @@ List<({String? lead, String date, List<Note> notes})> _phoneDays(
   List<Note> notes, {
   required DateTime now,
   required DateTime Function(DateTime) displayTime,
+  DateTime? Function(Note note)? ownDay,
 }) {
   final today = dayShown(now, displayTime);
   final days = <DateTime, List<Note>>{};
   for (final note in notes) {
-    final day = dayShown(note.updatedAt, displayTime);
-    (days[day.isAfter(today) ? today : day] ??= []).add(note);
+    final own = ownDay?.call(note);
+    final day = noteDay(note, displayTime, ownDay: own);
+    // An edit from a clock ahead of this one counts as today's; a day given
+    // ahead is that day, as Upcoming's notes are.
+    (days[own == null && day.isAfter(today) ? today : day] ??= []).add(note);
   }
+  // Later days soonest first, then today and the days before, newest first.
+  final order = days.keys.toList()
+    ..sort(
+      (a, b) => a.isAfter(today) && b.isAfter(today)
+          ? a.compareTo(b)
+          : b.compareTo(a),
+    );
   return [
-    for (final MapEntry(key: day, value: notes) in days.entries)
+    for (final day in order)
       if (SidebarTimestamp.phoneDay(day, now: today) case (
         :final lead,
         :final date,
       ))
-        (lead: lead, date: date, notes: notes),
+        (lead: lead, date: date, notes: days[day]!),
   ];
 }
 
