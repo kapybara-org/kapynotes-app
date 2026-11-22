@@ -36,7 +36,8 @@ import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
-import 'tasks/task_marks.dart';
+import 'tasks/task_marks.dart'
+    show dayTitleStyle, handStyle, metaStyle, uiStyle;
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -3820,9 +3821,10 @@ class _SharePeople extends StatelessWidget {
   }
 }
 
-/// A day's heading on a phone's list, in the note title's face at 19/24, as
-/// Home and Tasks both draw it: "Today" with the date after it, muted. Folders
-/// heads its notes in no folder with it too (M02), with no date.
+/// A day's heading on a phone's list, as Tasks draws its own: "Today" in
+/// the serif, then the date 8 after it in small quiet sans. A day with no
+/// name is headed by its date alone, in the serif, muted. Folders heads its
+/// notes in no folder with it too (M02): the words alone, unmuted.
 class _PhoneDayHeading extends StatelessWidget {
   const _PhoneDayHeading({required this.lead, this.date});
 
@@ -3833,31 +3835,36 @@ class _PhoneDayHeading extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final lead = this.lead;
-    final style = TextStyle(
-      fontFamily: AppFonts.title,
-      fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: 19,
-      height: 24 / 19,
-      color: palette.textPrimary,
-    );
-    final muted = style.copyWith(color: palette.textTertiary);
     final date = this.date;
     return Semantics(
       header: true,
       label: [?lead, ?date].join(', '),
       excludeSemantics: true,
-      child: Text.rich(
-        key: const ValueKey('phone-day-heading'),
-        lead == null
-            ? TextSpan(text: date, style: muted)
-            : TextSpan(
-                text: lead,
-                style: style,
-                children: [
-                  if (date != null) TextSpan(text: ' $date', style: muted),
-                ],
+      child: lead == null || date == null
+          ? Text(
+              lead ?? date ?? '',
+              key: const ValueKey('phone-day-heading'),
+              style: dayTitleStyle(
+                lead == null ? palette.textTertiary : palette.textPrimary,
               ),
-      ),
+            )
+          : Row(
+              key: const ValueKey('phone-day-heading'),
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              spacing: 8,
+              children: [
+                Text(lead, style: dayTitleStyle(palette.textPrimary)),
+                Flexible(
+                  child: Text(
+                    date,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: metaStyle(13, 16, palette.textTertiary),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
