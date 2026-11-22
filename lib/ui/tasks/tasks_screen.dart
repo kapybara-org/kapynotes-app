@@ -663,6 +663,7 @@ class TasksScreenState extends State<TasksScreen> {
         for (final item in choice.rest)
           if (matches(item)) item,
     ];
+    final waiting = _waiting(board).where(matches).toList();
     final staged = switch (stage) {
       PairStage(:final left, :final right) => matches(left) || matches(right),
       DoNowStage(:final item) => matches(item),
@@ -724,15 +725,9 @@ class TasksScreenState extends State<TasksScreen> {
             !staged &&
             upNext.isEmpty &&
             rest.isEmpty &&
-            phoneRest.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-            child: Text(
-              'No tasks match “$_query”.',
-              key: const ValueKey('tasks-search-empty'),
-              style: taskText(15, 20, ink.quiet),
-            ),
-          ),
+            phoneRest.isEmpty &&
+            waiting.isEmpty)
+          _noMatch(ink),
         if (staged)
           switch (stage) {
             EmptyStage() => Padding(
@@ -823,8 +818,7 @@ class TasksScreenState extends State<TasksScreen> {
               ],
             ),
           ),
-        if (_waiting(board) case final waiting
-            when waiting.isNotEmpty && !searching) ...[
+        if (waiting.isNotEmpty) ...[
           _Heading('Later', phone: phone),
           _LaterRow(
             waiting: waiting,
@@ -873,11 +867,22 @@ class TasksScreenState extends State<TasksScreen> {
     ];
   }
 
+  /// What a search that matches nothing says, on Today and on Done.
+  Widget _noMatch(TaskInk ink) => Padding(
+    padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+    child: Text(
+      'No tasks match “$_query”.',
+      key: const ValueKey('tasks-search-empty'),
+      style: taskText(15, 20, ink.quiet),
+    ),
+  );
+
   Widget _done(TaskBoard board) {
     final palette = context.palette;
     final now = _tasks.now();
     final days = <DateTime, List<TaskItem>>{};
     for (final item in board.done) {
+      if (!_matches(board, item)) continue;
       final at = item.doneAt!;
       (days[DateTime(at.year, at.month, at.day)] ??= []).add(item);
     }
@@ -934,6 +939,11 @@ class TasksScreenState extends State<TasksScreen> {
             ],
           ),
         ),
+        if (_query.isNotEmpty && days.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: _noMatch(TaskInk.of(context)),
+          ),
         for (final MapEntry(key: day, value: items) in days.entries) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 18, 10, 4),

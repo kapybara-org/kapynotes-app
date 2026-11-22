@@ -378,6 +378,182 @@ void main() {
       expect(later, findsNothing);
     });
 
+    testWidgets('while a waiting task matches the search, Later stays with '
+        'the matching count rather than "No tasks match"', (tester) async {
+      await setUpTasks(tester, errands);
+      await addNotes(['Renewal notes\n☐ Renew the domain\n☐ Renew the van']);
+      final days = await waitingFor('Renewal notes', DateTime(2026, 11, 20));
+      await pumpScreen(tester, phone: true, days: days);
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-search-field')),
+        'domain',
+      );
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-later')), findsOneWidget);
+      expect(find.text('1 task waits for its day'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-search-empty')), findsNothing);
+    });
+
+    testWidgets('Later with two waiting notes names the soonest day and '
+        'opens the soonest note', (tester) async {
+      await setUpTasks(tester, errands);
+      await addNotes([
+        'Renewal notes\n☐ Renew the domain',
+        'Garden\n☐ Plant the bulbs',
+      ]);
+      final days = await waitingFor('Renewal notes', DateTime(2026, 11, 24));
+      days.setDay(
+        notes.allNotes.firstWhere((n) => n.title == 'Garden').id,
+        DateTime(2026, 11, 20),
+      );
+      final opened = <String>[];
+      await pumpScreen(tester, days: days, onOpenNote: opened.add);
+      expect(find.text('2 tasks wait for their day'), findsOneWidget);
+      expect(find.text('Fri 20'), findsOneWidget);
+      expect(find.text('Tue 24'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('tasks-later')));
+      await settle(tester);
+      expect(opened, [item('Plant the bulbs').note.id]);
+    });
+
+    testWidgets('every typed word must match, not any one of them', (
+      tester,
+    ) async {
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Pay the rent\n☐ Call the bank\n☐ Book flights\n'
+        '☐ Book the Sintra train\n☐ Pack for Sintra',
+      );
+      await pumpScreen(tester, phone: true);
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-search-field')),
+        'book sintra',
+      );
+      await settle(tester);
+      expect(phoneRow('Book the Sintra train'), findsOneWidget);
+      expect(phoneRow('Book flights'), findsNothing);
+      expect(phoneRow('Pack for Sintra'), findsNothing);
+    });
+
+    testWidgets('"No tasks match" never shows beside a matching pair or Do '
+        'now', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+      final empty = find.byKey(const ValueKey('tasks-search-empty'));
+      await tester.enterText(field, 'flights');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
+      expect(empty, findsNothing);
+
+      await tester.enterText(field, '');
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('tasks-start')));
+      await settle(tester);
+      await tester.enterText(field, 'report');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      expect(empty, findsNothing);
+    });
+
+    testWidgets('in the evening, search narrows the card\'s rows, and the card '
+        'goes once none match', (tester) async {
+      await setUpTasks(
+        tester,
+        'Errands\n☐ Done one\n☐ Left one\n☐ Left two',
+        at: DateTime(2026, 11, 19, 18, 30),
+      );
+      await tester.runAsync(
+        () => tasks.setDone(tasks.read().open.first, done: true),
+      );
+      await pumpScreen(tester, phone: true);
+      expect(find.byKey(const ValueKey('tasks-evening')), findsOneWidget);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+
+      await tester.enterText(field, 'two');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-evening')), findsOneWidget);
+      expect(phoneRow('Left two'), findsOneWidget);
+      expect(phoneRow('Left one'), findsNothing);
+      expect(find.byKey(const ValueKey('tasks-search-empty')), findsNothing);
+
+      await tester.enterText(field, 'garage');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('tasks-evening')), findsNothing);
+      expect(find.text('No tasks match “garage”.'), findsOneWidget);
+    });
+
+    testWidgets('search narrows Done too, and says so when nothing matches; '
+        'the well and its filter stay', (tester) async {
+      await setUpTasks(tester, errands);
+      for (final words in ['Pay the rent', 'Book flights']) {
+        await tester.runAsync(() => tasks.setDone(item(words), done: true));
+      }
+      await pumpScreen(
+        tester,
+        phone: true,
+        filter: const TaskFilter.done(),
+        onFilter: (_) {},
+      );
+      expect(find.text('Pay the rent'), findsOneWidget);
+      expect(find.text('Book flights'), findsOneWidget);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+
+      await tester.enterText(field, 'rent');
+      await settle(tester);
+      expect(find.text('Pay the rent'), findsOneWidget);
+      expect(find.text('Book flights'), findsNothing);
+
+      await tester.enterText(field, 'garage');
+      await settle(tester);
+      expect(find.text('Pay the rent'), findsNothing);
+      expect(find.text('No tasks match “garage”.'), findsOneWidget);
+      expect(field, findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-filters')), findsOneWidget);
+    });
+
+    testWidgets('Clear empties the search and keeps the keyboard up, from a '
+        '32 pt button', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final field = find.byKey(const ValueKey('tasks-search-field'));
+      await tester.tap(field);
+      await tester.enterText(field, 'rent');
+      await settle(tester);
+      final focus = tester.widget<TextField>(field).focusNode!;
+      expect(focus.hasFocus, isTrue);
+      final clear = find.byTooltip('Clear search');
+      expect(tester.getSize(clear), const Size.square(32));
+
+      await tester.tap(clear);
+      await settle(tester);
+      expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+      expect(focus.hasFocus, isTrue);
+    });
+
+    testWidgets('the filter button carries its dot while a filter is on', (
+      tester,
+    ) async {
+      await setUpTasks(tester, errands);
+      final dot = find.byKey(const ValueKey('phone-filters-dot'));
+      await pumpScreen(tester, phone: true, onFilter: (_) {});
+      expect(dot, findsNothing);
+      await pumpScreen(
+        tester,
+        phone: true,
+        filter: TaskFilter.note(item('Pay the rent').note.id),
+        onFilter: (_) {},
+      );
+      expect(dot, findsOneWidget);
+      await pumpScreen(
+        tester,
+        phone: true,
+        filter: const TaskFilter.done(),
+        onFilter: (_) {},
+      );
+      expect(dot, findsOneWidget);
+    });
+
     testWidgets('M13a: one hairline, after the last Up next row, full width', (
       tester,
     ) async {
