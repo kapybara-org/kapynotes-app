@@ -74,17 +74,15 @@ class KapyAiPicker extends StatelessWidget {
       );
     }
 
-    final groups = <List<Widget>>[
-      [
-        const _Label('On this device'),
-        if (device.note case final note?)
-          Padding(
+    const deviceHeading = 'On this device';
+    final note = device.note;
+    final Widget deviceRow = note != null
+        ? Padding(
             key: const ValueKey('kapy-ai-device-note'),
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
             child: Text(note, style: kapyText(13, 18, palette.textSecondary)),
           )
-        else
-          switch (device.status) {
+        : switch (device.status) {
             _
                 when deviceModel == null ||
                     device.status == DeviceModelStatus.unavailable =>
@@ -101,7 +99,13 @@ class KapyAiPicker extends StatelessWidget {
               subline: 'Turn it on in System Settings first',
             ),
             _ => modelRow(deviceModel, deviceModel.whereItRuns(word)),
-          },
+          };
+
+    final groups = <List<Widget>>[
+      [
+        if (deviceRow is! _Row || deviceRow.title != deviceHeading)
+          const _Label(deviceHeading),
+        deviceRow,
       ],
       [
         const _Label('Kapy AI'),
