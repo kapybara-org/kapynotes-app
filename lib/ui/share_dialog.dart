@@ -643,7 +643,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
           : 'Shared with you',
       subtitle: _note.title,
       onClose: () => Navigator.of(context).pop(),
-      more: space == null
+      more: space == null || owner
           ? null
           : _OverflowMenu(onReportNote: () => _reportNote(space)),
       body: Column(

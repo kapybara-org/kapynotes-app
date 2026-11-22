@@ -891,6 +891,8 @@ class Sharing extends ChangeNotifier {
     required bool quietly,
   }) async {
     for (final held in _held) {
+      // Signing out stopped waiting: what is left goes at the next sign-in.
+      if (_disposed) return;
       final key = _heldKey(held.noteId, held.email);
       if (!pick(key, held.noteId)) continue;
       // Undo may have taken it back while an earlier one was on its way.

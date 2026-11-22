@@ -376,13 +376,124 @@ void main() {
       'up', (tester) async {
     await signIn(tester);
     final mine = await shareWithPriya(tester);
+    // Someone else stays invited, so taking Priya off asks the server.
+    await tester.runAsync(
+      () => account.sharing!.addPerson(mine, 'ravi@kapy34.test'),
+    );
     account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
-    server.onRemoval = () => Completer<void>().future;
+    var asked = false;
+    server.onRemoval = () {
+      asked = true;
+      return Completer<void>().future;
+    };
 
     final watch = Stopwatch()..start();
     await tester.runAsync(account.signOut);
+    expect(asked, isTrue);
     expect(account.state, AccountState.signedOut);
     expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+  });
+
+  testWidgets('a removal still held when signing out stops waiting stays held, '
+      'and goes at the next sign-in', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    const ravi = 'ravi@kapy34.test';
+    await tester.runAsync(() async {
+      await account.sharing!.addPerson(mine, ravi);
+      // Someone else stays invited, so the note stays shared.
+      await account.sharing!.addPerson(mine, 'mia@kapy34.test');
+    });
+    bool raviInvited() =>
+        server.spaces[space]!.invites.values.any((i) => i.email == ravi);
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+    account.sharing!.holdRemoval(mine, ravi, const Duration(hours: 1));
+    await tester.runAsync(() async {
+      final answer = Completer<void>();
+      server.onRemoval = () {
+        server.onRemoval = null;
+        return answer.future;
+      };
+      await account.signOut();
+      answer.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    expect(priyaIn(space), isFalse);
+    expect(raviInvited(), isTrue);
+
+    await tester.runAsync(() async {
+      await account.signIn(email: 'sam@kapy34.test', password: 'x');
+      await account.unlock('a good passphrase');
+      for (
+        var wait = 0;
+        wait < 100 && account.sharing!.isRemovalHeld(mine, ravi);
+        wait++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(raviInvited(), isFalse);
+    expect(account.sharing!.isRemovalHeld(mine, ravi), isFalse);
+  });
+
+  testWidgets('on a phone, a toast from the share sheet over Home sits at the '
+      'bottom edge, not above the bar the sheet covers', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    // The app restores the account once it is up, with sharing anew.
+    await tester.runAsync(() async {
+      for (
+        var wait = 0;
+        wait < 100 && account.sharing?.memberOn(mine, priya.email) == null;
+        wait++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pumpAndSettle();
+    await showList(tester, phone: true);
+
+    await tester.longPress(
+      find
+          .descendant(
+            of: find.byType(Sidebar),
+            matching: find.text('Trip budget'),
+          )
+          .last,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sharing'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('member-menu-${priya.userId}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove from this note').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+
+    final toast = find.byKey(const ValueKey('toast-surface'));
+    expect(
+      find.descendant(of: toast, matching: find.textContaining('Removed')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getBottomLeft(toast).dy,
+      greaterThan(
+        tester.getTopLeft(find.byKey(const ValueKey('phone-bar'))).dy,
+      ),
+    );
+    await tester.pump(const Duration(seconds: 8));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
   });
 
   testWidgets('on a phone, Leave without a copy from the open page goes back '

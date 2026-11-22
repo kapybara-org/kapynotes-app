@@ -2714,6 +2714,47 @@ void main() {
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   });
 
+  for (final (platform, size) in const [
+    (TargetPlatform.iOS, Size(390, 844)),
+    (TargetPlatform.macOS, Size(1100, 720)),
+  ]) {
+    testWidgets('on ${platform.name} the header’s ⋮ is for whoever the note is '
+        'shared with: Report this note there, and none for its owner', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+        await bob.sync.syncNow();
+      });
+      final more = find.byKey(const ValueKey('share-more'));
+
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      expect(find.byKey(const ValueKey('share-email')), findsOneWidget);
+      expect(more, findsNothing);
+      expect(find.text('Report this note'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('share-dialog-close')));
+      await tester.pumpAndSettle();
+
+      await openSheet(tester, bob.notes.byId(note.id)!, bob);
+      expect(find.text('Shared with you'), findsOneWidget);
+      await tester.tap(more);
+      await tester.pumpAndSettle();
+      expect(find.text('Report this note'), findsOneWidget);
+    });
+  }
+
   testWidgets('the Mac dialog is S02’s: 480 wide, a clear ⋮ at 16 in a 28 box, '
       'plain rows, a quiet subtitle and label, and a footer of words with Done '
       'at the right', (tester) async {
@@ -2756,13 +2797,17 @@ void main() {
       }
 
       final more = find.byKey(const ValueKey('share-more'));
-      expect(tester.getSize(more), const Size(28, 28));
-      expect(
-        tester.getSize(
-          find.descendant(of: more, matching: find.byType(KapyIcon)),
-        ),
-        const Size(16, 16),
-      );
+      if (device == alice) {
+        expect(more, findsNothing);
+      } else {
+        expect(tester.getSize(more), const Size(28, 28));
+        expect(
+          tester.getSize(
+            find.descendant(of: more, matching: find.byType(KapyIcon)),
+          ),
+          const Size(16, 16),
+        );
+      }
 
       final subtitle = tester.widget<Text>(
         find.byKey(const ValueKey('share-subtitle')),
