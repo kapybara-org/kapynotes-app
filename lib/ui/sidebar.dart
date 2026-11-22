@@ -2494,15 +2494,18 @@ class SidebarSearchField extends StatelessWidget {
   Widget? _end(CalcPalette palette, double extent) {
     final onClear = this.onClear;
     if (query.isNotEmpty && onClear != null) {
-      return CompactIconButton(
-        tooltip: 'Clear search',
-        extent: extent,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        foregroundColor: palette.textTertiary,
-        onPressed: onClear,
-        icon: KapyIcon(
-          KapyIcons.cancelRounded,
-          size: AppControlMetrics.iconAdornment,
+      // Inside the field's tap region, so Clear keeps the keyboard up.
+      return TextFieldTapRegion(
+        child: CompactIconButton(
+          tooltip: 'Clear search',
+          extent: extent,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: palette.textTertiary,
+          onPressed: onClear,
+          icon: KapyIcon(
+            KapyIcons.cancelRounded,
+            size: AppControlMetrics.iconAdornment,
+          ),
         ),
       );
     }

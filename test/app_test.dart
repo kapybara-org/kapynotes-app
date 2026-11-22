@@ -62,6 +62,7 @@ import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
+import 'package:kapy_notes/ui/tasks/tasks_sidebar.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
@@ -4990,6 +4991,74 @@ void main() {
       }
       await tester.pumpAndSettle();
     }
+
+    Future<void> pumpWithWaiting(WidgetTester tester, {Size? size}) async {
+      await notes.load();
+      notes.create(body: 'Errands\n☐ Pay the rent\n☐ Call the bank');
+      final renewal = notes.create(
+        body: 'Renewal notes\n☐ Renew the domain\n☐ Renew the van',
+      );
+      final days = NoteDayStore(store);
+      await days.load();
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 3));
+      final tasks = TaskLibrary(
+        notes: notes,
+        store: store,
+        storage: MemoryDocStorage(),
+      );
+      await tasks.load();
+      await tasks.reconcileNow();
+      await pumpApp(
+        tester,
+        size: size ?? const Size(1100, 760),
+        tasks: tasks,
+        days: days,
+      );
+    }
+
+    testWidgets("a window's Tasks counts leave out tasks whose note waits: "
+        "the bar's open count and Today in the sidebar", (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpWithWaiting(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+      await tester.pumpAndSettle();
+
+      final bar = tester.widget<SidebarWindowBar>(
+        find.descendant(
+          of: find.byType(TasksSidebar),
+          matching: find.byType(SidebarWindowBar),
+        ),
+      );
+      expect(bar.count, 2);
+      expect(
+        [
+          for (final text in tester.widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('tasks-filter-all')),
+              matching: find.byType(Text),
+            ),
+          ))
+            text.data,
+        ].join(' '),
+        'Today 2',
+      );
+    });
+
+    testWidgets("a phone's header counts Tasks without the tasks whose note "
+        'waits', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpWithWaiting(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<PhoneHomeHeader>(find.byType(PhoneHomeHeader)).count,
+        2,
+      );
+    });
 
     testWidgets("Tasks' header has no More, as D09a draws it, and Keep on "
         'top still answers its keys there', (tester) async {
