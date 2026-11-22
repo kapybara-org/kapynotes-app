@@ -10,6 +10,8 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/editor/image_insertion.dart';
 import 'package:kapy_notes/ui/editor/task_details_editing.dart';
+import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/window_drag_area.dart';
 import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
@@ -196,6 +198,44 @@ void main() {
       tester.getRect(rowOf(tasks.read().open[1].id)).right,
       lessThanOrEqualTo(900),
     );
+    await settle(tester);
+  });
+
+  testWidgets('the Details header is as tall as the bar at a larger text '
+      'size, and drags the window everywhere but Close', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Book flights');
+    await pumpScreen(tester);
+    await tester.tap(nameIn(tasks.read().open.first.id, 'Hide the menu'));
+    await tester.pumpAndSettle();
+
+    final header = find.byKey(const ValueKey('tasks-details-header'));
+    expect(
+      tester.getSize(header).height,
+      closeTo(PageToolbar.height * 1.2, .01),
+    );
+    final drag = find.descendant(
+      of: header,
+      matching: find.byType(WindowDragArea),
+    );
+    expect(drag, findsOneWidget);
+    final area = tester.getRect(drag);
+    final details = tester.getRect(
+      find.descendant(of: header, matching: find.text('Details')),
+    );
+    final close = tester.getRect(
+      find.descendant(of: header, matching: find.byType(TextButton)),
+    );
+    expect(area.left, closeTo(details.right, .01));
+    expect(area.right, closeTo(close.left, .01));
+    expect(area.height, closeTo(tester.getSize(header).height - 1, 1));
+    expect(find.text('Close').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(sheetOpen(), isFalse);
     await settle(tester);
   });
 

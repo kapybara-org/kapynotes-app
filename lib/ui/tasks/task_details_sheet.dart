@@ -10,6 +10,7 @@ import '../../data/task_board.dart';
 import '../../data/task_details.dart';
 import '../../images/note_image_provider.dart';
 import '../page_toolbar.dart';
+import '../window_drag_area.dart';
 import 'task_marks.dart';
 import 'tasks_controller.dart';
 
@@ -199,6 +200,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
+            key: const ValueKey('tasks-details-header'),
             height: AppControlMetrics.scaleBar(context, PageToolbar.height),
             padding: const EdgeInsets.only(left: 20, right: 12),
             foregroundDecoration: BoxDecoration(border: Border(bottom: edge)),
@@ -208,7 +210,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                   'Details',
                   style: uiStyle(13, 18, FontWeight.w500, palette.textPrimary),
                 ),
-                const Spacer(),
+                const Expanded(child: WindowDragArea(child: SizedBox.expand())),
                 TextButton(
                   onPressed: widget.onClose,
                   style: TextButton.styleFrom(
