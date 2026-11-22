@@ -134,6 +134,19 @@ void main() {
     );
     expect(find.text('Kapy AI Cloud'), findsOneWidget);
     expect(find.byKey(const ValueKey('account')), findsOneWidget);
+
+    List<FontVariation>? wghtOf(String label) =>
+        tester.widget<Text>(find.text(label)).style?.fontVariations;
+    for (final label in ['Yesterday', 'Previous 7 days', 'October']) {
+      expect(wghtOf(label), [const FontVariation('wght', 520)], reason: label);
+    }
+    final dispatcher = tester.binding.platformDispatcher;
+    dispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures.allOn;
+    addTearDown(dispatcher.clearAccessibilityFeaturesTestValue);
+    await _pump(tester, _ai());
+    for (final label in ['Yesterday', 'Previous 7 days', 'October']) {
+      expect(wghtOf(label), [const FontVariation('wght', 700)], reason: label);
+    }
   });
 
   testWidgets('says where chats are kept when they do not sync', (

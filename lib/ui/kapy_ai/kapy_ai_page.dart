@@ -323,12 +323,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
             padding: EdgeInsets.fromLTRB(20, i == 0 ? 18 : 14, 20, 6),
             child: Text(
               label,
-              style: kapyText(
-                13,
-                18,
-                _quiet,
-                weight: FontWeight.w500,
-              ).copyWith(fontVariations: const [FontVariation('wght', 520)]),
+              style: kapyText(13, 18, _quiet, weight: FontWeight.w600),
             ),
           ),
           for (final chat in rows)

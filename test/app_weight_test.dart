@@ -50,4 +50,54 @@ void main() {
       const FontVariation('wght', 700),
     ]);
   });
+
+  test("the text theme's styles sit on the ladder, Bold Text off and on", () {
+    final dispatcher = TestWidgetsFlutterBinding.instance.platformDispatcher;
+    addTearDown(dispatcher.clearAccessibilityFeaturesTestValue);
+    for (final boldText in [false, true]) {
+      dispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures(
+        boldText: boldText,
+      );
+      for (final theme in [KapyTheme.light(), KapyTheme.dark()]) {
+        final text = theme.textTheme;
+        final styles = <String, TextStyle?>{
+          'displayLarge': text.displayLarge,
+          'displayMedium': text.displayMedium,
+          'displaySmall': text.displaySmall,
+          'headlineLarge': text.headlineLarge,
+          'headlineMedium': text.headlineMedium,
+          'headlineSmall': text.headlineSmall,
+          'titleLarge': text.titleLarge,
+          'titleMedium': text.titleMedium,
+          'titleSmall': text.titleSmall,
+          'bodyLarge': text.bodyLarge,
+          'bodyMedium': text.bodyMedium,
+          'bodySmall': text.bodySmall,
+          'labelLarge': text.labelLarge,
+          'labelMedium': text.labelMedium,
+          'labelSmall': text.labelSmall,
+        };
+        for (final MapEntry(key: name, value: style) in styles.entries) {
+          if (style == null) continue;
+          final reason = '$name, ${theme.brightness.name}, Bold Text $boldText';
+          // The display cut stays under 400, off the ladder (axisOf).
+          if (name.startsWith('display')) {
+            expect(style.fontWeight, FontWeight.w300, reason: reason);
+            expect(style.fontVariations, isNull, reason: reason);
+            continue;
+          }
+          expect(
+            style.fontWeight,
+            AppWeight.font(AppWeight.body),
+            reason: reason,
+          );
+          expect(
+            style.fontVariations,
+            AppWeight.wght(AppWeight.body),
+            reason: reason,
+          );
+        }
+      }
+    }
+  });
 }

@@ -3,49 +3,74 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Lines in lib/ that set a weight off the ladder on purpose, by file and
-/// exact line (trimmed), with the reason. Everything else that sets a
-/// fontWeight takes the ladder: chromeStyle, ladder(), or AppWeight.font
-/// with AppWeight.wght beside it.
-const Map<String, String> ladderExceptions = {
-  'lib/core/theme.dart|fontWeight: FontWeight.w300,':
-      'The display cut, under 400, which AppWeight.axisOf leaves alone.',
-  'lib/ui/instant_capture.dart|fontWeight: FontWeight.w300,':
-      "Quick capture's light 300 in the system mono face, under 400, which "
-      'AppWeight.axisOf leaves alone.',
-  'lib/core/theme.dart|fontWeight: FontWeight.w400,':
-      "The writing's body (EditorMetrics.textStyle): note text takes its "
-      "weight from the Writing font's own axes, not the interface ladder.",
-  'lib/ui/editor/editor_formatting.dart|fontWeight: FontWeight.w400,':
-      'The writing: a paragraph style keeps the Writing font body weight.',
+/// exact line (trimmed), with how many such lines the file holds and why.
+/// Everything else that sets a fontWeight takes the ladder: chromeStyle,
+/// ladder(), or AppWeight.font with AppWeight.wght beside it.
+const Map<String, (int, String)> ladderExceptions = {
+  'lib/core/theme.dart|fontWeight: FontWeight.w300,': (
+    3,
+    'The display cut, under 400, which AppWeight.axisOf leaves alone.',
+  ),
+  'lib/ui/instant_capture.dart|fontWeight: FontWeight.w300,': (
+    1,
+    "Quick capture's light 300 in the system mono face, under 400, which "
+        'AppWeight.axisOf leaves alone.',
+  ),
+  'lib/core/theme.dart|fontWeight: FontWeight.w400,': (
+    1,
+    "The writing's body (EditorMetrics.textStyle): note text takes its "
+        "weight from the Writing font's own axes, not the interface ladder.",
+  ),
+  'lib/ui/editor/editor_formatting.dart|fontWeight: FontWeight.w400,': (
+    1,
+    'The writing: a paragraph style keeps the Writing font body weight.',
+  ),
   'lib/ui/editor/editor_formatting.dart|'
-          'fontWeight: strong ? FontWeight.w600 : FontWeight.w400,':
-      "The note title in Newsreader's static cut, which has no wght axis.",
+      'fontWeight: strong ? FontWeight.w600 : FontWeight.w400,': (
+    1,
+    "The note title in Newsreader's static cut, which has no wght axis.",
+  ),
   'lib/ui/editor/editor_formatting.dart|'
-          'fontWeight: strong ? FontWeight.w600 : EditorMetrics.titleWeight,':
-      'The note title in the Writing font the person chose; the writing '
-      "keeps its own weights, not the interface ladder's.",
-  'lib/ui/editor/editor_formatting.dart|fontWeight: FontWeight.w600,':
-      'The writing: a Markdown heading in the Writing font.',
-  'lib/ui/editor/highlighting_controller.dart|fontWeight: FontWeight.w600,':
-      'The writing: Markdown bold, a table header and a list marker in the '
-      'Writing font.',
-  'lib/ui/editor/highlighting_controller.dart|fontWeight: FontWeight.w400,':
-      'The writing: a link chip inside a note.',
-  'lib/ui/editor/highlighting_controller.dart|fontWeight: FontWeight.w500,':
-      'The writing: a title token in a code block.',
+      'fontWeight: strong ? FontWeight.w600 : EditorMetrics.titleWeight,': (
+    1,
+    'The note title in the Writing font the person chose; the writing '
+        "keeps its own weights, not the interface ladder's.",
+  ),
+  'lib/ui/editor/editor_formatting.dart|fontWeight: FontWeight.w600,': (
+    1,
+    'The writing: a Markdown heading in the Writing font.',
+  ),
+  'lib/ui/editor/highlighting_controller.dart|fontWeight: FontWeight.w600,': (
+    3,
+    'The writing: Markdown bold, a table header and a list marker in the '
+        'Writing font.',
+  ),
+  'lib/ui/editor/highlighting_controller.dart|fontWeight: FontWeight.w400,': (
+    1,
+    'The writing: a link chip inside a note.',
+  ),
+  'lib/ui/editor/highlighting_controller.dart|fontWeight: FontWeight.w500,': (
+    1,
+    'The writing: a title token in a code block.',
+  ),
   'lib/ui/editor/note_editor.dart|'
-          'style: TextStyle(fontWeight: FontWeight.w700),':
-      "The empty note's placeholder shows the writing's own bold.",
-  'lib/ui/editor/note_field.dart|fontWeight: widget.style.fontWeight,':
-      "The keyboard's TextInputStyle, which has no font variations to set.",
+      'style: TextStyle(fontWeight: FontWeight.w700),': (
+    1,
+    "The empty note's placeholder shows the writing's own bold.",
+  ),
+  'lib/ui/editor/note_field.dart|fontWeight: widget.style.fontWeight,': (
+    1,
+    "The keyboard's TextInputStyle, which has no font variations to set.",
+  ),
 };
 
 final _fontWeight = RegExp(r'fontWeight:\s*(.*)$');
 
 /// Every line in [sources] (path to Dart source) that breaks the ladder, as
-/// "path:line: why".
+/// "path:line: why". An exception covers only as many lines as it counts.
 List<String> ladderViolations(Map<String, String> sources) {
   final found = <String>[];
+  final excused = <String, int>{};
   for (final MapEntry(key: path, value: source) in sources.entries) {
     final lines = source.split('\n');
     for (var index = 0; index < lines.length; index++) {
@@ -63,7 +88,9 @@ List<String> ladderViolations(Map<String, String> sources) {
                 value.contains('AppWeight.named(')) &&
             !value.contains('FontWeight.');
         if (!onLadder) {
-          if (!ladderExceptions.containsKey('$path|$line')) {
+          final key = '$path|$line';
+          final seen = excused[key] = (excused[key] ?? 0) + 1;
+          if (seen > (ladderExceptions[key]?.$1 ?? 0)) {
             found.add('$where: a plain weight without the ladder: $line');
           }
         } else {
@@ -77,6 +104,14 @@ List<String> ladderViolations(Map<String, String> sources) {
             found.add('$where: a ladder weight without its wght: $line');
           }
         }
+      }
+
+      if ((line.contains("FontVariation('wght'") ||
+              line.contains('FontVariation.weight(')) &&
+          path != 'lib/core/theme.dart') {
+        found.add(
+          '$where: a raw wght, which skips the ladder and Bold Text: $line',
+        );
       }
 
       final variations = line.indexOf('AppWeight.variations(');
@@ -107,16 +142,58 @@ void main() {
     expect(ladderViolations(_lib()), isEmpty);
   });
 
-  test('every documented exception still names a line in lib/', () {
-    final lib = _lib();
-    for (final key in ladderExceptions.keys) {
-      final [path, line] = key.split('|');
-      expect(
-        lib[path]?.split('\n').map((each) => each.trim()),
-        contains(line),
-        reason: key,
-      );
-    }
+  test(
+    'every documented exception names exactly as many lines as it counts',
+    () {
+      final lib = _lib();
+      for (final MapEntry(key: key, value: (count, _))
+          in ladderExceptions.entries) {
+        final [path, line] = key.split('|');
+        expect(
+          lib[path]?.split('\n').where((each) => each.trim() == line),
+          hasLength(count),
+          reason: key,
+        );
+      }
+    },
+  );
+
+  test('an exception covers only the lines it counts', () {
+    const line = 'fontWeight: FontWeight.w400,';
+    expect(
+      ladderViolations({
+        'lib/ui/instant_capture.dart': '  fontWeight: FontWeight.w300,\n',
+      }),
+      isEmpty,
+    );
+    expect(
+      ladderViolations({
+        'lib/ui/instant_capture.dart':
+            '  fontWeight: FontWeight.w300,\n  fontWeight: FontWeight.w300,\n',
+      }),
+      hasLength(1),
+    );
+    expect(
+      ladderViolations({'lib/ui/editor/note_field.dart': '  $line\n'}),
+      hasLength(1),
+    );
+  });
+
+  test('a raw wght outside theme.dart is caught', () {
+    const raw = '''
+final style = kapyText(13, 18, quiet).copyWith(
+  fontVariations: const [FontVariation('wght', 520)],
+);
+''';
+    const named = '''
+final style = kapyText(13, 18, quiet).copyWith(
+  fontVariations: const [FontVariation.weight(520)],
+);
+''';
+    expect(ladderViolations({'lib/ui/planted.dart': raw}), hasLength(1));
+    expect(ladderViolations({'lib/ui/planted.dart': named}), hasLength(1));
+    expect(ladderViolations({'lib/core/theme.dart': raw}), isEmpty);
+    expect(ladderViolations({'lib/core/theme.dart': named}), isEmpty);
   });
 
   test('a plain FontWeight in a text style is caught', () {
