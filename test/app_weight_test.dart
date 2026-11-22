@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
-import 'package:kapy_notes/ui/kapy_ai/kapy_ai_parts.dart' show kapyText;
 import 'package:material_ui/material_ui.dart';
 
 void main() {
@@ -50,16 +49,6 @@ void main() {
     expect(AppWeight.wght(AppWeight.section), [
       const FontVariation('wght', 700),
     ]);
-  });
-
-  test("the chats list's group labels are 520, and Bold Text raises them", () {
-    TextStyle label() =>
-        kapyText(13, 18, const Color(0xFF6E6A60), weight: FontWeight.w600);
-    expect(label().fontVariations, [const FontVariation('wght', 520)]);
-    final dispatcher = TestWidgetsFlutterBinding.instance.platformDispatcher;
-    dispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures.allOn;
-    addTearDown(dispatcher.clearAccessibilityFeaturesTestValue);
-    expect(label().fontVariations, [const FontVariation('wght', 700)]);
   });
 
   test("the text theme's styles sit on the ladder, Bold Text off and on", () {

@@ -106,7 +106,8 @@ List<String> ladderViolations(Map<String, String> sources) {
         }
       }
 
-      if (line.contains("FontVariation('wght'") &&
+      if ((line.contains("FontVariation('wght'") ||
+              line.contains('FontVariation.weight(')) &&
           path != 'lib/core/theme.dart') {
         found.add(
           '$where: a raw wght, which skips the ladder and Bold Text: $line',
@@ -184,8 +185,15 @@ final style = kapyText(13, 18, quiet).copyWith(
   fontVariations: const [FontVariation('wght', 520)],
 );
 ''';
+    const named = '''
+final style = kapyText(13, 18, quiet).copyWith(
+  fontVariations: const [FontVariation.weight(520)],
+);
+''';
     expect(ladderViolations({'lib/ui/planted.dart': raw}), hasLength(1));
+    expect(ladderViolations({'lib/ui/planted.dart': named}), hasLength(1));
     expect(ladderViolations({'lib/core/theme.dart': raw}), isEmpty);
+    expect(ladderViolations({'lib/core/theme.dart': named}), isEmpty);
   });
 
   test('a plain FontWeight in a text style is caught', () {
