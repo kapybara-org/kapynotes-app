@@ -8149,6 +8149,31 @@ void main() {
       expect(ends.last, ends.first);
     });
 
+    testWidgets('on an iPhone, a swipe in from the left edge takes Pinned '
+        'back to Home', (tester) async {
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+
+      // Over a row, whose own swipe the edge has to win.
+      final row = find.widgetWithText(NoteRow, 'Lisbon trip');
+      await tester.dragFrom(
+        Offset(2, tester.getCenter(row).dy),
+        const Offset(200, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsNothing);
+      expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets("Home's Pinned card says so while nothing is pinned", (
       tester,
     ) async {
