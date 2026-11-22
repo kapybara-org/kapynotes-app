@@ -217,6 +217,17 @@ void main() {
     expect(sharedPage, findsOneWidget);
   }
 
+  /// Opens [title] from its Shared row and comes back to Shared, so it is
+  /// the note selected behind the list, as after a person has read it.
+  Future<void> openAndComeBack(WidgetTester tester, String title) async {
+    await tester.tap(row(title));
+    await tester.pumpAndSettle();
+    expect(sharedPage, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('page-back')));
+    await tester.pumpAndSettle();
+    expect(sharedPage, findsOneWidget);
+  }
+
   /// Holds [title]'s row until its menu opens. The menu opens while the
   /// press is still held, and without passing pointer events through, the
   /// live binding drops the pointer cancel that opening sends (KAPY-45). The
@@ -577,6 +588,7 @@ void main() {
       expect(blocked, findsOneWidget);
       expect(account.sharing!.hasBlocked(priya.email), isTrue);
       expect(memberRow('user-2'), findsNothing);
+      expect(sharedPage, findsOneWidget, reason: 'Shared stays');
       await screenshot('phone-sharing-blocked-$sheetName');
     }
 
@@ -593,6 +605,7 @@ void main() {
         'then they are gone from the list', (tester) async {
       await shareAround(tester);
       await openSharedPage(tester);
+      await openAndComeBack(tester, 'Packing list');
       await openSheetFor(tester, 'Trip budget');
       await blockPriya(tester, 'note-sheet');
       await pumpUntil(tester, () => sheet.evaluate().isEmpty);
@@ -604,6 +617,7 @@ void main() {
         'they are gone from the list', (tester) async {
       await shareAround(tester);
       await openSharedPage(tester);
+      await openAndComeBack(tester, 'Packing list');
       await openShareWideSheet(tester, tripId);
       await blockPriya(tester, 'share-sheet');
       await expectPriyaGone(tester, 'share-sheet');
@@ -621,6 +635,7 @@ void main() {
       await pumpUntil(tester, () => !listed('Packing list'));
       await closeSheetIfOpen(tester);
       expect(sheet, findsNothing);
+      expect(sharedPage, findsOneWidget, reason: 'Shared stays');
       expect(listed('Packing list'), isFalse);
       expect(listed('Trip budget'), isTrue);
       expect(account.sharing!.notesSharedFrom(priya.email), isEmpty);
@@ -635,6 +650,7 @@ void main() {
         'leaves the Shared page', (tester) async {
       await shareAround(tester);
       await openSharedPage(tester);
+      await openAndComeBack(tester, 'Packing list');
       await openSheetFor(tester, 'Packing list');
       expect(find.text('Shared with you'), findsOneWidget);
       await leavePacking(tester, 'note-sheet');
@@ -644,6 +660,7 @@ void main() {
         'Shared page', (tester) async {
       await shareAround(tester);
       await openSharedPage(tester);
+      await openAndComeBack(tester, 'Packing list');
       await openShareWideSheet(tester, packingId);
       await leavePacking(tester, 'share-sheet');
     }, skip: !phone);
