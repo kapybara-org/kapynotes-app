@@ -912,7 +912,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     ? KapyIcons.penRounded
                     : KapyIcons.noteOutlined,
                 size: 15,
-                color: heading == 'Pinned' ? palette.clay : palette.textTertiary,
+                color: palette.textTertiary,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1004,7 +1004,14 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                   Text('Open Kapy Notes', style: TextStyle(color: palette.textSecondary)),
                   if (open != null) ...[
                     const SizedBox(width: 8),
-                    Keycap(open.keycapLabel),
+                    Text(
+                      open.keycapLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 14 / 11,
+                        color: palette.textSecondary,
+                      ),
+                    ),
                   ],
                 ],
               ),
