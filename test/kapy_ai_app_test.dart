@@ -11,6 +11,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
@@ -254,29 +255,6 @@ void main() {
       expect(find.textContaining('Private plans'), findsNothing);
     });
 
-    testWidgets('a phone has the button in its top bar, and a sheet', (
-      tester,
-    ) async {
-      notes.create(body: 'Trip budget');
-      await _pump(
-        tester,
-        size: const Size(390, 844),
-        platform: TargetPlatform.iOS,
-      );
-
-      expect(_button, findsOneWidget);
-      await tester.tap(_button);
-      await tester.pumpAndSettle();
-
-      expect(_panel, findsOneWidget);
-      expect(find.text('This note · Trip budget'), findsOneWidget);
-      expect(find.textContaining('opens and closes Kapy AI'), findsNothing);
-
-      await tester.tap(find.byKey(const ValueKey('kapy-ai-close')));
-      await tester.pumpAndSettle();
-      expect(_panel, findsNothing);
-    });
-
     testWidgets('turned off in Settings, the button and ⌘J do nothing', (
       tester,
     ) async {
@@ -299,6 +277,194 @@ void main() {
       expect(_ask, findsNothing);
       await _toggleWithKeys(tester);
       expect(_panel, findsNothing);
+    });
+  });
+
+  group('a phone’s sheet over the note (M10)', () {
+    const question = 'What is left on this note?';
+    const answer =
+        'One task: send the deck this morning. The pricing page is due Friday.';
+    final sheet = find.byKey(const ValueKey('kapy-ai-sheet'));
+    final grabber = find.byKey(const ValueKey('kapy-ai-grabber'));
+    final field = find.byKey(const ValueKey('kapy-ai-field'));
+    final chip = find.byKey(const ValueKey('kapy-ai-chip'));
+    final picker = find.byKey(const ValueKey('kapy-ai-model-button'));
+    final chats = find.byKey(const ValueKey('kapy-ai-chats'));
+    final newChat = find.byKey(const ValueKey('kapy-ai-new-chat'));
+    final answerText = find.textContaining(answer, findRichText: true);
+    const screen = Size(402, 874);
+
+    Future<String> open(WidgetTester tester) async {
+      final note = notes.create(
+        body: 'Call with Arjun\n☐ Send the deck this morning\nPricing page',
+      );
+      ai = FakeKapyAi(pro: true)..set(model: KapyModel.cloud);
+      await _pump(tester, size: screen, platform: TargetPlatform.iOS);
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      return note.id;
+    }
+
+    Future<void> ask(WidgetTester tester, String noteId) async {
+      await tester.enterText(field, question);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-send')));
+      await tester.pumpAndSettle();
+      expect(ai.calls.last, 'ask:$question:$noteId');
+      final asked = KapyMessage(
+        id: 'q',
+        role: KapyRole.user,
+        text: question,
+        at: DateTime(2026, 11, 17, 16, 41),
+      );
+      KapyChat chat(List<KapyMessage> messages) => KapyChat(
+        id: 'm10',
+        title: question,
+        createdAt: asked.at,
+        updatedAt: asked.at,
+        model: KapyModel.cloud,
+        messages: messages,
+      );
+      ai.set(current: chat([asked]));
+      await tester.pumpAndSettle();
+      expect(find.text('Reading your notes…'), findsOneWidget);
+      ai.set(
+        current: chat([
+          asked,
+          KapyMessage(
+            id: 'a',
+            role: KapyRole.assistant,
+            text: answer,
+            at: asked.at,
+            model: KapyModel.cloud,
+          ),
+        ]),
+        answering: false,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    double sheetTop(WidgetTester tester) => tester.getRect(sheet).top;
+
+    testWidgets('from the note’s button it rests over the note, compact', (
+      tester,
+    ) async {
+      await open(tester);
+
+      expect(_panel, findsOneWidget);
+      expect(
+        sheetTop(tester),
+        moreOrLessEquals(screen.height * 0.423, epsilon: 1),
+      );
+      expect(grabber, findsOneWidget);
+      expect(find.text('Kapy AI'), findsOneWidget);
+      expect(find.text('Close'), findsOneWidget);
+      expect(find.text('About Call with Arjun'), findsOneWidget);
+      expect(find.text('Ask about this note'), findsOneWidget);
+      for (final gone in [chip, picker, chats, newChat]) {
+        expect(gone, findsNothing);
+      }
+      for (final above in [
+        find.byKey(const ValueKey('page-back')),
+        _button,
+        find.byType(NoteField),
+      ]) {
+        expect(
+          tester.getRect(above).top,
+          lessThan(sheetTop(tester)),
+          reason: '$above stays in view above the sheet',
+        );
+      }
+      expect(
+        tester.testTextInput.isVisible,
+        isFalse,
+        reason: 'the keyboard waits for a tap, so the note stays in view',
+      );
+    });
+
+    testWidgets('asking about the note shows the question and the answer', (
+      tester,
+    ) async {
+      final id = await open(tester);
+      await ask(tester, id);
+
+      expect(find.text(question), findsOneWidget);
+      expect(answerText, findsOneWidget);
+      expect(find.text('Reading your notes…'), findsNothing);
+      expect(
+        tester.getRect(answerText).bottom,
+        lessThanOrEqualTo(tester.getRect(field).top),
+      );
+      expect(find.byKey(const ValueKey('kapy-ai-copy')), findsNothing);
+    });
+
+    testWidgets('pulled up, it is the full panel with the same chat', (
+      tester,
+    ) async {
+      final id = await open(tester);
+      await ask(tester, id);
+      await tester.enterText(field, 'And the pricing page?');
+      await tester.pump();
+
+      await tester.drag(grabber, const Offset(0, -500));
+      await tester.pumpAndSettle();
+
+      expect(sheetTop(tester), moreOrLessEquals(0, epsilon: 1));
+      for (final shown in [chats, newChat, picker]) {
+        expect(shown, findsOneWidget);
+      }
+      expect(find.text('This note · Call with Arjun'), findsOneWidget);
+      expect(find.text('About Call with Arjun'), findsNothing);
+      expect(find.text(question), findsOneWidget);
+      expect(answerText, findsOneWidget);
+      expect(find.byKey(const ValueKey('kapy-ai-copy')), findsOneWidget);
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        'And the pricing page?',
+        reason: 'what was typed in the compact sheet is still there',
+      );
+    });
+
+    testWidgets('pulled down past its rest, it goes', (tester) async {
+      await open(tester);
+      await tester.drag(grabber, const Offset(0, 400));
+      await tester.pumpAndSettle();
+      expect(_panel, findsNothing);
+    });
+
+    testWidgets('Close and the scrim each put it away', (tester) async {
+      await open(tester);
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-close')));
+      await tester.pumpAndSettle();
+      expect(_panel, findsNothing);
+
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      expect(_panel, findsOneWidget);
+      await tester.tapAt(const Offset(200, 60));
+      await tester.pumpAndSettle();
+      expect(_panel, findsNothing);
+    });
+
+    testWidgets('the keyboard lifts it, with the field just above it', (
+      tester,
+    ) async {
+      await open(tester);
+      final rest = sheetTop(tester);
+      await tester.tap(field);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+
+      expect(sheetTop(tester), moreOrLessEquals(rest - 300, epsilon: 1));
+      expect(
+        tester.getRect(field).bottom,
+        lessThanOrEqualTo(screen.height - 300),
+      );
+      expect(find.text('About Call with Arjun'), findsOneWidget);
+
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(sheetTop(tester), moreOrLessEquals(rest, epsilon: 1));
     });
   });
 

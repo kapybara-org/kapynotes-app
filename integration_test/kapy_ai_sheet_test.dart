@@ -6,11 +6,13 @@
 //     --target integration_test/kapy_ai_sheet_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
-// Call with Arjun is opened from Notes, Kapy AI is pulled up from the note's
-// sparkle, and a question is typed and sent. The answer lands once the sheet
-// says it is reading, and the shot is taken dark, at 1× and 2× text, with the
-// answer on screen. Each is a screenshot in build/screenshots, and a device
-// shot where tool/ci/phone_screenshots.sh names the device.
+// Call with Arjun is opened from Notes, and its sparkle pulls Kapy AI up as
+// a sheet resting over the note, with the note's header and title still in
+// view. A question is typed and sent, the answer lands once the sheet says it
+// is reading, and with the keyboard down the shot is taken dark, at 1× and 2×
+// text, with the sheet back at its rest and the answer on screen. Each is a
+// screenshot in build/screenshots, and a device shot where
+// tool/ci/phone_screenshots.sh names the device.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
@@ -23,6 +25,8 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -139,13 +143,17 @@ void main() {
       await until(() => panel.evaluate().isNotEmpty, 'the Kapy AI sheet');
       binding.shouldPropagateDevicePointerEvents = false;
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('kapy-ai-chip')),
-          matching: find.textContaining('Call with Arjun'),
-        ),
+        find.text('About Call with Arjun'),
         findsOneWidget,
         reason: 'the sheet asks about the note it was opened from',
       );
+      final sheet = find.byKey(const ValueKey('kapy-ai-sheet'));
+      final rest =
+          tester.view.physicalSize.height /
+          tester.view.devicePixelRatio *
+          (1 - kapyAiSheetRest);
+      bool resting() => (tester.getRect(sheet).top - rest).abs() < 1;
+      expect(resting(), isTrue, reason: 'the sheet rests over the note');
 
       final field = find.byKey(const ValueKey('kapy-ai-field'));
       await tester.tap(field);
@@ -181,19 +189,24 @@ void main() {
 
       FocusManager.instance.primaryFocus?.unfocus();
       await until(
-        () => tester.view.viewInsets.bottom == 0,
-        'the keyboard to go down',
+        () => tester.view.viewInsets.bottom == 0 && resting(),
+        'the keyboard to go down and the sheet to rest over the note',
       );
 
       expect(answerText, findsOneWidget);
-      final sheet = tester.getRect(panel);
+      final over = tester.getRect(sheet);
       final shown = tester.getRect(answerText);
       final composer = tester.getRect(field);
       expect(
-        shown.top >= sheet.top && shown.bottom <= composer.top,
+        shown.top >= over.top && shown.bottom <= composer.top,
         isTrue,
         reason:
-            'the answer $shown is on screen, inside $sheet and above $composer',
+            'the answer $shown is on screen, inside $over and above $composer',
+      );
+      expect(
+        tester.getRect(find.byType(NoteField)).top,
+        lessThan(over.top),
+        reason: 'the note stays in view above the sheet',
       );
       expect(find.textContaining(question), findsOneWidget);
       expect(tester.takeException(), isNull);
