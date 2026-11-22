@@ -3450,8 +3450,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
           (SlashCommandType.video, ShortcutAction.insertVideo),
           (SlashCommandType.file, ShortcutAction.insertFile),
-          (SlashCommandType.checklist, ShortcutAction.formatChecklist),
-          (SlashCommandType.bulletedList, ShortcutAction.formatBullets),
         ])
           if (widget.shortcuts.hintFor(action) case final binding?)
             command: binding.displayLabel,

@@ -9,9 +9,13 @@ import '../core/theme.dart';
 /// One look for every shortcut the app shows beside a control, so a hint
 /// reads as a key to press rather than as more text to read.
 class Keycap extends StatelessWidget {
-  const Keycap(this.label, {super.key, this.tonal = false});
+  const Keycap(this.label, {super.key, this.tonal = false, this.plain = false});
 
   final String label;
+
+  /// The key as plain text, Geist Mono 11/14 in T3 with no box, the way the
+  /// / menu (D06) and ⌘K (D11) print their keys.
+  final bool plain;
 
   /// The chip inside a tonal button: in the button's own sage, borderless
   /// and a step smaller, so it reads as part of the button rather than as a
@@ -56,6 +60,18 @@ class Keycap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (plain) {
+      return Text(
+        label,
+        maxLines: 1,
+        softWrap: false,
+        style: _style(tonal: false, color: palette.textTertiary).copyWith(
+          height: 14 / 11,
+          fontWeight: AppWeight.font(AppWeight.body),
+          fontVariations: AppWeight.wght(AppWeight.body),
+        ),
+      );
+    }
     return Container(
       constraints: tonal
           ? const BoxConstraints(minHeight: 18)

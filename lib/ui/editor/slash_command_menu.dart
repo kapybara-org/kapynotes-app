@@ -919,7 +919,7 @@ class _CommandRow extends StatelessWidget {
                     if (requiresMarkdown)
                       Text('Markdown', maxLines: 1, style: quiet)
                     else if (hint != null)
-                      Keycap(hint),
+                      Keycap(hint, plain: true),
                   ],
                 ),
               ),
@@ -1046,7 +1046,7 @@ class _KeyHints extends StatelessWidget {
               ('↵', 'insert'),
               ('esc', 'close'),
             ]) ...[
-              Keycap(key),
+              Keycap(key, plain: true),
               Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: Text(action, style: style),
