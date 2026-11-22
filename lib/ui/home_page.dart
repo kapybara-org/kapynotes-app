@@ -3183,6 +3183,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ai,
           onClose: close,
           compact: compact,
+          inSheet: true,
           onExpand: expand,
           onOpenNote: (id) {
             close();
@@ -3198,10 +3199,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required VoidCallback onClose,
     required ValueChanged<String> onOpenNote,
     bool compact = false,
+    bool inSheet = false,
     VoidCallback? onExpand,
   }) => KapyAiPanel(
     kapyAi: ai,
     compact: compact,
+    inSheet: inSheet,
     onExpand: onExpand,
     controller: _kapyPanel,
     noteTitle: _kapyNoteTitle,
@@ -4907,9 +4910,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _phoneHomeHeader() => PhoneHomeHeader(
     tasks: _tasksMode,
-    count: switch (_taskController) {
-      final tasks? when _tasksMode => _todayTasks(tasks).length,
-      _ => _matchingCount,
+    notesCount: _matchingCount,
+    tasksCount: switch (_taskController) {
+      final tasks? => _todayTasks(tasks).length,
+      null => 0,
     },
     onNotes: () => _showHome(tasks: false),
     onTasks: _taskController == null ? null : () => _showHome(tasks: true),

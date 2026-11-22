@@ -123,6 +123,61 @@ void main() {
     expect(find.text('Nothing pinned yet'), findsOneWidget);
   });
 
+  testWidgets("signed in with shares, the two cards are M01's: equal halves "
+      '8 apart, 132 tall, the icon box at 7% and the titles in T2', (
+    tester,
+  ) async {
+    await pumpCards(
+      tester,
+      pinned: [note('a', 'Reading list'), note('b', 'Lisbon budget')],
+      shared: [note('c', 'Call with Arjun'), note('d', 'Book club picks')],
+      invitations: 2,
+    );
+    final pinnedCard = find.byKey(const ValueKey('home-pinned-card'));
+    final pinned = tester.getRect(pinnedCard);
+    final shared = tester.getRect(
+      find.byKey(const ValueKey('home-shared-card')),
+    );
+    expect(pinned.left, 20);
+    expect(shared.right, 393 - 20);
+    expect(shared.left - pinned.right, 8);
+    expect(pinned.width, (393 - 40 - 8) / 2);
+    expect(shared.size, pinned.size);
+    expect(pinned.height, 132);
+    final palette = KapyTheme.darkPalette;
+    final iconBox = find.descendant(
+      of: pinnedCard,
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is Container &&
+            widget.constraints ==
+                const BoxConstraints.tightFor(width: 32, height: 32),
+      ),
+    );
+    expect(
+      (tester.widget<Container>(iconBox).decoration! as BoxDecoration).color,
+      palette.selectedBackground,
+    );
+    expect(
+      tester
+          .widget<Text>(find.text('Reading list, Lisbon budget'))
+          .style
+          ?.color,
+      palette.textSecondary,
+    );
+  });
+
+  testWidgets('signed out, Pinned alone takes the whole row', (tester) async {
+    await pumpCards(tester, pinned: [note('a', 'Reading list')]);
+    final pinned = tester.getRect(
+      find.byKey(const ValueKey('home-pinned-card')),
+    );
+    expect(find.byKey(const ValueKey('home-shared-card')), findsNothing);
+    expect(pinned.left, 20);
+    expect(pinned.width, 393 - 40);
+    expect(pinned.height, 132);
+  });
+
   for (final (scale, size) in [
     (2.0, const Size(412, 915)),
     (3.1, const Size(375, 667)),
