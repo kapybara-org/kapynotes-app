@@ -211,7 +211,9 @@ class NotesFoldersSwitch extends StatelessWidget {
 }
 
 /// The Folders tab beside the rail: the folder tree with the notes of each
-/// open folder, New folder, then Not in a folder.
+/// open folder, New folder, then Not in a folder. A phone's (M02) asks for a
+/// new folder from beside its search field instead, and heads the notes in no
+/// folder as Home heads a day.
 class FoldersTab extends StatefulWidget {
   const FoldersTab({
     super.key,
@@ -225,6 +227,8 @@ class FoldersTab extends StatefulWidget {
     this.onTab,
     this.header,
     this.phone = false,
+    this.newFolder,
+    this.looseHeading,
   });
 
   final FolderStore store;
@@ -235,6 +239,14 @@ class FoldersTab extends StatefulWidget {
   /// A phone's Folders (M02): rows a finger's height, and a long press for a
   /// folder's actions.
   final bool phone;
+
+  /// Notifies when a new folder is wanted at the top of the tree, from a
+  /// phone's New folder beside its search field.
+  final Listenable? newFolder;
+
+  /// Heads the notes in no folder, as a phone's Home heads a day; null for
+  /// the small heading beside the rail.
+  final Widget Function(String label)? looseHeading;
 
   /// The notes waiting for a day after today, folded above the tree as
   /// Upcoming, beside Drawings (Sanjay, 20 Nov: the phone home shows no note
@@ -337,6 +349,26 @@ class _FoldersTabState extends State<FoldersTab> {
 
   FolderStore get _store => widget.store;
 
+  @override
+  void initState() {
+    super.initState();
+    widget.newFolder?.addListener(_newFolder);
+  }
+
+  @override
+  void didUpdateWidget(FoldersTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.newFolder == widget.newFolder) return;
+    oldWidget.newFolder?.removeListener(_newFolder);
+    widget.newFolder?.addListener(_newFolder);
+  }
+
+  @override
+  void dispose() {
+    widget.newFolder?.removeListener(_newFolder);
+    super.dispose();
+  }
+
   void _stopNaming() => setState(() {
     _renaming = null;
     _naming = false;
@@ -428,6 +460,9 @@ class _FoldersTabState extends State<FoldersTab> {
       onCancel: _stopNaming,
     );
 
+    // A phone names a new folder at the top, under the button that asked.
+    final namingTop = _naming && _namingIn == null;
+    if (widget.phone && namingTop) add((_) => field(1));
     for (final line in tree) {
       switch (line) {
         case FolderLine(:final folder):
@@ -460,12 +495,34 @@ class _FoldersTabState extends State<FoldersTab> {
           add((_) => widget.noteRow(note, depth));
       }
     }
-    add(
-      (_) => _naming && _namingIn == null
-          ? field(1)
-          : _NewFolderRow(phone: widget.phone, onTap: _newFolder),
-    );
-    if (loose.isNotEmpty) {
+    if (!widget.phone) {
+      add((_) => namingTop ? field(1) : _NewFolderRow(onTap: _newFolder));
+    }
+    if (widget.looseHeading case final heading? when loose.isNotEmpty) {
+      rows.add((_) => const SizedBox(height: 22));
+      rows.add(
+        (_) => Padding(
+          key: const ValueKey('folders-loose-heading'),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: heading('Not in a folder'),
+        ),
+      );
+      rows.add((_) => const SizedBox(height: 12));
+      for (final (index, note) in loose.indexed) {
+        if (index > 0) {
+          rows.add(
+            (context) => Divider(
+              height: AppHairline.of(context),
+              thickness: AppHairline.of(context),
+              indent: 20,
+              endIndent: 20,
+              color: context.palette.separator,
+            ),
+          );
+        }
+        rows.add((_) => widget.noteRow(note, null));
+      }
+    } else if (loose.isNotEmpty) {
       add(
         (_) => NotesGroupHeading(
           key: const ValueKey('folders-loose-heading'),
@@ -675,9 +732,8 @@ class _FolderRowState extends State<_FolderRow> {
 
 /// New folder, under the tree.
 class _NewFolderRow extends StatefulWidget {
-  const _NewFolderRow({required this.phone, required this.onTap});
+  const _NewFolderRow({required this.onTap});
 
-  final bool phone;
   final VoidCallback onTap;
 
   @override
@@ -701,7 +757,7 @@ class _NewFolderRowState extends State<_NewFolderRow> {
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
           child: Container(
-            height: AppControlMetrics.scaleBar(context, widget.phone ? 48 : 32),
+            height: AppControlMetrics.scaleBar(context, 32),
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,

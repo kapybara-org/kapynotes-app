@@ -113,6 +113,10 @@ typedef SidebarFolders = ({
   void Function(String folderId, bool open) onOpen,
   String? inFront,
   void Function(String folderId, {required bool behind})? onTab,
+
+  /// On a phone, what New folder beside the search field (M02) bumps to
+  /// have the tree name a new folder at its top. Null elsewhere.
+  ValueNotifier<int>? newFolder,
 });
 
 /// What can be done to many picked notes at once.
@@ -431,7 +435,25 @@ class Sidebar extends StatelessWidget {
                       active: filtersActive,
                       onPressed: onFiltersToggled!,
                     )
-                  : null,
+                  : switch (folders?.newFolder) {
+                      final newFolder? when phone && _foldersTab =>
+                        SizedBox.square(
+                          dimension: 44,
+                          child: CompactIconButton(
+                            key: const ValueKey('phone-new-folder'),
+                            tooltip: 'New folder',
+                            semanticLabel: 'New folder',
+                            extent: 44,
+                            onPressed: () => newFolder.value++,
+                            icon: KapyIcon(
+                              KapyIcons.folderAddOutlined,
+                              size: 18,
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ),
+                      _ => null,
+                    },
             ),
             if (controls != null && !_foldersTab)
               if (phone && onFiltersToggled != null)
@@ -1444,10 +1466,16 @@ extension on Sidebar {
         upcoming: upcoming,
         header: phoneCards,
         phone: phone,
+        newFolder: folders.newFolder,
+        looseHeading: phone ? (label) => _PhoneDayHeading(lead: label) : null,
         noteRow: (note, depth) => _row(
           note,
           shared: sharing != null && note.isShared,
-          style: depth == null ? NoteRowStyle.loose : NoteRowStyle.filed,
+          style: switch (depth) {
+            null when phone => NoteRowStyle.touch,
+            null => NoteRowStyle.loose,
+            _ => NoteRowStyle.filed,
+          },
           depth: depth ?? 0,
         ),
       ),
@@ -2618,9 +2646,9 @@ class SidebarSearchField extends StatelessWidget {
                         KapyIcon(
                           KapyIcons.searchRounded,
                           size: 16,
-                          color: palette.textSecondary,
+                          color: palette.textTertiary,
                         ),
-                        const SizedBox(width: 9),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             searching ? query : placeholder,
@@ -3808,12 +3836,13 @@ class _SharePeople extends StatelessWidget {
 }
 
 /// A day's heading on a phone's list, in the note title's face at 19/24, as
-/// Home and Tasks both draw it: "Today" with the date after it, muted.
+/// Home and Tasks both draw it: "Today" with the date after it, muted. Folders
+/// heads its notes in no folder with it too (M02), with no date.
 class _PhoneDayHeading extends StatelessWidget {
-  const _PhoneDayHeading({required this.lead, required this.date});
+  const _PhoneDayHeading({required this.lead, this.date});
 
   final String? lead;
-  final String date;
+  final String? date;
 
   @override
   Widget build(BuildContext context) {
@@ -3827,9 +3856,10 @@ class _PhoneDayHeading extends StatelessWidget {
       color: palette.textPrimary,
     );
     final muted = style.copyWith(color: palette.textTertiary);
+    final date = this.date;
     return Semantics(
       header: true,
-      label: lead == null ? date : '$lead, $date',
+      label: [?lead, ?date].join(', '),
       excludeSemantics: true,
       child: Text.rich(
         key: const ValueKey('phone-day-heading'),
@@ -3838,7 +3868,9 @@ class _PhoneDayHeading extends StatelessWidget {
             : TextSpan(
                 text: lead,
                 style: style,
-                children: [TextSpan(text: ' $date', style: muted)],
+                children: [
+                  if (date != null) TextSpan(text: ' $date', style: muted),
+                ],
               ),
       ),
     );
@@ -3867,9 +3899,9 @@ class _PhoneHeading extends StatelessWidget {
   );
 }
 
-/// A phone list's title: the space's name large, its count beside it, and
-/// the clay underline the note page draws. A page under a tab, reached by
-/// its arrow, has no underline (M03).
+/// A phone list's title: the space's name large in the hand face, its count
+/// small beside it (M02, M03). The clay mark is Home's alone, under the title
+/// its swipe has on screen.
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
@@ -3899,45 +3931,31 @@ class PhoneListTitle extends StatelessWidget {
       header: true,
       label: count == null ? title : '$title, $count',
       excludeSemantics: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Flexible(
-                child: Text(
-                  title,
-                  key: const ValueKey('phone-list-title'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: handStyle(
-                    26,
-                    32,
-                    FontWeight.w600,
-                    palette.textPrimary,
-                  ),
-                ),
-              ),
-              if (count != null) ...[
-                const SizedBox(width: 6),
-                Text(
-                  '$count',
-                  style: uiStyle(
-                    13,
-                    16,
-                    FontWeight.w400,
-                    palette.textTertiary,
-                    tabular: true,
-                  ),
-                ),
-              ],
-            ],
+          Flexible(
+            child: Text(
+              title,
+              key: const ValueKey('phone-list-title'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: handStyle(26, 32, FontWeight.w600, palette.textPrimary),
+            ),
           ),
-          if (onBack == null) ...[
-            const SizedBox(height: 8),
-            Container(width: 44, height: 2, color: palette.clay),
+          if (count != null) ...[
+            const SizedBox(width: 6),
+            Text(
+              '$count',
+              style: uiStyle(
+                13,
+                16,
+                FontWeight.w400,
+                palette.textTertiary,
+                tabular: true,
+              ),
+            ),
           ],
         ],
       ),
