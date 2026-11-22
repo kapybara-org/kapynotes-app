@@ -427,6 +427,16 @@ void main() {
         ),
         findsOneWidget,
       );
+      // D11: the footer says tab asks, and every key is plain text.
+      expect(find.text('Ask Kapy AI'), findsOneWidget);
+      final caps = tester.widgetList<Keycap>(find.byType(Keycap));
+      expect(
+        [for (final cap in caps) cap.label],
+        containsAll(['esc', 'tab', '↑↓', '↵']),
+      );
+      for (final cap in caps) {
+        expect(cap.plain, isTrue, reason: cap.label);
+      }
     });
 
     testWidgets('is not there before anything is typed', (tester) async {
