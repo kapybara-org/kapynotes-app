@@ -303,6 +303,11 @@ void main() {
         ),
         isA<TasksScreen>().having((screen) => screen.sheet, 'sheet', isTrue),
       );
+      // Choosing in the sheet reaches Do now over Up next, as M15 shows it.
+      await tester.tap(find.byKey(const ValueKey('tasks-pair-right')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      expect(find.text('Today'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('phone-tasks-sheet-close')));
       await tester.pumpAndSettle();
       expect(sheet, findsNothing);
