@@ -15,7 +15,6 @@ import 'context_menu.dart';
 import 'day_strip.dart' show PlaceDays;
 import 'member_avatars.dart';
 import 'note_tabs.dart' show clickOpensTabBehind;
-import 'page_card.dart';
 import 'tonal_button.dart';
 import 'toolbar.dart' show UpdateRestartButton;
 import 'unloaded_pictures_status.dart';
@@ -188,9 +187,8 @@ class PageToolbar extends StatelessWidget {
   /// list, in place of the path and the list's controls.
   final ({String to, VoidCallback onPressed})? back;
 
-  /// The band is 52 from the page's top, the page card's edge included, so
-  /// it lines up with the list's bar beside it.
-  static const double height = 52 - PageCard.borderWidth;
+  /// The band is 52 tall, so it lines up with the list's bar beside it.
+  static const double height = 52;
 
   /// The top left's slot and the actions', each from its edge of the page
   /// with its inset: the week sits centred between them, 12 clear of each.

@@ -542,12 +542,12 @@ class KapyAiDock extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(child: child),
-            SizedBox(
+            Container(
               width: kapyAiPanelWidth,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12, right: 12, bottom: 4),
-                child: panel,
+              decoration: BoxDecoration(
+                border: Border(left: BorderSide(color: palette.separator)),
               ),
+              child: panel,
             ),
           ],
         );

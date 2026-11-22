@@ -97,7 +97,7 @@ import 'note_picks.dart';
 import 'note_tabs.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
-import 'page_card.dart';
+import 'page_pane.dart';
 import 'page_toolbar.dart';
 import 'phone_home_cards.dart';
 import 'phone_home_header.dart';
@@ -114,7 +114,6 @@ import 'tag_ui.dart';
 import 'sidebar_swipe.dart';
 import 'spaces_rail.dart';
 import 'split_view.dart';
-import 'window_drag_area.dart';
 import 'draw/drawing_canvas.dart';
 
 /// The narrowest window that holds the notes list beside the page. Below it a
@@ -3856,12 +3855,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // around the software keyboard. Desktop reports zero here.
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     // A phone on its side with the keyboard up has no room to spare: the page
-    // gives up its bar and its margins for the lines being typed.
+    // gives up its bar for the lines being typed.
     final cramped = isCrampedPage(MediaQuery.sizeOf(context), keyboardInset);
-    // The canvas left around the page, on every side but the one against the
-    // notes list, whose own margin keeps the two apart.
-    const pageInset = 12.0;
-
     // The desktop layout is its own chrome rather than a Scaffold, but text
     // fields, menus and ink still need a Material ancestor. It is the canvas
     // the rail, the notes list and the page stand on, and transparent in glass
@@ -4087,28 +4082,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       left: false,
                       bottom: false,
                       child: _withKapyAi(
-                        Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            const Positioned(
-                              left: 0,
-                              top: 0,
-                              right: 0,
-                              height: pageInset,
-                              child: WindowDragArea(child: SizedBox.expand()),
-                            ),
-                            AnimatedPadding(
-                              duration: const Duration(milliseconds: 160),
-                              curve: Curves.easeOutCubic,
-                              padding: EdgeInsets.fromLTRB(
-                                listFits && listShown ? 0 : pageInset,
-                                cramped || (listFits && listShown)
-                                    ? 0
-                                    : pageInset,
-                                pageInset,
-                                cramped ? 0 : pageInset,
-                              ),
-                              child: PageCard(
+                        PagePane(
+                          divided: listFits && listShown,
                                 child: Column(
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
@@ -4211,9 +4186,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                   ],
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ),

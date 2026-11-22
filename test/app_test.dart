@@ -73,7 +73,7 @@ import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tonal_button.dart';
-import 'package:kapy_notes/ui/page_card.dart';
+import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
@@ -1797,7 +1797,7 @@ void main() {
       expect(prefs.sidebarVisible, isTrue);
       expect(
         tester.getRect(find.byType(Sidebar)).right,
-        lessThanOrEqualTo(tester.getRect(find.byType(PageCard)).left),
+        lessThanOrEqualTo(tester.getRect(find.byType(PagePane)).left),
       );
 
       // Narrowed again, the window folds it away and keeps every action.
@@ -4072,7 +4072,7 @@ void main() {
       await library(tester);
       final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
       final list = tester.getRect(find.byType(SidebarWindowBar));
-      expect(tester.getRect(find.byType(PageCard)).top, list.top);
+      expect(tester.getRect(find.byType(PagePane)).top, list.top);
       expect(bar.bottom, list.bottom);
       expect(list.height, 52);
       final month = find.byKey(const ValueKey('day-strip-month'));
@@ -8501,6 +8501,40 @@ void main() {
       expect(spaceCount(tester), '2');
     });
 
+    testWidgets('the page sits flush on the window, split from the list by '
+        "one hairline, and from the rail by the rail's own edge", (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Call with Arjun');
+      await pumpApp(tester, size: const Size(1440, 900));
+      final pane = find.byType(PagePane);
+      final page = tester.getRect(pane);
+      expect(page.left, tester.getRect(find.byType(Sidebar)).right);
+      expect(page.top, tester.getRect(find.byType(SidebarWindowBar)).top);
+      expect(page.right, 1440);
+      expect(page.bottom, 900);
+      Container box() =>
+          tester.widget<Container>(find.byKey(const ValueKey('page-pane')));
+      final edge = (box().foregroundDecoration! as BoxDecoration).border!;
+      expect(
+        edge,
+        Border(
+          left: BorderSide(color: tester.element(pane).palette.pageBorder),
+        ),
+      );
+      expect(box().decoration, isNull);
+      expect(box().color, tester.element(pane).palette.paperColor);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(pane).left,
+        tester.getRect(find.byType(SpacesRail)).right,
+      );
+      expect(box().foregroundDecoration, isNull);
+    });
+
     testWidgets('New note sits in the bar over the search, with its keycap', (
       tester,
     ) async {
@@ -8591,18 +8625,17 @@ void main() {
       await tester.tap(hide);
       await tester.pumpAndSettle();
       expect(prefs.sidebarVisible, isFalse);
-      // The page moves up to the rail, with the canvas's margin on that side
-      // too now that no list sits against it.
+      // The page moves up to the rail, flush against it.
       expect(
-        tester.getRect(find.byType(PageCard)).left,
-        tester.getRect(find.byType(SpacesRail)).right + 12,
+        tester.getRect(find.byType(PagePane)).left,
+        tester.getRect(find.byType(SpacesRail)).right,
       );
 
       await tester.tap(notesToggleWithLabel('Show notes'));
       await tester.pumpAndSettle();
       expect(prefs.sidebarVisible, isTrue);
       expect(
-        tester.getRect(find.byType(PageCard)).left,
+        tester.getRect(find.byType(PagePane)).left,
         tester.getRect(find.byType(Sidebar)).right,
       );
     });
@@ -9065,11 +9098,11 @@ void main() {
       expect(prefs.sidebarVisible, isTrue);
       expect(find.byType(Sidebar), findsNothing);
       expect(notesToggleWithLabel('Show notes'), findsOneWidget);
-      // The page stands a margin in from the rail, as in Paper's window with
+      // The page stands flush against the rail, as D10 draws the window with
       // the list hidden.
       expect(
-        tester.getRect(find.byType(PageCard)).left,
-        tester.getRect(find.byType(SpacesRail)).right + 12,
+        tester.getRect(find.byType(PagePane)).left,
+        tester.getRect(find.byType(SpacesRail)).right,
       );
     });
 
@@ -9080,7 +9113,7 @@ void main() {
       notes.create(body: 'First note');
       notes.create(body: 'Second note');
       await pumpApp(tester, size: const Size(600, 720));
-      final page = tester.getRect(find.byType(PageCard));
+      final page = tester.getRect(find.byType(PagePane));
 
       Future<void> open() async {
         await tester.tap(notesToggleWithLabel('Show notes'));
@@ -9091,7 +9124,7 @@ void main() {
 
       // Over the page, which keeps its place and its width.
       await open();
-      expect(tester.getRect(find.byType(PageCard)), page);
+      expect(tester.getRect(find.byType(PagePane)), page);
 
       // A click on the page beside it.
       await tester.tapAt(Offset(page.right - 8, page.center.dy));
@@ -9173,7 +9206,7 @@ void main() {
       // aside for controls that are not over it.
       expect(tester.getRect(find.byType(Sidebar)).left, rail.right);
       expect(
-        tester.getRect(find.byType(PageCard)).left,
+        tester.getRect(find.byType(PagePane)).left,
         greaterThanOrEqualTo(rail.right),
       );
 
@@ -9205,15 +9238,15 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('sidebar-search-field'))).top,
         greaterThanOrEqualTo(bar.bottom),
       );
-      // The page stands on the canvas, a margin in from the window's right,
-      // and its band lines up with the list's bar.
-      final page = tester.getRect(find.byType(PageCard));
+      // The page runs flush to the window's right, and its band lines up
+      // with the list's bar.
+      final page = tester.getRect(find.byType(PagePane));
       expect(page.top, bar.top);
       expect(
         tester.getRect(find.byKey(const ValueKey('page-toolbar'))).bottom,
         bar.bottom,
       );
-      expect(page.right, 1100 - 12);
+      expect(page.right, 1100);
     }, skip: !WindowChrome.overlaysContent);
 
     testWidgets('keeps every pane inside the display safe area', (
@@ -9246,7 +9279,7 @@ void main() {
       // The page is level with the bar over the list, so its band lines up
       // with that bar.
       expect(
-        tester.getTopLeft(find.byType(PageCard)).dy,
+        tester.getTopLeft(find.byType(PagePane)).dy,
         tester.getRect(find.byType(SidebarWindowBar)).top,
       );
       expect(
@@ -9270,10 +9303,10 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('note-total'))).bottom,
         lessThanOrEqualTo(size.height - safeBottom),
       );
-      // The page itself runs down to the canvas's margin, and its footer holds
+      // The page itself runs down to the window's edge, and its footer holds
       // the controls above the indicator rather than the page stopping short
       // over a band of canvas.
-      expect(tester.getRect(find.byType(PageCard)).bottom, size.height - 12);
+      expect(tester.getRect(find.byType(PagePane)).bottom, size.height);
     });
 
     testWidgets('lifts the two-pane layout clear of a software keyboard', (
@@ -9378,13 +9411,13 @@ void main() {
 
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsNothing);
-        expect(tester.getTopLeft(find.byType(PageCard)).dy, phone.padding.top);
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, phone.padding.top);
         if (platform == TargetPlatform.android) {
           expect(statusBar, ['hide']);
           // Android takes the bar away, and the page moves up into its room.
           tester.view.padding = FakeViewPadding(left: phone.padding.left);
           await tester.pumpAndSettle();
-          expect(tester.getTopLeft(find.byType(PageCard)).dy, 0);
+          expect(tester.getTopLeft(find.byType(PagePane)).dy, 0);
         } else {
           expect(statusBar, isEmpty);
         }
@@ -9394,7 +9427,7 @@ void main() {
             .caretRect(driver.value.selection.extent)
             .shift(driver.toGlobal(Offset.zero));
         final view = tester.getRect(noteField);
-        final card = tester.getRect(find.byType(PageCard));
+        final card = tester.getRect(find.byType(PagePane));
         final bar = tester.getRect(
           find.byKey(const ValueKey('phone-format-bar')),
         );
@@ -9427,8 +9460,8 @@ void main() {
         }
         expect(find.byType(PageToolbar), findsOneWidget);
         expect(
-          tester.getTopLeft(find.byType(PageCard)).dy,
-          phone.padding.top + 12,
+          tester.getTopLeft(find.byType(PagePane)).dy,
+          phone.padding.top,
         );
       });
     }
@@ -9484,6 +9517,9 @@ void main() {
       tester.view.viewInsets = FakeViewPadding.zero;
       await tester.pumpAndSettle();
       expect(statusBar, ['hide', 'show', 'hide', 'show']);
+      // Resuming asked the platform for a launch intent, which waits up to
+      // 400 ms for its answer; the page no longer animates for that long.
+      await tester.pump(const Duration(milliseconds: 400));
     });
 
     final tablets = {
@@ -9512,8 +9548,8 @@ void main() {
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsOneWidget);
         expect(
-          tester.getTopLeft(find.byType(PageCard)).dy,
-          tablet.padding.top + 12,
+          tester.getTopLeft(find.byType(PagePane)).dy,
+          tablet.padding.top,
         );
         expect(statusBar, isEmpty);
       });
@@ -9549,7 +9585,7 @@ void main() {
           reason: 'cutout on the $side',
         );
         expect(
-          tester.getRect(find.byType(PageCard)).right,
+          tester.getRect(find.byType(PagePane)).right,
           lessThanOrEqualTo(size.width - (left ? 0 : cutout)),
           reason: 'cutout on the $side',
         );
