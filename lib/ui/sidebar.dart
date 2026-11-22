@@ -2497,6 +2497,7 @@ class SidebarSearchField extends StatelessWidget {
       return CompactIconButton(
         tooltip: 'Clear search',
         extent: extent,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         foregroundColor: palette.textTertiary,
         onPressed: onClear,
         icon: KapyIcon(
@@ -2533,7 +2534,7 @@ class SidebarSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final searching = query.isNotEmpty;
-    final end = _end(palette, 20);
+    final end = _end(palette, phone ? 32 : 20);
     if (!phone) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),

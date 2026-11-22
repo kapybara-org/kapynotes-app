@@ -232,6 +232,22 @@ void main() {
       expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
     });
 
+    testWidgets('on a touch phone, typing never makes the well taller, so the '
+        'list stays put', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester, phone: true);
+      final well = find.byKey(const ValueKey('sidebar-search-box'));
+      final empty = tester.getSize(well).height;
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-search-field')),
+        'sintra',
+      );
+      await settle(tester);
+      expect(find.byTooltip('Clear search'), findsOneWidget);
+      expect(tester.getSize(well).height, empty);
+    });
+
     testWidgets('the search well is a 44 pt target read as Search tasks, and '
         'the filter beside it is 44 pt and says what it does', (tester) async {
       final semantics = tester.ensureSemantics();
