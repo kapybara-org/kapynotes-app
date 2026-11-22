@@ -524,11 +524,10 @@ void main() {
     await boardShot(tester, 'd03-two-tabs');
   });
 
-  // The board picks Fri 21 in the week. Picking a day narrows the list to
-  // the notes last edited that day, which leaves out a note filed for a
-  // later day, so the note is opened from Upcoming, with its dot on its day.
-  testWidgets("D04's board: the day after tomorrow's note, opened from "
-      'Upcoming above Today, with its dot in the week', (tester) async {
+  // The board picks Fri 21 in the week: its note opens and is lit in the
+  // whole list, under Upcoming, which opens to show it above Today.
+  testWidgets("D04's board: the day after tomorrow picked in the week opens "
+      'its note, lit under Upcoming above Today', (tester) async {
     await board(tester);
     final now = notes.now();
     final friday = DateTime(now.year, now.month, now.day + 2);
@@ -555,12 +554,25 @@ void main() {
       findsOneWidget,
     );
 
-    await click(tester, upcoming);
+    await click(
+      tester,
+      find.byKey(
+        ValueKey('day-strip-${friday.year}-${friday.month}-${friday.day}'),
+      ),
+    );
+    expect(tester.widget<NotesGroupHeading>(upcoming).folded, isFalse);
+    expect(today, findsOneWidget, reason: 'the list stays whole');
+    final renewal = tester.widget<NoteRow>(row('Renewal notes'));
+    expect(renewal.selected, isTrue);
+    expect(renewal.ofPickedDay, isTrue);
     expect(
-      find.descendant(of: list, matching: find.text('Renewal notes')),
+      tester.getTopLeft(row('Renewal notes')).dy,
+      lessThan(tester.getTopLeft(today).dy),
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Call with Arjun')),
       findsOneWidget,
     );
-    await click(tester, row('Renewal notes'));
     expect(
       tester.widget<NoteField>(openNote).controller.text,
       startsWith('Renewal notes\n'),
