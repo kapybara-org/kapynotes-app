@@ -1,6 +1,7 @@
 import AppIntents
 import SwiftUI
 import UIKit
+import WidgetKit
 
 /// The three things a tap on a widget can ask the app for.
 ///
@@ -23,6 +24,11 @@ enum QuickAction: String, CaseIterable {
     }
   }
 
+  /// What every action works on, under its name on the square and
+  /// rectangular widgets. Each one carries on the note being written, which
+  /// is also why Write keeps the pen: in the app, + makes a new note.
+  static let lastNote: LocalizedStringResource = "Last note"
+
   /// What the widget gallery, the Lock Screen and Control Centre say it does.
   var summary: LocalizedStringResource {
     switch self {
@@ -32,13 +38,23 @@ enum QuickAction: String, CaseIterable {
     }
   }
 
-  /// SF Symbols, which is what a Lock Screen tint and Control Centre both
-  /// expect to be handed.
+  /// SF Symbols, for the controls: Control Centre, the Lock Screen's buttons
+  /// and the Action button draw these themselves.
   var symbol: String {
     switch self {
     case .write: return "square.and.pencil"
     case .dictate: return "mic"
     case .capture: return "camera"
+    }
+  }
+
+  /// The app's own glyph for it, a template image in this extension's asset
+  /// catalog, drawn in whatever colour the widget gives it.
+  var glyph: String {
+    switch self {
+    case .write: return "PencilEdit02"
+    case .dictate: return "Mic01"
+    case .capture: return "Camera"
     }
   }
 
@@ -50,22 +66,59 @@ enum QuickAction: String, CaseIterable {
   }
 }
 
-/// The paper and ink of the editor these open onto, so a tap looks like the
-/// app unfolding rather than replacing something else. Matches
-/// InstantCaptureApp in lib/ui/instant_capture.dart.
-let paper = Color(
-  uiColor: UIColor { traits in
-    traits.userInterfaceStyle == .dark
-      ? UIColor(red: 0.141, green: 0.125, blue: 0.094, alpha: 1)
-      : UIColor(red: 0.969, green: 0.941, blue: 0.871, alpha: 1)
-  })
+/// Phone · v2's colours, light and dark, so a tap looks like the app it opens
+/// unfolding rather than something else replacing it.
+let widgetBackground = dynamicColor(light: 0xFCFAF4, dark: 0x23201C)
+let widgetText = dynamicColor(light: 0x2A2620, dark: 0xE2DCCF)
+let widgetTextSecondary = dynamicColor(light: 0x6F695C, dark: 0xA29A8A)
+/// The round sage button: Write's, and the one on every single-action widget.
+let widgetPrimary = dynamicColor(light: 0x56703C, dark: 0x7D9468)
+let widgetOnPrimary = dynamicColor(light: 0xFCFAF4, dark: 0x1C1A17)
+/// The quieter disc Dictate and Capture sit on beside Write.
+let widgetTonal = dynamicColor(light: 0xE6ECDB, dark: 0x2E3828)
+let widgetOnTonal = dynamicColor(light: 0x445A2F, dark: 0xC2D6AC)
 
-let ink = Color(
-  uiColor: UIColor { traits in
-    traits.userInterfaceStyle == .dark
-      ? UIColor(red: 0.929, green: 0.886, blue: 0.792, alpha: 1)
-      : UIColor(red: 0.149, green: 0.212, blue: 0.290, alpha: 1)
-  })
+private func dynamicColor(light: UInt32, dark: UInt32) -> Color {
+  Color(
+    uiColor: UIColor { traits in
+      let rgb = traits.userInterfaceStyle == .dark ? dark : light
+      return UIColor(
+        red: CGFloat((rgb >> 16) & 0xFF) / 255,
+        green: CGFloat((rgb >> 8) & 0xFF) / 255,
+        blue: CGFloat(rgb & 0xFF) / 255,
+        alpha: 1)
+    })
+}
+
+/// Figtree, the app's own face. The extension carries its own two weights,
+/// listed under UIAppFonts. Fixed sizes, because every line is drawn to fit
+/// the widget's own size.
+enum Figtree {
+  static func semibold(_ size: CGFloat) -> Font { .custom("Figtree-SemiBold", fixedSize: size) }
+  static func regular(_ size: CGFloat) -> Font { .custom("Figtree-Regular", fixedSize: size) }
+}
+
+/// One action's round button: one disc per tap, with nothing boxed around it.
+/// In a tinted Home Screen the disc takes the tint and the glyph stays light.
+struct QuickActionDisc: View {
+  let action: QuickAction
+  let fill: Color
+  let ink: Color
+
+  var body: some View {
+    Circle()
+      .fill(fill)
+      .widgetAccentable()
+      .frame(width: 56, height: 56)
+      .overlay {
+        Image(decorative: action.glyph)
+          .renderingMode(.template)
+          .resizable()
+          .frame(width: 26, height: 26)
+          .foregroundStyle(ink)
+      }
+  }
+}
 
 /// The same three, as something the widget editor can offer in a menu.
 ///
