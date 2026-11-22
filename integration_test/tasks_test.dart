@@ -5,8 +5,14 @@
 //     --target integration_test/tasks_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
-// The Mac walks D1 to D5 by keys and clicks. Each state is taken dark and
-// light, as screenshots in build/screenshots.
+// The Mac walks the final boards' Tasks states by keys and clicks, in a
+// 1440 × 900 window over the boards' notes: Lisbon trip in green, the two
+// work notes in mustard, a task with no note, a task that came back (↺) and
+// Renewal notes waiting for Sat 21, so Later shows. Each state is the whole
+// window, dark, as screenshots in build/screenshots: D09a, the first pair
+// with How Tasks works; D09b, mid-pair; D09, Do now with a task's details
+// beside the list; D09d, after Done with a task added since you chose; and
+// D09e, the evening.
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +22,7 @@ import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -50,7 +57,7 @@ void main() {
   Future<void> launch(WidgetTester tester) async {
     if (AppPlatform.isDesktop) {
       await windowManager.ensureInitialized();
-      await windowManager.setBounds(const Rect.fromLTWH(0, 0, 960, 680));
+      await windowManager.setBounds(const Rect.fromLTWH(0, 0, 1440, 900));
     }
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
@@ -62,26 +69,41 @@ void main() {
       now: () => clock,
     );
     final tags = TagStore(store);
+    final days = NoteDayStore(store, now: () => clock);
     prefs = LayoutPrefs(store)..load();
+    prefs.appearance = AppearanceMode.dark;
     await notes.load();
     await library.load();
     await tags.load();
-    void later() => clock = clock.add(const Duration(minutes: 1));
-    notes.create(
-      body:
-          'Lisbon trip\n☐ Ask Ana which Sintra palace to skip\n'
-          '☐ Renew passport before the trip\n☐ Book the Sintra train tickets',
+    await days.load();
+    Future<String> add(String body) async {
+      final id = notes.create(body: body).id;
+      await library.reconcileNow();
+      clock = clock.add(const Duration(minutes: 1));
+      return id;
+    }
+
+    final lisbon = await add(
+      'Lisbon trip\n☐ Ask Ana which Sintra palace to skip\n'
+      '☐ Renew passport before the trip\n☐ Book the Sintra train tickets',
     );
-    later();
-    notes.create(body: 'Quote for the deck\n☐ Book the room');
-    later();
-    notes.create(
-      body:
-          'Call with Arjun\n☐ Send the deck\n'
-          '    Slides 1 to 6 are done. The charts need the new numbers.',
+    await add('Tasks\n☐ Call Arjun');
+    final quote = await add('Quote for the deck\n☐ Book the room');
+    final call = await add(
+      'Call with Arjun\n☐ Send the deck\n'
+      '    Slides 1 to 6 are done. The charts need the new numbers.',
     );
-    later();
-    await library.reconcileNow();
+    final renewal = await add(
+      'Renewal notes\n☐ Send the renewal scope\n☐ Read the signed contract',
+    );
+    days.setDay(renewal, DateTime(2026, 11, 21));
+    final travel = tags.create('Travel')!;
+    tags.recolour(travel.id, 'sage');
+    final work = tags.create('Work')!;
+    tags.recolour(work.id, 'mustard');
+    tags.setTags(lisbon, [travel.id]);
+    tags.setTags(quote, [work.id]);
+    tags.setTags(call, [work.id]);
     await tester.pumpWidget(
       KapyNotesApp(
         store: store,
@@ -91,18 +113,16 @@ void main() {
         shortcuts: ShortcutPrefs(store)..load(),
         tags: tags,
         tasks: library,
+        days: days,
       ),
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
   }
 
   Future<void> shot(WidgetTester tester, String name) async {
-    for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
-      prefs.appearance = mode;
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: name);
-      await screenshot('tasks-$name-${mode.name}');
-    }
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: name);
+    await screenshot('tasks-$name-dark');
   }
 
   Future<void> tap(WidgetTester tester, String key) async {
@@ -128,28 +148,49 @@ void main() {
     return labels;
   }
 
-  testWidgets('a window walks D1 to D5', (tester) async {
+  testWidgets('a 1440 × 900 window walks D09 and D09a to D09e', (tester) async {
     final semantics = tester.ensureSemantics();
     await launch(tester);
+    final window = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(window.width, 1440, reason: 'the shots are of a 1440 wide window');
     await tap(tester, 'rail-tasks');
 
-    expect(find.text('What do you want to work on next?'), findsOneWidget);
+    // Ask Ana comes back: Start with makes it Do now, and Not finished sends
+    // it to the end of the list with ↺.
     expect(find.text('First on the list'), findsOneWidget);
-    expect(find.byKey(const ValueKey('tasks-got-it')), findsOneWidget);
+    await tap(tester, 'tasks-start');
+    await tap(tester, 'tasks-not-finished');
+    expect(find.byTooltip('Not finished, moved to the end'), findsOneWidget);
+
+    expect(find.text('What do you want to work on next?'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tasks-how-it-works')), findsOneWidget);
+    expect(find.text('Based on FVP by Mark Forster'), findsOneWidget);
+    expect(find.text('2 tasks wait for their day'), findsOneWidget);
+    expect(find.text('Sat 21'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tasks-filter-all')),
+        matching: find.text('6'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Renewal notes'), findsNothing);
     expect(
       heard(tester, 'tasks-pair'),
       containsAll([
-        contains('Ask Ana which Sintra palace to skip'),
         contains('Renew passport before the trip'),
+        contains('Book the Sintra train tickets'),
       ]),
     );
-    await shot(tester, 'window-d1-first-pair');
+    await shot(tester, 'window-d09a');
 
+    await tap(tester, 'tasks-got-it');
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pumpAndSettle();
     expect(find.text('Your choice so far'), findsOneWidget);
     expect(find.text('Up next'), findsOneWidget);
-    await shot(tester, 'window-d2-mid-pair');
+    expect(find.byKey(const ValueKey('tasks-choose-again')), findsOneWidget);
+    await shot(tester, 'window-d09b');
 
     await tap(tester, 'tasks-start');
     expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
@@ -157,7 +198,12 @@ void main() {
       heard(tester, 'tasks-do-now'),
       containsAll([contains('Not finished'), contains('Done')]),
     );
-    await shot(tester, 'window-d3-do-now');
+    await tester.tap(find.text('Send the deck'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open in note'), findsOneWidget);
+    await shot(tester, 'window-d09');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
 
     clock = clock.add(const Duration(minutes: 30));
     final field = find.byKey(const ValueKey('tasks-add-field'));
@@ -177,13 +223,13 @@ void main() {
       ),
       findsOneWidget,
     );
-    await shot(tester, 'window-d4-after-done');
+    await shot(tester, 'window-d09d');
 
     clock = DateTime(2026, 11, 19, 18, 30);
     await tap(tester, 'tasks-choose-again');
     expect(find.text('Done for today.'), findsOneWidget);
     expect(find.byKey(const ValueKey('tasks-choose-again')), findsNothing);
-    await shot(tester, 'window-d5-evening');
+    await shot(tester, 'window-d09e');
 
     await tap(tester, 'tasks-keep-going');
     expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
