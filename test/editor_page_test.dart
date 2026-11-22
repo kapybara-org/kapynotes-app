@@ -57,6 +57,7 @@ Widget _page(
   ValueChanged<List<NoteFormatRange>>? onFormats,
   ValueChanged<String>? onBody,
   WritingFont writingFont = WritingFont.mixed,
+  bool phone = false,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
@@ -69,6 +70,7 @@ Widget _page(
           key: ValueKey(body),
           noteId: 'page',
           initialBody: body,
+          phone: phone,
           initialFormats: formats,
           engine: _engine,
           highlighter: Highlighter(_engine.registry),
@@ -440,7 +442,7 @@ void main() {
     window(tester);
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await tester.pumpWidget(_page(_body, width: 390));
+    await tester.pumpWidget(_page(_body, width: 390, phone: true));
     await tester.pumpAndSettle();
 
     expect(find.byType(NoteFooter), findsNothing);
@@ -457,6 +459,25 @@ void main() {
     final title = field.caretRect(const TextPosition(offset: 1));
     final first = field.caretRect(TextPosition(offset: _body.indexOf('☐')));
     expect(meta.top, greaterThanOrEqualTo(field.toGlobal(title.bottomLeft).dy));
+    expect(meta.bottom, lessThanOrEqualTo(field.toGlobal(first.topLeft).dy));
+  });
+
+  testWidgets('a tablet keeps the tags on a line of their own', (tester) async {
+    window(tester);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await tester.pumpWidget(_page(_body, width: 744));
+    await tester.pumpAndSettle();
+
+    // Taller than a window's row: the tags under the facts are 44 pt
+    // targets on a touch screen, so the row grows with them (KAP-115).
+    expect(
+      tester.getSize(find.byType(NoteMetaRow)).height,
+      greaterThanOrEqualTo(EditorMetrics.metaRow),
+    );
+    final field = _editable(tester);
+    final meta = tester.getRect(find.byType(NoteMetaRow));
+    final first = field.caretRect(TextPosition(offset: _body.indexOf('☐')));
     expect(meta.bottom, lessThanOrEqualTo(field.toGlobal(first.topLeft).dy));
   });
 }

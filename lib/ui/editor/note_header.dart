@@ -113,6 +113,7 @@ class NoteMetaRow extends StatelessWidget {
     this.readOnlyIcon,
     this.onReadOnlyPressed,
     this.tags,
+    this.phone = false,
   });
 
   final String edited;
@@ -139,6 +140,10 @@ class NoteMetaRow extends StatelessWidget {
 
   /// The note's tag chips and + Tag, at the end of the line.
   final Widget? tags;
+
+  /// On a phone's note page (M07): the facts and tags share one line that
+  /// wraps, where a tablet keeps the tags on a line of their own.
+  final bool phone;
 
   static const double _gap = 10;
 
@@ -259,7 +264,7 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
-    if (AppPlatform.isMobile) {
+    if (phone) {
       // One line that wraps with the text size: the facts a dot apart, then
       // the tags after a gap, as M07 draws them. The editor keeps a second
       // line's room under the title, so a wrap never runs into the note.
@@ -287,6 +292,43 @@ class NoteMetaRow extends StatelessWidget {
           ),
           ?tags,
         ],
+      );
+    }
+    if (AppPlatform.isMobile) {
+      // Grows with the text size and the tags' 44 pt targets rather than
+      // clipping them to a fixed row.
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: EditorMetrics.metaRow),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 16),
+              child: Wrap(
+                key: const ValueKey('note-facts'),
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  for (final (index, item) in items.indexed)
+                    index == 0
+                        ? item
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: _gap),
+                              dot,
+                              const SizedBox(width: _gap),
+                              item,
+                            ],
+                          ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // The tags' own targets are 44 pt tall on a phone, so the row
+            // gives them the room rather than clipping them to the pill.
+            SizedBox(height: AppPlatform.hasPointer ? 22 : 44, child: tags),
+          ],
+        ),
       );
     }
     return SizedBox(

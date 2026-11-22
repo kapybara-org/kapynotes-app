@@ -7528,6 +7528,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           tags: TagShelf.maybeOf(context) == null
               ? null
               : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
+          phone: widget.phone,
         ),
       ),
     );
