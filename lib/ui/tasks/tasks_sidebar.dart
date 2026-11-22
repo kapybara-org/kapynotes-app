@@ -17,13 +17,103 @@ final Uri fvpInstructions = Uri.parse(
   'the-final-version-perfected-fvp-instructions-reposted.html',
 );
 
-/// The list beside Tasks: a filter, not a second list. All tasks, Done, then
-/// each note with open tasks and how many, with No note last; and at its
-/// foot, where the method comes from.
+/// One way to narrow Tasks: Today, Done, or a note with tasks on today's list.
+class TaskFilterChoice {
+  const TaskFilterChoice(
+    this.filter,
+    this.label,
+    this.count, {
+    this.note,
+    this.noNote = false,
+  });
+
+  final TaskFilter filter;
+  final String label;
+  final int count;
+
+  /// The note whose swatch marks it; null for Today, Done and No note.
+  final Note? note;
+
+  /// The tasks with no note of their own, marked by a dashed swatch.
+  final bool noNote;
+
+  /// Names the choice's row, in the sidebar and in a phone's filter.
+  String get key => switch (filter) {
+    _ when noNote => 'no-note',
+    TaskFilter(:final noteId?) => noteId,
+    TaskFilter(done: true) => 'done',
+    _ => 'all',
+  };
+}
+
+/// What Tasks can be narrowed to, in the order the sidebar and a phone's
+/// filter list them: Today and Done, then each note with tasks on [today]'s
+/// list, the most first, with No note last. A note whose tasks all wait for
+/// a later day isn't listed.
+List<TaskFilterChoice> taskFilterChoices({
+  required TaskBoard board,
+  required List<TaskItem> today,
+  required String Function(Note note) labelOf,
+}) {
+  final counts = <String, int>{};
+  final notes = <String, Note>{};
+  for (final item in today) {
+    counts.update(item.note.id, (n) => n + 1, ifAbsent: () => 1);
+    notes[item.note.id] = item.note;
+  }
+  final home = board.home;
+  final homeCount = home == null ? 0 : counts.remove(home.id) ?? 0;
+  final ordered = counts.keys.toList()
+    ..sort((a, b) {
+      final byCount = counts[b]!.compareTo(counts[a]!);
+      return byCount != 0
+          ? byCount
+          : labelOf(
+              notes[a]!,
+            ).toLowerCase().compareTo(labelOf(notes[b]!).toLowerCase());
+    });
+  return [
+    TaskFilterChoice(const TaskFilter.all(), 'Today', today.length),
+    TaskFilterChoice(const TaskFilter.done(), 'Done', board.done.length),
+    for (final id in ordered)
+      TaskFilterChoice(
+        TaskFilter.note(id),
+        labelOf(notes[id]!),
+        counts[id]!,
+        note: notes[id],
+      ),
+    if (home != null && homeCount > 0)
+      TaskFilterChoice(
+        TaskFilter.note(home.id),
+        'No note',
+        homeCount,
+        noNote: true,
+      ),
+  ];
+}
+
+/// The mark before a filter's name: Today's list, Done's tick, or the note's
+/// swatch, in [ink].
+Widget taskFilterMark(TaskFilterChoice choice, Color ink, {double size = 16}) =>
+    switch (choice) {
+      TaskFilterChoice(noNote: true) => const NoteSwatch(note: null, size: 8),
+      TaskFilterChoice(:final note?) => NoteSwatch(note: note, size: 8),
+      TaskFilterChoice(filter: TaskFilter(done: true)) => KapyIcon(
+        KapyIcons.checkRounded,
+        size: size,
+        color: ink,
+      ),
+      _ => KapyIcon(KapyIcons.tasksOutlined, size: size, color: ink),
+    };
+
+/// The list beside Tasks: a filter, not a second list. Today, Done, then
+/// each note with tasks on today's list and how many, with No note last; and
+/// at its foot, where the method comes from.
 class TasksSidebar extends StatelessWidget {
   const TasksSidebar({
     super.key,
     required this.board,
+    required this.today,
     required this.filter,
     required this.onFilter,
     required this.labelOf,
@@ -35,6 +125,9 @@ class TasksSidebar extends StatelessWidget {
   });
 
   final TaskBoard board;
+
+  /// Today's open tasks, without those whose note waits for a later day.
+  final List<TaskItem> today;
   final TaskFilter filter;
   final ValueChanged<TaskFilter> onFilter;
   final String Function(Note note) labelOf;
@@ -52,23 +145,11 @@ class TasksSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final counts = <String, int>{};
-    final notes = <String, Note>{};
-    for (final item in board.open) {
-      counts.update(item.note.id, (n) => n + 1, ifAbsent: () => 1);
-      notes[item.note.id] = item.note;
-    }
-    final home = board.home;
-    final homeCount = home == null ? 0 : counts.remove(home.id) ?? 0;
-    final ordered = counts.keys.toList()
-      ..sort((a, b) {
-        final byCount = counts[b]!.compareTo(counts[a]!);
-        return byCount != 0
-            ? byCount
-            : labelOf(
-                notes[a]!,
-              ).toLowerCase().compareTo(labelOf(notes[b]!).toLowerCase());
-      });
+    final choices = taskFilterChoices(
+      board: board,
+      today: today,
+      labelOf: labelOf,
+    );
     return ColoredBox(
       color: palette.sidebarColor,
       child: SafeArea(
@@ -84,61 +165,27 @@ class TasksSidebar extends StatelessWidget {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
                 children: [
-                  _FilterRow(
-                    key: const ValueKey('tasks-filter-all'),
-                    leading: (ink) =>
-                        KapyIcon(KapyIcons.tasksOutlined, size: 15, color: ink),
-                    label: 'All tasks',
-                    count: board.open.length,
-                    selected: filter == const TaskFilter.all(),
-                    onPressed: () => onFilter(const TaskFilter.all()),
-                  ),
-                  const SizedBox(height: 2),
-                  _FilterRow(
-                    key: const ValueKey('tasks-filter-done'),
-                    leading: (ink) =>
-                        KapyIcon(KapyIcons.checkRounded, size: 15, color: ink),
-                    label: 'Done',
-                    count: board.done.length,
-                    selected: filter.done,
-                    onPressed: () => onFilter(const TaskFilter.done()),
-                  ),
-                  if (ordered.isNotEmpty || homeCount > 0)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
-                      child: Text(
-                        'From notes',
-                        style: uiStyle(
-                          14,
-                          20,
-                          FontWeight.w600,
-                          palette.textSubheading,
+                  for (final (index, choice) in choices.indexed) ...[
+                    if (index == 2)
+                      Container(
+                        height: 36,
+                        alignment: Alignment.bottomLeft,
+                        padding: const EdgeInsets.only(left: 10, bottom: 6),
+                        child: Text(
+                          'From notes',
+                          style: taskText(12, 16, palette.textTertiary, 520),
                         ),
                       ),
-                    ),
-                  for (final id in ordered) ...[
                     _FilterRow(
-                      key: ValueKey('tasks-filter-$id'),
-                      leading: (_) => NoteSwatch(note: notes[id], size: 14),
-                      label: labelOf(notes[id]!),
-                      hand: true,
-                      count: counts[id]!,
-                      selected: filter.noteId == id,
-                      onPressed: () => onFilter(TaskFilter.note(id)),
+                      key: ValueKey('tasks-filter-${choice.key}'),
+                      choice: choice,
+                      selected: filter == choice.filter,
+                      onPressed: () => onFilter(choice.filter),
                     ),
                     const SizedBox(height: 2),
                   ],
-                  if (home != null && homeCount > 0)
-                    _FilterRow(
-                      key: const ValueKey('tasks-filter-no-note'),
-                      leading: (_) => const NoteSwatch(note: null, size: 14),
-                      label: 'No note',
-                      count: homeCount,
-                      selected: filter.noteId == home.id,
-                      onPressed: () => onFilter(TaskFilter.note(home.id)),
-                    ),
                 ],
               ),
             ),
@@ -158,74 +205,63 @@ class TasksSidebar extends StatelessWidget {
 class _FilterRow extends StatelessWidget {
   const _FilterRow({
     super.key,
-    required this.leading,
-    required this.label,
-    required this.count,
+    required this.choice,
     required this.selected,
     required this.onPressed,
-    this.hand = false,
   });
 
-  /// Drawn in the ink the row gives it: sage when selected.
-  final Widget Function(Color ink) leading;
-  final String label;
-  final int count;
+  final TaskFilterChoice choice;
   final bool selected;
   final VoidCallback onPressed;
-
-  /// A note's name, in the hand notes are titled in.
-  final bool hand;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final ink = selected ? palette.textPrimary : palette.textSubheading;
-    final weight = selected ? FontWeight.w500 : FontWeight.w400;
     return Semantics(
       selected: selected,
       button: true,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(AppRadii.control),
+        borderRadius: BorderRadius.circular(6),
         hoverColor: palette.hover,
         child: Ink(
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          height: 32,
+          padding: const EdgeInsets.only(left: 10, right: 14),
           decoration: BoxDecoration(
-            color: selected ? palette.controlBackground : null,
-            borderRadius: BorderRadius.circular(AppRadii.control),
+            color: selected ? palette.selectedBackground : null,
+            borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
+            spacing: 10,
             children: [
-              SizedBox(
-                width: 14,
+              SizedBox.square(
+                dimension: 16,
                 child: Center(
-                  child: leading(
-                    selected ? palette.tonalForeground : palette.textTertiary,
+                  child: taskFilterMark(
+                    choice,
+                    selected ? palette.textPrimary : palette.textTertiary,
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  label,
+                  choice.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: uiStyle(
-                    13.5,
+                  style: taskText(
+                    13,
                     18,
-                    weight,
-                    ink,
-                    axis: selected ? AppWeight.selected : AppWeight.body,
+                    palette.textPrimary,
+                    selected ? 460 : 400,
                   ),
                 ),
               ),
               Text(
-                '$count',
+                '${choice.count}',
                 style: metaStyle(
                   12,
                   16,
-                  selected ? palette.tonalForeground : palette.textTertiary,
+                  selected ? palette.textSecondary : palette.textTertiary,
                   tabular: true,
                 ),
               ),
@@ -320,25 +356,24 @@ class _MethodLineState extends State<_MethodLine> {
             },
             child: Container(
               height: 44,
-              padding: const EdgeInsets.only(left: 24, right: 24, bottom: 8),
+              padding: const EdgeInsets.only(left: 20, right: 20, bottom: 8),
               alignment: Alignment.centerLeft,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     'Based on FVP by Mark Forster',
-                    style: uiStyle(
-                      12.5,
+                    style: taskText(
+                      12,
                       16,
-                      FontWeight.w500,
-                      open ? palette.textSecondary : palette.textTertiary,
+                      open ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 6),
                   KapyIcon(
                     KapyIcons.infoOutlined,
                     size: 14,
-                    color: open ? palette.textSubheading : palette.textTertiary,
+                    color: open ? palette.textSecondary : palette.textTertiary,
                   ),
                 ],
               ),

@@ -40,6 +40,7 @@ import '../data/note_days.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/tags.dart';
+import '../data/task_board.dart';
 import '../data/task_library.dart';
 import '../data/note.dart';
 import '../data/note_drawing.dart';
@@ -2015,6 +2016,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _taskNoteLabel(Note note) =>
       taskNoteLabel(note, widget.account?.sharing?.spaceById(note.spaceId));
 
+  /// Today's open tasks: every open one but those whose note waits for a
+  /// later day, as the Tasks page lists them and its counts count them.
+  List<TaskItem> _todayTasks(TasksController tasks) {
+    tasks.waits = taskWaitsToday(context, tasks, widget.prefs.displayTime);
+    return tasks.openIn(null);
+  }
+
   /// Opens a task's note where it lives, leaving Tasks.
   void _openTaskNote(String id) {
     final note = widget.notes.byId(id);
@@ -3895,6 +3903,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 if (ref case NoteImageRef(src: _?, isPreparing: false)) ref,
             ];
             final taskBoard = _taskController?.read();
+            final taskToday = switch (_taskController) {
+              final controller? => _todayTasks(controller),
+              null => const <TaskItem>[],
+            };
             final tasks = _tasksMode ? _taskController : null;
             final createNoun = tasks != null && taskBoard != null
                 ? 'task'
@@ -4055,6 +4067,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     sidebar: tasks != null && taskBoard != null
                         ? TasksSidebar(
                             board: taskBoard,
+                            today: taskToday,
                             filter: _taskFilter,
                             onFilter: (filter) =>
                                 setState(() => _taskFilter = filter),
@@ -4071,7 +4084,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             },
                             windowBar: SidebarWindowBar(
                               title: space.title,
-                              count: taskBoard.open.length,
+                              count: taskToday.length,
                               countLabel: 'open',
                               noun: createNoun,
                               onCreate: _createInSpace,
@@ -4769,10 +4782,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         phone: true,
                         controller: tasks,
                         filter: _taskFilter,
+                        onFilter: (filter) =>
+                            setState(() => _taskFilter = filter),
                         addFocus: _taskAddFocus,
                         labelOf: _taskNoteLabel,
                         onOpenNote: _openTaskNote,
                         onOpenDone: _openTasksDone,
+                        images: widget.notes.blobs,
+                        displayTime: widget.prefs.displayTime,
                       ),
                     ),
                   ],
@@ -4867,9 +4884,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _phoneHomeHeader() => PhoneHomeHeader(
     tasks: _tasksMode,
-    count: _tasksMode
-        ? _taskController?.read().open.length ?? 0
-        : _matchingCount,
+    count: switch (_taskController) {
+      final tasks? when _tasksMode => _todayTasks(tasks).length,
+      _ => _matchingCount,
+    },
     onNotes: () => _showHome(tasks: false),
     onTasks: _taskController == null ? null : () => _showHome(tasks: true),
     streak: widget.notes.streak,

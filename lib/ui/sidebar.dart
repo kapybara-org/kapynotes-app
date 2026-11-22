@@ -425,7 +425,8 @@ class Sidebar extends StatelessWidget {
               placeholder: searchPlaceholder,
               phone: phone,
               trailing: phone && controls != null && onFiltersToggled != null
-                  ? _FiltersButton(
+                  ? PhoneFiltersButton(
+                      key: const ValueKey('phone-filters'),
                       active: filtersActive,
                       onPressed: onFiltersToggled!,
                     )
@@ -2468,10 +2469,16 @@ class SidebarSearchField extends StatelessWidget {
     this.placeholder = 'Search',
     this.phone = false,
     this.trailing,
+    this.field,
   });
 
   /// A phone's field: a quiet well, the entry to Quick find.
   final bool phone;
+
+  /// A phone's text field in the well in place of the placeholder, for a
+  /// page that narrows its own list as you type, as Tasks does. A tap
+  /// elsewhere in the well calls [onSearch].
+  final Widget? field;
 
   /// A phone's filter button, beside the well. It stands outside the well's
   /// own tap area, so pressing it never starts a search.
@@ -2580,59 +2587,69 @@ class SidebarSearchField extends StatelessWidget {
     }
 
     final trailing = this.trailing;
+    final field = this.field;
+    final well = MouseRegion(
+      cursor: SystemMouseCursors.text,
+      child: Container(
+        key: const ValueKey('sidebar-search-box'),
+        // A phone's well is a 44 pt target, as every touch target is, and
+        // grows with the text size rather than cutting the placeholder's
+        // letters off.
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
+        decoration: BoxDecoration(
+          color: palette.fillRest,
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
+        child: Row(
+          children: [
+            KapyIcon(
+              KapyIcons.searchRounded,
+              size: 16,
+              color: palette.textSecondary,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child:
+                  field ??
+                  Text(
+                    searching ? query : placeholder,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: searching
+                          ? palette.textPrimary
+                          : palette.textTertiary,
+                    ),
+                  ),
+            ),
+            ?end,
+          ],
+        ),
+      ),
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 4, trailing == null ? 20 : 14, 6),
       child: Row(
         children: [
           Expanded(
-            child: Semantics(
-              button: true,
-              label: searching ? 'Search, $query' : placeholder,
-              child: GestureDetector(
-                key: const ValueKey('sidebar-search-field'),
-                behavior: HitTestBehavior.opaque,
-                onTap: onSearch,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.text,
-                  child: Container(
-                    key: const ValueKey('sidebar-search-box'),
-                    // A phone's well is a 44 pt target, as every touch target
-                    // is, and grows with the text size rather than cutting
-                    // the placeholder's letters off.
-                    constraints: const BoxConstraints(minHeight: 44),
-                    padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
-                    decoration: BoxDecoration(
-                      color: palette.fillRest,
-                      borderRadius: BorderRadius.circular(AppRadii.control),
-                    ),
-                    child: Row(
-                      children: [
-                        KapyIcon(
-                          KapyIcons.searchRounded,
-                          size: 16,
-                          color: palette.textSecondary,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            searching ? query : placeholder,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: searching
-                                  ? palette.textPrimary
-                                  : palette.textTertiary,
-                            ),
-                          ),
-                        ),
-                        ?end,
-                      ],
+            child: field != null
+                ? GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onSearch,
+                    child: well,
+                  )
+                : Semantics(
+                    button: true,
+                    label: searching ? 'Search, $query' : placeholder,
+                    child: GestureDetector(
+                      key: const ValueKey('sidebar-search-field'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onSearch,
+                      child: well,
                     ),
                   ),
-                ),
-              ),
-            ),
           ),
           if (trailing != null) ...[const SizedBox(width: 8), trailing],
         ],
@@ -2641,14 +2658,21 @@ class SidebarSearchField extends StatelessWidget {
   }
 }
 
-/// The button beside a phone's search well. The filter row shows while it is
-/// open, and it carries a dot while a filter it holds out of sight narrows
-/// the list.
-class _FiltersButton extends StatelessWidget {
-  const _FiltersButton({required this.active, required this.onPressed});
+/// The button beside a phone's search well. It opens the list's filters,
+/// and it carries a dot while a filter out of sight narrows the list.
+class PhoneFiltersButton extends StatelessWidget {
+  const PhoneFiltersButton({
+    super.key,
+    required this.active,
+    required this.onPressed,
+    this.tooltip = 'Filters',
+  });
 
   final bool active;
   final VoidCallback onPressed;
+
+  /// What a screen reader and a long press say it does.
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -2662,8 +2686,7 @@ class _FiltersButton extends StatelessWidget {
           Semantics(
             selected: active,
             child: CompactIconButton(
-              key: const ValueKey('phone-filters'),
-              tooltip: 'Filters',
+              tooltip: tooltip,
               extent: 44,
               onPressed: onPressed,
               icon: KapyIcon(
