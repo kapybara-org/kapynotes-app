@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
-import '../../core/platform.dart';
 import '../../core/theme.dart';
 import 'kapy_ai_chats.dart';
 import 'kapy_ai_conversation.dart';
@@ -88,10 +87,15 @@ class KapyAiPanel extends StatefulWidget {
     this.shortcut,
     this.now = DateTime.now,
     this.compact = false,
+    this.inSheet = false,
     this.onExpand,
   });
 
   final bool compact;
+
+  /// On a phone's sheet, pulled up to full height or resting. Docked beside
+  /// or over the page, on a desktop or a tablet, it is D10's panel.
+  final bool inSheet;
 
   /// Pulls the compact sheet up to full height, for what only it shows: the
   /// model picker a notice offers.
@@ -444,28 +448,28 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     );
   }
 
-  /// D10's header on a desktop. A phone's full panel has no board of its
-  /// own, so it keeps the hand-lettered title and the clock.
+  /// D10's header where the panel is docked. A phone's full-height sheet has
+  /// no board of its own, so it keeps the hand-lettered title and the clock.
   Widget _header() {
     final palette = context.palette;
-    final desktop = AppPlatform.isDesktop;
+    final docked = !widget.inSheet;
     return SizedBox(
-      height: desktop ? 52 : 56,
+      height: docked ? 52 : 56,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: desktop
+          border: docked
               ? Border(bottom: BorderSide(color: palette.separator))
               : null,
         ),
         child: Padding(
-          padding: EdgeInsets.only(left: 16, right: desktop ? 10 : 4),
+          padding: EdgeInsets.only(left: 16, right: docked ? 10 : 4),
           child: Row(
             children: [
               Expanded(
                 child: Text(
                   _chats ? 'Chats' : 'Kapy AI',
                   maxLines: 1,
-                  style: desktop
+                  style: docked
                       ? kapyText(
                           13,
                           18,
@@ -484,7 +488,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
               ),
               KapyAiIconButton(
                 key: const ValueKey('kapy-ai-chats'),
-                icon: desktop
+                icon: docked
                     ? KapyIcons.chatHistoryOutlined
                     : KapyIcons.scheduleRounded,
                 tooltip: 'Chats',
