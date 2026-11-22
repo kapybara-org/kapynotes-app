@@ -119,9 +119,20 @@ void main() {
   ) async {
     await launch(tester);
 
+    // A named day is the serif name and the small date side by side; an
+    // older one is its date alone. Either reads as its words joined.
     final days = [
-      for (final heading in tester.widgetList<Text>(headings))
-        heading.textSpan!.toPlainText(),
+      for (var i = 0; i < headings.evaluate().length; i++)
+        [
+          for (final part in tester.widgetList<Text>(
+            find.descendant(
+              of: headings.at(i),
+              matching: find.byType(Text),
+              matchRoot: true,
+            ),
+          ))
+            part.data ?? part.textSpan!.toPlainText(),
+        ].join(' '),
     ];
     expect(days, hasLength(3));
     expect(days[0], startsWith('Today '));
