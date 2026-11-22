@@ -14,7 +14,10 @@
 //   fold (#239). VoiceOver can't run on a CI runner, so the test reads the
 //   actions from the app's semantics tree, which is what the Mac hands
 //   VoiceOver, and does them from there.
-// Each state is taken light and dark, as screenshots in build/screenshots.
+// - D03, D04 and D07 of the final boards, over the boards' notes in a
+//   1440 × 900 window, for the design check to hold against them.
+// Each state is taken light and dark, as screenshots in build/screenshots;
+// the boards' states dark only, as the boards draw them.
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/semantics.dart'
     show CustomSemanticsAction, SemanticsAction, SemanticsNode;
@@ -26,6 +29,7 @@ import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_days.dart';
@@ -37,8 +41,13 @@ import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
+import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
+import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
+import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -68,16 +77,19 @@ void main() {
   late LayoutPrefs prefs;
   late ShortcutPrefs shortcuts;
 
-  /// The app with the list beside the page, over [bodies] written a minute
-  /// apart, oldest first; [prepare] then tags them or gives them days.
+  /// The app with the list beside the page in a window [size] wide, over
+  /// [bodies] written a minute apart, oldest first; [prepare] then tags them
+  /// or gives them days, and [file] puts them in folders.
   Future<void> launch(
     WidgetTester tester, {
     required List<String> bodies,
     void Function(TagStore tags, NoteDayStore days)? prepare,
+    void Function(FolderStore folders)? file,
+    Size size = const Size(1100, 640),
   }) async {
     if (AppPlatform.isDesktop) {
       await windowManager.ensureInitialized();
-      await windowManager.setBounds(const Rect.fromLTWH(0, 0, 1100, 640));
+      await windowManager.setBounds(Offset.zero & size);
     }
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
@@ -90,12 +102,15 @@ void main() {
     await notes.load();
     await tags.load();
     await days.load();
+    final folders = file == null ? null : FolderStore(store);
+    await folders?.load();
     for (final body in bodies) {
       clock = clock.add(const Duration(minutes: 1));
       notes.create(body: body);
     }
     clock = DateTime.now();
     prepare?.call(tags, days);
+    if (folders != null) file!(folders);
     final tasks = TaskLibrary(
       notes: notes,
       store: store,
@@ -113,6 +128,7 @@ void main() {
         tags: tags,
         days: days,
         tasks: tasks,
+        folders: folders,
         kapyAi: FakeKapyAi(),
       ),
     );
@@ -363,5 +379,230 @@ void main() {
       );
     }
     await shot(tester, 'upcoming-by-tag');
+  });
+
+  /// The boards' window, D03, D04 and D07 alike.
+  const boardSize = Size(1440, 900);
+  late Map<String, String> boardTags;
+
+  /// The boards' notes, dark, in their window: Call with Arjun and Renewal
+  /// notes in Work › Clients › Acme, Renewal notes on the day after
+  /// tomorrow, two pinned, and the boards' six tags. The boards' Wed 19 and
+  /// Fri 21 are the runner's today and the day after tomorrow.
+  Future<void> board(WidgetTester tester) async {
+    await launch(
+      tester,
+      size: boardSize,
+      bodies: [
+        'Lisbon budget\n180 EUR + 232 EUR',
+        'Reading list\nThe Overstory, Piranesi',
+        'Spare keys\nNadia has the spare set',
+        'Pricing ideas\n1,799 INR a seat',
+        'Gym plan\nVoice note',
+        'Launch checklist\nWrite release notes',
+        'Standup notes\nFinish the pricing page',
+        'Renewal notes\nFor the call with Acme on Friday.\n'
+            '- [ ] Send the renewal scope\n- [ ] Read the signed contract',
+        'Quote for the deck\n40 seats × 12 = 480 a month',
+        'Call with Arjun\nPricing page by Friday. He wants the annual plan '
+            'shown first, and the invoice split across two months so the '
+            'first one is smaller.\n- [ ] Send the deck',
+        'Morning pages\nThree things: the deck, the renewal, the gym',
+      ],
+      prepare: (tags, days) {
+        final now = notes.now();
+        days.setDay(
+          id('Renewal notes'),
+          DateTime(now.year, now.month, now.day + 2),
+        );
+        notes
+          ..togglePinned(id('Reading list'))
+          ..togglePinned(id('Lisbon budget'));
+        boardTags = {
+          for (final (name, titles) in [
+            (
+              'Work',
+              [
+                'Call with Arjun',
+                'Quote for the deck',
+                'Standup notes',
+                'Launch checklist',
+                'Pricing ideas',
+                'Renewal notes',
+              ],
+            ),
+            ('Money', ['Lisbon budget', 'Pricing ideas']),
+            ('Home', ['Spare keys', 'Gym plan']),
+            ('Ideas', ['Morning pages', 'Reading list']),
+            ('Travel', ['Lisbon budget', 'Reading list']),
+            ('Acme', ['Call with Arjun']),
+          ])
+            name: () {
+              final tag = tags.create(name)!.id;
+              for (final title in titles) {
+                tags.addTag(id(title), tag);
+              }
+              return tag;
+            }(),
+        };
+      },
+      file: (folders) {
+        final work = folders.create('Work')!;
+        final clients = folders.create('Clients', parentId: work.id)!;
+        final acme = folders.create('Acme', parentId: clients.id)!;
+        folders.file([id('Call with Arjun'), id('Renewal notes')], acme.id);
+      },
+    );
+    // GitHub's Mac runner has a screen smaller than the boards' window, and
+    // macOS keeps a window on its screen, so the view is held at the boards'
+    // size as well: the shot draws the app's layers, not the screen.
+    tester.view.physicalSize = boardSize * tester.view.devicePixelRatio;
+    addTearDown(tester.view.resetPhysicalSize);
+    prefs.appearance = AppearanceMode.dark;
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> boardShot(WidgetTester tester, String name) async {
+    expect(tester.getSize(find.byType(KapyNotesApp)), boardSize, reason: name);
+    expect(tester.takeException(), isNull, reason: name);
+    await screenshot('board-$name-dark');
+  }
+
+  final openNote = find.descendant(
+    of: find.byType(NoteEditor),
+    matching: find.byType(NoteField),
+  );
+
+  testWidgets("D03's board: a second card's menu opens it in a new tab", (
+    tester,
+  ) async {
+    await board(tester);
+    await click(tester, row('Call with Arjun'));
+    final tabs = find.byType(NoteTabRow);
+    expect(tabs, findsNothing, reason: 'one note open has no tab row');
+
+    await tester.tap(
+      row('Quote for the deck'),
+      buttons: kSecondaryButton,
+      kind: mouse,
+    );
+    await tester.pumpAndSettle();
+    final menu = [
+      for (final item in tester.widgetList<KapyMenuActionRow>(
+        find.byType(KapyMenuActionRow),
+      ))
+        item.action.label,
+    ];
+    expect(menu.take(2), ['Open in new tab', 'Open to the side']);
+    expect(menu, containsAll(['Pin note', 'Delete note…']));
+    await boardShot(tester, 'd03-menu');
+
+    await click(
+      tester,
+      find.widgetWithText(KapyMenuActionRow, 'Open in new tab'),
+    );
+    expect(find.byType(KapyMenuActionRow), findsNothing);
+    expect(tabs, findsOneWidget);
+    expect(
+      find.descendant(
+        of: tabs,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith('note-tab-'),
+        ),
+      ),
+      findsNWidgets(2),
+    );
+    for (final title in ['Call with Arjun', 'Quote for the deck']) {
+      expect(
+        find.descendant(of: tabs, matching: find.text(title)),
+        findsOneWidget,
+        reason: title,
+      );
+    }
+    await boardShot(tester, 'd03-two-tabs');
+  });
+
+  // The board picks Fri 21 in the week. Picking a day narrows the list to
+  // the notes last edited that day, which leaves out a note filed for a
+  // later day, so the note is opened from Upcoming, with its dot on its day.
+  testWidgets("D04's board: the day after tomorrow's note, opened from "
+      'Upcoming above Today, with its dot in the week', (tester) async {
+    await board(tester);
+    final now = notes.now();
+    final friday = DateTime(now.year, now.month, now.day + 2);
+    final list = find.byType(Sidebar);
+    final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
+    final today = find.byKey(const ValueKey('sidebar-group-Today'));
+    expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+    expect(
+      tester.getTopLeft(upcoming).dy,
+      lessThan(tester.getTopLeft(today).dy),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          ValueKey('day-strip-${friday.year}-${friday.month}-${friday.day}'),
+        ),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Container &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration! as BoxDecoration).shape == BoxShape.circle,
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await click(tester, upcoming);
+    expect(
+      find.descendant(of: list, matching: find.text('Renewal notes')),
+      findsOneWidget,
+    );
+    await click(tester, row('Renewal notes'));
+    expect(
+      tester.widget<NoteField>(openNote).controller.text,
+      startsWith('Renewal notes\n'),
+    );
+    final path = find.byType(NotePathLine);
+    expect(path, findsOneWidget);
+    for (final folder in ['Work', 'Clients', 'Acme']) {
+      expect(
+        find.descendant(of: path, matching: find.text(folder)),
+        findsOneWidget,
+        reason: folder,
+      );
+    }
+    expect(
+      tester.getTopLeft(path).dy,
+      lessThan(tester.getTopLeft(openNote).dy),
+    );
+    await boardShot(tester, 'd04-friday-upcoming');
+  });
+
+  testWidgets("D07's board: + Tag lists every tag in its colour, the note's "
+      'own ticked', (tester) async {
+    await board(tester);
+    await click(tester, row('Call with Arjun'));
+    await click(tester, find.byKey(const ValueKey('note-add-tag')));
+    final picker = find.byKey(const ValueKey('tag-picker'));
+    expect(picker, findsOneWidget);
+    expect(
+      find.descendant(of: picker, matching: find.byType(TagDot)),
+      findsNWidgets(boardTags.length),
+    );
+    for (final MapEntry(key: name, value: tag) in boardTags.entries) {
+      final ticked = find.descendant(
+        of: find.byKey(ValueKey('tag-row-$tag')),
+        matching: findKapyIcon(KapyIcons.checkRounded),
+      );
+      expect(
+        ticked,
+        name == 'Work' || name == 'Acme' ? findsOneWidget : findsNothing,
+        reason: name,
+      );
+    }
+    await boardShot(tester, 'd07-tag-picker');
   });
 }
