@@ -979,7 +979,10 @@ class _PiePainter extends CustomPainter {
 }
 
 /// The switch drawn at the end of a toggle row. Not a [Switch]: the whole row
-/// is the control, and this only shows which way it is set.
+/// is the control, and this only shows which way it is set. On a computer it
+/// is D13's 38 × 22 with an 18 pt knob, light both ways on a dark side. D13
+/// draws no light side, where the light knob would vanish into the off
+/// track, so there the off knob stays dark.
 class SettingsSwitch extends StatelessWidget {
   const SettingsSwitch({super.key, required this.value, this.enabled = true});
 
@@ -997,8 +1000,8 @@ class SettingsSwitch extends StatelessWidget {
         key: const ValueKey('compact-switch-indicator'),
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
-        width: pointer ? 34 : 44,
-        height: pointer ? 20 : 25,
+        width: pointer ? 38 : 44,
+        height: pointer ? 22 : 25,
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: value
@@ -1020,21 +1023,14 @@ class SettingsSwitch extends StatelessWidget {
           alignment: value ? Alignment.centerRight : Alignment.centerLeft,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: value
-                  ? (pointer ? palette.switchThumb : scheme.onPrimary)
+              color: pointer && (value || palette.brightness == Brightness.dark)
+                  ? palette.switchThumb
+                  : value
+                  ? scheme.onPrimary
                   : palette.textTertiary,
               shape: BoxShape.circle,
-              boxShadow: pointer && value
-                  ? [
-                      BoxShadow(
-                        color: palette.shadowAt(0x40),
-                        offset: const Offset(0, 1),
-                        blurRadius: 2,
-                      ),
-                    ]
-                  : null,
             ),
-            child: SizedBox.square(dimension: pointer ? 16 : 21),
+            child: SizedBox.square(dimension: pointer ? 18 : 21),
           ),
         ),
       ),
