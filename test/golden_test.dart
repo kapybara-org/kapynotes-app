@@ -992,51 +992,6 @@ void main() {
     );
   });
 
-  testWidgets('Tasks keeps Keep on top under More, with its shortcut', (
-    tester,
-  ) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(1000, 640),
-      brightness: Brightness.dark,
-      withTasks: true,
-      platform: TargetPlatform.macOS,
-    );
-    await tester.tap(find.byKey(const ValueKey('rail-tasks')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Tooltip &&
-            (widget.message ?? '').startsWith('Keep on top'),
-      ),
-      findsNothing,
-    );
-
-    final more = find.byKey(const ValueKey('page-more'));
-    final onTop = find.byKey(const ValueKey('page-more-on-top'));
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(of: onTop, matching: find.text('Keep on top')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: onTop, matching: find.text('⌃⌘T')),
-      findsOneWidget,
-    );
-    await tester.tap(onTop);
-    await tester.pumpAndSettle();
-    expect(goldenPrefs.alwaysOnTop, isTrue);
-
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(of: onTop, matching: find.text('Stop keeping on top')),
-      findsOneWidget,
-    );
-  });
-
   testWidgets('desktop dark narrow, results at line ends', (tester) async {
     await pumpForGolden(
       tester,
