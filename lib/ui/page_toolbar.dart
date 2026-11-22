@@ -374,7 +374,7 @@ class PageToolbar extends StatelessWidget {
               Expanded(
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: _BackButton(to: back.to, onPressed: back.onPressed),
+                  child: PageBackButton(to: back.to, onPressed: back.onPressed),
                 ),
               ),
               if (actions == null && members.isNotEmpty)
@@ -967,8 +967,8 @@ class _Saved extends StatelessWidget {
 
 /// Back to the list: "‹ Notes" on iOS, and on Android Material's arrow
 /// alone, as the system back gesture names nothing either.
-class _BackButton extends StatelessWidget {
-  const _BackButton({required this.to, required this.onPressed});
+class PageBackButton extends StatelessWidget {
+  const PageBackButton({super.key, required this.to, required this.onPressed});
 
   final String to;
   final VoidCallback onPressed;

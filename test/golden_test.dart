@@ -1680,6 +1680,33 @@ void main() {
           await tapAndSettle(tester, 'tasks-start');
           await matches('tasks_up_next');
         });
+
+        // M14: a task opened, pushed under the bar.
+        testWidgets('phone tasks, a task opened, $name', (tester) async {
+          await openBoardTasks(tester);
+          final call = goldenNotes.notes.firstWhere(
+            (note) => note.title == 'Call with Arjun',
+          );
+          goldenNotes.updateBody(
+            call.id,
+            '${call.body}\n'
+            '  Slides 1 to 6 are done. The charts need the new numbers '
+            'from Finance.\n'
+            '  Send it before the 17:00 review.',
+          );
+          await tester.runAsync(goldenTasks.reconcileNow);
+          await tester.pumpAndSettle();
+          final deck = find.text('Send the deck').last;
+          await tester.ensureVisible(deck);
+          await tester.pumpAndSettle();
+          await tester.tap(deck);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('phone-task-open-note')),
+            findsOneWidget,
+          );
+          await matches('tasks_task_opened');
+        });
       }
 
       testWidgets('phone drawings, $name', (tester) async {

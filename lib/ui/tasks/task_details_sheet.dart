@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -9,6 +8,8 @@ import '../../data/note_attachment.dart';
 import '../../data/task_board.dart';
 import '../../data/task_details.dart';
 import '../../images/note_image_provider.dart';
+import '../page_toolbar.dart';
+import '../sidebar_timestamp.dart';
 import 'task_marks.dart';
 import 'tasks_controller.dart';
 
@@ -31,8 +32,9 @@ class TaskDetailsSheet extends StatefulWidget {
   final VoidCallback onOpenNote;
   final BlobStore? images;
 
-  /// Inside a phone's sheet: no frame and no Close, since the sheet itself
-  /// is the frame and is pulled down to close, and the task has its box.
+  /// On a phone's task page: the details alone, as M14 has them, larger and
+  /// with the picture under the words. The page draws the task, its way
+  /// back and Open in note.
   final bool phone;
 
   @override
@@ -84,6 +86,78 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       alignment: Alignment.centerLeft,
     );
+    final picture = details == null
+        ? null
+        : TaskDetailPicture(
+            item: item,
+            details: details,
+            images: widget.images,
+            size: phone ? 96 : 72,
+            width: phone ? 200 : null,
+          );
+    final words = empty && editable
+        ? Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: link,
+              onPressed: () {
+                setState(() => _adding = true);
+                unawaited(widget.tasks.openDetails(widget.item));
+                _focus.requestFocus();
+              },
+              child: Text(
+                'Add details',
+                style: uiStyle(
+                  phone ? 16 : 14,
+                  22,
+                  FontWeight.w500,
+                  palette.accentText,
+                ),
+              ),
+            ),
+          )
+        : empty
+        ? null
+        : TextField(
+            controller: _words,
+            focusNode: _focus,
+            readOnly: !editable,
+            minLines: phone ? 1 : 3,
+            maxLines: phone ? null : 8,
+            style: phone
+                ? uiStyle(16, 22, FontWeight.w400, palette.textSecondary)
+                : uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              filled: false,
+              isCollapsed: true,
+              contentPadding: EdgeInsets.zero,
+              hintText: editable ? 'Add details' : null,
+            ),
+            onChanged: (value) => widget.tasks.setDetails(widget.item, value),
+          );
+    final hint = empty || !editable
+        ? Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              editable
+                  ? 'Writes under the task, in its note.'
+                  : 'You can view this note, not change it.',
+              style: uiStyle(13, 18, FontWeight.w400, palette.textTertiary),
+            ),
+          )
+        : null;
+    if (phone) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ?words,
+          if (picture != null)
+            Padding(padding: const EdgeInsets.only(top: 4), child: picture),
+          ?hint,
+        ],
+      );
+    }
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -91,95 +165,35 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (phone)
-              _PhoneTaskName(
-                item: item,
-                tasks: widget.tasks,
-                editable: editable,
-              )
-            else ...[
-              Row(
-                children: [
-                  Text(
-                    'Details',
-                    style: uiStyle(
-                      12,
-                      16,
-                      FontWeight.w600,
-                      palette.textTertiary,
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: widget.onClose,
-                    child: Text(
-                      'Close',
-                      style: uiStyle(
-                        13,
-                        16,
-                        FontWeight.w500,
-                        palette.textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                item.words,
-                style: uiStyle(15, 24, FontWeight.w500, palette.textPrimary),
-              ),
-            ],
-            const SizedBox(height: 8),
-            if (details != null)
-              TaskDetailPicture(
-                item: item,
-                details: details,
-                images: widget.images,
-              ),
-            if (empty && editable)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  style: link,
-                  onPressed: () {
-                    setState(() => _adding = true);
-                    unawaited(widget.tasks.openDetails(widget.item));
-                    _focus.requestFocus();
-                  },
+            Row(
+              children: [
+                Text(
+                  'Details',
+                  style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: widget.onClose,
                   child: Text(
-                    'Add details',
-                    style: uiStyle(14, 22, FontWeight.w500, palette.accentText),
+                    'Close',
+                    style: uiStyle(
+                      13,
+                      16,
+                      FontWeight.w500,
+                      palette.textSecondary,
+                    ),
                   ),
                 ),
-              )
-            else if (!empty)
-              TextField(
-                controller: _words,
-                focusNode: _focus,
-                readOnly: !editable,
-                minLines: 3,
-                maxLines: 8,
-                style: uiStyle(14, 22, FontWeight.w400, palette.textPrimary),
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  filled: false,
-                  isCollapsed: true,
-                  contentPadding: EdgeInsets.zero,
-                  hintText: editable ? 'Add details' : null,
-                ),
-                onChanged: (value) =>
-                    widget.tasks.setDetails(widget.item, value),
-              ),
-            if (empty || !editable)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  editable
-                      ? 'Writes under the task, in its note.'
-                      : 'You can view this note, not change it.',
-                  style: uiStyle(13, 18, FontWeight.w400, palette.textTertiary),
-                ),
-              ),
+              ],
+            ),
+            Text(
+              item.words,
+              style: uiStyle(15, 24, FontWeight.w500, palette.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            ?picture,
+            ?words,
+            ?hint,
           ],
         ),
         Column(
@@ -206,7 +220,6 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
         ),
       ],
     );
-    if (phone) return body;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.controlBackground,
@@ -234,12 +247,16 @@ class TaskDetailPicture extends StatelessWidget {
     required this.details,
     required this.images,
     this.size = 72,
+    this.width,
   });
 
   final TaskItem item;
   final TaskDetails details;
   final BlobStore? images;
+
+  /// How tall it is, and how wide too unless [width] says otherwise.
   final double size;
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
@@ -255,7 +272,7 @@ class TaskDetailPicture extends StatelessWidget {
     final child = picture != null && store != null
         ? Image(
             image: NoteImageProvider(hash: picture.hash, store: store),
-            width: size,
+            width: width ?? size,
             height: size,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stack) => _mark(context, video),
@@ -267,7 +284,7 @@ class TaskDetailPicture extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadii.compact),
-          child: SizedBox(width: size, height: size, child: child),
+          child: SizedBox(width: width ?? size, height: size, child: child),
         ),
       ),
     );
@@ -285,164 +302,173 @@ class TaskDetailPicture extends StatelessWidget {
   );
 }
 
-/// A task's details on a phone: a sheet that opens at half the screen and can
-/// be pulled up to nearly all of it. The same body the desktop shows beside the
-/// list, so a phone and a window edit one thing.
-class PhoneTaskDetailsSheet extends StatefulWidget {
-  const PhoneTaskDetailsSheet({
+/// A task opened from a phone's Tasks (M14): a page pushed over the list and
+/// under the bar, with the way back at the left and Open in note at the
+/// right, then the task, its note and day, and the details it holds, edited
+/// live in that note as a window edits them beside the list.
+class PhoneTaskPage extends StatelessWidget {
+  const PhoneTaskPage({
     super.key,
     required this.item,
     required this.tasks,
-    required this.onClose,
+    required this.label,
+    required this.onBack,
     required this.onOpenNote,
     this.images,
   });
 
   final TaskItem item;
   final TasksController tasks;
-  final VoidCallback onClose;
+
+  /// The note's name as the task's mark shows it.
+  final String label;
+  final VoidCallback onBack;
   final VoidCallback onOpenNote;
   final BlobStore? images;
 
-  @override
-  State<PhoneTaskDetailsSheet> createState() => _PhoneTaskDetailsSheetState();
-}
-
-class _PhoneTaskDetailsSheetState extends State<PhoneTaskDetailsSheet> {
-  /// Where the top edge sits, as a share of the space the sheet has.
-  static const double _half = 0.5;
-  static const double _full = 0.92;
-  static const double _dismiss = 0.32;
-
-  double _open = _half;
-  double? _dragged;
-
-  void _dragUpdate(DragUpdateDetails details, double height) {
-    final from = _dragged ?? _open;
-    _dragged = (from - details.delta.dy / height).clamp(0.1, _full);
-    setState(() => _open = _dragged!);
-  }
-
-  void _dragEnd(DragEndDetails details) {
-    final from = _dragged;
-    _dragged = null;
-    if (from == null) return;
-    if (from < _dismiss) {
-      widget.onClose();
-      return;
-    }
-    setState(() => _open = from >= (_half + _full) / 2 ? _full : _half);
+  /// "Today, Wed 19", "Yesterday, Tue 18", then "Sat 14 Nov".
+  String _added(DateTime now) {
+    final at = DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt);
+    final days = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).difference(DateTime(at.year, at.month, at.day)).inDays;
+    return switch (days) {
+      <= 0 => 'Today, ${SidebarTimestamp.weekdayAndDay(at)}',
+      1 => 'Yesterday, ${SidebarTimestamp.weekdayAndDay(at)}',
+      _ => SidebarTimestamp.shortDay(at, now: now),
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    // Above the keyboard while the details are typed into, and clear of the
-    // home indicator at rest.
-    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
-    final bottom = MediaQuery.paddingOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: keyboard),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final height = constraints.maxHeight;
-          // The route is the whole screen tall, so the dimmed list above the
-          // sheet is this, and a tap on it closes the sheet as the barrier
-          // would. A pull anywhere on the sheet moves it.
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: GestureDetector(
-                  key: const ValueKey('phone-details-scrim'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onClose,
-                ),
-              ),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onVerticalDragUpdate: (details) =>
-                      _dragUpdate(details, height),
-                  onVerticalDragEnd: _dragEnd,
-                  child: AnimatedContainer(
-                    key: const ValueKey('phone-details-body'),
-                    duration: _dragged == null
-                        ? const Duration(milliseconds: 180)
-                        : Duration.zero,
-                    curve: Curves.easeOutCubic,
-                    height: height * _open,
-                    decoration: BoxDecoration(
-                      color: palette.editorBackground,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(AppRadii.surface),
-                      ),
-                      border: Border(top: BorderSide(color: palette.separator)),
+    final editable = tasks.canEdit(item.note);
+    final done = item.line.done;
+    return Material(
+      color: palette.paperColor,
+      // Holds a sideways swipe, so it never turns Home to Notes underneath;
+      // iOS's edge swipe still takes the page back.
+      child: GestureDetector(
+        onHorizontalDragStart: (_) {},
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 14, right: 21),
+              child: Row(
+                children: [
+                  PageBackButton(to: 'Tasks', onPressed: onBack),
+                  const Spacer(),
+                  TextButton(
+                    key: const ValueKey('phone-task-open-note'),
+                    onPressed: onOpenNote,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(44, 44),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    child: Text(
+                      'Open in note',
+                      style: uiStyle(
+                        AppTypeScale.body,
+                        22,
+                        FontWeight.w500,
+                        palette.accentText,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  9,
+                  0,
+                  21,
+                  MediaQuery.viewInsetsOf(context).bottom +
+                      MediaQuery.paddingOf(context).bottom +
+                      24,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(
-                          key: const ValueKey('phone-details-grabber'),
-                          height: 22,
-                          child: Center(
-                            child: Container(
-                              width: 36,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: palette.textTertiary,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ),
+                        _PhoneTaskBox(
+                          item: item,
+                          tasks: tasks,
+                          editable: editable,
                         ),
                         Expanded(
-                          // Pulled below half, the body keeps its half-height layout
-                          // and slides out of view rather than squeezing.
-                          child: ClipRect(
-                            child: OverflowBox(
-                              alignment: Alignment.topCenter,
-                              minHeight: 0,
-                              maxHeight: math.max(
-                                height * _open - 22,
-                                height * _half - 22,
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.fromLTRB(
-                                  16,
-                                  0,
-                                  16,
-                                  12 + bottom,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 9),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Semantics(
+                                  header: true,
+                                  child: Text(
+                                    item.words,
+                                    style:
+                                        uiStyle(
+                                          18,
+                                          26,
+                                          FontWeight.w500,
+                                          done
+                                              ? palette.textTertiary
+                                              : palette.textPrimary,
+                                        ).copyWith(
+                                          decoration: done
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                        ),
+                                  ),
                                 ),
-                                child: TaskDetailsSheet(
-                                  item: widget.item,
-                                  tasks: widget.tasks,
-                                  onClose: widget.onClose,
-                                  onOpenNote: widget.onOpenNote,
-                                  images: widget.images,
-                                  phone: true,
+                                Text(
+                                  '$label · ${_added(tasks.now())}',
+                                  style: uiStyle(
+                                    14,
+                                    20,
+                                    FontWeight.w400,
+                                    palette.textTertiary,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
                         ),
                       ],
                     ),
-                  ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 44, top: 14),
+                      child: TaskDetailsSheet(
+                        item: item,
+                        tasks: tasks,
+                        onClose: onBack,
+                        onOpenNote: onOpenNote,
+                        images: images,
+                        phone: true,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// The task at the top of a phone's sheet: its box, 44 pt to tap, and its
-/// name beside it.
-class _PhoneTaskName extends StatelessWidget {
-  const _PhoneTaskName({
+/// The task's box at the top of its page, 44 pt to tap: done or not done,
+/// in its note.
+class _PhoneTaskBox extends StatelessWidget {
+  const _PhoneTaskBox({
     required this.item,
     required this.tasks,
     required this.editable,
@@ -460,63 +486,43 @@ class _PhoneTaskName extends StatelessWidget {
     final tick = editable
         ? () => unawaited(tasks.setDone(item, done: !done))
         : null;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Semantics(
-          checked: done,
-          label: item.words,
-          excludeSemantics: true,
-          onTap: tick,
-          child: GestureDetector(
-            key: const ValueKey('phone-details-box'),
-            behavior: HitTestBehavior.opaque,
-            onTap: tick,
-            child: SizedBox.square(
-              dimension: 44,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Opacity(
-                  opacity: editable ? 1 : lockedBoxOpacity,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: done ? sage : null,
-                      border: Border.all(
-                        color: done ? sage : palette.checkboxBorder,
-                        width: 1.5,
-                      ),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: done
-                        ? KapyIcon(
-                            KapyIcons.checkRounded,
-                            size: 15,
-                            color: palette.paperColor,
-                          )
-                        : null,
+    return Semantics(
+      checked: done,
+      label: item.words,
+      excludeSemantics: true,
+      onTap: tick,
+      child: GestureDetector(
+        key: const ValueKey('phone-details-box'),
+        behavior: HitTestBehavior.opaque,
+        onTap: tick,
+        child: SizedBox.square(
+          dimension: 44,
+          child: Center(
+            child: Opacity(
+              opacity: editable ? 1 : lockedBoxOpacity,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: done ? sage : null,
+                  border: Border.all(
+                    color: done ? sage : palette.checkboxBorder,
+                    width: 1.5,
                   ),
+                  borderRadius: BorderRadius.circular(5),
                 ),
+                child: done
+                    ? KapyIcon(
+                        KapyIcons.checkRounded,
+                        size: 14,
+                        color: palette.paperColor,
+                      )
+                    : null,
               ),
             ),
           ),
         ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Text(
-              item.words,
-              style: uiStyle(
-                16,
-                24,
-                FontWeight.w500,
-                done ? palette.textTertiary : palette.textPrimary,
-              ).copyWith(decoration: done ? TextDecoration.lineThrough : null),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

@@ -15,7 +15,8 @@
 //
 // A second walk takes the final boards dark, over their own notes: M13 with
 // the search field, a search typed and the filter open; M13a, Do now over
-// Up next with the line after it and Later; and M14, a task opened.
+// Up next with the line after it and Later; and M14, a task opened on
+// its own page under the bar.
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -338,7 +339,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(deck);
     await tester.pumpAndSettle();
-    expect(find.text('Open in note'), findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-task-open-note')), findsOneWidget);
+    expect(find.byKey(const ValueKey('page-back')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('phone-bar')).hitTestable(),
+      findsOneWidget,
+    );
     await shot('m14-task-opened');
   });
 }

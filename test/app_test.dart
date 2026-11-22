@@ -7656,9 +7656,14 @@ void main() {
       final groceries = find.widgetWithText(NoteRow, 'Groceries');
       late String groceriesId;
 
-      Future<void> pumpHome(WidgetTester tester, {TagStore? tags}) async {
+      Future<void> pumpHome(
+        WidgetTester tester, {
+        TagStore? tags,
+        String? also,
+      }) async {
         await notes.load();
         groceriesId = notes.create(body: 'Groceries\nOat milk').id;
+        if (also != null) notes.create(body: also);
         await pumpApp(
           tester,
           size: const Size(393, 852),
@@ -8064,6 +8069,91 @@ void main() {
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
         expect(groceries, findsOneWidget);
+      });
+
+      group('a task opened (M14)', () {
+        const trip =
+            'Lisbon trip\n☐ Book the train\n☐ Pack the adapters\n'
+            '☐ Renew the passport\n  It runs out in May.\n☐ Buy euros';
+        final taskPage = find.byKey(const ValueKey('phone-task-open-note'));
+        final bar = find.byKey(const ValueKey('phone-bar'));
+
+        Future<void> openTask(WidgetTester tester) async {
+          await pumpHome(tester, also: trip);
+          await tester.tap(tasksTitle);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Renew the passport'));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsOneWidget);
+        }
+
+        testWidgets('pushes a page under the bar, over the header, and '
+            '← Tasks comes back', (tester) async {
+          await openTask(tester);
+          expect(bar.hitTestable(), findsOneWidget);
+          expect(find.byType(PhoneHomeHeader).hitTestable(), findsNothing);
+          expect(find.text('It runs out in May.'), findsOneWidget);
+
+          await tester.tap(find.byKey(const ValueKey('page-back')));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage.hitTestable(), findsOneWidget);
+          expect(find.byType(PhoneHomeHeader).hitTestable(), findsOneWidget);
+        });
+
+        testWidgets("the system back comes back to Tasks, and only then "
+            'to Notes', (tester) async {
+          await openTask(tester);
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage, findsOneWidget);
+
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(tasksPage, findsNothing);
+          expect(groceries, findsOneWidget);
+        });
+
+        testWidgets("a sideways swipe on the page doesn't turn Home to "
+            'Notes', (tester) async {
+          await openTask(tester);
+          await tester.dragFrom(const Offset(200, 600), const Offset(200, 0));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsOneWidget);
+          expect(
+            tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).space,
+            LibrarySpace.tasks,
+          );
+        });
+
+        testWidgets("the bar's Tasks, tapped again, comes back to the list", (
+          tester,
+        ) async {
+          await openTask(tester);
+          await tester.tap(find.byKey(const ValueKey('bar-tasks')));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage.hitTestable(), findsOneWidget);
+        });
+
+        testWidgets("Open in note opens the note at the task's line", (
+          tester,
+        ) async {
+          await openTask(tester);
+          await tester.tap(taskPage);
+          await tester.pumpAndSettle();
+          expect(tasksPage, findsNothing);
+          final field = tester.widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          );
+          expect(field.controller.text, startsWith('Lisbon trip'));
+          final line = '☐ Renew the passport';
+          expect(
+            field.controller.selection,
+            TextSelection.collapsed(offset: trip.indexOf(line) + line.length),
+          );
+        });
       });
     });
 

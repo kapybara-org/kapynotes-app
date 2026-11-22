@@ -1133,12 +1133,12 @@ void main() {
 
       await tester.tap(words(rent));
       await settle(tester);
-      expect(find.byType(PhoneTaskDetailsSheet), findsOneWidget);
+      expect(find.byType(PhoneTaskPage), findsOneWidget);
       expect(opened, isNull);
 
       await tester.tap(find.text('Open in note'));
       await settle(tester);
-      expect(find.byType(PhoneTaskDetailsSheet), findsNothing);
+      expect(find.byType(PhoneTaskPage), findsNothing);
       expect(opened, rent.note.id);
 
       await tester.longPress(words(rent));
