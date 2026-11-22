@@ -8967,6 +8967,23 @@ void main() {
         );
       });
 
+      testWidgets("a note given today's own day stays on Home, under Today, "
+          'and not under Upcoming', (tester) async {
+        await pumpUpcoming(tester);
+        days.setDay(renewal, inDays(0));
+        await tester.pumpAndSettle();
+        expect(listed('Renewal notes'), findsOneWidget);
+        final headings = find.byKey(const ValueKey('phone-day-heading'));
+        expect(
+          tester.widget<Text>(headings).textSpan!.toPlainText(),
+          startsWith('Today'),
+        );
+
+        await openUpcoming(tester);
+        expect(listed('Renewal notes'), findsNothing);
+        expect(listed('Board review'), findsOneWidget);
+      });
+
       testWidgets('a pinned note for a later day stays with Pinned', (
         tester,
       ) async {
@@ -9005,6 +9022,20 @@ void main() {
         expect(page, findsNothing);
         expect(tile, findsOneWidget);
       });
+
+      testWidgets('on an iPhone, a swipe in from the left edge takes Upcoming '
+          'back to Folders', (tester) async {
+        await pumpUpcoming(tester);
+        await openUpcoming(tester);
+        await tester.dragFrom(
+          Offset(2, tester.getCenter(listed('Renewal notes')).dy),
+          const Offset(200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(page, findsNothing);
+        expect(tile, findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
       testWidgets('on an SE at 3.1× text the tile and the page fit, and their '
           'targets are at least 44 pt', (tester) async {
