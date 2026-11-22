@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -68,7 +69,12 @@ const double kapyAiOverlayBelow = 1180;
 
 /// Kapy AI: the header, a chat or the chats, and the composer. The same in
 /// the panel beside the page, over it in a narrow window, and on a phone's
-/// full-screen sheet.
+/// sheet pulled up to full height.
+///
+/// [compact] is the phone's sheet resting over the note it was opened from
+/// (M10): Kapy AI and Close, what it is about, the chat, and one field that
+/// asks about the note. It keeps this state, so a question asked or typed
+/// there is still there when the sheet is pulled up.
 class KapyAiPanel extends StatefulWidget {
   const KapyAiPanel({
     super.key,
@@ -80,7 +86,15 @@ class KapyAiPanel extends StatefulWidget {
     required this.onClose,
     this.shortcut,
     this.now = DateTime.now,
+    this.compact = false,
+    this.onExpand,
   });
+
+  final bool compact;
+
+  /// Pulls the compact sheet up to full height, for what only it shows: the
+  /// model picker a notice offers.
+  final VoidCallback? onExpand;
 
   final KapyAi kapyAi;
   final KapyAiPanelController controller;
@@ -120,9 +134,10 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     widget.controller.addListener(_takeDraft);
     // Asked for rather than autofocused, which yields to whatever already
     // holds focus, and beside a note that is its editor. Esc and typing both
-    // need the field.
+    // need the field. The sheet resting over a note waits for a tap
+    // instead, so the keyboard does not cover the note before anyone asks.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fieldFocus.requestFocus();
+      if (mounted && !widget.compact) _fieldFocus.requestFocus();
     });
   }
 
@@ -214,51 +229,219 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       type: MaterialType.transparency,
       child: ListenableBuilder(
         listenable: Listenable.merge([_ai, widget.controller]),
-        builder: (context, _) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(),
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _chats
-                      ? KapyAiChats(
-                          kapyAi: _ai,
-                          now: widget.now(),
-                          onOpened: () => setState(() => _chats = false),
-                        )
-                      : _body(),
-                  if (_picking) ...[
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _picking = false),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: KapyAiPicker(
-                          key: _menu,
-                          kapyAi: _ai,
-                          onPick: _pick,
-                          onManageAccounts: () {
-                            setState(() => _picking = false);
-                            widget.onManageAccounts();
-                          },
+        builder: (context, _) {
+          final noteId = _noteId;
+          if (widget.compact && noteId != null) return _compact(noteId);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(),
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _chats
+                        ? KapyAiChats(
+                            kapyAi: _ai,
+                            now: widget.now(),
+                            onOpened: () => setState(() => _chats = false),
+                          )
+                        : _body(),
+                    if (_picking) ...[
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() => _picking = false),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: KapyAiPicker(
+                            key: _menu,
+                            kapyAi: _ai,
+                            onPick: _pick,
+                            onManageAccounts: () {
+                              setState(() => _picking = false);
+                              widget.onManageAccounts();
+                            },
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            if (!_chats) _composer(),
-          ],
-        ),
+              if (!_chats) _composer(),
+            ],
+          );
+        },
       ),
     ),
   );
+
+  /// The sheet resting over the note (M10).
+  Widget _compact(String noteId) {
+    final palette = context.palette;
+    final chat = _ai.current;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 48,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 20, right: 8),
+            child: Row(
+              children: [
+                KapyIcon(
+                  KapyIcons.sparklesOutlined,
+                  size: 18,
+                  color: palette.textPrimary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Kapy AI',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: kapyText(
+                      17,
+                      22,
+                      palette.textPrimary,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  key: const ValueKey('kapy-ai-close'),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
+                  onTap: widget.onClose,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minWidth: 44,
+                      minHeight: 44,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Center(
+                        widthFactor: 1,
+                        child: Text(
+                          'Close',
+                          style: kapyText(
+                            15,
+                            20,
+                            palette.textSecondary,
+                            weight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            'About ${widget.noteTitle(noteId)}',
+            key: const ValueKey('kapy-ai-about'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: kapyText(13, 16, palette.textTertiary),
+          ),
+        ),
+        Expanded(
+          child: chat == null || chat.messages.isEmpty
+              ? const SizedBox.shrink()
+              : KapyAiConversation(
+                  kapyAi: _ai,
+                  chat: chat,
+                  noteTitle: widget.noteTitle,
+                  onOpenNote: widget.onOpenNote,
+                  onPickAnother: () {
+                    setState(() => _picking = true);
+                    widget.onExpand?.call();
+                  },
+                  onManageAccounts: widget.onManageAccounts,
+                  now: widget.now(),
+                  compact: true,
+                ),
+        ),
+        _compactComposer(),
+      ],
+    );
+  }
+
+  /// One field that asks about the note, 36 above the screen's edge, or just
+  /// above the keyboard while it is up.
+  Widget _compactComposer() {
+    final palette = context.palette;
+    final canSend = _field.text.trim().isNotEmpty && !_ai.answering;
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, keyboard ? 8 : 36),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.only(left: 14, right: 8),
+        decoration: BoxDecoration(
+          color: palette.controlBackground,
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Focus(
+                  onKeyEvent: _onFieldKey,
+                  child: TextField(
+                    key: const ValueKey('kapy-ai-field'),
+                    controller: _field,
+                    focusNode: _fieldFocus,
+                    minLines: 1,
+                    maxLines: 4,
+                    keyboardType: TextInputType.multiline,
+                    cursorColor: palette.selectedBorder,
+                    style: kapyText(15, 20, palette.textPrimary),
+                    decoration: InputDecoration.collapsed(
+                      hintText: 'Ask about this note',
+                      hintStyle: kapyText(15, 20, palette.textTertiary),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'Ask',
+              child: Material(
+                color: palette.hover,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  key: const ValueKey('kapy-ai-send'),
+                  onTap: canSend ? () => _ask(_field.text) : null,
+                  child: SizedBox.square(
+                    dimension: 28,
+                    child: Center(
+                      child: KapyIcon(
+                        KapyIcons.sendRounded,
+                        size: 16,
+                        color: canSend
+                            ? palette.textPrimary
+                            : palette.textTertiary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _header() {
     final palette = context.palette;
@@ -677,20 +860,191 @@ class KapyAiToolbarButton extends StatelessWidget {
   );
 }
 
-/// Kapy AI on a phone: the panel as a full-screen sheet.
+/// Where a phone's sheet rests over the note it was opened from, as a share
+/// of the screen above the keyboard: with the keyboard down its top is at
+/// 42.3%, so the note's header and title stay in view (M10).
+const double kapyAiSheetRest = 0.577;
+
+/// From this share of the screen up, the sheet is the full panel.
+const double _kapyAiSheetFull = 0.8;
+
+/// Kapy AI on a phone: a sheet over the page. From a note ([rest]) it rests
+/// at [kapyAiSheetRest] in its compact layout, and otherwise opens at full
+/// height. Pulled up it is the full panel, and pulled down past its rest, a
+/// tap on the scrim, or Close puts it away. [panel] is built for the sheet's
+/// layout of the moment, with what puts the sheet away and what pulls it up.
 Future<void> showKapyAiSheet(
   BuildContext context, {
-  required Widget Function(VoidCallback close) panel,
-}) => showModalBottomSheet<void>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  backgroundColor: context.palette.sidebarBackground,
-  shape: const RoundedRectangleBorder(
-    borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-  ),
-  builder: (sheetContext) => SizedBox(
-    height: MediaQuery.sizeOf(sheetContext).height,
-    child: panel(() => Navigator.of(sheetContext).pop()),
-  ),
-);
+  required bool rest,
+  required Widget Function(
+    VoidCallback close,
+    VoidCallback expand,
+    bool compact,
+  )
+  panel,
+}) {
+  final palette = context.palette;
+  final statusBar = MediaQuery.paddingOf(context).top;
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    enableDrag: false,
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    barrierColor: palette.brightness == Brightness.dark
+        ? const Color(0xA30C0B09)
+        : palette.scrim,
+    builder: (_) =>
+        _KapyAiSheet(rest: rest, statusBar: statusBar, panel: panel),
+  );
+}
+
+class _KapyAiSheet extends StatefulWidget {
+  const _KapyAiSheet({
+    required this.rest,
+    required this.statusBar,
+    required this.panel,
+  });
+
+  final bool rest;
+  final double statusBar;
+  final Widget Function(VoidCallback close, VoidCallback expand, bool compact)
+  panel;
+
+  @override
+  State<_KapyAiSheet> createState() => _KapyAiSheetState();
+}
+
+class _KapyAiSheetState extends State<_KapyAiSheet> {
+  final _sheet = DraggableScrollableController();
+
+  /// Where the person has the sheet, as a share of the space above the
+  /// keyboard. Only a drag, a snap or Pick another moves it; the keyboard
+  /// moves the space it is measured in instead.
+  late double _size = widget.rest ? kapyAiSheetRest : 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheet.addListener(_resized);
+  }
+
+  @override
+  void dispose() {
+    _sheet.dispose();
+    super.dispose();
+  }
+
+  void _resized() {
+    final wasCompact = _size < _kapyAiSheetFull;
+    _size = _sheet.size;
+    if (wasCompact != _size < _kapyAiSheetFull) setState(() {});
+  }
+
+  void _expand() {
+    if (!_sheet.isAttached) return;
+    unawaited(
+      _sheet.animateTo(
+        1,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final keyboard = media.viewInsets.bottom;
+    final above = media.size.height - keyboard;
+    final compact = _size < _kapyAiSheetFull;
+    // The sheet lives in the space above the keyboard, so its rest and full
+    // height are shares of that space and the field always sits just above
+    // the keyboard; with the keyboard down, that is the whole screen.
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: DraggableScrollableSheet(
+        controller: _sheet,
+        expand: false,
+        snap: true,
+        snapSizes: const [kapyAiSheetRest],
+        minChildSize: 0,
+        initialChildSize: _size,
+        builder: (context, scroll) => LayoutBuilder(
+          builder: (context, box) {
+            final palette = context.palette;
+            final height = math.max(box.maxHeight, above * kapyAiSheetRest);
+            final under = math.max(
+              0.0,
+              widget.statusBar - (above - box.maxHeight),
+            );
+            return ClipRRect(
+              key: const ValueKey('kapy-ai-sheet'),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppRadii.surface),
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: palette.sidebarBackground,
+                  border: Border(
+                    top: BorderSide(color: palette.textPrimary.withAlpha(0x14)),
+                  ),
+                ),
+                child: CustomScrollView(
+                  controller: scroll,
+                  slivers: [
+                    SliverFillRemaining(
+                      // Pulled below its rest on the way out, the sheet
+                      // keeps its rest layout and slides away clipped.
+                      child: OverflowBox(
+                        alignment: Alignment.topCenter,
+                        minHeight: height,
+                        maxHeight: height,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            top: under,
+                            bottom: compact || keyboard > 0
+                                ? 0
+                                : media.padding.bottom,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Center(
+                                  child: Container(
+                                    key: const ValueKey('kapy-ai-grabber'),
+                                    width: 36,
+                                    height: 5,
+                                    decoration: BoxDecoration(
+                                      color: palette.textPrimary.withAlpha(
+                                        0x33,
+                                      ),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: widget.panel(
+                                  () => Navigator.of(context).pop(),
+                                  _expand,
+                                  compact,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

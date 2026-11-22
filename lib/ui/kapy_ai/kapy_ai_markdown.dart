@@ -28,10 +28,14 @@ class KapyAiMarkdown extends StatefulWidget {
     this.text, {
     super.key,
     required this.sources,
+    this.style,
     this.launch = _openOutside,
   });
 
   final String text;
+
+  /// The body's type, where it is not the panel's 13.5 on 21.
+  final TextStyle? style;
 
   /// What was sent with the question this answers: the question and the
   /// notes it read, from `KapyAi.linkSources`.
@@ -130,7 +134,7 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
   Widget build(BuildContext context) {
     _disposeRecognizers();
     final palette = context.palette;
-    final body = kapyText(13.5, 21, palette.textPrimary);
+    final body = widget.style ?? kapyText(13.5, 21, palette.textPrimary);
     final blocks = <Widget>[];
     final paragraph = <String>[];
 
