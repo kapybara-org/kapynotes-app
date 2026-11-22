@@ -5,7 +5,7 @@ import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'share_dialog_test.dart' show Device, harness;
+import 'support/sharing_devices.dart' show Device, harness;
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
