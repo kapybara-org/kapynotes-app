@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -287,6 +288,94 @@ void main() {
       await _toggleWithKeys(tester);
       expect(_panel, findsNothing);
     });
+  });
+
+  group('the panel’s header follows where it sits', () {
+    final chats = find.byKey(const ValueKey('kapy-ai-chats'));
+    final sheet = find.byKey(const ValueKey('kapy-ai-sheet'));
+    Finder header() =>
+        find.ancestor(of: chats, matching: find.byType(SizedBox)).first;
+    TextStyle? titleStyle(WidgetTester tester) => tester
+        .widget<Text>(
+          find.descendant(
+            of: find.ancestor(of: chats, matching: find.byType(Row)).first,
+            matching: find.text('Kapy AI'),
+          ),
+        )
+        .style;
+    KapyIconData icon(WidgetTester tester) => tester
+        .widget<KapyIcon>(
+          find.descendant(of: chats, matching: find.byType(KapyIcon)),
+        )
+        .icon;
+    Border? hairline(WidgetTester tester) {
+      final box = tester.widget<DecoratedBox>(
+        find
+            .descendant(of: header(), matching: find.byType(DecoratedBox))
+            .first,
+      );
+      return (box.decoration as BoxDecoration).border as Border?;
+    }
+
+    for (final (platform, size) in [
+      (TargetPlatform.macOS, const Size(1500, 800)),
+      (TargetPlatform.iOS, const Size(744, 1133)),
+      (TargetPlatform.iOS, const Size(1366, 1024)),
+      (TargetPlatform.android, const Size(1280, 800)),
+    ]) {
+      final name =
+          '${platform.name} at ${size.width.toInt()}×${size.height.toInt()}';
+      testWidgets('docked on $name, it is D10’s', (tester) async {
+        notes.create(body: 'Trip budget\n900 flights\n600 hotel');
+        await _pump(tester, size: size, platform: platform);
+        await tester.tap(_button);
+        await tester.pumpAndSettle();
+
+        expect(_panel, findsOneWidget);
+        expect(sheet, findsNothing);
+        final style = titleStyle(tester);
+        expect(style?.fontFamily, 'Figtree');
+        expect(style?.fontSize, 13);
+        expect(
+          icon(tester).paths,
+          same(HugeIcons.strokeRoundedTransactionHistory),
+        );
+        expect(
+          hairline(tester),
+          Border(
+            bottom: BorderSide(color: tester.element(chats).palette.separator),
+          ),
+        );
+        expect(tester.getSize(header()).height, 52);
+      });
+    }
+
+    testWidgets(
+      'on a phone’s sheet pulled up to full height, it is unchanged',
+      (tester) async {
+        notes.create(body: 'Trip budget\n900 flights\n600 hotel');
+        await _pump(
+          tester,
+          size: const Size(390, 844),
+          platform: TargetPlatform.iOS,
+        );
+        await tester.tap(_button);
+        await tester.pumpAndSettle();
+        await tester.drag(
+          find.byKey(const ValueKey('kapy-ai-grabber')),
+          const Offset(0, -500),
+        );
+        await tester.pumpAndSettle();
+
+        expect(sheet, findsOneWidget);
+        final style = titleStyle(tester);
+        expect(style?.fontFamily, 'Shantell Sans');
+        expect(style?.fontSize, 17);
+        expect(icon(tester), same(KapyIcons.scheduleRounded));
+        expect(hairline(tester), isNull);
+        expect(tester.getSize(header()).height, 56);
+      },
+    );
   });
 
   group('a phone’s sheet over the note (M10)', () {

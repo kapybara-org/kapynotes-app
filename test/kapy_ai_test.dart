@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -12,6 +13,7 @@ import 'package:kapy_notes/ui/kapy_ai/punycode.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'fake_kapy_ai.dart';
+import 'kapy_icon_finder.dart';
 import 'test_fonts.dart';
 
 /// The panel, its picker, its chats, its notices and its answers, one piece
@@ -85,9 +87,13 @@ KapyAiPanel _panel(
   VoidCallback? onManage,
   Map<String, String> titles = const {'n1': 'Trip budget'},
   void Function(String)? onOpenNote,
+  bool compact = false,
+  bool inSheet = false,
 }) => KapyAiPanel(
   kapyAi: ai,
   controller: controller,
+  compact: compact,
+  inSheet: inSheet,
   noteTitle: (id) => titles[id],
   onOpenNote: onOpenNote ?? (_) {},
   onManageAccounts: onManage ?? () {},
@@ -258,6 +264,143 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('kapy-ai-new-chat')));
       expect(ai.calls, ['newChat']);
+    });
+
+    Finder headerOf(Finder button) =>
+        find.ancestor(of: button, matching: find.byType(SizedBox)).first;
+
+    Border? hairlineOf(WidgetTester tester, Finder button) {
+      final boxes = find.ancestor(
+        of: button,
+        matching: find.byType(DecoratedBox),
+      );
+      for (final box in tester.widgetList<DecoratedBox>(boxes)) {
+        final decoration = box.decoration;
+        if (decoration is BoxDecoration && decoration.border is Border) {
+          return decoration.border! as Border;
+        }
+      }
+      return null;
+    }
+
+    testWidgets('docked, the header is D10’s: a Figtree title, the '
+        'notes-history icon and a hairline', (tester) async {
+      final controller = KapyAiPanelController()..open(noteId: 'n1');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_harness(_panel(FakeKapyAi(), controller)));
+
+      final chats = find.byKey(const ValueKey('kapy-ai-chats'));
+      final palette = tester.element(chats).palette;
+      final title = tester.widget<Text>(
+        find.descendant(
+          of: find.ancestor(of: chats, matching: find.byType(Row)).first,
+          matching: find.text('Kapy AI'),
+        ),
+      );
+      expect(title.style?.fontFamily, 'Figtree');
+      expect(title.style?.fontSize, 13);
+      expect(title.style?.height, 18 / 13);
+      expect(title.style?.fontWeight, FontWeight.w500);
+      expect(title.style?.color, palette.textPrimary);
+
+      final icon = tester.widget<KapyIcon>(
+        find.descendant(of: chats, matching: find.byType(KapyIcon)),
+      );
+      expect(icon.icon.paths, same(HugeIcons.strokeRoundedTransactionHistory));
+      expect(icon.size, 17);
+
+      expect(
+        hairlineOf(tester, chats),
+        Border(bottom: BorderSide(color: palette.separator)),
+      );
+      expect(tester.getSize(headerOf(chats)).height, 52);
+    });
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.iOS]) {
+      testWidgets('docked on ${platform.name}, Close ends 10 from the '
+          'header’s right edge', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final controller = KapyAiPanelController()..open(noteId: 'n1');
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(_harness(_panel(FakeKapyAi(), controller)));
+
+        final close = find.byKey(const ValueKey('kapy-ai-close'));
+        expect(
+          tester.getRect(headerOf(close)).right - tester.getRect(close).right,
+          10,
+        );
+      });
+    }
+
+    testWidgets('in the phone’s full-height sheet the header is unchanged', (
+      tester,
+    ) async {
+      final controller = KapyAiPanelController()..open(noteId: 'n1');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _harness(_panel(FakeKapyAi(), controller, inSheet: true)),
+      );
+
+      final chats = find.byKey(const ValueKey('kapy-ai-chats'));
+      final title = tester.widget<Text>(
+        find.descendant(
+          of: find.ancestor(of: chats, matching: find.byType(Row)).first,
+          matching: find.text('Kapy AI'),
+        ),
+      );
+      expect(title.style?.fontFamily, 'Shantell Sans');
+      expect(title.style?.fontSize, 17);
+      expect(title.style?.height, 22 / 17);
+      expect(
+        find.descendant(
+          of: chats,
+          matching: findKapyIcon(KapyIcons.scheduleRounded),
+        ),
+        findsOneWidget,
+      );
+      expect(hairlineOf(tester, chats), isNull);
+      expect(tester.getSize(headerOf(chats)).height, 56);
+      final close = find.byKey(const ValueKey('kapy-ai-close'));
+      expect(
+        tester.getRect(headerOf(close)).right - tester.getRect(close).right,
+        4,
+      );
+    });
+
+    testWidgets('resting over the note, the sheet keeps M10’s header', (
+      tester,
+    ) async {
+      final controller = KapyAiPanelController()..open(noteId: 'n1');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _harness(
+          _panel(FakeKapyAi(), controller, inSheet: true, compact: true),
+        ),
+      );
+
+      final close = find.byKey(const ValueKey('kapy-ai-close'));
+      final row = find.ancestor(of: close, matching: find.byType(Row)).first;
+      final title = tester.widget<Text>(
+        find.descendant(of: row, matching: find.text('Kapy AI')),
+      );
+      expect(title.style?.fontFamily, 'Figtree');
+      expect(title.style?.fontSize, 17);
+      expect(title.style?.fontWeight, FontWeight.w600);
+      expect(
+        find.descendant(
+          of: row,
+          matching: findKapyIcon(KapyIcons.sparklesOutlined),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: close, matching: find.text('Close')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('kapy-ai-chats')), findsNothing);
+      expect(hairlineOf(tester, close), isNull);
+      expect(tester.getSize(headerOf(close)).height, 48);
     });
 
     testWidgets(
@@ -959,9 +1102,7 @@ void main() {
 
       expect(find.text('Codex is signed out'), findsOneWidget);
       expect(
-        find.text(
-          'Sign in inside Codex, then check again.',
-        ),
+        find.text('Sign in inside Codex, then check again.'),
         findsOneWidget,
       );
       await tester.tap(find.text('Check again'));
@@ -995,10 +1136,7 @@ void main() {
         onManage: () => managed++,
       );
 
-      expect(
-        find.text('Check the key in Settings.'),
-        findsOneWidget,
-      );
+      expect(find.text('Check the key in Settings.'), findsOneWidget);
       await tester.tap(find.text('Open Settings'));
       expect(managed, 1);
     });

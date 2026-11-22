@@ -570,6 +570,10 @@ class KapyIcons {
     0xE0DE,
     HugeIcons.strokeRoundedBubbleChatEdit,
   );
+  static const chatHistoryOutlined = KapyIconData(
+    0xE0EB,
+    HugeIcons.strokeRoundedTransactionHistory,
+  );
   static const sendRounded = KapyIconData(
     0xE0DF,
     HugeIcons.strokeRoundedArrowUp02,
