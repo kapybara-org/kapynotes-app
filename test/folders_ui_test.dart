@@ -996,6 +996,42 @@ void main() {
       expect(find.byKey(const ValueKey('notes-grouping')), findsNothing);
     });
 
+    testWidgets('an empty folder and a note keep the chevron slot, so their '
+        "icons line up with their siblings', 20 wide beside the rail", (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final acme = goldenFolders.create('Acme', parentId: clients.id)!;
+      final product = goldenFolders.create('Product')!;
+      final offsite = goldenNotes.create(body: 'Offsite agenda');
+      goldenFolders.file([offsite.id], clients.id);
+      goldenPrefs
+        ..setFolderOpen(work.id, true)
+        ..setFolderOpen(clients.id, true);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+
+      double left(Finder row, KapyIconData data) => tester
+          .getRect(
+            find.descendant(
+              of: row,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is KapyIcon && widget.icon == data,
+              ),
+            ),
+          )
+          .left;
+      Finder rowFor(Folder folder) =>
+          find.byKey(ValueKey('folder-${folder.id}'));
+      double folderIcon(Folder folder) =>
+          left(rowFor(folder), KapyIcons.folderOutlined);
+      expect(folderIcon(product), folderIcon(work));
+      expect(folderIcon(work) - tester.getRect(rowFor(work)).left, 8 + 20);
+      expect(left(rowOf(offsite.id), KapyIcons.noteOutlined), folderIcon(acme));
+    });
+
     testWidgets("the tree and the switch keep r3's measures", (tester) async {
       await pumpWindow(tester);
       final work = goldenFolders.create('Work')!;

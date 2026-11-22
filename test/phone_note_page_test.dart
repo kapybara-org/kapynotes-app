@@ -22,6 +22,7 @@ import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
+import 'package:kapy_notes/ui/spaces_rail.dart' show PhoneSpaces, PhoneTab;
 import 'package:kapy_notes/ui/tag_ui.dart' show TagPicker;
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
 import 'package:material_ui/material_ui.dart';
@@ -794,6 +795,22 @@ void main() {
       });
     }
 
+    testWidgets("from a folder's note in Folders goes to Home, not back to "
+        'the folder', (tester) async {
+      seed(path: const ['Work']);
+      await pump(tester);
+      final work = folders.tree.top.single;
+      await tap(tester, 'page-home');
+      await tap(tester, 'bar-folders');
+      await tap(tester, 'folder-${work.id}');
+      await homeFrom(tester, 'Call with Arjun');
+      expect(find.byKey(ValueKey('phone-folder-${work.id}')), findsNothing);
+      expect(
+        tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+        PhoneTab.notes,
+      );
+    });
+
     testWidgets('from a drawing goes to Home, not back to Drawings', (
       tester,
     ) async {
@@ -807,7 +824,8 @@ void main() {
       seed();
       await pump(tester);
       await tap(tester, 'page-home');
-      await tap(tester, 'bar-drawings');
+      await tap(tester, 'bar-folders');
+      await tap(tester, 'folders-drawings-tile');
       await homeFrom(tester, 'Floor plan');
     });
   });

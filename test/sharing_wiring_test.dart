@@ -231,7 +231,7 @@ void main() {
       await pumpApp(tester, phone: phone);
       await showList(tester, phone: phone);
       await tester.tap(
-        find.byKey(ValueKey(phone ? 'bar-settings' : 'rail-settings')),
+        find.byKey(ValueKey(phone ? 'phone-account' : 'rail-settings')),
       );
       await tester.pumpAndSettle();
       expect(find.byType(SettingsDialog), findsOneWidget);

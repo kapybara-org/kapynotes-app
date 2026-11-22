@@ -92,6 +92,7 @@ import 'folders_ui.dart'
 import 'context_menu.dart';
 import 'day_strip.dart';
 import 'hidden_notes_gate.dart';
+import 'kapy_ai/kapy_ai_page.dart';
 import 'kapy_ai/kapy_ai_panel.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
 import 'note_picks.dart';
@@ -330,6 +331,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// note the opening-note setting chooses, ready to type, with the list
   /// under it; back shows the list.
   bool _phonePageOpen = true;
+
+  /// The phone bar's tab on screen.
+  PhoneTab _phoneTab = PhoneTab.notes;
+
+  /// The folder whose notes a phone's Folders shows, or null for the tree.
+  String? _phoneFolder;
+
+  /// Bumped by New folder beside a phone's Search folders, for the tree to
+  /// name a new folder.
+  final _phoneNewFolder = ValueNotifier(0);
+
   final GlobalKey<NavigatorState> _phoneNavigator = GlobalKey();
 
   /// Whether the notes list is open over the page, in a desktop window too
@@ -533,6 +545,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.desktopIntegration?.onOpenRequested = null;
     widget.desktopIntegration?.window = null;
     _desktopShortcutFocus.dispose();
+    _phoneNewFolder.dispose();
     _kapyAi?.removeListener(_onKapyAi);
     _kapyPanel.dispose();
     _taskAddFocus.dispose();
@@ -1442,6 +1455,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.notes.deleteAll(abandoned);
   }
 
+  /// Drawings on or off. A phone's Drawings is a page of Folders, so its bar
+  /// follows: Folders into Drawings, and Notes out of it.
+  void _setDrawingsOnly(bool on) {
+    if (on == _drawingsOnly) return;
+    _drawingsOnly = on;
+    _phoneTab = on ? PhoneTab.folders : PhoneTab.notes;
+  }
+
   /// Lists the tab [id] is in, when a note is opened from somewhere other
   /// than the list: a link, a pane, the note put back after the archive. A
   /// row the reader clicked is in the tab on screen already, a note of their
@@ -1453,7 +1474,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (id == null) return;
     final note = widget.notes.byId(id);
     if (note == null) return;
-    if (!_listsKind(note)) _drawingsOnly = !_drawingsOnly;
+    if (!_listsKind(note)) _setDrawingsOnly(!_drawingsOnly);
     if (_specialMode || _drawingsOnly) return;
     final sharing = widget.account?.sharing;
     if (sharing != null && !sidebarTabLists(_sidebarTab, note, sharing)) {
@@ -2084,9 +2105,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// [body] is the note's first words, from the ⌘K menu's field. A note made
-  /// while a folder's tab is in front goes into that folder. One that isn't
-  /// [titled] starts as an empty page rather than under "New Note", as a day
-  /// tapped on a phone's week opens it (M11).
+  /// while a folder's tab is in front, or a phone shows a folder, goes into
+  /// that folder. One that isn't [titled] starts as an empty page rather than
+  /// under "New Note", as a day tapped on a phone's week opens it (M11).
   bool _createNoteNow({
     bool drawing = false,
     String body = '',
@@ -2094,7 +2115,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ValueChanged<String>? onMade,
   }) {
     final creatingHidden = _hiddenMode;
-    final folderId = drawing ? null : _folderInFront;
+    final folderId = drawing ? null : _folderInFront ?? _phoneFolderShown?.id;
     final blank = drawing || body.isNotEmpty ? null : _blankNoteAlreadyOpen();
     if (blank == null && !(_noteLimit?.canCreate ?? true)) {
       unawaited(_explainNoteLimit(creating: true));
@@ -2127,7 +2148,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // A new note is the person's own, so it is listed where they can see
       // it being written.
       _sidebarTab = SidebarTab.mine;
-      _drawingsOnly = drawing;
+      _setDrawingsOnly(drawing);
       // And it is written on the page, so a list open over the page goes.
       _listOverlaid = false;
       _setSelectedId(note.id);
@@ -2716,7 +2737,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!mounted || !_hiddenMode) return;
     setState(() {
       _tasksMode = false;
-      _drawingsOnly = false;
+      _setDrawingsOnly(false);
       _sidebarTab = SidebarTab.mine;
     });
   }
@@ -3189,7 +3210,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// again when it changes.
   void _onKapyAi() {
     if (_kapyAiOn == _kapyAiWasOn) return;
-    setState(() => _kapyAiWasOn = _kapyAiOn);
+    setState(() {
+      _kapyAiWasOn = _kapyAiOn;
+      // Switched off, a phone's Kapy AI tab goes, so its bar is back on Notes.
+      if (!_kapyAiOn && _phoneTab == PhoneTab.kapyAi) {
+        _phoneTab = PhoneTab.notes;
+      }
+    });
   }
 
   /// What the search fields read: Drawings' names what it finds, and the
@@ -3526,7 +3553,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       displayTime: widget.prefs.displayTime,
       taskLabel: _taskNoteLabel,
       tasks: _taskController?.read(),
-      folders: _usesCompactLayout ? null : widget.folders?.tree,
+      folders: widget.folders?.tree,
       showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
       askKapyAi: _kapyAiOn,
@@ -3573,6 +3600,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         } else {
           _openTaskNote(note.id);
         }
+      case OpenFolderChoice(:final folderId) when _usesCompactLayout:
+        _showFolders();
+        setState(() => _phoneFolder = folderId);
       case OpenFolderChoice(:final folderId):
         _showNotes(NotesShow.all);
         _openFolder(folderId, behind: false);
@@ -3740,13 +3770,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _openSpace(tasks ? LibrarySpace.tasks : LibrarySpace.notes);
   }
 
-  /// Back on a phone's list, from Android's back or a swipe right: the picks
-  /// let go, then Tasks, Pinned or Shared returns to Notes.
+  /// A phone's Folders with its tree, from Drawings or a folder's notes, or
+  /// from another tab.
+  void _showFolders() {
+    if (_drawingsOnly) _showSpace(LibrarySpace.notes);
+    setState(() {
+      _phoneTab = PhoneTab.folders;
+      _phoneFolder = null;
+      _tasksMode = false;
+    });
+  }
+
+  /// A tap on the phone's bar. A tab tapped again starts its page over: Notes
+  /// goes back to All notes and Folders to its tree. Notes tapped on Tasks,
+  /// which it holds, turns back as the header does, keeping the list.
+  void _selectPhoneTab(PhoneTab tab) {
+    final again = tab == _phoneTab;
+    // Drawings is a page of Folders, so another tab leaves it, for All notes
+    // as Notes' own tap there does.
+    if (!again && _drawingsOnly) _showSpace(LibrarySpace.notes);
+    switch (tab) {
+      case PhoneTab.notes when again && _tasksMode:
+        _showHome(tasks: false);
+      case PhoneTab.notes when again:
+        _showSpace(LibrarySpace.notes);
+      case PhoneTab.folders when again:
+        _showFolders();
+      case _:
+        // Tasks is a page of Notes, so another tab leaves it too, with the
+        // Notes list kept as it was.
+        setState(() {
+          _phoneTab = tab;
+          _tasksMode = false;
+        });
+    }
+  }
+
+  /// Back on a phone's list, from Android's back or the edge swipe: one level
+  /// up at a time. Tasks returns to Notes and picks let go, though not on
+  /// Kapy AI, which doesn't show them; then a folder or Drawings returns to
+  /// Folders, another tab to Notes, and on Notes Pinned or Shared to its Home.
   void _phoneListBack() {
     if (_tasksMode) {
       _showHome(tasks: false);
-    } else if (_picks.on) {
+    } else if (_picks.on && _phoneTab != PhoneTab.kapyAi) {
       _picks.clear();
+    } else if (_phoneTab == PhoneTab.folders &&
+        (_drawingsOnly || _phoneFolderShown != null)) {
+      _showFolders();
+    } else if (_phoneTab != PhoneTab.notes) {
+      setState(() => _phoneTab = PhoneTab.notes);
     } else if (_showingPinnedOnly) {
       setState(() => _pinnedOnly = false);
     } else {
@@ -3758,6 +3831,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _openSpace(LibrarySpace space) {
     setState(() {
       _phonePageOpen = false;
+      // A phone's Drawings is a page of Folders; the other spaces are Notes.
+      _phoneTab = space == LibrarySpace.drawings
+          ? PhoneTab.folders
+          : PhoneTab.notes;
       _tasksMode = space == LibrarySpace.tasks;
       _drawingsOnly = space == LibrarySpace.drawings;
       _sidebarTab = space == LibrarySpace.shared
@@ -4095,6 +4172,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   onOpen: widget.prefs.setFolderOpen,
                   inFront: _folderInFront,
                   onTab: _openFolder,
+                  newFolder: null,
                 ),
                 null => null,
               },
@@ -4809,8 +4887,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final selected = _shownNote(_selectedId);
     final pageOpen = _phonePageOpen && selected != null && !_tasksMode;
     // Back, from Android's gesture or iOS's edge swipe, goes up one level:
-    // the note's page closes, then the picks let go, then Pinned, Shared or
-    // Tasks returns to Notes, and only then does the app itself leave.
+    // the note's page closes, then on Folders the picks let go and a folder
+    // or Drawings returns to Folders. Folders and Kapy AI return to Notes,
+    // where Tasks returns to Notes, the picks let go, and Pinned or Shared
+    // returns to Notes, and only then does the app itself leave.
     final pinnedOrShared = _showingPinnedOnly || _space == LibrarySpace.shared;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: Theme.of(context).brightness == Brightness.dark
@@ -4819,7 +4899,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: ListenableBuilder(
         listenable: _picks,
         builder: (context, _) => PopScope(
-          canPop: !pageOpen && !_picks.on && !pinnedOrShared && !_tasksMode,
+          canPop:
+              !pageOpen &&
+              _phoneTab == PhoneTab.notes &&
+              !_picks.on &&
+              !pinnedOrShared &&
+              !_tasksMode,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
             if (pageOpen) {
@@ -4893,23 +4978,62 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: ListenableBuilder(
         listenable: _toolbarSources,
         builder: (context, _) {
-          final tasks = _tasksMode ? _taskController : null;
-          // A swipe left turns Home to Tasks; a swipe right goes back out of
-          // Tasks, Pinned or Shared, as iOS's edge swipe does out of a page,
-          // since none of them is a page of its own to swipe away.
+          final tasks = _tasksMode && _phoneTab == PhoneTab.notes
+              ? _taskController
+              : null;
+          final ai = _phoneTab == PhoneTab.kapyAi && _kapyAiOn ? _kapyAi : null;
+          // A swipe left turns Home to Tasks; a swipe right goes up a level,
+          // as iOS's edge swipe does out of a page, from wherever Back goes up
+          // one rather than across to another tab.
           final turns = _taskController != null && _phoneHome;
-          final back =
-              _tasksMode || _showingPinnedOnly || _space == LibrarySpace.shared;
+          final back = _phoneTab == PhoneTab.notes
+              ? _tasksMode ||
+                    _showingPinnedOnly ||
+                    _space == LibrarySpace.shared
+              : _phoneTab == PhoneTab.folders &&
+                    (_drawingsOnly || _phoneFolderShown != null);
           // The Notes list stays built under Tasks, out of sight, so it comes
           // back scrolled and narrowed as it was left.
           final page = Stack(
             fit: StackFit.expand,
             children: [
               Visibility(
-                visible: tasks == null,
+                visible: tasks == null && ai == null,
                 maintainState: true,
-                child: _phoneNotes(),
+                child:
+                    _phoneTab == PhoneTab.folders &&
+                        !_drawingsOnly &&
+                        widget.folders == null
+                    // A build without folders still has Drawings to open.
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          PhoneListTitle(
+                            title: 'Folders',
+                            trailing: _phoneAccount(),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                            child: _phoneFolderTiles(),
+                          ),
+                        ],
+                      )
+                    : _phoneNotes(),
               ),
+              if (ai != null)
+                KapyAiPage(
+                  kapyAi: ai,
+                  onOpenChat: _openKapyAi,
+                  onManageAccounts: () => _showSettings(
+                    section: SettingsSection.voice,
+                    reveal: ai.accounts.isEmpty
+                        ? 'kapy-ai-toggle'
+                        : kapyAccountRowId(ai.accounts.first.kind),
+                  ),
+                  account: _phoneAccount(),
+                  barClearance: PhoneSpaces.clearance(context),
+                  now: widget.notes.now,
+                ),
               if (tasks != null)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4932,25 +5056,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ],
           );
           return PhoneSpaces(
-            space: _space,
-            // Between Notes and Tasks the bar turns Home as the header does,
-            // keeping the list; the page already showing, tapped again, and
-            // every other space start the list over.
-            onSelected: (space) =>
-                _phoneHome &&
-                    space != _space &&
-                    (space == LibrarySpace.notes || space == LibrarySpace.tasks)
-                ? _showHome(tasks: space == LibrarySpace.tasks)
-                : _showSpace(space),
-            onSettingsPressed: _showSettings,
-            showTasks: _taskController != null,
-            createLabel: _tasksMode
+            tab: _phoneTab,
+            onSelected: _selectPhoneTab,
+            // Kapy AI's tab only while it can be asked, as its other ways in
+            // are: its page has no switched-off state of its own.
+            showKapyAi: _kapyAiOn,
+            createLabel: tasks != null
                 ? 'New task'
                 : _drawingsOnly
                 ? 'New drawing'
                 : 'New note',
-            onCreate: _createInSpace,
+            onCreate: tasks != null
+                ? _createInSpace
+                : () => _createNote(drawing: _drawingsOnly),
             createActions: [
+              const KapyMenuAction(
+                value: 'note',
+                label: 'New note',
+                icon: KapyIcons.noteAddRounded,
+              ),
               if (_taskController != null)
                 const KapyMenuAction(
                   value: 'task',
@@ -4960,18 +5084,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               if (widget.recording != null)
                 const KapyMenuAction(
                   value: 'voice',
-                  label: 'Voice note',
+                  label: 'New voice note',
                   icon: KapyIcons.micRounded,
                 ),
               const KapyMenuAction(
                 value: 'drawing',
-                label: 'Drawing',
+                label: 'New drawing',
                 icon: KapyIcons.penRounded,
-              ),
-              const KapyMenuAction(
-                value: 'find',
-                label: 'Quick find',
-                icon: KapyIcons.searchRounded,
               ),
             ],
             onCreateAction: _createFromPhone,
@@ -4997,6 +5116,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The rest of New, from a long press on the phone's +.
   void _createFromPhone(String choice) {
     switch (choice) {
+      case 'note':
+        _createNote();
       case 'task':
         _newTask();
       case 'voice':
@@ -5006,8 +5127,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         });
       case 'drawing':
         _createNote(drawing: true);
-      case 'find':
-        unawaited(_openCommandMenu());
     }
   }
 
@@ -5018,8 +5137,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Home on a phone: Notes or Tasks, under the header that turns between
   /// them, rather than Drawings, Shared, Archive or Hidden.
   bool get _phoneHome =>
+      _phoneTab == PhoneTab.notes &&
       !_specialMode &&
       (_space == LibrarySpace.notes || _space == LibrarySpace.tasks);
+
+  /// A phone's Folders: the tree, or with [_phoneFolder] one folder's notes.
+  /// Drawings, reached from it, is the drawings list.
+  bool get _phoneFolders =>
+      _phoneTab == PhoneTab.folders && !_drawingsOnly && widget.folders != null;
+
+  /// The folder whose notes a phone's Folders shows, while it still exists.
+  Folder? get _phoneFolderShown => _phoneFolders && _phoneFolder != null
+      ? widget.folders!.tree.byId(_phoneFolder!)
+      : null;
 
   Widget _phoneHomeHeader() => PhoneHomeHeader(
     tasks: _tasksMode,
@@ -5032,93 +5162,168 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onSettings: _showSettings,
   );
 
-  /// The phone's home for Notes, Drawings and Shared: the list beside the
-  /// rail, drawn for a phone under Home's header or the space's large title.
-  Widget _phoneNotes() => Sidebar(
-    key: _sharedPage ? const ValueKey('shared-page') : null,
-    phone: true,
-    windowBar: _phoneHome
-        ? _phoneHomeHeader()
-        : PhoneListTitle(
-            title: _listTitle,
-            count: _matchingCount,
-            onBack: _sharedPage ? () => _showSpace(LibrarySpace.notes) : null,
-          ),
-    notes: _visibleNotes,
-    pinnedNoteIds: widget.notes.pinnedNoteIds,
-    lockedNoteIds: _noteLimit?.lockedIds ?? const {},
-    selectedId: _phonePageOpen ? _selectedId : null,
-    query: _archiveQuery,
-    displayTime: widget.prefs.displayTime,
-    onSearch: _openCommandMenu,
-    onClearQuery: () => setState(() => _archiveQuery = ''),
-    onSelect: _select,
-    onArchive: _archiveNote,
-    onRestore: _restoreNote,
-    onHide: (id) => unawaited(_hideNote(id)),
-    onUnhide: _unhideNote,
-    onTogglePin: _specialMode ? null : _togglePinnedNote,
-    archiveMode: _archiveMode,
-    hiddenMode: _hiddenMode,
-    onDelete: _deleteNote,
-    asksBeforeDeleting: widget.prefs.askBeforeDeleting,
-    onDeleteAll: () => unawaited(_deleteAllArchived()),
-    picks: _picks,
-    onPicked: _actOnPicked,
-    onShare: widget.account == null ? null : _shareNote,
-    sharing: widget.account?.sharing,
-    onOpenPerson: widget.account?.sharing == null ? null : _openPerson,
-    onStartSharing: widget.account?.sharing == null ? null : _startSharing,
-    collaborators: widget.account?.sync?.collaboratorsByNote ?? const {},
-    tab: _sidebarTab,
-    onTabChanged: _setSidebarTab,
-    searchPlaceholder: _kapyAiOn || _space == LibrarySpace.drawings
-        ? _searchPlaceholder
-        : _sharedPage
-        ? 'Search shared notes'
-        : _taskController == null
-        ? 'Search notes'
-        : 'Search notes and tasks',
-    drawings: _space == LibrarySpace.drawings,
-    onNewDrawing: () => _createNote(drawing: true),
-    engine: widget.engines.engine,
-    now: widget.notes.now,
-    controls: _notesControls(_space, phone: true),
-    filtersOpen: _phoneFiltersOpen,
-    filtersActive: filtersNarrowed(
-      show: _show,
-      media: _space == LibrarySpace.drawings ? null : _mediaFilter,
-      tags: _tagFilter,
-    ),
-    onFiltersToggled: () =>
-        setState(() => _phoneFiltersOpen = !_phoneFiltersOpen),
-    pinnedOnly: _showingPinnedOnly,
-    onPinnedOnlyChanged: (value) => setState(() => _pinnedOnly = value),
-    phoneCards: _space != LibrarySpace.notes || _specialMode
-        ? null
-        : switch ([
-            for (final note in _narrowed(widget.notes.search('')))
-              if (widget.notes.pinnedNoteIds.contains(note.id)) note,
-          ]) {
-            final pinned => PhoneHomeCards(
-              pinned: pinned,
-              onOpenPinned: pinned.isEmpty
-                  ? null
-                  : () {
-                      _clearFilter();
-                      setState(() => _pinnedOnly = true);
-                    },
-              shared: widget.account?.sharing == null
-                  ? null
-                  : [
-                      for (final note in widget.notes.search(''))
-                        if (note.isShared) note,
-                    ],
-              invitations: widget.account?.sharing?.invites.length ?? 0,
-              onOpenShared: () => _showSpace(LibrarySpace.shared),
-            ),
-          },
+  /// S, which opens Settings, where a phone's title row ends.
+  Widget _phoneAccount() => AccountAvatar(
+    key: const ValueKey('phone-account'),
+    label: 'Settings',
+    target: 44,
+    user: widget.account?.user,
+    onPressed: _showSettings,
   );
+
+  /// The phone's list for Notes, Drawings, Shared and Folders: the list
+  /// beside the rail, drawn for a phone under Home's header or the page's
+  /// large title. Folders shows the tree under its Drawings tile (M02), and
+  /// a folder from it its notes.
+  Widget _phoneNotes() {
+    final folders = _phoneFolders;
+    final folder = _phoneFolderShown;
+    final tree = folders && folder == null;
+    final notes = folder != null
+        ? _filtered(
+            widget.folders!.tree.notesIn(_folderNotes, folder.id, deep: true),
+          )
+        : tree
+        ? _folderNotes
+        : _visibleNotes;
+    return Sidebar(
+      key: _sharedPage
+          ? const ValueKey('shared-page')
+          : folder != null
+          ? ValueKey('phone-folder-${folder.id}')
+          : tree
+          ? const ValueKey('phone-folders')
+          : null,
+      phone: true,
+      windowBar: _phoneHome
+          ? _phoneHomeHeader()
+          : tree
+          ? PhoneListTitle(title: 'Folders', trailing: _phoneAccount())
+          : PhoneListTitle(
+              title: folder?.name ?? _listTitle,
+              count: folder != null ? notes.length : _matchingCount,
+              onBack: _sharedPage
+                  ? () => _showSpace(LibrarySpace.notes)
+                  : folder != null || _drawingsOnly
+                  ? _showFolders
+                  : null,
+              trailing: folder != null || _drawingsOnly
+                  ? _phoneAccount()
+                  : null,
+            ),
+      notes: notes,
+      pinnedNoteIds: widget.notes.pinnedNoteIds,
+      lockedNoteIds: _noteLimit?.lockedIds ?? const {},
+      selectedId: _phonePageOpen ? _selectedId : null,
+      query: _archiveQuery,
+      displayTime: widget.prefs.displayTime,
+      onSearch: _openCommandMenu,
+      onClearQuery: () => setState(() => _archiveQuery = ''),
+      onSelect: _select,
+      onArchive: _archiveNote,
+      onRestore: _restoreNote,
+      onHide: (id) => unawaited(_hideNote(id)),
+      onUnhide: _unhideNote,
+      onTogglePin: _specialMode ? null : _togglePinnedNote,
+      archiveMode: _archiveMode,
+      hiddenMode: _hiddenMode,
+      onDelete: _deleteNote,
+      asksBeforeDeleting: widget.prefs.askBeforeDeleting,
+      onDeleteAll: () => unawaited(_deleteAllArchived()),
+      picks: _picks,
+      onPicked: _actOnPicked,
+      onShare: widget.account == null ? null : _shareNote,
+      sharing: widget.account?.sharing,
+      onOpenPerson: widget.account?.sharing == null ? null : _openPerson,
+      onStartSharing: widget.account?.sharing == null ? null : _startSharing,
+      collaborators: widget.account?.sync?.collaboratorsByNote ?? const {},
+      tab: _sidebarTab,
+      onTabChanged: _setSidebarTab,
+      searchPlaceholder: tree
+          ? 'Search folders'
+          : _kapyAiOn || _space == LibrarySpace.drawings
+          ? _searchPlaceholder
+          : _sharedPage
+          ? 'Search shared notes'
+          : _taskController == null
+          ? 'Search notes'
+          : 'Search notes and tasks',
+      drawings: _space == LibrarySpace.drawings,
+      onNewDrawing: () => _createNote(drawing: true),
+      engine: widget.engines.engine,
+      now: widget.notes.now,
+      controls: tree ? null : _notesControls(_space, phone: true),
+      filtersOpen: _phoneFiltersOpen,
+      filtersActive: filtersNarrowed(
+        show: _show,
+        media: _space == LibrarySpace.drawings ? null : _mediaFilter,
+        tags: _tagFilter,
+      ),
+      onFiltersToggled: () =>
+          setState(() => _phoneFiltersOpen = !_phoneFiltersOpen),
+      pinnedOnly: !folders && _showingPinnedOnly,
+      onPinnedOnlyChanged: (value) => setState(() => _pinnedOnly = value),
+      folders: tree
+          ? (
+              store: widget.folders!,
+              shown: true,
+              onShown: null,
+              open: widget.prefs.openFolders,
+              onOpen: widget.prefs.setFolderOpen,
+              inFront: null,
+              onTab: (folderId, {required behind}) =>
+                  setState(() => _phoneFolder = folderId),
+              newFolder: _phoneNewFolder,
+            )
+          : null,
+      phoneCards: tree
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+              child: _phoneFolderTiles(),
+            )
+          : folders || _space != LibrarySpace.notes || _specialMode
+          ? null
+          : switch ([
+              for (final note in _narrowed(widget.notes.search('')))
+                if (widget.notes.pinnedNoteIds.contains(note.id)) note,
+            ]) {
+              final pinned => PhoneHomeCards(
+                pinned: pinned,
+                onOpenPinned: pinned.isEmpty
+                    ? null
+                    : () {
+                        _clearFilter();
+                        setState(() => _pinnedOnly = true);
+                      },
+                shared: widget.account?.sharing == null
+                    ? null
+                    : [
+                        for (final note in widget.notes.search(''))
+                          if (note.isShared) note,
+                      ],
+                invitations: widget.account?.sharing?.invites.length ?? 0,
+                onOpenShared: () => _showSpace(LibrarySpace.shared),
+              ),
+            },
+    );
+  }
+
+  /// Folders' tiles: Drawings, naming the newest drawing and its day.
+  Widget _phoneFolderTiles() {
+    final drawings = [
+      for (final note in widget.notes.search(''))
+        if (note.isDrawing) note,
+    ];
+    final newest = drawings.firstOrNull;
+    final displayTime = widget.prefs.displayTime;
+    return PhoneFolderTiles(
+      drawings: drawings,
+      newest: newest == null
+          ? null
+          : '${newest.title} · ${SidebarTimestamp.dayHeading(noteDay(newest, displayTime), today: dayShown(widget.notes.now(), displayTime)).$1}',
+      onOpenDrawings: () => _showSpace(LibrarySpace.drawings),
+    );
+  }
 
   /// A note's page on a phone: back, then the note's own actions, over the
   /// editor.

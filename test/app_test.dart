@@ -315,6 +315,14 @@ Future<void> showNotesList(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// Opens a phone's Drawings, a tile on Folders.
+Future<void> openPhoneDrawings(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('bar-folders')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
+  await tester.pumpAndSettle();
+}
+
 /// Rests the pointer on a note in the list, where the desktop list shows the
 /// note's actions button.
 Future<TestGesture> hoverNote(WidgetTester tester, String noteId) async {
@@ -4479,17 +4487,19 @@ void main() {
     );
   });
 
-  testWidgets('a phone opens Settings from the end of its bar', (tester) async {
+  testWidgets('a phone opens Settings from S on Folders, the bar holding no '
+      'Settings of its own', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpApp(tester, size: const Size(390, 844));
     await showNotesList(tester);
+    expect(find.byKey(const ValueKey('bar-settings')), findsNothing);
 
-    final bar = tester.getRect(find.byKey(const ValueKey('phone-bar')));
-    final settings = find.byKey(const ValueKey('bar-settings'));
-    expect(tester.getRect(settings).right, closeTo(bar.right - 4, 1));
-
-    await tester.tap(settings);
+    await tester.tap(find.byKey(const ValueKey('bar-folders')));
+    await tester.pumpAndSettle();
+    final account = find.byKey(const ValueKey('phone-account'));
+    expect(tester.getSize(account), const Size(44, 44));
+    await tester.tap(account);
     await tester.pumpAndSettle();
     expect(find.byType(SettingsDialog), findsOneWidget);
   });
@@ -5103,8 +5113,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('bar-notes')));
       await tester.pumpAndSettle();
       expect(await listed(), {'Groceries'});
-      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
-      await tester.pumpAndSettle();
+      await openPhoneDrawings(tester);
       expect(await listed(), {'Floor plan'});
       expect(
         find.descendant(
@@ -7825,7 +7834,7 @@ void main() {
       await pumpApp(tester, size: const Size(375, 667));
       await showNotesList(tester);
 
-      for (final item in ['notes', 'drawings', 'settings']) {
+      for (final item in ['notes', 'folders']) {
         final size = tester.getSize(find.byKey(ValueKey('bar-$item')));
         expect(size.height, greaterThanOrEqualTo(44), reason: item);
         expect(size.width, greaterThanOrEqualTo(44), reason: item);
@@ -7835,15 +7844,14 @@ void main() {
         const Size(56, 56),
       );
 
-      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
-      await tester.pumpAndSettle();
+      await openPhoneDrawings(tester);
       expect(find.widgetWithText(NoteRow, 'Lisbon trip'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('bar-notes')));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(NoteRow, 'Lisbon trip'), findsOneWidget);
     });
 
-    testWidgets('Android uses Material\'s navigation bar and a back arrow', (
+    testWidgets("Android's page has a back arrow, and its list the pill", (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -7852,7 +7860,8 @@ void main() {
       expect(find.text('Notes'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byKey(const ValueKey('phone-bar')), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
     });
   });
 
@@ -7904,7 +7913,9 @@ void main() {
     });
 
     testWidgets("Home's header carries the streak 12 pt before S, and "
-        'Drawings keeps its own title with none of the header', (tester) async {
+        'Drawings keeps its own title with none of the rest of the header', (
+      tester,
+    ) async {
       notes.create(body: 'Written today');
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
@@ -7933,8 +7944,7 @@ void main() {
       expect(find.byKey(const ValueKey('phone-list-title')), findsNothing);
       expect(find.byKey(const ValueKey('rail-streak')), findsNothing);
 
-      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
-      await tester.pumpAndSettle();
+      await openPhoneDrawings(tester);
       expect(
         tester
             .widget<Text>(find.byKey(const ValueKey('phone-list-title')))
@@ -7942,7 +7952,7 @@ void main() {
         'Drawings',
       );
       expect(streak, findsNothing);
-      expect(avatar, findsNothing);
+      expect(avatar, findsOneWidget, reason: 'M03 keeps S at the right');
       expect(find.byKey(const ValueKey('home-title-notes')), findsNothing);
     });
 
@@ -7957,9 +7967,7 @@ void main() {
       expect(find.byKey(const ValueKey('phone-streak')), findsNothing);
     });
 
-    testWidgets("S on Home's header opens Settings, as the bar does", (
-      tester,
-    ) async {
+    testWidgets("S on Home's header opens Settings", (tester) async {
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
 
@@ -8264,52 +8272,19 @@ void main() {
         expect(groceries, findsOneWidget);
       });
 
-      testWidgets('the bar to Tasks and back keeps the '
-          'filter', (tester) async {
+      testWidgets("the header to Tasks keeps the bar's Notes lit, and the "
+          "bar's Notes back keeps the filter", (tester) async {
         final tags = TagStore(store);
         await pumpHome(tester, tags: tags);
         await filterByTag(tester, tags);
-        expectFiltered();
-
-        LibrarySpace highlighted() =>
-            tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).space;
-        await tester.tap(find.byKey(const ValueKey('bar-tasks')));
-        await tester.pumpAndSettle();
-        expect(tasksPage, findsOneWidget);
-        expect(highlighted(), LibrarySpace.tasks);
-
-        await tester.tap(find.byKey(const ValueKey('bar-notes')));
-        await tester.pumpAndSettle();
-        expect(tasksPage, findsNothing);
-        expect(highlighted(), LibrarySpace.notes);
-        expectFiltered();
-      });
-
-      testWidgets('the bar to Tasks, the header back, '
-          'keeps the filter', (tester) async {
-        final tags = TagStore(store);
-        await pumpHome(tester, tags: tags);
-        await filterByTag(tester, tags);
-
-        await tester.tap(find.byKey(const ValueKey('bar-tasks')));
-        await tester.pumpAndSettle();
-        expect(tasksPage, findsOneWidget);
-
-        await tester.tap(notesTitle);
-        await tester.pumpAndSettle();
-        expect(tasksPage, findsNothing);
-        expectFiltered();
-      });
-
-      testWidgets('the header to Tasks, the bar back, '
-          'keeps the filter', (tester) async {
-        final tags = TagStore(store);
-        await pumpHome(tester, tags: tags);
-        await filterByTag(tester, tags);
+        PhoneTab highlighted() =>
+            tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab;
+        expect(find.byKey(const ValueKey('bar-tasks')), findsNothing);
 
         await tester.tap(tasksTitle);
         await tester.pumpAndSettle();
         expect(tasksPage, findsOneWidget);
+        expect(highlighted(), PhoneTab.notes);
 
         await tester.tap(find.byKey(const ValueKey('bar-notes')));
         await tester.pumpAndSettle();
@@ -8360,8 +8335,7 @@ void main() {
 
       testWidgets('a swipe on Drawings stays on Drawings', (tester) async {
         await pumpHome(tester);
-        await tester.tap(find.byKey(const ValueKey('bar-drawings')));
-        await tester.pumpAndSettle();
+        await openPhoneDrawings(tester);
 
         final title = find.byKey(const ValueKey('phone-list-title'));
         await tester.drag(title, const Offset(-120, 0));
@@ -8484,6 +8458,830 @@ void main() {
         expect(groceries, findsOneWidget);
       });
     });
+
+    group('Folders', () {
+      late FolderStore folders;
+      late Folder work;
+      late Folder clients;
+      late Folder acme;
+      final barFolders = find.byKey(const ValueKey('bar-folders'));
+      final barNotes = find.byKey(const ValueKey('bar-notes'));
+      final tree = find.byKey(const ValueKey('phone-folders'));
+      final tile = find.byKey(const ValueKey('folders-drawings-tile'));
+      final title = find.byKey(const ValueKey('phone-list-title'));
+      final brief = find.widgetWithText(NoteRow, 'Acme brief');
+      final groceries = find.widgetWithText(NoteRow, 'Groceries');
+      PhoneTab lit(WidgetTester tester) =>
+          tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab;
+      String titleOf(WidgetTester tester) => tester.widget<Text>(title).data!;
+
+      Future<void> pumpFolders(
+        WidgetTester tester, {
+        Size size = const Size(393, 852),
+        bool tasks = false,
+      }) async {
+        folders = FolderStore(store);
+        await folders.load();
+        await notes.load();
+        final note = notes.create(body: 'Acme brief\nScope and dates');
+        notes.create(body: 'Groceries\nOat milk');
+        final drawing = notes.create(drawing: true);
+        notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Deck flow');
+        work = folders.create('Work')!;
+        clients = folders.create('Clients', parentId: work.id)!;
+        acme = folders.create('Acme', parentId: clients.id)!;
+        folders.file([note.id], acme.id);
+        await pumpApp(
+          tester,
+          size: size,
+          folders: folders,
+          tasks: tasks
+              ? TaskLibrary(
+                  notes: notes,
+                  store: store,
+                  storage: MemoryDocStorage(),
+                )
+              : null,
+        );
+        await showNotesList(tester);
+      }
+
+      Future<void> tap(WidgetTester tester, Finder finder) async {
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> openFolder(WidgetTester tester, Folder folder) async {
+        await tap(tester, barFolders);
+        if (find.byKey(ValueKey('folder-${folder.id}')).evaluate().isEmpty) {
+          await tap(tester, find.byKey(ValueKey('folder-chevron-${work.id}')));
+          await tap(
+            tester,
+            find.byKey(ValueKey('folder-chevron-${clients.id}')),
+          );
+        }
+        await tap(tester, find.byKey(ValueKey('folder-${folder.id}')));
+      }
+
+      testWidgets("after a visit to Tasks a folder's note still opens, and "
+          'Notes is back on its list', (tester) async {
+        await pumpFolders(tester, tasks: true);
+        // It opens on the newest note, a drawing, so on Drawings.
+        await tap(tester, barNotes);
+        await tap(tester, find.byKey(const ValueKey('home-title-tasks')));
+        expect(find.byType(TasksScreen), findsOneWidget);
+
+        await openFolder(tester, work);
+        await tap(tester, brief);
+        expect(find.byType(NoteEditor), findsOneWidget);
+        expect(openNoteBody(tester), startsWith('Acme brief'));
+
+        await tap(tester, find.byKey(const ValueKey('page-home')));
+        await tap(tester, barNotes);
+        expect(find.byType(TasksScreen), findsNothing);
+        expect(groceries, findsOneWidget);
+      });
+
+      testWidgets('on an iPhone, a swipe in from the left edge takes a '
+          'folder, and Drawings, back to Folders', (tester) async {
+        await pumpFolders(tester);
+        Future<void> swipe(Finder row) async {
+          await tester.dragFrom(
+            Offset(2, tester.getCenter(row).dy),
+            const Offset(200, 0),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        await openFolder(tester, work);
+        await swipe(brief);
+        expect(find.byKey(ValueKey('phone-folder-${work.id}')), findsNothing);
+        expect(tree, findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+
+        await tap(tester, tile);
+        await swipe(find.text('Deck flow'));
+        expect(tree, findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+
+        // The tree is a tab of its own, with no level to go back to, so its
+        // edge leaves it where it is, as Android's Back would not.
+        await swipe(find.byKey(ValueKey('folder-${work.id}')));
+        expect(tree, findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+      testWidgets("Drawings' title is in the hand face, its count small beside "
+          'it, and its Pinned and Recent labels 13 pt in muted grey (M03)', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        final shelf = notes.create(drawing: true);
+        notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+        notes.togglePinned(shelf.id);
+        await tap(tester, barFolders);
+        await tap(tester, tile);
+        final palette = tester.element(title).palette;
+
+        final heading = tester.widget<Text>(title).style!;
+        expect(heading.fontFamily, WritingFont.handwritten.fontFamily);
+        expect(heading.fontSize, 26);
+        expect(heading.height, 32 / 26);
+        expect(heading.color, palette.textPrimary);
+        final count = tester
+            .widget<Text>(
+              find.descendant(
+                of: find.byType(PhoneListTitle),
+                matching: find.text('2'),
+              ),
+            )
+            .style!;
+        expect(count.fontFamily, AppFonts.ui);
+        expect(count.fontSize, 13);
+        expect(count.color, palette.textTertiary);
+
+        for (final label in ['Pinned', 'Recent']) {
+          final style = tester.widget<Text>(find.text(label)).style!;
+          expect(style.fontFamily, AppFonts.ui, reason: label);
+          expect(style.fontSize, 13, reason: label);
+          expect(style.height, 18 / 13, reason: label);
+          expect(style.color, palette.textTertiary, reason: label);
+        }
+      });
+
+      double iconLeft(WidgetTester tester, Finder row, KapyIconData data) =>
+          tester
+              .getRect(find.descendant(of: row, matching: findKapyIcon(data)))
+              .left;
+      double folderIcon(WidgetTester tester, Folder folder) => iconLeft(
+        tester,
+        find.byKey(ValueKey('folder-${folder.id}')),
+        KapyIcons.folderOutlined,
+      );
+
+      testWidgets("on a phone an empty folder keeps the chevron's 44, so its "
+          'icon lines up with a folder that opens', (tester) async {
+        await pumpFolders(tester);
+        final product = folders.create('Product')!;
+        await tap(tester, barFolders);
+        expect(folderIcon(tester, product), folderIcon(tester, work));
+      });
+
+      testWidgets("on a phone a note in a folder starts where that folder's "
+          'own folders do', (tester) async {
+        await pumpFolders(tester);
+        final offsite = notes.create(body: 'Offsite agenda');
+        folders.file([offsite.id], clients.id);
+        await tap(tester, barFolders);
+        await tap(tester, find.byKey(ValueKey('folder-chevron-${work.id}')));
+        await tap(tester, find.byKey(ValueKey('folder-chevron-${clients.id}')));
+        expect(
+          iconLeft(
+            tester,
+            find.widgetWithText(NoteRow, 'Offsite agenda'),
+            KapyIcons.noteOutlined,
+          ),
+          folderIcon(tester, acme),
+        );
+      });
+
+      testWidgets('the Folders title has no clay mark under it (M02)', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        final clay = tester.element(title).palette.clay;
+        expect(
+          find.descendant(
+            of: find.byType(PhoneListTitle),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Container && widget.color == clay,
+            ),
+          ),
+          findsNothing,
+        );
+      });
+
+      testWidgets('Not in a folder is a serif heading over Home rows (M02)', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        final heading = find.byKey(const ValueKey('folders-loose-heading'));
+        final words = tester.widget<Text>(
+          find.descendant(
+            of: heading,
+            matching: find.byKey(const ValueKey('phone-day-heading')),
+          ),
+        );
+        expect(words.data, 'Not in a folder');
+        final style = words.style!;
+        expect(style.fontFamily, AppFonts.title);
+        expect(style.fontSize, 19);
+        expect(
+          find.descendant(of: heading, matching: find.text('1')),
+          findsNothing,
+        );
+        expect(tester.widget<NoteRow>(groceries).style, NoteRowStyle.touch);
+      });
+
+      testWidgets('New folder sits beside Search folders, 44 pt, and names '
+          'a folder at the top of the tree (M02)', (tester) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        expect(find.byKey(const ValueKey('folders-new')), findsNothing);
+        final button = find.byKey(const ValueKey('phone-new-folder'));
+        expect(tester.getSize(button), const Size(44, 44));
+        final field = tester.getRect(
+          find.byKey(const ValueKey('sidebar-search-box')),
+        );
+        expect(tester.getCenter(button).dy, closeTo(field.center.dy, 0.5));
+        expect(tester.getRect(button).left, greaterThan(field.right));
+        expect(find.bySemanticsLabel('New folder'), findsOneWidget);
+        final glass = find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-box')),
+          matching: find.byType(KapyIcon),
+        );
+        expect(
+          tester.widget<KapyIcon>(glass).color,
+          tester.element(glass).palette.textTertiary,
+        );
+
+        await tap(tester, button);
+        await tester.enterText(
+          find.byKey(const ValueKey('folder-name-field')),
+          'Travel',
+        );
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect([
+          for (final folder in folders.tree.top) folder.name,
+        ], contains('Travel'));
+      });
+
+      testWidgets('Back from Folders goes to Notes with its Pinned still on', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await tap(tester, barNotes);
+        notes.togglePinned(
+          notes.notes.firstWhere((note) => note.title == 'Groceries').id,
+        );
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(const ValueKey('home-pinned-card')));
+        final pinned = find.byKey(const ValueKey('sidebar-pinned-back'));
+        expect(pinned, findsOneWidget);
+
+        await tap(tester, barFolders);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(lit(tester), PhoneTab.notes);
+        expect(pinned, findsOneWidget);
+        expect(groceries, findsOneWidget);
+        expect(brief, findsNothing);
+      });
+
+      testWidgets('Back in a folder lets the picks go first, then goes to '
+          'Folders', (tester) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        await tester.longPress(brief);
+        await tester.pumpAndSettle();
+        await tap(tester, find.text('Select'));
+        final picked = find.text('1 selected');
+        expect(picked, findsOneWidget);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(picked, findsNothing);
+        expect(find.byKey(ValueKey('phone-folder-${work.id}')), findsOneWidget);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(tree, findsOneWidget);
+      });
+
+      testWidgets('+ in a folder files the new note there', (tester) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        final before = {for (final note in notes.notes) note.id};
+
+        await tap(tester, find.byKey(const ValueKey('phone-new')));
+        final made = notes.notes.singleWhere(
+          (note) => !before.contains(note.id),
+        );
+        expect(folders.tree.folderOf(made.id), work.id);
+        expect(find.byType(NoteEditor), findsOneWidget);
+      });
+
+      testWidgets("Folders' search finds a folder, and choosing it opens it "
+          'on Folders', (tester) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        await tap(tester, find.byKey(const ValueKey('sidebar-search-field')));
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          'Acme',
+        );
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(const ValueKey('command-menu-row-Acme')));
+        expect(find.byKey(ValueKey('phone-folder-${acme.id}')), findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+        expect(brief, findsOneWidget);
+      });
+
+      testWidgets('with its folder deleted, Back from it still goes on', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        folders.delete(work.id);
+        await tester.pumpAndSettle();
+        expect(tree, findsOneWidget);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(lit(tester), PhoneTab.notes);
+        expect(tree, findsNothing);
+      });
+
+      testWidgets("Pinned doesn't narrow a folder, and its title counts the "
+          'folder alone', (tester) async {
+        await pumpFolders(tester);
+        final invoice = notes.create(body: 'Acme invoice\nNet 30');
+        folders.file([invoice.id], acme.id);
+        notes.togglePinned(invoice.id);
+        await tap(tester, barNotes);
+        await tap(tester, find.byKey(const ValueKey('home-pinned-card')));
+        expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+
+        await openFolder(tester, acme);
+        expect(brief, findsOneWidget);
+        expect(find.widgetWithText(NoteRow, 'Acme invoice'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(PhoneListTitle),
+            matching: find.text('2'),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('the bar opens Folders: its title and S, the Drawings tile '
+          'naming the newest drawing, and the tree', (tester) async {
+        await pumpFolders(tester);
+        expect(tree, findsNothing);
+
+        await tap(tester, barFolders);
+        expect(lit(tester), PhoneTab.folders);
+        expect(tree, findsOneWidget);
+        expect(titleOf(tester), 'Folders');
+        expect(find.byKey(const ValueKey('phone-account')), findsOneWidget);
+        expect(find.text('Search folders'), findsOneWidget);
+        expect(
+          find.descendant(of: tile, matching: find.text('Drawings')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: tile,
+            matching: find.textContaining('Deck flow · '),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester.getRect(tile).bottom,
+          lessThan(
+            tester.getRect(find.byKey(ValueKey('folder-${work.id}'))).top,
+          ),
+        );
+        expect(find.text('Not in a folder'), findsOneWidget);
+        expect(find.byKey(const ValueKey('home-title-notes')), findsNothing);
+
+        await tap(tester, barNotes);
+        expect(lit(tester), PhoneTab.notes);
+        expect(tree, findsNothing);
+        expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+      });
+
+      testWidgets('a nested folder opens with its notes; its arrow and Back '
+          'go to Folders, and Back again to Notes', (tester) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        await tap(tester, find.byKey(ValueKey('folder-chevron-${work.id}')));
+        await tap(tester, find.byKey(ValueKey('folder-chevron-${clients.id}')));
+        final row = find.byKey(ValueKey('folder-${acme.id}'));
+        expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+
+        await tap(tester, row);
+        final page = find.byKey(ValueKey('phone-folder-${acme.id}'));
+        expect(page, findsOneWidget);
+        expect(titleOf(tester), 'Acme');
+        expect(brief, findsOneWidget);
+        expect(groceries, findsNothing);
+        expect(lit(tester), PhoneTab.folders);
+
+        await tap(tester, find.byKey(const ValueKey('page-back')));
+        expect(page, findsNothing);
+        expect(tree, findsOneWidget);
+
+        await tap(tester, row);
+        expect(page, findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(tree, findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(tree, findsNothing);
+        expect(lit(tester), PhoneTab.notes);
+        expect(groceries, findsOneWidget);
+      });
+
+      testWidgets("Folders tapped again brings a folder's page back to the "
+          'tree', (tester) async {
+        await pumpFolders(tester);
+        await tap(tester, barFolders);
+        await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+        expect(find.byKey(ValueKey('phone-folder-${work.id}')), findsOneWidget);
+        expect(brief, findsOneWidget, reason: 'a folder holds its inner notes');
+
+        await tap(tester, barFolders);
+        expect(find.byKey(ValueKey('phone-folder-${work.id}')), findsNothing);
+        expect(tree, findsOneWidget);
+      });
+
+      testWidgets('the Drawings tile opens Drawings with Folders still lit; '
+          'its arrow and Back go to Folders', (tester) async {
+        await pumpFolders(tester);
+        await openPhoneDrawings(tester);
+        expect(titleOf(tester), 'Drawings');
+        expect(find.byType(DrawingCardFace), findsOneWidget);
+        expect(lit(tester), PhoneTab.folders);
+
+        await tap(tester, find.byKey(const ValueKey('page-back')));
+        expect(tree, findsOneWidget);
+        expect(find.byType(DrawingCardFace), findsNothing);
+
+        await tap(tester, tile);
+        expect(titleOf(tester), 'Drawings');
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(tree, findsOneWidget);
+
+        await tap(tester, tile);
+        await tap(tester, barNotes);
+        expect(lit(tester), PhoneTab.notes);
+        expect(groceries, findsOneWidget);
+        expect(find.byType(DrawingCardFace), findsNothing);
+      });
+
+      testWidgets('a build without folders still shows Folders with its '
+          'Drawings tile', (tester) async {
+        await pumpApp(tester, size: const Size(393, 852));
+        await showNotesList(tester);
+        await tap(tester, barFolders);
+        expect(titleOf(tester), 'Folders');
+        expect(
+          find.descendant(of: tile, matching: find.text('No drawings yet')),
+          findsOneWidget,
+        );
+        await tap(tester, tile);
+        expect(titleOf(tester), 'Drawings');
+        expect(lit(tester), PhoneTab.folders);
+      });
+
+      for (final scale in [1.3, 3.1]) {
+        testWidgets('on an SE at $scale× text Folders fits, and its tile, '
+            'rows and S take at least 44 pt', (tester) async {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pumpFolders(tester, size: const Size(375, 667));
+          await tap(tester, barFolders);
+          await tap(tester, find.byKey(ValueKey('folder-chevron-${work.id}')));
+          expect(tester.takeException(), isNull);
+          for (final target in [
+            tile,
+            find.byKey(const ValueKey('phone-account')),
+            find.byKey(ValueKey('folder-${work.id}')),
+            find.byKey(ValueKey('folder-${clients.id}')),
+            find.byKey(ValueKey('folder-chevron-${work.id}')),
+          ]) {
+            final size = tester.getSize(target);
+            expect(size.height, greaterThanOrEqualTo(44), reason: '$target');
+            expect(size.width, greaterThanOrEqualTo(44), reason: '$target');
+          }
+
+          await openPhoneDrawings(tester);
+          expect(tester.takeException(), isNull);
+        });
+      }
+    });
+
+    group("the +'s menu", () {
+      final plus = find.byKey(const ValueKey('phone-new'));
+      final close = find.byKey(const ValueKey('phone-new-close'));
+      final menu = find.byKey(const ValueKey('phone-new-menu'));
+      final dim = find.byKey(const ValueKey('phone-new-dim'));
+      late VoiceRecordingController recording;
+
+      Future<void> pumpPlus(
+        WidgetTester tester, {
+        Size size = const Size(393, 852),
+      }) async {
+        final temp = Directory.systemTemp.createTempSync('kapy-plus-');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        recording = VoiceRecordingController(
+          recorder: FakeVoiceRecorder(writesFile: false),
+          tempDirectory: temp,
+        );
+        addTearDown(recording.dispose);
+        await notes.load();
+        notes.create(body: 'Groceries\nOat milk');
+        await pumpApp(
+          tester,
+          size: size,
+          recording: recording,
+          tasks: TaskLibrary(
+            notes: notes,
+            store: store,
+            storage: MemoryDocStorage(),
+          ),
+        );
+        await showNotesList(tester);
+      }
+
+      Future<void> open(WidgetTester tester) async {
+        await tester.longPress(plus);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> choose(WidgetTester tester, String value) async {
+        await open(tester);
+        await tester.tap(find.byKey(ValueKey('phone-new-$value')));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('a tap on + opens a new note and no menu; holding it opens '
+          'the menu, and after its × a tap still opens a note', (tester) async {
+        await pumpPlus(tester);
+        final before = notes.notes.length;
+        await tester.tap(plus);
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+        expect(notes.notes.length, before + 1);
+        expect(find.byType(NoteField), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('page-home')));
+        await tester.pumpAndSettle();
+        await open(tester);
+        expect(menu, findsOneWidget);
+        expect(notes.notes.length, before + 1);
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+
+        // The new note was left blank, so + opens it again rather than a
+        // second one.
+        await tester.tap(plus);
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+        expect(find.byType(NoteField), findsOneWidget);
+      });
+
+      testWidgets("offers New note, New task, New voice note and New drawing, "
+          "in M05's order, each at least 44 pt, and no Quick find", (
+        tester,
+      ) async {
+        await pumpPlus(tester);
+        await open(tester);
+        expect(
+          [
+            for (final text
+                in find
+                    .descendant(of: menu, matching: find.byType(Text))
+                    .evaluate())
+              (text.widget as Text).data,
+          ],
+          ['New note', 'New task', 'New voice note', 'New drawing'],
+        );
+        for (final value in ['note', 'task', 'voice', 'drawing']) {
+          final row = find.byKey(ValueKey('phone-new-$value'));
+          expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+        }
+        expect(find.byKey(const ValueKey('phone-new-find')), findsNothing);
+        expect(find.text('Quick find'), findsNothing);
+      });
+
+      testWidgets('New note makes a note and opens it', (tester) async {
+        await pumpPlus(tester);
+        final before = notes.notes.length;
+        await choose(tester, 'note');
+        expect(notes.notes.length, before + 1);
+        expect(notes.notes.where((note) => note.isDrawing), isEmpty);
+        expect(find.byType(NoteEditor), findsOneWidget);
+      });
+
+      testWidgets('New task opens Tasks to add one', (tester) async {
+        await pumpPlus(tester);
+        await choose(tester, 'task');
+        expect(find.byType(TasksScreen), findsOneWidget);
+        expect(
+          tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+          PhoneTab.notes,
+        );
+      });
+
+      testWidgets('New voice note makes a note and starts recording', (
+        tester,
+      ) async {
+        await pumpPlus(tester);
+        final before = notes.notes.length;
+        await choose(tester, 'voice');
+        for (var wait = 0; wait < 100 && !recording.isRecording; wait++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+        expect(notes.notes.length, before + 1);
+        expect(recording.isRecording, isTrue);
+        await tester.runAsync(recording.cancel);
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('New drawing makes a drawing and opens its canvas', (
+        tester,
+      ) async {
+        await pumpPlus(tester);
+        await choose(tester, 'drawing');
+        expect(notes.notes.where((note) => note.isDrawing), hasLength(1));
+        expect(find.byType(DrawingCanvas), findsOneWidget);
+      });
+
+      testWidgets('while it is open the page dims behind it, all but the bar, '
+          'and + is a sage × that closes it, as a tap on the page does', (
+        tester,
+      ) async {
+        await pumpPlus(tester);
+        final before = notes.notes.length;
+        expect(dim, findsNothing);
+        expect(close, findsNothing);
+
+        await open(tester);
+        expect(menu, findsOneWidget);
+        expect(dim, findsOneWidget);
+        expect(tester.getRect(dim), Offset.zero & const Size(393, 852));
+        expect(tester.getRect(close), tester.getRect(plus));
+        expect(
+          find.descendant(
+            of: close,
+            matching: findKapyIcon(KapyIcons.closeRounded),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<Material>(
+                find.descendant(of: close, matching: find.byType(Material)),
+              )
+              .color,
+          Theme.of(tester.element(plus)).colorScheme.primary,
+        );
+        expect(
+          tester.getRect(menu).bottom,
+          tester.getRect(plus).top - 12,
+          reason: 'the menu rises from the + where the thumb already is',
+        );
+        expect(tester.getRect(menu).right, tester.getRect(plus).right);
+
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+        expect(dim, findsNothing);
+        expect(close, findsNothing);
+        expect(
+          find.descendant(
+            of: plus,
+            matching: findKapyIcon(KapyIcons.addRounded),
+          ),
+          findsOneWidget,
+        );
+
+        await open(tester);
+        await tester.tapAt(const Offset(200, 300));
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+        expect(dim, findsNothing);
+        expect(notes.notes.length, before, reason: 'closing makes nothing');
+        expect(find.byType(NoteEditor), findsNothing);
+      });
+
+      testWidgets("the dim leaves the bar as it was and darkens the page", (
+        tester,
+      ) async {
+        await pumpPlus(tester);
+        final tab = tester.getRect(find.byKey(const ValueKey('bar-folders')));
+        final points = [
+          tab.topLeft + const Offset(6, 8),
+          const Offset(200, 300),
+        ];
+        Future<List<Color>> pixels() async {
+          final (data, width) = (await tester.runAsync(() async {
+            final image = await captureImage(
+              find.byType(KapyNotesApp).evaluate().single,
+            );
+            final data = await image.toByteData();
+            final width = image.width;
+            image.dispose();
+            return (data!, width);
+          }))!;
+          return [
+            for (final point in points)
+              Color(
+                data.getUint32(
+                  (point.dy.round() * width + point.dx.round()) * 4,
+                ),
+              ),
+          ];
+        }
+
+        final before = await pixels();
+        await open(tester);
+        final after = await pixels();
+        expect(after.first, before.first, reason: 'the bar stays as it was');
+        expect(after.last, isNot(before.last), reason: 'the page dims');
+      });
+
+      testWidgets('the menu fits an SE at 3.1× text', (tester) async {
+        tester.platformDispatcher.textScaleFactorTestValue = 3.1;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await pumpPlus(tester, size: const Size(375, 667));
+        await open(tester);
+        expect(tester.takeException(), isNull);
+        expect(tester.getRect(menu).top, greaterThanOrEqualTo(0));
+        expect(tester.getRect(menu).left, greaterThanOrEqualTo(16));
+      });
+    });
+
+    testWidgets(
+      'Drawings from Folders reads "← Drawings" with its count and S, '
+      'no underline, then Recent, with Pinned only once something is',
+      (tester) async {
+        final drawings = [
+          for (var i = 0; i < 2; i++) notes.create(drawing: true).id,
+        ];
+        for (final (id, title) in [
+          (drawings[0], 'Deck flow'),
+          (drawings[1], 'Shelf plan'),
+        ]) {
+          notes.updateDrawing(id, NoteDrawing.empty, title: title);
+        }
+        await pumpApp(tester, size: const Size(393, 852));
+        await showNotesList(tester);
+        final clay = tester.element(find.byType(Sidebar)).palette.clay;
+        Finder underline() => find.descendant(
+          of: find.byType(PhoneListTitle),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Container && widget.color == clay,
+          ),
+        );
+
+        await tester.tap(find.byKey(const ValueKey('bar-folders')));
+        await tester.pumpAndSettle();
+        expect(underline(), findsNothing, reason: "the clay mark is Home's");
+
+        await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
+        await tester.pumpAndSettle();
+        final header = find.byType(PhoneListTitle);
+        final back = find.byKey(const ValueKey('page-back'));
+        final account = find.byKey(const ValueKey('phone-account'));
+        expect(find.descendant(of: header, matching: back), findsOneWidget);
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('phone-list-title')))
+              .data,
+          'Drawings',
+        );
+        expect(
+          find.descendant(of: header, matching: find.text('2')),
+          findsOneWidget,
+        );
+        expect(find.descendant(of: header, matching: account), findsOneWidget);
+        expect(tester.getRect(account).right, 393 - 14);
+        expect(underline(), findsNothing);
+        expect(find.text('Recent'), findsOneWidget);
+        expect(find.text('Pinned'), findsNothing);
+
+        notes.togglePinned(drawings.first);
+        await tester.pumpAndSettle();
+        expect(find.text('Pinned'), findsOneWidget);
+        expect(find.text('Recent'), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.text('Pinned')).dy,
+          lessThan(tester.getTopLeft(find.text('Recent')).dy),
+        );
+      },
+    );
 
     testWidgets("Home's Pinned card counts the pinned notes a filter hides, "
         'and opens them with the filter cleared', (tester) async {
@@ -8928,8 +9726,7 @@ void main() {
       }
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
-      await tester.tap(find.byKey(const ValueKey('bar-drawings')));
-      await tester.pumpAndSettle();
+      await openPhoneDrawings(tester);
 
       expect(find.text('Search drawings'), findsOneWidget);
       final cards = find.byType(DrawingCardFace);
@@ -9951,10 +10748,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(
-          tester.getTopLeft(find.byType(PagePane)).dy,
-          phone.padding.top,
-        );
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, phone.padding.top);
       });
     }
 
@@ -10039,10 +10833,7 @@ void main() {
 
         expect(tester.testTextInput.isVisible, isTrue);
         expect(find.byType(PageToolbar), findsOneWidget);
-        expect(
-          tester.getTopLeft(find.byType(PagePane)).dy,
-          tablet.padding.top,
-        );
+        expect(tester.getTopLeft(find.byType(PagePane)).dy, tablet.padding.top);
         expect(statusBar, isEmpty);
       });
     }
