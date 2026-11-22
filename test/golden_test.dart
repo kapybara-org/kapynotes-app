@@ -15,6 +15,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
@@ -114,6 +115,10 @@ Future<void> pumpForGolden(
 
   /// A tagged note last edited yesterday, for a phone's list of days.
   bool withYesterday = false,
+
+  /// M01's Today: three notes written this morning, one holding a
+  /// recording, one a checklist and a tag, one words alone.
+  bool withTodayRows = false,
 
   /// Which build the image is of.
   ///
@@ -283,9 +288,47 @@ Future<void> pumpForGolden(
       },
     ];
   }
+  if (withTodayRows) {
+    DateTime at(int hour, int minute) => DateTime(2026, 9, 1, hour, minute);
+    const pages =
+        'Morning pages\nThree things: the deck, the room, a walk\n'
+        '${NoteAttachmentRef.placeholder}';
+    store.data['notes.v1'] = [
+      Note(
+        id: 'pages',
+        body: pages,
+        attachments: [
+          NoteVoiceRef(
+            offset: pages.indexOf(NoteAttachmentRef.placeholder),
+            hash: 'pages-voice',
+            key: Uint8List(32),
+            bytes: 128,
+            durationMs: 200000,
+          ),
+        ],
+        createdAt: at(9, 12),
+        updatedAt: at(9, 12),
+      ).toJson(),
+      Note(
+        id: 'arjun',
+        body: 'Call with Arjun\nPricing page by Friday\n☐ Send the deck',
+        createdAt: at(8, 55),
+        updatedAt: at(8, 55),
+      ).toJson(),
+      Note(
+        id: 'renewal',
+        body: 'Renewal notes\nFor the call with Acme on Friday.',
+        createdAt: at(8, 20),
+        updatedAt: at(8, 20),
+      ).toJson(),
+    ];
+  }
   await notes.load();
   if (withYesterday) {
     goldenTags.setTags('ferry', [goldenTags.create('Trip')!.id]);
+  }
+  if (withTodayRows) {
+    goldenTags.setTags('arjun', [goldenTags.create('Work')!.id]);
   }
   await tasks?.load();
   prefs.load();
@@ -1538,6 +1581,33 @@ void main() {
         await tapAndSettle(tester, 'page-back');
         await matches('notes_home');
       });
+
+      if (phone == 'iphone') {
+        testWidgets('phone note rows with what they hold, $name', (
+          tester,
+        ) async {
+          await pumpForGolden(
+            tester,
+            size: size,
+            brightness: brightness,
+            platform: platform,
+            withNote: false,
+            withTasks: true,
+            withTodayRows: true,
+          );
+          final back = find.byKey(const ValueKey('page-back'));
+          if (back.evaluate().isNotEmpty) {
+            await tapAndSettle(tester, 'page-back');
+          }
+          expect(find.byType(NoteRow), findsNWidgets(3));
+          expect(
+            find.byKey(const ValueKey('note-row-holds')),
+            findsNWidgets(2),
+            reason: 'the recording and the checklist each take a third line',
+          );
+          await matches('note_rows');
+        });
+      }
 
       testWidgets('phone notes, two picked, $name', (tester) async {
         await pumpPhone(tester);
