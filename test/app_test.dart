@@ -5770,7 +5770,7 @@ void main() {
             ),
           )
           .date,
-      'Today, 09:10',
+      'Today, 9:10',
     );
   });
 
@@ -8600,7 +8600,7 @@ void main() {
       expect(tester.widget<TagDots>(dots).tags, hasLength(2));
       final time = find.descendant(
         of: row('Call with Arjun'),
-        matching: find.text('09:00'),
+        matching: find.text('9:00'),
       );
       expect(
         tester.getTopLeft(dots).dx,
@@ -8615,7 +8615,7 @@ void main() {
         findsNothing,
       );
       for (final (title, clock) in [
-        ('Stamped by a clock ahead', '08:00'),
+        ('Stamped by a clock ahead', '8:00'),
         ('Quote for the deck', '17:00'),
         ('Renewal notes', '11:00'),
       ]) {

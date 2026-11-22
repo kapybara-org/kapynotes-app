@@ -135,7 +135,7 @@ void main() {
     expect(tester.getBottomLeft(pinnedCard).dy, lessThan(tops.first));
 
     for (final (title, day, time) in [
-      ('Call with Arjun', 0, '09:12'),
+      ('Call with Arjun', 0, '9:12'),
       ('Groceries', 1, '18:40'),
       ('Offsite agenda', 2, '10:00'),
     ]) {

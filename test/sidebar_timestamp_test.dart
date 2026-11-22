@@ -11,7 +11,7 @@ void main() {
         instant,
         displayTime: (value) => AppTimeZones.convert(value, 'Asia/Kolkata'),
       ),
-      '2 Sep 2026 · 00:15',
+      '2 Sep 2026 · 0:15',
     );
     expect(
       SidebarTimestamp.format(
@@ -31,10 +31,10 @@ void main() {
       today: today,
     );
 
-    expect(glance(DateTime.utc(2026, 11, 16, 9, 5)), '09:05');
+    expect(glance(DateTime.utc(2026, 11, 16, 9, 5)), '9:05');
     expect(
       glance(DateTime.utc(2026, 11, 16, 9, 5), today: true),
-      'Today, 09:05',
+      'Today, 9:05',
     );
     expect(glance(DateTime.utc(2026, 11, 15, 23)), 'Yesterday');
     expect(glance(DateTime.utc(2026, 11, 14, 8)), 'Sat');
