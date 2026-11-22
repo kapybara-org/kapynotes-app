@@ -444,14 +444,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NoteFooter), findsNothing);
-    // Taller than a window's row: the tags under the facts are 44 pt
-    // targets on a phone, so the row grows with them (KAP-115).
+    // One line under the title on a phone, the tags after the facts (M07),
+    // inside the room the page keeps for it to wrap into.
     expect(
       tester.getSize(find.byType(NoteMetaRow)).height,
-      greaterThanOrEqualTo(EditorMetrics.metaRow),
+      lessThanOrEqualTo(EditorMetrics.metaRow),
     );
-    // The facts and the tags on their two lines sit between the title and
-    // the writing, over neither.
+    // The facts and the tags sit between the title and the writing, over
+    // neither.
     final field = _editable(tester);
     final meta = tester.getRect(find.byType(NoteMetaRow));
     final title = field.caretRect(const TextPosition(offset: 1));

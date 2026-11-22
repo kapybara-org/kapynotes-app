@@ -261,32 +261,32 @@ class NoteMetaRow extends StatelessWidget {
     ];
     if (AppPlatform.isMobile) {
       // One line that wraps with the text size: the facts a dot apart, then
-      // the tags after a gap, as M07 draws them.
-      return ConstrainedBox(
-        constraints: BoxConstraints(minHeight: EditorMetrics.metaRow),
-        child: Wrap(
-          key: const ValueKey('note-facts'),
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            for (final (index, item) in items.indexed)
-              index == 0
-                  ? item
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(width: _gap),
-                        dot,
-                        const SizedBox(width: _gap),
-                        item,
-                      ],
-                    ),
-            if (tags case final tags?)
-              Padding(
-                padding: const EdgeInsets.only(left: _gap + 4),
-                child: tags,
-              ),
-          ],
-        ),
+      // the tags after a gap, as M07 draws them. The editor keeps a second
+      // line's room under the title, so a wrap never runs into the note.
+      return Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: _gap + 4,
+        children: [
+          Wrap(
+            key: const ValueKey('note-facts'),
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final (index, item) in items.indexed)
+                index == 0
+                    ? item
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: _gap),
+                          dot,
+                          const SizedBox(width: _gap),
+                          item,
+                        ],
+                      ),
+            ],
+          ),
+          ?tags,
+        ],
       );
     }
     return SizedBox(

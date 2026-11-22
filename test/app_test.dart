@@ -7378,7 +7378,7 @@ void main() {
       expect(openNoteField(tester).focusNode.hasFocus, isTrue);
       expect(tester.testTextInput.isVisible, isTrue);
       expect(find.byKey(const ValueKey('phone-bar')), findsNothing);
-      expect(find.text('Notes'), findsOneWidget);
+      expect(find.text('Home'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();

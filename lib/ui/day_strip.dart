@@ -568,15 +568,29 @@ class _DayStripState extends State<DayStrip> {
     final counts = _counts(shown);
     final picked = _picked;
     final filled = _listing ?? picked ?? today;
-    Widget arrow(String key, String tooltip, KapyIconData icon, int by) =>
-        CompactIconButton(
-          key: ValueKey(key),
-          tooltip: tooltip,
-          extent: _Day.phoneHeight,
-          width: DayStrip._phoneArrowWidth,
-          radius: 8,
-          onPressed: () => setState(() => _shift += by),
-          icon: KapyIcon(icon, size: 16),
+    // As narrow as M09 draws them, so each of the seven days keeps 44 to
+    // tap; the arrows keep the strip's whole height.
+    Widget arrow(String key, String label, KapyIconData icon, int by) =>
+        Semantics(
+          button: true,
+          label: label,
+          excludeSemantics: true,
+          child: InkResponse(
+            key: ValueKey(key),
+            onTap: () => setState(() => _shift += by),
+            radius: DayStrip._phoneArrowWidth,
+            child: SizedBox(
+              width: DayStrip._phoneArrowWidth,
+              height: _Day.phoneHeight,
+              child: Center(
+                child: KapyIcon(
+                  icon,
+                  size: 16,
+                  color: context.palette.textSecondary,
+                ),
+              ),
+            ),
+          ),
         );
     return Row(
       key: _weekRow,

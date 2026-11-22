@@ -4416,7 +4416,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               label: note.isShared ? 'Sharing' : 'Share note',
               icon: KapyIcons.shareRounded,
             ),
-          if (_canMoveToFolder(note))
+          if (widget.folders != null && !_specialMode && _canFile(note))
             const KapyMenuAction(
               value: 'folder',
               label: 'Move to folder…',
@@ -5102,7 +5102,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _phoneNoteHeader(Note note) {
     final displayTime = widget.prefs.displayTime;
     final today = dayShown(widget.notes.now(), displayTime);
-    final day = noteDay(note, displayTime, ownDay: _ownDayOf(note));
+    final day = noteDay(
+      note,
+      displayTime,
+      ownDay: _dayOfFreshNote[note.id] ?? _ownDayOf(note),
+    );
     final hasDays = _space == LibrarySpace.notes && !_specialMode;
     final tasks = hasDays ? _phoneTasksOn(day, today) : 0;
     return PhoneNoteHeader(
@@ -5155,19 +5159,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// for a note of today or before, whose tasks are on it, or the tasks
   /// waiting for a later [day] in that day's notes.
   int _phoneTasksOn(DateTime day, DateTime today) {
-    final tasks = _taskController;
-    if (tasks == null) return 0;
-    if (!day.isAfter(today)) return tasks.openIn(null).length;
+    final open = _taskController?.read().open ?? const [];
     final displayTime = widget.prefs.displayTime;
-    return tasks
-        .read()
-        .open
-        .where(
-          (item) =>
-              noteDay(item.note, displayTime, ownDay: _ownDayOf(item.note)) ==
-              day,
-        )
-        .length;
+    return open.where((item) {
+      final ownDay = _ownDayOf(item.note);
+      final waits = ownDay != null && ownDay.isAfter(today);
+      return day.isAfter(today)
+          ? waits && noteDay(item.note, displayTime, ownDay: ownDay) == day
+          : !waits;
+    }).length;
   }
 
   /// The tasks sheet over a phone note (M15): Tasks' own list, with Do now
