@@ -31,7 +31,8 @@ void main() {
   Future<List<String>> pumpHeader(
     WidgetTester tester, {
     bool tasks = false,
-    int count = 37,
+    int notesCount = 37,
+    int tasksCount = 6,
     bool withTasks = true,
     WritingStreak? streak = const WritingStreak(days: 1, wroteToday: true),
     AccountUser? signedIn = user,
@@ -52,7 +53,8 @@ void main() {
             alignment: Alignment.topCenter,
             child: PhoneHomeHeader(
               tasks: tasks,
-              count: count,
+              notesCount: notesCount,
+              tasksCount: tasksCount,
               onNotes: () => taps.add('notes'),
               onTasks: withTasks ? () => taps.add('tasks') : null,
               streak: streak,
@@ -72,16 +74,22 @@ void main() {
       .style
       ?.color;
 
-  testWidgets('Notes is 100 wide at the 20 pt inset, with Tasks 12 pt after '
-      'it', (tester) async {
-    await pumpHeader(tester);
+  for (final notesCount in [1, 37, 999]) {
+    testWidgets('Notes $notesCount starts at the 20 pt inset and Tasks sits '
+        '12 pt after its count, as M01 draws it', (tester) async {
+      await pumpHeader(tester, notesCount: notesCount, width: 375);
 
-    final notes = tester.getRect(notesTitle);
-    expect(notes.left, 20);
-    expect(notes.width, 100);
-    expect(tester.getRect(tasksTitle).left - notes.right, 12);
-    expect(tester.getSize(find.byType(PhoneHomeHeader)).height, 48);
-  });
+      final notes = tester.getRect(notesTitle);
+      final count = tester.getRect(
+        find.descendant(of: notesTitle, matching: find.text('$notesCount')),
+      );
+      expect(notes.left, 20);
+      expect(count.right, notes.right);
+      expect(tester.getRect(tasksTitle).left - count.right, 12);
+      expect(tester.getSize(find.byType(PhoneHomeHeader)).height, 48);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('the title on screen is in ink with its count and the clay '
       'underline; the other waits in grey', (tester) async {
@@ -108,7 +116,8 @@ void main() {
       findsNothing,
     );
 
-    await pumpHeader(tester, tasks: true, count: 6);
+    final tasksLeft = tester.getRect(tasksTitle).left;
+    await pumpHeader(tester, tasks: true);
     expect(ink(tester, tasksTitle, 'Tasks'), palette().textPrimary);
     expect(find.descendant(of: tasksTitle, matching: find.text('6')), findsOne);
     expect(
@@ -130,7 +139,23 @@ void main() {
       ),
       findsNothing,
     );
-    expect(tester.getRect(notesTitle).width, 100, reason: 'Tasks stays put');
+    expect(
+      tester
+          .widget<Visibility>(
+            find.ancestor(
+              of: find.descendant(of: notesTitle, matching: find.text('37')),
+              matching: find.byType(Visibility),
+            ),
+          )
+          .visible,
+      isFalse,
+      reason: "Notes keeps its count's room unseen",
+    );
+    expect(
+      tester.getRect(tasksTitle).left,
+      tasksLeft,
+      reason: 'Tasks stays put',
+    );
   });
 
   testWidgets('each title is at least 44 pt tall to tap', (tester) async {
@@ -243,22 +268,14 @@ void main() {
     });
   }
 
-  testWidgets('"Notes 999" outgrows the 100 box, which keeps Tasks 12 pt '
-      'after it', (tester) async {
-    await pumpHeader(tester, count: 999, width: 375);
-    final notes = tester.getRect(notesTitle);
-    expect(notes.width, greaterThan(100));
-    expect(tester.getRect(tasksTitle).left - notes.right, 12);
-    expect(tester.takeException(), isNull);
-  });
-
   for (final scale in [1.0, 1.3, 3.1]) {
     testWidgets('an SE fits the row at $scale× text with the longest of '
         'everything', (tester) async {
       await pumpHeader(
         tester,
         tasks: true,
-        count: 99,
+        notesCount: 999,
+        tasksCount: 99,
         width: 375,
         scale: scale,
         streak: const WritingStreak(days: 365, wroteToday: true),

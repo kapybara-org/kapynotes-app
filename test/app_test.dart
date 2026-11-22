@@ -7744,6 +7744,43 @@ void main() {
       Finder underlineOf(Finder title) =>
           find.descendant(of: title, matching: find.byType(NoteTitleUnderline));
 
+      testWidgets('the search field reads "Search notes and tasks" because '
+          'Quick find, which it opens, finds tasks too', (tester) async {
+        notes.create(body: 'Lisbon trip\n☐ Renew passport before the trip');
+        final tasks = TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        );
+        await tasks.load();
+        await tasks.reconcileNow();
+        await pumpApp(tester, size: const Size(393, 852), tasks: tasks);
+        await showNotesList(tester);
+
+        final field = find.byKey(const ValueKey('sidebar-search-field'));
+        expect(
+          find.descendant(
+            of: field,
+            matching: find.text('Search notes and tasks'),
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(field);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          'passport',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('command-menu')),
+            matching: find.text('Renew passport before the trip'),
+          ),
+          findsOneWidget,
+        );
+      });
+
       testWidgets('a tap on Tasks shows Tasks under the same header, and a '
           'tap on Notes comes back', (tester) async {
         await pumpHome(tester);
@@ -8343,8 +8380,8 @@ void main() {
             matching: find.byKey(const ValueKey('phone-day-heading')),
           ),
         );
-        expect(words.textSpan!.toPlainText(), 'Not in a folder');
-        final style = words.textSpan!.style!;
+        expect(words.data, 'Not in a folder');
+        final style = words.style!;
         expect(style.fontFamily, AppFonts.title);
         expect(style.fontSize, 19);
         expect(
@@ -9081,8 +9118,16 @@ void main() {
         expect(find.byKey(const ValueKey('phone-filters')), findsNothing);
         final headings = find.byKey(const ValueKey('phone-day-heading'));
         expect(headings, findsNWidgets(2));
-        String heading(Finder finder) =>
-            tester.widget<Text>(finder).textSpan!.toPlainText();
+        String heading(Finder finder) => [
+          for (final text in tester.widgetList<Text>(
+            find.descendant(
+              of: finder,
+              matching: find.byType(Text),
+              matchRoot: true,
+            ),
+          ))
+            text.data,
+        ].join(' ');
         final later = SidebarTimestamp.phoneDay(inDays(5), now: inDays(0));
         expect(later.lead, isNull);
         expect(
@@ -9123,7 +9168,9 @@ void main() {
         expect(listed('Renewal notes'), findsNothing);
         expect(listed('Board review'), findsNothing);
         expect(
-          tester.widget<PhoneHomeHeader>(find.byType(PhoneHomeHeader)).count,
+          tester
+              .widget<PhoneHomeHeader>(find.byType(PhoneHomeHeader))
+              .notesCount,
           1,
         );
       });
@@ -9137,7 +9184,16 @@ void main() {
         final headings = find.byKey(const ValueKey('phone-day-heading'));
         expect(headings, findsOneWidget);
         expect(
-          tester.widget<Text>(headings).textSpan!.toPlainText(),
+          [
+            for (final text in tester.widgetList<Text>(
+              find.descendant(
+                of: headings,
+                matching: find.byType(Text),
+                matchRoot: true,
+              ),
+            ))
+              text.data,
+          ].join(' '),
           startsWith('Yesterday'),
         );
       });
@@ -9150,7 +9206,16 @@ void main() {
         expect(listed('Renewal notes'), findsOneWidget);
         final headings = find.byKey(const ValueKey('phone-day-heading'));
         expect(
-          tester.widget<Text>(headings).textSpan!.toPlainText(),
+          [
+            for (final text in tester.widgetList<Text>(
+              find.descendant(
+                of: headings,
+                matching: find.byType(Text),
+                matchRoot: true,
+              ),
+            ))
+              text.data,
+          ].join(' '),
           startsWith('Today'),
         );
 
@@ -9451,6 +9516,137 @@ void main() {
       }
     });
 
+    testWidgets("a day's heading is the serif name, then its date 8 after "
+        'it in small quiet sans, as Tasks draws Today', (tester) async {
+      final nine = DateTime(2026, 11, 19, 9).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        {
+          'id': 'pages',
+          'body': 'Morning pages',
+          'createdAt': nine,
+          'updatedAt': nine,
+        },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final heading = find.byKey(const ValueKey('phone-day-heading'));
+      final palette = tester.element(heading).palette;
+      final today = tester.widget<Text>(
+        find.descendant(of: heading, matching: find.text('Today')),
+      );
+      final date = find.descendant(of: heading, matching: find.text('Thu 19'));
+      expect(today.style?.fontFamily, AppFonts.title);
+      expect(today.style?.fontSize, 19);
+      expect(today.style?.color, palette.textPrimary);
+      final style = tester.widget<Text>(date).style;
+      expect(style?.fontFamily, AppFonts.ui);
+      expect(style?.fontSize, 13);
+      expect(style?.height, 16 / 13);
+      expect(style?.color, palette.textTertiary);
+      expect(
+        tester.getTopLeft(date).dx -
+            tester
+                .getTopRight(
+                  find.descendant(of: heading, matching: find.text('Today')),
+                )
+                .dx,
+        8,
+      );
+    });
+
+    testWidgets('a hairline as wide as the text sits under every row of a '
+        'day but its last', (tester) async {
+      int at(int day, int hour) =>
+          DateTime(2026, 11, day, hour).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        for (final (id, body, day, hour) in [
+          ('pages', 'Morning pages', 19, 9),
+          ('arjun', 'Call with Arjun', 19, 8),
+          ('quote', 'Quote for the deck', 19, 7),
+          ('renewal', 'Renewal notes', 18, 11),
+        ])
+          {
+            'id': id,
+            'body': body,
+            'createdAt': at(day, hour),
+            'updatedAt': at(day, hour),
+          },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final lines = find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.byType(Divider),
+      );
+      expect(lines, findsNWidgets(2));
+      Finder row(String title) => find.widgetWithText(NoteRow, title);
+      final rects = [for (var i = 0; i < 2; i++) tester.getRect(lines.at(i))];
+      for (var i = 0; i < 2; i++) {
+        final line = tester.widget<Divider>(lines.at(i));
+        expect(rects[i].left + line.indent!, 20);
+        expect(rects[i].width - line.indent! - line.endIndent!, 393 - 40);
+      }
+      expect(rects[0].top, tester.getRect(row('Morning pages')).bottom);
+      expect(rects[1].top, tester.getRect(row('Call with Arjun')).bottom);
+      expect(
+        tester.widget<Divider>(lines.first).color,
+        tester.element(lines.first).palette.separator,
+      );
+    });
+
+    testWidgets('a row with a preview and what it holds is 91 from hairline '
+        'to hairline, and one with words alone keeps two lines', (
+      tester,
+    ) async {
+      int at(int hour) => DateTime(2026, 11, 19, hour).millisecondsSinceEpoch;
+      store.data['notes.v1'] = [
+        for (final (id, body, hour) in [
+          (
+            'arjun',
+            'Call with Arjun\nPricing page by Friday\n☐ Send the deck',
+            9,
+          ),
+          ('quote', 'Quote for the deck\nBook it\n☐ Book the room', 8),
+          ('renewal', 'Renewal notes\nFor the call with Acme on Friday.', 7),
+        ])
+          {
+            'id': id,
+            'body': body,
+            'createdAt': at(hour),
+            'updatedAt': at(hour),
+          },
+      ];
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 12));
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      final lines = find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.byType(Divider),
+      );
+      expect(lines, findsNWidgets(2));
+      expect(
+        tester.getTopLeft(lines.at(1)).dy - tester.getTopLeft(lines.at(0)).dy,
+        91,
+      );
+      Finder holdsOf(String title) => find.descendant(
+        of: find.widgetWithText(NoteRow, title),
+        matching: find.byKey(const ValueKey('note-row-holds')),
+      );
+      expect(
+        find.descendant(
+          of: holdsOf('Quote for the deck'),
+          matching: find.text('0 of 1'),
+        ),
+        findsOneWidget,
+      );
+      expect(holdsOf('Renewal notes'), findsNothing);
+    });
+
     testWidgets('a row swipes left to Pin and Archive', (tester) async {
       final groceries = notes.create(body: 'Groceries\nOat milk');
       final offsite = notes.create(body: 'Team offsite');
@@ -9513,6 +9709,14 @@ void main() {
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
 
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-field')),
+          matching: find.text('Search notes'),
+        ),
+        findsOneWidget,
+        reason: 'without Tasks there are only notes to find',
+      );
       await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
