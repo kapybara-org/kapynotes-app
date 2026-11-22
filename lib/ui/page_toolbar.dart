@@ -112,8 +112,7 @@ class PageToolbar extends StatelessWidget {
     this.onMore,
     this.updates,
     this.actions,
-    this.back,
-  }) : assert(path != null || crumb != null || days != null || back != null);
+  }) : assert(path != null || crumb != null || days != null);
 
   /// Where a page with no days is, at the top left.
   final PagePath? path;
@@ -183,10 +182,6 @@ class PageToolbar extends StatelessWidget {
   /// and Share go.
   final List<Widget>? actions;
 
-  /// A phone's way back to the list the page was pushed over, named for that
-  /// list, in place of the path and the list's controls.
-  final ({String to, VoidCallback onPressed})? back;
-
   /// The band is 52 tall, so it lines up with the list's bar beside it.
   static const double height = 52;
 
@@ -203,11 +198,6 @@ class PageToolbar extends StatelessWidget {
   /// path of one level, such as Drawings › a drawing, has nothing to fold,
   /// so it stays whole down to [_savedWidth].
   static const double _fullWidth = 720;
-
-  /// A phone's page bar: the back button and the note's actions, each 44.
-  static const double phoneHeight = 44;
-
-  static const _phonePadding = EdgeInsets.only(left: 4, right: 6);
 
   /// Narrower than this, Saved moves to the note's date line and the path
   /// keeps only its last level.
@@ -247,16 +237,12 @@ class PageToolbar extends StatelessWidget {
     final extent = _extent;
     final showListShortcut = this.showListShortcut;
     final days = this.days;
-    final back = this.back;
     final create = listVisible || underList ? null : this.create;
     return Container(
       key: const ValueKey('page-toolbar'),
-      height: AppControlMetrics.scaleBar(
-        context,
-        back == null ? height : phoneHeight,
-      ),
+      height: AppControlMetrics.scaleBar(context, height),
       color: palette.isGlass ? palette.paperColor : null,
-      foregroundDecoration: back == null && !underList
+      foregroundDecoration: !underList
           ? BoxDecoration(
               border: Border(bottom: BorderSide(color: palette.railBorder)),
             )
@@ -331,12 +317,7 @@ class PageToolbar extends StatelessWidget {
               const Positioned.fill(
                 child: WindowDragArea(child: SizedBox.expand()),
               ),
-              if (back != null)
-                Padding(
-                  padding: _phonePadding,
-                  child: _phoneBar(back, width, extent),
-                )
-              else if (days != null)
+              if (days != null)
                 days(room < _fullWidth, band)
               else if (crumb case final crumb?)
                 band(crumb)
@@ -359,95 +340,13 @@ class PageToolbar extends StatelessWidget {
     );
   }
 
-  /// A phone's bar, outside the desktop's band, as Phone v2 has it: the way
-  /// back at the left, the collaborators after it, then the note's actions.
-  Widget _phoneBar(
-    ({String to, VoidCallback onPressed}) back,
-    double width,
-    double extent,
-  ) => Row(
-    children: [
-      Expanded(
-        child: LayoutBuilder(
-          builder: (context, slot) => Row(
-            children: [
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: PageBackButton(to: back.to, onPressed: back.onPressed),
-                ),
-              ),
-              if (actions == null && members.isNotEmpty)
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: math.min(
-                      slot.maxWidth,
-                      (width - _phonePadding.horizontal) / 3,
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 6),
-                    child: MemberAvatars(
-                      members: members,
-                      present: present,
-                      currentUserId: currentUserId,
-                      onPressed: onShare,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-      ..._actions(width, extent),
-    ],
-  );
-
   /// The collaborators, giving way first, then Saved and Share 8 apart,
-  /// Kapy AI behind its hairline, and More last. A phone's bar keeps Phone
-  /// v2's: Share's icon, then Kapy AI and More.
+  /// Kapy AI behind its hairline, and More last.
   List<Widget> _actions(double width, double extent) {
     final updates = this.updates;
     final actions = this.actions;
     final onMore = this.onMore;
     final assistant = this.assistant;
-    Widget more(
-      void Function(String value, Offset at) onMore, {
-      required double radius,
-      required double size,
-      required KapyIconData icon,
-    }) => Builder(
-      builder: (buttonContext) => CompactIconButton(
-        key: const ValueKey('page-more'),
-        tooltip: 'More',
-        extent: extent,
-        radius: radius,
-        onPressed: moreActions.isEmpty
-            ? null
-            : () => _showMore(buttonContext, onMore),
-        icon: KapyIcon(icon, size: size),
-      ),
-    );
-    if (back != null) {
-      return [
-        TonalButton(
-          key: const ValueKey('page-share'),
-          tall: true,
-          icon: KapyIcons.shareRounded,
-          tooltip: noteShared ? 'Manage sharing' : 'Share',
-          onPressed: onShare,
-        ),
-        const SizedBox(width: 6),
-        ?assistant,
-        if (onMore != null)
-          more(
-            onMore,
-            radius: 10,
-            size: AppControlMetrics.iconAction,
-            icon: KapyIcons.moreVerticalRounded,
-          ),
-      ];
-    }
     return [
       if (actions == null && members.isNotEmpty)
         Flexible(
@@ -499,7 +398,18 @@ class PageToolbar extends StatelessWidget {
           const SizedBox(width: 4)
         else if (actions == null || actions.isNotEmpty)
           const SizedBox(width: 8),
-        more(onMore, radius: 8, size: 16, icon: KapyIcons.moreVerticalRounded),
+        Builder(
+          builder: (buttonContext) => CompactIconButton(
+            key: const ValueKey('page-more'),
+            tooltip: 'More',
+            extent: extent,
+            radius: 8,
+            onPressed: moreActions.isEmpty
+                ? null
+                : () => _showMore(buttonContext, onMore),
+            icon: const KapyIcon(KapyIcons.moreVerticalRounded, size: 16),
+          ),
+        ),
       ],
     ];
   }
@@ -523,7 +433,7 @@ class PageToolbar extends StatelessWidget {
               key: ValueKey('page-more-${action.value}'),
               value: action.value,
               enabled: action.enabled,
-              // A phone's sheet gives each action a 44 pt target.
+              // A touch screen gives each action a 44 pt target.
               height: AppPlatform.hasPointer ? 36 : 44,
               child: KapyMenuActionRow(action, touch: false),
             ),
@@ -589,14 +499,10 @@ class _Band extends MultiChildLayoutDelegate {
 /// page whose top left has its days: "Work › Clients › Acme". They open as
 /// the path's do, and a deep one folds its middle into "…".
 class NotePathLine extends StatelessWidget {
-  const NotePathLine({
-    super.key,
-    required this.folders,
-    required this.onOpenFolder,
-  });
+  const NotePathLine({super.key, required this.folders, this.onOpenFolder});
 
   final List<PagePlace> folders;
-  final void Function(String folderId, {required bool behind}) onOpenFolder;
+  final void Function(String folderId, {required bool behind})? onOpenFolder;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -965,8 +871,8 @@ class _Saved extends StatelessWidget {
   }
 }
 
-/// Back to the list: "‹ Notes" on iOS, and on Android Material's arrow
-/// alone, as the system back gesture names nothing either.
+/// Back to the list a page came from: "← Tasks" on iOS, and on Android
+/// Material's arrow alone, as the system back gesture names nothing either.
 class PageBackButton extends StatelessWidget {
   const PageBackButton({super.key, required this.to, required this.onPressed});
 

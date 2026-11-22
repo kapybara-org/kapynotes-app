@@ -439,6 +439,24 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
+  /// Takes the title [Note.blankBody] gives off a blank note, as a page
+  /// opened on a day with none starts with no title (M11): the counterpart of
+  /// [startAsNew]. The app's own words, so not writing.
+  void startAsEmpty(String id) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    final existing = _notes[index];
+    if (existing.body != Note.blankBody || !existing.isEmpty) return;
+    final edit = (start: 0, oldEnd: existing.body.length, newEnd: 0);
+    final earlier = _edits[id];
+    _edits[id] = earlier == null ? edit : composeEdits(earlier, edit);
+    _replace(
+      index,
+      existing.copyWith(body: '', formats: const [], updatedAt: _now()),
+      toFront: true,
+    );
+  }
+
   /// Puts [title] in place of [id]'s first line, moving the formats and
   /// attachments after it along. The app's own words, so not writing.
   /// Returns whether the note changed.

@@ -250,6 +250,10 @@ class KapyIcons {
     0xE02C,
     HugeIcons.strokeRoundedLeftToRightListBullet,
   );
+  static const homeOutlined = KapyIconData(
+    0xE0EC,
+    HugeIcons.strokeRoundedHome03,
+  );
   static const hourglassRounded = KapyIconData(
     0xE030,
     HugeIcons.strokeRoundedHourglass,

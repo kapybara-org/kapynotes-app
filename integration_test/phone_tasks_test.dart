@@ -138,7 +138,7 @@ void main() {
       return labels;
     }
 
-    await tap('page-back');
+    await tap('page-home');
     await tap('home-title-tasks');
 
     expect(find.text('What do you want to work on next?'), findsOneWidget);
@@ -297,8 +297,8 @@ void main() {
       await screenshot('tasks-$name-dark', device: true);
     }
 
-    if (find.byKey(const ValueKey('page-back')).evaluate().isNotEmpty) {
-      await tap('page-back');
+    if (find.byKey(const ValueKey('page-home')).evaluate().isNotEmpty) {
+      await tap('page-home');
     }
     await tap('home-title-tasks');
     expect(find.text('Search tasks'), findsOneWidget);

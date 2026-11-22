@@ -266,10 +266,12 @@ class KapyMenuAction {
 typedef KapyMenu = ({String? heading, List<List<KapyMenuAction>> groups});
 
 /// [menu]'s lines for [showKapyContextMenu]: its heading, then its groups
-/// with a rule between each. [key] names a line by its action's value.
+/// with a rule between each. [key] names a line by its action's value, and
+/// [height] is each line's: a phone's are 44 to tap.
 List<PopupMenuEntry<String>> kapyMenuItems(
   KapyMenu menu, {
   required String Function(String value) key,
+  double height = 36,
 }) {
   final groups = [
     for (final group in menu.groups)
@@ -283,7 +285,7 @@ List<PopupMenuEntry<String>> kapyMenuItems(
         PopupMenuItem(
           key: ValueKey(key(action.value)),
           value: action.value,
-          height: 36,
+          height: height,
           child: KapyMenuActionRow(action, touch: false),
         ),
     ],

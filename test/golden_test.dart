@@ -40,7 +40,7 @@ import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'app_test.dart' show MemoryStore;
+import 'app_test.dart' show MemoryStore, openNoteBody;
 import 'billing/billing_fakes.dart';
 import 'fake_update_installer.dart';
 import 'support/note_driver.dart';
@@ -85,6 +85,7 @@ late LayoutPrefs goldenPrefs;
 late NotesStore goldenNotes;
 late TagStore goldenTags;
 late FolderStore goldenFolders;
+late NoteDayStore goldenDays;
 
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
@@ -131,6 +132,10 @@ Future<void> pumpForGolden(
 
   /// A tagged note last edited yesterday, for a phone's list of days.
   bool withYesterday = false,
+
+  /// The days notes are given, in [goldenDays], so a note can be moved to
+  /// another day.
+  bool withDays = false,
 
   /// The notes' own days, for Tasks' Later row.
   NoteDayStore? days,
@@ -263,6 +268,10 @@ Future<void> pumpForGolden(
   await goldenTags.load();
   goldenFolders = FolderStore(store);
   await goldenFolders.load();
+  if (withDays) {
+    goldenDays = NoteDayStore(store, now: () => _goldenNow);
+    await goldenDays.load();
+  }
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
   _goldenTaskNow = _goldenNow;
@@ -396,8 +405,8 @@ Future<void> pumpForGolden(
       updates: updates,
       tags: goldenTags,
       folders: goldenFolders,
+      days: withDays ? goldenDays : days,
       tasks: tasks,
-      days: days,
       titleModel: _GoldenTitles(),
     ),
   );
@@ -1016,7 +1025,7 @@ void main() {
         platform: TargetPlatform.iOS,
         withPinnedNote: true,
       );
-      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
 
       final card = tester.getRect(
@@ -1715,6 +1724,7 @@ void main() {
         NoteDayStore? days,
         bool signedIn = false,
         bool withImageStore = false,
+        bool withDays = false,
       }) async {
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
@@ -1737,6 +1747,7 @@ void main() {
           days: days,
           signedIn: signedIn,
           withImageStore: withImageStore,
+          withDays: withDays,
         );
       }
 
@@ -1763,15 +1774,28 @@ void main() {
         await matches('page');
       });
 
+      // As M09 draws it: a note given a day two days on, so the menu opens
+      // on Move to another day and Remove day.
       testWidgets('phone page menu, $name', (tester) async {
-        await pumpPhone(tester);
+        await pumpPhone(tester, withDays: true);
+        final body = openNoteBody(tester);
+        final open = goldenNotes.notes.firstWhere(
+          (note) => note.body.trimRight() == body,
+        );
+        goldenDays.setDay(open.id, DateTime(2026, 9, 3));
+        await tester.pumpAndSettle();
         await tapAndSettle(tester, 'page-more');
+        final items = [
+          for (final value in ['day', 'undate', 'pin'])
+            tester.getRect(find.byKey(ValueKey('page-more-$value'))).top,
+        ];
+        expect(items, orderedEquals([...items]..sort()));
         await matches('page_menu');
       });
 
       testWidgets('phone notes home, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await matches('notes_home');
       });
 
@@ -1788,9 +1812,9 @@ void main() {
             withTasks: true,
             withTodayRows: true,
           );
-          final back = find.byKey(const ValueKey('page-back'));
-          if (back.evaluate().isNotEmpty) {
-            await tapAndSettle(tester, 'page-back');
+          final home = find.byKey(const ValueKey('page-home'));
+          if (home.evaluate().isNotEmpty) {
+            await tapAndSettle(tester, 'page-home');
           }
           expect(find.byType(NoteRow), findsNWidgets(3));
           expect(
@@ -1814,9 +1838,9 @@ void main() {
             withTodayRows: true,
             markdownTasks: true,
           );
-          final back = find.byKey(const ValueKey('page-back'));
+          final back = find.byKey(const ValueKey('page-home'));
           if (back.evaluate().isNotEmpty) {
-            await tapAndSettle(tester, 'page-back');
+            await tapAndSettle(tester, 'page-home');
           }
           final renewal = find.widgetWithText(NoteRow, 'Renewal notes');
           expect(
@@ -1836,7 +1860,7 @@ void main() {
 
       testWidgets('phone notes, two picked, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         final rows = find.byType(NoteRow);
         await tester.longPress(rows.last);
         await tester.pumpAndSettle();
@@ -1854,7 +1878,7 @@ void main() {
             goldenTags.create(tag)!.id,
           ]);
         }
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'phone-filters');
         await tapAndSettle(tester, 'sidebar-notes-filter');
         await matches('notes_filter');
@@ -1862,7 +1886,7 @@ void main() {
 
       testWidgets('phone new menu, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tester.longPress(find.byKey(const ValueKey('phone-new')));
         await tester.pumpAndSettle();
         await matches('new_menu');
@@ -1870,7 +1894,7 @@ void main() {
 
       testWidgets('phone quick find, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'sidebar-search-field');
         await matches('quick_find');
       });
@@ -1887,7 +1911,7 @@ void main() {
         );
         await tester.runAsync(goldenTasks.reconcileNow);
         await tester.pumpAndSettle();
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'home-title-tasks');
         await matches('tasks');
       });
@@ -1902,7 +1926,7 @@ void main() {
           final days = await boardDays();
           await pumpPhone(tester, days: days, withImageStore: withImageStore);
           await seedBoardTasks(tester, days);
-          await tapAndSettle(tester, 'page-back');
+          await tapAndSettle(tester, 'page-home');
           await tapAndSettle(tester, 'home-title-tasks');
         }
 
@@ -1975,7 +1999,7 @@ void main() {
 
       testWidgets('phone drawings, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'bar-folders');
         await tapAndSettle(tester, 'folders-drawings-tile');
         await matches('drawings');
@@ -1988,7 +2012,7 @@ void main() {
         goldenPrefs.appearance = brightness == Brightness.dark
             ? AppearanceMode.dark
             : AppearanceMode.light;
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'phone-account');
         for (final text in [
           'Sam',
@@ -2004,7 +2028,7 @@ void main() {
 
       testWidgets('phone settings, a category opened, $name', (tester) async {
         await pumpPhone(tester);
-        await tapAndSettle(tester, 'page-back');
+        await tapAndSettle(tester, 'page-home');
         await tapAndSettle(tester, 'phone-account');
         await tapAndSettle(tester, 'settings-section-appearance');
         await matches('settings_appearance');
@@ -2307,7 +2331,7 @@ void main() {
       goldenPrefs.nightTheme = const NightTheme(enabled: true);
       await tester.pumpAndSettle();
       for (final key in [
-        'page-back',
+        'page-home',
         'phone-account',
         'settings-section-appearance',
       ]) {
