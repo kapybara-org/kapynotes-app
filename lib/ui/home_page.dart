@@ -5039,11 +5039,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? widget.folders!.tree.byId(_phoneFolder!)
       : null;
 
+  /// The notes a phone lists under Home's header, which counts them. A note
+  /// for a later day waits under Upcoming instead, though a pinned one stays
+  /// with Pinned.
+  List<Note> get _phoneHomeNotes {
+    if (_space != LibrarySpace.notes || _specialMode || widget.days == null) {
+      return _visibleNotes;
+    }
+    final today = dayShown(widget.notes.now(), widget.prefs.displayTime);
+    final pinned = widget.notes.pinnedNoteIds;
+    return [
+      for (final note in _visibleNotes)
+        if (pinned.contains(note.id) ||
+            !waitsForLaterDay(_ownDayOf(note), today))
+          note,
+    ];
+  }
+
   Widget _phoneHomeHeader() => PhoneHomeHeader(
     tasks: _tasksMode,
     count: _tasksMode
         ? _taskController?.read().open.length ?? 0
-        : _matchingCount,
+        : _phoneHomeNotes.length,
     onNotes: () => _showHome(tasks: false),
     onTasks: _taskController == null ? null : () => _showHome(tasks: true),
     streak: widget.notes.streak,
@@ -5077,19 +5094,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           )
         : tree
         ? _folderNotes
-        : _space == LibrarySpace.notes && !_specialMode && widget.days != null
-        // A note for a later day waits under Upcoming, off Home's days; a
-        // pinned one stays with Pinned.
-        ? [
-            for (final note in _visibleNotes)
-              if (widget.notes.pinnedNoteIds.contains(note.id) ||
-                  !waitsForLaterDay(
-                    _ownDayOf(note),
-                    dayShown(widget.notes.now(), widget.prefs.displayTime),
-                  ))
-                note,
-          ]
-        : _visibleNotes;
+        : _phoneHomeNotes;
     final page = upcoming || folder != null || _drawingsOnly;
     return Sidebar(
       key: _sharedPage

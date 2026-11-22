@@ -9014,6 +9014,18 @@ void main() {
         expect(listed('Board review'), findsOneWidget);
       });
 
+      testWidgets("Home's header counts the notes Home lists, leaving out "
+          'those for a later day', (tester) async {
+        await pumpUpcoming(tester);
+        expect(listed('Standup'), findsOneWidget);
+        expect(listed('Renewal notes'), findsNothing);
+        expect(listed('Board review'), findsNothing);
+        expect(
+          tester.widget<PhoneHomeHeader>(find.byType(PhoneHomeHeader)).count,
+          1,
+        );
+      });
+
       testWidgets("Home files a note under the day it was given, as the list "
           'beside the rail does', (tester) async {
         await pumpUpcoming(tester);
