@@ -59,6 +59,7 @@ class TasksScreen extends StatefulWidget {
     required this.controller,
     required this.filter,
     required this.addFocus,
+    this.words,
     required this.labelOf,
     required this.onOpenNote,
     this.onOpenTask,
@@ -96,6 +97,10 @@ class TasksScreen extends StatefulWidget {
   final TaskFilter filter;
   final FocusNode addFocus;
 
+  /// The add row's words, kept by whoever outlives this page so a half-typed
+  /// task is still there when it opens again.
+  final TextEditingController? words;
+
   /// A note's name as a task's mark shows it.
   final String Function(Note note) labelOf;
   final ValueChanged<String> onOpenNote;
@@ -123,7 +128,7 @@ class TasksScreen extends StatefulWidget {
 }
 
 class TasksScreenState extends State<TasksScreen> {
-  final _words = TextEditingController();
+  late final _words = widget.words ?? TextEditingController();
 
   /// A phone's search over the page: the rows, the pair and Do now keep
   /// only the tasks whose words or note name hold every word typed.
@@ -200,7 +205,7 @@ class TasksScreenState extends State<TasksScreen> {
     _listFocus.dispose();
     widget.addFocus.removeListener(_focusChanged);
     _noticeTimer?.cancel();
-    _words.dispose();
+    if (widget.words == null) _words.dispose();
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();

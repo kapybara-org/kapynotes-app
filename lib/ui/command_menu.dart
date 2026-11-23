@@ -157,6 +157,7 @@ Future<CommandChoice?> showCommandMenu(
   List<TagMark> Function(String noteId)? marksOf,
   bool phone = false,
   bool drawings = false,
+  TextEditingController? field,
   Future<void> Function(TaskItem item, {required bool done})? onSetTaskDone,
 }) {
   final palette = context.palette;
@@ -181,6 +182,7 @@ Future<CommandChoice?> showCommandMenu(
       fileNote: fileNote,
       phone: phone,
       drawings: drawings,
+      field: field,
       onSetTaskDone: onSetTaskDone,
       onChosen: (choice) => Navigator.of(context).pop(choice),
     );
@@ -243,6 +245,7 @@ class CommandMenu extends StatefulWidget {
     this.fileNote,
     this.phone = false,
     this.drawings = false,
+    this.field,
     this.onSetTaskDone,
   });
 
@@ -252,6 +255,10 @@ class CommandMenu extends StatefulWidget {
 
   /// Opens on the Drawings scope rather than All.
   final bool drawings;
+
+  /// The field's words, kept by the caller so Quick find can open again
+  /// with them, as a phone's does on the way back from a note it opened.
+  final TextEditingController? field;
 
   /// Checks a task off, or back on, without leaving Quick find.
   final Future<void> Function(TaskItem item, {required bool done})?
@@ -357,10 +364,11 @@ class _Line {
 }
 
 class _CommandMenuState extends State<CommandMenu> {
-  final TextEditingController _field = TextEditingController();
+  late final TextEditingController _field =
+      widget.field ?? TextEditingController();
   final ScrollController _scroll = ScrollController();
   final Map<int, GlobalKey> _rowKeys = {};
-  late List<_Line> _lines = _build('');
+  late List<_Line> _lines = _build(_field.text);
   late int _highlight = _rows.firstOrNull ?? 0;
 
   SettingsIndex? _settings;
@@ -383,7 +391,7 @@ class _CommandMenuState extends State<CommandMenu> {
   @override
   void dispose() {
     _picker?.dispose();
-    _field.dispose();
+    if (widget.field == null) _field.dispose();
     _scroll.dispose();
     super.dispose();
   }

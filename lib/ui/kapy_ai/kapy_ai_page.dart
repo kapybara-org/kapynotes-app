@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
 import '../../core/theme.dart';
+import '../back_entry.dart';
 import '../sidebar_timestamp.dart';
 import 'kapy_ai_parts.dart';
 import 'kapy_ai_picker.dart';
@@ -57,7 +58,17 @@ class _KapyAiPageState extends State<KapyAiPage> {
   final _field = TextEditingController();
   bool _picking = false;
 
+  /// Back closes the picker before the page goes.
+  late final _back = BackEntry(() {
+    if (mounted) _setPicking(false);
+  });
+
   KapyAi get _ai => widget.kapyAi;
+
+  void _setPicking(bool picking) {
+    setState(() => _picking = picking);
+    picking ? _back.open(context) : _back.close();
+  }
 
   @override
   void initState() {
@@ -68,6 +79,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
 
   @override
   void dispose() {
+    _back.close();
     _search.dispose();
     _searchFocus.dispose();
     _field.dispose();
@@ -83,13 +95,13 @@ class _KapyAiPageState extends State<KapyAiPage> {
 
   void _newChat() {
     _ai.newChat();
-    setState(() => _picking = false);
+    _setPicking(false);
     widget.onOpenChat();
   }
 
   void _open(KapyChat chat) {
     _ai.openChat(chat.id);
-    setState(() => _picking = false);
+    _setPicking(false);
     widget.onOpenChat();
   }
 
@@ -98,14 +110,14 @@ class _KapyAiPageState extends State<KapyAiPage> {
     if (question.isEmpty || _ai.answering) return;
     _freshChat();
     _field.clear();
-    setState(() => _picking = false);
+    _setPicking(false);
     unawaited(_ai.ask(question));
     widget.onOpenChat();
   }
 
   void _togglePicker() {
     if (!_picking) _freshChat();
-    setState(() => _picking = !_picking);
+    _setPicking(!_picking);
   }
 
   @override
@@ -134,7 +146,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                     if (_picking) ...[
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: () => setState(() => _picking = false),
+                        onTap: () => _setPicking(false),
                       ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -144,10 +156,10 @@ class _KapyAiPageState extends State<KapyAiPage> {
                             kapyAi: _ai,
                             onPick: (model) {
                               _ai.pickModel(model);
-                              setState(() => _picking = false);
+                              _setPicking(false);
                             },
                             onManageAccounts: () {
-                              setState(() => _picking = false);
+                              _setPicking(false);
                               widget.onManageAccounts();
                             },
                           ),
@@ -417,7 +429,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
               minLines: 1,
               maxLines: 4,
               textInputAction: TextInputAction.send,
-              onTap: () => setState(() => _picking = false),
+              onTap: () => _setPicking(false),
               onSubmitted: (_) => _ask(),
               cursorColor: palette.selectedBorder,
               style: kapyText(15, 20, palette.textPrimary),

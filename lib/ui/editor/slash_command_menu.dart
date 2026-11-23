@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
 import '../../core/platform.dart';
+import '../back_entry.dart';
 import '../floating_surface.dart';
 import '../keycap.dart';
 import 'slash_commands.dart';
@@ -221,6 +222,7 @@ const _definitions = [
 /// undo, selection and accessibility behavior.
 class SlashCommandMenuController extends ChangeNotifier {
   OverlayEntry? _entry;
+  late final _back = BackEntry(() => hide(userInitiated: true));
   Rect _anchor = Rect.zero;
   String _query = '';
   Set<SlashCommandType> _available = const {};
@@ -304,6 +306,7 @@ class SlashCommandMenuController extends ChangeNotifier {
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
+    _back.open(context);
 
     if (_entry == null) {
       _searching = search;
@@ -353,6 +356,7 @@ class SlashCommandMenuController extends ChangeNotifier {
   }
 
   void _remove() {
+    _back.close();
     _entry?.remove();
     _entry = null;
     _searching = false;

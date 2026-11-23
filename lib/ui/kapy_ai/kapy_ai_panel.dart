@@ -36,6 +36,12 @@ class KapyAiPanelController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Keeps what was left typed in the composer as it goes, so the question
+  /// is still there when it opens again.
+  void keep(String typed) {
+    if (typed.trim().isNotEmpty) _draft = typed;
+  }
+
   /// The draft for the composer, once. It goes after anything already typed
   /// there, on a line of its own.
   String? takeDraft() {
@@ -144,6 +150,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   @override
   void dispose() {
     widget.controller.removeListener(_takeDraft);
+    widget.controller.keep(_field.text);
     _field.dispose();
     _fieldFocus.dispose();
     super.dispose();
