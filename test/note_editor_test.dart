@@ -3877,6 +3877,35 @@ total to usd''';
       expect(kept, isTrue);
     });
 
+    // A keyboard that blinks out while coming up on a slow phone (CI,
+    // Android, run 45205129413): the zero lasted longer than the wait for a
+    // dismissal to stick, so the editor let the note go 0.8 s after the
+    // keyboard came up, and asked for the keyboard to be hidden itself.
+    testWidgets(
+      'a keyboard that blinks out and then slides in slowly keeps the note '
+      '(KAP-324)',
+      (tester) async {
+        final node = await pumpFocused(tester);
+        await setKeyboard(tester, 40);
+
+        tester.testTextInput.log.clear();
+        await setKeyboard(tester, 0);
+        await tester.pump(const Duration(milliseconds: 800));
+        for (final height in [80.0, 160.0, 240.0, 300.0]) {
+          await setKeyboard(tester, height);
+          await tester.pump(const Duration(milliseconds: 150));
+        }
+        await tester.pump(const Duration(seconds: 4));
+
+        expect(node.hasFocus, isTrue);
+        expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          isNot(contains('TextInput.hide')),
+        );
+      },
+    );
+
     // The guard used to read MediaQuery, which a Scaffold hands its body with
     // the bottom inset already taken out — so it never saw the keyboard, and
     // every note opened went on asking for one for five seconds. Pressing Back

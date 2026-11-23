@@ -457,6 +457,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   static const _keyboardGoneAfter = Duration(milliseconds: 500);
   Timer? _keyboardGoneTimer;
 
+  /// A keyboard that goes down within this long of coming up was still coming
+  /// up. A slow phone can read zero for longer than [_keyboardGoneAfter]
+  /// while it restarts the animation, so such a keyboard gets
+  /// [_keyboardSlowGoneAfter] to come back before the editor lets go.
+  static const _keyboardSettleTime = Duration(seconds: 1);
+  static const _keyboardSlowGoneAfter = Duration(seconds: 2);
+
+  /// Running while the keyboard that just came up is within
+  /// [_keyboardSettleTime] of arriving.
+  Timer? _keyboardSettleTimer;
+
   final PlatformSpellCheckService _spellCheckService =
       PlatformSpellCheckService();
   Locale? _spellCheckLocale;
@@ -814,6 +825,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _correctionsArrived.dispose();
     _keyboardRetryTimer?.cancel();
     _keyboardGoneTimer?.cancel();
+    _keyboardSettleTimer?.cancel();
     _selectionToolbarTimer?.cancel();
     _pasteOfferTimer?.cancel();
     _keywordHoverTimer?.cancel();
@@ -4516,6 +4528,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // keyboard had a height; now that it has one, the cell may be under it.
     if (isUp && _editingCell != null) _ensureCellVisible();
     if (isUp) _keyboardGoneTimer?.cancel();
+    if (isUp && !wasUp) {
+      _keyboardSettleTimer?.cancel();
+      _keyboardSettleTimer = Timer(_keyboardSettleTime, () {});
+    }
     if (isUp || !wasUp) return;
     if (widget.readOnly || !_editingNote) return;
     // Backgrounding the app also takes the keyboard down, and focus should
@@ -4524,11 +4540,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
     _keyboardRetryTimer?.cancel();
     _keyboardGoneTimer?.cancel();
-    _keyboardGoneTimer = Timer(_keyboardGoneAfter, () {
-      if (!mounted || _keyboardInset > 0) return;
-      if (widget.readOnly || !_editingNote) return;
-      FocusManager.instance.primaryFocus?.unfocus();
-    });
+    final settling = _keyboardSettleTimer?.isActive ?? false;
+    _keyboardGoneTimer = Timer(
+      settling ? _keyboardSlowGoneAfter : _keyboardGoneAfter,
+      () {
+        if (!mounted || _keyboardInset > 0) return;
+        if (widget.readOnly || !_editingNote) return;
+        FocusManager.instance.primaryFocus?.unfocus();
+      },
+    );
   }
 
   void _recordKapyPeekActivity() {
