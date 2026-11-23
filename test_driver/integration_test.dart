@@ -10,6 +10,7 @@
 // tool/ci/phone_screenshots.sh does, each one taken with `device: true` is
 // also read off that device's own screen into
 // build/screenshots/<name>-device.png.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_driver/flutter_driver.dart';
@@ -137,6 +138,8 @@ Future<String?> _act(String device, String action) async {
       ['wm', 'dismiss-keyguard'],
     ),
     'other-app' => adb(['am', 'start', '-a', 'android.settings.SETTINGS']),
+    'film' => _film(device),
+    'cut' => _cut(device),
     'back' => adb(['am', 'start', '-n', '$_app/.MainActivity']),
     'light' || 'dark' => adb([
       'cmd',
@@ -146,6 +149,44 @@ Future<String?> _act(String device, String action) async {
     ]),
     _ => Future.value('no such action: $action'),
   };
+}
+
+/// The emulator filming its own screen, from a test's `film` to its `cut`.
+Future<int>? _filming;
+
+/// Films the next 90 seconds of [device]'s screen, for the Play Console's
+/// foreground-service declaration, which asks for a video of what the
+/// service is for.
+Future<String?> _film(String device) async {
+  final film = await Process.start('adb', [
+    '-s',
+    device,
+    'shell',
+    'screenrecord',
+    '--time-limit',
+    '90',
+    '/sdcard/recording-away.mp4',
+  ]);
+  unawaited(film.stdout.drain<void>());
+  unawaited(film.stderr.drain<void>());
+  _filming = film.exitCode;
+  return null;
+}
+
+/// Saves the film as `build/screenshots/recording-away.mp4` once it ends.
+Future<String?> _cut(String device) async {
+  final filming = _filming;
+  if (filming == null) return 'nothing was filmed';
+  _filming = null;
+  await filming;
+  final pull = await Process.run('adb', [
+    '-s',
+    device,
+    'pull',
+    '/sdcard/recording-away.mp4',
+    'build/screenshots/recording-away.mp4',
+  ]);
+  return pull.exitCode == 0 ? null : '${pull.stderr}'.trim();
 }
 
 /// Presses whatever on [device]'s screen is labelled [label], as found in

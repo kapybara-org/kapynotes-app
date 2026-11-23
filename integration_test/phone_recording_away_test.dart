@@ -99,6 +99,9 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
+    // Filmed on Android for the Play Console, which asks for a video of what
+    // the recording's foreground service is for.
+    if (Platform.isAndroid) expect(await deviceAction('film'), isNull);
     expect(await recording.start(noteId: 'standup'), isTrue);
     await tester.pump(const Duration(seconds: 2));
     await screenshot('recording-away-app', device: true);
@@ -150,6 +153,7 @@ void main() {
     final remaining = _away - DateTime.now().difference(left);
     if (remaining > Duration.zero) await Future<void>.delayed(remaining);
     expect(recording.isRecording, isTrue, reason: 'stopped while away');
+    if (Platform.isAndroid) expect(await deviceAction('cut'), isNull);
 
     if (Platform.isAndroid) await deviceAction('unlock');
     expect(await deviceAction('back'), isNull);
