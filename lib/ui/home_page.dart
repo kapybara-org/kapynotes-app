@@ -103,7 +103,7 @@ import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'page_pane.dart';
 import 'page_toolbar.dart';
-import 'phone_home_cards.dart';
+import 'phone_folder_tiles.dart';
 import 'phone_home_header.dart';
 import 'phone_note_header.dart';
 import 'note_day_scope.dart' show withNoteDays;
@@ -313,7 +313,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// How far back that list reaches, kept the same way.
   NotesWhen _when = NotesWhen.anyTime;
 
-  /// Whether that list shows every pinned note, after See all.
+  /// Whether that list shows every pinned note, after View all.
   bool _pinnedOnly = false;
 
   /// Whether a phone's filter row is showing. It starts put away, so the list
@@ -343,9 +343,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// The folder whose notes a phone's Folders shows, or null for the tree.
   String? _phoneFolder;
-
-  /// Whether a phone's Folders shows Upcoming's page, from its tile.
-  bool _phoneUpcoming = false;
 
   /// Bumped by New folder beside a phone's Search folders, for the tree to
   /// name a new folder.
@@ -1528,6 +1525,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final sharing = widget.account?.sharing;
     if (sharing != null && !sidebarTabLists(_sidebarTab, note, sharing)) {
       _sidebarTab = sidebarTabOf(note, sharing);
+      // A phone's Shared is a page of Folders, as Drawings is.
+      _phoneTab = _sidebarTab == SidebarTab.shared
+          ? PhoneTab.folders
+          : PhoneTab.notes;
     }
   }
 
@@ -2019,9 +2020,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The day a note was given, where it has one.
   DateTime? _ownDayOf(Note note) => widget.days?.dayOf(note.id);
 
-  /// Whether the list's Upcoming fold is open.
-  bool _upcomingOpen = false;
-
   /// The day last picked in the page's week. Its notes are lit in the list
   /// until another day is picked or a note from another day opens.
   DateTime? _pickedDay;
@@ -2032,9 +2030,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _dayOfFreshNote[note.id] ??
       noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
 
-  /// A day picked in the page's week. Its latest note opens, with Upcoming
-  /// opened when the day is still to come; with no notes, a page to write on
-  /// it opens where [write] allows one. The list stays whole.
+  /// A day picked in the page's week. Its latest note opens, a later day's
+  /// too, though the list leaves that day out until it comes; with no notes,
+  /// a page to write on it opens where [write] allows one. The list stays
+  /// whole.
   void _pickDay(DateTime day, List<Note> notes, {required bool write}) {
     if (notes.isEmpty) {
       if (!write) return;
@@ -2042,11 +2041,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       setState(() => _pickedDay = day);
       return;
     }
-    final today = dayShown(widget.notes.now(), widget.prefs.displayTime);
-    setState(() {
-      _pickedDay = day;
-      if (day.isAfter(today)) _upcomingOpen = true;
-    });
+    setState(() => _pickedDay = day);
     _select(
       notes.reduce((a, b) => b.updatedAt.isAfter(a.updatedAt) ? b : a).id,
     );
@@ -3839,14 +3834,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _openSpace(tasks ? LibrarySpace.tasks : LibrarySpace.notes);
   }
 
-  /// A phone's Folders with its tree, from Drawings or a folder's notes, or
-  /// from another tab.
+  /// A phone's Folders with its tree, from Drawings, Shared or a folder's
+  /// notes, or from another tab.
   void _showFolders() {
-    if (_drawingsOnly) _showSpace(LibrarySpace.notes);
+    if (_drawingsOnly || _sharedPage) _showSpace(LibrarySpace.notes);
     setState(() {
       _phoneTab = PhoneTab.folders;
       _phoneFolder = null;
-      _phoneUpcoming = false;
       _tasksMode = false;
     });
   }
@@ -3856,9 +3850,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// which it holds, turns back as the header does, keeping the list.
   void _selectPhoneTab(PhoneTab tab) {
     final again = tab == _phoneTab;
-    // Drawings is a page of Folders, so another tab leaves it, for All notes
-    // as Notes' own tap there does.
-    if (!again && _drawingsOnly) _showSpace(LibrarySpace.notes);
+    // Drawings and Shared are pages of Folders, so another tab leaves them,
+    // for All notes as Notes' own tap there does.
+    if (!again && (_drawingsOnly || _sharedPage)) {
+      _showSpace(LibrarySpace.notes);
+    }
     switch (tab) {
       case PhoneTab.notes when again && _tasksMode:
         _showHome(tasks: false);
@@ -3879,9 +3875,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Back on a phone's list, from Android's back or the edge swipe: one level
   /// up at a time. A task's page returns to Tasks, Tasks returns to Notes
   /// and picks let go, though not on Kapy AI, which doesn't show them; then
-  /// Archive or Hidden returns to All notes, a folder, Upcoming or Drawings
-  /// returns to Folders, another tab to Notes,
-  /// and on Notes Pinned or Shared to its Home.
+  /// Archive or Hidden returns to All notes, a folder, Drawings or Shared
+  /// returns to Folders, another tab to Notes, and on Notes Pinned to its Home.
   void _phoneListBack() {
     if (_tasksNavigator.currentState?.canPop() ?? false) {
       _tasksNavigator.currentState?.maybePop();
@@ -3892,7 +3887,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if (_specialMode) {
       _setShow(NotesShow.all);
     } else if (_phoneTab == PhoneTab.folders &&
-        (_drawingsOnly || _phoneFolderShown != null || _phoneUpcomingShown)) {
+        (_drawingsOnly || _sharedPage || _phoneFolderShown != null)) {
       _showFolders();
     } else if (_phoneTab != PhoneTab.notes) {
       setState(() => _phoneTab = PhoneTab.notes);
@@ -3909,8 +3904,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _phonePageOpen = false;
       _findOnBack = null;
       _phoneBehind.clear();
-      // A phone's Drawings is a page of Folders; the other spaces are Notes.
-      _phoneTab = space == LibrarySpace.drawings
+      // A phone's Drawings and Shared are pages of Folders; the other spaces
+      // are Notes.
+      _phoneTab = space == LibrarySpace.drawings || space == LibrarySpace.shared
           ? PhoneTab.folders
           : PhoneTab.notes;
       _tasksMode = space == LibrarySpace.tasks;
@@ -4234,9 +4230,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
               grouping: widget.prefs.notesGrouping,
               ownDay: widget.days == null ? null : _ownDayOf,
-              upcomingOpen: _upcomingOpen,
-              onUpcomingToggled: () =>
-                  setState(() => _upcomingOpen = !_upcomingOpen),
               ofPickedDay: switch (_pickedDay) {
                 null => null,
                 final day => (note) => _dayOfNote(note) == day,
@@ -4965,11 +4958,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final selected = _shownNote(_selectedId);
     final pageOpen = _phonePageOpen && selected != null;
     // Back, from Android's gesture or iOS's edge swipe, goes up one level:
-    // the note's page closes, then on Folders the picks let go and a folder
-    // or Drawings returns to Folders. Folders and Kapy AI return to Notes,
-    // where Tasks returns to Notes, the picks let go, and Pinned or Shared
+    // the note's page closes, then on Folders the picks let go and a folder,
+    // Drawings or Shared returns to Folders. Folders and Kapy AI return to
+    // Notes, where Tasks returns to Notes, the picks let go, and Pinned
     // returns to Notes, and only then does the app itself leave.
-    final pinnedOrShared = _showingPinnedOnly || _space == LibrarySpace.shared;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: Theme.of(context).brightness == Brightness.dark
           ? SystemUiOverlayStyle.light
@@ -4981,7 +4973,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               !pageOpen &&
               _phoneTab == PhoneTab.notes &&
               !_picks.on &&
-              !pinnedOrShared &&
+              !_showingPinnedOnly &&
               !_specialMode &&
               !_homeNarrowed &&
               !_tasksMode,
@@ -5115,14 +5107,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // one rather than across to another tab.
           final turns = _taskController != null && _phoneHome;
           final back = _phoneTab == PhoneTab.notes
-              ? _tasksMode ||
-                    _specialMode ||
-                    _showingPinnedOnly ||
-                    _space == LibrarySpace.shared
+              ? _tasksMode || _specialMode || _showingPinnedOnly
               : _phoneTab == PhoneTab.folders &&
-                    (_drawingsOnly ||
-                        _phoneFolderShown != null ||
-                        _phoneUpcomingShown);
+                    (_drawingsOnly || _sharedPage || _phoneFolderShown != null);
           // The Notes list stays built under Tasks, out of sight, so it comes
           // back scrolled and narrowed as it was left.
           final page = Stack(
@@ -5134,7 +5121,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 child:
                     _phoneTab == PhoneTab.folders &&
                         !_drawingsOnly &&
-                        !_phoneUpcomingShown &&
+                        !_sharedPage &&
                         widget.folders == null
                     // A build without folders still has Drawings to open.
                     ? Column(
@@ -5211,6 +5198,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           return PhoneSpaces(
             tab: _phoneTab,
             onSelected: _selectPhoneTab,
+            foldersDot: _invitationsWaiting > 0,
             // Kapy AI's tab only while it can be asked, as its other ways in
             // are: its page has no switched-off state of its own.
             showKapyAi: _kapyAiOn,
@@ -5283,8 +5271,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  /// Shared on a phone: a page reached from Home, which its arrow goes back
-  /// to.
+  /// Shared on a phone: a page of Folders, reached from its tile, which its
+  /// arrow goes back to.
   bool get _sharedPage => !_specialMode && _space == LibrarySpace.shared;
 
   /// Home on a phone: Notes or Tasks, under the header that turns between
@@ -5295,31 +5283,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       (_space == LibrarySpace.notes || _space == LibrarySpace.tasks);
 
   /// A phone's Folders: the tree, or with [_phoneFolder] one folder's notes.
-  /// Drawings, reached from it, is the drawings list.
+  /// Drawings and Shared, reached from it, are their own lists.
   bool get _phoneFolders =>
       _phoneTab == PhoneTab.folders &&
       !_drawingsOnly &&
-      !_phoneUpcomingShown &&
+      !_sharedPage &&
       widget.folders != null;
-
-  /// Whether a phone's Folders shows Upcoming's page.
-  bool get _phoneUpcomingShown =>
-      _phoneTab == PhoneTab.folders &&
-      !_drawingsOnly &&
-      _phoneUpcoming &&
-      widget.days != null;
-
-  /// The notes given a later day, which a phone keeps under Folders'
-  /// Upcoming rather than on Home, soonest first.
-  List<Note> get _upcomingNotes {
-    final days = widget.days;
-    if (days == null) return const [];
-    final today = dayShown(widget.notes.now(), widget.prefs.displayTime);
-    return [
-      for (final note in _folderNotes)
-        if (waitsForLaterDay(days.dayOf(note.id), today)) note,
-    ]..sort((a, b) => days.dayOf(a.id)!.compareTo(days.dayOf(b.id)!));
-  }
 
   /// The folder whose notes a phone's Folders shows, while it still exists.
   Folder? get _phoneFolderShown => _phoneFolders && _phoneFolder != null
@@ -5327,8 +5296,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       : null;
 
   /// The notes a phone lists under Home's header, which counts them. A note
-  /// for a later day waits under Upcoming instead, though a pinned one stays
-  /// with Pinned.
+  /// for a later day stays off until its day, though a pinned one stays with
+  /// Pinned.
   List<Note> get _phoneHomeNotes {
     if (_space != LibrarySpace.notes || _specialMode || widget.days == null) {
       return _visibleNotes;
@@ -5368,28 +5337,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// The phone's list for Notes, Drawings, Shared and Folders: the list
   /// beside the rail, drawn for a phone under Home's header or the page's
-  /// large title. Folders shows the tree under its Drawings tile (M02), and
-  /// a folder from it its notes.
+  /// large title. Folders shows the tree under its Drawings and Shared tiles
+  /// (M02), and a folder from it its notes.
   Widget _phoneNotes() {
     final folders = _phoneFolders;
     final folder = _phoneFolderShown;
-    final upcoming = _phoneUpcomingShown;
     final tree = folders && folder == null;
-    final notes = upcoming
-        ? _upcomingNotes
-        : folder != null
+    final notes = folder != null
         ? _filtered(
             widget.folders!.tree.notesIn(_folderNotes, folder.id, deep: true),
           )
         : tree
         ? _folderNotes
         : _phoneHomeNotes;
-    final page = upcoming || folder != null || _drawingsOnly;
+    final page = folder != null || _drawingsOnly || _sharedPage;
+    final pinnedPage = !folders && _showingPinnedOnly;
     return Sidebar(
       key: _sharedPage
           ? const ValueKey('shared-page')
-          : upcoming
-          ? const ValueKey('phone-upcoming')
+          : pinnedPage
+          ? const ValueKey('pinned-page')
           : folder != null
           ? ValueKey('phone-folder-${folder.id}')
           : tree
@@ -5397,18 +5364,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : null,
       phone: true,
       ownDay: widget.days == null ? null : _ownDayOf,
-      windowBar: _phoneHome
+      // The Pinned page from View all is titled as Drawings is, and its
+      // arrow goes back to Home.
+      windowBar: pinnedPage
+          ? PhoneListTitle(
+              title: 'Pinned',
+              count: notes.length,
+              onBack: () => setState(() => _pinnedOnly = false),
+              trailing: _phoneAccount(),
+            )
+          : _phoneHome
           ? _phoneHomeHeader()
           : tree
           ? PhoneListTitle(title: 'Folders', trailing: _phoneAccount())
           : PhoneListTitle(
-              title: upcoming ? 'Upcoming' : folder?.name ?? _listTitle,
-              count: upcoming || folder != null ? notes.length : _matchingCount,
-              onBack: _sharedPage
-                  ? () => _showSpace(LibrarySpace.notes)
-                  : page
-                  ? _showFolders
-                  : null,
+              title: folder?.name ?? _listTitle,
+              count: folder != null ? notes.length : _matchingCount,
+              onBack: page ? _showFolders : null,
               trailing: page ? _phoneAccount() : null,
             ),
       notes: notes,
@@ -5441,6 +5413,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onTabChanged: _setSidebarTab,
       searchPlaceholder: tree
           ? 'Search folders'
+          : pinnedPage
+          ? 'Search pinned notes'
           : _kapyAiOn || _space == LibrarySpace.drawings
           ? _searchPlaceholder
           : _sharedPage
@@ -5452,7 +5426,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onNewDrawing: () => _createNote(drawing: true),
       engine: widget.engines.engine,
       now: widget.notes.now,
-      controls: tree || upcoming ? null : _notesControls(_space, phone: true),
+      controls: tree ? null : _notesControls(_space, phone: true),
       filtersOpen: _phoneFiltersOpen,
       filtersActive: filtersNarrowed(
         show: _show,
@@ -5461,8 +5435,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       onFiltersToggled: () =>
           setState(() => _phoneFiltersOpen = !_phoneFiltersOpen),
-      pinnedOnly: !folders && !upcoming && _showingPinnedOnly,
-      onPinnedOnlyChanged: (value) => setState(() => _pinnedOnly = value),
+      pinnedOnly: pinnedPage,
+      // Only Home's Pinned has View all, which opens the whole list, as its
+      // card did, with nothing narrowing it.
+      onPinnedOnlyChanged: _phoneHome
+          ? (value) {
+              if (value) _clearFilter();
+              setState(() => _pinnedOnly = value);
+            }
+          : null,
       folders: tree
           ? (
               store: widget.folders!,
@@ -5476,69 +5457,50 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               newFolder: _phoneNewFolder,
             )
           : null,
-      phoneCards: tree
+      phoneTiles: tree
           ? Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
               child: _phoneFolderTiles(),
             )
-          : folders || upcoming || _space != LibrarySpace.notes || _specialMode
-          ? null
-          : switch ([
-              for (final note in _narrowed(widget.notes.search('')))
-                if (widget.notes.pinnedNoteIds.contains(note.id)) note,
-            ]) {
-              final pinned => PhoneHomeCards(
-                pinned: pinned,
-                onOpenPinned: pinned.isEmpty
-                    ? null
-                    : () {
-                        _clearFilter();
-                        setState(() => _pinnedOnly = true);
-                      },
-                shared: widget.account?.sharing == null
-                    ? null
-                    : [
-                        for (final note in widget.notes.search(''))
-                          if (note.isShared) note,
-                      ],
-                invitations: widget.account?.sharing?.invites.length ?? 0,
-                onOpenShared: () => _showSpace(LibrarySpace.shared),
-              ),
-            },
+          : null,
     );
   }
 
-  /// Folders' tiles: Drawings, naming the newest drawing and its day.
+  /// Folders' tiles: Drawings and Shared, each naming its newest note and
+  /// that note's day.
   Widget _phoneFolderTiles() {
+    final displayTime = widget.prefs.displayTime;
+    final today = dayShown(widget.notes.now(), displayTime);
+    String? newest(List<Note> notes) => switch (notes.firstOrNull) {
+      final note? =>
+        '${note.title} · '
+            '${SidebarTimestamp.briefDay(noteDay(note, displayTime), today: today)}',
+      null => null,
+    };
     final drawings = [
       for (final note in widget.notes.search(''))
         if (note.isDrawing) note,
     ];
-    final newest = drawings.firstOrNull;
-    final displayTime = widget.prefs.displayTime;
-    final today = dayShown(widget.notes.now(), displayTime);
-    final upcoming = _upcomingNotes;
+    final shared = widget.account?.sharing == null
+        ? null
+        : [
+            for (final note in widget.notes.search(''))
+              if (note.isShared) note,
+          ];
     return PhoneFolderTiles(
       drawings: drawings,
-      newest: newest == null
-          ? null
-          : '${newest.title} · '
-                '${SidebarTimestamp.briefDay(noteDay(newest, displayTime), today: today)}',
+      newest: newest(drawings),
       onOpenDrawings: () => _showSpace(LibrarySpace.drawings),
-      upcoming: widget.days == null ? null : upcoming,
-      soonest: switch (upcoming.firstOrNull) {
-        final soon? =>
-          '${soon.title} · '
-              '${SidebarTimestamp.briefDay(widget.days!.dayOf(soon.id)!, today: today)}',
-        null => null,
-      },
-      onOpenUpcoming: () => setState(() {
-        _phoneTab = PhoneTab.folders;
-        _phoneFolder = null;
-        _phoneUpcoming = true;
-      }),
+      shared: shared,
+      latest: shared == null ? null : newest(shared),
+      invitations: _invitationsWaiting,
+      onOpenShared: () => _showSpace(LibrarySpace.shared),
     );
   }
+
+  /// Invitations waiting under Shared, which its tile counts and the phone
+  /// bar's Folders marks.
+  int get _invitationsWaiting => widget.account?.sharing?.invites.length ?? 0;
 
   /// A note's page on a phone: back, then the note's own actions, over the
   /// editor.

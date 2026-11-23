@@ -3,81 +3,20 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 
-/// Home's cards over a phone's list of days: Pinned, and Shared while there
-/// is sharing to open. Each counts its notes, names the first of them, and
-/// opens its own list.
-class PhoneHomeCards extends StatelessWidget {
-  const PhoneHomeCards({
-    super.key,
-    required this.pinned,
-    this.onOpenPinned,
-    this.shared,
-    this.invitations = 0,
-    this.onOpenShared,
-  });
-
-  final List<Note> pinned;
-
-  /// Null while nothing is pinned, when there is no list to open.
-  final VoidCallback? onOpenPinned;
-
-  /// Every shared note, newest first. Null leaves the card out, for a phone
-  /// with no account to share from.
-  final List<Note>? shared;
-
-  /// Invitations waiting under Shared, counted on its icon.
-  final int invitations;
-  final VoidCallback? onOpenShared;
-
-  @override
-  Widget build(BuildContext context) {
-    final shared = this.shared;
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: _HomeCard(
-              key: const ValueKey('home-pinned-card'),
-              icon: KapyIcons.pinOutlined,
-              name: 'Pinned',
-              notes: pinned,
-              empty: 'Nothing pinned yet',
-              onPressed: onOpenPinned,
-            ),
-          ),
-          if (shared != null) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: _HomeCard(
-                key: const ValueKey('home-shared-card'),
-                icon: KapyIcons.groupOutlined,
-                name: 'Shared',
-                notes: shared,
-                empty: 'Nothing shared yet',
-                invitations: invitations,
-                onPressed: onOpenShared,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 /// The tiles over a phone's folder tree (M02): Drawings, which counts the
-/// drawings and names the newest with its day. It takes half the row, the
-/// other half being Upcoming's when that comes.
+/// drawings and names the newest with its day, and Shared, which counts the
+/// shared notes, names the latest with its day and marks the invitations
+/// waiting there.
 class PhoneFolderTiles extends StatelessWidget {
   const PhoneFolderTiles({
     super.key,
     required this.drawings,
     required this.newest,
     required this.onOpenDrawings,
-    this.upcoming,
-    this.soonest,
-    this.onOpenUpcoming,
+    this.shared,
+    this.latest,
+    this.invitations = 0,
+    this.onOpenShared,
   });
 
   final List<Note> drawings;
@@ -86,14 +25,16 @@ class PhoneFolderTiles extends StatelessWidget {
   final String? newest;
   final VoidCallback onOpenDrawings;
 
-  /// The notes given a later day, where the build keeps days; null leaves
-  /// Upcoming's place empty.
-  final List<Note>? upcoming;
+  /// Every shared note, newest first. Null leaves Shared's half empty, for a
+  /// phone with no account to share from.
+  final List<Note>? shared;
 
-  /// The soonest of them, by title and day, such as "Renewal notes · Fri 21
-  /// Nov".
-  final String? soonest;
-  final VoidCallback? onOpenUpcoming;
+  /// The latest shared note's title and day, such as "Trip budget · Today".
+  final String? latest;
+
+  /// Invitations waiting under Shared, counted on its icon.
+  final int invitations;
+  final VoidCallback? onOpenShared;
 
   @override
   Widget build(BuildContext context) => IntrinsicHeight(
@@ -101,29 +42,26 @@ class PhoneFolderTiles extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: _HomeCard(
+          child: _FolderTile(
             key: const ValueKey('folders-drawings-tile'),
             icon: KapyIcons.penRounded,
             name: 'Drawings',
             notes: drawings,
-            empty: 'No drawings yet',
-            detail: newest,
-            oneLine: true,
+            line: newest ?? 'No drawings yet',
             onPressed: onOpenDrawings,
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: switch (upcoming) {
-            final upcoming? => _HomeCard(
-              key: const ValueKey('folders-upcoming-tile'),
-              icon: KapyIcons.calendarOutlined,
-              name: 'Upcoming',
-              notes: upcoming,
-              empty: 'Nothing for a later day',
-              detail: soonest,
-              oneLine: true,
-              onPressed: onOpenUpcoming,
+          child: switch (shared) {
+            final shared? => _FolderTile(
+              key: const ValueKey('folders-shared-tile'),
+              icon: KapyIcons.groupOutlined,
+              name: 'Shared',
+              notes: shared,
+              line: latest ?? 'Nothing shared yet',
+              invitations: invitations,
+              onPressed: onOpenShared,
             ),
             null => const SizedBox(),
           },
@@ -133,32 +71,25 @@ class PhoneFolderTiles extends StatelessWidget {
   );
 }
 
-class _HomeCard extends StatelessWidget {
-  const _HomeCard({
+class _FolderTile extends StatelessWidget {
+  const _FolderTile({
     super.key,
     required this.icon,
     required this.name,
     required this.notes,
-    required this.empty,
+    required this.line,
     required this.onPressed,
     this.invitations = 0,
-    this.detail,
-    this.oneLine = false,
   });
 
   final KapyIconData icon;
   final String name;
   final List<Note> notes;
 
-  /// The lines under the name while there are no notes to name.
-  final String empty;
+  /// The one line under the name.
+  final String line;
   final VoidCallback? onPressed;
   final int invitations;
-
-  /// One line under the name in place of the notes' titles, as a folder
-  /// tile has, or [empty] in its place while it is null.
-  final String? detail;
-  final bool oneLine;
 
   @override
   Widget build(BuildContext context) {
@@ -211,7 +142,7 @@ class _HomeCard extends StatelessWidget {
                             top: -5,
                             right: -5,
                             child: Container(
-                              key: const ValueKey('home-shared-invitations'),
+                              key: const ValueKey('folders-shared-invitations'),
                               height: 16,
                               constraints: const BoxConstraints(minWidth: 16),
                               padding: const EdgeInsets.symmetric(
@@ -263,40 +194,17 @@ class _HomeCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                if (oneLine)
-                  Text(
-                    detail ?? empty,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: chromeStyle(
-                      size: 13,
-                      line: 16,
-                      weight: 400,
-                      color: palette.textMuted,
-                    ),
-                  )
-                else
-                  // Two lines' room whatever fills it, so the cards keep one
-                  // height as notes come and go.
-                  SizedBox(
-                    height:
-                        MediaQuery.textScalerOf(context).scale(13) * 36 / 13,
-                    child: Text(
-                      notes.isEmpty
-                          ? empty
-                          : [
-                              for (final note in notes.take(8)) note.title,
-                            ].join(', '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: chromeStyle(
-                        size: 13,
-                        line: 18,
-                        weight: 400,
-                        color: palette.textSecondary,
-                      ),
-                    ),
+                Text(
+                  line,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: chromeStyle(
+                    size: 13,
+                    line: 16,
+                    weight: 400,
+                    color: palette.textMuted,
                   ),
+                ),
               ],
             ),
           ),
