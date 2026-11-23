@@ -177,7 +177,10 @@ void main() {
   /// has, Trip budget counts as somebody else's note, and the page it opens
   /// on goes back to Shared rather than Home. So this waits for that sharing
   /// to know Trip budget's space, then goes back until the bar is there.
-  Future<void> openSharedPage(WidgetTester tester) async {
+  Future<void> openSharedPage(
+    WidgetTester tester, {
+    String? foldersShot,
+  }) async {
     prefs.load();
     shortcuts.load();
     final restored = account.sharing;
@@ -212,6 +215,14 @@ void main() {
     await tester.pumpAndSettle();
     final tile = find.byKey(const ValueKey('folders-shared-tile'));
     expect(tile, findsOneWidget, reason: 'Folders, with its Shared tile');
+    if (foldersShot != null) {
+      expect(
+        find.byKey(const ValueKey('folders-shared-invitations')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('bar-folders-dot')), findsOneWidget);
+      await settledShot(tester, foldersShot);
+    }
     await tester.tap(tile);
     await tester.pumpAndSettle();
     expect(sharedPage, findsOneWidget);
@@ -533,7 +544,10 @@ void main() {
         token = tokenFor(server, samEmail);
         await account.sharing!.refresh();
       });
-      await openSharedPage(tester);
+      await openSharedPage(
+        tester,
+        foldersShot: 'phone-sharing-folders-invitation-waiting',
+      );
 
       final card = find.byKey(ValueKey('sidebar-invite-$token'));
       expect(card, findsOneWidget);
