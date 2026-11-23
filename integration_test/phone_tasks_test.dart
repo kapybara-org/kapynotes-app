@@ -49,50 +49,26 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
+/// Try branch only (KAPY-63): how many times the opening runs.
+const _openings = 5;
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('a phone walks the Tasks states, dark and light', (tester) async {
     final semantics = tester.ensureSemantics();
-    var clock = DateTime(2026, 11, 4, 9);
-    final store = _MemoryStore();
-    store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
-    final prefs = LayoutPrefs(store)..load();
-    final notes = NotesStore(store, now: () => clock);
-    final library = TaskLibrary(
-      notes: notes,
-      store: store,
-      storage: MemoryDocStorage(),
-      now: () => clock,
-    );
-    final tags = TagStore(store);
-    await notes.load();
-    await library.load();
-    await tags.load();
-    notes.create(
-      body:
-          'Lisbon trip\n☐ Ask Ana which Sintra palace to skip\n'
-          '☐ Renew passport before the trip\n'
-          '    The form is in Downloads. Bring two photos.\n'
-          '☐ Book the Sintra train tickets',
-    );
-    await library.reconcileNow();
-    clock = DateTime(2026, 11, 19, 9);
-    notes.create(body: 'Quote for the deck\n☐ Book the room');
-    await library.reconcileNow();
-    clock = clock.add(const Duration(minutes: 1));
-    await tester.pumpWidget(
-      KapyNotesApp(
-        store: store,
-        notes: notes,
-        rates: offlineRates(store),
-        prefs: prefs,
-        shortcuts: ShortcutPrefs(store)..load(),
-        tags: tags,
-        tasks: library,
-      ),
-    );
-    await tester.pumpAndSettle(const Duration(seconds: 1));
+    // Try branch only (KAPY-63): print every Flutter error in full, with the
+    // step it happened in, and still record it for takeException.
+    var step = 'setup';
+    final recorded = FlutterError.onError;
+    FlutterError.onError = (details) {
+      debugPrint('KAPY63 error during "$step":\n$details');
+      recorded?.call(details);
+    };
+    void check(String name) {
+      step = name;
+      expect(tester.takeException(), isNull, reason: name);
+    }
 
     Future<void> tap(String key) async {
       final target = find.byKey(ValueKey(key));
@@ -102,11 +78,76 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<void> shot(String name) async {
+    var clock = DateTime(2026, 11, 4, 9);
+    late LayoutPrefs prefs;
+    for (var round = 1; round <= _openings; round++) {
+      clock = DateTime(2026, 11, 4, 9);
+      step = 'launch $round';
+      final store = _MemoryStore();
+      store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
+      prefs = LayoutPrefs(store)..load();
+      final notes = NotesStore(store, now: () => clock);
+      final library = TaskLibrary(
+        notes: notes,
+        store: store,
+        storage: MemoryDocStorage(),
+        now: () => clock,
+      );
+      final tags = TagStore(store);
+      await notes.load();
+      await library.load();
+      await tags.load();
+      notes.create(
+        body:
+            'Lisbon trip\n☐ Ask Ana which Sintra palace to skip\n'
+            '☐ Renew passport before the trip\n'
+            '    The form is in Downloads. Bring two photos.\n'
+            '☐ Book the Sintra train tickets',
+      );
+      await library.reconcileNow();
+      clock = DateTime(2026, 11, 19, 9);
+      notes.create(body: 'Quote for the deck\n☐ Book the room');
+      await library.reconcileNow();
+      clock = clock.add(const Duration(minutes: 1));
+      await tester.pumpWidget(
+        KapyNotesApp(
+          key: ValueKey(round),
+          store: store,
+          notes: notes,
+          rates: offlineRates(store),
+          prefs: prefs,
+          shortcuts: ShortcutPrefs(store)..load(),
+          tags: tags,
+          tasks: library,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+
+      check('after launch $round');
+      step = 'page-home $round';
+      await tap('page-home');
+      check('after page-home $round');
+      step = 'Tasks $round';
+      await tap('home-title-tasks');
+      check('after Tasks $round');
+      if (round == _openings) break;
       for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
+        step = 'theme ${mode.name} $round';
         prefs.appearance = mode;
         await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull, reason: name);
+        check('after theme ${mode.name} $round');
+      }
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> shot(String name) async {
+      for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
+        step = 'theme ${mode.name} for $name';
+        prefs.appearance = mode;
+        await tester.pumpAndSettle();
+        step = 'shot $name ${mode.name}';
+        expect(tester.takeException(), isNull, reason: step);
         await screenshot('tasks-$name-${mode.name}');
       }
     }
@@ -137,9 +178,6 @@ void main() {
       walk(tester.getSemantics(find.byKey(ValueKey(key))));
       return labels;
     }
-
-    await tap('page-home');
-    await tap('home-title-tasks');
 
     expect(find.text('What do you want to work on next?'), findsOneWidget);
     expect(find.text('First on the list'), findsOneWidget);
@@ -222,6 +260,7 @@ void main() {
     await tap('tasks-keep-going');
     expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
     semantics.dispose();
+    FlutterError.onError = recorded;
   });
 
   testWidgets('a phone shows the boards M13, M13a and M14, dark', (
