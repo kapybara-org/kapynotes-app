@@ -1,0 +1,13 @@
+Kapy Notes 1.35.4
+
+- The bar at the bottom has Notes, Folders and, when it's on, Kapy AI. Tap + for a new note, or press and hold it for a task, voice note or drawing.
+- Tap Tasks at the top of Home, or swipe, to see your tasks, and tap your picture for Settings. Drawings are in Folders.
+- Home shows Pinned and Shared as cards, with your notes under each day.
+- Give a note a later day and it waits in Folders under Upcoming, named Tomorrow, Tue 24 or 7 Dec.
+- A new note page: the week sits at the top, that day's tasks are a tap away, and Move to another day opens a month you can swipe through. Tap an empty day to start that day's note.
+- Kapy AI opens from a note as a sheet, so the note stays in view.
+- Tasks has search and a filter, and a task opens on its own page.
+- Settings opens on a short list of simple rows.
+- The widgets have a fresh look.
+- Undo after removing someone from a shared note keeps them in it, or invites them again if it's too late. Notices sit above the bar.
+- Times no longer start with a zero.

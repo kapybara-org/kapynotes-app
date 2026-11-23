@@ -1,0 +1,8 @@
+A new bar, note page and Upcoming.
+
+- The bar has Notes, Folders and, when it's on, Kapy AI. Press and hold + for a task, voice note or drawing.
+- Notes for a later day wait in Folders under Upcoming.
+- A new note page, with the week at the top and a month to move a note to another day.
+- Kapy AI opens as a sheet over the note.
+- Tasks has search, and a task opens on its own page.
+- Undo after removing someone from a shared note keeps them in it, or invites them again if it's too late.
