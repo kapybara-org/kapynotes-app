@@ -313,6 +313,7 @@ Future<String?> _cut(String device) async {
   if (pid.isNotEmpty) await _adbShell(device, ['kill', '-INT', pid]);
   await filming;
   await _adbShell(device, ['settings', 'put', 'system', 'show_touches', '0']);
+  await Directory('build/screenshots').create(recursive: true);
   final pull = await Process.run('adb', [
     '-s',
     device,
