@@ -1204,9 +1204,8 @@ extension on Sidebar {
     final groups = _noteGroups;
     final pinned = _shownPinned(groups);
     final rows = <WidgetBuilder>[];
-    // A phone's lists are rows only, a drawing's led by its thumbnail; the
-    // Mac keeps the list or cards it was given.
-    final cards = !phone && this.cards;
+    // A phone's lists are rows only, a drawing's led by its thumbnail: its
+    // list is never given cards, which are the Mac's choice.
     final style = switch ((cards, drawings)) {
       _ when phone => NoteRowStyle.touch,
       (true, true) => NoteRowStyle.drawingCard,

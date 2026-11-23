@@ -200,6 +200,14 @@ void main() {
     expect(rows.map((row) => row.note.title), contains('Trip budget'));
     expect(rows.every((row) => row.style == NoteRowStyle.touch), isTrue);
     expect(find.byType(NoteCardFace), findsNothing);
+    final width = tester.getSize(find.byType(Sidebar)).width;
+    for (final row in rows) {
+      expect(tester.getSize(find.byWidget(row)).width, width, reason: 'a row');
+    }
+    expect(
+      find.descendant(of: find.byType(Sidebar), matching: find.byType(Divider)),
+      findsAtLeastNWidgets(rows.length - 1),
+    );
   });
 
   for (final phone in [false, true]) {
@@ -624,6 +632,42 @@ void main() {
     await tester.runAsync(() => account.sharing!.leave(space));
     await tester.pumpAndSettle();
     expect(listed(tester, 'Bank details'), isTrue);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('on a phone, a shared note opened from outside the list, by '
+      'Quick find, moves the bar to Folders, and Back from its page is '
+      'Shared', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await priyaShares(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    expect(lit(tester, 'bar-notes'), isTrue);
+    expect(listed(tester, 'Packing list'), isFalse);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('command-menu-field')),
+      'Packing',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('command-menu')),
+            matching: find.text('Packing list'),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsNothing, reason: "the note's page");
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+    expect(lit(tester, 'bar-folders'), isTrue);
+    expect(listed(tester, 'Packing list'), isTrue);
     await tester.pump(const Duration(seconds: 2));
   });
 

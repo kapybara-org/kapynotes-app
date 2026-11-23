@@ -151,6 +151,7 @@ Future<void> pumpApp(
   TitleModel titleModel = const NoTitleModel('Not in tests'),
   VoiceRecordingController? recording,
   TaskLibrary? tasks,
+  TextScaler? textScaler,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -169,24 +170,32 @@ Future<void> pumpApp(
   // by every test that happens to look at the sidebar.
   if (prefs.sidebarVisible != sidebarVisible) prefs.toggleSidebar();
   shortcuts.load();
+  final app = KapyNotesApp(
+    store: store,
+    notes: notes,
+    rates: rates,
+    prefs: prefs,
+    shortcuts: shortcuts,
+    desktopIntegration: desktopIntegration,
+    hiddenNotesGate: hiddenNotesGate,
+    imageAcquirer: imageAcquirer,
+    account: account,
+    tags: tags,
+    folders: folders,
+    days: days,
+    titleModel: titleModel,
+    recording: recording,
+    tasks: tasks,
+  );
   await tester.pumpWidget(
-    KapyNotesApp(
-      store: store,
-      notes: notes,
-      rates: rates,
-      prefs: prefs,
-      shortcuts: shortcuts,
-      desktopIntegration: desktopIntegration,
-      hiddenNotesGate: hiddenNotesGate,
-      imageAcquirer: imageAcquirer,
-      account: account,
-      tags: tags,
-      folders: folders,
-      days: days,
-      titleModel: titleModel,
-      recording: recording,
-      tasks: tasks,
-    ),
+    textScaler == null
+        ? app
+        : Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: app,
+            ),
+          ),
   );
   await tester.pumpAndSettle();
 }
@@ -8328,13 +8337,14 @@ void main() {
         WidgetTester tester,
         int count, {
         Size size = const Size(390, 844),
+        TextScaler? textScaler,
       }) async {
         final titles = [for (var i = 1; i <= count; i++) 'Pinned $i'];
         for (final title in titles) {
           notes.togglePinned(notes.create(body: '$title\nFirst line').id);
         }
         notes.create(body: 'Groceries\nOat milk, lemons');
-        await pumpApp(tester, size: size);
+        await pumpApp(tester, size: size, textScaler: textScaler);
         await showNotesList(tester);
         return titles;
       }
@@ -8519,6 +8529,71 @@ void main() {
           await tester.pumpAndSettle();
           expect(scroller, findsOneWidget);
           expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+        });
+      }
+
+      for (final android in const [
+        _AndroidScaler('1.15', [
+          9.2,
+          11.5,
+          13.8,
+          16.4,
+          19.8,
+          21.8,
+          25.2,
+          30,
+          100,
+        ]),
+        _AndroidScaler('1.3', [
+          10.4,
+          13,
+          15.6,
+          18.8,
+          21.6,
+          23.6,
+          26.4,
+          30,
+          100,
+        ]),
+        _AndroidScaler('1.5', [12, 15, 18, 22, 24, 26, 28, 30, 100]),
+        _AndroidScaler('1.8', [
+          14.4,
+          18,
+          21.6,
+          24.4,
+          27.6,
+          30.8,
+          32.8,
+          34.8,
+          100,
+        ]),
+        _AndroidScaler('2.0', [16, 20, 24, 26, 30, 34, 36, 38, 100]),
+      ]) {
+        testWidgets("at Android 14's ${android.name}×, which grows large text "
+            'less than small, the cards hold their three lines whole', (
+          tester,
+        ) async {
+          AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          await pumpPinned(
+            tester,
+            3,
+            size: const Size(412, 915),
+            textScaler: android,
+          );
+          expect(tester.takeException(), isNull);
+          final face = find.byType(PhoneCardFace).first;
+          expect(MediaQuery.textScalerOf(tester.element(face)), android);
+          final card = tester.getRect(face);
+          for (final text in tester.widgetList<Text>(
+            find.descendant(of: face, matching: find.byType(Text)),
+          )) {
+            expect(
+              tester.getRect(find.byWidget(text)).bottom,
+              lessThanOrEqualTo(card.bottom - 14 + 0.5),
+              reason: text.data,
+            );
+          }
         });
       }
 
@@ -9829,6 +9904,7 @@ void main() {
           final page = find.byKey(ValueKey('phone-folder-${folder.id}'));
           expect(page, findsOneWidget);
           expect(tester.widget<NoteRow>(brief).style, NoteRowStyle.touch);
+          expect(tester.getSize(brief).width, 393, reason: 'a full-width row');
           expect(find.byType(NoteCardFace), findsNothing);
           expect(find.byType(NoteListRowFace), findsOneWidget);
           expect(
@@ -9840,6 +9916,56 @@ void main() {
           );
           await tap(tester, find.byKey(const ValueKey('page-back')));
         }
+      });
+
+      testWidgets('a folder and Drawings, which have no View all, list every '
+          'pinned note, six of six, as rows', (tester) async {
+        await pumpFolders(tester);
+        final pinnedNotes = [
+          for (var i = 1; i <= 6; i++)
+            notes.create(body: 'Pinned note $i\nFirst line').id,
+        ];
+        folders.file(pinnedNotes, work.id);
+        final pinnedDrawings = [
+          for (var i = 1; i <= 6; i++) notes.create(drawing: true).id,
+        ];
+        for (final (index, id) in pinnedDrawings.indexed) {
+          notes.updateDrawing(
+            id,
+            NoteDrawing.empty,
+            title: 'Pinned drawing ${index + 1}',
+          );
+        }
+        for (final id in [...pinnedNotes, ...pinnedDrawings]) {
+          notes.togglePinned(id);
+        }
+        await tester.pumpAndSettle();
+        final viewAll = find.byKey(const ValueKey('sidebar-view-all-pinned'));
+        final cards = find.byKey(const ValueKey('phone-pinned-cards'));
+        int listedPinned(String prefix) => tester
+            .widgetList<NoteRow>(find.byType(NoteRow, skipOffstage: false))
+            .where(
+              (row) =>
+                  row.note.title.startsWith(prefix) &&
+                  row.style == NoteRowStyle.touch,
+            )
+            .length;
+
+        await openFolder(tester, work);
+        await tester.scrollUntilVisible(
+          find.widgetWithText(NoteRow, 'Pinned note 1'),
+          200,
+        );
+        expect(viewAll, findsNothing);
+        expect(cards, findsNothing);
+        expect(listedPinned('Pinned note'), 6);
+
+        await tap(tester, find.byKey(const ValueKey('page-back')));
+        await tap(tester, tile);
+        expect(titleOf(tester), 'Drawings');
+        expect(viewAll, findsNothing);
+        expect(cards, findsNothing);
+        expect(listedPinned('Pinned drawing'), 6);
       });
 
       testWidgets('a build without folders still shows Folders with its '
@@ -12509,4 +12635,36 @@ void main() {
       );
     });
   });
+}
+
+/// Android 14's text scale, which grows large type less than small: the
+/// steps AOSP's FontScaleConverterFactory takes from 8 to 100 sp.
+class _AndroidScaler extends TextScaler {
+  const _AndroidScaler(this.name, this.to);
+
+  final String name;
+  final List<double> to;
+  static const _from = [8.0, 10.0, 12.0, 14.0, 18.0, 20.0, 24.0, 30.0, 100.0];
+
+  @override
+  double scale(double fontSize) {
+    if (fontSize <= _from.first) return fontSize * to.first / _from.first;
+    for (var i = 1; i < _from.length; i++) {
+      if (fontSize <= _from[i]) {
+        final t = (fontSize - _from[i - 1]) / (_from[i] - _from[i - 1]);
+        return to[i - 1] + t * (to[i] - to[i - 1]);
+      }
+    }
+    return fontSize * to.last / _from.last;
+  }
+
+  @override
+  double get textScaleFactor => to.first / _from.first;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _AndroidScaler && other.name == name;
+
+  @override
+  int get hashCode => name.hashCode;
 }

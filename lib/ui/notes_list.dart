@@ -449,11 +449,14 @@ class PhoneCardFace extends StatelessWidget {
   });
 
   /// The padding round it, and its three lines with the space between them,
-  /// each rounded up to a whole point so no line is cut.
+  /// each as tall as the text draws it, its font size scaled and its line
+  /// height kept, and rounded up to a whole point so no line is cut. Android
+  /// scales larger sizes less, so the line heights can't be scaled alone.
   static double height(BuildContext context) {
-    double line(double height) =>
-        MediaQuery.textScalerOf(context).scale(height).ceilToDouble();
-    return 14 + line(22) + 2 + line(18) + 12 + line(16) + 14;
+    final scaler = MediaQuery.textScalerOf(context);
+    double line(double size, double height) =>
+        (scaler.scale(size) * height / size).ceilToDouble();
+    return 14 + line(16, 22) + 2 + line(13, 18) + 12 + line(12, 16) + 14;
   }
 
   final Note note;
