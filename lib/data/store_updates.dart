@@ -107,11 +107,11 @@ typedef StoreLookup = Future<StoreOffer?> Function(PackageInfo installed);
 /// store has said that version is there.
 ///
 /// Asking costs a request, so the store is asked only when Settings opens,
-/// at most once a day, and the answer is kept. Anything that goes wrong (no
-/// network, a timeout, an answer nobody can read, a copy Google Play did not
-/// install) leaves the last answer standing and adds nothing. A check that
-/// got no answer must never look like an update, nor like "you have the
-/// latest version".
+/// at most once a day whether or not it answers, and the answer is kept.
+/// Anything that goes wrong (no network, a timeout, an answer nobody can
+/// read, a copy Google Play did not install) leaves the last answer standing
+/// and adds nothing. A check that got no answer must never look like an
+/// update, nor like "you have the latest version".
 class StoreUpdates extends ChangeNotifier {
   StoreUpdates(
     LocalStore store, {
@@ -159,6 +159,11 @@ class StoreUpdates extends ChangeNotifier {
   PackageInfo? _packageInfo;
 
   StoreOffer? _latest;
+
+  /// When the store gave [_latest].
+  DateTime? _answeredAt;
+
+  /// When the store was last asked, whether or not it answered.
   DateTime? _askedAt;
   bool _cacheLoaded = false;
   bool _checking = false;
@@ -178,7 +183,7 @@ class StoreUpdates extends ChangeNotifier {
 
   /// Whether the store said, within the last day, that it has nothing newer
   /// than this phone runs. An older answer may be out of date by now.
-  bool get isLatest => (_order ?? 1) <= 0 && _answeredToday;
+  bool get isLatest => (_order ?? 1) <= 0 && _withinADay(_answeredAt);
 
   /// How the store's answer stands against what this phone runs: above zero
   /// when it is newer. Null without an answer, or when the two can't be
@@ -194,11 +199,10 @@ class StoreUpdates extends ChangeNotifier {
     return installedBuild == null ? null : build.compareTo(installedBuild);
   }
 
-  bool get _answeredToday {
-    final askedAt = _askedAt;
-    if (askedAt == null || installedVersion.isEmpty) return false;
+  static bool _withinADay(DateTime? at) {
+    if (at == null) return false;
     final now = DateTime.now();
-    return !now.isBefore(askedAt) && now.isBefore(askedAt.add(staleAfter));
+    return !now.isBefore(at) && now.isBefore(at.add(staleAfter));
   }
 
   /// Whether [update] waits for somebody who has not seen About & updates
@@ -239,23 +243,24 @@ class StoreUpdates extends ChangeNotifier {
   }
 
   /// Reads what this phone runs and the last answer, and asks the store again
-  /// once that answer is a day old. Safe to call each time Settings opens:
-  /// the store hears from this phone at most once a day.
+  /// once it was last asked a day ago. Safe to call each time Settings opens:
+  /// the store hears from this phone at most once a day, answer or not.
   Future<void> check() async {
     if (_disposed || _checking) return;
     _checking = true;
     try {
       final installed = _packageInfo ??= await PackageInfo.fromPlatform();
       _loadCache();
-      if (_latest != null && _answeredToday) return;
+      if (_withinADay(_askedAt)) return;
+      // Counted as the request goes out, so that a store that never answers
+      // this phone is not asked again on every visit.
+      _askedAt = DateTime.now();
+      _save();
       final offer = await (_lookup ?? _ask)(installed).timeout(timeout);
       if (_disposed || offer == null) return;
       _latest = offer;
-      final askedAt = _askedAt = DateTime.now();
-      _store.put(_key, {
-        'askedAt': askedAt.toIso8601String(),
-        'offer': offer.toJson(),
-      });
+      _answeredAt = DateTime.now();
+      _save();
     } catch (error) {
       debugPrint('KapyNotes: could not ask the store about updates: $error');
     } finally {
@@ -275,16 +280,29 @@ class StoreUpdates extends ChangeNotifier {
         : history.loadForBuild(build);
   }
 
+  /// Written as soon as it changes rather than after the store's usual pause:
+  /// a phone that asked must still know it did if the app closes right away.
+  void _save() => _store.putNow(_key, {
+    'askedAt': ?_askedAt?.toIso8601String(),
+    'answeredAt': ?_answeredAt?.toIso8601String(),
+    'offer': ?_latest?.toJson(),
+  });
+
   void _loadCache() {
     if (_cacheLoaded) return;
     _cacheLoaded = true;
     final cached = _store.read<Map<String, Object?>>(_key);
-    final offer = StoreOffer.fromJson(cached?['offer']);
-    final askedAt = cached?['askedAt'];
-    if (offer == null || askedAt is! String) return;
+    if (cached == null) return;
+    _askedAt = _time(cached['askedAt']);
+    final offer = StoreOffer.fromJson(cached['offer']);
+    final answeredAt = _time(cached['answeredAt']);
+    if (offer == null || answeredAt == null) return;
     _latest = offer;
-    _askedAt = DateTime.tryParse(askedAt);
+    _answeredAt = answeredAt;
   }
+
+  static DateTime? _time(Object? value) =>
+      value is String ? DateTime.tryParse(value) : null;
 
   Future<StoreOffer?> _ask(PackageInfo installed) {
     if (AppPlatform.isIOS) return _askAppStore();

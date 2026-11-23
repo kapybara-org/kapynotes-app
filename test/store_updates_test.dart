@@ -33,12 +33,15 @@ class _Store extends LocalStore {
 http.Response _json(Object? body) =>
     http.Response.bytes(utf8.encode(jsonEncode(body)), 200);
 
-/// The store's answer as it was given [age] ago.
-void _answered(LocalStore store, Duration age, Map<String, Object?> offer) =>
-    store.data['storeUpdate.v1'] = {
-      'askedAt': DateTime.now().subtract(age).toIso8601String(),
-      'offer': offer,
-    };
+/// The store's answer as it was given [age] ago, when it was last asked.
+void _answered(LocalStore store, Duration age, Map<String, Object?> offer) {
+  final at = DateTime.now().subtract(age).toIso8601String();
+  store.data['storeUpdate.v1'] = {
+    'askedAt': at,
+    'answeredAt': at,
+    'offer': offer,
+  };
+}
 
 /// This phone, running 1.35.4 as build 46, asking the real stores, with
 /// [client] where the App Store or the changelog is asked.
@@ -169,16 +172,24 @@ void main() {
         expect(updates.latest, isNull);
         expect(updates.update, isNull);
         expect(updates.isLatest, isFalse);
-        expect(store.data, isNot(contains('storeUpdate.v1')));
+        expect(
+          (store.data['storeUpdate.v1']! as Map<String, Object?>)['offer'],
+          isNull,
+        );
       }
     });
 
-    test('a store that never answers is given up on', () {
+    test('a store that never answers is given up on, and not asked again '
+        'that day', () {
       fakeAsync((async) {
-        final updates = fakeStoreUpdates(
-          _Store(),
-          answer: () => Completer<StoreOffer?>().future,
-        );
+        final store = _Store();
+        var asked = 0;
+        Future<StoreOffer?> answer() {
+          asked++;
+          return Completer<StoreOffer?>().future;
+        }
+
+        final updates = fakeStoreUpdates(store, answer: answer);
         var done = false;
         unawaited(updates.check().then((_) => done = true));
         async.elapse(const Duration(seconds: 7));
@@ -187,6 +198,10 @@ void main() {
         expect(done, isTrue);
         expect(updates.update, isNull);
         expect(updates.isLatest, isFalse);
+
+        unawaited(fakeStoreUpdates(store, answer: answer).check());
+        async.flushMicrotasks();
+        expect(asked, 1);
       });
     });
 
@@ -216,6 +231,66 @@ void main() {
       _answered(store, const Duration(hours: -5), {'version': '1.35.4'});
       await fakeStoreUpdates(store, answer: answer).check();
       expect(asked, 3);
+    });
+
+    test(
+      'a store that does not answer is still asked only once a day',
+      () async {
+        for (final reply in <Future<StoreOffer?> Function()>[
+          () async => null,
+          () async => throw const SocketException('offline'),
+        ]) {
+          final store = _Store();
+          var asked = 0;
+          Future<StoreOffer?> answer() {
+            asked++;
+            return reply();
+          }
+
+          await fakeStoreUpdates(store, answer: answer).check();
+          await fakeStoreUpdates(store, answer: answer).check();
+          expect(asked, 1);
+
+          final cached = store.data['storeUpdate.v1']! as Map<String, Object?>;
+          store.data['storeUpdate.v1'] = {
+            ...cached,
+            'askedAt': DateTime.now()
+                .subtract(const Duration(hours: 25))
+                .toIso8601String(),
+          };
+          await fakeStoreUpdates(store, answer: answer).check();
+          expect(asked, 2);
+        }
+      },
+    );
+
+    test('a version this phone runs that cannot be compared claims neither '
+        'an update nor the latest version', () async {
+      final beta = fakeStoreUpdates(
+        _Store(),
+        installed: '1.36.0-beta.1',
+        answer: () async => const StoreOffer(version: '1.35.4'),
+      );
+      await beta.check();
+      expect(beta.latest?.version, '1.35.4');
+      expect(beta.update, isNull);
+      expect(beta.isLatest, isFalse);
+
+      final unreadable = StoreUpdates(
+        _Store(),
+        packageInfo: PackageInfo(
+          appName: 'Kapy Notes',
+          packageName: StoreUpdates.bundleId,
+          version: '1.35.4',
+          buildNumber: '',
+        ),
+        lookup: (_) async => const StoreOffer(build: 47),
+      );
+      addTearDown(unreadable.dispose);
+      await unreadable.check();
+      expect(unreadable.latest?.build, 47);
+      expect(unreadable.update, isNull);
+      expect(unreadable.isLatest, isFalse);
     });
 
     test('a day-old answer no longer says this is the latest', () async {
