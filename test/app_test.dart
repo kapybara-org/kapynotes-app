@@ -12707,6 +12707,28 @@ void main() {
       return gesture;
     }
 
+    testWidgets("Android's Back on Pinned lets the picks go first, then "
+        'goes Home', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final (shown, under) = await open(tester, 'Pinned');
+      await tester.longPress(find.widgetWithText(NoteRow, 'Lisbon trip'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select'));
+      await tester.pumpAndSettle();
+      final picked = find.text('1 selected');
+      expect(picked, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(picked, findsNothing);
+      expect(shown, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(shown, findsNothing);
+      expect(under, findsOneWidget);
+    });
+
     for (final level in levels.keys) {
       testWidgets('on an iPhone, a part swipe from the left edge of $level '
           'follows the finger, and let go early it stays', (tester) async {
