@@ -2,6 +2,7 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
+import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -176,6 +177,21 @@ void main() {
       find.byKey(const ValueKey('settings-section-notes')),
       findsOneWidget,
     );
+  });
+
+  testWidgets("a category's bar titles it in the hand with a green Done, "
+      'while the list keeps its plain bar', (tester) async {
+    await _pumpPhone(tester);
+    await _openSettings(tester);
+    TextStyle style(String text) =>
+        tester.renderObject<RenderParagraph>(find.text(text)).text.style!;
+    final palette = tester.element(find.text('Done')).palette;
+    expect(style('Settings').fontFamily, AppFonts.ui);
+    expect(style('Done').color, palette.textPrimary);
+
+    await _openCategory(tester, 'appearance');
+    expect(style('Appearance').fontFamily, WritingFont.handwritten.fontFamily);
+    expect(style('Done').color, palette.accentText);
   });
 
   testWidgets('a switch inside a pushed category still changes the setting', (

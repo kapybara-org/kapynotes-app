@@ -305,6 +305,18 @@ void main() {
       expect(updates.isLatest, isFalse);
     });
 
+    test('an ask that fails keeps the last answer for the next time', () async {
+      final store = _Store();
+      _answered(store, const Duration(hours: 25), {'version': '1.35.5'});
+      Future<StoreOffer?> offline() async =>
+          throw const SocketException('offline');
+      await fakeStoreUpdates(store, answer: offline).check();
+
+      final next = fakeStoreUpdates(store, answer: offline);
+      await next.check();
+      expect(next.update?.version, '1.35.5');
+    });
+
     test('an update seen stays seen, until the store offers another', () async {
       final store = _Store();
       final updates = fakeStoreUpdates(

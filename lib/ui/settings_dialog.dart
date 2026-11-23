@@ -58,6 +58,7 @@ import 'settings_search.dart';
 import 'settings_update_card.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart';
+import 'tasks/task_marks.dart';
 import 'tonal_button.dart';
 import 'voice_consent_sheet.dart';
 import 'voice_note_dialog.dart';
@@ -4664,7 +4665,9 @@ class _SheetPage extends StatelessWidget {
   final double bottomInset;
   final List<Widget> children;
 
-  /// Null on the list of categories, which has nothing to go back to.
+  /// Null on the list of categories, which has nothing to go back to. A
+  /// category's page, which has it, titles itself in the hand with a green
+  /// Done, as its board draws it.
   final VoidCallback? onBack;
 
   /// The row a search result led to, lit over the page. Only a category's
@@ -4676,6 +4679,7 @@ class _SheetPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final back = onBack;
+    final done = back == null ? palette.textPrimary : palette.accentText;
     // Opaque, because these pages slide over one another.
     return ColoredBox(
       color: palette.surfaceBackground,
@@ -4683,8 +4687,8 @@ class _SheetPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            height: 48,
-            padding: EdgeInsets.fromLTRB(back == null ? 20 : 4, 0, 8, 0),
+            constraints: BoxConstraints(minHeight: back == null ? 48 : 52),
+            padding: EdgeInsets.fromLTRB(back == null ? 20 : 6, 0, 8, 0),
             child: Row(
               children: [
                 if (back != null)
@@ -4692,19 +4696,31 @@ class _SheetPage extends StatelessWidget {
                     key: const ValueKey('settings-sheet-back'),
                     onPressed: back,
                     tooltip: 'Back',
+                    constraints: const BoxConstraints.tightFor(
+                      width: 44,
+                      height: 44,
+                    ),
+                    padding: EdgeInsets.zero,
                     color: palette.textSecondary,
-                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 20),
+                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 22),
                   ),
                 Expanded(
                   child: Text(
                     title,
-                    style: TextStyle(
-                      fontSize: 17,
-                      height: 22 / 17,
-                      fontWeight: AppWeight.font(AppWeight.page),
-                      fontVariations: AppWeight.wght(AppWeight.page),
-                      color: palette.textPrimary,
-                    ),
+                    style: back == null
+                        ? TextStyle(
+                            fontSize: 17,
+                            height: 22 / 17,
+                            fontWeight: AppWeight.font(AppWeight.page),
+                            fontVariations: AppWeight.wght(AppWeight.page),
+                            color: palette.textPrimary,
+                          )
+                        : handStyle(
+                            26,
+                            32,
+                            FontWeight.w400,
+                            palette.textPrimary,
+                          ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -4713,12 +4729,12 @@ class _SheetPage extends StatelessWidget {
                   onPressed: () =>
                       Navigator.of(context, rootNavigator: true).pop(),
                   style: TextButton.styleFrom(
-                    foregroundColor: palette.textPrimary,
+                    foregroundColor: done,
                     textStyle: chromeStyle(
                       size: 15,
                       line: 20,
-                      weight: AppWeight.button,
-                      color: palette.textPrimary,
+                      weight: back == null ? AppWeight.button : AppWeight.page,
+                      color: done,
                     ),
                   ),
                   child: const Text('Done'),
@@ -5559,6 +5575,7 @@ class _StoreAboutPaneState extends State<_StoreAboutPane> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const SizedBox(height: 4),
           if (card != null) ...[
             card,
             SizedBox(height: SettingsMetrics.groupGap),
@@ -5700,7 +5717,11 @@ class _StoreReleaseCardState extends State<_StoreReleaseCard> {
     final sections = <Widget>[
       Padding(
         padding: SettingsMetrics.padding,
-        child: SettingsRowCopy(title: widget.title, subtitle: widget.subtitle),
+        child: SettingsRowCopy(
+          title: widget.title,
+          subtitle: widget.subtitle,
+          subtitleColor: palette.textTertiary,
+        ),
       ),
       if (summary.isNotEmpty || lines.isNotEmpty)
         Padding(
