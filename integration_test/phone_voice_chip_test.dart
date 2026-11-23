@@ -108,7 +108,7 @@ void main() {
         expect(find.byType(NoteVoiceChip), findsNWidgets(2));
         expect(tester.takeException(), isNull);
         await screenshot(
-          'voice-chip-${scale == 1.0 ? '1x' : '1.3x'}-${appearance.name}',
+          'voice-chip-${scale == 1.0 ? '1x' : 'large-text'}-${appearance.name}',
           device: true,
         );
       });
