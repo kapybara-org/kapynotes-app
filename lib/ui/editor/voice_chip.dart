@@ -11,12 +11,27 @@ import '../../data/note_attachment.dart';
 import '../context_menu.dart';
 import 'note_image_layout.dart';
 
-/// How tall a recording sits in the text.
+/// How tall a recording's row is: Paper's 44px pill with a pointer, and the
+/// phone's 56pt card on touch.
 ///
-/// Fixed, and the same whatever the recording holds: a chip that grew once a
-/// transcript arrived would reflow the note under whoever was reading it.
-/// Paper's 44px pill with a pointer, and the phone's 56pt card on touch.
-double get noteVoiceChipHeight => AppPlatform.hasPointer ? 44 : 56;
+/// The same whatever the recording holds: a chip that grew once a transcript
+/// arrived would reflow the note under whoever was reading it. Only a status
+/// too long for a phone's row adds a line under it, as
+/// [NoteVoiceChip.heightIn] says.
+double get _rowHeight => AppPlatform.hasPointer ? 44 : 56;
+
+/// The phone card's insets, border, play button and gaps, which a status is
+/// measured against before the card is drawn.
+const _touchInsets = EdgeInsets.only(left: 8, right: 16);
+const double _touchBorder = 1;
+const double _touchPlay = 40;
+const double _gap = 12;
+
+/// The widest a label on the row gets.
+const double _labelMaxWidth = 280;
+
+/// The room under a status that takes its own line.
+const double _belowInset = 10;
 
 /// What the chip says about a recording beyond the recording itself.
 enum VoiceChipState {
@@ -161,6 +176,79 @@ class NoteVoiceChip extends StatelessWidget {
       state == VoiceChipState.waiting ||
       state == VoiceChipState.retrying;
 
+  /// Whether the label is the summary's title rather than a status.
+  bool get _titled =>
+      ref.summary != null &&
+      (state == VoiceChipState.done || state == VoiceChipState.idle);
+
+  /// How tall the chip is when it is handed [width]: its row, and the
+  /// status's own line under it when the row would cut the status short.
+  double heightIn(BuildContext context, double width) =>
+      _height(_labelBelow(context, width));
+
+  double _height(double? below) =>
+      below == null ? _rowHeight : _rowHeight + below + _belowInset;
+
+  /// How tall the status is on its own line under the row, or null when the
+  /// label sits on the row.
+  ///
+  /// Only on a phone, whose row splits what the play button and the length
+  /// leave evenly between the waveform and the label. A status wider than
+  /// its half would end in an ellipsis, and it is a few words that only help
+  /// when they read in full. A summary's title stays on the row and is cut
+  /// instead, so a summary arriving never moves the writing under the chip.
+  double? _labelBelow(BuildContext context, double width) {
+    final label = _label;
+    if (AppPlatform.hasPointer || label == 'Voice note' || _titled) {
+      return null;
+    }
+    final palette = context.palette;
+    final inherited = DefaultTextStyle.of(context);
+    TextPainter measure(String text, TextStyle style, double maxWidth) =>
+        TextPainter(
+          text: TextSpan(text: text, style: inherited.style.merge(style)),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          textHeightBehavior:
+              inherited.textHeightBehavior ??
+              DefaultTextHeightBehavior.maybeOf(context),
+        )..layout(maxWidth: maxWidth);
+    final inner = width - _touchInsets.horizontal - 2 * _touchBorder;
+    final length = measure(
+      formatVoiceDuration(ref.duration),
+      _lengthStyle(palette),
+      double.infinity,
+    );
+    final words = measure(label, _labelStyle(palette), inner);
+    final share = math.min(
+      _labelMaxWidth,
+      (inner - _touchPlay - length.width - 3 * _gap) / 2,
+    );
+    final below = words.width > share ? words.height : null;
+    length.dispose();
+    words.dispose();
+    return below;
+  }
+
+  /// The length, in the row's small type with figures that keep their width.
+  TextStyle _lengthStyle(CalcPalette palette) => TextStyle(
+    fontFamily: AppFonts.ui,
+    fontFamilyFallback: AppFonts.uiFallback,
+    fontSize: 13,
+    height: 16 / 12.5,
+    fontWeight: AppWeight.font(AppWeight.rowTitle),
+    fontVariations: AppWeight.wght(AppWeight.rowTitle),
+    fontFeatures: const [FontFeature.tabularFigures()],
+    color: palette.textSecondary,
+  );
+
+  /// The label, a step lighter than the length.
+  TextStyle _labelStyle(CalcPalette palette) => _lengthStyle(palette).copyWith(
+    fontWeight: AppWeight.font(AppWeight.body),
+    fontVariations: AppWeight.wght(AppWeight.body),
+    color: _isTransient ? palette.textTertiary : palette.textMuted,
+  );
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
@@ -184,21 +272,22 @@ class NoteVoiceChip extends StatelessWidget {
   /// recording when that is more than "Voice note". On touch it is the
   /// phone's card: the column's width, and removed from its long-press menu.
   Widget _chip(BuildContext context) {
+    if (AppPlatform.hasPointer) return _card(context, null);
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _card(context, _labelBelow(context, constraints.maxWidth)),
+    );
+  }
+
+  /// The chip with its label on the row, or with a status on its own line
+  /// [below] the row, that line's height given.
+  Widget _card(BuildContext context, double? below) {
     final palette = context.palette;
     final touch = !AppPlatform.hasPointer;
     final removable = onRemove != null && !touch;
     final accent = Theme.of(context).colorScheme.primary;
     final label = _label;
-    final small = TextStyle(
-      fontFamily: AppFonts.ui,
-      fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: 13,
-      height: 16 / 12.5,
-      fontWeight: AppWeight.font(AppWeight.rowTitle),
-      fontVariations: AppWeight.wght(AppWeight.rowTitle),
-      fontFeatures: const [FontFeature.tabularFigures()],
-      color: palette.textSecondary,
-    );
+    final labelStyle = _labelStyle(palette);
     Widget waveform(int bars) => RepaintBoundary(
       child: _Waveform(
         peaks: ref.peaks,
@@ -209,63 +298,65 @@ class NoteVoiceChip extends StatelessWidget {
         bars: bars,
       ),
     );
+    final row = Row(
+      mainAxisSize: touch ? MainAxisSize.max : MainAxisSize.min,
+      spacing: _gap,
+      children: [
+        _PlayButton(
+          playing: playing,
+          opening: opening,
+          failure: failure,
+          onPressed: onPlayPause,
+          touch: touch,
+        ),
+        if (touch)
+          Expanded(child: SizedBox(height: 24, child: waveform(40)))
+        else
+          SizedBox(width: 118, height: 18, child: waveform(24)),
+        Text(formatVoiceDuration(ref.duration), style: _lengthStyle(palette)),
+        if (below == null && label != 'Voice note')
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _labelMaxWidth),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: labelStyle,
+              ),
+            ),
+          ),
+        if (removable) _removeButton(palette),
+      ],
+    );
     return Align(
       alignment: Alignment.centerLeft,
       child: _gestures(
         context,
         Container(
           key: const ValueKey('voice-chip-pill'),
-          height: noteVoiceChipHeight,
+          height: _height(below),
           width: touch ? double.infinity : null,
-          padding: EdgeInsets.only(
-            left: touch ? 8 : 6,
-            right: removable ? 6 : 16,
-          ),
+          padding: touch
+              ? _touchInsets.copyWith(bottom: below == null ? 0 : _belowInset)
+              : EdgeInsets.only(left: 6, right: removable ? 6 : 16),
           decoration: BoxDecoration(
             color: palette.controlBackground,
             borderRadius: BorderRadius.circular(touch ? 14 : AppRadii.pill),
             border: Border.all(
               color: palette.controlBorder,
-              width: touch ? 1 : 1.5,
+              width: touch ? _touchBorder : 1.5,
             ),
           ),
-          child: Row(
-            mainAxisSize: touch ? MainAxisSize.max : MainAxisSize.min,
-            spacing: 12,
-            children: [
-              _PlayButton(
-                playing: playing,
-                opening: opening,
-                failure: failure,
-                onPressed: onPlayPause,
-                touch: touch,
-              ),
-              if (touch)
-                Expanded(child: SizedBox(height: 24, child: waveform(40)))
-              else
-                SizedBox(width: 118, height: 18, child: waveform(24)),
-              Text(formatVoiceDuration(ref.duration), style: small),
-              if (label != 'Voice note')
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 280),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: small.copyWith(
-                        fontWeight: AppWeight.font(AppWeight.body),
-                        fontVariations: AppWeight.wght(AppWeight.body),
-                        color: _isTransient
-                            ? palette.textTertiary
-                            : palette.textMuted,
-                      ),
-                    ),
-                  ),
+          child: below == null
+              ? row
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(height: _rowHeight - 2 * _touchBorder, child: row),
+                    Text(label, style: labelStyle),
+                  ],
                 ),
-              if (removable) _removeButton(palette),
-            ],
-          ),
         ),
       ),
     );
@@ -421,7 +512,7 @@ class _PlayButton extends StatelessWidget {
       child: _hoverHint(
         onPressed == null ? null : label,
         SizedBox.square(
-          dimension: touch ? 40 : 32,
+          dimension: touch ? _touchPlay : 32,
           child: Material(
             color: touch
                 ? palette.tonalBackground

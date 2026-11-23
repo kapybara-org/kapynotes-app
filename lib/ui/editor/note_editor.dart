@@ -1576,7 +1576,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return session != null && session.noteId == widget.noteId ? session : null;
   }
 
-  Widget _voiceChip(NoteVoiceRef ref) {
+  NoteVoiceChip _voiceChip(NoteVoiceRef ref) {
     final player = widget.player;
     return NoteVoiceChip(
       key: ValueKey('note-voice-${ref.hash}-${ref.offset}'),
@@ -7742,6 +7742,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Map<int, NoteImageSpan> _buildAttachmentSpans(
     double columnWidth,
     double viewportHeight,
+    double inline,
   ) {
     final store = widget.images;
     if (_attachments.isEmpty || store == null) return const {};
@@ -7762,12 +7763,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       // Both chips stretch to whatever they are handed, and what the text
       // engine hands a placeholder is the rest of the line — so unlike an
       // image, which carries its own measured box, they have to be told the
-      // width or they would fill the column and take the slack back.
+      // width or they would fill the column and take the slack back. The
+      // field draws a placeholder's widget scaled by [inline], so the voice
+      // chip is laid out that much narrower, and the text engine is told the
+      // height it is drawn at.
       if (ref is NoteVoiceRef) {
+        final chip = _voiceChip(ref);
+        final width = columnWidth / inline;
         spans[ref.offset] = (
           width: columnWidth,
-          height: noteVoiceChipHeight + noteImageGap,
-          child: SizedBox(width: columnWidth, child: _voiceChip(ref)),
+          height: (chip.heightIn(context, width) + noteImageGap) * inline,
+          child: SizedBox(width: width, child: chip),
         );
         continue;
       }
@@ -7924,6 +7930,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       editorScale: widget.editorTextScale,
     );
     final textScaler = MediaQuery.textScalerOf(context);
+    final writingSize = textStyle.fontSize ?? kDefaultFontSize;
     final mobileTableCell = AppPlatform.isMobile ? _activeTableCell() : null;
     final statusShown = widget.readOnly || widget.typing.isNotEmpty;
 
@@ -8062,6 +8069,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   for (final MapEntry(:key, :value) in _buildAttachmentSpans(
                     drawnWidth,
                     constraints.maxHeight,
+                    textScaler.scale(writingSize) / writingSize,
                   ).entries)
                     key: (
                       width: math.min(value.width, attachmentWidth),

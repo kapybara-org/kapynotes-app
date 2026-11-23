@@ -100,6 +100,7 @@ Widget harness(
   DateTime Function()? now,
   bool startAtEnd = false,
   void Function(String, List<NoteAttachmentRef>)? onChanged,
+  VoiceChipState Function(NoteVoiceRef ref)? voiceStateFor,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
@@ -111,6 +112,7 @@ Widget harness(
       images: images ?? store,
       player: player,
       onOpenVoiceNote: onOpenVoiceNote,
+      voiceStateFor: voiceStateFor,
       engine: engine,
       highlighter: Highlighter(engine.registry),
       resultsVisible: true,
@@ -509,5 +511,53 @@ void main() {
       expect(changed.single.hash, recordingHash);
       expect(find.byType(NoteVoiceChip), findsOneWidget);
     });
+  });
+
+  group('a status on a phone', () {
+    setUp(
+      () => AppPlatform.debugTargetPlatformOverride = TargetPlatform.android,
+    );
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final scale in [1.0, 1.3]) {
+      for (final phone in [320.0, 375.0, 412.0]) {
+        testWidgets(
+          'reads in full at $phone pt and ${scale}x, clear of the line under it',
+          (tester) async {
+            tester.view.physicalSize = Size(phone * 3, 800 * 3);
+            tester.view.devicePixelRatio = 3;
+            tester.platformDispatcher.textScaleFactorTestValue = scale;
+            addTearDown(tester.view.reset);
+            addTearDown(
+              tester.platformDispatcher.clearTextScaleFactorTestValue,
+            );
+            await tester.pumpWidget(
+              harness('$anchor\nafter', [
+                voice(0),
+              ], voiceStateFor: (_) => VoiceChipState.needsConsent),
+            );
+            await tester.pumpAndSettle();
+
+            expect(
+              tester
+                  .renderObject<RenderParagraph>(
+                    find.text('Turn on transcription'),
+                  )
+                  .didExceedMaxLines,
+              isFalse,
+              reason: 'the status is not cut short',
+            );
+            final pill = tester.getRect(
+              find.byKey(const ValueKey('voice-chip-pill')),
+            );
+            expect(
+              caretFor(tester, 2).top + tester.getRect(noteField).top,
+              greaterThanOrEqualTo(pill.bottom),
+              reason: 'the line under the chip starts below it',
+            );
+          },
+        );
+      }
+    }
   });
 }
