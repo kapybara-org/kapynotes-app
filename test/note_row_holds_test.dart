@@ -21,6 +21,8 @@ void main() {
     WidgetTester tester,
     Note note, {
     Widget? people,
+    String? live,
+    bool viewOnly = false,
     bool locked = false,
     bool shared = false,
     double width = 393,
@@ -44,6 +46,8 @@ void main() {
                 selected: false,
                 hovering: false,
                 people: people,
+                live: live,
+                viewOnly: viewOnly,
                 locked: locked,
                 shared: shared,
                 touch: true,
@@ -257,36 +261,82 @@ void main() {
       find.descendant(of: holds, matching: findKapyIcon(KapyIcons.lockRounded)),
       findsOne,
     );
-    expect(
-      findKapyIcon(KapyIcons.groupOutlined),
-      findsNothing,
-      reason: 'the people stand in for the shared mark',
-    );
+    expect(findKapyIcon(KapyIcons.groupOutlined), findsNothing);
   });
 
-  testWidgets('a shared note with nobody to show ends its holds line with '
-      'the shared mark, after read-only', (tester) async {
-    await pumpRow(tester, morningPages(), locked: true, shared: true);
-    final mark = find.descendant(
-      of: holds,
-      matching: findKapyIcon(KapyIcons.groupOutlined),
+  testWidgets('a shared note with nobody to show carries no shared mark: '
+      'who is typing leads its holds line after a 6 pt sage dot, in T2, and '
+      'View only ends it after read-only, as 16RO-0 draws', (tester) async {
+    await pumpRow(
+      tester,
+      morningPages(),
+      live: 'Priya is typing…',
+      viewOnly: true,
+      locked: true,
+      shared: true,
     );
+    final palette = KapyTheme.darkPalette;
+    expect(findKapyIcon(KapyIcons.groupOutlined), findsNothing);
+
+    final live = find.descendant(
+      of: holds,
+      matching: find.byKey(const ValueKey('note-row-live')),
+    );
+    final typing = find.descendant(
+      of: live,
+      matching: find.text('Priya is typing…'),
+    );
+    final dot = find.descendant(of: live, matching: find.byType(Container));
+    expect(tester.getSize(dot), const Size(6, 6));
+    expect(
+      (tester.widget<Container>(dot).decoration! as BoxDecoration).color,
+      palette.accentText,
+    );
+    expect(tester.getTopLeft(typing).dx - tester.getTopRight(dot).dx, 6);
+    final style = tester.widget<Text>(typing).style!;
+    expect(style.fontSize, 12);
+    expect(style.height, 16 / 12);
+    expect(style.color, palette.textSecondary);
+    expect(tester.getTopLeft(live).dx, 20);
+
+    final tasks = find.descendant(of: holds, matching: find.text('0 of 1'));
+    final pie = find.descendant(of: holds, matching: find.byType(ChecklistPie));
+    expect(tester.getTopLeft(pie).dx - tester.getTopRight(live).dx, 12);
+    expect(tasks, findsOne);
+
     final lock = find.descendant(
       of: holds,
       matching: findKapyIcon(KapyIcons.lockRounded),
     );
-    expect(mark, findsOne);
-    expect(tester.getTopLeft(mark).dx - tester.getTopRight(lock).dx, 12);
-    expect(
-      tester.getTopLeft(lock).dx -
-          tester
-              .getTopRight(
-                find.descendant(of: holds, matching: find.text('3:20')),
-              )
-              .dx,
-      12,
+    final eye = find.descendant(
+      of: holds,
+      matching: findKapyIcon(KapyIcons.visibilityOutlined),
     );
-    expect(tester.getCenter(mark).dy, tester.getCenter(holds).dy);
+    final viewOnly = find.descendant(
+      of: holds,
+      matching: find.text('View only'),
+    );
+    expect(tester.getTopLeft(eye).dx - tester.getTopRight(lock).dx, 12);
+    expect(tester.getTopLeft(viewOnly).dx - tester.getTopRight(eye).dx, 6);
+    expect(tester.widget<Text>(viewOnly).style!.color, palette.textTertiary);
+    expect(tester.getCenter(eye).dy, tester.getCenter(holds).dy);
+  });
+
+  testWidgets('nobody in a note of words alone leaves it two lines', (
+    tester,
+  ) async {
+    await pumpRow(
+      tester,
+      Note(
+        id: 'plain',
+        body: 'Renewal notes\nFor the call with Acme on Friday.',
+        createdAt: now,
+        updatedAt: now,
+      ),
+      shared: true,
+    );
+    expect(holds, findsNothing);
+    expect(findKapyIcon(KapyIcons.groupOutlined), findsNothing);
   });
 
   testWidgets('a row of words alone that is shared keeps the people at the '
@@ -311,5 +361,58 @@ void main() {
         .first;
     expect(find.descendant(of: previewLine, matching: peopleStrip), findsOne);
     expect(tester.getRect(peopleStrip).right, 393 - 20);
+  });
+
+  Note titleOnly() =>
+      Note(id: 'packing', body: 'Packing list', createdAt: now, updatedAt: now);
+
+  testWidgets('a title-only row with a bottom line goes straight from its '
+      'title to it, 3 under: 12, the 24 title, 3, the 16 line, 12', (
+    tester,
+  ) async {
+    await pumpRow(
+      tester,
+      titleOnly(),
+      live: 'Priya is typing…',
+      viewOnly: true,
+      shared: true,
+    );
+    final title = find.text('Packing list');
+    expect(holds, findsOne);
+    expect(tester.getTopLeft(holds).dy - tester.getBottomLeft(title).dy, 3);
+    expect(
+      find.descendant(of: holds, matching: find.text('View only')),
+      findsOne,
+    );
+    expect(
+      tester.getSize(find.byType(NoteListRowFace)).height,
+      12 + 24 + 3 + 16 + 12,
+    );
+  });
+
+  testWidgets('a title-only row with its people puts them on the bottom line '
+      'under the title', (tester) async {
+    await pumpRow(tester, titleOnly(), people: people, shared: true);
+    expect(find.descendant(of: holds, matching: peopleStrip), findsOne);
+    expect(tester.getRect(peopleStrip).right, 393 - 20);
+    expect(
+      tester.getSize(find.byType(NoteListRowFace)).height,
+      12 + 24 + 3 + 16 + 12,
+    );
+  });
+
+  testWidgets('a title-only row with no bottom line ends at its title: 12, '
+      'the 24 title, 12', (tester) async {
+    await pumpRow(tester, titleOnly());
+    expect(holds, findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(NoteListRowFace),
+        matching: find.byType(RichText),
+      ),
+      findsNWidgets(2),
+      reason: 'the title and the time, with no empty preview line',
+    );
+    expect(tester.getSize(find.byType(NoteListRowFace)).height, 12 + 24 + 12);
   });
 }
