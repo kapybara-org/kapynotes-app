@@ -435,9 +435,11 @@ class NoteEditor extends StatefulWidget {
 class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   static const _pasteAsPlainTextLabel = 'Paste Text';
 
+  /// The first retry waits well past the 100 ms or so an IME that took the
+  /// request needs to start moving the window; see
+  /// [_windowMovedSinceKeyboardRequest].
   static const List<Duration> _keyboardRetryDelays = [
-    Duration(milliseconds: 100),
-    Duration(milliseconds: 150),
+    Duration(milliseconds: 400),
     Duration(milliseconds: 250),
     Duration(milliseconds: 400),
     Duration(milliseconds: 600),
@@ -445,6 +447,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     Duration(milliseconds: 1200),
     Duration(milliseconds: 1500),
   ];
+
+  /// Whether the window has changed since the editor last asked for the
+  /// keyboard. An IME that took the request is already moving it, and asking
+  /// again then cancels the animation it started; Android can then leave the
+  /// inset at zero under a keyboard that is up, so the bar goes and the editor
+  /// takes the keyboard for dismissed (KAP-324).
+  bool _windowMovedSinceKeyboardRequest = false;
 
   /// Whether the soft keyboard was up the last time the window was measured,
   /// which is what turns a metrics change into "the keyboard just went".
@@ -979,11 +988,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _scheduleKeyboardRetry() {
     _keyboardRetryTimer?.cancel();
     if (widget.readOnly || !widget.ensureKeyboardVisible) return;
-    // Try as soon as the editable connection exists, then probe quickly while
+    // Try as soon as the editable connection exists, then again while
     // Android is still promoting FlutterView to the served input view.
-    debugPrint('KAP324 retry show at open');
-    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+    _requestKeyboard();
     _scheduleKeyboardRetryAt(0);
+  }
+
+  void _requestKeyboard() {
+    _windowMovedSinceKeyboardRequest = false;
+    debugPrint('KAP324 editor asks for the keyboard');
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
   }
 
   /// How far the soft keyboard reaches up the window, or zero when it is not
@@ -1003,11 +1017,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       if (!mounted || !_focusNode.hasFocus || _keyboardInset > 0) {
         return;
       }
-      // A rejected Android request has no Dart acknowledgement. Backoff keeps
-      // the recovery window broad without repeatedly waking an IME that has
-      // already started its animation.
-      debugPrint('KAP324 retry show $index');
-      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+      // A rejected Android request has no Dart acknowledgement, but one the
+      // IME took moves the window. Until a whole wait passes with the window
+      // still, the last request is taken to be in hand.
+      if (_windowMovedSinceKeyboardRequest) {
+        _windowMovedSinceKeyboardRequest = false;
+      } else {
+        _requestKeyboard();
+      }
       _scheduleKeyboardRetryAt(index + 1);
     });
   }
@@ -4509,6 +4526,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// is always zero, so [_keyboardWasUp] is never true.
   @override
   void didChangeMetrics() {
+    _windowMovedSinceKeyboardRequest = true;
     final wasUp = _keyboardWasUp;
     final inset = _keyboardInset;
     debugPrint('KAP324 metrics inset=$inset wasUp=$wasUp');
