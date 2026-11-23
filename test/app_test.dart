@@ -33,6 +33,7 @@ import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/data/task_folds.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -12665,4 +12666,117 @@ void main() {
       expect(tester.widget<TextField>(menuField).controller!.text, isEmpty);
     });
   });
+  final phones = ValueVariant({TargetPlatform.iOS, TargetPlatform.android});
+  testWidgets('phones name no desktop keys or clicks on any surface: the '
+      "page, its slash menu and a task line's hint, Home, Quick find, the +, "
+      'Folders, Tasks and a task, and Settings (KAP-115)', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = phones.currentValue;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final semantics = tester.ensureSemantics();
+    final keys = RegExp(
+      r'Ctrl|Cmd|Alt ?\+|Option ?\+|Shift ?\+|[⌘⌥⌃⇧↵]|\besc\b|[Cc]lick',
+    );
+    void expectNoKeys(String where) {
+      final shown = [
+        for (final tooltip in tester.widgetList<Tooltip>(find.byType(Tooltip)))
+          tooltip.message ?? '',
+        for (final text in tester.widgetList<Text>(find.byType(Text)))
+          text.data ?? text.textSpan?.toPlainText() ?? '',
+        for (final rich in tester.widgetList<RichText>(find.byType(RichText)))
+          rich.text.toPlainText(),
+      ];
+      expect(shown.where(keys.hasMatch), isEmpty, reason: where);
+      expect(
+        find.semantics.byPredicate(
+          (node) =>
+              keys.hasMatch(node.label) ||
+              keys.hasMatch(node.tooltip) ||
+              keys.hasMatch(node.hint),
+        ),
+        findsNothing,
+        reason: where,
+      );
+    }
+
+    Future<void> tap(Finder finder) async {
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    await tester.runAsync(TaskFolds.open);
+    await notes.load();
+    notes.create(body: 'Errands\n☐ Post the parcel\n☐ ');
+    final folders = FolderStore(store);
+    await folders.load();
+    folders.create('Work');
+    await pumpApp(
+      tester,
+      size: const Size(393, 852),
+      folders: folders,
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        storage: MemoryDocStorage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The page, typing on an empty task line, where a Mac offers details.
+    final field = openNoteField(tester);
+    field.focusNode.requestFocus();
+    await tester.pump();
+    final body = field.controller.text;
+    field.controller.selection = TextSelection.collapsed(
+      offset: body.indexOf('☐ ', body.indexOf('parcel')) + 2,
+    );
+    await tester.pumpAndSettle();
+    expectNoKeys('the page');
+
+    // The slash menu.
+    final text = '${field.controller.text}\n/';
+    tester.testTextInput.updateEditingValue(
+      TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+    expectNoKeys('the slash menu');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tap(find.byKey(const ValueKey('page-home')));
+    expectNoKeys('Home');
+
+    await tap(find.byKey(const ValueKey('sidebar-search-field')));
+    expect(find.byKey(const ValueKey('command-menu-field')), findsOneWidget);
+    expectNoKeys('Quick find');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byKey(const ValueKey('phone-new')));
+    await tester.pumpAndSettle();
+    expectNoKeys("the +'s menu");
+    await tap(find.byKey(const ValueKey('phone-new-close')));
+
+    await tap(find.byKey(const ValueKey('bar-folders')));
+    expectNoKeys('Folders');
+    await tap(find.byKey(const ValueKey('bar-notes')));
+
+    await tap(find.byKey(const ValueKey('home-title-tasks')));
+    expectNoKeys('Tasks');
+    await tap(find.text('Post the parcel'));
+    expect(find.byKey(const ValueKey('phone-task-open-note')), findsOneWidget);
+    expectNoKeys("a task's page");
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tap(find.byKey(const ValueKey('phone-account')).first);
+    expectNoKeys('Settings');
+    semantics.dispose();
+  }, variant: phones);
 }
