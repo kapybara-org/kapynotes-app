@@ -451,9 +451,12 @@ class TasksScreenState extends State<TasksScreen> {
       final page = LayoutBuilder(
         builder: (context, constraints) {
           final phone = widget.phone;
-          final width = phone
-              ? constraints.maxWidth - 42
-              : math.min(680.0, constraints.maxWidth - 48);
+          final width = math.max(
+            0.0,
+            phone
+                ? constraints.maxWidth - 42
+                : math.min(680.0, constraints.maxWidth - 48),
+          );
           return SingleChildScrollView(
             controller: widget.scrollController,
             padding: EdgeInsets.only(

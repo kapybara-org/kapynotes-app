@@ -37,6 +37,7 @@ import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
+import 'package:kapy_notes/ui/notes_list.dart' show PhoneCardFace;
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -1014,7 +1015,7 @@ void main() {
   });
 
   for (final scale in [1.0, 2.0, 3.1]) {
-    testWidgets("Home's Pinned card holds its two lines whole at "
+    testWidgets("Home's Pinned card holds its lines whole at "
         '$scale× text', (tester) async {
       tester.platformDispatcher.textScaleFactorTestValue = scale;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
@@ -1028,18 +1029,18 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
 
-      final card = tester.getRect(
-        find.byKey(const ValueKey('home-pinned-card')),
-      );
-      final lines = tester.getRect(
-        find.descendant(
-          of: find.byKey(const ValueKey('home-pinned-card')),
-          matching: find.byWidgetPredicate(
-            (widget) => widget is Text && widget.maxLines == 2,
-          ),
-        ),
-      );
-      expect(lines.bottom, lessThanOrEqualTo(card.bottom - 14 + 0.5));
+      final face = find.byType(PhoneCardFace);
+      expect(face, findsOneWidget);
+      final card = tester.getRect(face);
+      for (final text in tester.widgetList<Text>(
+        find.descendant(of: face, matching: find.byType(Text)),
+      )) {
+        expect(
+          tester.getRect(find.byWidget(text)).bottom,
+          lessThanOrEqualTo(card.bottom - 14 + 0.5),
+          reason: text.data,
+        );
+      }
       expect(tester.takeException(), isNull);
     });
   }
@@ -1323,7 +1324,7 @@ void main() {
   });
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
-  // long for one line, See all at the heading's end, and amounts in mono.
+  // long for one line, View all at the heading's end, and amounts in mono.
   // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so its
   // note opens, lit in the whole list, and the fill has left today, whose
   // weekday stays sage.

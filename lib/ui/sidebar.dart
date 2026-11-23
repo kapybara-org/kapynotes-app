@@ -194,7 +194,7 @@ class Sidebar extends StatelessWidget {
     this.now = DateTime.now,
     this.cards = false,
     this.phone = false,
-    this.phoneCards,
+    this.phoneTiles,
     this.filtersOpen = true,
     this.filtersActive = false,
     this.onFiltersToggled,
@@ -203,8 +203,6 @@ class Sidebar extends StatelessWidget {
     this.onPinnedOnlyChanged,
     this.grouping = NotesGrouping.byDate,
     this.ownDay,
-    this.upcomingOpen = false,
-    this.onUpcomingToggled,
     this.when = NotesWhen.anyTime,
     this.onWhenChanged,
     this.folders,
@@ -363,10 +361,8 @@ class Sidebar extends StatelessWidget {
   /// is the phone's title.
   final bool phone;
 
-  /// The cards a phone's Notes puts over its days in place of the pinned
-  /// notes, which are behind one of them, or the tiles a phone's Folders
-  /// puts over its tree.
-  final Widget? phoneCards;
+  /// The tiles a phone's Folders puts over its tree: Drawings and Shared.
+  final Widget? phoneTiles;
 
   /// The notes filter and the list/cards switch, under the search beside the
   /// rail: see [NotesListControls]. Null leaves them out, as the compact list
@@ -386,21 +382,17 @@ class Sidebar extends StatelessWidget {
   /// layout, where the row is always there and there is no button.
   final VoidCallback? onFiltersToggled;
 
-  /// Whether the list is showing every pinned note, after See all, rather
-  /// than the four most recent over the rest.
+  /// Whether the list is showing every pinned note, after View all, rather
+  /// than the few most recent over the rest.
   final bool pinnedOnly;
   final ValueChanged<bool>? onPinnedOnlyChanged;
 
   /// How the list beside the rail groups what Pinned leaves.
   final NotesGrouping grouping;
 
-  /// The day a note was given, where it has one: those waiting for a later
-  /// day fold into Upcoming above the day they were last edited.
+  /// The day a note was given, where it has one: a note waiting for a later
+  /// day stays out of the days until it comes.
   final DateTime? Function(Note note)? ownDay;
-
-  /// Whether the Upcoming fold is open, and what opens it: closed until then.
-  final bool upcomingOpen;
-  final VoidCallback? onUpcomingToggled;
 
   /// How far back the filter reaches, for an empty list to say so and to
   /// offer any time again.
@@ -1150,13 +1142,12 @@ extension on Sidebar {
   );
 
   /// The pinned notes the list beside the rail shows over the rest: the four
-  /// most recent, unless See all or a search asks for every one.
+  /// most recent, or five in a phone's scroller, unless View all or a search
+  /// asks for every one. A list with no View all shows them all.
   List<Note> _shownPinned(SidebarNoteGroups groups) =>
-      pinnedOnly || query.trim().isNotEmpty
+      pinnedOnly || query.trim().isNotEmpty || onPinnedOnlyChanged == null
       ? groups.pinned
-      : groups.pinned.take(_pinnedPreview).toList();
-
-  static const _pinnedPreview = 4;
+      : groups.pinned.take(phone ? 5 : 4).toList();
 
   List<Note> get _railOrder {
     if (folders case final folders? when folders.shown) {
@@ -1216,22 +1207,31 @@ extension on Sidebar {
     final groups = _noteGroups;
     final pinned = _shownPinned(groups);
     final rows = <WidgetBuilder>[];
-    // A phone's Drawings is all thumbnails, two to a row.
-    final cards = this.cards || (phone && drawings);
+    // A phone's lists are rows only, a drawing's led by its thumbnail: its
+    // list is never given cards, which are the Mac's choice.
     final style = switch ((cards, drawings)) {
+      _ when phone => NoteRowStyle.touch,
       (true, true) => NoteRowStyle.drawingCard,
       (true, false) => NoteRowStyle.card,
       (false, true) => NoteRowStyle.drawingRow,
-      (false, false) => phone ? NoteRowStyle.touch : NoteRowStyle.row,
+      (false, false) => NoteRowStyle.row,
     };
     final margin = phone ? 20.0 : 16.0;
     final noun = drawings ? 'drawing' : 'note';
     final onPinnedOnlyChanged = this.onPinnedOnlyChanged;
+    final onOpenPinned = phone && !drawings && onPinnedOnlyChanged != null
+        ? () => onPinnedOnlyChanged(true)
+        : null;
 
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
     void heading(Widget heading) {
-      if (rows.isNotEmpty) gap(phone ? 22 : 24);
+      if (rows.isNotEmpty) {
+        gap(phone ? 22 : 24);
+      } else if (phone) {
+        // The first heading sits as far under search as Home's Pinned does.
+        gap(12);
+      }
       rows.add(
         (_) => Padding(
           padding: EdgeInsets.symmetric(horizontal: margin),
@@ -1246,6 +1246,14 @@ extension on Sidebar {
             : 4,
       );
     }
+
+    // Home's pinned notes are cards in a sideways row, whatever the list
+    // draws.
+    Widget pinnedCard(Note note) => _row(
+      note,
+      shared: sharing != null && note.isShared,
+      style: NoteRowStyle.phoneCard,
+    );
 
     void section(Iterable<Note> notes, {bool clockOnly = false}) {
       final list = notes.toList();
@@ -1338,6 +1346,9 @@ extension on Sidebar {
           ),
         );
       }
+    } else if (pinnedOnly && phone) {
+      // The Pinned page, under its own title: every pinned note as a row.
+      section(groups.pinned);
     } else if (pinnedOnly) {
       heading(
         NotesListHeading(
@@ -1359,24 +1370,49 @@ extension on Sidebar {
       );
       section(groups.pinned);
     } else if (phone) {
-      if (phoneCards case final phoneCards?) {
+      // Home's Pinned, the one list with View all: up to five cards in a
+      // sideways row. Elsewhere, Drawings, Shared or a folder, every pinned
+      // note sits over the rest as the list draws it.
+      if (onOpenPinned case final onOpenPinned? when pinned.isNotEmpty) {
         rows.add(
           (_) => Padding(
-            padding: EdgeInsets.fromLTRB(margin, 10, margin, 0),
-            child: phoneCards,
+            // 16 over it with the list's own 4 at the top.
+            padding: EdgeInsets.fromLTRB(margin, 12, margin, 10),
+            child: Row(
+              key: const ValueKey('sidebar-pinned-heading'),
+              children: [
+                Expanded(
+                  child: _PhoneDayHeading(
+                    lead: 'Pinned',
+                    date: '${groups.pinned.length}',
+                  ),
+                ),
+                ViewAllLink(
+                  key: const ValueKey('sidebar-view-all-pinned'),
+                  phone: true,
+                  onPressed: onOpenPinned,
+                ),
+              ],
+            ),
           ),
         );
-      } else if (groups.pinned.isNotEmpty) {
+        rows.add(
+          (_) => PhonePinnedCards(
+            key: const ValueKey('phone-pinned-cards'),
+            margin: margin,
+            children: [for (final note in pinned) pinnedCard(note)],
+          ),
+        );
+      } else if (pinned.isNotEmpty) {
         heading(const _PhoneHeading('Pinned'));
-        section(groups.pinned);
+        section(pinned);
       }
       for (final key in groups.groupOrder) {
         heading(_groupHeading(groups, key));
         section(groups.byGroup[key]!);
       }
       if (drawings) {
-        // Drawings stay one grid of thumbnails, two to a row, which a day
-        // heading would break into short rows.
+        // Drawings stay one list under Recent, without a heading a day.
         if (groups.mine.isNotEmpty) {
           heading(const _PhoneHeading('Recent'));
           section(groups.mine);
@@ -1407,8 +1443,8 @@ extension on Sidebar {
             trailing:
                 pinned.length < groups.pinned.length &&
                     onPinnedOnlyChanged != null
-                ? SeeAllLink(
-                    key: const ValueKey('sidebar-see-all-pinned'),
+                ? ViewAllLink(
+                    key: const ValueKey('sidebar-view-all-pinned'),
                     onPressed: () => onPinnedOnlyChanged(true),
                   )
                 : null,
@@ -1429,19 +1465,14 @@ extension on Sidebar {
         ownDay: ownDay,
       );
       for (final group in grouped) {
-        final fold = group.upcoming;
         heading(
           NotesGroupHeading(
             key: ValueKey('sidebar-group-${group.label}'),
             label: group.label,
             detail: group.detail,
-            folded: fold ? !upcomingOpen : null,
-            onTap: fold ? onUpcomingToggled : null,
           ),
         );
-        if (!fold || upcomingOpen) {
-          section(group.notes, clockOnly: group.day != null);
-        }
+        section(group.notes, clockOnly: group.day != null);
       }
     }
 
@@ -1466,14 +1497,6 @@ extension on Sidebar {
   /// The Folders tab: the folder tree, then the notes in no folder.
   Widget _buildFolders(BuildContext context) {
     final folders = this.folders!;
-    final today = dayShown(now(), displayTime);
-    // A phone's Upcoming is a tile in [phoneCards], with a page of its own.
-    final upcoming = phone
-        ? const <Note>[]
-        : [
-            for (final note in notes)
-              if (waitsForLaterDay(ownDay?.call(note), today)) note,
-          ];
     return _fading(
       context,
       FoldersTab(
@@ -1483,8 +1506,7 @@ extension on Sidebar {
         onOpen: folders.onOpen,
         inFront: folders.inFront,
         onTab: folders.onTab,
-        upcoming: upcoming,
-        header: phoneCards,
+        header: phoneTiles,
         phone: phone,
         newFolder: folders.newFolder,
         looseHeading: phone ? (label) => _PhoneDayHeading(lead: label) : null,
@@ -2797,7 +2819,16 @@ class PhoneFiltersButton extends StatelessWidget {
 /// How a [NoteRow] draws its note: the desktop list's row or sticky card
 /// beside the spaces rail, a phone's row, or the Folders
 /// tab's note in an open folder ([filed]) or in none ([loose]).
-enum NoteRowStyle { row, card, drawingRow, drawingCard, touch, filed, loose }
+enum NoteRowStyle {
+  row,
+  card,
+  phoneCard,
+  drawingRow,
+  drawingCard,
+  touch,
+  filed,
+  loose,
+}
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -3293,8 +3324,10 @@ class _NoteRowState extends State<NoteRow> {
   Widget _boardFace({required String? snippet, required bool hasMenu}) {
     final note = widget.note;
     final people = widget.collaborators;
+    final drawingRow = widget.style == NoteRowStyle.touch && note.isDrawing;
     final card =
         widget.style == NoteRowStyle.card ||
+        widget.style == NoteRowStyle.phoneCard ||
         widget.style == NoteRowStyle.drawingCard;
     String stamp({bool clock = true}) => switch (widget.laterDay) {
       final day? => SidebarTimestamp.briefDay(
@@ -3305,7 +3338,7 @@ class _NoteRowState extends State<NoteRow> {
         note.updatedAt,
         now: widget.now(),
         displayTime: widget.displayTime,
-        today: card,
+        today: card || drawingRow,
         clock: clock,
       ),
     };
@@ -3329,6 +3362,16 @@ class _NoteRowState extends State<NoteRow> {
     final ringed = widget.openElsewhere && !widget.selected;
     final lit = _hovering || widget.ofPickedDay;
     final face = switch (widget.style) {
+      NoteRowStyle.phoneCard => PhoneCardFace(
+        note: note,
+        glance: glance,
+        date: date,
+        day: day,
+        selected: selected,
+        locked: widget.locked,
+        shared: widget.shared,
+        picking: picking,
+      ),
       NoteRowStyle.card => NoteCardFace(
         note: note,
         glance: glance,
@@ -3376,6 +3419,13 @@ class _NoteRowState extends State<NoteRow> {
         selected: widget.selected,
         hovering: lit,
         ringed: ringed,
+      ),
+      NoteRowStyle.touch when drawingRow => PhoneDrawingRowFace(
+        note: note,
+        date: date,
+        selected: selected,
+        hovering: lit,
+        picking: picking,
       ),
       NoteRowStyle.row || NoteRowStyle.touch => NoteListRowFace(
         touch: widget.style == NoteRowStyle.touch,
@@ -3865,10 +3915,11 @@ class _IconButton extends StatelessWidget {
   }
 }
 
-/// A day's notes on a phone's list, under the heading
+/// A day's notes on a phone's list, newest day first, under the heading
 /// [SidebarTimestamp.phoneDay] gives the day. Days are counted by calendar
 /// date, so a change of clocks never moves a note to another day, and a note
-/// stamped later than now joins today's.
+/// stamped later than now joins today's. A note given a later day stays out
+/// until that day comes.
 List<({String? lead, String date, List<Note> notes})> _phoneDays(
   List<Note> notes, {
   required DateTime now,
@@ -3879,18 +3930,12 @@ List<({String? lead, String date, List<Note> notes})> _phoneDays(
   final days = <DateTime, List<Note>>{};
   for (final note in notes) {
     final own = ownDay?.call(note);
+    if (waitsForLaterDay(own, today)) continue;
     final day = noteDay(note, displayTime, ownDay: own);
-    // An edit from a clock ahead of this one counts as today's; a day given
-    // ahead is that day, as Upcoming's notes are.
-    (days[own == null && day.isAfter(today) ? today : day] ??= []).add(note);
+    // An edit from a clock ahead of this one counts as today's.
+    (days[day.isAfter(today) ? today : day] ??= []).add(note);
   }
-  // Later days soonest first, then today and the days before, newest first.
-  final order = days.keys.toList()
-    ..sort(
-      (a, b) => a.isAfter(today) && b.isAfter(today)
-          ? a.compareTo(b)
-          : b.compareTo(a),
-    );
+  final order = days.keys.toList()..sort((a, b) => b.compareTo(a));
   return [
     for (final day in order)
       if (SidebarTimestamp.phoneDay(day, now: today) case (
@@ -4015,7 +4060,51 @@ class _PhoneDayHeading extends StatelessWidget {
   }
 }
 
-/// A heading over a phone's list: Pinned, Recent.
+/// A phone Home's pinned notes: cards in a row that scrolls sideways, two in
+/// full on screen and a sliver of the next, saying there is more.
+class PhonePinnedCards extends StatelessWidget {
+  const PhonePinnedCards({
+    super.key,
+    required this.margin,
+    required this.children,
+  });
+
+  /// The list's own margin, which the first card lines up with.
+  final double margin;
+  final List<Widget> children;
+
+  /// Between two cards, across and down.
+  static const double gap = 8;
+
+  /// How much of the third card shows past the second.
+  static const double peek = 34;
+
+  /// A card's width in a row [width] wide: two cards and the next one's
+  /// sliver after the margin, 160 on a 390 phone.
+  static double cardWidth(double width, double margin) =>
+      (width - margin - 2 * gap - peek) / 2;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = cardWidth(constraints.maxWidth, margin);
+      return SizedBox(
+        height: PhoneCardFace.height(context),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: margin),
+          itemCount: children.length,
+          separatorBuilder: (_, _) => const SizedBox(width: gap),
+          itemBuilder: (_, index) =>
+              SizedBox(width: width, child: children[index]),
+        ),
+      );
+    },
+  );
+}
+
+/// A heading over a phone's list: Pinned, where it has no View all, and
+/// Recent.
 class _PhoneHeading extends StatelessWidget {
   const _PhoneHeading(this.label);
 
