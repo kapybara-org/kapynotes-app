@@ -633,6 +633,11 @@ class NoteListRowFace extends StatelessWidget {
             : touch
             ? glance.preview ?? ''
             : glance.summary);
+    // A phone's note with nothing to preview goes from its title straight to
+    // its bottom line, or ends at the title when it has none.
+    final previewed =
+        !touch || snippet != null || place != null || summary.isNotEmpty;
+    final bottom = holds.isNotEmpty || (!previewed && people != null);
     final picking = this.picking;
     final marked = selected || picking == true;
     final tagMarks = TagMarks.of(context, note.id);
@@ -741,47 +746,49 @@ class NoteListRowFace extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    if (!touch) SizedBox(width: TagDots.size + 8),
-                    for (final mark in marks) ...[
-                      KapyIcon(mark, size: 14, color: palette.textMuted),
-                      const SizedBox(width: 5),
-                    ],
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            if (place case final place?)
-                              TextSpan(
-                                text: '$place · ',
-                                style: TextStyle(color: palette.textTertiary),
-                              ),
-                            TextSpan(text: summary),
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _figtree(
-                          touch ? 14 : AppTypeScale.body,
-                          touch ? 20 : 16,
-                          FontWeight.w400,
-                          note.isEmpty
-                              ? palette.textTertiary
-                              : touch
-                              ? palette.textSecondary
-                              : palette.textMuted,
+                if (previewed) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (!touch) SizedBox(width: TagDots.size + 8),
+                      for (final mark in marks) ...[
+                        KapyIcon(mark, size: 14, color: palette.textMuted),
+                        const SizedBox(width: 5),
+                      ],
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              if (place case final place?)
+                                TextSpan(
+                                  text: '$place · ',
+                                  style: TextStyle(color: palette.textTertiary),
+                                ),
+                              TextSpan(text: summary),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _figtree(
+                            touch ? 14 : AppTypeScale.body,
+                            touch ? 20 : 16,
+                            FontWeight.w400,
+                            note.isEmpty
+                                ? palette.textTertiary
+                                : touch
+                                ? palette.textSecondary
+                                : palette.textMuted,
+                          ),
                         ),
                       ),
-                    ),
-                    if (people != null && holds.isEmpty) ...[
-                      const SizedBox(width: 8),
-                      people,
+                      if (people != null && !bottom) ...[
+                        const SizedBox(width: 8),
+                        people,
+                      ],
                     ],
-                  ],
-                ),
-                if (holds.isNotEmpty) ...[
+                  ),
+                ],
+                if (bottom) ...[
                   const SizedBox(height: 3),
                   Row(
                     key: const ValueKey('note-row-holds'),

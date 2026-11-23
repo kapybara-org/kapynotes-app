@@ -4052,8 +4052,10 @@ class _PhoneShareHeading extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
           child: Padding(
-            // The room above the heading is part of what a tap takes.
-            padding: const EdgeInsets.only(top: 19),
+            // A 44 pt target: the 19 above the heading, its 24, and 1 under
+            // it. A list item takes no taps outside itself, so the point the
+            // 19 and 24 leave short sits under the heading, not above it.
+            padding: const EdgeInsets.only(top: 19, bottom: 1),
             child: SizedBox(
               height: 24,
               child: Row(

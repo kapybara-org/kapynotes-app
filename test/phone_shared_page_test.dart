@@ -247,22 +247,31 @@ void main() {
     });
   }
 
-  testWidgets('a heading takes the 19 above it, sits right on its first row, '
-      'and marks whoever is in one of its notes with a sage dot', (
-    tester,
-  ) async {
+  testWidgets('a heading is a 44 pt target: the 19 above it, its 24 and 1 '
+      'under it, then its first row; it marks whoever is in one of its notes '
+      'with a sage dot', (tester) async {
     await shareAround(tester);
-    await pumpPage(tester, onOpenPerson: (_) {});
+    String? opened;
+    await pumpPage(tester, onOpenPerson: (email) => opened = email);
     final palette = KapyTheme.darkPalette;
     final group = heading('With Priya, waiting for luca');
-    expect(tester.getSize(group).height, 19 + 24);
+    final box = tester.getRect(group);
+    expect(box.height, 44);
+    final words = tester.getRect(find.text('With Priya, waiting for luca'));
+    expect(words.top - box.top, 19);
+    expect(box.bottom - words.bottom, 1);
     final first = row('Call with Arjun');
-    expect(tester.getRect(first).top, tester.getRect(group).bottom);
+    expect(tester.getRect(first).top, box.bottom);
     expect(
       tester.getRect(find.text('Call with Arjun')).top -
           tester.getRect(first).top,
       12,
     );
+    for (final dy in [box.top + 1, box.bottom - 1]) {
+      opened = null;
+      await tester.tapAt(Offset(box.right - 10, dy));
+      expect(opened, 'priya@example.com', reason: 'a tap at y = $dy');
+    }
 
     final here = find.descendant(
       of: group,
@@ -315,7 +324,7 @@ void main() {
     );
     final callHolds = find.descendant(of: call, matching: holds);
     expect(
-      find.descendant(of: callHolds, matching: find.text('Priya is typing...')),
+      find.descendant(of: callHolds, matching: find.text('Priya is typing…')),
       findsOne,
     );
     expect(

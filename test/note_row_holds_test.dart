@@ -270,7 +270,7 @@ void main() {
     await pumpRow(
       tester,
       morningPages(),
-      live: 'Priya is typing...',
+      live: 'Priya is typing…',
       viewOnly: true,
       locked: true,
       shared: true,
@@ -284,7 +284,7 @@ void main() {
     );
     final typing = find.descendant(
       of: live,
-      matching: find.text('Priya is typing...'),
+      matching: find.text('Priya is typing…'),
     );
     final dot = find.descendant(of: live, matching: find.byType(Container));
     expect(tester.getSize(dot), const Size(6, 6));
@@ -361,5 +361,58 @@ void main() {
         .first;
     expect(find.descendant(of: previewLine, matching: peopleStrip), findsOne);
     expect(tester.getRect(peopleStrip).right, 393 - 20);
+  });
+
+  Note titleOnly() =>
+      Note(id: 'packing', body: 'Packing list', createdAt: now, updatedAt: now);
+
+  testWidgets('a title-only row with a bottom line goes straight from its '
+      'title to it, 3 under: 12, the 24 title, 3, the 16 line, 12', (
+    tester,
+  ) async {
+    await pumpRow(
+      tester,
+      titleOnly(),
+      live: 'Priya is typing…',
+      viewOnly: true,
+      shared: true,
+    );
+    final title = find.text('Packing list');
+    expect(holds, findsOne);
+    expect(tester.getTopLeft(holds).dy - tester.getBottomLeft(title).dy, 3);
+    expect(
+      find.descendant(of: holds, matching: find.text('View only')),
+      findsOne,
+    );
+    expect(
+      tester.getSize(find.byType(NoteListRowFace)).height,
+      12 + 24 + 3 + 16 + 12,
+    );
+  });
+
+  testWidgets('a title-only row with its people puts them on the bottom line '
+      'under the title', (tester) async {
+    await pumpRow(tester, titleOnly(), people: people, shared: true);
+    expect(find.descendant(of: holds, matching: peopleStrip), findsOne);
+    expect(tester.getRect(peopleStrip).right, 393 - 20);
+    expect(
+      tester.getSize(find.byType(NoteListRowFace)).height,
+      12 + 24 + 3 + 16 + 12,
+    );
+  });
+
+  testWidgets('a title-only row with no bottom line ends at its title: 12, '
+      'the 24 title, 12', (tester) async {
+    await pumpRow(tester, titleOnly());
+    expect(holds, findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(NoteListRowFace),
+        matching: find.byType(RichText),
+      ),
+      findsNWidgets(2),
+      reason: 'the title and the time, with no empty preview line',
+    );
+    expect(tester.getSize(find.byType(NoteListRowFace)).height, 12 + 24 + 12);
   });
 }
