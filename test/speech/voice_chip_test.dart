@@ -591,7 +591,6 @@ void main() {
         (VoiceChipState.summarising, null),
         (VoiceChipState.done, summarised),
         (VoiceChipState.done, null),
-        (VoiceChipState.idle, null),
       ];
       for (final bold in [false, true]) {
         tester.platformDispatcher.accessibilityFeaturesTestValue =
@@ -612,6 +611,29 @@ void main() {
       }
     });
 
+    testWidgets('one never queued keeps to the row at every size', (
+      tester,
+    ) async {
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      for (final bold in [false, true]) {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(boldText: bold);
+        for (final scale in [1.0, 1.3]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          for (final phone in [320.0, 375.0, 412.0]) {
+            final reason = '$phone pt, ${scale}x, bold $bold';
+            await pumpAt(tester, phone, VoiceChipState.idle);
+            expect(drawn(tester), 56, reason: reason);
+            expect(promised(tester, phone), 56, reason: reason);
+            expect(find.text('Voice note'), findsNothing, reason: reason);
+          }
+        }
+      }
+    });
+
     testWidgets(
       "a summary's title takes the second line wherever its statuses do, "
       "across the card's width",
@@ -623,6 +645,10 @@ void main() {
         final words = tester.getRect(find.text(title));
         expect(drawn(tester), 83);
         expect(cut(tester, title), isTrue);
+        expect(
+          tester.renderObject<RenderParagraph>(find.text(title)).overflow,
+          TextOverflow.ellipsis,
+        );
         expect(
           words.top,
           greaterThanOrEqualTo(tester.getRect(find.text('2:03')).bottom),

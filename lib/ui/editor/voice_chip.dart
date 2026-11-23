@@ -185,9 +185,14 @@ class NoteVoiceChip extends StatelessWidget {
       ref.summary != null &&
       (state == VoiceChipState.done || state == VoiceChipState.idle);
 
-  /// Whether the label is where a recording comes to rest: its summary's
-  /// title, or "Voice note".
-  bool get _resting => _titled || _label == 'Voice note';
+  /// Whether the chip is on a recording's usual way to its summary's title:
+  /// saying "Transcribing…" or "Summarising…", or where that way ended.
+  bool get _onUsualPath => switch (state) {
+    VoiceChipState.transcribing ||
+    VoiceChipState.summarising ||
+    VoiceChipState.done => true,
+    _ => _titled,
+  };
 
   /// How tall the chip is when it is handed [width]: its row, and the
   /// label's own line under it when the row would cut a status short.
@@ -204,9 +209,10 @@ class NoteVoiceChip extends StatelessWidget {
   /// leave evenly between the waveform and the label. A status wider than
   /// its half would end in an ellipsis, and it is a few words that only help
   /// when they read in full. A summary's title takes the second line
-  /// wherever "Transcribing…" and "Summarising…" would, and a recording with
-  /// nothing more to say than "Voice note" keeps that line's room, so a
-  /// recording is as tall at the end of its usual path as all along it.
+  /// wherever "Transcribing…" and "Summarising…" would, and a recording done
+  /// with nothing more to say than "Voice note" keeps that line's room, so a
+  /// recording is as tall at the end of its usual path as all along it. One
+  /// that was never queued has nothing to say and keeps to the row.
   double? _labelBelow(BuildContext context, double width) {
     if (AppPlatform.hasPointer) return null;
     final palette = context.palette;
@@ -231,13 +237,11 @@ class NoteVoiceChip extends StatelessWidget {
       (inner - _touchPlay - length.width - 3 * _gap) / 2,
     );
     length.dispose();
-    final usual =
-        _resting ||
-        state == VoiceChipState.transcribing ||
-        state == VoiceChipState.summarising;
     double? below;
     for (final status
-        in usual ? const [_transcribing, _summarising] : [_label]) {
+        in _onUsualPath
+            ? const [_transcribing, _summarising]
+            : [if (_label != 'Voice note') _label]) {
       final words = measure(status, _labelStyle(palette), inner);
       if (words.width > share) below = math.max(below ?? 0, words.height);
       words.dispose();
