@@ -1,0 +1,10 @@
+Kapy Notes 1.35.5
+
+- A voice recording keeps going with the screen off, the phone locked or another app open, up to 30 minutes. From iOS 16.1, the Lock Screen and the Dynamic Island show it, with Pause and Stop from iOS 17.
+- Swipe a note left to pin or delete it. A full swipe archives it, and Undo puts it back.
+- The swipe from the left edge goes one step back from anywhere. Archive and Hidden go back to All notes, and a task or Kapy AI question you'd started is still there.
+- Home shows your pinned notes as a row of cards, with View all. Shared has moved into Folders, beside Drawings.
+- Upcoming is gone. A note for a later day stays off your lists until its day. To find it sooner, pick its day in the week or search for it.
+- About & updates in Settings shows your version and what it brought, and opens the App Store when a newer one is there.
+- Shared groups notes under the people you share them with.
+- A voice note's status and long calculator answers are no longer cut off.

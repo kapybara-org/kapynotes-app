@@ -1,0 +1,8 @@
+Recording with the screen off, and a swipe for each note.
+
+- Recording keeps going with the screen off, with Pause and Stop in its notification.
+- Swipe a note left to pin or delete it. A full swipe archives it, with Undo.
+- Back goes one step back from anywhere.
+- Pinned notes sit in a row on Home, and Shared is in Folders. Upcoming is gone.
+- Transcribing on your device no longer skips sentences.
+- About & updates shows your version and opens Google Play when an update is waiting.
