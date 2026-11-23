@@ -4281,10 +4281,7 @@ void main() {
           ),
           findsOneWidget,
         );
-        expect(
-          tester.widget<NoteCardFace>(card('October plan')).date,
-          '7 Dec',
-        );
+        expect(tester.widget<NoteCardFace>(card('October plan')).date, '7 Dec');
         expect(ring('October plan'), findsNothing);
         expect(
           tester.widget<NoteCardFace>(card('Standup notes')).date,
@@ -8402,9 +8399,14 @@ void main() {
       final groceries = find.widgetWithText(NoteRow, 'Groceries');
       late String groceriesId;
 
-      Future<void> pumpHome(WidgetTester tester, {TagStore? tags}) async {
+      Future<void> pumpHome(
+        WidgetTester tester, {
+        TagStore? tags,
+        String? also,
+      }) async {
         await notes.load();
         groceriesId = notes.create(body: 'Groceries\nOat milk').id;
+        if (also != null) notes.create(body: also);
         await pumpApp(
           tester,
           size: const Size(393, 852),
@@ -8875,6 +8877,141 @@ void main() {
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
         expect(groceries, findsOneWidget);
+      });
+
+      group('a task opened (M14)', () {
+        const trip =
+            'Lisbon trip\n☐ Book the train\n☐ Pack the adapters\n'
+            '☐ Renew the passport\n  It runs out in May.\n☐ Buy euros';
+        final taskPage = find.byKey(const ValueKey('phone-task-open-note'));
+        final bar = find.byKey(const ValueKey('phone-bar'));
+
+        Future<void> openTask(WidgetTester tester) async {
+          await pumpHome(tester, also: trip);
+          await tester.tap(tasksTitle);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Renew the passport'));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsOneWidget);
+        }
+
+        testWidgets('pushes a page under the bar, over the header, and '
+            '← Tasks comes back', (tester) async {
+          await openTask(tester);
+          expect(bar.hitTestable(), findsOneWidget);
+          expect(find.byType(PhoneHomeHeader).hitTestable(), findsNothing);
+          expect(find.text('It runs out in May.'), findsOneWidget);
+
+          await tester.tap(find.byKey(const ValueKey('page-back')));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage.hitTestable(), findsOneWidget);
+          expect(find.byType(PhoneHomeHeader).hitTestable(), findsOneWidget);
+        });
+
+        testWidgets("a row's menu covers the whole screen, the bar too, and "
+            'a tap anywhere closes it', (tester) async {
+          await pumpHome(tester, also: trip);
+          await tester.tap(tasksTitle);
+          await tester.pumpAndSettle();
+          await tester.longPress(find.text('Buy euros'));
+          await tester.pumpAndSettle();
+          final doNow = find.byKey(const ValueKey('task-menu-Do now'));
+          expect(doNow, findsOneWidget);
+          expect(bar.hitTestable(), findsNothing);
+          await tester.tapAt(const Offset(8, 8));
+          await tester.pumpAndSettle();
+          expect(doNow, findsNothing);
+          expect(bar.hitTestable(), findsOneWidget);
+        });
+
+        for (final (name, opener) in [
+          ('the filter menu', 'tasks-filters'),
+          ('the note chooser', 'tasks-note-picker'),
+        ]) {
+          testWidgets('$name covers the whole screen, the bar too, and a '
+              'tap anywhere closes it', (tester) async {
+            await pumpHome(tester, also: trip);
+            await tester.tap(tasksTitle);
+            await tester.pumpAndSettle();
+            await tester.tap(find.byKey(ValueKey(opener)));
+            await tester.pumpAndSettle();
+            final items = find.byWidgetPredicate(
+              (widget) => widget is PopupMenuItem,
+            );
+            expect(items, findsWidgets);
+            expect(bar.hitTestable(), findsNothing);
+            await tester.tapAt(const Offset(8, 8));
+            await tester.pumpAndSettle();
+            expect(items, findsNothing);
+            expect(bar.hitTestable(), findsOneWidget);
+          });
+        }
+
+        testWidgets("a swipe from the page's left edge comes back to Tasks, "
+            'not Notes', (tester) async {
+          AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          await openTask(tester);
+          await tester.dragFrom(const Offset(5, 400), const Offset(300, 0));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage.hitTestable(), findsOneWidget);
+        });
+
+        testWidgets("the system back comes back to Tasks, and only then "
+            'to Notes', (tester) async {
+          await openTask(tester);
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage, findsOneWidget);
+
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(tasksPage, findsNothing);
+          expect(groceries, findsOneWidget);
+        });
+
+        testWidgets("a sideways swipe on the page doesn't turn Home to "
+            'Notes', (tester) async {
+          await openTask(tester);
+          await tester.dragFrom(const Offset(200, 600), const Offset(200, 0));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsOneWidget);
+          expect(find.byType(TasksScreen, skipOffstage: false), findsOneWidget);
+        });
+
+        testWidgets("the bar's Notes leaves the task's page, and Tasks opens "
+            'again on its list', (tester) async {
+          await openTask(tester);
+          await tester.tap(find.byKey(const ValueKey('bar-notes')));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage, findsNothing);
+          await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
+          await tester.pumpAndSettle();
+          expect(taskPage, findsNothing);
+          expect(tasksPage.hitTestable(), findsOneWidget);
+        });
+
+        testWidgets("Open in note opens the note at the task's line", (
+          tester,
+        ) async {
+          await openTask(tester);
+          await tester.tap(taskPage);
+          await tester.pumpAndSettle();
+          expect(tasksPage, findsNothing);
+          final field = tester.widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          );
+          expect(field.controller.text, startsWith('Lisbon trip'));
+          final line = '☐ Renew the passport';
+          expect(
+            field.controller.selection,
+            TextSelection.collapsed(offset: trip.indexOf(line) + line.length),
+          );
+        });
       });
     });
 

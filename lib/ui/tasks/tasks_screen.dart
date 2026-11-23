@@ -61,6 +61,7 @@ class TasksScreen extends StatefulWidget {
     required this.addFocus,
     required this.labelOf,
     required this.onOpenNote,
+    this.onOpenTask,
     required this.onOpenDone,
     this.images,
     this.displayTime,
@@ -98,6 +99,10 @@ class TasksScreen extends StatefulWidget {
   /// A note's name as a task's mark shows it.
   final String Function(Note note) labelOf;
   final ValueChanged<String> onOpenNote;
+
+  /// Opens a task's note at the task's line, from a phone's task page.
+  /// Without it the page opens the note as [onOpenNote] does.
+  final ValueChanged<TaskItem>? onOpenTask;
 
   /// Opens the Done view, from the evening's "N finished today".
   final VoidCallback onOpenDone;
@@ -241,6 +246,7 @@ class TasksScreenState extends State<TasksScreen> {
     );
     final picked = await showKapyContextMenu<TaskFilter>(
       context: context,
+      useRootNavigator: true,
       globalPosition: box.localToGlobal(box.size.bottomLeft(Offset.zero)),
       requestFocus: false,
       items: [
@@ -511,7 +517,7 @@ class TasksScreenState extends State<TasksScreen> {
 
   void _openSheet(TaskItem item) {
     if (widget.phone) {
-      unawaited(_openPhoneSheet(item));
+      unawaited(_openPhonePage(item));
       return;
     }
     setState(() {
@@ -521,42 +527,44 @@ class TasksScreenState extends State<TasksScreen> {
     _listFocus.requestFocus();
   }
 
-  /// A phone's sheet pulls up over the list, and follows the task as it is
-  /// edited, so what it shows is what the note now says.
-  Future<void> _openPhoneSheet(TaskItem item) => showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    barrierColor: Theme.of(context).drawerTheme.scrimColor,
-    builder: (context) => ListenableBuilder(
-      listenable: _tasks,
-      builder: (context, _) {
-        final board = _tasks.read();
-        TaskItem? shown;
-        for (final candidate in [...board.open, ...board.done]) {
-          if (candidate.id == item.id) shown = candidate;
-        }
-        final current = shown;
-        if (current == null) {
-          final route = ModalRoute.of(context);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (context.mounted && (route?.isCurrent ?? false)) {
+  /// A phone's task page (M14), pushed over the list on the navigator that
+  /// holds Tasks, so the bar stays. It follows the task as it is edited, so
+  /// what it shows is what the note now says, and goes back to the list,
+  /// as it was left, once the task leaves its note.
+  Future<void> _openPhonePage(TaskItem item) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (context) => ListenableBuilder(
+        listenable: _tasks,
+        builder: (context, _) {
+          final board = _tasks.read();
+          TaskItem? shown;
+          for (final candidate in [...board.open, ...board.done]) {
+            if (candidate.id == item.id) shown = candidate;
+          }
+          final current = shown;
+          if (current == null) {
+            final route = ModalRoute.of(context);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted && (route?.isCurrent ?? false)) {
+                Navigator.of(context).pop();
+              }
+            });
+            return const SizedBox.shrink();
+          }
+          return PhoneTaskPage(
+            item: current,
+            tasks: _tasks,
+            label: widget.labelOf(current.note),
+            images: widget.images,
+            onBack: () => Navigator.of(context).pop(),
+            onOpenNote: () {
               Navigator.of(context).pop();
-            }
-          });
-          return const SizedBox.shrink();
-        }
-        return PhoneTaskDetailsSheet(
-          item: current,
-          tasks: _tasks,
-          images: widget.images,
-          onClose: () => Navigator.of(context).pop(),
-          onOpenNote: () {
-            Navigator.of(context).pop();
-            widget.onOpenNote(current.note.id);
-          },
-        );
-      },
+              final open = widget.onOpenTask;
+              open == null ? widget.onOpenNote(current.note.id) : open(current);
+            },
+          );
+        },
+      ),
     ),
   );
 
@@ -1395,6 +1403,7 @@ class _NotePicker extends StatelessWidget {
     unawaited(
       showKapyContextMenu<String>(
         context: context,
+        useRootNavigator: true,
         requestFocus: false,
         globalPosition: box.localToGlobal(Offset(0, box.size.height + 4)),
         items: [
@@ -1426,6 +1435,7 @@ Future<void> _showTaskMenu(
 }) async {
   final choice = await showKapyContextMenu<int>(
     context: context,
+    useRootNavigator: true,
     globalPosition: position,
     requestFocus: false,
     items: [

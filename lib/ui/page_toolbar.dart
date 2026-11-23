@@ -870,3 +870,64 @@ class _Saved extends StatelessWidget {
     };
   }
 }
+
+/// Back to the list a page came from: "← Tasks" on iOS, and on Android
+/// Material's arrow alone, as the system back gesture names nothing either.
+class PageBackButton extends StatelessWidget {
+  const PageBackButton({super.key, required this.to, required this.onPressed});
+
+  final String to;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    if (AppPlatform.isAndroid) {
+      return IconButton(
+        key: const ValueKey('page-back'),
+        tooltip: 'Back',
+        onPressed: onPressed,
+        color: palette.textPrimary,
+        icon: KapyIcon(KapyIcons.arrowBackRounded, size: 18),
+      );
+    }
+    return Semantics(
+      button: true,
+      label: 'Back to $to',
+      excludeSemantics: true,
+      child: TextButton(
+        key: const ValueKey('page-back'),
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.only(right: 8),
+          foregroundColor: palette.textPrimary,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: Colors.transparent,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            KapyIcon(
+              KapyIcons.arrowBackRounded,
+              size: 18,
+              color: palette.textPrimary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              to,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppTypeScale.body,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
+                color: palette.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

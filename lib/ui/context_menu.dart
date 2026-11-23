@@ -17,9 +17,10 @@ Future<T?> showKapyContextMenu<T>({
   required List<PopupMenuEntry<T>> items,
   Rect? preferredGlobalBounds,
   bool requestFocus = true,
+  bool useRootNavigator = false,
 }) {
   assert(items.isNotEmpty);
-  final navigator = Navigator.of(context);
+  final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
   final overlay = navigator.overlay?.context.findRenderObject() as RenderBox?;
   if (overlay == null) return Future<T?>.value();
 
