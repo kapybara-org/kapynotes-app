@@ -10571,7 +10571,7 @@ void main() {
       expect(holdsOf('Renewal notes'), findsNothing);
     });
 
-    testWidgets('a row swipes left to Pin and Archive', (tester) async {
+    testWidgets('a row swipes left to Pin and Delete', (tester) async {
       final groceries = notes.create(body: 'Groceries\nOat milk');
       final offsite = notes.create(body: 'Team offsite');
       await pumpApp(tester, size: const Size(393, 852));
@@ -10604,9 +10604,11 @@ void main() {
         const Offset(-200, 0),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(ValueKey('swipe-archive-${offsite.id}')));
+      await tester.tap(find.byKey(ValueKey('swipe-delete-${offsite.id}')));
       await tester.pumpAndSettle();
-      expect(notes.archivedNotes.map((note) => note.id), [offsite.id]);
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(notes.byId(offsite.id), isNull);
     });
 
     testWidgets('a short swipe springs back and a tap still opens the note', (

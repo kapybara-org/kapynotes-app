@@ -622,6 +622,33 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
+  /// Takes an archive straight back: [before] is the note as it was just
+  /// before, and [index] where it stood among every note, so it returns to
+  /// its day and its place in the list. Only the archive is undone: whatever
+  /// else reached the note since stays. It goes back unsent, a millisecond
+  /// on if its old time is the one the server confirmed, so the server hears
+  /// the archive taken back.
+  void undoArchive(Note before, int index) {
+    final at = indexOf(before.id);
+    if (at < 0) return;
+    final note = _notes[at];
+    if (!note.isArchived || note.isHidden) return;
+    final back = before.updatedAt;
+    final rest = [..._notes]..removeAt(at);
+    _notes = [
+      ...rest.take(index),
+      note.copyWith(
+        archivedAt: null,
+        updatedAt:
+            note.syncedAt?.millisecondsSinceEpoch == back.millisecondsSinceEpoch
+            ? back.add(const Duration(milliseconds: 1))
+            : back,
+      ),
+      ...rest.skip(index),
+    ];
+    _persist();
+  }
+
   /// Returns an archived note to the main list as the most recent change.
   void restore(String id) => restoreAll([id]);
 

@@ -712,4 +712,84 @@ void main() {
     expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-shared-card')), findsOneWidget);
   });
+
+  group("a phone row's swipe in Shared", () {
+    /// Priya shares Packing list with Sam, who joins, and Sam shares Trip
+    /// budget with her; then Shared opens on Sam's phone.
+    Future<void> openShared(WidgetTester tester) async {
+      await signIn(tester);
+      await tester.runAsync(() async {
+        await priya.boot();
+        final theirs = priya.notes.create(body: 'Packing list');
+        await priya.sync.syncNow();
+        await priya.sharing.shareNoteWith(
+          theirs.id,
+          email: server.user('user-1').email,
+        );
+        await account.sharing!.acceptInvite(server.outbox.single.token);
+        final mine = notes.create(body: 'Trip budget');
+        await account.sync!.syncNow();
+        await account.sharing!.shareNoteWith(mine.id, email: priya.email);
+        await priya.sharing.acceptInvite(server.outbox.last.token);
+        await priya.sync.syncNow();
+        await account.sharing!.refresh();
+        await account.sync!.syncNow();
+        for (
+          var i = 0;
+          i < 200 && !notes.allNotes.any((n) => n.title == 'Packing list');
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 25));
+        }
+      });
+      await pumpApp(tester, phone: true);
+      await showList(tester, phone: true);
+      await openTab(tester, SidebarTab.shared, phone: true);
+    }
+
+    Future<String> openRow(WidgetTester tester, String title) async {
+      await tester.drag(
+        find.widgetWithText(NoteRow, title),
+        const Offset(-120, 0),
+      );
+      await tester.pumpAndSettle();
+      return notes.allNotes.firstWhere((note) => note.title == title).id;
+    }
+
+    testWidgets("an owner's Delete asks first, as the row's menu does", (
+      tester,
+    ) async {
+      await openShared(tester);
+      final id = await openRow(tester, 'Trip budget');
+      expect(find.text('Delete'), findsOneWidget);
+      await tester.tap(find.byKey(ValueKey('swipe-delete-$id')));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete note?'), findsOneWidget);
+      expect(
+        find.text(
+          'Permanently deletes "Trip budget" from every synced device.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(notes.byId(id), isNull);
+      expect(find.text('Note deleted'), findsOneWidget);
+    });
+
+    testWidgets("a guest's row offers Remove, which only takes the note out "
+        'of their notes', (tester) async {
+      await openShared(tester);
+      final id = await openRow(tester, 'Packing list');
+      expect(find.text('Remove'), findsOneWidget);
+      expect(find.text('Delete'), findsNothing);
+      await tester.tap(find.byKey(ValueKey('swipe-delete-$id')));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove from your notes?'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(notes.byId(id), isNull);
+      expect(find.text('Removed from your notes'), findsOneWidget);
+    });
+  });
 }
