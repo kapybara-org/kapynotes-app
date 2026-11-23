@@ -414,6 +414,29 @@ void main() {
       return note.id;
     }
 
+    testWidgets('a half-typed question is still there when the sheet opens '
+        'again after Back', (tester) async {
+      await open(tester);
+      await tester.enterText(field, 'What did Arjun');
+      await tester.pump();
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(sheet, findsNothing);
+
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(of: field, matching: find.byType(EditableText)),
+            )
+            .controller
+            .text,
+        'What did Arjun',
+      );
+    });
+
     Future<void> ask(WidgetTester tester, String noteId) async {
       await tester.enterText(field, question);
       await tester.pump();

@@ -326,4 +326,33 @@ void main() {
     await tap('phone-new-close');
     expect(find.byKey(const ValueKey('phone-new-close')), findsNothing);
   });
+  testWidgets('Archive opens from the filter, and Back comes Home with the '
+      'app still open (KAP-305)', (tester) async {
+    await launch(tester);
+    final homeTitle = find.byKey(const ValueKey('home-title-notes'));
+    final ways = ['edge swipe', if (AppPlatform.isAndroid) 'system back'];
+    for (final way in ways) {
+      if (find.byKey(const ValueKey('phone-filter-row')).evaluate().isEmpty) {
+        await tester.tap(find.byKey(const ValueKey('phone-filters')));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+      await tester.pumpAndSettle();
+      expect(homeTitle, findsNothing, reason: way);
+
+      if (way == 'edge swipe') {
+        await tester.timedDragFrom(
+          const Offset(2, 420),
+          const Offset(200, 0),
+          const Duration(milliseconds: 300),
+        );
+      } else {
+        await tester.binding.handlePopRoute();
+      }
+      await tester.pumpAndSettle();
+      expect(homeTitle, findsOneWidget, reason: way);
+    }
+  });
 }

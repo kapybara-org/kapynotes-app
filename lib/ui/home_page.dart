@@ -4980,6 +4980,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               !_picks.on &&
               !pinnedOrShared &&
               !_specialMode &&
+              !_homeNarrowed &&
               !_tasksMode,
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) unawaited(_phoneBack());
@@ -5036,6 +5037,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   static const _phoneListPage = ValueKey('phone-list');
+
+  /// Whether Home's list is narrowed by a tag, a kind of note or a time,
+  /// which Android's Back clears before it leaves the app.
+  bool get _homeNarrowed =>
+      _when != NotesWhen.anyTime ||
+      filtersNarrowed(show: _show, media: _mediaFilter, tags: _tagsNarrowed);
 
   /// Whether a phone's page is up, over the list.
   bool get _phonePageShown => _phonePageOpen && _shownNote(_selectedId) != null;

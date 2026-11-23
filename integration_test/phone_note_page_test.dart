@@ -11,10 +11,12 @@
 //
 // M08 and M11 keep the format bar on the keyboard, as the Captain ruled on
 // KAPY-35's item 27; the boards leave it out.
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -241,5 +243,34 @@ void main() {
     await keyboard(up: true);
     expect(find.byKey(const ValueKey('day-strip-2025-11-21')), findsOneWidget);
     await shot('m11-another-day-blank-page');
+    // Back while typing (KAP-305): the words are kept and the keyboard
+    // doesn't stay up over the list. On Android the first Back belongs to
+    // the keyboard, so the page is still there; the second leaves it. On an
+    // iPhone the swipe in from the edge leaves it.
+    const words = 'Pick up the keys';
+    field().controller.value = const TextEditingValue(
+      text: words,
+      selection: TextSelection.collapsed(offset: words.length),
+    );
+    await tester.pumpAndSettle();
+    final written = field().controller;
+    if (AppPlatform.isAndroid) {
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      await keyboard(up: false);
+      expect(find.byType(NoteEditor), findsOneWidget);
+      await tester.binding.handlePopRoute();
+    } else {
+      await tester.timedDragFrom(
+        const Offset(2, 420),
+        const Offset(300, 0),
+        const Duration(milliseconds: 300),
+      );
+    }
+    await tester.pumpAndSettle();
+    await keyboard(up: false);
+    expect(find.byType(NoteEditor), findsNothing);
+    expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    expect(written.text, words);
+    expect(notes.notes.any((note) => note.body.startsWith(words)), isTrue);
   });
 }

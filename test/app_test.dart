@@ -12514,5 +12514,124 @@ void main() {
       expect(find.byType(NoteEditor), findsNothing);
       expect(popped, isEmpty);
     });
+    testWidgets("on an iPhone, the swipe from a task's page edge goes back "
+        'one level, to Tasks', (tester) async {
+      await notes.load();
+      notes.create(body: 'Lisbon trip\n☐ Renew the passport');
+      await pumpApp(
+        tester,
+        size: const Size(393, 852),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Renew the passport'));
+      await tester.pumpAndSettle();
+      final taskPage = find.byKey(const ValueKey('phone-task-open-note'));
+      expect(taskPage, findsOneWidget);
+
+      await tester.dragFrom(const Offset(5, 400), const Offset(300, 0));
+      await tester.pumpAndSettle();
+      expect(taskPage, findsNothing);
+      expect(find.byType(TasksScreen).hitTestable(), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+    testWidgets("on an iPhone, the keyboard goes as the page's back swipe "
+        'starts', (tester) async {
+      await notes.load();
+      notes.create(body: 'Phone budget\n6 * 7');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.widgetWithText(NoteRow, 'Phone budget'));
+      await tester.pumpAndSettle();
+      final field = openNoteField(tester);
+      field.focusNode.requestFocus();
+      await tester.pump();
+      expect(field.focusNode.hasFocus, isTrue);
+
+      final swipe = await tester.startGesture(const Offset(5, 400));
+      await swipe.moveBy(const Offset(40, 0));
+      await tester.pump();
+      await swipe.moveBy(const Offset(40, 0));
+      await tester.pump();
+      expect(field.focusNode.hasFocus, isFalse);
+      await swipe.moveBy(const Offset(220, 0));
+      await swipe.up();
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsNothing);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+    testWidgets("Android's Back on Home clears a tag first, and only then "
+        'leaves the app', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final tags = TagStore(store);
+      await notes.load();
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      final travel = tags.create('Travel')!;
+      tags.addTag(trip.id, travel.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+      await openPhoneFilters(tester);
+      await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+      await tester.pumpAndSettle();
+      final dot = find.byKey(const ValueKey('phone-filters-dot'));
+      expect(dot, findsOneWidget);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(popped, isEmpty);
+      expect(dot, findsNothing);
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(popped, ['SystemNavigator.pop']);
+    });
+
+    testWidgets('on an iPhone, plain Home keeps no back zone at its left '
+        'edge, even with a tag chosen', (tester) async {
+      final tags = TagStore(store);
+      await notes.load();
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final travel = tags.create('Travel')!;
+      tags.addTag(trip.id, travel.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+      await openPhoneFilters(tester);
+      await tester.tap(find.byKey(ValueKey('phone-tag-${travel.id}')));
+      await tester.pumpAndSettle();
+      final row = find.widgetWithText(NoteRow, 'Lisbon trip');
+      await tester.dragFrom(
+        Offset(5, tester.getCenter(row).dy),
+        const Offset(200, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('phone-filters-dot')), findsOneWidget);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    });
+
+    testWidgets('on an iPhone, a row swipe from 24 pt in still opens its '
+        'actions on Pinned, where the edge goes back', (tester) async {
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+      await tester.pumpAndSettle();
+      final row = find.widgetWithText(NoteRow, 'Lisbon trip');
+      await tester.dragFrom(
+        Offset(24, tester.getCenter(row).dy),
+        const Offset(-200, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('swipe-pin-${trip.id}')), findsOneWidget);
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+    });
   });
 }
