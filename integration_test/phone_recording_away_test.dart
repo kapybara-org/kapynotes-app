@@ -137,11 +137,20 @@ void main() {
       expect(await deviceAction('shade'), isNull);
       await wait(3);
       await deviceShot('recording-away-shade');
-      // The notification's own buttons, pressed as a person would.
-      expect(await deviceAction('tap:Pause'), isNull);
+      // The notification's own buttons, pressed as a person would. Its time
+      // ticks every second, and the host reads a screen only once it has
+      // stood still for one, so it is read paused: paused here in the app,
+      // then resumed, paused and resumed again from the notification, where
+      // Pause and Resume take turns in the same place.
+      await recording.pause();
+      await wait(3);
+      await deviceShot('recording-away-shade-paused');
+      expect(await deviceAction('tap:Resume'), isNull);
+      await wait(3);
+      expect(recording.session?.paused, isFalse, reason: 'Resume did nothing');
+      expect(await deviceAction('tap-again'), isNull);
       await wait(3);
       expect(recording.session?.paused, isTrue, reason: 'Pause did nothing');
-      await deviceShot('recording-away-shade-paused');
       expect(await deviceAction('tap:Resume'), isNull);
       await wait(3);
       expect(recording.session?.paused, isFalse, reason: 'Resume did nothing');
@@ -160,6 +169,9 @@ void main() {
       expect(await deviceAction('other-app'), isNull);
       await wait(3);
       await deviceShot('recording-away-dynamic-island');
+      // For the run's log only: whether ActivityKit started the activity
+      // and the widget extension drew it.
+      await deviceAction('system-log');
     }
 
     final remaining = _away - DateTime.now().difference(left);

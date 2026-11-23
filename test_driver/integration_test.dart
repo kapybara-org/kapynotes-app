@@ -94,21 +94,26 @@ Future<String?> _act(String device, String action) async {
   Future<String?> simctl(List<String> arguments) =>
       run('xcrun', ['simctl', ...arguments]);
   Future<String?> simulatorKeys(String keys) async {
-    // Opened by its path in the Xcode in use: Launch Services may know no app
-    // named Simulator, as on CI, where DEVELOPER_DIR picks the Xcode.
+    // Simulator's window with this device in it, or from Xcode 27, where
+    // Device Hub took Simulator's place, Device Hub's. Each is found by its
+    // path in the Xcode in use: Launch Services may know neither by name, as
+    // on CI, where DEVELOPER_DIR picks the Xcode.
     final xcode =
         Platform.environment['DEVELOPER_DIR'] ??
         '${(await Process.run('xcode-select', ['-p'])).stdout}'.trim();
-    return await run('open', [
-          '-a',
-          '$xcode/Applications/Simulator.app',
-          '--args',
-          '-CurrentDeviceUDID',
-          device,
-        ]) ??
+    final simulator = '$xcode/Applications/Simulator.app';
+    final opened = Directory(simulator).existsSync()
+        ? await run('open', [
+            '-a',
+            simulator,
+            '--args',
+            '-CurrentDeviceUDID',
+            device,
+          ])
+        : await run('open', ['$xcode/../Applications/DeviceHub.app']) ??
+              await run('open', ['devices://device/open?id=$device']);
+    return opened ??
         await run('osascript', [
-          '-e',
-          'tell application id "com.apple.iphonesimulator" to activate',
           '-e',
           'delay 3',
           '-e',
@@ -126,10 +131,12 @@ Future<String?> _act(String device, String action) async {
       'back' => simctl(['launch', device, _app]),
       'light' || 'dark' => simctl(['ui', device, 'appearance', action]),
       'wake' => Future.value(null),
+      'system-log' => _systemLog(device),
       _ => Future.value('a simulator cannot $action'),
     };
   }
   if (action.startsWith('tap:')) return _tapLabel(device, action.substring(4));
+  if (action == 'tap-again') return _tapAgain(device);
   return switch (action) {
     'grant' => adbBoth(
       ['pm', 'grant', _app, 'android.permission.RECORD_AUDIO'],
@@ -257,15 +264,47 @@ Future<String?> _tapLabel(String device, String label) async {
       continue;
     }
     int at(int group) => int.parse(node.group(group)!);
-    final tap = await _adbShell(device, [
-      'input',
-      'tap',
-      '${(at(1) + at(3)) ~/ 2}',
-      '${(at(2) + at(4)) ~/ 2}',
-    ]);
-    return tap.exitCode == 0 ? null : '${tap.stderr}'.trim();
+    _lastTap = ['${(at(1) + at(3)) ~/ 2}', '${(at(2) + at(4)) ~/ 2}'];
+    return _tapAgain(device);
   }
   return 'nothing on screen says $label: $why';
+}
+
+/// Prints the last of what [device], a simulator, logged in the past few
+/// minutes about the recording's Live Activity, to read in a run's log:
+/// whether ActivityKit started it, and whether the widget extension drew it.
+Future<String?> _systemLog(String device) async {
+  final log = await Process.run('xcrun', [
+    'simctl',
+    'spawn',
+    device,
+    'log',
+    'show',
+    '--last',
+    '4m',
+    '--style',
+    'compact',
+    '--predicate',
+    'eventMessage CONTAINS[c] "RecordingAttributes" OR '
+        'process == "WriteNoteWidgetExtension"',
+  ]);
+  final lines = '${log.stdout}'.trim().split('\n');
+  stderr.writeln(
+    lines.sublist(lines.length > 80 ? lines.length - 80 : 0).join('\n'),
+  );
+  return log.exitCode == 0 ? null : '${log.stderr}'.trim();
+}
+
+/// Where `_tapLabel` last pressed, as `input tap` takes it.
+List<String>? _lastTap;
+
+/// Presses where [device] was last pressed: the same button, or whatever
+/// has taken its place since.
+Future<String?> _tapAgain(String device) async {
+  final at = _lastTap;
+  if (at == null) return 'nothing has been pressed yet';
+  final tap = await _adbShell(device, ['input', 'tap', ...at]);
+  return tap.exitCode == 0 ? null : '${tap.stderr}'.trim();
 }
 
 /// Saves what [device]'s screen shows as
