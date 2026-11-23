@@ -245,7 +245,6 @@ void main() {
 
   group('hearing skipped speech again', () {
     const rate = 16000;
-    const limit = 20 * rate;
 
     TimedWord word(String text, int ms) =>
         TimedWord(text: text, startMs: ms, endMs: ms + 300);
@@ -262,7 +261,6 @@ void main() {
           speech: const [(1 * rate, 6 * rate)],
           frames: 8 * rate,
           sampleRate: rate,
-          limit: limit,
           decode: never,
         ),
         same(words),
@@ -280,7 +278,6 @@ void main() {
         ],
         frames: 17 * rate,
         sampleRate: rate,
-        limit: limit,
         decode: (start, end) {
           asked.add((start, end));
           return [word('skipped', 5200), word('sentence', 6000)];
@@ -296,6 +293,32 @@ void main() {
       ]);
     });
 
+    test('a skipped sentence split at its breaths is still heard again', () {
+      final asked = <(int, int)>[];
+      hearAgain(
+        words: [word('before', 1500), word('after', 13500)],
+        speech: const [
+          (1 * rate, 4 * rate),
+          (5 * rate, 7 * rate),
+          (8 * rate, 9 * rate),
+          (10 * rate, 12 * rate),
+          (13 * rate, 16 * rate),
+        ],
+        frames: 17 * rate,
+        sampleRate: rate,
+        decode: (start, end) {
+          asked.add((start, end));
+          return const [];
+        },
+      );
+
+      expect(asked, [
+        (9 * rate ~/ 2, 15 * rate ~/ 2),
+        (15 * rate ~/ 2, 19 * rate ~/ 2),
+        (19 * rate ~/ 2, 25 * rate ~/ 2),
+      ], reason: 'five seconds with no words, though no one part is three');
+    });
+
     test('words that stop partway through are heard again too', () {
       final asked = <(int, int)>[];
       hearAgain(
@@ -303,7 +326,6 @@ void main() {
         speech: const [(1 * rate, 11 * rate)],
         frames: 12 * rate,
         sampleRate: rate,
-        limit: limit,
         decode: (start, end) {
           asked.add((start, end));
           return const [];
@@ -321,7 +343,6 @@ void main() {
         speech: const [(5 * rate, 12 * rate)],
         frames: 13 * rate,
         sampleRate: rate,
-        limit: limit,
         decode: (start, end) => [word('second', 5300)],
       );
 
@@ -337,14 +358,13 @@ void main() {
           speech: const [(0, 3 * rate ~/ 2), (3 * rate, 5 * rate)],
           frames: 6 * rate,
           sampleRate: rate,
-          limit: limit,
           decode: never,
         ),
         same(words),
       );
     });
 
-    test('skipped neighbours are heard together while they fit', () {
+    test('skipped neighbours are each heard on their own', () {
       final asked = <(int, int)>[];
       hearAgain(
         words: const <TimedWord>[],
@@ -355,14 +375,17 @@ void main() {
         ],
         frames: 28 * rate,
         sampleRate: rate,
-        limit: limit,
         decode: (start, end) {
           asked.add((start, end));
           return const [];
         },
       );
 
-      expect(asked, [(0, 37 * rate ~/ 2), (37 * rate ~/ 2, 28 * rate)]);
+      expect(asked, [
+        (0, 19 * rate ~/ 2),
+        (19 * rate ~/ 2, 37 * rate ~/ 2),
+        (37 * rate ~/ 2, 28 * rate),
+      ]);
     });
 
     test('without a voice activity model there is nothing to hear again', () {
@@ -374,7 +397,6 @@ void main() {
           speech: const [],
           frames: 60 * rate,
           sampleRate: rate,
-          limit: limit,
           decode: never,
         ),
         same(words),

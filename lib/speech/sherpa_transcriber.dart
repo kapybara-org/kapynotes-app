@@ -265,14 +265,13 @@ List<TimedWord> _recognise(_RecogniseRequest request) {
     }
 
     final speech = _speechIn(file, request);
-    final limit = _chunkSeconds * request.sampleRate;
     final chunks = chunksAtPauses(
       frames: request.frames,
       pauses: [
         for (var i = 1; i < speech.length; i++)
           (speech[i - 1].$2 + speech[i].$1) ~/ 2,
       ],
-      limit: limit,
+      limit: _chunkSeconds * request.sampleRate,
       quietest: (from, to) => _quietestBetween(file, request, from, to),
     );
     return hearAgain(
@@ -280,7 +279,6 @@ List<TimedWord> _recognise(_RecogniseRequest request) {
       speech: speech,
       frames: request.frames,
       sampleRate: request.sampleRate,
-      limit: limit,
       decode: decode,
     );
   } finally {
@@ -326,56 +324,58 @@ List<(int, int)> chunksAtPauses({
 /// Hears again, on its own, any stretch of [speech] the model gave no
 /// words for, and keeps the second hearing when it found more.
 ///
-/// Parakeet now and then skips a whole sentence, most often when a new voice
+/// Parakeet now and then skips whole sentences, most often when a new voice
 /// starts partway through a chunk over background noise, and far less often
-/// when it hears that sentence alone. More than three seconds of speech with
-/// no word starting in it is that skip, not a pause: the voice activity
-/// model already split the speech at every pause. Each such stretch is heard
-/// from the pause before it to the pause after it, joined with skipped
-/// neighbours while they fit in [limit]. Shorter ones are left alone, since
-/// a cough or a breath is speech to the voice activity model too.
+/// when it hears them alone. More than three seconds of speech between two
+/// words is that skip: speech is counted, pauses are not, so the voice
+/// activity model splitting a sentence at its breaths does not hide it.
+/// Each stretch of speech in there with no word in it is heard again on its
+/// own, from the pause before it to the pause after it: heard together, or
+/// with the voices around them, a run of skipped sentences can be skipped
+/// again. A stretch with words in it is heard again only when more than
+/// three seconds of it had none. Less is left alone, since a cough or a
+/// breath is speech to the voice activity model too.
 @visibleForTesting
 List<TimedWord> hearAgain({
   required List<TimedWord> words,
   required List<(int, int)> speech,
   required int frames,
   required int sampleRate,
-  required int limit,
   required List<TimedWord> Function(int start, int end) decode,
 }) {
   int ms(int sample) => (sample * 1000) ~/ sampleRate;
-  final starts = [for (final word in words) word.startMs]..sort();
-  final unheard = <(int, int)>[];
-  var next = 0;
-  for (var i = 0; i < speech.length; i++) {
-    final from = ms(speech[i].$1);
-    final to = ms(speech[i].$2);
-    while (next < starts.length && starts[next] < from) {
-      next++;
+  final anchors = [
+    0,
+    ...[for (final word in words) word.startMs]..sort(),
+    ms(frames),
+  ];
+  final skipped = <int>{};
+  var first = 0;
+  for (var g = 1; g < anchors.length; g++) {
+    final from = anchors[g - 1];
+    final to = anchors[g];
+    while (first < speech.length && ms(speech[first].$2) <= from) {
+      first++;
     }
-    var last = from;
-    var longest = 0;
-    for (var k = next; k < starts.length && starts[k] <= to; k++) {
-      longest = max(longest, starts[k] - last);
-      last = starts[k];
+    var unheardMs = 0;
+    final touched = <int>[];
+    for (var k = first; k < speech.length && ms(speech[k].$1) < to; k++) {
+      final start = ms(speech[k].$1);
+      final end = ms(speech[k].$2);
+      final wordless = min(end, to) - max<int>(start, from);
+      if (wordless <= 0) continue;
+      unheardMs += wordless;
+      if ((start >= from && end <= to) || wordless > 3000) touched.add(k);
     }
-    if (max(longest, to - last) <= 3000) continue;
+    if (unheardMs > 3000) skipped.addAll(touched);
+  }
 
+  var heard = words;
+  for (final i in skipped.toList()..sort()) {
     final start = i == 0 ? 0 : (speech[i - 1].$2 + speech[i].$1) ~/ 2;
     final end = i == speech.length - 1
         ? frames
         : (speech[i].$2 + speech[i + 1].$1) ~/ 2;
-    if (unheard.isNotEmpty &&
-        unheard.last.$2 == start &&
-        end - unheard.last.$1 <= limit) {
-      unheard[unheard.length - 1] = (unheard.last.$1, end);
-    } else {
-      unheard.add((start, end));
-    }
-  }
-
-  var heard = words;
-  for (final (start, end) in unheard) {
     final again = decode(start, end);
     final before = heard.where((word) => word.startMs < ms(start)).toList();
     final after = heard.where((word) => word.startMs >= ms(end)).toList();
