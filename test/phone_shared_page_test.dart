@@ -1,6 +1,8 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
@@ -121,16 +123,21 @@ void main() {
     WidgetTester tester, {
     ValueChanged<String>? onOpenPerson,
     Brightness brightness = Brightness.dark,
+    List<Note> unnamed = const [],
+    double textScale = 1,
   }) async {
     tester.view.physicalSize = const Size(393, 852);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    tester.platformDispatcher.textScaleFactorTestValue = textScale;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     final notes = [
       for (final note in sam.notes.notes)
         if (sidebarTabLists(SidebarTab.shared, note, sam.sharing))
           note.copyWith(updatedAt: edited[note.id]),
+      ...unnamed,
     ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     await tester.pumpWidget(
       MaterialApp(
@@ -299,6 +306,95 @@ void main() {
         matching: find.byKey(const ValueKey('share-face-here')),
       ),
       findsNothing,
+    );
+  });
+
+  testWidgets('a screen reader hears a heading button named for its group, '
+      'and its tap opens that person', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await shareAround(tester);
+    String? opened;
+    await pumpPage(tester, onOpenPerson: (email) => opened = email);
+    final node = tester.getSemantics(heading('From Wen'));
+    expect(
+      node,
+      matchesSemantics(
+        isHeader: true,
+        isButton: true,
+        hasTapAction: true,
+        label: 'From Wen',
+      ),
+    );
+    tester.semantics.tap(find.semantics.byLabel('From Wen'));
+    expect(opened, 'wen@example.com');
+    semantics.dispose();
+  });
+
+  testWidgets('a group nobody can be named for has its words alone: no '
+      'faces, no › and no button', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await shareAround(tester);
+    String? opened;
+    await pumpPage(
+      tester,
+      onOpenPerson: (email) => opened = email,
+      unnamed: [
+        Note(
+          id: 'unknown',
+          body: 'Shopping list\nOat milk',
+          createdAt: now,
+          updatedAt: DateTime(2026, 11, 23, 9),
+          spaceId: 'space-this-device-has-not-heard-of',
+        ),
+      ],
+    );
+    final group = heading('Shared');
+    expect(group, findsOne);
+    expect(
+      find.descendant(
+        of: group,
+        matching: find.byWidgetPredicate(
+          (widget) => switch (widget.key) {
+            ValueKey<String>(:final value) => value.startsWith('share-face-'),
+            _ => false,
+          },
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: group,
+        matching: findKapyIcon(KapyIcons.chevronRightRounded),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.getSemantics(group),
+      matchesSemantics(isHeader: true, label: 'Shared'),
+    );
+    await tester.tap(find.descendant(of: group, matching: find.text('Shared')));
+    expect(opened, isNull);
+    semantics.dispose();
+  });
+
+  testWidgets('at 1.3× text a heading grows with its title rather than '
+      'cutting it', (tester) async {
+    await shareAround(tester);
+    await pumpPage(tester, onOpenPerson: (_) {}, textScale: 1.3);
+    final title = find.text('From Wen');
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find.descendant(of: title, matching: find.byType(RichText)),
+    );
+    final lines = paragraph.getBoxesForSelection(
+      const TextSelection(baseOffset: 0, extentOffset: 'From Wen'.length),
+    );
+    final textHeight = lines.last.bottom - lines.first.top;
+    expect(textHeight, greaterThan(24));
+    expect(paragraph.size.height, greaterThanOrEqualTo(textHeight));
+    expect(
+      tester.getSize(heading('From Wen')).height,
+      19 + paragraph.size.height + 1,
     );
   });
 

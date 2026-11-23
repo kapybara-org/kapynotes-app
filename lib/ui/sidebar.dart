@@ -4056,8 +4056,9 @@ class _PhoneShareHeading extends StatelessWidget {
             // it. A list item takes no taps outside itself, so the point the
             // 19 and 24 leave short sits under the heading, not above it.
             padding: const EdgeInsets.only(top: 19, bottom: 1),
-            child: SizedBox(
-              height: 24,
+            // 24 at 1×, and taller as the text grows.
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 24),
               child: Row(
                 spacing: 8,
                 children: [
