@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -13,6 +15,7 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/spaces.dart';
+import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
@@ -108,6 +111,10 @@ void main() {
     });
     return mine;
   }
+
+  /// Whether Priya is still in [space] on the server.
+  bool priyaIn(String space) =>
+      server.spaces[space]?.members.containsKey(priya.userId) ?? false;
 
   Future<void> pumpApp(WidgetTester tester, {required bool phone}) async {
     AppPlatform.debugTargetPlatformOverride = phone
@@ -308,6 +315,255 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
     });
   }
+
+  /// Opens Packing list from Shared on a phone, so its page is on screen.
+  Future<String> openPackingPage(WidgetTester tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    final space = await priyaShares(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Sidebar),
+        matching: find.text('Packing list'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsNothing);
+    return space;
+  }
+
+  testWidgets('leaving the app sends a removal still held for Undo', (
+    tester,
+  ) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    await pumpApp(tester, phone: true);
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+
+    await tester.runAsync(() async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      for (var wait = 0; wait < 100 && priyaIn(space); wait++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(priyaIn(space), isFalse);
+    expect(account.sharing!.cancelRemoval(mine, priya.email), isFalse);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('signing out sends a removal still held for Undo first', (
+    tester,
+  ) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    // Someone else stays invited, so the note stays shared.
+    await tester.runAsync(
+      () => account.sharing!.addPerson(mine, 'ravi@kapy34.test'),
+    );
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+
+    await tester.runAsync(account.signOut);
+    expect(account.state, AccountState.signedOut);
+    expect(priyaIn(space), isFalse);
+  });
+
+  testWidgets('a removal the server never answers does not hold signing out '
+      'up', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    // Someone else stays invited, so taking Priya off asks the server.
+    await tester.runAsync(
+      () => account.sharing!.addPerson(mine, 'ravi@kapy34.test'),
+    );
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+    var asked = false;
+    server.onRemoval = () {
+      asked = true;
+      return Completer<void>().future;
+    };
+
+    final watch = Stopwatch()..start();
+    await tester.runAsync(
+      () => account.signOut().timeout(const Duration(seconds: 10)),
+    );
+    expect(asked, isTrue);
+    expect(account.state, AccountState.signedOut);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+  });
+
+  testWidgets('a removal still held when signing out stops waiting stays held, '
+      'and goes at the next sign-in', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    const ravi = 'ravi@kapy34.test';
+    await tester.runAsync(() async {
+      await account.sharing!.addPerson(mine, ravi);
+      // Someone else stays invited, so the note stays shared.
+      await account.sharing!.addPerson(mine, 'mia@kapy34.test');
+    });
+    bool raviInvited() =>
+        server.spaces[space]!.invites.values.any((i) => i.email == ravi);
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+    account.sharing!.holdRemoval(mine, ravi, const Duration(hours: 1));
+    await tester.runAsync(() async {
+      final answer = Completer<void>();
+      server.onRemoval = () {
+        server.onRemoval = null;
+        return answer.future;
+      };
+      await account.signOut().timeout(const Duration(seconds: 10));
+      answer.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    expect(priyaIn(space), isFalse);
+    expect(raviInvited(), isTrue);
+
+    await tester.runAsync(() async {
+      await account.signIn(email: 'sam@kapy34.test', password: 'x');
+      await account.unlock('a good passphrase');
+      for (
+        var wait = 0;
+        wait < 100 && account.sharing!.isRemovalHeld(mine, ravi);
+        wait++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(raviInvited(), isFalse);
+    expect(account.sharing!.isRemovalHeld(mine, ravi), isFalse);
+  });
+
+  testWidgets('a removal on its way when signing out stops waiting, that then '
+      'fails, stays held and goes at the next sign-in', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    final space = notes.byId(mine)!.spaceId!;
+    // Someone else stays invited, so taking Priya off asks the server.
+    await tester.runAsync(
+      () => account.sharing!.addPerson(mine, 'ravi@kapy34.test'),
+    );
+    account.sharing!.holdRemoval(mine, priya.email, const Duration(hours: 1));
+    List<Object?>? held() =>
+        (store.data['sharing.heldRemovals.v1'] as Map?)?['user-1'] as List?;
+
+    await tester.runAsync(() async {
+      final answer = Completer<void>();
+      server.onRemoval = () {
+        server.onRemoval = null;
+        return answer.future;
+      };
+      await account.signOut().timeout(const Duration(seconds: 10));
+      answer.completeError(const SyncRefusedException(409, 'conflict', {}));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    expect(priyaIn(space), isTrue);
+    expect(held(), [
+      {'note': mine, 'email': priya.email},
+    ]);
+
+    await tester.runAsync(() async {
+      await account.signIn(email: 'sam@kapy34.test', password: 'x');
+      await account.unlock('a good passphrase');
+      for (var wait = 0; wait < 100 && priyaIn(space); wait++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(priyaIn(space), isFalse);
+  });
+
+  testWidgets('on a phone, a toast from the share sheet over Home sits at the '
+      'bottom edge, not above the bar the sheet covers', (tester) async {
+    await signIn(tester);
+    final mine = await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    // The app restores the account once it is up, with sharing anew.
+    await tester.runAsync(() async {
+      for (
+        var wait = 0;
+        wait < 100 && account.sharing?.memberOn(mine, priya.email) == null;
+        wait++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pumpAndSettle();
+    await showList(tester, phone: true);
+
+    await tester.longPress(
+      find
+          .descendant(
+            of: find.byType(Sidebar),
+            matching: find.text('Trip budget'),
+          )
+          .last,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sharing'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('member-menu-${priya.userId}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove from this note').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+
+    final toast = find.byKey(const ValueKey('toast-surface'));
+    expect(
+      find.descendant(of: toast, matching: find.textContaining('Removed')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getBottomLeft(toast).dy,
+      greaterThan(
+        tester.getTopLeft(find.byKey(const ValueKey('phone-bar'))).dy,
+      ),
+    );
+    await tester.pump(const Duration(seconds: 8));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+  });
+
+  testWidgets('on a phone, Leave without a copy from the open page goes back '
+      'to Shared', (tester) async {
+    final space = await openPackingPage(tester);
+
+    await tester.runAsync(
+      () => account.sharing!.leave(space, keepCopies: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+    expect(find.byType(Sidebar), findsOneWidget);
+    expect(listed(tester, 'Packing list'), isFalse);
+    // Past the presence HomePage writes for the shared note now selected.
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('on a phone, Leave keeping a copy from the open page stays on '
+      'the page, showing the copy', (tester) async {
+    final space = await openPackingPage(tester);
+
+    await tester.runAsync(() => account.sharing!.leave(space));
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsNothing);
+    final shown = notes.byId(prefs.lastOpenedNoteId);
+    expect(shown?.body, 'Packing list');
+    expect(shown?.isShared, isFalse);
+    await tester.pump(const Duration(seconds: 2));
+  });
 
   testWidgets('beside a window, the list follows the selection to My notes '
       'when Leave takes away the shared note it was on', (tester) async {

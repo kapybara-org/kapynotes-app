@@ -51,9 +51,11 @@ class Sharing extends ChangeNotifier {
        _notes = notes,
        _sync = sync,
        _images = images,
-       _since = now() {
+       _since = now(),
+       _syncStatus = sync.status {
     _guests = _guestSpaces();
     _keyring.addListener(_onKeyring);
+    _sync.addListener(_onSync);
     _keyring.trust.addListener(notifyListeners);
     _changes = _sync.sharedChanges.listen(_onSharedChange);
   }
@@ -69,6 +71,10 @@ class Sharing extends ChangeNotifier {
   /// is news only for a space joined after it; before, it is a device
   /// catching up on what was already shared.
   final DateTime _since;
+
+  /// Sync's status as last heard, to tell when a pass has finished.
+  SyncStatus _syncStatus;
+  bool _disposed = false;
   late final StreamSubscription<SharedChange> _changes;
   final StreamController<SharingNotice> _notices = StreamController.broadcast();
 
@@ -171,6 +177,7 @@ class Sharing extends ChangeNotifier {
   /// Fetches the latest list of spaces and invitations, and the two
   /// account-level facts the sharing UI needs beside them.
   Future<void> refresh() async {
+    if (_disposed) return;
     await _keyring.refresh(_api, _vault);
     await refreshSafety();
   }
@@ -219,6 +226,17 @@ class Sharing extends ChangeNotifier {
       _autoAccept();
     }
     notifyListeners();
+  }
+
+  /// Removals held over from before, or put off by a lost connection, go
+  /// once a sync pass has finished rather than in the middle of one.
+  void _onSync() {
+    final was = _syncStatus;
+    _syncStatus = _sync.status;
+    if (was == SyncStatus.syncing &&
+        (_syncStatus == SyncStatus.idle || _syncStatus == SyncStatus.failed)) {
+      unawaited(_sendHeldQuietly(_isLeftOver));
+    }
   }
 
   void _onSharedChange(SharedChange change) {
@@ -698,6 +716,242 @@ class Sharing extends ChangeNotifier {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Removals held for Undo
+  // -------------------------------------------------------------------------
+
+  static const String _heldEntry = 'sharing.heldRemovals.v1';
+
+  /// The held removals with a window still running in this run, by
+  /// [_heldKey]. One without, made before the app last closed or put off by
+  /// a lost connection, goes out on the next refresh that reaches the server.
+  final Map<String, Timer> _holdTimers = {};
+
+  /// Where each held removal was made, by [_heldKey], to say there that the
+  /// server refused it. False once it can't, so it becomes a notice.
+  final Map<String, bool Function(Object error)> _onRefused = {};
+
+  /// Held removals on their way to the server, which Undo can no longer
+  /// take back.
+  final Set<String> _sendingHeld = {};
+
+  /// The send of held removals under way, if any. Sends go one after
+  /// another, so none goes out twice.
+  Future<void>? _heldSends;
+
+  static String _heldKey(String noteId, String email) => '$noteId $email';
+
+  /// Every account's held removals on this device, by account id, so one
+  /// signing in here never drops another's that has not gone out yet.
+  Map<String, Object?> get _heldByAccount =>
+      _keyring.store.read<Map<String, Object?>>(_heldEntry) ?? const {};
+
+  List<({String noteId, String email})> get _held {
+    final removals = _heldByAccount[userId];
+    return [
+      if (removals is List)
+        for (final entry in removals)
+          if (entry case {
+            'note': final String noteId,
+            'email': final String email,
+          })
+            (noteId: noteId, email: email),
+    ];
+  }
+
+  /// Written at once rather than coalesced: a removal made just before the
+  /// app is closed still has to go out.
+  void _keepHeld(Iterable<({String noteId, String email})> held) {
+    final others = {..._heldByAccount}..remove(userId);
+    final all = {
+      ...others,
+      if (held.isNotEmpty)
+        userId: [
+          for (final removal in held)
+            {'note': removal.noteId, 'email': removal.email},
+        ],
+    };
+    _keyring.store.putNow(_heldEntry, all.isEmpty ? null : all);
+  }
+
+  void _forgetHeld(String key) {
+    _keepHeld([
+      for (final held in _held)
+        if (_heldKey(held.noteId, held.email) != key) held,
+    ]);
+    notifyListeners();
+  }
+
+  /// Whether [email]'s removal from [noteId] is held on this device, so the
+  /// sheet already shows them gone.
+  bool isRemovalHeld(String noteId, String email) {
+    final key = _heldKey(noteId, _address(email));
+    return _held.any((held) => _heldKey(held.noteId, held.email) == key);
+  }
+
+  /// Whether that held removal missed the server and waits to go again, so
+  /// the sheet shows them still there, being removed.
+  bool isRemovalWaiting(String noteId, String email) {
+    final key = _heldKey(noteId, _address(email));
+    return !_holdTimers.containsKey(key) &&
+        !_sendingHeld.contains(key) &&
+        isRemovalHeld(noteId, email);
+  }
+
+  /// Takes [email] off [noteId] on this device first, for [window]: the
+  /// server hears when it ends, or sooner through [sendHeldRemovals], and
+  /// until then [cancelRemoval] takes it back with nothing sent. It is
+  /// written to disk at once, so one held when the app closes goes out on
+  /// the next start. A refusal once it has gone goes to [onRefused].
+  void holdRemoval(
+    String noteId,
+    String email,
+    Duration window, {
+    bool Function(Object error)? onRefused,
+  }) {
+    final key = _heldKey(noteId, _address(email));
+    if (onRefused == null) {
+      _onRefused.remove(key);
+    } else {
+      _onRefused[key] = onRefused;
+    }
+    _keepHeld([
+      for (final held in _held)
+        if (_heldKey(held.noteId, held.email) != key) held,
+      (noteId: noteId, email: _address(email)),
+    ]);
+    _holdTimers.remove(key)?.cancel();
+    _holdTimers[key] = Timer(window, () {
+      _holdTimers.remove(key);
+      unawaited(_sendHeldQuietly((held, _) => held == key));
+    });
+    notifyListeners();
+  }
+
+  /// Undo for [holdRemoval]: true when the removal was still held, and now
+  /// never reaches the server. False once it is on its way or gone.
+  bool cancelRemoval(String noteId, String email) {
+    final key = _heldKey(noteId, _address(email));
+    if (_sendingHeld.contains(key) || !isRemovalHeld(noteId, email)) {
+      return false;
+    }
+    _holdTimers.remove(key)?.cancel();
+    _onRefused.remove(key);
+    _forgetHeld(key);
+    return true;
+  }
+
+  /// Sends the removals held for [noteId] now, without waiting for their
+  /// windows: its sheet has closed, or something else is about to change
+  /// who is on it. Waits for any already on their way.
+  Future<void> sendHeldRemovals(String noteId) =>
+      _sendHeld((_, held) => held == noteId);
+
+  /// Sends every removal still held, or those for [noteId], now, and Undo
+  /// after it invites again: the sheet has closed, or the app is leaving the
+  /// foreground or signing out. A refusal is said where the removal was
+  /// made, or as a notice, and never thrown.
+  Future<void> sendHeldRemovalsQuietly([String? noteId]) =>
+      _sendHeldQuietly((_, held) => noteId == null || held == noteId);
+
+  Future<void> _sendHeldQuietly(
+    bool Function(String key, String noteId) pick,
+  ) async {
+    try {
+      await _sendHeld(pick, quietly: true);
+    } on Object catch (error) {
+      debugPrint('KapyNotes: a held removal was not sent: $error');
+    }
+  }
+
+  bool _isLeftOver(String key, String _) => !_holdTimers.containsKey(key);
+
+  Future<void> _sendHeld(
+    bool Function(String key, String noteId) pick, {
+    bool quietly = false,
+  }) async {
+    for (var earlier = _heldSends; earlier != null; earlier = _heldSends) {
+      try {
+        await earlier;
+      } on Object {
+        // Its own caller hears about it.
+      }
+    }
+    final sending = _sendPicked(pick, quietly: quietly);
+    _heldSends = sending;
+    try {
+      await sending;
+    } finally {
+      if (identical(_heldSends, sending)) _heldSends = null;
+    }
+  }
+
+  Future<void> _sendPicked(
+    bool Function(String key, String noteId) pick, {
+    required bool quietly,
+  }) async {
+    final unsaid = <({String noteId, String name})>[];
+    for (final held in _held) {
+      // Signing out stopped waiting: what is left goes at the next sign-in.
+      if (_disposed) return;
+      final key = _heldKey(held.noteId, held.email);
+      if (!pick(key, held.noteId)) continue;
+      // Undo may have taken it back while an earlier one was on its way.
+      if (!isRemovalHeld(held.noteId, held.email)) continue;
+      _holdTimers.remove(key)?.cancel();
+      _sendingHeld.add(key);
+      try {
+        if (_stillOn(held.noteId, held.email)) {
+          await removeFromNote(held.noteId, held.email);
+        }
+      } on SyncTransientException {
+        continue;
+      } catch (error) {
+        // Failing after sign-out says nothing about the server: kept for the
+        // next sign-in, which lets it go if it was applied after all.
+        if (_disposed) return;
+        final say = _onRefused.remove(key);
+        _forgetHeld(key);
+        if (!quietly) rethrow;
+        if (!(say?.call(error) ?? false)) {
+          unsaid.add((
+            noteId: held.noteId,
+            name: memberOn(held.noteId, held.email)?.firstName ?? held.email,
+          ));
+        }
+        continue;
+      } finally {
+        _sendingHeld.remove(key);
+        notifyListeners();
+      }
+      _onRefused.remove(key);
+      _forgetHeld(key);
+    }
+    for (final noteId in {for (final refused in unsaid) refused.noteId}) {
+      if (_notices.isClosed) return;
+      _notices.add(
+        SharingNotice.notRemoved(
+          names: [
+            for (final refused in unsaid)
+              if (refused.noteId == noteId) refused.name,
+          ],
+          title: _notes.byId(noteId)?.title ?? '',
+        ),
+      );
+    }
+  }
+
+  /// Whether [email] is still on [noteId], in a space this account owns.
+  /// Not after the note was deleted or stopped being shared, or they were
+  /// taken off it on another device: then there is nothing left to send.
+  bool _stillOn(String noteId, String email) {
+    final note = _notes.byId(noteId);
+    final space = note == null ? null : spaceOf(note);
+    return space != null &&
+        space.isOwner &&
+        audienceOf(space).containsKey(email);
+  }
+
   /// [email] among the people in [noteId]'s space, once they have joined.
   SpaceMember? memberOn(String noteId, String email) {
     final note = _notes.byId(noteId);
@@ -926,7 +1180,21 @@ class Sharing extends ChangeNotifier {
   void trustNewKey(TrustWarning warning) => trust.acknowledge(warning);
 
   @override
+  void notifyListeners() {
+    // A held removal sent while signing out can answer after the account
+    // has gone, with nobody left to tell.
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
+    for (final timer in _holdTimers.values) {
+      timer.cancel();
+    }
+    _onRefused.clear();
+    _sync.removeListener(_onSync);
     _keyring.removeListener(_onKeyring);
     _keyring.trust.removeListener(notifyListeners);
     unawaited(_changes.cancel());
@@ -938,7 +1206,11 @@ class Sharing extends ChangeNotifier {
 /// Something that happened to the notes shared with this account, said in
 /// one line.
 class SharingNotice {
-  const SharingNotice._(this.message, {this.leaveSpaceId});
+  const SharingNotice._(
+    this.message, {
+    this.leaveSpaceId,
+    this.isError = false,
+  });
 
   factory SharingNotice.shared({
     required String from,
@@ -971,11 +1243,32 @@ class SharingNotice {
         : '${notes.length} notes from $from are no longer shared with you',
   );
 
+  /// Removals held for Undo from the note titled [title] that the server
+  /// refused once the sheet they were made in had closed, naming everyone
+  /// still on it.
+  factory SharingNotice.notRemoved({
+    required List<String> names,
+    required String title,
+  }) {
+    final others = names.length - 2;
+    final who = names.length == 1
+        ? names.single
+        : names.length == 2
+        ? '${names[0]} and ${names[1]}'
+        : '${names[0]}, ${names[1]} and $others '
+              '${others == 1 ? 'other' : 'others'}';
+    final note = title.trim().isEmpty ? 'a note' : '“${title.trim()}”';
+    return SharingNotice._("Couldn't remove $who from $note.", isError: true);
+  }
+
   final String message;
 
   /// The space a share accepted on its own joined, which the notice offers
   /// to leave again.
   final String? leaveSpaceId;
+
+  /// Whether it says something went wrong.
+  final bool isError;
 
   static String _named(Note note) {
     final title = note.title.trim();

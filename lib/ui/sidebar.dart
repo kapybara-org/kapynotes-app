@@ -2243,13 +2243,18 @@ class _InvitationsState extends State<_Invitations> {
           key: ValueKey('invite-report-${invite.token}'),
           value: 'report',
           height: 36,
-          child: const Text('Report'),
+          child: const Text('Report…'),
         ),
         PopupMenuItem(
           key: ValueKey('invite-block-${invite.token}'),
           value: 'block',
           height: 36,
-          child: Text('Block ${invite.inviterDisplayName}'),
+          // Phones ask first, as the member menu's Block… does.
+          child: Text(
+            AppPlatform.isMobile
+                ? 'Block…'
+                : 'Block ${invite.inviterDisplayName}',
+          ),
         ),
       ],
     );

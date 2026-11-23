@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 import '../core/window_chrome.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -784,12 +785,15 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
           label: 'Kapy AI',
         ),
     ];
-    final plus = Builder(
-      builder: (context) => _PlusButton(
-        key: const ValueKey('phone-new'),
-        label: widget.createLabel,
-        onPressed: widget.onCreate,
-        onLongPress: () => _showCreateMenu(context),
+    // The + reaches as high as anything here, so toasts keep above it.
+    final plus = ToastClearance(
+      child: Builder(
+        builder: (context) => _PlusButton(
+          key: const ValueKey('phone-new'),
+          label: widget.createLabel,
+          onPressed: widget.onCreate,
+          onLongPress: () => _showCreateMenu(context),
+        ),
       ),
     );
 

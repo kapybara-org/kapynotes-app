@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
@@ -64,6 +67,97 @@ void main() {
       });
     }
   }
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on ${platform.name} a toast sits above the bar and its +, '
+        'and back at the bottom edge over a sheet', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.padding = const FakeViewPadding(bottom: 34);
+      addTearDown(tester.view.resetPadding);
+      await pumpBar(tester, scale: 1, size: const Size(393, 852));
+      final context = tester.element(find.byType(SizedBox).last);
+      final toast = find.byKey(const ValueKey('toast-surface'));
+
+      Toast.show(context, 'Removed Carol from this note');
+      await tester.pumpAndSettle();
+      final top = [
+        tester.getTopLeft(find.byKey(const ValueKey('phone-bar'))).dy,
+        tester.getTopLeft(find.bySemanticsLabel('New note')).dy,
+      ].reduce((a, b) => a < b ? a : b);
+      expect(tester.getBottomLeft(toast).dy, lessThanOrEqualTo(top - 16));
+
+      unawaited(
+        showModalBottomSheet<void>(
+          context: context,
+          builder: (_) => const SizedBox(height: 200),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Toast.show(context, 'Removed Carol from this note');
+      await tester.pumpAndSettle();
+      expect(tester.getBottomLeft(toast).dy, 852 - 34 - 16);
+    });
+  }
+
+  testWidgets('with the bar in a navigator of its own, as on Home, a sheet '
+      'from the one around it takes a toast back to the bottom edge', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.resetPadding);
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: ToastClearanceScope(
+          child: Navigator(
+            pages: [
+              MaterialPage<void>(
+                child: PhoneSpaces(
+                  tab: PhoneTab.notes,
+                  onSelected: (_) {},
+                  createLabel: 'New note',
+                  onCreate: () {},
+                  createActions: const [],
+                  onCreateAction: (_) {},
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ],
+            onDidRemovePage: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final outer = tester.element(find.byType(ToastClearanceScope));
+    final toast = find.byKey(const ValueKey('toast-surface'));
+
+    Toast.show(outer, 'Removed Carol from this note');
+    await tester.pumpAndSettle();
+    expect(
+      tester.getBottomLeft(toast).dy,
+      lessThanOrEqualTo(
+        tester.getTopLeft(find.byKey(const ValueKey('phone-bar'))).dy - 16,
+      ),
+    );
+
+    unawaited(
+      showModalBottomSheet<void>(
+        context: outer,
+        builder: (_) => const SizedBox(height: 200),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Toast.show(outer, 'Removed Carol from this note');
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(toast).dy, 852 - 34 - 16);
+  });
 
   testWidgets("iOS's bar is a quiet opaque pill with an 8% edge, and the open "
       'tab is the 7% fill', (tester) async {

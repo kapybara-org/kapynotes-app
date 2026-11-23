@@ -338,11 +338,19 @@ void main() {
             findsWidgets,
             reason: who,
           );
-          expect(
-            tester.getSize(find.byKey(const ValueKey('share-more'))),
-            const Size(28, 28),
-            reason: who,
-          );
+          if (owner) {
+            expect(
+              find.byKey(const ValueKey('share-more')),
+              findsNothing,
+              reason: who,
+            );
+          } else {
+            expect(
+              tester.getSize(find.byKey(const ValueKey('share-more'))),
+              const Size(28, 28),
+              reason: who,
+            );
+          }
           expect(
             tester.getSize(find.byKey(const ValueKey('share-dialog-close'))),
             const Size(28, 28),
@@ -408,23 +416,28 @@ void main() {
       await settledShot(tester, 'mac-sharing-click-outside-closed');
     }, skip: !mac);
 
-    testWidgets('the header ⋮ opens the menu with Report this note, for the '
-        'owner and the viewer', (tester) async {
+    testWidgets('the owner’s header has no ⋮, and the viewer’s ⋮ opens the '
+        'menu with Report this note', (tester) async {
       await shareAround(tester);
-      for (final (noteId, who) in [(tripId, 'owner'), (packingId, 'viewer')]) {
-        await showSam(tester, noteId);
-        await open(tester, 'note');
-        await tester.tap(find.byKey(const ValueKey('share-more')));
-        await tester.pumpAndSettle();
-        expect(find.text('Report this note'), findsOneWidget, reason: who);
-        await settledShot(tester, 'mac-sharing-more-menu-$who');
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await tester.pumpAndSettle();
-        expect(find.text('Report this note'), findsNothing, reason: who);
-        expect(dialog, findsOneWidget, reason: who);
-        await tester.tap(find.byKey(const ValueKey('share-done')));
-        await tester.pumpAndSettle();
-      }
+      await showSam(tester, tripId);
+      await open(tester, 'note');
+      expect(find.byKey(const ValueKey('share-more')), findsNothing);
+      expect(find.text('Report this note'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('share-done')));
+      await tester.pumpAndSettle();
+
+      await showSam(tester, packingId);
+      await open(tester, 'note');
+      await tester.tap(find.byKey(const ValueKey('share-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('Report this note'), findsOneWidget);
+      await settledShot(tester, 'mac-sharing-more-menu-viewer');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Report this note'), findsNothing);
+      expect(dialog, findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('share-done')));
+      await tester.pumpAndSettle();
     }, skip: !mac);
 
     testWidgets('Tab walks close, email, each person it suggests, Member, '
@@ -457,7 +470,7 @@ void main() {
     testWidgets('on a shared note the first Tab reaches ⋮, and Enter opens '
         'its menu', (tester) async {
       await shareAround(tester);
-      await showSam(tester, tripId);
+      await showSam(tester, packingId);
       await open(tester, 'note');
       await tab(tester);
       expect(focused(['share-more', 'share-dialog-close']), 'share-more');

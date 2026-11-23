@@ -333,6 +333,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// under it; back shows the list.
   bool _phonePageOpen = true;
 
+  /// The notes as [_reconcileSelection] last saw them, to tell what the note
+  /// it had open was once it has gone.
+  List<Note> _notesSeen = const [];
+
   /// The phone bar's tab on screen.
   PhoneTab _phoneTab = PhoneTab.notes;
 
@@ -1312,6 +1316,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       widget.notes.notes.map((note) => note.id),
     );
     final previous = _selectedId;
+    final seen = _notesSeen;
+    _notesSeen = widget.notes.allNotes;
+    final gone = widget.notes.byId(previous) == null
+        ? seen.where((note) => note.id == previous).firstOrNull
+        : null;
+    // Leaving a note shared with you, with no copy kept, takes its page back
+    // to the list, as archiving, hiding and deleting do. A copy kept stays
+    // on the page in its place.
+    if (_usesCompactLayout &&
+        gone?.spaceId != null &&
+        widget.account?.sharing?.spaceById(gone!.spaceId)?.isOwner != true &&
+        !widget.notes.notes.any(
+          (note) => !note.isShared && note.createdAt == gone!.createdAt,
+        )) {
+      _phonePageOpen = false;
+    }
     _workspace.reconcile(
       available.map((note) => note.id),
       fallbackId: preferred ?? available.firstOrNull?.id,
@@ -3238,8 +3258,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What the search fields read: Drawings' names what it finds, and the
   /// rest offer to ask Kapy AI only while it can be asked.
-  String get _searchPlaceholder =>
-      _kapyAiOn && _space != LibrarySpace.drawings
+  String get _searchPlaceholder => _kapyAiOn && _space != LibrarySpace.drawings
       ? 'Search or Ask Kapy AI'
       : _listSearchPlaceholder;
 
@@ -3527,11 +3546,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 MediaQuery.sizeOf(context).width < kapyAiOverlayBelow),
         today: dayShown(widget.notes.now(), displayTime),
         picked: _pickedDay,
-        onPick: (day, notes) => _pickDay(
-          day,
-          notes,
-          write: widget.days != null && listVisible,
-        ),
+        onPick: (day, notes) =>
+            _pickDay(day, notes, write: widget.days != null && listVisible),
         notes: folderId == null
             ? _filtered(widget.notes.search(''), anyTime: true)
             : widget.folders!.tree.notesIn(
@@ -4936,22 +4952,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _phoneListBack();
             }
           },
-          child: Navigator(
-            key: _phoneNavigator,
-            pages: [
-              MaterialPage(key: _phoneListPage, child: _phoneList()),
-              if (pageOpen)
-                MaterialPage(
-                  // One page whichever note is on it: a note opened over
-                  // another replaces it in place rather than pushing a second
-                  // editor beside the first.
-                  key: const ValueKey('phone-page'),
-                  child: _phonePage(selected),
-                ),
-            ],
-            onDidRemovePage: (page) {
-              if (page.key != _phoneListPage) _closePhonePage();
-            },
+          child: ToastClearanceScope(
+            child: Navigator(
+              key: _phoneNavigator,
+              pages: [
+                MaterialPage(key: _phoneListPage, child: _phoneList()),
+                if (pageOpen)
+                  MaterialPage(
+                    // One page whichever note is on it: a note opened over
+                    // another replaces it in place rather than pushing a second
+                    // editor beside the first.
+                    key: const ValueKey('phone-page'),
+                    child: _phonePage(selected),
+                  ),
+              ],
+              onDidRemovePage: (page) {
+                if (page.key != _phoneListPage) _closePhonePage();
+              },
+            ),
           ),
         ),
       ),

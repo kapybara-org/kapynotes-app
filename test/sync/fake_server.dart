@@ -76,6 +76,10 @@ class FakeServer {
   /// Thrown after the next removal is applied, as when its answer is lost.
   SyncException? loseRemovalAnswer;
 
+  /// Run as each removal arrives, before it is applied: to see what the
+  /// device asking is doing then, to refuse it, or never to answer.
+  Future<void> Function()? onRemoval;
+
   /// Set to refuse every op push with this code, as a server refuses an op or
   /// a snapshot past its size.
   String? refusePushes;
@@ -2552,6 +2556,7 @@ class FakeApi implements SyncApi {
   @override
   Future<void> revokeInvite(String spaceId, String token) async {
     _gate();
+    if (server.onRemoval case final hook?) await hook();
     server._member(userId, spaceId).invites.remove(token);
   }
 
@@ -2587,6 +2592,7 @@ class FakeApi implements SyncApi {
   @override
   Future<void> removeMember(String spaceId, String userId) async {
     _gate();
+    if (server.onRemoval case final hook?) await hook();
     server.removeMember(this.userId, spaceId, userId);
     final lost = server.loseRemovalAnswer;
     if (lost != null) {

@@ -74,6 +74,7 @@ class _SharingNoticesState extends State<SharingNotices> {
     Toast.show(
       context,
       notice.message,
+      isError: notice.isError,
       action: spaceId == null ? null : 'Leave',
       onAction: spaceId == null
           ? null

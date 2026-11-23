@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -49,10 +50,13 @@ class Person {
     Duration minRetry = const Duration(seconds: 5),
     int snapshotEvery = 150,
     int rereadPages = 100,
+    MemoryStore? reopening,
   }) {
     server.seedBundle(userId);
-    store = MemoryStore();
-    store.data['sync.v1'] = {'deviceId': deviceIdFor(device)};
+    // An earlier run's store is the app opened again on the same device.
+    store =
+        reopening ??
+        (MemoryStore()..data['sync.v1'] = {'deviceId': deviceIdFor(device)});
     notes = NotesStore(store, now: () => now);
     state = SyncState(store)..load();
     api = FakeApi(server, device: state.deviceId, userId: userId);
@@ -2843,6 +2847,374 @@ void main() {
       expect(alice.notes.byId(other.id)!.spaceId, pair);
       expect(bob.notes.byId(note.id), isNull);
       expect(bob.notes.byId(other.id)?.body, 'Two');
+    });
+
+    group('a removal held for Undo', () {
+      /// Bob has joined Alice's note and Carol is invited to it, so taking
+      /// Bob off is one removal and the note stays where it is.
+      Future<(Note, String)> withBobAndCarol() async {
+        final note = await shareWithBob('Ours');
+        await alice.sharing.addPerson(note.id, carol(), allNotes: true);
+        return (note, alice.notes.byId(note.id)!.spaceId!);
+      }
+
+      bool bobIn(String space) =>
+          server.spaces[space]!.members.containsKey(bob.userId);
+
+      test('taken back inside its window never reaches the server', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(
+          note.id,
+          bob.email,
+          const Duration(milliseconds: 20),
+        );
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isTrue);
+
+        expect(alice.sharing.cancelRemoval(note.id, bob.email), isTrue);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        await alice.sharing.sendHeldRemovals(note.id);
+        expect(bobIn(space), isTrue);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+      });
+
+      test('reaches the server when its window ends', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(
+          note.id,
+          bob.email,
+          const Duration(milliseconds: 20),
+        );
+        expect(bobIn(space), isTrue);
+
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(bobIn(space), isFalse);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+        expect(alice.sharing.cancelRemoval(note.id, bob.email), isFalse);
+      });
+
+      test('goes at once when its note is done with', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+
+        await alice.sharing.sendHeldRemovals(note.id);
+        expect(bobIn(space), isFalse);
+        expect(alice.sharing.cancelRemoval(note.id, bob.email), isFalse);
+      });
+
+      test('goes out when the app opens again after closing inside its '
+          'window', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+
+        final again = Person(
+          server,
+          userId: alice.userId,
+          device: alice.device,
+          reopening: alice.store,
+        );
+        addTearDown(again.dispose);
+        expect(again.sharing.isRemovalHeld(note.id, bob.email), isTrue);
+        expect(bobIn(space), isTrue);
+
+        await again.boot();
+        await settle(server);
+        expect(bobIn(space), isFalse);
+        expect(again.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+      });
+
+      test('outlives another account signing in on the device and holding '
+          'one of its own', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+
+        final other = Person(
+          server,
+          userId: bob.userId,
+          device: alice.device,
+          reopening: alice.store,
+        );
+        addTearDown(other.dispose);
+        other.sharing.holdRemoval(
+          'note-of-bob',
+          carol(),
+          const Duration(hours: 1),
+        );
+
+        final again = Person(
+          server,
+          userId: alice.userId,
+          device: alice.device,
+          reopening: alice.store,
+        );
+        addTearDown(again.dispose);
+        expect(again.sharing.isRemovalHeld(note.id, bob.email), isTrue);
+        await again.boot();
+        await settle(server);
+        expect(bobIn(space), isFalse);
+        expect(again.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+        expect(other.sharing.isRemovalHeld('note-of-bob', carol()), isTrue);
+      });
+
+      test('waits while offline, and goes once the server answers', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.api.failAll = const SyncTransientException('offline');
+        alice.sharing.holdRemoval(
+          note.id,
+          bob.email,
+          const Duration(milliseconds: 20),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(bobIn(space), isTrue);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isTrue);
+
+        alice.api.failAll = null;
+        await alice.sync.syncNow();
+        await settle(server);
+        expect(bobIn(space), isFalse);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+      });
+
+      test('is let go when another device took them off first', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+        await alice.api.removeMember(space, bob.userId);
+        await alice.sharing.refresh();
+
+        await alice.sharing.sendHeldRemovals(note.id);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+        expect(server.spaces[space]!.invites.values.map((i) => i.email), [
+          carol(),
+        ]);
+      });
+
+      test('is let go when the note stops being shared', () async {
+        final (note, _) = await withBobAndCarol();
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+        await alice.sharing.unshareNote(note.id);
+
+        await alice.sharing.sendHeldRemovals(note.id);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+        expect(alice.notes.byId(note.id)!.isShared, isFalse);
+      });
+
+      test('Undo while an earlier one is on its way takes back a later one '
+          'for good, but not the one on its way', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+        alice.sharing.holdRemoval(note.id, carol(), const Duration(hours: 1));
+        final answer = Completer<void>();
+        server.onRemoval = () => answer.future;
+
+        final sending = alice.sharing.sendHeldRemovals(note.id);
+        expect(alice.sharing.cancelRemoval(note.id, bob.email), isFalse);
+        expect(alice.sharing.cancelRemoval(note.id, carol()), isTrue);
+        answer.complete();
+        await sending;
+
+        expect(bobIn(space), isFalse);
+        expect(server.spaces[space]?.invites.values.map((i) => i.email), [
+          carol(),
+        ]);
+        expect(alice.notes.byId(note.id)!.isShared, isTrue);
+      });
+
+      /// The server refuses the next removal, once.
+      void refuseNextRemoval() => server.onRemoval = () async {
+        server.onRemoval = null;
+        throw const SyncRefusedException(403, 'view-only', {});
+      };
+
+      test('refused once its window is up, is said where it was made and '
+          'never thrown', () async {
+        final (note, space) = await withBobAndCarol();
+        refuseNextRemoval();
+        final said = <Object>[];
+        alice.sharing.holdRemoval(
+          note.id,
+          bob.email,
+          const Duration(milliseconds: 20),
+          onRefused: (error) {
+            said.add(error);
+            return true;
+          },
+        );
+
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(said.single, isA<SyncRefusedException>());
+        expect(bobIn(space), isTrue);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+      });
+
+      test('refused where nothing can say so any more, is a notice', () async {
+        final (note, space) = await withBobAndCarol();
+        final heard = <SharingNotice>[];
+        final subscription = alice.sharing.notices.listen(heard.add);
+        addTearDown(subscription.cancel);
+        refuseNextRemoval();
+        alice.sharing.holdRemoval(
+          note.id,
+          bob.email,
+          const Duration(hours: 1),
+          onRefused: (_) => false,
+        );
+
+        await alice.sharing.sendHeldRemovalsQuietly();
+        await Future<void>.delayed(Duration.zero);
+        final bobName = alice.sharing.memberOn(note.id, bob.email)!.firstName;
+        expect(heard.single.message, "Couldn't remove $bobName from “Ours”.");
+        expect(heard.single.isError, isTrue);
+        expect(bobIn(space), isTrue);
+        expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
+      });
+
+      test('refused where the sheet that made it said so already, is no '
+          'notice as well', () async {
+        final (note, space) = await withBobAndCarol();
+        final heard = <SharingNotice>[];
+        final subscription = alice.sharing.notices.listen(heard.add);
+        addTearDown(subscription.cancel);
+        refuseNextRemoval();
+        final said = <Object>[];
+        alice.sharing.holdRemoval(
+          note.id,
+          bob.email,
+          const Duration(hours: 1),
+          onRefused: (error) {
+            said.add(error);
+            return true;
+          },
+        );
+
+        await alice.sharing.sendHeldRemovalsQuietly();
+        await Future<void>.delayed(Duration.zero);
+        expect(said.single, isA<SyncRefusedException>());
+        expect(heard, isEmpty);
+        expect(bobIn(space), isTrue);
+      });
+
+      test('refused on two notes in one go are a notice for each, naming '
+          'only its own people', () async {
+        final (note, _) = await withBobAndCarol();
+        final other = await privateNote('Theirs');
+        // Someone else stays invited, so taking Dave off asks the server.
+        await alice.sharing.addPerson(other.id, 'dave@example.com');
+        await alice.sharing.addPerson(other.id, 'erin@example.com');
+        final heard = <SharingNotice>[];
+        final subscription = alice.sharing.notices.listen(heard.add);
+        addTearDown(subscription.cancel);
+        server.onRemoval = () async =>
+            throw const SyncRefusedException(403, 'view-only', {});
+        addTearDown(() => server.onRemoval = null);
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+        alice.sharing.holdRemoval(
+          other.id,
+          'dave@example.com',
+          const Duration(hours: 1),
+        );
+
+        await alice.sharing.sendHeldRemovalsQuietly();
+        await Future<void>.delayed(Duration.zero);
+        final bobName = alice.sharing.memberOn(note.id, bob.email)!.firstName;
+        expect(heard.map((notice) => notice.message), [
+          "Couldn't remove $bobName from “Ours”.",
+          "Couldn't remove dave@example.com from “Theirs”.",
+        ]);
+      });
+
+      test('refused from a note with no title names it as a note', () {
+        expect(
+          SharingNotice.notRemoved(names: ['Bob'], title: ' ').message,
+          "Couldn't remove Bob from a note.",
+        );
+      });
+
+      for (final count in [1, 2, 3, 4]) {
+        test('$count refused in one go once nothing can say so are one notice '
+            'naming them', () async {
+          final (note, _) = await withBobAndCarol();
+          for (final address in ['dave@example.com', 'erin@example.com']) {
+            await alice.sharing.addPerson(note.id, address, allNotes: true);
+          }
+          final heard = <SharingNotice>[];
+          final subscription = alice.sharing.notices.listen(heard.add);
+          addTearDown(subscription.cancel);
+          server.onRemoval = () async =>
+              throw const SyncRefusedException(403, 'view-only', {});
+          addTearDown(() => server.onRemoval = null);
+          final people = [
+            bob.email,
+            carol(),
+            'dave@example.com',
+            'erin@example.com',
+          ].take(count);
+          for (final email in people) {
+            alice.sharing.holdRemoval(note.id, email, const Duration(hours: 1));
+          }
+
+          await alice.sharing.sendHeldRemovalsQuietly();
+          await Future<void>.delayed(Duration.zero);
+          final bobName = alice.sharing.memberOn(note.id, bob.email)!.firstName;
+          expect(heard.map((notice) => notice.message), [
+            switch (count) {
+              1 => "Couldn't remove $bobName from “Ours”.",
+              2 => "Couldn't remove $bobName and ${carol()} from “Ours”.",
+              3 =>
+                "Couldn't remove $bobName, ${carol()} and 1 other from "
+                    '“Ours”.',
+              _ =>
+                "Couldn't remove $bobName, ${carol()} and 2 others from "
+                    '“Ours”.',
+            },
+          ]);
+          expect(heard.single.isError, isTrue);
+          expect(heard.single.leaveSpaceId, isNull);
+          for (final email in people) {
+            expect(alice.sharing.isRemovalHeld(note.id, email), isFalse);
+          }
+        });
+      }
+
+      test(
+        'put off by a lost connection waits to go again, shown as such',
+        () async {
+          final (note, space) = await withBobAndCarol();
+          server.onRemoval = () async {
+            server.onRemoval = null;
+            throw const SyncTransientException('offline');
+          };
+          alice.sharing.holdRemoval(
+            note.id,
+            bob.email,
+            const Duration(hours: 1),
+          );
+          expect(alice.sharing.isRemovalWaiting(note.id, bob.email), isFalse);
+
+          await alice.sharing.sendHeldRemovalsQuietly();
+          expect(bobIn(space), isTrue);
+          expect(alice.sharing.isRemovalWaiting(note.id, bob.email), isTrue);
+        },
+      );
+
+      test('held over from before goes once a sync pass is done, not in the '
+          'middle of one', () async {
+        final (note, space) = await withBobAndCarol();
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+        final again = Person(
+          server,
+          userId: alice.userId,
+          device: alice.device,
+          reopening: alice.store,
+        );
+        addTearDown(again.dispose);
+        final passing = <bool>[];
+        server.onRemoval = () async =>
+            passing.add(again.sync.status == SyncStatus.syncing);
+
+        await again.boot();
+        await settle(server);
+        expect(bobIn(space), isFalse);
+        expect(passing, [false]);
+      });
     });
 
     test(

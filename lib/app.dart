@@ -694,6 +694,16 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.account?.billing?.refreshIfStale() ?? Future<void>.value(),
       );
     } else {
+      // Leaving the foreground or closing gives up Undo on a removal still
+      // held for it: it goes now, while the app can still send it.
+      if (state == AppLifecycleState.hidden ||
+          state == AppLifecycleState.paused ||
+          state == AppLifecycleState.detached) {
+        unawaited(
+          widget.account?.sharing?.sendHeldRemovalsQuietly() ??
+              Future<void>.value(),
+        );
+      }
       // Deliberately not on `inactive` or `hidden`. On desktop those mean a
       // window that lost focus or was minimised, and an open window quietly
       // going stale is the whole reason the socket stays open. Only a

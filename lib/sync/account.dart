@@ -887,6 +887,14 @@ class Account extends ChangeNotifier {
   /// delete.
   Future<void> signOut() async {
     final token = _token;
+    // A removal still held for Undo goes before the account does, but never
+    // holds the sign-out up for long.
+    if (_sharing case final sharing?) {
+      await sharing.sendHeldRemovalsQuietly().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+    }
     _teardownSync();
     _token = null;
     _user = null;
@@ -1128,8 +1136,9 @@ class Account extends ChangeNotifier {
     final name = await deviceName(_user?.name);
     if (name == null || _token != token) return;
     try {
-      await _syncApiFor(token)
-          .reportDevice(name: name, platform: thisDevicePlatform);
+      await _syncApiFor(
+        token,
+      ).reportDevice(name: name, platform: thisDevicePlatform);
       _putForThisAccount(_reportedEntry, now);
     } on SyncException {
       // Only ever a nicer sentence on another device; the next pass retries.
@@ -1160,8 +1169,9 @@ class Account extends ChangeNotifier {
     final token = _token;
     if (token == null) return (proof: null, problem: KeyCodeProblem.offline);
     try {
-      final proof = await _syncApiFor(token)
-          .verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
+      final proof = await _syncApiFor(
+        token,
+      ).verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
       return (proof: proof, problem: null);
     } on SyncRefusedException catch (error) {
       return (

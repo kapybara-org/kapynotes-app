@@ -409,7 +409,9 @@ void main() {
       await settledShot(tester, 'phone-sharing-removed-toast');
 
       await tester.tap(find.text('Undo'));
-      final sent = find.text('Invitation sent to ${carol.email}');
+      final sent = find.text(
+        'Invited Carol again. They can see the note once they accept.',
+      );
       await pumpUntil(tester, () => sent.evaluate().isNotEmpty);
       expect(tester.takeException(), isNull);
       expect(sent, findsOneWidget);
@@ -426,6 +428,9 @@ void main() {
       await shareAround(tester);
       await openSharedPage(tester);
       await openSheetFor(tester, 'Trip budget');
+      final who = account.sharing!
+          .spaceOf(notes.byId(tripId)!)!
+          .peoplePhrase(account.sharing!.userId);
 
       await tester.tap(find.byKey(const ValueKey('stop-sharing')));
       await tester.pumpAndSettle();
@@ -452,7 +457,7 @@ void main() {
       await settledShot(tester, 'phone-sharing-stopped-toast');
 
       await tester.tap(find.text('Undo'));
-      final again = find.textContaining(RegExp('Shared again with|sent to'));
+      final again = find.text('$who can see this note again');
       await pumpUntil(
         tester,
         () => again.evaluate().isNotEmpty && listed('Trip budget'),
@@ -461,6 +466,8 @@ void main() {
       expect(again, findsOneWidget);
       expect(notes.byId(tripId)!.isShared, isTrue);
       expect(listed('Trip budget'), isTrue);
+      final space = account.sharing!.spaceOf(notes.byId(tripId)!)!;
+      expect(space.invites, isEmpty);
       await settledShot(tester, 'phone-sharing-stop-undone');
     }, skip: !phone);
 
