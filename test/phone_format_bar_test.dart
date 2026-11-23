@@ -693,6 +693,24 @@ void main() {
       expect(tester.getRect(find.byKey(card)).bottom, 760 - 300 - 16);
     });
 
+    testWidgets('one already showing keeps above the format bar as the '
+        'keyboard grows under it', (tester) async {
+      await _open(
+        tester,
+        TargetPlatform.iOS,
+        'Trip budget',
+        const TextSelection.collapsed(offset: 0),
+      );
+      Toast.show(tester.element(find.byKey(_bar)), 'Copied');
+      await tester.pumpAndSettle();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 340);
+      await tester.pumpAndSettle();
+      final bar = tester.getRect(find.byKey(_bar));
+      expect(bar.bottom, closeTo(760 - 340, 0.01));
+      expect(tester.getRect(find.byKey(card)).bottom, bar.top - 16);
+    });
+
     testWidgets('one already showing steps down with the keyboard, the note '
         'still focused', (tester) async {
       await _open(
