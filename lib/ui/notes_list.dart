@@ -1142,6 +1142,88 @@ class DrawingCardFace extends StatelessWidget {
   }
 }
 
+/// A drawing as a phone's row, full width between hairlines: a small
+/// thumbnail of it, then its title in the hand face over its day or time.
+class PhoneDrawingRowFace extends StatelessWidget {
+  const PhoneDrawingRowFace({
+    super.key,
+    required this.note,
+    required this.date,
+    required this.selected,
+    required this.hovering,
+    this.picking,
+  });
+
+  final Note note;
+  final String date;
+  final bool selected;
+  final bool hovering;
+  final bool? picking;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final picking = this.picking;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      color: selected || picking == true
+          ? palette.fillSelected
+          : hovering
+          ? palette.fillControl
+          : null,
+      child: Row(
+        children: [
+          if (picking != null) ...[
+            _PickBox(checked: picking),
+            const SizedBox(width: 10),
+          ],
+          Container(
+            key: const ValueKey('phone-drawing-thumbnail'),
+            width: 64,
+            height: 40,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              // Sunk a little below the list it sits on, as on the cards.
+              color: Color.alphaBlend(
+                Colors.black.withValues(alpha: 0.18),
+                palette.sidebarBackground,
+              ),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
+            ),
+            child: DrawingThumbnail(drawing: note.drawing),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  note.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _handwritten(
+                    17,
+                    22,
+                    FontWeight.w400,
+                    palette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  date,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _figtree(13, 16, FontWeight.w400, palette.textMuted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A drawing as a row in the Drawings space: a small thumbnail of it, then
 /// its title over when it was last changed.
 class DrawingListRowFace extends StatelessWidget {

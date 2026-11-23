@@ -18,6 +18,7 @@ import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/notes_list.dart' show NoteCardFace;
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
@@ -183,6 +184,23 @@ void main() {
       .descendant(of: find.byType(Sidebar), matching: find.text(title))
       .evaluate()
       .isNotEmpty;
+
+  testWidgets("a phone's Shared is rows between hairlines even with cards "
+      'chosen on the Mac', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    prefs.noteCards = true;
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await openTab(tester, SidebarTab.shared, phone: true);
+
+    final rows = tester.widgetList<NoteRow>(
+      find.descendant(of: find.byType(Sidebar), matching: find.byType(NoteRow)),
+    );
+    expect(rows.map((row) => row.note.title), contains('Trip budget'));
+    expect(rows.every((row) => row.style == NoteRowStyle.touch), isTrue);
+    expect(find.byType(NoteCardFace), findsNothing);
+  });
 
   for (final phone in [false, true]) {
     final on = phone ? 'on a phone' : 'beside a window';

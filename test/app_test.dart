@@ -8435,38 +8435,63 @@ void main() {
         expect(find.text('Unpin note'), findsOneWidget);
       });
 
-      testWidgets('View all opens every pinned note as cards two to a row, '
-          'and Back comes home', (tester) async {
-        final titles = await pumpPinned(tester, 7);
-        await tester.tap(viewAll);
-        await tester.pumpAndSettle();
-        expect(scroller, findsNothing);
-        expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
-        expect(find.byKey(const ValueKey('pinned-page')), findsOneWidget);
-        expect(find.text('Search pinned notes'), findsOneWidget);
-        expect(
-          tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
-          PhoneTab.notes,
-        );
-        final first = tester.getRect(card(titles[6]));
-        final second = tester.getRect(card(titles[5]));
-        final third = tester.getRect(card(titles[4]));
-        expect(second.top, first.top, reason: 'two to a row');
-        expect(first.left, 20);
-        expect(first.width, 171);
-        expect(second.width, 171);
-        expect(second.left - first.right, 8);
-        expect(second.right, 370);
-        expect(third.top - first.bottom, 8);
-        expect(third.left, first.left);
-        await tester.scrollUntilVisible(card(titles[0]), 200);
-        expect(card(titles[0]), findsOneWidget);
+      for (final cards in [false, true]) {
+        testWidgets('View all opens every pinned note as the day list\'s '
+            'rows, newest first between hairlines, with cards '
+            '${cards ? 'chosen' : 'off'} on the Mac, and Back comes home', (
+          tester,
+        ) async {
+          final titles = await pumpPinned(tester, 7);
+          prefs.noteCards = cards;
+          await tester.pumpAndSettle();
+          await tester.tap(viewAll);
+          await tester.pumpAndSettle();
+          expect(scroller, findsNothing);
+          expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+          expect(find.byKey(const ValueKey('pinned-page')), findsOneWidget);
+          expect(find.text('Search pinned notes'), findsOneWidget);
+          expect(find.byKey(const ValueKey('phone-filters')), findsOneWidget);
+          expect(
+            tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+            PhoneTab.notes,
+          );
+          expect(find.byType(PhoneCardFace), findsNothing);
+          expect(find.byType(NoteCardFace), findsNothing);
+          expect(heading, findsNothing, reason: 'no heading over the rows');
+          final rows = tester
+              .widgetList<NoteRow>(find.byType(NoteRow))
+              .toList();
+          expect(rows.every((row) => row.style == NoteRowStyle.touch), isTrue);
+          expect([
+            for (final row in rows) row.note.title,
+          ], titles.reversed.take(rows.length).toList());
+          final first = tester.getRect(find.byWidget(rows[0]));
+          final second = tester.getRect(find.byWidget(rows[1]));
+          expect(first.left, 0);
+          expect(first.width, 390);
+          expect(second.top, greaterThan(first.bottom - 0.5));
+          final divider = tester.widget<Divider>(
+            find
+                .descendant(
+                  of: find.byType(Sidebar),
+                  matching: find.byType(Divider),
+                )
+                .first,
+          );
+          expect(divider.indent, 20);
+          expect(divider.endIndent, 20);
+          await tester.scrollUntilVisible(
+            find.widgetWithText(NoteRow, titles[0]),
+            200,
+          );
+          expect(find.widgetWithText(NoteRow, titles[0]), findsOneWidget);
 
-        await tester.binding.handlePopRoute();
-        await tester.pumpAndSettle();
-        expect(scroller, findsOneWidget);
-        expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
-      });
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(scroller, findsOneWidget);
+          expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
+        });
+      }
 
       for (final scale in [1.3, 2.0, 3.1]) {
         testWidgets("at $scale× text Home's top section and its cards grow "
@@ -9743,12 +9768,12 @@ void main() {
         await pumpFolders(tester);
         await openPhoneDrawings(tester);
         expect(titleOf(tester), 'Drawings');
-        expect(find.byType(DrawingCardFace), findsOneWidget);
+        expect(find.byType(PhoneDrawingRowFace), findsOneWidget);
         expect(lit(tester), PhoneTab.folders);
 
         await tap(tester, find.byKey(const ValueKey('page-back')));
         expect(tree, findsOneWidget);
-        expect(find.byType(DrawingCardFace), findsNothing);
+        expect(find.byType(PhoneDrawingRowFace), findsNothing);
 
         await tap(tester, tile);
         expect(titleOf(tester), 'Drawings');
@@ -9760,7 +9785,32 @@ void main() {
         await tap(tester, barNotes);
         expect(lit(tester), PhoneTab.notes);
         expect(groceries, findsOneWidget);
-        expect(find.byType(DrawingCardFace), findsNothing);
+        expect(find.byType(PhoneDrawingRowFace), findsNothing);
+      });
+
+      testWidgets('a folder and a subfolder are the day list\'s rows under '
+          'its day headings, even with cards chosen on the Mac', (
+        tester,
+      ) async {
+        await pumpFolders(tester);
+        prefs.noteCards = true;
+        await tester.pumpAndSettle();
+        for (final folder in [acme, work]) {
+          await openFolder(tester, folder);
+          final page = find.byKey(ValueKey('phone-folder-${folder.id}'));
+          expect(page, findsOneWidget);
+          expect(tester.widget<NoteRow>(brief).style, NoteRowStyle.touch);
+          expect(find.byType(NoteCardFace), findsNothing);
+          expect(find.byType(NoteListRowFace), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byType(Sidebar),
+              matching: find.bySemanticsLabel(RegExp(r'^Today, ')),
+            ),
+            findsOneWidget,
+          );
+          await tap(tester, find.byKey(const ValueKey('page-back')));
+        }
       });
 
       testWidgets('a build without folders still shows Folders with its '
@@ -10691,28 +10741,78 @@ void main() {
       expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
     });
 
-    testWidgets('Drawings is thumbnail cards, two to a row', (tester) async {
-      for (final title in ['Garden plan', 'Living room', 'App wireframe']) {
-        final drawing = notes.create(drawing: true);
-        notes.updateDrawing(drawing.id, NoteDrawing.empty, title: title);
-      }
-      await pumpApp(tester, size: const Size(393, 852));
-      await showNotesList(tester);
-      await openPhoneDrawings(tester);
+    for (final cards in [false, true]) {
+      testWidgets('Drawings is rows under Recent, each led by its thumbnail, '
+          'with cards ${cards ? 'chosen' : 'off'} on the Mac', (tester) async {
+        for (final title in ['Garden plan', 'Living room', 'App wireframe']) {
+          final drawing = notes.create(drawing: true);
+          notes.updateDrawing(drawing.id, NoteDrawing.empty, title: title);
+        }
+        await pumpApp(tester, size: const Size(393, 852));
+        prefs.noteCards = cards;
+        await showNotesList(tester);
+        await openPhoneDrawings(tester);
 
-      expect(find.text('Search drawings'), findsOneWidget);
-      final cards = find.byType(DrawingCardFace);
-      expect(cards, findsNWidgets(3));
-      expect(
-        tester.getTopLeft(cards.at(0)).dy,
-        tester.getTopLeft(cards.at(1)).dy,
-      );
-      expect(tester.getSize(cards.first).width, (393 - 40 - 12) / 2);
+        expect(find.text('Search drawings'), findsOneWidget);
+        expect(find.text('Recent'), findsOneWidget);
+        expect(find.byType(DrawingCardFace), findsNothing);
+        final rows = find.byType(PhoneDrawingRowFace);
+        expect(rows, findsNWidgets(3));
+        final first = tester.getRect(rows.at(0));
+        final second = tester.getRect(rows.at(1));
+        expect(first.left, 0);
+        expect(first.width, 393);
+        expect(second.top, greaterThan(first.bottom - 0.5));
+        final thumbnail = find.descendant(
+          of: rows.first,
+          matching: find.byKey(const ValueKey('phone-drawing-thumbnail')),
+        );
+        expect(tester.getSize(thumbnail), const Size(64, 40));
+        final inset =
+            (tester.widget<Container>(thumbnail).decoration! as BoxDecoration)
+                .color!;
+        expect(
+          inset.computeLuminance(),
+          lessThan(
+            tester
+                .element(thumbnail)
+                .palette
+                .sidebarBackground
+                .computeLuminance(),
+          ),
+          reason: 'a darker inset than the list',
+        );
+        expect(tester.getTopLeft(thumbnail).dx, 20);
+        expect(tester.getCenter(thumbnail).dy, closeTo(first.center.dy, 0.5));
+        final title = find.descendant(
+          of: rows.first,
+          matching: find.text('App wireframe'),
+        );
+        expect(tester.getTopLeft(title).dx, 20 + 64 + 12);
+        expect(tester.widget<Text>(title).style?.fontSize, 17);
+        final date = find.descendant(
+          of: rows.first,
+          matching: find.textContaining(RegExp(r'^Today, ')),
+        );
+        expect(date, findsOneWidget);
+        expect(tester.widget<Text>(date).style?.fontSize, 13);
+        expect(
+          tester.getTopLeft(date).dy - tester.getBottomLeft(title).dy,
+          closeTo(2, 0.5),
+        );
+        expect(
+          find.descendant(
+            of: find.byType(Sidebar),
+            matching: find.byType(Divider),
+          ),
+          findsNWidgets(2),
+        );
 
-      await tester.tap(find.text('Living room'));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('page-home')), findsOneWidget);
-    });
+        await tester.tap(find.text('Living room'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('page-home')), findsOneWidget);
+      });
+    }
 
     testWidgets('a tag pill narrows the list, and a second tap widens it', (
       tester,

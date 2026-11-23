@@ -1204,13 +1204,15 @@ extension on Sidebar {
     final groups = _noteGroups;
     final pinned = _shownPinned(groups);
     final rows = <WidgetBuilder>[];
-    // A phone's Drawings is all thumbnails, two to a row.
-    final cards = this.cards || (phone && drawings);
+    // A phone's lists are rows only, a drawing's led by its thumbnail; the
+    // Mac keeps the list or cards it was given.
+    final cards = !phone && this.cards;
     final style = switch ((cards, drawings)) {
+      _ when phone => NoteRowStyle.touch,
       (true, true) => NoteRowStyle.drawingCard,
       (true, false) => NoteRowStyle.card,
       (false, true) => NoteRowStyle.drawingRow,
-      (false, false) => phone ? NoteRowStyle.touch : NoteRowStyle.row,
+      (false, false) => NoteRowStyle.row,
     };
     final margin = phone ? 20.0 : 16.0;
     final noun = drawings ? 'drawing' : 'note';
@@ -1238,8 +1240,8 @@ extension on Sidebar {
       );
     }
 
-    // A phone's pinned notes are cards whatever the list draws: a sideways
-    // row on Home and two to a row on the Pinned page.
+    // Home's pinned notes are cards in a sideways row, whatever the list
+    // draws.
     Widget pinnedCard(Note note) => _row(
       note,
       shared: sharing != null && note.isShared,
@@ -1343,35 +1345,9 @@ extension on Sidebar {
           ),
         );
       }
-    } else if (pinnedOnly && phone && !drawings) {
-      // The Pinned page, under its own title: every pinned note as a card,
-      // two to a row.
-      const gutter = PhonePinnedCards.gap;
-      gap(16);
-      for (var index = 0; index < groups.pinned.length; index += 2) {
-        if (index > 0) gap(gutter);
-        final pair = groups.pinned.skip(index).take(2).toList();
-        rows.add(
-          (context) => Padding(
-            padding: EdgeInsets.symmetric(horizontal: margin),
-            child: SizedBox(
-              height: PhoneCardFace.height(context),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(child: pinnedCard(pair.first)),
-                  const SizedBox(width: gutter),
-                  Expanded(
-                    child: pair.length > 1
-                        ? pinnedCard(pair.last)
-                        : const SizedBox(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }
+    } else if (pinnedOnly && phone) {
+      // The Pinned page, under its own title: every pinned note as a row.
+      section(groups.pinned, pinned: true);
     } else if (pinnedOnly) {
       heading(
         NotesListHeading(
@@ -1435,8 +1411,7 @@ extension on Sidebar {
         section(groups.byGroup[key]!);
       }
       if (drawings) {
-        // Drawings stay one grid of thumbnails, two to a row, which a day
-        // heading would break into short rows.
+        // Drawings stay one list under Recent, without a heading a day.
         if (groups.mine.isNotEmpty) {
           heading(const _PhoneHeading('Recent'));
           section(groups.mine);
@@ -3338,6 +3313,7 @@ class _NoteRowState extends State<NoteRow> {
   Widget _boardFace({required String? snippet, required bool hasMenu}) {
     final note = widget.note;
     final people = widget.collaborators;
+    final drawingRow = widget.style == NoteRowStyle.touch && note.isDrawing;
     final card =
         widget.style == NoteRowStyle.card ||
         widget.style == NoteRowStyle.phoneCard ||
@@ -3351,7 +3327,7 @@ class _NoteRowState extends State<NoteRow> {
         note.updatedAt,
         now: widget.now(),
         displayTime: widget.displayTime,
-        today: card,
+        today: card || drawingRow,
         clock: clock,
       ),
     };
@@ -3432,6 +3408,13 @@ class _NoteRowState extends State<NoteRow> {
         selected: widget.selected,
         hovering: lit,
         ringed: ringed,
+      ),
+      NoteRowStyle.touch when drawingRow => PhoneDrawingRowFace(
+        note: note,
+        date: date,
+        selected: selected,
+        hovering: lit,
+        picking: picking,
       ),
       NoteRowStyle.row || NoteRowStyle.touch => NoteListRowFace(
         touch: widget.style == NoteRowStyle.touch,
