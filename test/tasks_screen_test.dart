@@ -277,6 +277,21 @@ void main() {
       await settle(tester);
     });
 
+    for (final phone in [true, false]) {
+      testWidgets('a ${phone ? 'phone' : 'desktop'} Tasks only 30 pt wide '
+          'lays out without an error', (tester) async {
+        await setUpTasks(tester, errands);
+        await pumpScreen(
+          tester,
+          phone: phone,
+          onFilter: (_) {},
+          size: const Size(30, 600),
+        );
+        expect(tester.takeException(), isNull);
+        await settle(tester);
+      });
+    }
+
     testWidgets('the filter offers Today, Done and each note with its count, '
         'ticks the one showing, and narrows to the one picked', (tester) async {
       await setUpTasks(tester, errands);
