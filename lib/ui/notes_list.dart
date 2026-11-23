@@ -430,6 +430,119 @@ class NoteCardFace extends StatelessWidget {
   }
 }
 
+/// A phone's card for a pinned note, on Home's sideways row and on the
+/// Pinned page's grid: the Mac's card in the phone's type sizes, the title
+/// in the hand face, then the first line or its sum's value, then the date
+/// and the tags. Its height is its lines' at the person's text size, so it
+/// grows with the text and nothing on it is cut.
+class PhoneCardFace extends StatelessWidget {
+  const PhoneCardFace({
+    super.key,
+    required this.note,
+    required this.glance,
+    required this.date,
+    required this.selected,
+    this.day,
+    this.locked = false,
+    this.shared = false,
+    this.picking,
+  });
+
+  /// The padding round it, and its three lines with the space between them,
+  /// each as tall as the text draws it, its font size scaled and its line
+  /// height kept, and rounded up to a whole point so no line is cut. Android
+  /// scales larger sizes less, so the line heights can't be scaled alone.
+  static double height(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    double line(double size, double height) =>
+        (scaler.scale(size) * height / size).ceilToDouble();
+    return 14 + line(16, 22) + 2 + line(13, 18) + 12 + line(12, 16) + 14;
+  }
+
+  final Note note;
+  final NoteGlance glance;
+
+  /// When it was changed, in the list's own words.
+  final String date;
+
+  /// [date] without its time of day, for a meta row short of room.
+  final String? day;
+  final bool selected;
+  final bool locked;
+  final bool shared;
+
+  /// Ticked or not while notes are being picked; null otherwise.
+  final bool? picking;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final picking = this.picking;
+    final marked = selected || picking == true;
+    final fill = marked ? palette.fillSelected : palette.fillRest;
+    final result = glance.amount ?? glance.result;
+    final text = glance.line;
+    final card = Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(
+              right: picking == null ? 0 : _PickBox.size + 6,
+            ),
+            child: Text(
+              note.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: _handwritten(16, 22, FontWeight.w400, palette.textPrimary),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            result ?? text ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: result != null
+                ? chromeStyle(
+                    size: 13,
+                    line: 18,
+                    weight: 600,
+                    color: palette.resultPillText,
+                    tabular: true,
+                  )
+                : _figtree(13, 18, FontWeight.w400, palette.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          _MetaRow(
+            date: date,
+            day: day,
+            done: glance.done,
+            boxes: glance.boxes,
+            types: const [],
+            locked: locked,
+            shared: shared,
+            tags: TagMarks.of(context, note.id),
+            ground: fill,
+            selected: false,
+          ),
+        ],
+      ),
+    );
+    if (picking == null) return card;
+    return Stack(
+      children: [
+        card,
+        Positioned(top: 14, right: 14, child: _PickBox(checked: picking)),
+      ],
+    );
+  }
+}
+
 /// A card's last line, in the date's quiet style: the checklist's pie and
 /// the date on the left; the note's type glyphs, then its first tag's dot
 /// and name, on the right, with its other tags as dots behind the first.
@@ -1065,6 +1178,88 @@ class DrawingCardFace extends StatelessWidget {
   }
 }
 
+/// A drawing as a phone's row, full width between hairlines: a small
+/// thumbnail of it, then its title in the hand face over its day or time.
+class PhoneDrawingRowFace extends StatelessWidget {
+  const PhoneDrawingRowFace({
+    super.key,
+    required this.note,
+    required this.date,
+    required this.selected,
+    required this.hovering,
+    this.picking,
+  });
+
+  final Note note;
+  final String date;
+  final bool selected;
+  final bool hovering;
+  final bool? picking;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final picking = this.picking;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      color: selected || picking == true
+          ? palette.fillSelected
+          : hovering
+          ? palette.fillControl
+          : null,
+      child: Row(
+        children: [
+          if (picking != null) ...[
+            _PickBox(checked: picking),
+            const SizedBox(width: 10),
+          ],
+          Container(
+            key: const ValueKey('phone-drawing-thumbnail'),
+            width: 64,
+            height: 40,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              // Sunk a little below the list it sits on, as on the cards.
+              color: Color.alphaBlend(
+                Colors.black.withValues(alpha: 0.18),
+                palette.sidebarBackground,
+              ),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
+            ),
+            child: DrawingThumbnail(drawing: note.drawing),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  note.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _handwritten(
+                    17,
+                    22,
+                    FontWeight.w400,
+                    palette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  date,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _figtree(13, 16, FontWeight.w400, palette.textMuted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A drawing as a row in the Drawings space: a small thumbnail of it, then
 /// its title over when it was last changed.
 class DrawingListRowFace extends StatelessWidget {
@@ -1233,19 +1428,22 @@ class NotesListHeading extends StatelessWidget {
   }
 }
 
-/// "See all", at the end of the Pinned heading.
-class SeeAllLink extends StatelessWidget {
-  const SeeAllLink({super.key, required this.onPressed});
+/// "View all", at the end of the Pinned heading. A phone's is larger and
+/// quieter, as its Home draws it beside Pinned's serif.
+class ViewAllLink extends StatelessWidget {
+  const ViewAllLink({super.key, required this.onPressed, this.phone = false});
 
   final VoidCallback onPressed;
+  final bool phone;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final ink = phone ? palette.textSecondary : palette.accentText;
     return Semantics(
       container: true,
       button: true,
-      label: 'See all pinned notes',
+      label: 'View all pinned notes',
       excludeSemantics: true,
       onTap: onPressed,
       child: MouseRegion(
@@ -1257,19 +1455,16 @@ class SeeAllLink extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'See all',
-                style: _figtree(
-                  AppTypeScale.small,
-                  16,
-                  FontWeight.w500,
-                  palette.accentText,
-                ),
+                'View all',
+                style: phone
+                    ? _figtree(13, 16, FontWeight.w400, ink)
+                    : _figtree(AppTypeScale.small, 16, FontWeight.w500, ink),
               ),
-              const SizedBox(width: 1),
+              SizedBox(width: phone ? 2 : 1),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
-                size: 12,
-                color: palette.accentText,
+                size: phone ? 14 : 12,
+                color: ink,
               ),
             ],
           ),
@@ -1297,42 +1492,18 @@ TextStyle _sectionDetail(CalcPalette palette) => chromeStyle(
   tabular: true,
 );
 
-/// The heading over one group of the notes list: a day, Upcoming with how
-/// many wait there, a tag or a letter.
+/// The heading over one group of the notes list: a day, a tag or a letter.
 class NotesGroupHeading extends StatelessWidget {
-  const NotesGroupHeading({
-    super.key,
-    required this.label,
-    this.detail,
-    this.onTap,
-    this.folded,
-  });
+  const NotesGroupHeading({super.key, required this.label, this.detail});
 
   final String label;
   final String? detail;
-
-  /// Opens or closes the fold this heading names, when it folds.
-  final VoidCallback? onTap;
-
-  /// Whether the notes under this heading are folded away: null when the
-  /// heading folds nothing. Its chevron follows the count on a desktop, as
-  /// D03 and D04 draw "Upcoming 1 ›", and leads the words elsewhere.
-  final bool? folded;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final detail = this.detail;
-    final trailing = AppPlatform.hasPointer;
-    final chevron = switch (folded) {
-      null => null,
-      final folded => KapyIcon(
-        folded ? KapyIcons.chevronRightRounded : KapyIcons.chevronDownRounded,
-        size: 12,
-        color: palette.textTertiary,
-      ),
-    };
-    final heading = SizedBox(
+    return SizedBox(
       height: MediaQuery.textScalerOf(context).scale(16),
       child: CustomMultiChildLayout(
         delegate: _GroupHeadingLayout(),
@@ -1341,61 +1512,26 @@ class NotesGroupHeading extends StatelessWidget {
             id: _GroupHeadingPart.label,
             child: Semantics(
               header: true,
-              button: folded != null,
-              expanded: folded == null ? null : !folded!,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (chevron != null && !trailing) ...[
-                    chevron,
-                    const SizedBox(width: 4),
-                  ],
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _sectionLabel(palette),
-                    ),
-                  ),
-                  if (chevron != null && trailing && detail == null) ...[
-                    const SizedBox(width: 6),
-                    chevron,
-                  ],
-                ],
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _sectionLabel(palette),
               ),
             ),
           ),
           if (detail != null)
             LayoutId(
               id: _GroupHeadingPart.detail,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      detail,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _sectionDetail(palette),
-                    ),
-                  ),
-                  if (chevron != null && trailing) ...[
-                    const SizedBox(width: 6),
-                    chevron,
-                  ],
-                ],
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _sectionDetail(palette),
               ),
             ),
         ],
       ),
-    );
-    final onTap = this.onTap;
-    if (onTap == null) return heading;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: heading,
     );
   }
 }
@@ -2243,15 +2379,19 @@ class _NotesFilterState extends State<_NotesFilter> {
           key: const ValueKey('sidebar-notes-filter'),
           onTap: _toggle,
           behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: AppControlMetrics.iconButtonExtent,
+          // 30 tall in a 44 target at the regular size, and taller with
+          // larger text, so its words are never cut.
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: AppControlMetrics.iconButtonExtent,
+            ),
             child: Center(
               child: Container(
-                height: 30,
-                padding: const EdgeInsets.only(left: 12, right: 10),
+                constraints: const BoxConstraints(minHeight: 30),
+                padding: const EdgeInsets.fromLTRB(12, 5, 10, 5),
                 decoration: BoxDecoration(
                   color: palette.textPrimary,
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -2469,12 +2609,14 @@ class _TagPill extends StatelessWidget {
         key: ValueKey('phone-tag-${tag.id}'),
         onTap: () => onChanged(!on),
         behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          height: AppControlMetrics.iconButtonExtent,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: AppControlMetrics.iconButtonExtent,
+          ),
           child: Center(
             child: Container(
-              height: 30,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              constraints: const BoxConstraints(minHeight: 30),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
                 color: on ? palette.tonalBackground : null,
                 border: Border.all(
@@ -2482,7 +2624,7 @@ class _TagPill extends StatelessWidget {
                       ? palette.tonalKeyBackground
                       : palette.controlBorder,
                 ),
-                borderRadius: BorderRadius.circular(15),
+                borderRadius: BorderRadius.circular(999),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

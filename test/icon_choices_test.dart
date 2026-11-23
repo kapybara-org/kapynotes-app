@@ -79,12 +79,21 @@ void main() {
     );
   });
 
-  testWidgets("See all's chevron is a 12 px path chevron", (tester) async {
-    await pump(tester, Center(child: SeeAllLink(onPressed: () {})));
-
+  testWidgets("View all's chevron is a 12 px path chevron, and 14 on a "
+      'phone', (tester) async {
+    await pump(tester, Center(child: ViewAllLink(onPressed: () {})));
     expect(
       tester.getSize(findKapyIcon(KapyIcons.chevronRightRounded)),
       const Size.square(12),
+    );
+
+    await pump(
+      tester,
+      Center(child: ViewAllLink(phone: true, onPressed: () {})),
+    );
+    expect(
+      tester.getSize(findKapyIcon(KapyIcons.chevronRightRounded)),
+      const Size.square(14),
     );
   });
 }

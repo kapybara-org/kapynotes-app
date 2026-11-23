@@ -197,7 +197,7 @@ void main() {
     expect(find.byKey(const ValueKey('notes-filter-menu')), findsOneWidget);
   });
 
-  testPress('See all is pressed by its name', (tester) async {
+  testPress('View all is pressed by its name', (tester) async {
     await pumpWindow(tester);
     for (final id in [for (var i = 0; i < 5; i++) goldenNotes.create().id]) {
       goldenNotes.updateBody(id, 'Pinned');
@@ -205,12 +205,12 @@ void main() {
     }
     await tester.pumpAndSettle();
 
-    await press(tester, labelled('See all pinned notes'));
-    expect(labelled('See all pinned notes'), findsNothing);
+    await press(tester, labelled('View all pinned notes'));
+    expect(labelled('View all pinned notes'), findsNothing);
     expect(unpressable(), isEmpty);
     expect(unnamed(), isEmpty);
 
     await press(tester, tipped('Back to all notes'));
-    expect(labelled('See all pinned notes'), findsOne);
+    expect(labelled('View all pinned notes'), findsOne);
   });
 }

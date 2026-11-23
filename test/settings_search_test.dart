@@ -15,6 +15,8 @@ import 'package:kapy_notes/ui/settings_search.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'support/store_updates.dart';
+
 /// Finding a setting by typing its name — or any of the other words people
 /// use for it — and landing on its row.
 
@@ -105,6 +107,7 @@ Future<SettingsIndex> _phoneIndex(WidgetTester tester) async {
         shortcuts: shortcuts,
         rates: RatesRepository(store),
         notes: notes,
+        storeUpdates: fakeStoreUpdates(store),
         voicePrefs: VoicePrefs(store)..load(),
         onIndex: (lent) => index = lent,
       ),

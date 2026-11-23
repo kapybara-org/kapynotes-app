@@ -23,6 +23,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/store_updates.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
@@ -37,6 +38,7 @@ import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
+import 'package:kapy_notes/ui/notes_list.dart' show PhoneCardFace;
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -44,6 +46,7 @@ import 'app_test.dart' show MemoryStore, openNoteBody;
 import 'billing/billing_fakes.dart';
 import 'fake_update_installer.dart';
 import 'support/note_driver.dart';
+import 'support/store_updates.dart';
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
@@ -151,6 +154,10 @@ Future<void> pumpForGolden(
   /// Signed in to an account on Pro with two invitations waiting, so that
   /// Settings has its account, its sharing and every one of its categories.
   bool signedIn = false,
+
+  /// What a phone's store says, for About & updates. Left out, a phone makes
+  /// its own, which hears nothing back in a test.
+  StoreUpdates? storeUpdates,
 
   /// Which build the image is of.
   ///
@@ -403,6 +410,7 @@ Future<void> pumpForGolden(
       shortcuts: shortcuts,
       account: account,
       updates: updates,
+      storeUpdates: storeUpdates,
       tags: goldenTags,
       folders: goldenFolders,
       days: withDays ? goldenDays : days,
@@ -1014,7 +1022,7 @@ void main() {
   });
 
   for (final scale in [1.0, 2.0, 3.1]) {
-    testWidgets("Home's Pinned card holds its two lines whole at "
+    testWidgets("Home's Pinned card holds its lines whole at "
         '$scale× text', (tester) async {
       tester.platformDispatcher.textScaleFactorTestValue = scale;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
@@ -1028,18 +1036,18 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('page-home')));
       await tester.pumpAndSettle();
 
-      final card = tester.getRect(
-        find.byKey(const ValueKey('home-pinned-card')),
-      );
-      final lines = tester.getRect(
-        find.descendant(
-          of: find.byKey(const ValueKey('home-pinned-card')),
-          matching: find.byWidgetPredicate(
-            (widget) => widget is Text && widget.maxLines == 2,
-          ),
-        ),
-      );
-      expect(lines.bottom, lessThanOrEqualTo(card.bottom - 14 + 0.5));
+      final face = find.byType(PhoneCardFace);
+      expect(face, findsOneWidget);
+      final card = tester.getRect(face);
+      for (final text in tester.widgetList<Text>(
+        find.descendant(of: face, matching: find.byType(Text)),
+      )) {
+        expect(
+          tester.getRect(find.byWidget(text)).bottom,
+          lessThanOrEqualTo(card.bottom - 14 + 0.5),
+          reason: text.data,
+        );
+      }
       expect(tester.takeException(), isNull);
     });
   }
@@ -1323,7 +1331,7 @@ void main() {
   });
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
-  // long for one line, See all at the heading's end, and amounts in mono.
+  // long for one line, View all at the heading's end, and amounts in mono.
   // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so its
   // note opens, lit in the whole list, and the fill has left today, whose
   // weekday stays sage.
@@ -1725,6 +1733,7 @@ void main() {
         bool signedIn = false,
         bool withImageStore = false,
         bool withDays = false,
+        StoreUpdates? storeUpdates,
       }) async {
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
@@ -1748,6 +1757,7 @@ void main() {
           signedIn: signedIn,
           withImageStore: withImageStore,
           withDays: withDays,
+          storeUpdates: storeUpdates,
         );
       }
 
@@ -2033,6 +2043,73 @@ void main() {
         await tapAndSettle(tester, 'settings-section-appearance');
         await matches('settings_appearance');
       });
+
+      // About & updates (1E0B-0) on the store's two answers: nothing newer
+      // than 1.35.4, and 1.35.5 waiting. Dark, as the board is drawn: both on
+      // the iPhone, and the update on Android, whose button names its store.
+      if (brightness == Brightness.dark && phone != 'se') {
+        for (final waiting in [if (phone == 'iphone') false, true]) {
+          final state = waiting ? 'update' : 'latest';
+          testWidgets('phone about & updates, $state, $name', (tester) async {
+            await pumpPhone(
+              tester,
+              storeUpdates: fakeStoreUpdates(
+                MemoryStore(),
+                releases: aboutReleases(),
+                answer: () async => platform == TargetPlatform.android
+                    ? const StoreOffer(build: 47)
+                    : StoreOffer(version: waiting ? '1.35.5' : '1.35.4'),
+              ),
+            );
+            await tapAndSettle(tester, 'page-home');
+            await tapAndSettle(tester, 'phone-account');
+            expect(
+              find.descendant(
+                of: find.byKey(const ValueKey('settings-section-about')),
+                matching: find.text('Update available'),
+              ),
+              waiting ? findsOneWidget : findsNothing,
+            );
+            await tapAndSettle(tester, 'settings-section-about');
+            expect(
+              find.text(
+                waiting
+                    ? 'Version 1.35.5 is out'
+                    : '23 Nov 2026 · You have the latest version',
+              ),
+              findsOneWidget,
+            );
+            await matches('about_$state');
+          });
+        }
+      }
+
+      // The same page at Android's Large text (1.3x): its hand title takes a
+      // second line under a bar that grows to hold it (KAP-315).
+      if (brightness == Brightness.dark && phone == 'android') {
+        testWidgets('phone about & updates at 1.3x text, $name', (
+          tester,
+        ) async {
+          tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pumpPhone(
+            tester,
+            storeUpdates: fakeStoreUpdates(
+              MemoryStore(),
+              releases: aboutReleases(),
+              answer: () async => const StoreOffer(build: 47),
+            ),
+          );
+          await tapAndSettle(tester, 'page-home');
+          await tapAndSettle(tester, 'phone-account');
+          final about = find.byKey(const ValueKey('settings-section-about'));
+          await tester.ensureVisible(about);
+          await tester.pumpAndSettle();
+          await tester.tap(about);
+          await tester.pumpAndSettle();
+          await matches('about_large_text');
+        });
+      }
     }
   }
 
