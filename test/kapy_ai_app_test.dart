@@ -17,6 +17,7 @@ import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
@@ -170,7 +171,9 @@ void main() {
       expect(
         tester
             .widget<Tooltip>(
-              find.descendant(of: _button, matching: find.byType(Tooltip)).first,
+              find
+                  .descendant(of: _button, matching: find.byType(Tooltip))
+                  .first,
             )
             .message,
         contains('J'),
@@ -410,6 +413,29 @@ void main() {
       await tester.pumpAndSettle();
       return note.id;
     }
+
+    testWidgets('a half-typed question is still there when the sheet opens '
+        'again after Back', (tester) async {
+      await open(tester);
+      await tester.enterText(field, 'What did Arjun');
+      await tester.pump();
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(sheet, findsNothing);
+
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(of: field, matching: find.byType(EditableText)),
+            )
+            .controller
+            .text,
+        'What did Arjun',
+      );
+    });
 
     Future<void> ask(WidgetTester tester, String noteId) async {
       await tester.enterText(field, question);
@@ -1758,6 +1784,44 @@ void main() {
       await tester.tap(finder);
       await tester.pumpAndSettle();
     }
+
+    testWidgets("Back closes the model picker first, then goes Home", (
+      tester,
+    ) async {
+      await pumpPhone(tester);
+      await tap(tester, tab);
+      await tap(tester, find.byType(KapyAiModelButton));
+      final picker = find.byType(KapyAiPicker);
+      expect(picker, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
+      expect(page, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(home, findsOneWidget);
+    });
+
+    testWidgets('with the model picker open, another tab takes it away, and '
+        "Back then does that tab's step", (tester) async {
+      await pumpPhone(tester);
+      await tap(tester, tab);
+      await tap(tester, find.byType(KapyAiModelButton));
+      expect(find.byType(KapyAiPicker), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(page, findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(home, findsOneWidget);
+      expect(
+        tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+        PhoneTab.notes,
+      );
+    });
 
     testWidgets("mounts Kapy AI's page clear of the bar, lit in it; Notes and "
         'Back both go Home', (tester) async {

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/popup_keyboard.dart';
 import '../../core/theme.dart';
+import '../back_entry.dart';
 import '../floating_surface.dart';
 
 /// The small panel that a click on a link raises, offering to open it.
@@ -21,6 +22,7 @@ class LinkPopover {
   const LinkPopover._();
 
   static OverlayEntry? _current;
+  static final _back = BackEntry(hide);
 
   static bool get isVisible => _current != null;
 
@@ -39,6 +41,7 @@ class LinkPopover {
 
     keepMobilePopupKeyboardClosed();
     hide();
+    _back.open(context);
     final entry = OverlayEntry(
       builder: (context) => _LinkPopoverBody(
         anchor: anchor,
@@ -59,6 +62,7 @@ class LinkPopover {
   }
 
   static void hide() {
+    _back.close();
     _current?.remove();
     _current = null;
   }

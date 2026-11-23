@@ -77,6 +77,7 @@ import 'editor/note_header.dart' show DateLineSaved, NoteFolders;
 import 'editor/image_insertion.dart';
 import 'editor/slash_commands.dart';
 import 'editor_panes.dart';
+import 'back_entry.dart';
 import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
 import 'command_menu.dart';
@@ -418,7 +419,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? _openedBySpace;
   TaskFilter _taskFilter = const TaskFilter.all();
   final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
+
+  /// The words in Tasks' add row, kept here so a half-typed task is still
+  /// there when Tasks opens again.
+  final _taskWords = TextEditingController();
   final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
+
+  /// Quick find's words, kept while a phone's page holds a note it opened, so
+  /// Back from that note opens Quick find again with them.
+  final _findWords = TextEditingController();
+
+  /// Whether Back from the phone's page opens Quick find again, and whether
+  /// it came from the list's search field.
+  ({bool field})? _findOnBack;
+
+  /// The notes a phone's page was showing before a note opened from it (its
+  /// week, Kapy AI, its tasks), latest last, which Back returns to in turn.
+  final List<String> _phoneBehind = [];
 
   /// The page's days, keyed so they keep their place in the week wherever
   /// the bar is built.
@@ -558,6 +575,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyAi?.removeListener(_onKapyAi);
     _kapyPanel.dispose();
     _taskAddFocus.dispose();
+    _taskWords.dispose();
+    _findWords.dispose();
     _taskController?.dispose();
     _picks.dispose();
     super.dispose();
@@ -1328,6 +1347,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           (note) => !note.isShared && note.createdAt == gone!.createdAt,
         )) {
       _phonePageOpen = false;
+      _findOnBack = null;
+      _phoneBehind.clear();
     }
     _workspace.reconcile(
       available.map((note) => note.id),
@@ -2126,6 +2147,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final note = widget.notes.byId(id);
     final sharing = widget.account?.sharing;
     if (note == null) return;
+    // A phone opens it over the list it was asked from, Tasks included, so
+    // Back comes back to that list as it was left.
+    if (_usesCompactLayout && _shownNote(id) != null) return _openFromPage(id);
     _showSpace(
       sharing != null && sidebarTabOf(note, sharing) == SidebarTab.shared
           ? LibrarySpace.shared
@@ -3301,7 +3325,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onExpand: expand,
           onOpenNote: (id) {
             close();
-            _select(id);
+            _openFromPage(id);
           },
         ),
       ).whenComplete(_kapyPanel.close),
@@ -3566,8 +3590,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
   /// From a list's own search field ([field]), Drawings' searches drawings
   /// alone.
-  Future<void> _openCommandMenu({bool field = false}) async {
+  Future<void> _openCommandMenu({
+    bool field = false,
+    bool again = false,
+  }) async {
     final shown = _tasksMode ? null : _shownNote(_selectedId);
+    _findOnBack = null;
+    if (!again) _findWords.clear();
     final choice = await showCommandMenu(
       context,
       notes: widget.notes,
@@ -3599,6 +3628,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           AppPlatform.isMobile &&
           MediaQuery.sizeOf(context).width < kTwoPaneBreakpoint,
       drawings: field && _space == LibrarySpace.drawings,
+      field: _usesCompactLayout ? _findWords : null,
       onSetTaskDone: _taskController?.setDone,
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,
@@ -3619,6 +3649,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         hiddenNotes: widget.hiddenNotesGate,
       ),
     );
+    if (choice is OpenNoteChoice && _usesCompactLayout && !_phonePageShown) {
+      _findOnBack = (field: field);
+    }
     if (!mounted || choice == null) return;
     _dismissListOverlay();
     switch (choice) {
@@ -3626,7 +3659,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (note.isHidden) {
           _select(note.id);
         } else if (note.isDrawing) {
-          _showSpace(LibrarySpace.drawings);
+          if (_shownNote(note.id) == null) _showSpace(LibrarySpace.drawings);
           _select(note.id);
         } else {
           _openTaskNote(note.id);
@@ -3842,8 +3875,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Back on a phone's list, from Android's back or the edge swipe: one level
   /// up at a time. A task's page returns to Tasks, Tasks returns to Notes
   /// and picks let go, though not on Kapy AI, which doesn't show them; then
-  /// a folder, Drawings or Shared returns to Folders, another tab to Notes,
-  /// and on Notes Pinned to its Home.
+  /// Archive or Hidden returns to All notes, a folder, Drawings or Shared
+  /// returns to Folders, another tab to Notes, and on Notes Pinned to its Home.
   void _phoneListBack() {
     if (_tasksNavigator.currentState?.canPop() ?? false) {
       _tasksNavigator.currentState?.maybePop();
@@ -3851,6 +3884,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _showHome(tasks: false);
     } else if (_picks.on && _phoneTab != PhoneTab.kapyAi) {
       _picks.clear();
+    } else if (_specialMode) {
+      _setShow(NotesShow.all);
     } else if (_phoneTab == PhoneTab.folders &&
         (_drawingsOnly || _sharedPage || _phoneFolderShown != null)) {
       _showFolders();
@@ -3867,6 +3902,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _openSpace(LibrarySpace space) {
     setState(() {
       _phonePageOpen = false;
+      _findOnBack = null;
+      _phoneBehind.clear();
       // A phone's Drawings and Shared are pages of Folders; the other spaces
       // are Notes.
       _phoneTab = space == LibrarySpace.drawings || space == LibrarySpace.shared
@@ -4716,6 +4753,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         controller: tasks,
         filter: filter,
         addFocus: _taskAddFocus,
+        words: _taskWords,
         labelOf: _taskNoteLabel,
         onOpenNote: _openTaskNote,
         onOpenDone: _openTasksDone,
@@ -4918,7 +4956,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// iOS's edge swipe or Android's predictive back, pops the page.
   Widget _buildPhone(BuildContext context) {
     final selected = _shownNote(_selectedId);
-    final pageOpen = _phonePageOpen && selected != null && !_tasksMode;
+    final pageOpen = _phonePageOpen && selected != null;
     // Back, from Android's gesture or iOS's edge swipe, goes up one level:
     // the note's page closes, then on Folders the picks let go and a folder,
     // Drawings or Shared returns to Folders. Folders and Kapy AI return to
@@ -4936,14 +4974,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _phoneTab == PhoneTab.notes &&
               !_picks.on &&
               !_showingPinnedOnly &&
+              !_specialMode &&
+              !_homeNarrowed &&
               !_tasksMode,
           onPopInvokedWithResult: (didPop, _) {
-            if (didPop) return;
-            if (pageOpen) {
-              _phoneNavigator.currentState?.maybePop();
-            } else {
-              _phoneListBack();
-            }
+            if (!didPop) unawaited(_phoneBack());
           },
           child: ToastClearanceScope(
             child: Navigator(
@@ -4953,8 +4988,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 if (pageOpen)
                   MaterialPage(
                     // One page whichever note is on it: a note opened over
-                    // another replaces it in place rather than pushing a second
-                    // editor beside the first.
+                    // another takes its place, with that one kept in
+                    // [_phoneBehind] for Back, rather than a second editor
+                    // beside the first.
                     key: const ValueKey('phone-page'),
                     child: _phonePage(selected),
                   ),
@@ -4997,12 +5033,62 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   static const _phoneListPage = ValueKey('phone-list');
 
+  /// Whether Home's list is narrowed by a tag, a kind of note or a time,
+  /// which Android's Back clears before it leaves the app.
+  bool get _homeNarrowed =>
+      _when != NotesWhen.anyTime ||
+      filtersNarrowed(show: _show, media: _mediaFilter, tags: _tagsNarrowed);
+
+  /// Whether a phone's page is up, over the list.
+  bool get _phonePageShown => _phonePageOpen && _shownNote(_selectedId) != null;
+
   /// Back from the page to the list it was pushed over.
   void _closePhonePage() {
     if (!_phonePageOpen) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _phonePageOpen = false);
+    setState(() {
+      _phonePageOpen = false;
+      _phoneBehind.clear();
+    });
     _scheduleDiscardAbandonedBlanks();
+    final find = _findOnBack;
+    _findOnBack = null;
+    if (find == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_openCommandMenu(field: find.field, again: true));
+      }
+    });
+  }
+
+  /// Back on a phone: whatever the page or the list has open closes first
+  /// (see [BackEntry]), then the page, then the list goes up a level.
+  Future<void> _phoneBack() async {
+    if (await _phoneNavigator.currentState?.maybePop() ?? false) return;
+    if (mounted) _phoneListBack();
+  }
+
+  /// Opens [id] from the note on a phone's page, keeping that note behind it
+  /// for Back.
+  void _openFromPage(String id) {
+    final from = _shownNote(_selectedId)?.id;
+    if (_phonePageShown && from != null && from != id) {
+      setState(() => _phoneBehind.add(from));
+    }
+    _select(id);
+  }
+
+  /// Back on a phone's page: to the note it was opened from, else off the
+  /// page.
+  void _phonePageBack() {
+    while (_phoneBehind.isNotEmpty) {
+      final id = _phoneBehind.removeLast();
+      if (_shownNote(id) == null) continue;
+      setState(() {});
+      _select(id, focusEditor: false);
+      return;
+    }
+    _phoneNavigator.currentState?.pop();
   }
 
   Widget _phoneList() {
@@ -5021,7 +5107,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // one rather than across to another tab.
           final turns = _taskController != null && _phoneHome;
           final back = _phoneTab == PhoneTab.notes
-              ? _tasksMode || _showingPinnedOnly
+              ? _tasksMode || _specialMode || _showingPinnedOnly
               : _phoneTab == PhoneTab.folders &&
                     (_drawingsOnly || _sharedPage || _phoneFolderShown != null);
           // The Notes list stays built under Tasks, out of sight, so it comes
@@ -5086,6 +5172,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               onFilter: (filter) =>
                                   setState(() => _taskFilter = filter),
                               addFocus: _taskAddFocus,
+                              words: _taskWords,
                               labelOf: _taskNoteLabel,
                               onOpenNote: _openTaskNote,
                               onOpenTask: (item) {
@@ -5417,7 +5504,42 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A note's page on a phone: back, then the note's own actions, over the
   /// editor.
-  Widget _phonePage(Note note) => Builder(
+  Widget _phonePage(Note note) {
+    final behind = _phoneBehind.isNotEmpty;
+    // A stroke from a drawing's left edge draws, so its page lets go of the
+    // back swipe; Back and the page's Home still leave.
+    final drawing = _opensAsDrawing(note) && _canWriteNote(note);
+    return PopScope(
+      canPop: !behind && !drawing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || BackEntry.anyOpen || (!behind && !drawing)) return;
+        _phonePageBack();
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _phonePageBody(note),
+          // iOS's own swipe would leave for the list, past the notes behind.
+          if (behind && !drawing && AppPlatform.isIOS)
+            PositionedDirectional(
+              start: 0,
+              top: 0,
+              bottom: 0,
+              width: PhoneHomeSwipe.edge,
+              child: PhoneHomeSwipe(
+                onTurn: (tasks) {
+                  if (!tasks) unawaited(_phoneBack());
+                },
+                backFromEdge: true,
+                child: const SizedBox.expand(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _phonePageBody(Note note) => Builder(
     builder: (outer) => Scaffold(
       backgroundColor: context.palette.paperColor,
       body: ListenableBuilder(
@@ -5495,7 +5617,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               displayTime: displayTime,
               firstWeekday: firstWeekday(context),
               ownDay: widget.days == null ? null : _ownDayOf,
-              onOpenNote: (id, {required behind}) => _select(id),
+              onOpenNote: (id, {required behind}) => _openFromPage(id),
             )
           : null,
       tasks: tasks,
@@ -5517,8 +5639,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Home from a note's page: back to the notes it was opened over, or to
   /// Notes from Shared, Drawings, the archive or Hidden Notes.
   void _phoneGoHome() {
+    _findOnBack = null;
     if (_phoneHome) {
-      unawaited(_phoneNavigator.currentState?.maybePop());
+      _phoneNavigator.currentState?.pop();
     } else {
       _showSpace(LibrarySpace.notes);
     }
