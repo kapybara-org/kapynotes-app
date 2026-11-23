@@ -88,6 +88,15 @@ void main() {
         tester.getTopLeft(find.bySemanticsLabel('New note')).dy,
       ].reduce((a, b) => a < b ? a : b);
       expect(tester.getBottomLeft(toast).dy, lessThanOrEqualTo(top - 16));
+      expect(
+        tester.getTopLeft(toast).dx,
+        tester.getTopLeft(find.byKey(const ValueKey('phone-bar'))).dx,
+        reason: 'as wide as the bar and its +',
+      );
+      expect(
+        tester.getTopRight(toast).dx,
+        tester.getTopRight(find.bySemanticsLabel('New note')).dx,
+      );
 
       unawaited(
         showModalBottomSheet<void>(
@@ -99,6 +108,7 @@ void main() {
       Toast.show(context, 'Removed Carol from this note');
       await tester.pumpAndSettle();
       expect(tester.getBottomLeft(toast).dy, 852 - 34 - 16);
+      expect(tester.getSize(toast).width, 393 - 32, reason: 'the same card');
     });
   }
 

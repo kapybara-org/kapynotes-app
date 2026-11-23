@@ -30,6 +30,14 @@ class Toast {
   /// How long a toast with an action stays: time enough to reach it.
   static const Duration actionLifetime = Duration(seconds: 4);
 
+  /// How wide a phone's card grows: the width of its bar and +, which on a
+  /// tablet stops here.
+  static const double _cardMaxWidth = 480;
+
+  /// The action's height, which a phone's card lines its icon and first
+  /// line up with.
+  static const double _actionHeight = 28;
+
   /// [action] names a button at the toast's end that runs [onAction], such
   /// as View after a note is filed away. A toast with one stays a little
   /// longer, so there is time to reach it.
@@ -67,8 +75,7 @@ class Toast {
     _showOn(
       overlay,
       message,
-      icon:
-          icon ?? (isError ? KapyIcons.errorOutlined : KapyIcons.checkRounded),
+      icon: icon,
       isError: isError,
       progress: false,
       duration: action == null
@@ -102,7 +109,7 @@ class Toast {
   static int _showOn(
     OverlayState overlay,
     String message, {
-    required KapyIconData icon,
+    required KapyIconData? icon,
     required bool isError,
     required bool progress,
     required Duration? duration,
@@ -146,7 +153,7 @@ class Toast {
     OverlayState? overlay,
     int generation,
     String message, {
-    required KapyIconData icon,
+    required KapyIconData? icon,
     required bool isError,
   }) {
     if (overlay == null || !overlay.mounted || generation != _generation) {
@@ -186,14 +193,13 @@ class ToastProgress {
   final OverlayState? _overlay;
   final int _generation;
 
-  void success(String message, {KapyIconData icon = KapyIcons.checkRounded}) =>
-      Toast._complete(
-        _overlay,
-        _generation,
-        message,
-        icon: icon,
-        isError: false,
-      );
+  void success(String message, {KapyIconData? icon}) => Toast._complete(
+    _overlay,
+    _generation,
+    message,
+    icon: icon,
+    isError: false,
+  );
 
   void error(String message) => Toast._complete(
     _overlay,
@@ -211,7 +217,7 @@ class ToastProgress {
 class _ToastBody extends StatefulWidget {
   const _ToastBody({
     required this.message,
-    required this.icon,
+    this.icon,
     required this.isError,
     required this.progress,
     required this.duration,
@@ -221,7 +227,10 @@ class _ToastBody extends StatefulWidget {
   });
 
   final String message;
-  final KapyIconData icon;
+
+  /// Null for the notice's own: a tick, or a warning for an error, on a
+  /// desktop, and on a phone a warning for an error and nothing otherwise.
+  final KapyIconData? icon;
   final bool isError;
   final bool progress;
   final (String, VoidCallback)? action;
@@ -274,7 +283,10 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       curve: Curves.easeOutCubic,
     );
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final compact = AppPlatform.hasPointer;
+    // A desktop's toast is a pill sized to its words. A phone's is a card as
+    // wide as the bar and its +, with an icon only where the notice brings
+    // one and no colour for an error but its words.
+    final desktop = AppPlatform.hasPointer;
     final statusColor = widget.isError ? scheme.error : scheme.primary;
     final surfaceColor = Color.alphaBlend(
       palette.textPrimary.withValues(alpha: dark ? 0.055 : 0.035),
@@ -286,10 +298,129 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     final clear = below is RenderBox && below.hasSize
         ? media.size.height - below.localToGlobal(Offset.zero).dy + 16
         : 0.0;
+    final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontSize: AppTypeScale.body,
+      color: palette.textPrimary,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
+      height: 1.2,
+    );
+    final text = Text(
+      widget.message,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: textStyle,
+    );
+    final button = switch (widget.action) {
+      (final label, final onPressed) => TextButton(
+        key: const ValueKey('toast-action'),
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: palette.accentText,
+          minimumSize: const Size(0, Toast._actionHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: TextStyle(
+            fontSize: AppTypeScale.body,
+            fontWeight: AppWeight.font(AppWeight.button),
+            fontVariations: AppWeight.wght(AppWeight.button),
+          ),
+        ),
+        child: Text(label),
+      ),
+      null => null,
+    };
+
+    final Widget content;
+    if (desktop) {
+      content = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: statusColor.withValues(alpha: dark ? 0.14 : 0.10),
+            ),
+            child: widget.progress
+                ? SizedBox.square(
+                    key: const ValueKey('toast-progress-indicator'),
+                    dimension: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.75,
+                      color: statusColor,
+                    ),
+                  )
+                : KapyIcon(
+                    widget.icon ??
+                        (widget.isError
+                            ? KapyIcons.errorOutlined
+                            : KapyIcons.checkRounded),
+                    key: const ValueKey('toast-status-icon'),
+                    size: 14,
+                    color: statusColor,
+                  ),
+          ),
+          const SizedBox(width: 9),
+          Flexible(child: text),
+          if (button != null) ...[
+            const SizedBox(width: 4),
+            button,
+          ] else
+            const SizedBox(width: 3),
+        ],
+      );
+    } else {
+      final icon =
+          widget.icon ?? (widget.isError ? KapyIcons.errorOutlined : null);
+      // The icon and the first line of words sit level with the action, so
+      // words that wrap keep the action at the top.
+      final line = media.textScaler.scale(AppTypeScale.body) * 1.2;
+      content = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.progress || icon != null) ...[
+            SizedBox(
+              height: Toast._actionHeight,
+              child: Center(
+                child: widget.progress
+                    ? SizedBox.square(
+                        key: const ValueKey('toast-progress-indicator'),
+                        dimension: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.75,
+                          color: palette.textSecondary,
+                        ),
+                      )
+                    : KapyIcon(
+                        icon!,
+                        key: const ValueKey('toast-status-icon'),
+                        size: 18,
+                        color: palette.textSecondary,
+                      ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                top: math.max(0, (Toast._actionHeight - line) / 2),
+              ),
+              child: text,
+            ),
+          ),
+          if (button != null) ...[const SizedBox(width: 8), button],
+        ],
+      );
+    }
+
     return Positioned(
       bottom: math.max(
         clear,
-        (compact ? 24 : 16) +
+        (desktop ? 24 : 16) +
             math.max(media.padding.bottom, media.viewInsets.bottom),
       ),
       left: 16,
@@ -309,8 +440,14 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                 label: widget.message,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    minHeight: compact ? 40 : 44,
-                    maxWidth: math.max(0, math.min(400, media.size.width - 32)),
+                    minHeight: desktop ? 40 : 52,
+                    maxWidth: math.max(
+                      0,
+                      math.min(
+                        desktop ? 400 : Toast._cardMaxWidth,
+                        media.size.width - 32,
+                      ),
+                    ),
                   ),
                   child: RepaintBoundary(
                     key: const ValueKey('toast-repaint-boundary'),
@@ -322,13 +459,22 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                       style: FloatingSurface.textStyle(context),
                       child: Container(
                         key: const ValueKey('toast-surface'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
+                        padding: desktop
+                            ? const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              )
+                            : EdgeInsets.fromLTRB(
+                                16,
+                                12,
+                                button == null ? 16 : 8,
+                                12,
+                              ),
                         decoration: BoxDecoration(
                           color: surfaceColor,
-                          borderRadius: BorderRadius.circular(AppRadii.pill),
+                          borderRadius: BorderRadius.circular(
+                            desktop ? AppRadii.pill : AppRadii.surface,
+                          ),
                           border: Border.all(
                             color: palette.controlBorder.withValues(
                               alpha: dark ? 0.95 : 0.72,
@@ -336,89 +482,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                             width: 0.75,
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: compact ? 22 : 24,
-                              height: compact ? 22 : 24,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: statusColor.withValues(
-                                  alpha: dark ? 0.14 : 0.10,
-                                ),
-                              ),
-                              child: widget.progress
-                                  ? SizedBox.square(
-                                      key: const ValueKey(
-                                        'toast-progress-indicator',
-                                      ),
-                                      dimension: compact ? 12 : 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.75,
-                                        color: statusColor,
-                                      ),
-                                    )
-                                  : KapyIcon(
-                                      widget.icon,
-                                      key: const ValueKey('toast-status-icon'),
-                                      size: compact ? 14 : 16,
-                                      color: statusColor,
-                                    ),
-                            ),
-                            const SizedBox(width: 9),
-                            Flexible(
-                              child: Text(
-                                widget.message,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(
-                                      fontSize: AppTypeScale.body,
-                                      color: palette.textPrimary,
-                                      fontWeight: AppWeight.font(
-                                        AppWeight.body,
-                                      ),
-                                      fontVariations: AppWeight.wght(
-                                        AppWeight.body,
-                                      ),
-                                      height: 1.2,
-                                    ),
-                              ),
-                            ),
-                            if (widget.action case (
-                              final label,
-                              final onPressed,
-                            )) ...[
-                              const SizedBox(width: 4),
-                              TextButton(
-                                key: const ValueKey('toast-action'),
-                                onPressed: onPressed,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: palette.accentText,
-                                  minimumSize: const Size(0, 28),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  textStyle: TextStyle(
-                                    fontSize: AppTypeScale.body,
-                                    fontWeight: AppWeight.font(
-                                      AppWeight.button,
-                                    ),
-                                    fontVariations: AppWeight.wght(
-                                      AppWeight.button,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(label),
-                              ),
-                            ] else
-                              const SizedBox(width: 3),
-                          ],
-                        ),
+                        child: content,
                       ),
                     ),
                   ),

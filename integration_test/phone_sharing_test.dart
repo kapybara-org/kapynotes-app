@@ -435,6 +435,30 @@ void main() {
       await settledShot(tester, 'phone-sharing-remove-undone');
     }, skip: !phone);
 
+    // Its own scene, because the device's shot can outlast the notice that
+    // the test above still needs after the sheet closes.
+    testWidgets("Remove's notice is the phone's card, at the sheet's foot", (
+      tester,
+    ) async {
+      await shareAround(tester);
+      await openSharedPage(tester);
+      await openSheetFor(tester, 'Trip budget');
+      await tester.tap(memberMenu('user-3'));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+
+      final removed = find.text('Removed Carol from this note');
+      await tapUntil(tester, askOk, () => removed.evaluate().isNotEmpty);
+      expect(sheet, findsOneWidget);
+      final card = tester.getRect(find.byKey(const ValueKey('toast-surface')));
+      final width =
+          tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      expect(card.width, moreOrLessEquals(width - 32, epsilon: 0.5));
+      expect(tester.takeException(), isNull);
+      await settledShot(tester, 'notice-removed-in-sheet', device: true);
+    }, skip: !phone);
+
     testWidgets('Stop sharing, then Undo after the sheet has closed shares '
         'the note again', (tester) async {
       await shareAround(tester);

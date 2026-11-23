@@ -397,6 +397,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       Toast.show(
         context,
         'Removed $name from this note',
+        icon: KapyIcons.checkCircleRounded,
         action: 'Undo',
         onAction: () => unawaited(
           undoSharing(overlay, () async {

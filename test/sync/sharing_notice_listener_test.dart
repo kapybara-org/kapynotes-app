@@ -67,6 +67,8 @@ void main() {
     });
     await tester.pump();
     expect(find.text('Someone shared "Two" with you'), findsOneWidget);
+    final icon = find.byKey(const ValueKey('toast-status-icon'));
+    expect(tester.widget<KapyIcon>(icon).icon, KapyIcons.groupOutlined);
 
     await tester.runAsync(() async {
       await tester.tap(find.text('Leave'));
@@ -75,6 +77,7 @@ void main() {
     });
     await tester.pump();
     expect(find.text('Left. Your copy stays in your notes'), findsOneWidget);
+    expect(tester.widget<KapyIcon>(icon).icon, isNot(KapyIcons.groupOutlined));
     expect(bob.bodies, ['One', 'Two']);
     await tester.pumpAndSettle(const Duration(seconds: 10));
   });

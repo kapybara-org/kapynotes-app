@@ -502,6 +502,12 @@ void main() {
       await settleHere(tester);
 
       expect(find.text('Removed $bobName from this note'), findsOneWidget);
+      expect(
+        tester
+            .widget<KapyIcon>(find.byKey(const ValueKey('toast-status-icon')))
+            .icon,
+        KapyIcons.checkCircleRounded,
+      );
       expect(find.byKey(ValueKey('member-row-${bob.userId}')), findsNothing);
       expect(bobOnServer(), isTrue);
 
