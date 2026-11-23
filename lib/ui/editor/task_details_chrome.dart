@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/task_details.dart';
 import '../../data/task_lines.dart';
@@ -117,10 +118,16 @@ class TaskDetailsChrome extends StatelessWidget {
       }
     }
     if (showHint &&
+        AppPlatform.hasPointer &&
         caretLine != null &&
         caretLine.isTask &&
-        _lineEmpty(text, caretLine)) {
-      final hint = laid.caretRectAt(TextPosition(offset: caretLine.lineStart));
+        text
+            .substring(caretLine.contentStart, caretLine.lineEnd)
+            .trim()
+            .isEmpty) {
+      final hint = laid.caretRectAt(
+        TextPosition(offset: caretLine.contentStart),
+      );
       if (hint != null) {
         children.add(
           Positioned(
@@ -144,9 +151,6 @@ class TaskDetailsChrome extends StatelessWidget {
     return Stack(clipBehavior: Clip.none, children: children);
   }
 }
-
-bool _lineEmpty(String text, MarkdownLinePrefix line) =>
-    text.substring(line.lineStart, line.lineEnd).trim().isEmpty;
 
 bool _inside(TaskDetails details, MarkdownLinePrefix line) =>
     line.lineStart >= details.start && line.lineStart <= details.end;

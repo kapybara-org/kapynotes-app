@@ -1823,6 +1823,56 @@ void main() {
       );
     });
 
+    for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+      testWidgets('on ${platform.name}, its page, its picker and the sheet '
+          'over a note name no desktop keys or clicks (KAP-115)', (
+        tester,
+      ) async {
+        final semantics = tester.ensureSemantics();
+        final keys = RegExp(
+          r'Ctrl|Cmd|Alt ?\+|Option ?\+|Shift ?\+|[⌘⌥⌃⇧↵]|\besc\b|[Cc]lick',
+        );
+        void expectNoKeys(String where) {
+          final shown = [
+            for (final tip in tester.widgetList<Tooltip>(find.byType(Tooltip)))
+              tip.message ?? '',
+            for (final text in tester.widgetList<Text>(find.byType(Text)))
+              text.data ?? text.textSpan?.toPlainText() ?? '',
+          ];
+          expect(shown.where(keys.hasMatch), isEmpty, reason: where);
+          expect(
+            find.semantics.byPredicate(
+              (node) =>
+                  keys.hasMatch(node.label) ||
+                  keys.hasMatch(node.tooltip) ||
+                  keys.hasMatch(node.hint),
+            ),
+            findsNothing,
+            reason: where,
+          );
+        }
+
+        notes.create(body: 'Call with Arjun\nPricing page');
+        await _pump(tester, size: const Size(390, 844), platform: platform);
+        await tester.tap(_button);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('kapy-ai-sheet')), findsOneWidget);
+        expectNoKeys('the sheet');
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+
+        final back = find.byKey(const ValueKey('page-home'));
+        if (back.evaluate().isNotEmpty) await tap(tester, back);
+        await tap(tester, tab);
+        expect(page, findsOneWidget);
+        expectNoKeys('the page');
+        await tap(tester, find.byType(KapyAiModelButton));
+        expect(find.byType(KapyAiPicker), findsOneWidget);
+        expectNoKeys('the picker');
+        semantics.dispose();
+      });
+    }
+
     testWidgets("mounts Kapy AI's page clear of the bar, lit in it; Notes and "
         'Back both go Home', (tester) async {
       await pumpPhone(tester);

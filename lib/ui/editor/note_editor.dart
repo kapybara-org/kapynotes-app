@@ -8264,6 +8264,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                           contentWidth * 2 / 3,
                                         ) +
                                         lineTrailingGap,
+                                    height: ResultChip.heightOf(
+                                      context,
+                                      result,
+                                      contentWidth * 2 / 3,
+                                    ),
                                   ),
                                   final result => (
                                     child: ResultChip(
@@ -8278,6 +8283,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     right: contentWidth,
                                     firstRow: false,
                                     room: 0.0,
+                                    height: 0.0,
                                   ),
                                 }
                               : null,

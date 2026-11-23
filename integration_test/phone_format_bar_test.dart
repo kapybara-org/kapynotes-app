@@ -56,7 +56,7 @@ void main() {
 
   Future<void> open(WidgetTester tester, String body) async {
     await tester.pumpWidget(const SizedBox.shrink());
-    for (var i = 0; i < 150 && tester.view.viewInsets.bottom > 0; i++) {
+    for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(
@@ -102,8 +102,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       if (tester.view.viewInsets.bottom > 0 &&
           find.byKey(_bar).evaluate().isNotEmpty) {
-        await tester.pump(const Duration(milliseconds: 500));
-        return;
+        var inset = tester.view.viewInsets.bottom;
+        for (var j = 0; j < 50; j++) {
+          await tester.pump(const Duration(milliseconds: 100));
+          if (tester.view.viewInsets.bottom == inset) return;
+          inset = tester.view.viewInsets.bottom;
+        }
+        fail(
+          'The software keyboard was still coming up after 5 s; the bar '
+          'would be measured against a keyboard that has not settled.',
+        );
       }
     }
     fail(
@@ -261,10 +269,14 @@ void main() {
   ) async {
     await open(tester, 'Trip budget');
     await tap(tester, 'dismiss-keyboard');
-    for (var i = 0; i < 40 && tester.view.viewInsets.bottom > 0; i++) {
+    for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(tester.view.viewInsets.bottom, 0);
+    expect(
+      tester.view.viewInsets.bottom,
+      0,
+      reason: 'Hide keyboard left the keyboard up after 15 s',
+    );
     expect(find.byKey(_bar), findsNothing);
     expect(field(tester).focusNode.hasFocus, isFalse);
     await screenshot('format-bar-keyboard-hidden', device: true);
