@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -46,6 +47,41 @@ Uint8List bucketPeaks(List<double> samples, {double floor = -45}) {
     peaks[bucket] = (scaled.clamp(0.0, 1.0) * 255).round();
   }
   return peaks;
+}
+
+/// The samples [bucketPeaks] takes, read off decoded audio rather than heard
+/// while recording: the loudest moment of each tenth of a second in dBFS, the
+/// way `record` reports them. For a recording the app was not there to finish,
+/// whose levels went with it, so it draws the same as any other.
+///
+/// [path] is raw little-endian 16-bit mono PCM at [sampleRate], as the
+/// decoder writes it. Read ten seconds at a time, because half an hour of it
+/// is 57 MB; meant for an isolate.
+List<double> levelsFromPcm(String path, int sampleRate) {
+  final window = math.max(1, sampleRate ~/ 10) * 2;
+  final buffer = Uint8List(window * 100);
+  final levels = <double>[];
+  final file = File(path).openSync();
+  try {
+    while (true) {
+      final read = file.readIntoSync(buffer);
+      if (read < 2) break;
+      final samples = ByteData.sublistView(buffer, 0, read);
+      for (var start = 0; start + 1 < read; start += window) {
+        var loudest = 0;
+        for (var i = start; i < start + window && i + 1 < read; i += 2) {
+          final sample = samples.getInt16(i, Endian.little).abs();
+          if (sample > loudest) loudest = sample;
+        }
+        levels.add(
+          loudest == 0 ? -160 : 20 * math.log(loudest / 32768) / math.ln10,
+        );
+      }
+    }
+  } finally {
+    file.closeSync();
+  }
+  return levels;
 }
 
 /// The level the recording bar shows, from one dBFS sample. 0 to 1.

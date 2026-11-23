@@ -12,6 +12,7 @@ import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 
 import '../kapy_icon_finder.dart';
+import '../test_fonts.dart';
 
 NoteVoiceRef recording({
   int durationMs = 134000,
@@ -40,11 +41,12 @@ Widget harness(
   VoidCallback? onPlayPause,
   VoidCallback? onRemove,
   ValueChanged<double>? onSeekFraction,
+  double width = 400,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
     body: SizedBox(
-      width: 400,
+      width: width,
       child: NoteVoiceChip(
         ref: ref,
         state: state,
@@ -496,5 +498,183 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  group('a status on a phone', () {
+    _onPhone();
+    setUpAll(loadTestFonts);
+
+    double column(double phone) =>
+        phone - EditorMetrics.phonePadding.horizontal;
+
+    Future<void> pumpAt(
+      WidgetTester tester,
+      double phone,
+      VoiceChipState state, {
+      NoteVoiceRef? ref,
+    }) => tester.pumpWidget(
+      harness(
+        ref ?? recording(durationMs: 123000),
+        state: state,
+        width: column(phone),
+      ),
+    );
+
+    double drawn(WidgetTester tester) =>
+        tester.getSize(find.byKey(const ValueKey('voice-chip-pill'))).height;
+
+    double promised(WidgetTester tester, double phone) => tester
+        .widget<NoteVoiceChip>(find.byType(NoteVoiceChip))
+        .heightIn(tester.element(find.byType(NoteVoiceChip)), column(phone));
+
+    bool cut(WidgetTester tester, String words) => tester
+        .renderObject<RenderParagraph>(find.text(words))
+        .didExceedMaxLines;
+
+    testWidgets('reads in full on every phone, at large text and in bold', (
+      tester,
+    ) async {
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      const statuses = {
+        VoiceChipState.needsConsent: 'Turn on transcription',
+        VoiceChipState.waiting: 'Waiting for connection',
+        VoiceChipState.failed: "Couldn't transcribe",
+        VoiceChipState.retrying: 'Trying again soon',
+      };
+      for (final bold in [false, true]) {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(boldText: bold);
+        for (final scale in [1.0, 1.3]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          for (final phone in [320.0, 375.0, 412.0]) {
+            for (final MapEntry(key: state, value: words) in statuses.entries) {
+              await pumpAt(tester, phone, state);
+              final reason = '$words at $phone pt, ${scale}x, bold $bold';
+              expect(cut(tester, words), isFalse, reason: reason);
+              expect(drawn(tester), promised(tester, phone), reason: reason);
+            }
+          }
+        }
+      }
+    });
+
+    testWidgets('one that fits keeps the single row', (tester) async {
+      await pumpAt(tester, 412, VoiceChipState.transcribing);
+      expect(drawn(tester), 56);
+      expect(
+        tester.getCenter(find.text('Transcribing…')).dy,
+        moreOrLessEquals(tester.getCenter(find.text('2:03')).dy, epsilon: 0.5),
+      );
+    });
+
+    const title = 'Standup thoughts on the pricing page and the launch';
+    final summarised = recording(
+      durationMs: 123000,
+      summary: VoiceSummary(
+        engine: 'cf/llama',
+        at: 1,
+        title: title,
+        points: const ['Ship it.'],
+      ),
+    );
+
+    testWidgets('is as tall at its title as all the way there', (tester) async {
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final path = <(VoiceChipState, NoteVoiceRef?)>[
+        (VoiceChipState.transcribing, null),
+        (VoiceChipState.summarising, null),
+        (VoiceChipState.done, summarised),
+        (VoiceChipState.done, null),
+      ];
+      for (final bold in [false, true]) {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(boldText: bold);
+        for (final scale in [1.0, 1.3]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          for (final phone in [320.0, 375.0, 412.0]) {
+            final reason = '$phone pt, ${scale}x, bold $bold';
+            final heights = <double>{};
+            for (final (state, ref) in path) {
+              await pumpAt(tester, phone, state, ref: ref);
+              expect(drawn(tester), promised(tester, phone), reason: reason);
+              heights.add(drawn(tester));
+            }
+            expect(heights, hasLength(1), reason: reason);
+          }
+        }
+      }
+    });
+
+    testWidgets('one never queued keeps to the row at every size', (
+      tester,
+    ) async {
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      for (final bold in [false, true]) {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(boldText: bold);
+        for (final scale in [1.0, 1.3]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          for (final phone in [320.0, 375.0, 412.0]) {
+            final reason = '$phone pt, ${scale}x, bold $bold';
+            await pumpAt(tester, phone, VoiceChipState.idle);
+            expect(drawn(tester), 56, reason: reason);
+            expect(promised(tester, phone), 56, reason: reason);
+            expect(find.text('Voice note'), findsNothing, reason: reason);
+          }
+        }
+      }
+    });
+
+    testWidgets(
+      "a summary's title takes the second line wherever its statuses do, "
+      "across the card's width",
+      (tester) async {
+        await pumpAt(tester, 320, VoiceChipState.done, ref: summarised);
+        final pill = tester.getRect(
+          find.byKey(const ValueKey('voice-chip-pill')),
+        );
+        final words = tester.getRect(find.text(title));
+        expect(drawn(tester), 83);
+        expect(cut(tester, title), isTrue);
+        expect(
+          tester.renderObject<RenderParagraph>(find.text(title)).overflow,
+          TextOverflow.ellipsis,
+        );
+        expect(
+          words.top,
+          greaterThanOrEqualTo(tester.getRect(find.text('2:03')).bottom),
+        );
+        expect(words.left, moreOrLessEquals(pill.left + 9, epsilon: 0.5));
+        expect(words.right, moreOrLessEquals(pill.right - 17, epsilon: 0.5));
+
+        await pumpAt(tester, 320, VoiceChipState.done);
+        expect(drawn(tester), 83);
+        expect(find.text('Voice note'), findsNothing);
+
+        await pumpAt(tester, 412, VoiceChipState.done, ref: summarised);
+        expect(drawn(tester), 56);
+        expect(cut(tester, title), isTrue);
+        expect(
+          tester.getCenter(find.text(title)).dy,
+          moreOrLessEquals(
+            tester.getCenter(find.text('2:03')).dy,
+            epsilon: 0.5,
+          ),
+        );
+
+        await pumpAt(tester, 412, VoiceChipState.done);
+        expect(drawn(tester), 56);
+        expect(find.text('Voice note'), findsNothing);
+      },
+    );
   });
 }

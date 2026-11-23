@@ -3877,6 +3877,67 @@ total to usd''';
       expect(kept, isTrue);
     });
 
+    // CI, Android, run 45220012622: the startup retry asked again 20 ms after
+    // the field's own request, before the IME had moved the window. Android
+    // cancelled the animation it had started and left the inset at zero under
+    // a keyboard that was up, so the bar went (KAP-324).
+    testWidgets(
+      'the startup request gives the IME time to start before asking again',
+      (tester) async {
+        await pumpFocused(tester);
+        tester.testTextInput.log.clear();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          isNot(contains('TextInput.show')),
+        );
+      },
+    );
+
+    testWidgets(
+      'a request the IME is answering is not repeated, and one it ignored is',
+      (tester) async {
+        await pumpFocused(tester);
+        tester.testTextInput.log.clear();
+        // The IME starts its animation: the window moves, still at zero.
+        await tester.pump(const Duration(milliseconds: 100));
+        tester.binding.handleMetricsChanged();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          isNot(contains('TextInput.show')),
+        );
+        // Nothing more comes of it: the window stays still, so it asks again.
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          contains('TextInput.show'),
+        );
+      },
+    );
+
+    testWidgets(
+      'a window that moved before the note asked still gets asked again',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          harness('one\ntwo', ensureKeyboardVisible: true),
+        );
+        // A page sliding in, or the last field's keyboard going down.
+        tester.binding.handleMetricsChanged();
+        tester.state<NoteEditorState>(find.byType(NoteEditor)).focus();
+        await tester.pump();
+        tester.testTextInput.log.clear();
+        await tester.pump(const Duration(milliseconds: 450));
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          contains('TextInput.show'),
+        );
+      },
+    );
+
     // The guard used to read MediaQuery, which a Scaffold hands its body with
     // the bottom inset already taken out — so it never saw the keyboard, and
     // every note opened went on asking for one for five seconds. Pressing Back

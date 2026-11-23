@@ -820,33 +820,31 @@ class NoteListRowFace extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    if (touch)
-                      // At least as wide as the widest time, so the times line
-                      // up down the list, and the tag dots come after the
-                      // time rather than leading the title.
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 72),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              date,
-                              maxLines: 1,
-                              style: _figtree(
-                                12.5,
-                                16,
-                                FontWeight.w400,
-                                palette.textTertiary,
-                              ),
-                            ),
-                            if (tagMarks.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              TagDots(tags: tagMarks),
-                            ],
-                          ],
+                    if (touch) ...[
+                      Text(
+                        date,
+                        maxLines: 1,
+                        style: chromeStyle(
+                          size: 13,
+                          line: 16,
+                          weight: AppWeight.axisOf(FontWeight.w400),
+                          color: palette.textTertiary,
+                          tabular: true,
                         ),
-                      )
-                    else
+                      ),
+                      const SizedBox(width: 8),
+                      // The tag dots follow the time in room for the most a
+                      // row shows, kept on untagged rows so times line up.
+                      SizedBox(
+                        width: TagDots.widthFor(TagDots.most),
+                        child: tagMarks.isEmpty
+                            ? null
+                            : Align(
+                                alignment: Alignment.centerLeft,
+                                child: TagDots(tags: tagMarks),
+                              ),
+                      ),
+                    ] else
                       Text(
                         date,
                         maxLines: 1,

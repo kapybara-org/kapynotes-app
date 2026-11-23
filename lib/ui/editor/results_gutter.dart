@@ -202,6 +202,22 @@ class _ResultChipState extends State<ResultChip> {
       fill = _hovering ? background : Colors.transparent;
     }
 
+    final words = Text(
+      widget.result.text,
+      // A phone's result wraps, and its line grows to hold it. A pill keeps to
+      // one line and ends with an ellipsis, and grows under the pointer.
+      maxLines: pill ? 1 : null,
+      softWrap: !pill,
+      overflow: pill ? TextOverflow.ellipsis : null,
+      textAlign: TextAlign.right,
+      style: ResultChip._textStyle(pill: pill, total: total, color: ink),
+    );
+    final check = KapyIcon(
+      KapyIcons.checkRounded,
+      size: AppControlMetrics.iconInline,
+      color: ink,
+    );
+
     final chip = AnimatedContainer(
       duration: const Duration(milliseconds: 130),
       curve: Curves.easeOutCubic,
@@ -215,36 +231,25 @@ class _ResultChipState extends State<ResultChip> {
       foregroundDecoration: widget.result.count?.mark == true
           ? _DashedOutline(ink.withValues(alpha: 0.45), pill ? 999 : 5)
           : null,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_justCopied) ...[
-            KapyIcon(
-              KapyIcons.checkRounded,
-              size: AppControlMetrics.iconInline,
-              color: ink,
+      child: pill
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_justCopied) ...[check, const SizedBox(width: 4)],
+                Flexible(child: words),
+              ],
+            )
+          : Stack(
+              alignment: Alignment.centerRight,
+              children: [
+                Opacity(
+                  opacity: _justCopied ? 0 : 1,
+                  alwaysIncludeSemantics: true,
+                  child: words,
+                ),
+                if (_justCopied) check,
+              ],
             ),
-            const SizedBox(width: 4),
-          ],
-          Flexible(
-            child: Text(
-              widget.result.text,
-              // A phone's result wraps, and its line grows to hold it. A
-              // pill keeps to one line and ends with an ellipsis, and grows
-              // under the pointer.
-              maxLines: pill ? 1 : null,
-              softWrap: !pill,
-              overflow: pill ? TextOverflow.ellipsis : null,
-              textAlign: TextAlign.right,
-              style: ResultChip._textStyle(
-                pill: pill,
-                total: total,
-                color: ink,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
 
     return MouseRegion(

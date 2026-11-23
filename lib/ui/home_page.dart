@@ -725,6 +725,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// one being read — the same note the widget would have opened.
   Future<void> _runWidgetAction(LaunchIntent intent) async {
     if (!mounted || intent == LaunchIntent.open) return;
+    if (intent == LaunchIntent.recording) return _showRecordingNote();
     if (Onboarding.holdsOnlyWelcome(widget.notes)) {
       _createNoteNow();
       await WidgetsBinding.instance.endOfFrame;
@@ -734,12 +735,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     switch (intent) {
       case LaunchIntent.open:
       case LaunchIntent.continueWriting:
+      case LaunchIntent.recording:
         return;
       case LaunchIntent.capture:
         await _selectedEditor?.pickAndInsertImages();
       case LaunchIntent.dictate:
         await _startVoiceRecording();
     }
+  }
+
+  /// A tap on the recording's notification or Live Activity: the note being
+  /// recorded into, on screen. Never a hidden note from outside Hidden Notes,
+  /// which only their own gate opens; the app simply comes back as it was.
+  void _showRecordingNote() {
+    final id = widget.recording?.session?.noteId;
+    final note = id == null ? null : widget.notes.byId(id);
+    if (id == null || note == null || (note.isHidden && !_hiddenMode)) return;
+    if (id != _selectedId) _select(id, focusEditor: false);
+    if (!_phonePageOpen) setState(() => _phonePageOpen = true);
   }
 
   /// Runs the action [intent] names, then one whose answer missed the

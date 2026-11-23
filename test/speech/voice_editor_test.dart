@@ -80,13 +80,14 @@ class _FakeBackend implements VoicePlayerBackend {
   Future<void> dispose() async {}
 }
 
-NoteVoiceRef voice(int offset) => NoteVoiceRef(
+NoteVoiceRef voice(int offset, {VoiceSummary? summary}) => NoteVoiceRef(
   offset: offset,
   hash: recordingHash,
   key: Uint8List(32),
   bytes: 2048,
   durationMs: 10000,
   peaks: Uint8List.fromList(List.generate(100, (i) => 40 + i % 60)),
+  summary: summary,
 );
 
 Widget harness(
@@ -100,6 +101,7 @@ Widget harness(
   DateTime Function()? now,
   bool startAtEnd = false,
   void Function(String, List<NoteAttachmentRef>)? onChanged,
+  VoiceChipState Function(NoteVoiceRef ref)? voiceStateFor,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
@@ -111,6 +113,7 @@ Widget harness(
       images: images ?? store,
       player: player,
       onOpenVoiceNote: onOpenVoiceNote,
+      voiceStateFor: voiceStateFor,
       engine: engine,
       highlighter: Highlighter(engine.registry),
       resultsVisible: true,
@@ -509,5 +512,72 @@ void main() {
       expect(changed.single.hash, recordingHash);
       expect(find.byType(NoteVoiceChip), findsOneWidget);
     });
+  });
+
+  group('a status on a phone', () {
+    setUp(
+      () => AppPlatform.debugTargetPlatformOverride = TargetPlatform.android,
+    );
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    final summary = VoiceSummary(
+      engine: 'cf/llama',
+      at: 1,
+      title: 'Standup thoughts on the pricing page and the launch',
+      points: const ['Ship it.'],
+    );
+
+    for (final scale in [1.0, 1.3]) {
+      for (final phone in [320.0, 375.0, 412.0]) {
+        testWidgets(
+          'reads in full at $phone pt and ${scale}x, clear of the line under '
+          'it, and as tall at its title as on its way there',
+          (tester) async {
+            tester.view.physicalSize = Size(phone * 3, 800 * 3);
+            tester.view.devicePixelRatio = 3;
+            tester.platformDispatcher.textScaleFactorTestValue = scale;
+            addTearDown(tester.view.reset);
+            addTearDown(
+              tester.platformDispatcher.clearTextScaleFactorTestValue,
+            );
+            final usualPath = <double>{};
+            for (final (state, ref, words) in [
+              (VoiceChipState.needsConsent, voice(0), 'Turn on transcription'),
+              (VoiceChipState.transcribing, voice(0), 'Transcribing…'),
+              (VoiceChipState.summarising, voice(0), 'Summarising…'),
+              (VoiceChipState.done, voice(0, summary: summary), null),
+            ]) {
+              await tester.pumpWidget(const SizedBox());
+              await tester.pumpWidget(
+                harness('$anchor\nafter', [ref], voiceStateFor: (_) => state),
+              );
+              await tester.pumpAndSettle();
+
+              if (words != null) {
+                expect(
+                  tester
+                      .renderObject<RenderParagraph>(find.text(words))
+                      .didExceedMaxLines,
+                  isFalse,
+                  reason: '$words is not cut short',
+                );
+              }
+              final pill = tester.getRect(
+                find.byKey(const ValueKey('voice-chip-pill')),
+              );
+              expect(
+                caretFor(tester, 2).top + tester.getRect(noteField).top,
+                greaterThanOrEqualTo(pill.bottom),
+                reason: 'the line under the chip starts below it, $state',
+              );
+              if (state != VoiceChipState.needsConsent) {
+                usualPath.add(pill.height);
+              }
+            }
+            expect(usualPath, hasLength(1));
+          },
+        );
+      }
+    }
   });
 }
