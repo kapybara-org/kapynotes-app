@@ -96,6 +96,34 @@ class ResultChip extends StatefulWidget {
 
   static final _railWidths = <(String, double), double>{};
 
+  /// How tall a [ResultChipLook.rail] chip's words are in [context] when they
+  /// wrap at [width], for a line to be at least that tall.
+  static double heightOf(
+    BuildContext context,
+    LineResult result,
+    double width,
+  ) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final key = (result.text, scaler.scale(AppTypeScale.result), width);
+    if (_railHeights[key] case final height?) return height;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: result.text,
+        style: DefaultTextStyle.of(
+          context,
+        ).style.merge(_textStyle(pill: false)),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout(maxWidth: math.max(0.0, width - _railPadding.horizontal));
+    final height = painter.height;
+    painter.dispose();
+    if (_railHeights.length >= 512) _railHeights.clear();
+    return _railHeights[key] = height.ceilToDouble() + _railPadding.vertical;
+  }
+
+  static final _railHeights = <(String, double, double), double>{};
+
   static const _railPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 3);
 
   /// The least a finger gets to tap on the rail. Only the part inside its
@@ -201,11 +229,12 @@ class _ResultChipState extends State<ResultChip> {
           Flexible(
             child: Text(
               widget.result.text,
-              maxLines: 1,
-              softWrap: false,
-              // Long results clip from the left so the significant digits and
-              // the unit — the parts you actually read — stay visible.
-              overflow: TextOverflow.ellipsis,
+              // A phone's result wraps, and its line grows to hold it. A
+              // pill keeps to one line and ends with an ellipsis, and grows
+              // under the pointer.
+              maxLines: pill ? 1 : null,
+              softWrap: !pill,
+              overflow: pill ? TextOverflow.ellipsis : null,
               textAlign: TextAlign.right,
               style: ResultChip._textStyle(
                 pill: pill,

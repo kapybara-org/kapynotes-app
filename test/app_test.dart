@@ -58,6 +58,7 @@ import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/editor/note_sliver.dart' show RenderNoteLine;
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/note_header.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
@@ -12779,4 +12780,46 @@ void main() {
     expectNoKeys('Settings');
     semantics.dispose();
   }, variant: phones);
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final (width, scale) in [(320.0, 1.0), (393.0, 1.3), (393.0, 2.0)]) {
+      testWidgets(
+        'on ${platform.name}, on a ${width.toInt()} pt phone at ${scale}x text, a long '
+        "result such as a week wraps whole, and its line grows to hold it "
+        '(KAP-143)',
+        (tester) async {
+          AppPlatform.debugTargetPlatformOverride = platform;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await notes.load();
+          notes.create(body: 'Sprint\nweek 44 2026\nNext');
+          await pumpApp(tester, size: Size(width, 800));
+          final chip = find.byType(ResultChip);
+          final result = tester.widget<ResultChip>(chip).result.text;
+          expect(result, 'Oct 26 – Nov 1, 2026');
+          final words = find.descendant(of: chip, matching: find.text(result));
+          final paragraph = tester.renderObject<RenderParagraph>(words);
+          expect(paragraph.didExceedMaxLines, isFalse);
+          expect(paragraph.debugHasOverflowShader, isFalse);
+          expect(
+            paragraph.getBoxesForSelection(
+              TextSelection(baseOffset: 0, extentOffset: result.length),
+            ),
+            isNotEmpty,
+          );
+          RenderObject? week = tester.renderObject(chip);
+          while (week is! RenderNoteLine) {
+            week = week!.parent;
+          }
+          final rect = tester.getRect(words);
+          final line = MatrixUtils.transformRect(
+            week.getTransformTo(null),
+            Offset.zero & week.size,
+          );
+          expect(rect.top, greaterThanOrEqualTo(line.top - 0.5));
+          expect(rect.bottom, lessThanOrEqualTo(line.bottom + 0.5));
+        },
+      );
+    }
+  }
 }
