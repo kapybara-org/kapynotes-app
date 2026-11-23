@@ -570,26 +570,85 @@ void main() {
       );
     });
 
-    testWidgets("a summary's title stays on the row and is cut instead", (
-      tester,
-    ) async {
-      const title = 'Standup thoughts on the pricing page and the launch';
-      await pumpAt(
-        tester,
-        320,
-        VoiceChipState.done,
-        ref: recording(
-          durationMs: 123000,
-          summary: VoiceSummary(
-            engine: 'cf/llama',
-            at: 1,
-            title: title,
-            points: const ['Ship it.'],
-          ),
-        ),
+    const title = 'Standup thoughts on the pricing page and the launch';
+    final summarised = recording(
+      durationMs: 123000,
+      summary: VoiceSummary(
+        engine: 'cf/llama',
+        at: 1,
+        title: title,
+        points: const ['Ship it.'],
+      ),
+    );
+
+    testWidgets('is as tall at its title as all the way there', (tester) async {
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
       );
-      expect(drawn(tester), 56);
-      expect(cut(tester, title), isTrue);
+      final path = <(VoiceChipState, NoteVoiceRef?)>[
+        (VoiceChipState.transcribing, null),
+        (VoiceChipState.summarising, null),
+        (VoiceChipState.done, summarised),
+        (VoiceChipState.done, null),
+        (VoiceChipState.idle, null),
+      ];
+      for (final bold in [false, true]) {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(boldText: bold);
+        for (final scale in [1.0, 1.3]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          for (final phone in [320.0, 375.0, 412.0]) {
+            final reason = '$phone pt, ${scale}x, bold $bold';
+            final heights = <double>{};
+            for (final (state, ref) in path) {
+              await pumpAt(tester, phone, state, ref: ref);
+              expect(drawn(tester), promised(tester, phone), reason: reason);
+              heights.add(drawn(tester));
+            }
+            expect(heights, hasLength(1), reason: reason);
+          }
+        }
+      }
     });
+
+    testWidgets(
+      "a summary's title takes the second line wherever its statuses do, "
+      "across the card's width",
+      (tester) async {
+        await pumpAt(tester, 320, VoiceChipState.done, ref: summarised);
+        final pill = tester.getRect(
+          find.byKey(const ValueKey('voice-chip-pill')),
+        );
+        final words = tester.getRect(find.text(title));
+        expect(drawn(tester), 83);
+        expect(cut(tester, title), isTrue);
+        expect(
+          words.top,
+          greaterThanOrEqualTo(tester.getRect(find.text('2:03')).bottom),
+        );
+        expect(words.left, moreOrLessEquals(pill.left + 9, epsilon: 0.5));
+        expect(words.right, moreOrLessEquals(pill.right - 17, epsilon: 0.5));
+
+        await pumpAt(tester, 320, VoiceChipState.done);
+        expect(drawn(tester), 83);
+        expect(find.text('Voice note'), findsNothing);
+
+        await pumpAt(tester, 412, VoiceChipState.done, ref: summarised);
+        expect(drawn(tester), 56);
+        expect(cut(tester, title), isTrue);
+        expect(
+          tester.getCenter(find.text(title)).dy,
+          moreOrLessEquals(
+            tester.getCenter(find.text('2:03')).dy,
+            epsilon: 0.5,
+          ),
+        );
+
+        await pumpAt(tester, 412, VoiceChipState.done);
+        expect(drawn(tester), 56);
+        expect(find.text('Voice note'), findsNothing);
+      },
+    );
   });
 }

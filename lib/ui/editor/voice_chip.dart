@@ -15,8 +15,8 @@ import 'note_image_layout.dart';
 /// phone's 56pt card on touch.
 ///
 /// The same whatever the recording holds: a chip that grew once a transcript
-/// arrived would reflow the note under whoever was reading it. Only a status
-/// too long for a phone's row adds a line under it, as
+/// arrived would reflow the note under whoever was reading it. Only a phone's
+/// row too narrow for a status adds a line under it, as
 /// [NoteVoiceChip.heightIn] says.
 double get _rowHeight => AppPlatform.hasPointer ? 44 : 56;
 
@@ -30,8 +30,12 @@ const double _gap = 12;
 /// The widest a label on the row gets.
 const double _labelMaxWidth = 280;
 
-/// The room under a status that takes its own line.
+/// The room under a label that takes its own line.
 const double _belowInset = 10;
+
+/// What a recording says on its usual way to its summary's title.
+const _transcribing = 'Transcribing…';
+const _summarising = 'Summarising…';
 
 /// What the chip says about a recording beyond the recording itself.
 enum VoiceChipState {
@@ -129,8 +133,8 @@ class NoteVoiceChip extends StatelessWidget {
     return switch (state) {
       VoiceChipState.done when summary != null => summary.title,
       VoiceChipState.done => 'Voice note',
-      VoiceChipState.transcribing => 'Transcribing…',
-      VoiceChipState.summarising => 'Summarising…',
+      VoiceChipState.transcribing => _transcribing,
+      VoiceChipState.summarising => _summarising,
       VoiceChipState.waiting => 'Waiting for connection',
       VoiceChipState.retrying => 'Trying again soon',
       VoiceChipState.failed when ref.transcript != null => "Couldn't summarise",
@@ -181,27 +185,30 @@ class NoteVoiceChip extends StatelessWidget {
       ref.summary != null &&
       (state == VoiceChipState.done || state == VoiceChipState.idle);
 
+  /// Whether the label is where a recording comes to rest: its summary's
+  /// title, or "Voice note".
+  bool get _resting => _titled || _label == 'Voice note';
+
   /// How tall the chip is when it is handed [width]: its row, and the
-  /// status's own line under it when the row would cut the status short.
+  /// label's own line under it when the row would cut a status short.
   double heightIn(BuildContext context, double width) =>
       _height(_labelBelow(context, width));
 
   double _height(double? below) =>
       below == null ? _rowHeight : _rowHeight + below + _belowInset;
 
-  /// How tall the status is on its own line under the row, or null when the
-  /// label sits on the row.
+  /// How tall the label is on its own line under the row, or null when it
+  /// sits on the row.
   ///
   /// Only on a phone, whose row splits what the play button and the length
   /// leave evenly between the waveform and the label. A status wider than
   /// its half would end in an ellipsis, and it is a few words that only help
-  /// when they read in full. A summary's title stays on the row and is cut
-  /// instead, so a summary arriving never moves the writing under the chip.
+  /// when they read in full. A summary's title takes the second line
+  /// wherever "Transcribing…" and "Summarising…" would, and a recording with
+  /// nothing more to say than "Voice note" keeps that line's room, so a
+  /// recording is as tall at the end of its usual path as all along it.
   double? _labelBelow(BuildContext context, double width) {
-    final label = _label;
-    if (AppPlatform.hasPointer || label == 'Voice note' || _titled) {
-      return null;
-    }
+    if (AppPlatform.hasPointer) return null;
     final palette = context.palette;
     final inherited = DefaultTextStyle.of(context);
     TextPainter measure(String text, TextStyle style, double maxWidth) =>
@@ -219,14 +226,22 @@ class NoteVoiceChip extends StatelessWidget {
       _lengthStyle(palette),
       double.infinity,
     );
-    final words = measure(label, _labelStyle(palette), inner);
     final share = math.min(
       _labelMaxWidth,
       (inner - _touchPlay - length.width - 3 * _gap) / 2,
     );
-    final below = words.width > share ? words.height : null;
     length.dispose();
-    words.dispose();
+    final usual =
+        _resting ||
+        state == VoiceChipState.transcribing ||
+        state == VoiceChipState.summarising;
+    double? below;
+    for (final status
+        in usual ? const [_transcribing, _summarising] : [_label]) {
+      final words = measure(status, _labelStyle(palette), inner);
+      if (words.width > share) below = math.max(below ?? 0, words.height);
+      words.dispose();
+    }
     return below;
   }
 
@@ -279,8 +294,8 @@ class NoteVoiceChip extends StatelessWidget {
     );
   }
 
-  /// The chip with its label on the row, or with a status on its own line
-  /// [below] the row, that line's height given.
+  /// The chip with its label on the row, or on its own line [below] the
+  /// row, that line's height given.
   Widget _card(BuildContext context, double? below) {
     final palette = context.palette;
     final touch = !AppPlatform.hasPointer;
@@ -354,7 +369,13 @@ class NoteVoiceChip extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(height: _rowHeight - 2 * _touchBorder, child: row),
-                    Text(label, style: labelStyle),
+                    if (label != 'Voice note')
+                      Text(
+                        label,
+                        maxLines: _titled ? 1 : null,
+                        overflow: _titled ? TextOverflow.ellipsis : null,
+                        style: labelStyle,
+                      ),
                   ],
                 ),
         ),
