@@ -329,13 +329,13 @@ void main() {
         home: const Material(
           child: SizedBox(
             width: 300,
-            child: NotesGroupHeading(label: 'Upcoming', detail: '2'),
+            child: NotesGroupHeading(label: 'Yesterday', detail: '2'),
           ),
         ),
       ),
     );
 
-    final label = styleOf(tester, 'Upcoming');
+    final label = styleOf(tester, 'Yesterday');
     expect(label.fontSize, 12);
     expect(label.height, 16 / 12);
     expect(label.fontVariations, AppWeight.variations(AppWeight.section));
@@ -413,82 +413,9 @@ void main() {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-    Future<void> pumpHeading(WidgetTester tester, {required bool folded}) =>
-        tester.pumpWidget(
-          MaterialApp(
-            theme: KapyTheme.dark(),
-            home: Material(
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: SizedBox(
-                  width: 300,
-                  child: NotesGroupHeading(
-                    label: 'Upcoming',
-                    detail: '1',
-                    folded: folded,
-                    onTap: () {},
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-
     Finder chevron(KapyIconData icon) => find.byWidgetPredicate(
       (widget) => widget is KapyIcon && widget.icon == icon,
     );
-
-    for (final (folded, icon) in [
-      (true, KapyIcons.chevronRightRounded),
-      (false, KapyIcons.chevronDownRounded),
-    ]) {
-      testWidgets('Upcoming reads "Upcoming 1 ${folded ? '›' : '⌄'}" '
-          '${folded ? 'folded' : 'open'}, its chevron after the count', (
-        tester,
-      ) async {
-        await pumpHeading(tester, folded: folded);
-        final label = tester.getRect(find.text('Upcoming'));
-        final count = tester.getRect(find.text('1'));
-        final mark = tester.getRect(chevron(icon));
-        expect(chevron(icon), findsOneWidget);
-        expect(count.left, greaterThan(label.right));
-        expect(mark.left - count.right, 6);
-        expect(mark.center.dy, moreOrLessEquals(count.center.dy, epsilon: 1));
-        expect(
-          tester.getSemantics(
-            find
-                .descendant(
-                  of: find.byType(NotesGroupHeading),
-                  matching: find.byType(Semantics),
-                )
-                .first,
-          ),
-          isSemantics(
-            label: 'Upcoming\n1',
-            textDirection: TextDirection.ltr,
-            isHeader: true,
-            isButton: true,
-            isImage: true,
-            hasExpandedState: true,
-            isExpanded: !folded,
-            hasTapAction: true,
-          ),
-        );
-      });
-    }
-
-    testWidgets('on a phone the chevron still leads the words', (tester) async {
-      for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-        AppPlatform.debugTargetPlatformOverride = platform;
-        await pumpHeading(tester, folded: true);
-        final mark = tester.getRect(chevron(KapyIcons.chevronRightRounded));
-        expect(
-          tester.getRect(find.text('Upcoming')).left - mark.right,
-          4,
-          reason: platform.name,
-        );
-      }
-    });
 
     Future<void> pumpControls(
       WidgetTester tester, {

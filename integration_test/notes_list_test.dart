@@ -10,8 +10,8 @@
 //   name on hover, and a click that opens Kapy AI on the note shown.
 // - New beside show-list while the list is hidden (#254): it makes a note or
 //   a drawing, by click and by Tab and Enter.
-// - A row's screen-reader actions while notes are picked, and the Upcoming
-//   fold (#239). VoiceOver can't run on a CI runner, so the test reads the
+// - A row's screen-reader actions while notes are picked (#239), and a note
+//   for a later day staying off the list until its day (KAP-302). VoiceOver can't run on a CI runner, so the test reads the
 //   actions from the app's semantics tree, which is what the Mac hands
 //   VoiceOver, and does them from there.
 // - D03, D04 and D07 of the final boards, over the boards' notes in a
@@ -346,8 +346,8 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('only the day grouping folds Upcoming: a tag named Upcoming '
-      'starts open when the list groups by tag', (tester) async {
+  testWidgets("a note for a later day stays off the list's days, and grouped "
+      'by tag it keeps its place under No tag', (tester) async {
     await launch(
       tester,
       bodies: ['Renewal notes\nRead the contract', 'Standup\nShip it'],
@@ -357,22 +357,18 @@ void main() {
           id('Renewal notes'),
           DateTime(now.year, now.month, now.day + 2),
         );
-        tags.addTag(id('Standup'), tags.create('Upcoming')!.id);
       },
     );
     final list = find.byType(Sidebar);
-    final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
-    expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
+    expect(find.byKey(const ValueKey('sidebar-group-Upcoming')), findsNothing);
     expect(
       find.descendant(of: list, matching: find.text('Renewal notes')),
       findsNothing,
     );
-    await shot(tester, 'upcoming-by-date');
+    await shot(tester, 'later-day-by-date');
 
     await click(tester, find.byKey(const ValueKey('notes-grouping')));
     await click(tester, find.byKey(const ValueKey('notes-grouping-byTag')));
-    expect(tester.widget<NotesGroupHeading>(upcoming).label, 'Upcoming');
-    expect(tester.widget<NotesGroupHeading>(upcoming).folded, isNull);
     for (final title in ['Standup', 'Renewal notes']) {
       expect(
         find.descendant(of: list, matching: find.text(title)),
@@ -380,7 +376,7 @@ void main() {
         reason: title,
       );
     }
-    await shot(tester, 'upcoming-by-tag');
+    await shot(tester, 'later-day-by-tag');
   });
 
   /// The boards' window, D03, D04 and D07 alike.
@@ -599,22 +595,17 @@ void main() {
     await boardShot(tester, 'd03-two-tabs');
   });
 
-  // The board picks Fri 21 in the week: its note opens and is lit in the
-  // whole list, under Upcoming, which opens to show it above Today.
-  testWidgets("D04's board: the day after tomorrow picked in the week opens "
-      'its note, lit under Upcoming above Today', (tester) async {
+  // The Friday note (PFP-0): the board picks Fri 21 in the week and its note
+  // opens, though the list leaves it out until its day.
+  testWidgets("The Friday note's board: the day after tomorrow picked in the "
+      'week opens its note, which stays off the list', (tester) async {
     await board(tester);
     final now = notes.now();
     final friday = DateTime(now.year, now.month, now.day + 2);
     final list = find.byType(Sidebar);
-    final upcoming = find.byKey(const ValueKey('sidebar-group-Upcoming'));
     final today = find.byKey(const ValueKey('sidebar-group-Today'));
-    expect(tester.widget<NotesGroupHeading>(upcoming).folded, isTrue);
-    expectBoardDates(tester);
-    expect(
-      tester.getTopLeft(upcoming).dy,
-      lessThan(tester.getTopLeft(today).dy),
-    );
+    expect(find.byKey(const ValueKey('sidebar-group-Upcoming')), findsNothing);
+    expect(row('Renewal notes'), findsNothing);
     expect(
       find.descendant(
         of: find.byKey(
@@ -636,48 +627,8 @@ void main() {
         ValueKey('day-strip-${friday.year}-${friday.month}-${friday.day}'),
       ),
     );
-    expect(tester.widget<NotesGroupHeading>(upcoming).folded, isFalse);
-    expect(
-      tester
-          .getRect(
-            find.descendant(
-              of: upcoming,
-              matching: findKapyIcon(KapyIcons.chevronDownRounded),
-            ),
-          )
-          .left,
-      greaterThan(
-        tester
-            .getRect(find.descendant(of: upcoming, matching: find.text('1')))
-            .right,
-      ),
-    );
-    expect(
-      tester
-          .widget<NoteCardFace>(
-            find.descendant(
-              of: row('Renewal notes'),
-              matching: find.byType(NoteCardFace),
-            ),
-          )
-          .date,
-      SidebarTimestamp.weekdayAndDay(friday),
-    );
-    final ring = tester.widget<ChecklistPie>(
-      find.descendant(
-        of: row('Renewal notes'),
-        matching: find.byType(ChecklistPie),
-      ),
-    );
-    expect((ring.done, ring.total), (0, 2));
+    expect(row('Renewal notes'), findsNothing);
     expect(today, findsOneWidget, reason: 'the list stays whole');
-    final renewal = tester.widget<NoteRow>(row('Renewal notes'));
-    expect(renewal.selected, isTrue);
-    expect(renewal.ofPickedDay, isTrue);
-    expect(
-      tester.getTopLeft(row('Renewal notes')).dy,
-      lessThan(tester.getTopLeft(today).dy),
-    );
     expect(
       find.descendant(of: list, matching: find.text('Call with Arjun')),
       findsOneWidget,
@@ -699,7 +650,7 @@ void main() {
       tester.getTopLeft(path).dy,
       lessThan(tester.getTopLeft(openNote).dy),
     );
-    await boardShot(tester, 'd04-friday-upcoming');
+    await boardShot(tester, 'pfp-friday-note');
   });
 
   testWidgets("D07's board: + Tag lists every tag in its colour, the note's "

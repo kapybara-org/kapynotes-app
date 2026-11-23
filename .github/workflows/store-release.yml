@@ -150,6 +150,25 @@ jobs:
           if [ "$STORES" != ios ]; then check_notes play_notes_file "$PLAY_NOTES" 500; fi
           echo "Releasing $VERSION ($BUILD) to $STORES"
 
+      # Android names the update Play offers by finding Play's version code
+      # among the changelog's builds (KAP-310). If the site lists this version
+      # with another build, Android says "A new version is out" with no notes.
+      - name: The changelog must list this version with this build
+        run: |
+          set -euo pipefail
+          url=https://kapynotes.com/changelog.json
+          file="$RUNNER_TEMP/changelog.json"
+          if ! curl -fsS --max-time 20 -o "$file" "$url"; then
+            echo "::error::could not read $url"
+            exit 1
+          fi
+          listed="$(python3 -c 'import json, sys; print(" ".join(str(r.get("build")) for r in json.load(open(sys.argv[1]))["releases"] if r.get("version") == sys.argv[2]))' "$file" "$VERSION")"
+          if [ "$listed" != "$BUILD" ]; then
+            echo "::error::$url lists $VERSION with build ${listed:-none}, not $BUILD. Fix the entry in kapynotes' website/src/data/releases.ts and deploy the site before releasing."
+            exit 1
+          fi
+          echo "$url lists $VERSION as build $BUILD"
+
   ios:
     needs: verify
     if: inputs.stores != 'android'

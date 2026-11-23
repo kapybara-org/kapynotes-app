@@ -82,21 +82,19 @@ DateTime noteDay(
   DateTime? ownDay,
 }) => ownDay ?? dayShown(note.updatedAt, displayTime);
 
-/// Whether a note given the day [own] waits for a day after [today], under
-/// Upcoming rather than in the list.
+/// Whether a note given the day [own] waits for a day after [today]: it stays
+/// off the lists until that day, found by its day in the week or the month,
+/// or by search.
 bool waitsForLaterDay(DateTime? own, DateTime today) =>
     own != null && own.isAfter(DateTime(today.year, today.month, today.day));
 
-/// A heading in the notes list, and the notes under it. [upcoming] marks the
-/// one grouping by day gives the notes waiting for a later day, which the
-/// list beside the rail folds; no other group is it, whatever its label.
-/// [day] is the one day a group by day holds, so its notes need give only
-/// their time; null for Upcoming and every other grouping.
+/// A heading in the notes list, and the notes under it. [day] is the one day
+/// a group by day holds, so its notes need give only their time; null for
+/// every other grouping.
 typedef NoteGroup = ({
   String label,
   String? detail,
   List<Note> notes,
-  bool upcoming,
   DateTime? day,
 });
 
@@ -105,9 +103,9 @@ typedef NoteGroup = ({
 /// each first tag, by name, and then the untagged; or one for each first
 /// letter of the titles, sorted A to Z, with anything that is not a letter
 /// last.
-/// [ownDay] is the day a note was given, where it has one: those waiting for a
-/// day after [today] go into one Upcoming group at the top, and the rest sit
-/// under the day they were given rather than the day they were last edited.
+/// [ownDay] is the day a note was given, where it has one: grouping by day
+/// leaves out those waiting for a day after [today], and puts the rest under
+/// the day they were given rather than the day they were last edited.
 List<NoteGroup> groupNotes(
   List<Note> notes,
   NotesGrouping grouping, {
@@ -120,26 +118,16 @@ List<NoteGroup> groupNotes(
   void add(Object? key, String label, Note note, {DateTime? day}) => groups
       .putIfAbsent(
         key,
-        () => (
-          label: label,
-          detail: null,
-          notes: <Note>[],
-          upcoming: false,
-          day: day,
-        ),
+        () => (label: label, detail: null, notes: <Note>[], day: day),
       )
       .notes
       .add(note);
 
   switch (grouping) {
     case NotesGrouping.byDate:
-      final waiting = <Note>[];
       for (final note in notes) {
         final own = ownDay?.call(note);
-        if (waitsForLaterDay(own, today)) {
-          waiting.add(note);
-          continue;
-        }
+        if (waitsForLaterDay(own, today)) continue;
         final day = noteDay(note, displayTime, ownDay: own);
         // The page's week already says which day Today and Yesterday are.
         final (label, _) = SidebarTimestamp.dayHeading(day, today: today);
@@ -147,17 +135,7 @@ List<NoteGroup> groupNotes(
       }
       final days = groups.keys.cast<DateTime>().toList()
         ..sort((a, b) => b.compareTo(a));
-      return [
-        if (waiting.isNotEmpty)
-          (
-            label: 'Upcoming',
-            detail: '${waiting.length}',
-            notes: waiting,
-            upcoming: true,
-            day: null,
-          ),
-        for (final day in days) groups[day]!,
-      ];
+      return [for (final day in days) groups[day]!];
     case NotesGrouping.byTag:
       for (final note in notes) {
         final tag = firstTag(note);

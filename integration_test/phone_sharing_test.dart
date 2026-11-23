@@ -169,15 +169,18 @@ void main() {
     matching: find.text(label),
   );
 
-  /// The app as it launches, then Home's Shared card, which opens Shared as
+  /// The app as it launches, then Folders' Shared tile, which opens Shared as
   /// a page.
   ///
   /// Launching, the app restores the account itself, which swaps in a
   /// sharing of its own that hears about the spaces a moment later. Until it
   /// has, Trip budget counts as somebody else's note, and the page it opens
   /// on goes back to Shared rather than Home. So this waits for that sharing
-  /// to know Trip budget's space, then goes back until Home's card is there.
-  Future<void> openSharedPage(WidgetTester tester) async {
+  /// to know Trip budget's space, then goes back until the bar is there.
+  Future<void> openSharedPage(
+    WidgetTester tester, {
+    String? foldersShot,
+  }) async {
     prefs.load();
     shortcuts.load();
     final restored = account.sharing;
@@ -199,19 +202,28 @@ void main() {
     });
     await tester.pumpAndSettle();
     final home = find.byKey(const ValueKey('page-home'));
-    final card = find.byKey(const ValueKey('home-shared-card'));
+    final folders = find.byKey(const ValueKey('bar-folders'));
     for (
       var taps = 0;
-      taps < 3 && card.evaluate().isEmpty && home.evaluate().isNotEmpty;
+      taps < 3 && folders.evaluate().isEmpty && home.evaluate().isNotEmpty;
       taps++
     ) {
       await tester.tap(home);
       await tester.pumpAndSettle();
     }
-    expect(card, findsOneWidget, reason: 'Home, with its Shared card');
-    await tester.ensureVisible(card);
+    await tester.tap(folders);
     await tester.pumpAndSettle();
-    await tester.tap(card);
+    final tile = find.byKey(const ValueKey('folders-shared-tile'));
+    expect(tile, findsOneWidget, reason: 'Folders, with its Shared tile');
+    if (foldersShot != null) {
+      expect(
+        find.byKey(const ValueKey('folders-shared-invitations')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('bar-folders-dot')), findsOneWidget);
+      await settledShot(tester, foldersShot);
+    }
+    await tester.tap(tile);
     await tester.pumpAndSettle();
     expect(sharedPage, findsOneWidget);
   }
@@ -532,7 +544,10 @@ void main() {
         token = tokenFor(server, samEmail);
         await account.sharing!.refresh();
       });
-      await openSharedPage(tester);
+      await openSharedPage(
+        tester,
+        foldersShot: 'phone-sharing-folders-invitation-waiting',
+      );
 
       final card = find.byKey(ValueKey('sidebar-invite-$token'));
       expect(card, findsOneWidget);
