@@ -580,6 +580,8 @@ class NoteListRowFace extends StatelessWidget {
     this.snippet,
     this.place,
     this.people,
+    this.live,
+    this.viewOnly = false,
     this.ringed = false,
     this.locked = false,
     this.shared = false,
@@ -592,12 +594,19 @@ class NoteListRowFace extends StatelessWidget {
   final String date;
   final String? snippet;
 
+  /// Who is typing in the note, or in it, which a phone's row says first on
+  /// its last line, after a sage dot. Null while nobody else is.
+  final String? live;
+
+  /// Somebody else's note this account may only read, which a phone's row
+  /// says on its last line.
+  final bool viewOnly;
+
   /// The folders the note is in, as "Work › Clients", which start the second
   /// line in the date's quieter ink. Null for a note in no folder.
   final String? place;
 
-  /// Who a shared note is open to, at the end of a phone's last line, in
-  /// place of the shared mark.
+  /// Who a shared note is open to, at the end of a phone's last line.
   final Widget? people;
   final bool selected;
   final bool hovering;
@@ -615,14 +624,8 @@ class NoteListRowFace extends StatelessWidget {
     final people = this.people;
     final marks = touch
         ? const <KapyIconData>[]
-        : _marksOf(
-            glance.media,
-            locked: locked,
-            shared: shared && people == null,
-          );
-    final holds = touch
-        ? _holdsOf(palette, shared: shared && people == null)
-        : const <Widget>[];
+        : _marksOf(glance.media, locked: locked, shared: shared);
+    final holds = touch ? _holdsOf(palette) : const <Widget>[];
     final summary =
         snippet ??
         (note.isEmpty
@@ -810,11 +813,13 @@ class NoteListRowFace extends StatelessWidget {
     );
   }
 
-  /// A phone row's third line, what the note holds: how far its checklist
-  /// has got, how long its recordings and videos run, how many pictures it
-  /// has, then whether it is read-only or [shared]. Each is a 14 pt icon 6
-  /// from its words, 12 from the next. Empty when it holds only words.
-  List<Widget> _holdsOf(CalcPalette palette, {required bool shared}) {
+  /// A phone row's third line: who is in the note, then what it holds: how
+  /// far its checklist has got, how long its recordings and videos run, how
+  /// many pictures it has, then whether it is read-only or [viewOnly]. Each
+  /// is a 14 pt icon 6 from its words, 12 from the next. Empty when it holds
+  /// only words and nobody else is in it. Who it is shared with is its
+  /// people's faces, or the heading over it in Shared, never a mark here.
+  List<Widget> _holdsOf(CalcPalette palette) {
     final ink = palette.textTertiary;
     final words = chromeStyle(
       size: 12,
@@ -847,6 +852,27 @@ class NoteListRowFace extends StatelessWidget {
     );
     Widget mark(KapyIconData icon) => KapyIcon(icon, size: 14, color: ink);
     return [
+      if (live case final live?)
+        Row(
+          key: const ValueKey('note-row-live'),
+          mainAxisSize: MainAxisSize.min,
+          spacing: 6,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: palette.accentText,
+                shape: BoxShape.circle,
+              ),
+            ),
+            Text(
+              live,
+              maxLines: 1,
+              style: words.copyWith(color: palette.textSecondary),
+            ),
+          ],
+        ),
       if (glance.boxes > 0)
         hold(
           ChecklistPie(
@@ -863,7 +889,7 @@ class NoteListRowFace extends StatelessWidget {
         hold(mark(NoteMedia.video.icon), formatVoiceDuration(video)),
       if (pictures > 0) hold(mark(NoteMedia.image.icon), '$pictures'),
       if (locked) hold(mark(KapyIcons.lockRounded)),
-      if (shared) hold(mark(KapyIcons.groupOutlined)),
+      if (viewOnly) hold(mark(KapyIcons.visibilityOutlined), 'View only'),
     ];
   }
 }

@@ -22,6 +22,7 @@ import 'package:http/testing.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -42,6 +43,7 @@ import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../test/kapy_icon_finder.dart';
 import '../test/support/sharing_devices.dart'
     show Device, FakeSend, joiningOver, opener;
 import '../test/sync/fake_server.dart' show FakeApi, FakeAuth, FakeServer;
@@ -280,6 +282,35 @@ void main() {
       expect(listed('Trip budget'), isTrue);
       expect(listed('Packing list'), isTrue);
       expect(listed('Bank details'), isFalse);
+      // 16RO-0 (KAP-313): each group headed in the serif with a › to its
+      // person, and rows with no shared mark.
+      for (final heading in ['With Carol and Priya', 'From Priya']) {
+        expect(
+          find.descendant(of: sharedPage, matching: find.text(heading)),
+          findsOneWidget,
+        );
+      }
+      expect(
+        find.descendant(
+          of: sharedPage,
+          matching: findKapyIcon(KapyIcons.chevronRightRounded),
+        ),
+        findsNWidgets(2),
+      );
+      expect(
+        find.descendant(
+          of: row('Packing list'),
+          matching: find.text('View only'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedPage,
+          matching: findKapyIcon(KapyIcons.groupOutlined),
+        ),
+        findsNothing,
+      );
       await settledShot(tester, 'phone-sharing-shared-page');
 
       await longPressRow(tester, 'Trip budget');

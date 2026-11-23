@@ -1087,6 +1087,7 @@ extension on Sidebar {
     shareGroup: phone && shared && !_onSharedTab
         ? sharing?.groupOf(note)
         : null,
+    viewOnly: shared && !_mayEdit(note),
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
     openElsewhere: openElsewhereIds.contains(note.id),
@@ -1185,25 +1186,37 @@ extension on Sidebar {
     final notes = groups.byGroup[key]!;
     final group = groups.shareGroups[key];
     final onOpenPerson = this.onOpenPerson;
-    return _ShareGroupHeader(
-      key: ValueKey('share-group-$key'),
-      group: group,
-      title:
-          group?.title ??
-          sharing?.spaceOf(notes.first)?.titleFor(sharing!.userId) ??
-          'Shared',
-      present: {
-        for (final note in notes)
-          for (final person in collaborators[note.id] ?? const [])
-            person.userId,
-      },
-      attention: {
-        for (final note in notes) ?note.spaceId,
-      }.any((id) => sharing?.trust.warningsFor(id).isNotEmpty ?? false),
-      onTap: group == null || onOpenPerson == null
-          ? null
-          : () => onOpenPerson(group.people.first.email),
-    );
+    final title =
+        group?.title ??
+        sharing?.spaceOf(notes.first)?.titleFor(sharing!.userId) ??
+        'Shared';
+    final present = <String>{
+      for (final note in notes)
+        for (final person in collaborators[note.id] ?? const []) person.userId,
+    };
+    final attention = {
+      for (final note in notes) ?note.spaceId,
+    }.any((id) => sharing?.trust.warningsFor(id).isNotEmpty ?? false);
+    final onTap = group == null || onOpenPerson == null
+        ? null
+        : () => onOpenPerson(group.people.first.email);
+    return phone
+        ? _PhoneShareHeading(
+            key: ValueKey('share-group-$key'),
+            group: group,
+            title: title,
+            present: present,
+            attention: attention,
+            onTap: onTap,
+          )
+        : _ShareGroupHeader(
+            key: ValueKey('share-group-$key'),
+            group: group,
+            title: title,
+            present: present,
+            attention: attention,
+            onTap: onTap,
+          );
   }
 
   /// The list beside the spaces rail: Pinned, then each shared space, then
@@ -1372,8 +1385,15 @@ extension on Sidebar {
         heading(const _PhoneHeading('Pinned'));
         section(groups.pinned, pinned: true);
       }
+      // A group's heading carries the room above it and sits right on its
+      // first row, whose own padding is the gap under it (16RO-0).
       for (final key in groups.groupOrder) {
-        heading(_groupHeading(groups, key));
+        rows.add(
+          (_) => Padding(
+            padding: EdgeInsets.symmetric(horizontal: margin),
+            child: _groupHeading(groups, key),
+          ),
+        );
         section(groups.byGroup[key]!);
       }
       if (drawings) {
@@ -2828,6 +2848,7 @@ class NoteRow extends StatefulWidget {
     this.shared = false,
     this.collaborators = const [],
     this.shareGroup,
+    this.viewOnly = false,
     this.locked = false,
     this.selecting = false,
     this.checked = false,
@@ -2945,6 +2966,10 @@ class NoteRow extends StatefulWidget {
   /// Who a phone's row shows the note is shared with, at the end of its last
   /// line. Null leaves the faces off.
   final ShareGroup? shareGroup;
+
+  /// Somebody else's note that this account may only read, which a phone's
+  /// row says on its last line.
+  final bool viewOnly;
 
   /// Whether the note limit holds the note read-only.
   final bool locked;
@@ -3304,12 +3329,17 @@ class _NoteRowState extends State<NoteRow> {
     final day = card && people.isEmpty && widget.laterDay == null
         ? stamp(clock: false)
         : null;
-    final date = people.isNotEmpty
-        ? typingStatusText([
+    final live = people.isEmpty
+        ? null
+        : typingStatusText([
                 for (final person in people)
                   if (person.typing) person.name,
               ]) ??
-              presenceStatusText([for (final person in people) person.name])!
+              presenceStatusText([for (final person in people) person.name])!;
+    // A phone's row keeps its time and says who is in it on its last line.
+    final touch = widget.style == NoteRowStyle.touch;
+    final date = live != null && !touch
+        ? live
         : widget.clockOnly
         ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
         : stamp();
@@ -3370,10 +3400,12 @@ class _NoteRowState extends State<NoteRow> {
         ringed: ringed,
       ),
       NoteRowStyle.row || NoteRowStyle.touch => NoteListRowFace(
-        touch: widget.style == NoteRowStyle.touch,
+        touch: touch,
         note: note,
         glance: glance,
         date: date,
+        live: touch ? live : null,
+        viewOnly: widget.viewOnly,
         snippet: snippet,
         people: switch (widget.shareGroup) {
           final group? => _SharePeople(group: group),
@@ -3561,8 +3593,9 @@ String? presenceStatusText(List<String> names) => switch (names.length) {
   _ => '${names[0]} and ${names.length - 1} others are here',
 };
 
-/// The heading over a group of the Shared list: whose notes they are, and
-/// their faces at the far end, ringed while they are in one of the notes.
+/// The heading over a group of the Shared list beside the rail: whose notes
+/// they are, and their faces at the far end, ringed while they are in one of
+/// the notes. A phone heads its groups with [_PhoneShareHeading].
 /// The heading opens the page of the person it names in Settings → Sharing,
 /// which is where what they can see is changed.
 class _ShareGroupHeader extends StatelessWidget {
@@ -3876,65 +3909,181 @@ List<({String? lead, String date, List<Note> notes})> _phoneDays(
   ];
 }
 
-/// Who a shared note on a phone's row is open to: a face for each person,
-/// with their initial, and an envelope for anyone who has not joined yet.
+/// Who a shared note on a phone's row, or a group on a phone's Shared page,
+/// is open to: a face for each person, with their initial, and an envelope
+/// for anyone who has not joined yet.
 class _SharePeople extends StatelessWidget {
-  const _SharePeople({required this.group});
+  const _SharePeople({required this.group, this.present});
 
   final ShareGroup group;
 
-  static const double _extent = 16;
-  static const double _step = _extent - 5;
+  /// Set on a phone's Shared heading, whose faces are larger and carry a
+  /// sage dot for whoever is in one of its notes now, by account. Null on a
+  /// row.
+  final Set<String>? present;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final present = this.present;
+    final heading = present != null;
+    final extent = heading ? 24.0 : 16.0;
+    final ring = heading ? 2.0 : 1.5;
+    final step = extent - (heading ? 6 : 5);
     final people = group.people.take(3).toList();
+    Widget face(SharePerson person) => Container(
+      width: extent,
+      height: extent,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: heading ? palette.selectedBackground : palette.controlBackground,
+        shape: BoxShape.circle,
+        border: Border.all(color: palette.paperColor, width: ring),
+      ),
+      child: person.isInvited
+          ? KapyIcon(
+              KapyIcons.mailOutlined,
+              size: heading ? 12 : 9,
+              color: heading ? palette.textSecondary : palette.textMuted,
+            )
+          : Text(
+              (person.name.trim().isEmpty ? person.email : person.name.trim())
+                      .characters
+                      .firstOrNull
+                      ?.toUpperCase() ??
+                  '?',
+              textScaler: TextScaler.noScaling,
+              style: chromeStyle(
+                size: heading ? 11 : 9,
+                line: heading ? 14 : 10,
+                weight: heading ? 500 : 600,
+                color: palette.textPrimary,
+              ),
+            ),
+    );
     return Semantics(
       label: group.title,
       child: ExcludeSemantics(
         child: SizedBox(
-          width: _extent + (people.length - 1) * _step,
-          height: _extent,
+          width: extent + (people.length - 1) * step,
+          height: extent,
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
               for (final (index, person) in people.indexed.toList().reversed)
                 Positioned(
-                  left: index * _step,
-                  child: Container(
-                    width: _extent,
-                    height: _extent,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: palette.controlBackground,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: palette.paperColor, width: 1.5),
-                    ),
-                    child: person.isInvited
-                        ? KapyIcon(
-                            KapyIcons.mailOutlined,
-                            size: 9,
-                            color: palette.textMuted,
-                          )
-                        : Text(
-                            (person.name.trim().isEmpty
-                                        ? person.email
-                                        : person.name.trim())
-                                    .characters
-                                    .firstOrNull
-                                    ?.toUpperCase() ??
-                                '?',
-                            textScaler: TextScaler.noScaling,
-                            style: chromeStyle(
-                              size: 9,
-                              line: 10,
-                              weight: 600,
-                              color: palette.textPrimary,
+                  key: ValueKey('share-face-${person.email}'),
+                  left: index * step,
+                  child: present?.contains(person.userId) ?? false
+                      ? Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            face(person),
+                            Positioned(
+                              right: -3,
+                              bottom: -3,
+                              child: Container(
+                                key: const ValueKey('share-face-here'),
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: palette.accentText,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: palette.paperColor,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                  ),
+                          ],
+                        )
+                      : face(person),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The heading over a group of a phone's Shared page (16RO-0): the faces,
+/// whose notes they are in the serif, and a › that opens that person in
+/// Settings → Sharing. A group this device cannot name yet has its words
+/// alone. A changed safety code puts a clay mark after the faces.
+class _PhoneShareHeading extends StatelessWidget {
+  const _PhoneShareHeading({
+    super.key,
+    required this.group,
+    required this.title,
+    required this.present,
+    required this.attention,
+    required this.onTap,
+  });
+
+  final ShareGroup? group;
+  final String title;
+  final Set<String> present;
+  final bool attention;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final group = this.group;
+    final onTap = this.onTap;
+    final people = group?.people ?? const <SharePerson>[];
+    final here = [
+      for (final person in people)
+        if (present.contains(person.userId)) person.firstName,
+    ];
+    return Semantics(
+      header: true,
+      button: onTap != null,
+      onTap: onTap,
+      label: [
+        title,
+        ?presenceStatusText(here),
+        if (attention) "A member's safety code changed",
+      ].join('. '),
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
+            // The room above the heading is part of what a tap takes.
+            padding: const EdgeInsets.only(top: 19),
+            child: SizedBox(
+              height: 24,
+              child: Row(
+                spacing: 8,
+                children: [
+                  if (group != null && people.isNotEmpty)
+                    _SharePeople(group: group, present: present),
+                  if (attention)
+                    KapyIcon(
+                      KapyIcons.errorOutlined,
+                      size: 14,
+                      color: palette.clay,
+                    ),
+                  Flexible(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: dayTitleStyle(palette.textPrimary),
+                    ),
+                  ),
+                  if (onTap != null)
+                    KapyIcon(
+                      KapyIcons.chevronRightRounded,
+                      size: 14,
+                      color: palette.textTertiary,
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
