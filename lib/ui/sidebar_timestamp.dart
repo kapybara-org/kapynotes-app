@@ -186,8 +186,7 @@ class SidebarTimestamp {
 
   /// A day's heading on a phone's list: "Today" or "Yesterday" leading
   /// "Wed 19", then "Mon 17 Nov" alone, where the day alone could be any
-  /// month's. Ahead, as Upcoming lists its notes, "Tomorrow" leads "Thu 20",
-  /// and later days have their date alone.
+  /// month's. The list holds no later day: a note given one waits for it.
   static ({String? lead, String date}) phoneDay(
     DateTime shown, {
     required DateTime now,
@@ -196,7 +195,6 @@ class SidebarTimestamp {
     return switch (_daysBetween(shown, now)) {
       0 => (lead: 'Today', date: date),
       1 => (lead: 'Yesterday', date: date),
-      -1 => (lead: 'Tomorrow', date: date),
       _ => (lead: null, date: '$date ${_months[shown.month - 1]}'),
     };
   }

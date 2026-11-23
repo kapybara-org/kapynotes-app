@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -21,6 +22,7 @@ import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
+import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'support/sharing_devices.dart' show Device;
@@ -153,21 +155,29 @@ void main() {
   }
 
   /// Beside a window the rail switches between My notes and Shared; on a
-  /// phone the bar's Notes opens Home, and Home's Shared card opens Shared.
+  /// phone the bar's Notes opens Home, and Folders' Shared tile opens Shared.
   Future<void> openTab(
     WidgetTester tester,
     SidebarTab tab, {
     required bool phone,
   }) async {
-    final key = switch ((phone, tab)) {
-      (true, SidebarTab.mine) => 'bar-notes',
-      (true, SidebarTab.shared) => 'home-shared-card',
-      (false, SidebarTab.mine) => 'rail-notes',
-      (false, SidebarTab.shared) => 'rail-shared',
+    final keys = switch ((phone, tab)) {
+      (true, SidebarTab.mine) => ['bar-notes'],
+      (true, SidebarTab.shared) => ['bar-folders', 'folders-shared-tile'],
+      (false, SidebarTab.mine) => ['rail-notes'],
+      (false, SidebarTab.shared) => ['rail-shared'],
     };
-    await tester.tap(find.byKey(ValueKey(key)));
-    await tester.pumpAndSettle();
+    for (final key in keys) {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
   }
+
+  final sharedTile = find.byKey(const ValueKey('folders-shared-tile'));
+  final foldersDot = find.byKey(const ValueKey('bar-folders-dot'));
+  bool lit(WidgetTester tester, String key) =>
+      'bar-${tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab.name}' ==
+      key;
 
   bool listed(WidgetTester tester, String title) => find
       .descendant(of: find.byType(Sidebar), matching: find.text(title))
@@ -272,6 +282,24 @@ void main() {
       await account.sync!.syncNow();
     });
     return spaceId;
+  }
+
+  /// Priya shares Packing list with Sam, who hasn't answered: one invitation
+  /// waits. Returns its token.
+  Future<String> priyaInvites(WidgetTester tester) async {
+    late String token;
+    await tester.runAsync(() async {
+      final packing = priya.notes.create(body: 'Packing list');
+      await priya.sync.syncNow();
+      await priya.sharing.shareNoteWith(
+        packing.id,
+        email: server.user('user-1').email,
+        role: SpaceRole.viewer,
+      );
+      token = server.outbox.last.token;
+      await account.sharing!.refresh();
+    });
+    return token;
   }
 
   /// Opens Packing list from Shared and comes back to the list, so it is
@@ -581,24 +609,100 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
-  testWidgets("Back from Shared comes home to Notes, with Home's cards and "
-      'Notes chosen in the bar, on a phone', (tester) async {
+  testWidgets('on a phone, Shared opens from its tile on Folders with '
+      'Folders chosen in the bar, and Back goes to Folders, then Home', (
+    tester,
+  ) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    await tester.tap(find.byKey(const ValueKey('bar-folders')));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: sharedTile, matching: find.text('1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: sharedTile,
+        matching: find.text('Trip budget · Today'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(sharedTile);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-page')), findsOneWidget);
+    expect(sharedTile, findsNothing);
+    expect(lit(tester, 'bar-folders'), isTrue);
+    expect(lit(tester, 'bar-notes'), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-page')), findsNothing);
+    expect(sharedTile, findsOneWidget);
+    expect(lit(tester, 'bar-folders'), isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    expect(lit(tester, 'bar-notes'), isTrue);
+    expect(listed(tester, 'Bank details'), isTrue);
+  });
+
+  testWidgets('on a phone, Notes in the bar leaves Shared for Home', (
+    tester,
+  ) async {
     await signIn(tester);
     await shareWithPriya(tester);
     await pumpApp(tester, phone: true);
     await showList(tester, phone: true);
     await openTab(tester, SidebarTab.shared, phone: true);
-    expect(find.byKey(const ValueKey('home-shared-card')), findsNothing);
-
-    await tester.binding.handlePopRoute();
+    await tester.tap(find.byKey(const ValueKey('bar-notes')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('home-pinned-card')), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-shared-card')), findsOneWidget);
+    expect(find.byKey(const ValueKey('shared-page')), findsNothing);
+    expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+  });
+
+  testWidgets("on a phone, Folders in the bar carries a clay dot on every tab "
+      'while invitations wait, and loses it once none do', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: true);
+    await showList(tester, phone: true);
+    expect(foldersDot, findsNothing, reason: 'nothing waits');
+    expect(find.bySemanticsLabel('Folders'), findsOneWidget);
+
+    final token = await priyaInvites(tester);
+    await tester.pumpAndSettle();
+    for (final tab in ['bar-notes', 'bar-folders', 'bar-kapyAi']) {
+      if (find.byKey(ValueKey(tab)).evaluate().isEmpty) continue;
+      await tester.tap(find.byKey(ValueKey(tab)));
+      await tester.pumpAndSettle();
+      expect(foldersDot, findsOneWidget, reason: tab);
+    }
     expect(
-      tester.getSemantics(find.byKey(const ValueKey('bar-notes'))),
-      isSemantics(isSelected: true),
+      (tester.widget<Container>(foldersDot).decoration! as BoxDecoration).color,
+      tester.element(foldersDot).palette.clay,
     );
-    expect(listed(tester, 'Bank details'), isTrue);
+    expect(tester.getSize(foldersDot), const Size.square(7));
+    expect(find.bySemanticsLabel('Folders, new in Shared'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('bar-folders')));
+    await tester.pumpAndSettle();
+    final badge = find.byKey(const ValueKey('folders-shared-invitations'));
+    expect(find.descendant(of: badge, matching: find.text('1')), findsOne);
+
+    await tester.runAsync(() async {
+      await account.sharing!.declineInvite(token);
+      await account.sharing!.refresh();
+    });
+    await tester.pumpAndSettle();
+    expect(foldersDot, findsNothing);
+    expect(badge, findsNothing);
+    semantics.dispose();
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('on a phone, a view-only note shared with you has Home and '
@@ -675,7 +779,7 @@ void main() {
   });
 
   testWidgets('on an iPhone, a swipe in from the left edge takes Shared '
-      'back to Home', (tester) async {
+      'back to Folders', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await signIn(tester);
@@ -691,11 +795,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('shared-page')), findsNothing);
-    expect(find.byKey(const ValueKey('home-shared-card')), findsOneWidget);
+    expect(sharedTile, findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-  testWidgets('on a phone, Shared is a page whose arrow goes back to the '
-      'notes', (tester) async {
+  testWidgets('on a phone, Shared is a page whose arrow goes back to '
+      'Folders', (tester) async {
     await signIn(tester);
     await shareWithPriya(tester);
     await pumpApp(tester, phone: true);
@@ -709,7 +813,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('page-back')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('shared-page')), findsNothing);
-    expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-shared-card')), findsOneWidget);
+    expect(sharedTile, findsOneWidget);
+    expect(lit(tester, 'bar-folders'), isTrue);
   });
 }

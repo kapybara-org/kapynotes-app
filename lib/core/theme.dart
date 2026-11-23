@@ -123,7 +123,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color lineCommand;
 
   /// The title on a note's sticky card or list row, and the sage that marks
-  /// a link inside the list, such as See all.
+  /// a link inside the list, such as View all.
   final Color cardTitle;
   final Color accentText;
 

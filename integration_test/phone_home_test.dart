@@ -8,12 +8,11 @@
 //
 // The list comes a day at a time (#203): Today, Yesterday, then the older
 // day, each row under its own day with its time, and a tagged row with its
-// dot after the time. Pinned's card (#230) counts its notes and names them,
-// opens the pinned list, and Back returns to Notes: Pinned's own arrow and a
-// swipe in from the left edge on both phones, and Android's system back.
-// Without an account there is no Shared card; sharing is KAP-256's. Each
-// state is taken light and dark, and the list again at 2× text, as
-// screenshots in build/screenshots.
+// dot after the time. Pinned (KAP-302) is a row of cards over the days,
+// with its count and View all, which opens every pinned note two to a row;
+// Back returns to Notes: the page's arrow and a swipe in from the left edge
+// on both phones, and Android's system back. Each state is taken light and
+// dark, and the list again at 2× text, as screenshots in build/screenshots.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -86,7 +85,7 @@ void main() {
     tags.addTag(groceries, tags.create('Errands')!.id);
 
     // M02's tree, opened down to Acme, with two drawings for its tile and a
-    // note for a later day for Upcoming's.
+    // note for a later day, which stays off the lists until its day.
     FolderStore? folderStore;
     NoteDayStore? days;
     if (folders) {
@@ -144,11 +143,12 @@ void main() {
   }
 
   final headings = find.byKey(const ValueKey('phone-day-heading'));
-  final pinnedCard = find.byKey(const ValueKey('home-pinned-card'));
-  final pinnedBack = find.byKey(const ValueKey('sidebar-pinned-back'));
+  final pinnedCards = find.byKey(const ValueKey('phone-pinned-cards'));
+  final viewAll = find.byKey(const ValueKey('sidebar-view-all-pinned'));
+  final pinnedPage = find.byKey(const ValueKey('pinned-page'));
   Finder row(String title) => find.widgetWithText(NoteRow, title);
 
-  testWidgets('the list comes a day at a time, under the Pinned card', (
+  testWidgets("the list comes a day at a time, under Pinned's cards", (
     tester,
   ) async {
     await launch(tester);
@@ -175,7 +175,7 @@ void main() {
         tester.getTopLeft(headings.at(i)).dy,
     ];
     expect(tops, orderedEquals([...tops]..sort()));
-    expect(tester.getBottomLeft(pinnedCard).dy, lessThan(tops.first));
+    expect(tester.getBottomLeft(pinnedCards).dy, lessThan(tops.first));
 
     for (final (title, day, time) in [
       ('Call with Arjun', 0, '9:12'),
@@ -211,12 +211,15 @@ void main() {
     );
 
     expect(
-      find.descendant(of: pinnedCard, matching: find.text('2')),
+      find.descendant(
+        of: find.byKey(const ValueKey('sidebar-pinned-heading')),
+        matching: find.text('2'),
+      ),
       findsOneWidget,
     );
     for (final title in ['Lisbon trip', 'Reading list']) {
       expect(
-        find.descendant(of: pinnedCard, matching: find.textContaining(title)),
+        find.descendant(of: pinnedCards, matching: find.text(title)),
         findsOneWidget,
         reason: title,
       );
@@ -224,7 +227,7 @@ void main() {
     await shot(tester, 'days');
   });
 
-  testWidgets('Pinned opens its list, and Back returns to Notes', (
+  testWidgets('View all opens the Pinned page, and Back returns to Notes', (
     tester,
   ) async {
     await launch(tester);
@@ -235,20 +238,19 @@ void main() {
       if (AppPlatform.isAndroid) 'system back',
     ];
     for (final way in ways) {
-      await tester.tap(pinnedCard);
+      await tester.tap(viewAll);
       await tester.pumpAndSettle();
-      expect(pinnedBack, findsOneWidget);
-      expect(pinnedCard, findsNothing);
+      expect(pinnedPage, findsOneWidget);
+      expect(pinnedCards, findsNothing);
       expect(row('Lisbon trip'), findsOneWidget);
       expect(row('Reading list'), findsOneWidget);
       expect(row('Groceries'), findsNothing);
       if (way == ways.first) await shot(tester, 'pinned');
 
       if (way == 'arrow') {
-        await tester.tap(pinnedBack);
+        await tester.tap(find.byKey(const ValueKey('page-back')));
       } else if (way == 'edge swipe') {
-        // In from the very edge, as iOS's back swipe starts, over a row
-        // whose own swipe the edge has to win.
+        // In from the very edge, as iOS's back swipe starts, beside a card.
         await tester.timedDragFrom(
           Offset(2, tester.getCenter(row('Lisbon trip')).dy),
           const Offset(200, 0),
@@ -258,8 +260,8 @@ void main() {
         await tester.binding.handlePopRoute();
       }
       await tester.pumpAndSettle();
-      expect(pinnedBack, findsNothing, reason: way);
-      expect(pinnedCard, findsOneWidget, reason: way);
+      expect(pinnedPage, findsNothing, reason: way);
+      expect(pinnedCards, findsOneWidget, reason: way);
       expect(row('Groceries'), findsOneWidget, reason: way);
     }
     await shot(tester, 'back');
@@ -269,14 +271,13 @@ void main() {
     tester.platformDispatcher.textScaleFactorTestValue = 2;
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     await launch(tester);
-    expect(pinnedCard, findsOneWidget);
+    expect(pinnedCards, findsOneWidget);
     expect(headings, findsWidgets);
     await shot(tester, 'large-text');
   });
 
-  testWidgets("the bar's boards, dark: Folders with Drawings and Upcoming "
-      "(M02), Upcoming's page, Drawings from Folders (M03) and the + menu "
-      'open (M05)', (tester) async {
+  testWidgets("the bar's boards, dark: Folders with Drawings (M02), Drawings "
+      'from Folders (M03) and the + menu open (M05)', (tester) async {
     await launch(tester, folders: true);
     prefs.appearance = AppearanceMode.dark;
     await tester.pumpAndSettle();
@@ -300,15 +301,8 @@ void main() {
       expect(find.text(name), findsOneWidget, reason: name);
     }
     expect(find.text('Not in a folder'), findsOneWidget);
-    expect(find.byKey(const ValueKey('folders-upcoming-tile')), findsOneWidget);
-    expect(find.textContaining('Renewal notes · '), findsOneWidget);
-    await board('m02-folders-upcoming');
-
-    await tap('folders-upcoming-tile');
-    expect(tester.widget<Text>(title).data, 'Upcoming');
-    expect(find.text('Renewal notes'), findsOneWidget);
-    await board('upcoming');
-    await tap('page-back');
+    expect(find.byKey(const ValueKey('folders-upcoming-tile')), findsNothing);
+    await board('m02-folders');
 
     await tap('folders-drawings-tile');
     expect(tester.widget<Text>(title).data, 'Drawings');

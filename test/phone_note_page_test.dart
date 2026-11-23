@@ -911,8 +911,8 @@ void main() {
       );
     });
 
-    testWidgets("a note moved to a later day leaves Home's list and waits "
-        'under Upcoming', (tester) async {
+    testWidgets("a note moved to a later day leaves Home's list, and its "
+        "day in the week opens it", (tester) async {
       seed();
       await pump(tester);
       final arjun = find.widgetWithText(NoteRow, 'Call with Arjun');
@@ -929,9 +929,14 @@ void main() {
       await tap(tester, 'page-home');
       expect(arjun, findsNothing);
       await tap(tester, 'bar-folders');
-      await tap(tester, 'folders-upcoming-tile');
-      expect(find.byKey(const ValueKey('phone-upcoming')), findsOneWidget);
-      expect(arjun, findsOneWidget);
+      expect(find.byKey(const ValueKey('folders-upcoming-tile')), findsNothing);
+      await tap(tester, 'bar-notes');
+
+      await tester.tap(find.byType(NoteRow).first);
+      await tester.pumpAndSettle();
+      if (day(25).evaluate().isEmpty) await tap(tester, 'day-strip-forward');
+      await open(tester, 25);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
     });
 
     testWidgets('from a drawing goes to Home, not back to Drawings', (
