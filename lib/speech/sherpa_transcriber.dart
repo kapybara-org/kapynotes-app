@@ -211,10 +211,10 @@ class _RecogniseRequest {
 ///
 /// Parakeet will take far more, and was given ninety seconds until KAP-314.
 /// Over that long it now and then skips a whole passage and carries on as if
-/// nothing were missing: 129 words of one five-minute audiobook chapter, gone
-/// without a trace. Cut at pauses into twenty seconds or less, the same
-/// recordings lost no sentence and came out as accurate as transcribing one
-/// sentence at a time, and a little faster than the long windows were.
+/// nothing were missing: 380 words in 7 of 79 audiobook chapters, gone
+/// without a trace. Cut at pauses into twenty seconds or less, it skips less
+/// often and runs a little faster, but it still skips now and then, so
+/// [hearAgain] hears again whatever it skipped.
 const int _chunkSeconds = 20;
 
 /// Recognises the whole recording, in one isolate, and answers with words.
