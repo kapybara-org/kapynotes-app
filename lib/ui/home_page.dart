@@ -1351,6 +1351,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         )) {
       _phonePageOpen = false;
       _findOnBack = null;
+      _phoneBehind.clear();
     }
     _workspace.reconcile(
       available.map((note) => note.id),
@@ -3594,9 +3595,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
   /// From a list's own search field ([field]), Drawings' searches drawings
   /// alone.
-  Future<void> _openCommandMenu({bool field = false}) async {
+  Future<void> _openCommandMenu({
+    bool field = false,
+    bool again = false,
+  }) async {
     final shown = _tasksMode ? null : _shownNote(_selectedId);
     _findOnBack = null;
+    if (!again) _findWords.clear();
     final choice = await showCommandMenu(
       context,
       notes: widget.notes,
@@ -3651,8 +3656,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (choice is OpenNoteChoice && _usesCompactLayout && !_phonePageShown) {
       _findOnBack = (field: field);
-    } else {
-      _findWords.clear();
     }
     if (!mounted || choice == null) return;
     _dismissListOverlay();
@@ -5060,7 +5063,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _findOnBack = null;
     if (find == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_openCommandMenu(field: find.field));
+      if (mounted) {
+        unawaited(_openCommandMenu(field: find.field, again: true));
+      }
     });
   }
 
@@ -5541,7 +5546,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final behind = _phoneBehind.isNotEmpty;
     // A stroke from a drawing's left edge draws, so its page lets go of the
     // back swipe; Back and the page's Home still leave.
-    final drawing = note.isDrawing && _canWriteNote(note);
+    final drawing = _opensAsDrawing(note) && _canWriteNote(note);
     return PopScope(
       canPop: !behind && !drawing,
       onPopInvokedWithResult: (didPop, _) {
@@ -5553,7 +5558,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         children: [
           _phonePageBody(note),
           // iOS's own swipe would leave for the list, past the notes behind.
-          if (behind && AppPlatform.isIOS)
+          if (behind && !drawing && AppPlatform.isIOS)
             PositionedDirectional(
               start: 0,
               top: 0,

@@ -12395,6 +12395,10 @@ void main() {
           expect(find.byType(NoteEditor), findsNothing);
           expect(menuField, findsOneWidget);
           expect(tester.widget<TextField>(menuField).controller!.text, 'Acme');
+          expect(
+            find.byKey(const ValueKey('command-menu-row-Groceries')),
+            findsNothing,
+          );
 
           if (swipe) {
             await tester.tap(find.byKey(const ValueKey('command-menu-cancel')));
@@ -12632,6 +12636,33 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('swipe-pin-${trip.id}')), findsOneWidget);
       expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+    });
+    testWidgets("after a note Quick find opened, the page's Home brings no "
+        'Quick find back, and the next one starts empty', (tester) async {
+      await notes.load();
+      notes.create(body: 'Groceries\nOat milk');
+      notes.create(body: 'Lisbon trip\nFour days in May');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      final menuField = find.byKey(const ValueKey('command-menu-field'));
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      await tester.enterText(menuField, 'Groc');
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('command-menu-row-Groceries')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('page-home')));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsNothing);
+      expect(menuField, findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(menuField).controller!.text, isEmpty);
     });
   });
 }

@@ -1805,6 +1805,24 @@ void main() {
       expect(home, findsOneWidget);
     });
 
+    testWidgets('with the model picker open, another tab takes it away, and '
+        "Back then does that tab's step", (tester) async {
+      await pumpPhone(tester);
+      await tap(tester, tab);
+      await tap(tester, find.byType(KapyAiModelButton));
+      expect(find.byType(KapyAiPicker), findsOneWidget);
+
+      await tap(tester, find.byKey(const ValueKey('bar-folders')));
+      expect(page, findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(home, findsOneWidget);
+      expect(
+        tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
+        PhoneTab.notes,
+      );
+    });
+
     testWidgets("mounts Kapy AI's page clear of the bar, lit in it; Notes and "
         'Back both go Home', (tester) async {
       await pumpPhone(tester);

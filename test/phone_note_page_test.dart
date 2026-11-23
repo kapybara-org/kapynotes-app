@@ -1072,5 +1072,112 @@ void main() {
       await tap(tester, 'page-home');
       expect(header, findsNothing);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+    testWidgets('after Home, a note opened from the list has nothing behind '
+        'it', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      await tap(tester, 'page-home');
+      await tester.tap(find.widgetWithText(NoteRow, 'Errands'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Errands'));
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    });
+
+    testWidgets("Back closes the slash menu on a note the week opened, and "
+        'keeps that note', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      final field = openNoteField(tester);
+      field.focusNode.requestFocus();
+      await tester.pump();
+      const text = 'Standup notes\nShip it\n/';
+      field.controller.selection = const TextSelection.collapsed(
+        offset: text.length - 2,
+      );
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      final menu = find.byKey(const ValueKey('slash-command-menu'));
+      expect(menu, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    });
+
+    testWidgets('Back skips a note behind that has since been deleted', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      await open(tester, 21);
+      notes.delete('tue');
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Renewal notes'));
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+    });
+
+    testWidgets('after a shared note goes from under its page, the next note '
+        'from the list has nothing behind it', (tester) async {
+      final data = store.data['notes.v1']! as List;
+      final tue = data.indexWhere((note) => (note as Map)['id'] == 'tue');
+      final synced = data[tue] as Map<String, Object?>;
+      data[tue] = {
+        ...synced,
+        'spaceId': 'space-1',
+        'syncedAt': synced['updatedAt'],
+      };
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      notes.forgetSpace('space-1');
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Errands'));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    });
+
+    testWidgets('on an iPhone, a drawing with words opened from Home opens '
+        'as its words and keeps the back swipe', (tester) async {
+      (store.data['notes.v1']! as List).add({
+        'id': 'sketch',
+        'body': 'Floor plan\nMeasure the hall',
+        'createdAt': DateTime(2025, 11, 19, 9, 30).millisecondsSinceEpoch,
+        'updatedAt': DateTime(2025, 11, 19, 9, 30).millisecondsSinceEpoch,
+        'drawing': {'elements': <Object?>[]},
+      });
+      seed();
+      await pump(tester);
+      await tap(tester, 'page-home');
+      await tester.tap(find.widgetWithText(NoteRow, 'Floor plan'));
+      await tester.pumpAndSettle();
+      expect(header, findsOneWidget);
+
+      await back(tester, swipe: true);
+      expect(header, findsNothing);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   });
 }
