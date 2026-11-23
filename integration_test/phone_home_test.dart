@@ -166,16 +166,18 @@ void main() {
             .map((text) => text.data ?? text.textSpan!.toPlainText())
             .join(' '),
     ];
-    expect(days, hasLength(3));
-    expect(days[0], startsWith('Today '));
-    expect(days[1], startsWith('Yesterday '));
-    expect(days[2], contains(' ${older.day} '));
+    expect(days, hasLength(4));
+    expect(days[0], startsWith('Pinned '));
+    expect(days[1], startsWith('Today '));
+    expect(days[2], startsWith('Yesterday '));
+    expect(days[3], contains(' ${older.day} '));
     final tops = [
       for (var i = 0; i < days.length; i++)
         tester.getTopLeft(headings.at(i)).dy,
     ];
     expect(tops, orderedEquals([...tops]..sort()));
-    expect(tester.getBottomLeft(pinnedCards).dy, lessThan(tops.first));
+    expect(tester.getTopLeft(pinnedCards).dy, greaterThan(tops[0]));
+    expect(tester.getBottomLeft(pinnedCards).dy, lessThan(tops[1]));
 
     for (final (title, day, time) in [
       ('Call with Arjun', 0, '9:12'),
@@ -183,8 +185,8 @@ void main() {
       ('Offsite agenda', 2, '10:00'),
     ]) {
       final top = tester.getTopLeft(row(title)).dy;
-      expect(top, greaterThan(tops[day]), reason: title);
-      if (day < 2) expect(top, lessThan(tops[day + 1]), reason: title);
+      expect(top, greaterThan(tops[day + 1]), reason: title);
+      if (day < 2) expect(top, lessThan(tops[day + 2]), reason: title);
       expect(
         find.descendant(of: row(title), matching: find.text(time)),
         findsOneWidget,
