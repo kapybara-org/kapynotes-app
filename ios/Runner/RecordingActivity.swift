@@ -37,8 +37,10 @@ final class RecordingActivity {
         self.show(
           elapsed: ((arguments["elapsedMs"] as? NSNumber)?.doubleValue ?? 0) / 1000,
           paused: arguments["paused"] as? Bool ?? false,
-          interrupted: arguments["interrupted"] as? Bool ?? false)
-        result(nil)
+          interrupted: arguments["interrupted"] as? Bool ?? false
+        ) { refusal in
+          result(refusal.map { FlutterError(code: "unavailable", message: $0, details: nil) })
+        }
       case "hide":
         self.hide()
         result(nil)
@@ -52,8 +54,13 @@ final class RecordingActivity {
     hide()
   }
 
-  private func show(elapsed: TimeInterval, paused: Bool, interrupted: Bool) {
-    guard #available(iOS 16.1, *) else { return }
+  /// Starts the activity, or brings it up to date, and answers with why
+  /// ActivityKit would not start it, or nil.
+  private func show(
+    elapsed: TimeInterval, paused: Bool, interrupted: Bool,
+    answer: @escaping (String?) -> Void
+  ) {
+    guard #available(iOS 16.1, *) else { return answer(nil) }
     let state = RecordingAttributes.ContentState(
       startedAt: Date().addingTimeInterval(-elapsed),
       elapsed: elapsed,
@@ -62,8 +69,9 @@ final class RecordingActivity {
     enqueue {
       if let activity = Activity<RecordingAttributes>.activities.first {
         await RecordingActivity.update(activity, to: state)
+        answer(nil)
       } else {
-        RecordingActivity.start(state)
+        answer(RecordingActivity.start(state))
       }
     }
   }
@@ -96,8 +104,11 @@ final class RecordingActivity {
     }
   }
 
+  /// Nil once started, else why not: Live Activities switched off for the
+  /// app in Settings, or too many already up. The recording carries on all
+  /// the same, and Dart says why in the log.
   @available(iOS 16.1, *)
-  private static func start(_ state: RecordingAttributes.ContentState) {
+  private static func start(_ state: RecordingAttributes.ContentState) -> String? {
     do {
       if #available(iOS 16.2, *) {
         _ = try Activity.request(
@@ -106,10 +117,9 @@ final class RecordingActivity {
       } else {
         _ = try Activity.request(attributes: RecordingAttributes(), contentState: state)
       }
+      return nil
     } catch {
-      // Live Activities switched off for the app in Settings, or too many
-      // already up. The recording carries on all the same.
-      NSLog("KapyNotes: no Live Activity for the recording: \(error)")
+      return "no Live Activity for the recording: \(error)"
     }
   }
 

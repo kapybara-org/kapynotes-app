@@ -62,6 +62,18 @@ void main() {
     if (Platform.isAndroid) {
       expect(await deviceAction('grant'), isNull, reason: 'the microphone');
     }
+    // What the phone refuses to show is only said in the log: a notification
+    // the system would not post, a Live Activity ActivityKit would not start.
+    final refusals = <String>[];
+    final print = debugPrint;
+    debugPrint = (message, {wrapWidth}) {
+      if (message?.contains('recording controls could not') ?? false) {
+        refusals.add(message!);
+      }
+      print(message, wrapWidth: wrapWidth);
+    };
+    addTearDown(() => debugPrint = print);
+
     final probe = AudioRecorder();
     final granted = await probe.hasPermission(request: false);
     await probe.dispose();
@@ -174,6 +186,8 @@ void main() {
       recording.session!.elapsed,
       greaterThanOrEqualTo(const Duration(minutes: 2)),
     );
+
+    expect(refusals, isEmpty, reason: 'the phone would not show the recording');
 
     await recording.finishRecordingAndFlush();
     await tester.pumpAndSettle(const Duration(seconds: 1));

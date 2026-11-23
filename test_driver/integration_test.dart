@@ -93,22 +93,28 @@ Future<String?> _act(String device, String action) async {
       await adb(first) ?? await adb(second);
   Future<String?> simctl(List<String> arguments) =>
       run('xcrun', ['simctl', ...arguments]);
-  Future<String?> simulatorKeys(String keys) async =>
-      await run('open', [
-        '-a',
-        'Simulator',
-        '--args',
-        '-CurrentDeviceUDID',
-        device,
-      ]) ??
-      await run('osascript', [
-        '-e',
-        'tell application "Simulator" to activate',
-        '-e',
-        'delay 1',
-        '-e',
-        'tell application "System Events" to $keys',
-      ]);
+  Future<String?> simulatorKeys(String keys) async {
+    // Opened by its path in the Xcode in use: Launch Services may know no app
+    // named Simulator, as on CI, where DEVELOPER_DIR picks the Xcode.
+    final xcode =
+        Platform.environment['DEVELOPER_DIR'] ??
+        '${(await Process.run('xcode-select', ['-p'])).stdout}'.trim();
+    return await run('open', [
+          '-a',
+          '$xcode/Applications/Simulator.app',
+          '--args',
+          '-CurrentDeviceUDID',
+          device,
+        ]) ??
+        await run('osascript', [
+          '-e',
+          'tell application id "com.apple.iphonesimulator" to activate',
+          '-e',
+          'delay 3',
+          '-e',
+          'tell application "System Events" to $keys',
+        ]);
+  }
 
   if (_isSimulator(device)) {
     return switch (action) {
