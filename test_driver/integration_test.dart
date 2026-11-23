@@ -193,11 +193,15 @@ Future<String?> _act(String device, String action) async {
       _ => Future.value('a simulator cannot $action'),
     };
   }
-  if (action.startsWith('touch:') || action.startsWith('hold:')) {
+  if (action.startsWith('touch:') ||
+      action.startsWith('hold:') ||
+      action.startsWith('swipe:')) {
     final at = action.substring(action.indexOf(':') + 1).split(',');
-    return action.startsWith('touch:')
-        ? adb(['input', 'tap', ...at])
-        : adb(['input', 'swipe', ...at, ...at, '900']);
+    return switch (action.split(':').first) {
+      'touch' => _touch(device, at),
+      'hold' => _touch(device, at, holdMs: 900),
+      _ => _touch(device, at.sublist(0, 2), to: at.sublist(2)),
+    };
   }
   if (action.startsWith('find:')) {
     return _tapLabel(device, action.substring(5), press: false);
@@ -283,6 +287,9 @@ Future<String?> _unlock(String device) async {
 /// The emulator filming its own screen, from a test's `film` to its `cut`.
 Future<int>? _filming;
 
+/// How many films `cut` has pulled, each to its own file.
+int _cuts = 0;
+
 /// Films the next 90 seconds of [device]'s screen, for the Play Console's
 /// foreground-service declaration, which asks for a video of what the
 /// service is for.
@@ -319,7 +326,7 @@ Future<String?> _cut(String device) async {
     device,
     'pull',
     '/sdcard/recording-away.mp4',
-    'build/screenshots/recording-away.mp4',
+    'build/screenshots/recording-away-${++_cuts}.mp4',
   ]);
   return pull.exitCode == 0 ? null : '${pull.stderr}'.trim();
 }
@@ -420,8 +427,89 @@ Future<String?> _tapAgain(String device) async {
   final at = _lastTap;
   if (at == null) return 'nothing has been pressed yet';
   await _adbShell(device, ['input', 'keyevent', 'KEYCODE_WAKEUP']);
-  final tap = await _adbShell(device, ['input', 'tap', ...at]);
-  return tap.exitCode == 0 ? null : '${tap.stderr}'.trim();
+  return _touch(device, at);
+}
+
+/// [device]'s touchscreen as `getevent` lists it, scaled from screen pixels,
+/// once a touch has looked for it.
+({String path, double sx, double sy, int? pressure})? _screen;
+bool _screenLooked = false;
+int _touches = 0;
+
+/// Touches [device] at [at], held for [holdMs] or dragged to [to], through
+/// its own touchscreen, so that show_touches draws the finger as a person's.
+/// `input tap` goes in past the screen and is never drawn; it is the
+/// fallback when no touchscreen can be written to.
+Future<String?> _touch(
+  String device,
+  List<String> at, {
+  int holdMs = 0,
+  List<String>? to,
+}) async {
+  if (!_screenLooked) {
+    _screenLooked = true;
+    final devices = '${(await _adbShell(device, ['getevent', '-pl'])).stdout}';
+    final size = RegExp(
+      r'Physical size: (\d+)x(\d+)',
+    ).firstMatch('${(await _adbShell(device, ['wm', 'size'])).stdout}');
+    for (final block in devices.split('add device ')) {
+      final path = RegExp(r'^\d+: (\S+)').firstMatch(block)?.group(1);
+      final x = RegExp(r'ABS_MT_POSITION_X\s*:.*max (\d+)').firstMatch(block);
+      final y = RegExp(r'ABS_MT_POSITION_Y\s*:.*max (\d+)').firstMatch(block);
+      final pressure = RegExp(
+        r'ABS_MT_PRESSURE\s*:.*max (\d+)',
+      ).firstMatch(block);
+      if (path == null || x == null || y == null || size == null) continue;
+      if (!block.contains('INPUT_PROP_DIRECT')) continue;
+      // The emulator's first multi-touch screen is the main display's.
+      final first = block.contains('multi_touch_1"');
+      if (_screen != null && !first) continue;
+      _screen = (
+        path: path,
+        sx: (int.parse(x.group(1)!) + 1) / int.parse(size.group(1)!),
+        sy: (int.parse(y.group(1)!) + 1) / int.parse(size.group(2)!),
+        pressure: pressure == null ? null : int.parse(pressure.group(1)!) ~/ 2,
+      );
+      if (first) break;
+    }
+    stdout.writeln('Touches go through ${_screen?.path ?? 'input, undrawn'}');
+  }
+  final screen = _screen;
+  if (screen == null) {
+    final input = await _adbShell(device, [
+      'input',
+      if (to == null && holdMs == 0) ...['tap', ...at],
+      if (to != null || holdMs > 0) ...['swipe', ...at, ...(to ?? at)],
+      if (to != null) '300' else if (holdMs > 0) '$holdMs',
+    ]);
+    return input.exitCode == 0 ? null : '${input.stderr}'.trim();
+  }
+  final d = screen.path;
+  String place(num x, num y) =>
+      'sendevent $d 3 53 ${(x * screen.sx).round()};'
+      'sendevent $d 3 54 ${(y * screen.sy).round()};';
+  final x0 = int.parse(at[0]), y0 = int.parse(at[1]);
+  final script = StringBuffer(
+    'sendevent $d 3 47 0;sendevent $d 3 57 ${_touches++ % 60000};'
+    '${place(x0, y0)}'
+    '${screen.pressure == null ? '' : 'sendevent $d 3 58 ${screen.pressure};'}'
+    'sendevent $d 1 330 1;sendevent $d 0 0 0;',
+  );
+  if (to != null) {
+    final x1 = int.parse(to[0]), y1 = int.parse(to[1]);
+    for (var i = 1; i <= 12; i++) {
+      script.write(
+        'sleep 0.025;${place(x0 + (x1 - x0) * i / 12, y0 + (y1 - y0) * i / 12)}'
+        'sendevent $d 0 0 0;',
+      );
+    }
+  }
+  script.write(
+    'sleep ${holdMs > 0 ? holdMs / 1000 : 0.1};'
+    'sendevent $d 3 57 -1;sendevent $d 1 330 0;sendevent $d 0 0 0',
+  );
+  final touch = await _adbShell(device, [script.toString()]);
+  return touch.exitCode == 0 ? null : '${touch.stderr}'.trim();
 }
 
 /// Saves what [device]'s screen shows as

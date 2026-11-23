@@ -130,11 +130,6 @@ void main() {
     // The take: every touch is the emulator's own, drawn as a dot.
     binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
     binding.shouldPropagateDevicePointerEvents = true;
-    addTearDown(() {
-      binding.shouldPropagateDevicePointerEvents = false;
-      binding.framePolicy =
-          LiveTestWidgetsFlutterBindingFramePolicy.fadePointers;
-    });
     final ratio = tester.view.devicePixelRatio;
     Future<void> touch(Offset at, {bool hold = false}) async {
       final x = (at.dx * ratio).round();
@@ -195,10 +190,26 @@ void main() {
     expect(await deviceAction('press:Stop'), isNull);
     await wait(3);
     expect(recording.isRecording, isFalse, reason: 'Stop did nothing');
+    // Swiped open as a person does. The emulator's recorder stops drawing
+    // once the lock screen has gone, so the note gets a second film.
+    final size = tester.view.physicalSize;
+    final middle = (size.width / 2).round();
+    expect(
+      await deviceAction(
+        'swipe:$middle,${(size.height * 0.85).round()},'
+        '$middle,${(size.height * 0.35).round()}',
+      ),
+      isNull,
+    );
+    await wait(2);
+    expect(await deviceAction('cut'), isNull);
     expect(await deviceAction('unlock'), isNull);
     await backInFront();
-    await wait(4);
+    expect(await deviceAction('film'), isNull);
+    await wait(3);
     expect(await deviceAction('cut'), isNull);
+    binding.shouldPropagateDevicePointerEvents = false;
+    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fadePointers;
 
     final voice = notes.byId('standup')!.attachments.whereType<NoteVoiceRef>();
     expect(voice, hasLength(1), reason: 'the recording never reached its note');
