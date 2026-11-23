@@ -8350,6 +8350,35 @@ void main() {
         ];
       }
 
+      testWidgets("the first heading keeps Pinned's gap under the search, "
+          'whether it is Pinned, Today, or Drawings\' first', (tester) async {
+        final search = find.byKey(const ValueKey('sidebar-search-field'));
+        final first = find.byKey(const ValueKey('phone-day-heading')).first;
+        double under(Finder heading) =>
+            tester.getTopLeft(heading).dy - tester.getBottomLeft(search).dy;
+
+        await pumpPinned(tester, 1);
+        expect(
+          find.descendant(of: first, matching: find.text('Pinned')),
+          findsOneWidget,
+        );
+        final pinnedGap = under(first);
+
+        notes.togglePinned(notes.search('Pinned 1').single.id);
+        await tester.pumpAndSettle();
+        expect(heading, findsNothing);
+        expect(
+          find.descendant(of: first, matching: find.text('Today')),
+          findsOneWidget,
+        );
+        expect(under(first), pinnedGap, reason: 'Today sits where Pinned did');
+
+        final drawing = notes.create(drawing: true);
+        notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Deck flow');
+        await openPhoneDrawings(tester);
+        expect(under(find.text('Recent')), pinnedGap, reason: 'Drawings');
+      });
+
       testWidgets('nothing pinned draws no section', (tester) async {
         await pumpPinned(tester, 0);
         expect(heading, findsNothing);

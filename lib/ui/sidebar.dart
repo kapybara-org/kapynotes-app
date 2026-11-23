@@ -1224,7 +1224,12 @@ extension on Sidebar {
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
     void heading(Widget heading) {
-      if (rows.isNotEmpty) gap(phone ? 22 : 24);
+      if (rows.isNotEmpty) {
+        gap(phone ? 22 : 24);
+      } else if (phone) {
+        // The first heading sits as far under search as Home's Pinned does.
+        gap(12);
+      }
       rows.add(
         (_) => Padding(
           padding: EdgeInsets.symmetric(horizontal: margin),
