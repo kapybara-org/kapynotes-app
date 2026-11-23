@@ -56,7 +56,7 @@ void main() {
 
   Future<void> open(WidgetTester tester, String body) async {
     await tester.pumpWidget(const SizedBox.shrink());
-    for (var i = 0; i < 150 && tester.view.viewInsets.bottom > 0; i++) {
+    for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(
@@ -269,7 +269,7 @@ void main() {
   ) async {
     await open(tester, 'Trip budget');
     await tap(tester, 'dismiss-keyboard');
-    for (var i = 0; i < 150 && tester.view.viewInsets.bottom > 0; i++) {
+    for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(
