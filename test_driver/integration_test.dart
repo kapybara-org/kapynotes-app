@@ -70,16 +70,45 @@ bool _isSimulator(String device) => RegExp(
   caseSensitive: false,
 ).hasMatch(device);
 
+/// For osascript: chooses the menu item named by its first argument in the
+/// menus of the app whose bundle identifier is its second, or says which
+/// items there are when none is called that.
+const _chooseMenuItem = '''
+on run {wanted, hubId}
+  delay 3
+  set AppleScript's text item delimiters to ", "
+  tell application "System Events"
+    set hub to first application process whose bundle identifier is hubId
+    set frontmost of hub to true
+    set seen to {}
+    repeat with candidate in (entire contents of menu bar 1 of hub)
+      if class of candidate is menu item then
+        set itemName to name of candidate
+        if itemName is wanted then
+          if not (enabled of candidate) then error wanted & " is greyed out"
+          click candidate
+          return
+        end if
+        if itemName is not missing value then set end of seen to itemName
+      end if
+    end repeat
+    error "no " & wanted & " among " & (seen as text)
+  end tell
+end run
+''';
+
 /// Does what [action] names to [device], for a test that needs the phone
 /// itself handled (integration_test/screenshot.dart's `deviceAction`), and
 /// returns why it could not, or null.
 ///
-/// A simulator has no lock button, so Simulator's own Lock and Home
-/// shortcuts are pressed for it, which needs the host's permission to send
-/// keystrokes. Nor is its microphone granted here: an iPhone ends an app
-/// whose permissions change while it runs, so tool/ci/phone_screenshots.sh
-/// grants it before the app starts. Pressing a notification's button reads
-/// the emulator's screen for the button's label: `tap:Pause`.
+/// A simulator has no lock button, so Lock and Home are chosen for it from
+/// the menus of Simulator, or of Device Hub from Xcode 27, which needs the
+/// host's permission to control the computer. Nor is its microphone granted
+/// here: an iPhone ends an app whose permissions change while it runs, so
+/// tool/ci/phone_screenshots.sh grants it before the app starts. Pressing a
+/// notification's button reads the emulator's screen for the button's
+/// label, `tap:Pause`, and unfolding a folded notification reads it for the
+/// notification's title, `expand:Recording paused`.
 Future<String?> _act(String device, String action) async {
   Future<String?> run(String executable, List<String> arguments) async {
     final result = await Process.run(executable, arguments);
@@ -93,49 +122,81 @@ Future<String?> _act(String device, String action) async {
       await adb(first) ?? await adb(second);
   Future<String?> simctl(List<String> arguments) =>
       run('xcrun', ['simctl', ...arguments]);
-  Future<String?> simulatorKeys(String keys) async {
-    // Simulator's window with this device in it, or from Xcode 27, where
-    // Device Hub took Simulator's place, Device Hub's. Each is found by its
+  Future<String?> simulatorMenu(String item) async {
+    // Simulator, with this device in its window, or from Xcode 27, where
+    // Device Hub took Simulator's place, Device Hub. Each is found by its
     // path in the Xcode in use: Launch Services may know neither by name, as
     // on CI, where DEVELOPER_DIR picks the Xcode.
     final xcode =
         Platform.environment['DEVELOPER_DIR'] ??
         '${(await Process.run('xcode-select', ['-p'])).stdout}'.trim();
-    final simulator = '$xcode/Applications/Simulator.app';
-    final opened = Directory(simulator).existsSync()
-        ? await run('open', [
-            '-a',
-            simulator,
-            '--args',
-            '-CurrentDeviceUDID',
-            device,
-          ])
-        : await run('open', ['$xcode/../Applications/DeviceHub.app']) ??
-              await run('open', ['devices://device/open?id=$device']);
-    return opened ??
-        await run('osascript', [
-          '-e',
-          'delay 3',
-          '-e',
-          'tell application "System Events" to $keys',
-        ]);
+    var host = '$xcode/Applications/Simulator.app';
+    final String? opened;
+    if (Directory(host).existsSync()) {
+      opened = await run('open', [
+        '-a',
+        host,
+        '--args',
+        '-CurrentDeviceUDID',
+        device,
+      ]);
+    } else {
+      host = '$xcode/../Applications/DeviceHub.app';
+      opened =
+          await run('open', [host]) ??
+          await run('open', ['devices://device/open?id=$device']);
+    }
+    if (opened != null) return opened;
+    final id = await Process.run('defaults', [
+      'read',
+      '$host/Contents/Info',
+      'CFBundleIdentifier',
+    ]);
+    final chosen = await Process.run('osascript', [
+      '-e',
+      _chooseMenuItem,
+      item,
+      '${id.stdout}'.trim(),
+    ]);
+    return chosen.exitCode == 0 ? null : '$item: ${chosen.stderr}'.trim();
+  }
+
+  // Whether the simulator's screen has gone dark, as SpringBoard tells
+  // whoever asks.
+  Future<bool> screenOff() async {
+    final state = await Process.run('xcrun', [
+      'simctl',
+      'spawn',
+      device,
+      'notifyutil',
+      '-g',
+      'com.apple.springboard.hasBlankedScreen',
+    ]);
+    return '${state.stdout}'.trim().endsWith(' 1');
   }
 
   if (_isSimulator(device)) {
     return switch (action) {
-      'lock' => simulatorKeys('keystroke "l" using command down'),
-      'unlock' => simulatorKeys(
-        'keystroke "h" using {command down, shift down}',
-      ),
+      'lock' => simulatorMenu('Lock'),
+      // Lock again lights a screen that locking turned off, as the side
+      // button does.
+      'wake' => screenOff().then((off) => off ? simulatorMenu('Lock') : null),
+      // A first Home lights a dark Lock Screen, and with no passcode either
+      // press opens the phone; one more on the Home Screen does nothing.
+      'unlock' => simulatorMenu(
+        'Home',
+      ).then((error) async => error ?? await simulatorMenu('Home')),
       'other-app' => simctl(['launch', device, 'com.apple.Preferences']),
       'back' => simctl(['launch', device, _app]),
       'light' || 'dark' => simctl(['ui', device, 'appearance', action]),
-      'wake' => Future.value(null),
       'system-log' => _systemLog(device),
       _ => Future.value('a simulator cannot $action'),
     };
   }
   if (action.startsWith('tap:')) return _tapLabel(device, action.substring(4));
+  if (action.startsWith('expand:')) {
+    return _tapLabel(device, action.substring(7), expand: true);
+  }
   if (action == 'tap-again') return _tapAgain(device);
   return switch (action) {
     'grant' => adbBoth(
@@ -144,7 +205,6 @@ Future<String?> _act(String device, String action) async {
     ),
     'lock' => _lock(device),
     'wake' => adb(['input', 'keyevent', 'KEYCODE_WAKEUP']),
-    'shade' => adb(['cmd', 'statusbar', 'expand-notifications']),
     'collapse' => adb(['cmd', 'statusbar', 'collapse']),
     'unlock' => _unlock(device),
     'other-app' => adb(['am', 'start', '-a', 'android.settings.SETTINGS']),
@@ -241,33 +301,59 @@ Future<String?> _cut(String device) async {
 }
 
 /// Presses whatever on [device]'s screen is labelled [label], as found in
-/// the screen's accessibility tree.
+/// the screen's accessibility tree, or with [expand], the arrow on the same
+/// line as it, which unfolds a folded notification as a person does.
 ///
 /// The tree goes to a file on the device and is read back from there: with
 /// no terminal behind `adb exec-out`, a dump to /dev/tty comes back empty.
-/// A screen that is still moving cannot be dumped, so it is tried again.
-Future<String?> _tapLabel(String device, String label) async {
+/// A screen that is still moving cannot be dumped, so it is tried again, and
+/// one that has gone dark is lit first, as a lock screen does after seconds.
+Future<String?> _tapLabel(
+  String device,
+  String label, {
+  bool expand = false,
+}) async {
   const window = '/sdcard/kapynotes-window.xml';
-  final labelled = RegExp(
-    'text="${RegExp.escape(label)}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"',
-    caseSensitive: false,
-  );
+  final bounds = RegExp(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"');
+  List<List<int>> boxes(String tree, String attribute) => [
+    for (final node in RegExp('<node [^>]*>').allMatches(tree))
+      if (node[0]!.toLowerCase().contains(attribute.toLowerCase()))
+        if (bounds.firstMatch(node[0]!) case final box?)
+          [for (var i = 1; i <= 4; i++) int.parse(box[i]!)],
+  ];
+  int middle(List<int> box) => (box[1] + box[3]) ~/ 2;
+  String seen(String tree, String attribute) => {
+    for (final value in RegExp(' $attribute="([^"]+)"').allMatches(tree))
+      value[1],
+  }.join(', ');
   var why = '';
   for (var attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) await Future<void>.delayed(const Duration(seconds: 1));
+    await _adbShell(device, ['input', 'keyevent', 'KEYCODE_WAKEUP']);
     await _adbShell(device, ['rm', '-f', window]);
     final dump = await _adbShell(device, ['uiautomator', 'dump', window]);
-    final tree = await _adbShell(device, ['cat', window]);
-    final node = labelled.firstMatch('${tree.stdout}');
-    if (node == null) {
-      why = '${dump.stdout}${dump.stderr}'.trim();
+    final tree = '${(await _adbShell(device, ['cat', window])).stdout}';
+    final labelled = boxes(tree, 'text="$label"');
+    if (labelled.isEmpty) {
+      why =
+          'nothing on screen says $label, only ${seen(tree, 'text')}: '
+          '${dump.stdout}${dump.stderr}';
       continue;
     }
-    int at(int group) => int.parse(node.group(group)!);
-    _lastTap = ['${(at(1) + at(3)) ~/ 2}', '${(at(2) + at(4)) ~/ 2}'];
+    final title = labelled.first;
+    final arrows = boxes(tree, 'resource-id="android:id/expand_button"');
+    if (expand && arrows.isEmpty) {
+      why = 'no arrow beside $label, among ${seen(tree, 'resource-id')}';
+      continue;
+    }
+    int away(List<int> box) => (middle(box) - middle(title)).abs();
+    final target = expand
+        ? arrows.reduce((a, b) => away(a) <= away(b) ? a : b)
+        : title;
+    _lastTap = ['${(target[0] + target[2]) ~/ 2}', '${middle(target)}'];
     return _tapAgain(device);
   }
-  return 'nothing on screen says $label: $why';
+  return why.trim();
 }
 
 /// Prints the last of what [device], a simulator, logged in the past few
@@ -299,10 +385,11 @@ Future<String?> _systemLog(String device) async {
 List<String>? _lastTap;
 
 /// Presses where [device] was last pressed: the same button, or whatever
-/// has taken its place since.
+/// has taken its place since, with the screen lit first.
 Future<String?> _tapAgain(String device) async {
   final at = _lastTap;
   if (at == null) return 'nothing has been pressed yet';
+  await _adbShell(device, ['input', 'keyevent', 'KEYCODE_WAKEUP']);
   final tap = await _adbShell(device, ['input', 'tap', ...at]);
   return tap.exitCode == 0 ? null : '${tap.stderr}'.trim();
 }

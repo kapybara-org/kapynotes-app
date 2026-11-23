@@ -3,13 +3,14 @@
 // whole, two minutes and more of it.
 //
 // Run by tool/ci/phone_screenshots.sh under flutter drive, whose host does
-// to the phone what nobody in the app can: locks it, wakes it, pulls down
-// the shade and presses the notification's buttons, and reads its screen
-// for each of them. Under plain flutter test, with no host, it skips.
+// to the phone what nobody in the app can: locks it, wakes it, unfolds the
+// notification on the lock screen and presses its buttons, and reads its
+// screen for each of them. Under plain flutter test, with no host, it skips.
 //
-// A simulator has no lock button, so its host presses Simulator's own Lock
-// for it. Where that is not allowed, the recording goes behind another app
-// instead, which leaves the app just as out of sight.
+// A simulator has no lock button, so its host chooses Lock from Simulator's
+// menus, or Device Hub's, for it. Where that is not allowed or locks
+// nothing, the recording goes behind another app instead, which leaves the
+// app just as out of sight; an emulator always locks.
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
@@ -123,8 +124,20 @@ void main() {
     final left = DateTime.now();
     Future<void> wait(int seconds) =>
         Future<void>.delayed(Duration(seconds: seconds));
-    final locked = await deviceAction('lock') == null;
-    if (!locked) expect(await deviceAction('other-app'), isNull);
+    // A host may have pressed Lock and locked nothing, so the phone counts as
+    // locked only once the app is out of sight.
+    final lock = await deviceAction('lock');
+    bool inFront() =>
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    for (var i = 0; lock == null && inFront() && i < 10; i++) {
+      await wait(1);
+    }
+    final locked = lock == null && !inFront();
+    if (Platform.isAndroid) expect(locked, isTrue, reason: 'did not lock');
+    if (!locked) {
+      debugPrint('Not locked (${lock ?? 'the app stayed in front'}).');
+      expect(await deviceAction('other-app'), isNull);
+    }
     await wait(5);
     expect(recording.isRecording, isTrue, reason: 'stopped on the way out');
 
@@ -134,20 +147,21 @@ void main() {
       await deviceShot('recording-away-lock-screen');
     }
     if (Platform.isAndroid) {
-      expect(await deviceAction('shade'), isNull);
-      await wait(3);
-      await deviceShot('recording-away-shade');
-      // The notification's own buttons, pressed as a person would. Its time
-      // ticks every second, and the host reads a screen only once it has
-      // stood still for one, so it is read paused: paused here in the app,
-      // then resumed, paused and resumed again from the notification, where
-      // Pause and Resume take turns in the same place.
+      // The notification's own buttons, pressed on the lock screen as a
+      // person would: its arrow unfolds it, then Pause and Resume take turns
+      // in the same place. Its time ticks every second, and the host reads a
+      // screen only once it has stood still for one, so it is read paused:
+      // paused here in the app, then resumed, paused and resumed again from
+      // the notification.
       await recording.pause();
       await wait(3);
-      await deviceShot('recording-away-shade-paused');
+      expect(await deviceAction('expand:Recording paused'), isNull);
+      await wait(3);
+      await deviceShot('recording-away-lock-screen-paused');
       expect(await deviceAction('tap:Resume'), isNull);
       await wait(3);
       expect(recording.session?.paused, isFalse, reason: 'Resume did nothing');
+      await deviceShot('recording-away-lock-screen-controls');
       expect(await deviceAction('tap-again'), isNull);
       await wait(3);
       expect(recording.session?.paused, isTrue, reason: 'Pause did nothing');
@@ -161,13 +175,19 @@ void main() {
       await deviceAction('light');
       await recording.pause();
       await wait(3);
-      if (locked) await deviceShot('recording-away-lock-screen-paused');
+      if (locked) {
+        await deviceAction('wake');
+        await wait(2);
+        await deviceShot('recording-away-lock-screen-paused');
+      }
       await recording.resume();
       await deviceAction('dark');
-      if (locked) await deviceAction('unlock');
+      if (locked) expect(await deviceAction('unlock'), isNull);
       await wait(2);
       expect(await deviceAction('other-app'), isNull);
-      await wait(3);
+      // Settings can take seconds to open on CI, and the island shows the
+      // recording only once it has.
+      await wait(8);
       await deviceShot('recording-away-dynamic-island');
       // For the run's log only: whether ActivityKit started the activity
       // and the widget extension drew it.
