@@ -9344,7 +9344,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(taskPage, findsNothing);
           expect(tasksPage.hitTestable(), findsOneWidget);
-        });
+        }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
         testWidgets("the system back comes back to Tasks, and only then "
             'to Notes', (tester) async {
@@ -9491,7 +9491,7 @@ void main() {
         Future<void> swipe(Finder row) async {
           await tester.dragFrom(
             Offset(2, tester.getCenter(row).dy),
-            const Offset(200, 0),
+            const Offset(300, 0),
           );
           await tester.pumpAndSettle();
         }
@@ -10647,7 +10647,7 @@ void main() {
       // Over a row, whose own swipe the edge has to win.
       await tester.dragFrom(
         Offset(2, tester.getCenter(row).dy),
-        const Offset(200, 0),
+        const Offset(300, 0),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('pinned-page')), findsNothing);
