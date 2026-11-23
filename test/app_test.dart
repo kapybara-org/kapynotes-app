@@ -13189,6 +13189,7 @@ void main() {
       (tester) async {
         AppPlatform.debugTargetPlatformOverride = platform;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final semantics = tester.ensureSemantics();
         await notes.load();
         notes.create(body: 'Trip\ny = 123456789012 km in mi\ny');
         await pumpApp(tester, size: const Size(320, 800));
@@ -13234,6 +13235,12 @@ void main() {
           () =>
               messenger.setMockMethodCallHandler(SystemChannels.platform, null),
         );
+        int spoken() => find
+            .bySemanticsLabel(RegExp(RegExp.escape(result)))
+            .evaluate()
+            .length;
+        final spokenAtRest = spoken();
+        expect(spokenAtRest, greaterThan(0));
         final before = bounds();
         final laidOut = tester.getRect(words);
         expectInside(words);
@@ -13247,10 +13254,21 @@ void main() {
         expect(check, findsOneWidget);
         expect(bounds(), before);
         expect(tester.getRect(words), laidOut);
+        expect(
+          tester
+              .widget<Opacity>(
+                find.ancestor(of: words, matching: find.byType(Opacity)).first,
+              )
+              .opacity,
+          0,
+        );
+        expect(spoken(), spokenAtRest);
+        expect(tester.getRect(check).right, tester.getRect(words).right);
         expectInside(words);
         expectInside(check);
         await tester.pumpAndSettle(const Duration(seconds: 1));
         expect(check, findsNothing);
+        semantics.dispose();
       },
     );
   }
