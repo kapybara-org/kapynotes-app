@@ -193,6 +193,24 @@ Future<String?> _act(String device, String action) async {
       _ => Future.value('a simulator cannot $action'),
     };
   }
+  if (action.startsWith('touch:') || action.startsWith('hold:')) {
+    final at = action.substring(action.indexOf(':') + 1).split(',');
+    return action.startsWith('touch:')
+        ? adb(['input', 'tap', ...at])
+        : adb(['input', 'swipe', ...at, ...at, '900']);
+  }
+  if (action.startsWith('find:')) {
+    return _tapLabel(device, action.substring(5), press: false);
+  }
+  if (action.startsWith('find-arrow:')) {
+    return _tapLabel(device, action.substring(11), expand: true, press: false);
+  }
+  if (action.startsWith('press:')) {
+    final at = _found[action.substring(6)];
+    if (at == null) return 'never found ${action.substring(6)}';
+    _lastTap = at;
+    return _tapAgain(device);
+  }
   if (action.startsWith('tap:')) return _tapLabel(device, action.substring(4));
   if (action.startsWith('expand:')) {
     return _tapLabel(device, action.substring(7), expand: true);
@@ -269,13 +287,14 @@ Future<int>? _filming;
 /// foreground-service declaration, which asks for a video of what the
 /// service is for.
 Future<String?> _film(String device) async {
+  await _adbShell(device, ['settings', 'put', 'system', 'show_touches', '1']);
   final film = await Process.start('adb', [
     '-s',
     device,
     'shell',
     'screenrecord',
     '--time-limit',
-    '90',
+    '180',
     '/sdcard/recording-away.mp4',
   ]);
   unawaited(film.stdout.drain<void>());
@@ -289,7 +308,11 @@ Future<String?> _cut(String device) async {
   final filming = _filming;
   if (filming == null) return 'nothing was filmed';
   _filming = null;
+  final pid = '${(await _adbShell(device, ['pidof', 'screenrecord'])).stdout}'
+      .trim();
+  if (pid.isNotEmpty) await _adbShell(device, ['kill', '-INT', pid]);
   await filming;
+  await _adbShell(device, ['settings', 'put', 'system', 'show_touches', '0']);
   final pull = await Process.run('adb', [
     '-s',
     device,
@@ -312,6 +335,7 @@ Future<String?> _tapLabel(
   String device,
   String label, {
   bool expand = false,
+  bool press = true,
 }) async {
   const window = '/sdcard/kapynotes-window.xml';
   final bounds = RegExp(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"');
@@ -351,7 +375,8 @@ Future<String?> _tapLabel(
         ? arrows.reduce((a, b) => away(a) <= away(b) ? a : b)
         : title;
     _lastTap = ['${(target[0] + target[2]) ~/ 2}', '${middle(target)}'];
-    return _tapAgain(device);
+    _found[label] = _lastTap!;
+    return press ? _tapAgain(device) : null;
   }
   return why.trim();
 }
@@ -383,6 +408,10 @@ Future<String?> _systemLog(String device) async {
 
 /// Where `_tapLabel` last pressed, as `input tap` takes it.
 List<String>? _lastTap;
+
+/// Where each label was found, for `press:` to press without reading the
+/// screen again.
+final _found = <String, List<String>>{};
 
 /// Presses where [device] was last pressed: the same button, or whatever
 /// has taken its place since, with the screen lit first.

@@ -72,7 +72,7 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
-          script: bash tool/ci/phone_screenshots.sh emulator-5554
+          script: bash tool/ci/play_film.sh emulator-5554
 
       - name: List the screenshots
         if: ${{ !cancelled() }}
@@ -92,7 +92,7 @@ jobs:
           if-no-files-found: error
 
   ios:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
+    if: false
     runs-on: xcode-27
     timeout-minutes: 100
     env:
