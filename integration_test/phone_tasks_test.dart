@@ -54,6 +54,12 @@ void main() {
 
   testWidgets('a phone walks the Tasks states, dark and light', (tester) async {
     final semantics = tester.ensureSemantics();
+    final report = FlutterError.onError;
+    FlutterErrorDetails? reported;
+    FlutterError.onError = (details) {
+      reported = details;
+      report?.call(details);
+    };
     var clock = DateTime(2026, 11, 4, 9);
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
@@ -106,7 +112,11 @@ void main() {
       for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
         prefs.appearance = mode;
         await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull, reason: name);
+        final error = tester.takeException();
+        if (error != null && reported != null) {
+          FlutterError.dumpErrorToConsole(reported!, forceReport: true);
+        }
+        expect(error, isNull, reason: name);
         await screenshot('tasks-$name-${mode.name}');
       }
     }
