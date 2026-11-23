@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stop, from the app's own icon set, for a recording's notification. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M4,12C4,8.721 4,7.081 4.814,5.919C5.115,5.489 5.489,5.115 5.919,4.814C7.081,4 8.721,4 12,4C15.279,4 16.919,4 18.081,4.814C18.511,5.115 18.885,5.489 19.186,5.919C20,7.081 20,8.721 20,12C20,15.279 20,16.919 19.186,18.081C18.885,18.511 18.511,18.885 18.081,19.186C16.919,20 15.279,20 12,20C8.721,20 7.081,20 5.919,19.186C5.489,18.885 5.115,18.511 4.814,18.081C4,16.919 4,15.279 4,12Z"
+        android:strokeWidth="1.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineJoin="round" />
+</vector>

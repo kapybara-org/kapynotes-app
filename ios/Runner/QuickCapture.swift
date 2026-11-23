@@ -4,7 +4,8 @@ import UIKit
 /// The app's half of the widgets.
 ///
 /// A widget opens `kapynotes://write`, `kapynotes://dictate` or
-/// `kapynotes://capture`. UIKit hands that to the scene, the scene parks it
+/// `kapynotes://capture`, and a recording's Live Activity
+/// `kapynotes://recording`. UIKit hands that to the scene, the scene parks it
 /// here, and Dart collects it once storage has loaded. It is a single string
 /// because a single string is all a widget has to say: not what to write,
 /// only which of three ways the user arrived meaning to.
@@ -22,6 +23,7 @@ final class QuickCapture {
     "write": "continueWriting",
     "dictate": "dictate",
     "capture": "capture",
+    "recording": "recording",
   ]
 
   private static let channelName = "kapynotes/quick_capture"

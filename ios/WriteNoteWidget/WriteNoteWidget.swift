@@ -12,11 +12,13 @@ import WidgetKit
 /// wrote would have to be shared out of the app, kept current against a
 /// refresh budget, and shown on a locked phone to whoever is holding it. The
 /// action alone costs none of that.
+@available(iOS 17.0, *)
 struct QuickActionEntry: TimelineEntry {
   let date: Date
   let action: QuickAction
 }
 
+@available(iOS 17.0, *)
 struct QuickActionProvider: AppIntentTimelineProvider {
   func placeholder(in context: Context) -> QuickActionEntry {
     QuickActionEntry(date: .now, action: .write)
@@ -37,6 +39,7 @@ struct QuickActionProvider: AppIntentTimelineProvider {
   }
 }
 
+@available(iOS 17.0, *)
 struct QuickActionView: View {
   @Environment(\.widgetFamily) private var family
 
@@ -57,6 +60,7 @@ struct QuickActionView: View {
 
 /// The Home Screen square: the disc at the top, and along the bottom the
 /// action and the note it works on.
+@available(iOS 17.0, *)
 struct QuickActionSmall: View {
   let action: QuickAction
 
@@ -81,6 +85,7 @@ struct QuickActionSmall: View {
 
 /// The Lock Screen pair. iOS draws them vibrant, from the wallpaper, so they
 /// set no colour of their own and take no background but the one it draws.
+@available(iOS 17.0, *)
 struct QuickActionCircular: View {
   let action: QuickAction
 
@@ -96,6 +101,7 @@ struct QuickActionCircular: View {
   }
 }
 
+@available(iOS 17.0, *)
 struct QuickActionRectangular: View {
   let action: QuickAction
 
@@ -125,6 +131,7 @@ struct QuickActionRectangular: View {
 /// Write-only, and must stay that way: it is the identity the Home Screen
 /// files an already-placed widget under, and changing it would leave those
 /// widgets behind. The intent's default is Write for the same reason.
+@available(iOS 17.0, *)
 struct WriteNoteWidget: Widget {
   var body: some WidgetConfiguration {
     AppIntentConfiguration(
