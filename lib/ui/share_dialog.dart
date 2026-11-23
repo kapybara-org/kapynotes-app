@@ -1433,6 +1433,43 @@ class _SheetScaffold extends StatelessWidget {
             color: color,
           ),
         );
+        final footer = DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: palette.textPrimary.withValues(alpha: 0.06),
+                width: AppHairline.of(context),
+              ),
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(12, phone ? 4 : 8, 12, phone ? 0 : 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final action in actions)
+                        TextButton(
+                          key: action.key,
+                          onPressed: action.onPressed,
+                          style: text(palette.textSecondary),
+                          child: Text(action.label),
+                        ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  key: const ValueKey('share-done'),
+                  onPressed: onClose,
+                  style: text(palette.textPrimary),
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
+          ),
+        );
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1449,48 +1486,7 @@ class _SheetScaffold extends StatelessWidget {
                 child: body,
               ),
             ),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: palette.textPrimary.withValues(alpha: 0.06),
-                    width: AppHairline.of(context),
-                  ),
-                ),
-              ),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  12,
-                  phone ? 4 : 8,
-                  12,
-                  phone ? 0 : 8,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          for (final action in actions)
-                            TextButton(
-                              key: action.key,
-                              onPressed: action.onPressed,
-                              style: text(palette.textSecondary),
-                              child: Text(action.label),
-                            ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      key: const ValueKey('share-done'),
-                      onPressed: onClose,
-                      style: text(palette.textPrimary),
-                      child: const Text('Done'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            if (phone) ToastClearance(cover: true, child: footer) else footer,
           ],
         );
       },

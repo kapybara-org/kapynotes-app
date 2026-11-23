@@ -283,19 +283,22 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  /// How far up the screen the toast keeps: above the highest of what it
-  /// keeps clear of, such as a phone's bar or the format bar.
-  double _clear(MediaQueryData media) {
+  /// Where the toast keeps: above the highest of what it keeps clear of,
+  /// such as a phone's bar or the format bar, or over a row it takes the
+  /// place of, such as a sheet's footer. The second value is that row's
+  /// height, and the first how far its foot is from the screen's.
+  (double, double?) _clear(MediaQueryData media) {
     var clear = 0.0;
     for (final below in Toast._clearances) {
       final box = below.context.findRenderObject();
       if (box is! RenderBox || !box.hasSize || !box.attached) continue;
-      clear = math.max(
-        clear,
-        media.size.height - box.localToGlobal(Offset.zero).dy + 16,
-      );
+      final top = box.localToGlobal(Offset.zero).dy;
+      if (below.widget.cover) {
+        return (media.size.height - top - box.size.height, box.size.height);
+      }
+      clear = math.max(clear, media.size.height - top + 16);
     }
-    return clear;
+    return (clear, null);
   }
 
   @override
@@ -318,12 +321,14 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
 
     final media = MediaQuery.of(context);
-    final clear = _clear(media);
+    final (clear, cover) = _clear(media);
     // What it keeps clear of was laid out a frame ago, so once this frame is,
     // a toast whose clearance moved under it, as a format bar does with the
     // keyboard, takes its new place.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _clear(MediaQuery.of(context)) != clear) setState(() {});
+      if (mounted && _clear(MediaQuery.of(context)) != (clear, cover)) {
+        setState(() {});
+      }
     });
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontSize: AppTypeScale.body,
@@ -447,71 +452,79 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     }
 
     return Positioned(
-      bottom: math.max(
-        clear,
-        (desktop ? 24 : 16) +
-            math.max(media.padding.bottom, media.viewInsets.bottom),
-      ),
+      bottom: cover == null
+          ? math.max(
+              clear,
+              (desktop ? 24 : 16) +
+                  math.max(media.padding.bottom, media.viewInsets.bottom),
+            )
+          : clear,
+      height: cover,
       left: 16,
       right: 16,
-      child: IgnorePointer(
-        ignoring: widget.action == null,
-        child: FadeTransition(
-          opacity: curve,
-          child: SlideTransition(
-            position: Tween(
-              begin: const Offset(0, 0.35),
-              end: Offset.zero,
-            ).animate(curve),
-            child: Center(
-              child: Semantics(
-                liveRegion: true,
-                label: widget.message,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: desktop ? 40 : 0,
-                    maxWidth: math.max(
-                      0,
-                      math.min(
-                        desktop ? 400 : Toast._cardMaxWidth,
-                        media.size.width - 32,
+      child: _placed(
+        cover,
+        IgnorePointer(
+          ignoring: widget.action == null,
+          child: FadeTransition(
+            opacity: curve,
+            child: SlideTransition(
+              position: Tween(
+                begin: const Offset(0, 0.35),
+                end: Offset.zero,
+              ).animate(curve),
+              child: Center(
+                child: Semantics(
+                  liveRegion: true,
+                  label: widget.message,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: desktop ? 40 : 0,
+                      maxWidth: math.max(
+                        0,
+                        math.min(
+                          desktop ? 400 : Toast._cardMaxWidth,
+                          media.size.width - 32,
+                        ),
                       ),
                     ),
-                  ),
-                  child: RepaintBoundary(
-                    key: const ValueKey('toast-repaint-boundary'),
-                    // The toast is an overlay entry too, with no route above
-                    // it to hand its text a style: see [FloatingSurface]. Its
-                    // own is complete enough today, and this is what keeps
-                    // the next line added here from arriving underlined.
-                    child: DefaultTextStyle(
-                      style: FloatingSurface.textStyle(context),
-                      child: Container(
-                        key: const ValueKey('toast-surface'),
-                        padding: desktop
-                            ? const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              )
-                            : EdgeInsets.fromLTRB(
-                                16,
-                                12,
-                                button == null ? 16 : 8,
-                                12,
-                              ),
-                        decoration: BoxDecoration(
-                          color: surfaceColor,
-                          borderRadius: BorderRadius.circular(
-                            desktop ? AppRadii.pill : AppRadii.surface,
-                          ),
-                          border: Border.all(
-                            color: palette.controlBorder.withValues(
-                              alpha: dark ? 0.95 : 0.72,
+                    child: RepaintBoundary(
+                      key: const ValueKey('toast-repaint-boundary'),
+                      // The toast is an overlay entry too, with no route above
+                      // it to hand its text a style: see [FloatingSurface]. Its
+                      // own is complete enough today, and this is what keeps
+                      // the next line added here from arriving underlined.
+                      child: DefaultTextStyle(
+                        style: FloatingSurface.textStyle(context),
+                        child: Container(
+                          key: const ValueKey('toast-surface'),
+                          padding: desktop
+                              ? const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                )
+                              : EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  button == null ? 16 : 8,
+                                  12,
+                                ),
+                          decoration: BoxDecoration(
+                            color: surfaceColor,
+                            borderRadius: BorderRadius.circular(
+                              desktop ? AppRadii.pill : AppRadii.surface,
                             ),
-                            width: 0.75,
+                            border: Border.all(
+                              color: desktop
+                                  ? palette.controlBorder.withValues(
+                                      alpha: dark ? 0.95 : 0.72,
+                                    )
+                                  : palette.edge,
+                              width: 0.75,
+                            ),
                           ),
+                          child: content,
                         ),
-                        child: content,
                       ),
                     ),
                   ),
@@ -523,16 +536,31 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       ),
     );
   }
+
+  /// Centres the card on the row it takes the place of, at its own height
+  /// even where that is taller than the row.
+  static Widget _placed(double? cover, Widget toast) => cover == null
+      ? toast
+      : OverflowBox(
+          minWidth: 0,
+          minHeight: 0,
+          maxHeight: double.infinity,
+          child: toast,
+        );
 }
 
 /// Keeps toasts above [child], such as a phone's bar and its + or the format
 /// bar over the keyboard, the highest of them on screen, while its
 /// route is the one on top, and the page around its navigator too when a
 /// [ToastClearanceScope] marks one. A sheet over it takes the toast back down
-/// to the bottom edge, over the sheet's footer.
+/// to the bottom edge.
+///
+/// With [cover], the toast takes [child]'s place instead, centred on it, as
+/// a phone's notice does over a sheet's footer.
 class ToastClearance extends StatefulWidget {
-  const ToastClearance({super.key, required this.child});
+  const ToastClearance({super.key, this.cover = false, required this.child});
 
+  final bool cover;
   final Widget child;
 
   @override

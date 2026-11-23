@@ -268,6 +268,32 @@ void main() {
       );
     });
 
+    for (final (theme, palette) in [
+      (KapyTheme.dark(), KapyTheme.darkPalette),
+      (KapyTheme.light(), KapyTheme.lightPalette),
+    ]) {
+      testWidgets('is edged with the hairline the bar has, in '
+          '${theme.brightness.name}', (tester) async {
+        Toast.debugAnimateLifetimeInTests = false;
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(393, 852);
+        addTearDown(tester.view.reset);
+        late BuildContext context;
+        await tester.pumpWidget(
+          _harness((value) => context = value, theme: theme),
+        );
+        Toast.show(context, 'Archived', action: 'Undo', onAction: () {});
+        await tester.pumpAndSettle();
+
+        final border =
+            (tester.widget<Container>(surface).decoration! as BoxDecoration)
+                    .border!
+                as Border;
+        expect(border.top.color, palette.edge);
+        expect(border.top.width, 0.75);
+      });
+    }
+
     testWidgets('has no icon unless the notice brings one, so its words '
         'start at the edge', (tester) async {
       final context = await phone(tester);

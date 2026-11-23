@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/sync/identity.dart';
@@ -550,6 +551,40 @@ void main() {
         },
       );
     }
+
+    testWidgets('on a phone, the removal’s notice takes the footer’s place, '
+        'clear of the row above it', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.reset);
+      await sharedWithBobAndCarol(tester);
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      final footer = tester.getRect(
+        find.byWidgetPredicate((w) => w is ToastClearance && w.cover),
+      );
+      await removeBob(tester);
+
+      final card = tester.getRect(find.byKey(const ValueKey('toast-surface')));
+      expect(card.top, lessThanOrEqualTo(footer.top));
+      expect(card.bottom, greaterThanOrEqualTo(footer.bottom));
+      for (final label in ['Stop sharing', 'Done']) {
+        final words = tester.getRect(find.text(label));
+        expect(card.contains(words.topLeft), isTrue, reason: label);
+        expect(card.contains(words.bottomRight), isTrue, reason: label);
+      }
+      final above = tester.getRect(
+        find.byKey(ValueKey('member-row-${carol.userId}')),
+      );
+      expect(card.top - above.bottom, greaterThanOrEqualTo(8));
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 8));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+    });
 
     testWidgets('without Undo, the removal reaches the server once the '
         'toast’s time is up', (tester) async {
