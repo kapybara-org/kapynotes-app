@@ -108,6 +108,7 @@ jobs:
       # it ran past that while the iPhone was booting in the background.
       - name: Hash the lockfile
         id: lock
+        shell: bash
         run: |
           hash=$(openssl dgst -sha256 -binary pubspec.lock | shasum -a 256 | cut -d' ' -f1)
           echo "hash=$hash" >> "$GITHUB_OUTPUT"
