@@ -2284,17 +2284,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final othersOpen =
         !_usesCompactLayout &&
         (_workspace.isSplit || _workspace.tabs.length > 1);
+    // A phone's one note, archived from its row or its page, can come
+    // straight back to where it was.
+    final before = _usesCompactLayout && going.length == 1
+        ? widget.notes.byId(going.single)
+        : null;
+    final at = before == null ? -1 : widget.notes.indexOf(before.id);
     widget.notes.archiveAll(going);
     _picks.clear();
-    Toast.show(
-      context,
-      going.length == 1
-          ? 'Moved to Archive'
-          : 'Moved ${going.length} notes to Archive',
-      icon: archiveIcon,
-      action: 'View',
-      onAction: () => _viewArchived(going.first),
-    );
+    if (before != null) {
+      final title = before.title.trim();
+      Toast.show(
+        context,
+        title.isEmpty ? 'Archived' : 'Archived “$title”',
+        icon: archiveIcon,
+        action: 'Undo',
+        onAction: () => widget.notes.undoArchive(before, at),
+      );
+    } else {
+      Toast.show(
+        context,
+        going.length == 1
+            ? 'Moved to Archive'
+            : 'Moved ${going.length} notes to Archive',
+        icon: archiveIcon,
+        action: 'View',
+        onAction: () => _viewArchived(going.first),
+      );
+    }
     if (archivingSelected) _openInPlaceOf(index, othersOpen: othersOpen);
   }
 

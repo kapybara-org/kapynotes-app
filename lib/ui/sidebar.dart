@@ -29,6 +29,7 @@ import 'folders_ui.dart';
 import 'join/joining_ui.dart' show joinedLine;
 import 'member_avatars.dart';
 import 'note_picks.dart';
+import 'note_row_swipe.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'safety_dialogs.dart';
@@ -530,7 +531,6 @@ class Sidebar extends StatelessWidget {
   Widget noteTile(Note note, {bool clockOnly = false}) => _row(
     note,
     shared: sharing != null && note.isShared,
-    pinned: pinnedNoteIds.contains(note.id),
     style: cards ? NoteRowStyle.card : NoteRowStyle.row,
     clockOnly: clockOnly,
   );
@@ -1033,7 +1033,6 @@ extension on Sidebar {
   Widget _row(
     Note note, {
     required bool shared,
-    bool pinned = false,
     NoteRowStyle style = NoteRowStyle.row,
     double inset = 0,
     bool clockOnly = false,
@@ -1042,7 +1041,6 @@ extension on Sidebar {
     child: _noteRow(
       note,
       shared: shared,
-      pinned: pinned,
       style: style,
       inset: inset,
       clockOnly: clockOnly,
@@ -1052,7 +1050,6 @@ extension on Sidebar {
   Widget _noteRow(
     Note note, {
     required bool shared,
-    required bool pinned,
     required NoteRowStyle style,
     required double inset,
     bool clockOnly = false,
@@ -1070,7 +1067,7 @@ extension on Sidebar {
     displayTime: displayTime,
     selected: note.id == selectedId,
     shared: shared,
-    pinned: pinned,
+    pinned: pinnedNoteIds.contains(note.id),
     locked: lockedNoteIds.contains(note.id),
     collaborators: shared && !(phone && clockOnly)
         ? collaborators[note.id] ?? const []
@@ -1106,6 +1103,12 @@ extension on Sidebar {
         ? null
         : () => onDelete!(note.id),
     deleteLabel: _deleteLabel(note),
+    theirs: _theirs(note),
+    // A phone's list rows only: cards scroll sideways or sit in a grid, and
+    // keep their menu. So do Archived and Hidden notes, whose way out is
+    // Restore or a delete that can't be undone, which no swipe should be a
+    // slip away from.
+    swipe: phone && !_specialMode && style == NoteRowStyle.touch,
     selecting: _picking,
     checked: picks?.contains(note.id) ?? false,
     onToggleChecked: picks == null ? null : () => picks!.toggle(note.id),
@@ -1249,20 +1252,14 @@ extension on Sidebar {
     Widget pinnedCard(Note note) => _row(
       note,
       shared: sharing != null && note.isShared,
-      pinned: true,
       style: NoteRowStyle.phoneCard,
     );
 
-    void section(
-      Iterable<Note> notes, {
-      bool pinned = false,
-      bool clockOnly = false,
-    }) {
+    void section(Iterable<Note> notes, {bool clockOnly = false}) {
       final list = notes.toList();
       Widget note(Note note) => _row(
         note,
         shared: sharing != null && note.isShared,
-        pinned: pinned,
         style: style,
         clockOnly: clockOnly,
       );
@@ -1351,7 +1348,7 @@ extension on Sidebar {
       }
     } else if (pinnedOnly && phone) {
       // The Pinned page, under its own title: every pinned note as a row.
-      section(groups.pinned, pinned: true);
+      section(groups.pinned);
     } else if (pinnedOnly) {
       heading(
         NotesListHeading(
@@ -1371,7 +1368,7 @@ extension on Sidebar {
           ),
         ),
       );
-      section(groups.pinned, pinned: true);
+      section(groups.pinned);
     } else if (phone) {
       // Home's Pinned, the one list with View all: up to five cards in a
       // sideways row. Elsewhere, Drawings, Shared or a folder, every pinned
@@ -1408,7 +1405,7 @@ extension on Sidebar {
         );
       } else if (pinned.isNotEmpty) {
         heading(const _PhoneHeading('Pinned'));
-        section(pinned, pinned: true);
+        section(pinned);
       }
       for (final key in groups.groupOrder) {
         heading(_groupHeading(groups, key));
@@ -1453,7 +1450,7 @@ extension on Sidebar {
                 : null,
           ),
         );
-        section(pinned, pinned: true);
+        section(pinned);
       }
       for (final key in groups.groupOrder) {
         heading(_groupHeading(groups, key));
@@ -2869,6 +2866,8 @@ class NoteRow extends StatefulWidget {
     this.pickedActions,
     this.onPickedAction,
     this.style = NoteRowStyle.row,
+    this.swipe = false,
+    this.theirs = false,
     this.inset = 0,
     this.clockOnly = false,
     this.laterDay,
@@ -2879,6 +2878,14 @@ class NoteRow extends StatefulWidget {
 
   final Note note;
   final NoteRowStyle style;
+
+  /// Whether the row slides left, as a phone's list row does, to Pin and
+  /// Delete and, all the way across, to Archive.
+  final bool swipe;
+
+  /// Whether the note is somebody else's, shared with the reader, so its
+  /// delete only takes it out of their notes.
+  final bool theirs;
 
   /// How far in a [NoteRowStyle.filed] note's icon sits in the folder tree.
   final double inset;
@@ -3541,29 +3548,46 @@ class _NoteRowState extends State<NoteRow> {
         ),
       ),
     );
-    if (widget.style == NoteRowStyle.touch && !widget.selecting) {
+    if (widget.swipe && !widget.selecting) {
       final onTogglePin = widget.onTogglePin;
+      final onDelete = widget.onDelete;
       final onArchive = widget.onArchive;
-      return _SwipeActions(
+      final danger = Theme.of(context).colorScheme.error;
+      return NoteRowSwipe(
+        id: widget.note.id,
         actions: [
           if (onTogglePin != null)
             (
               key: 'pin',
               label: widget.pinned ? 'Unpin' : 'Pin',
               icon: KapyIcons.pinOutlined,
-              background: palette.clay,
+              background: palette.controlBackground,
+              foreground: palette.textPrimary,
               onPressed: onTogglePin,
             ),
-          if (onArchive != null)
+          if (onDelete != null)
             (
-              key: 'archive',
-              label: 'Archive',
-              icon: KapyIcons.archiveOutlined,
-              background: palette.textSecondary,
-              onPressed: onArchive,
+              key: 'delete',
+              label: widget.theirs ? 'Remove' : 'Delete',
+              icon: deleteIcon,
+              background: Color.alphaBlend(
+                danger.withValues(alpha: 0.16),
+                palette.paperColor,
+              ),
+              foreground: danger,
+              onPressed: onDelete,
             ),
         ],
-        id: widget.note.id,
+        full: onArchive == null
+            ? null
+            : (
+                key: 'archive',
+                label: 'Archive',
+                icon: archiveIcon,
+                background: palette.controlBackground,
+                foreground: palette.textPrimary,
+                onPressed: onArchive,
+              ),
         child: row,
       );
     }
@@ -4238,141 +4262,4 @@ class _PullToFindState extends State<_PullToFind> {
         onNotification: _onScroll,
         child: widget.child,
       );
-}
-
-typedef _SwipeAction = ({
-  String key,
-  String label,
-  KapyIconData icon,
-  Color background,
-  VoidCallback onPressed,
-});
-
-/// A phone row that slides left to show its actions, Pin and Archive,
-/// which VoiceOver and TalkBack offer as actions on the row too.
-class _SwipeActions extends StatefulWidget {
-  const _SwipeActions({
-    required this.id,
-    required this.actions,
-    required this.child,
-  });
-
-  final String id;
-  final List<_SwipeAction> actions;
-  final Widget child;
-
-  static const double actionWidth = 76;
-
-  @override
-  State<_SwipeActions> createState() => _SwipeActionsState();
-}
-
-class _SwipeActionsState extends State<_SwipeActions>
-    with SingleTickerProviderStateMixin {
-  late final _open = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 180),
-  );
-
-  double get _extent => widget.actions.length * _SwipeActions.actionWidth;
-
-  @override
-  void dispose() {
-    _open.dispose();
-    super.dispose();
-  }
-
-  void _settle(double velocity) {
-    final open = velocity < -300 || (velocity <= 300 && _open.value > 0.5);
-    unawaited(_open.animateTo(open ? 1 : 0, curve: Curves.easeOutCubic));
-  }
-
-  void _run(_SwipeAction action) {
-    _open.value = 0;
-    action.onPressed();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.actions.isEmpty) return widget.child;
-    final palette = context.palette;
-    final foreground = palette.paperColor;
-    return GestureDetector(
-      onHorizontalDragUpdate: (details) =>
-          _open.value -= details.primaryDelta! / _extent,
-      onHorizontalDragEnd: (details) => _settle(details.primaryVelocity ?? 0),
-      child: ClipRect(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  for (final action in widget.actions)
-                    SizedBox(
-                      width: _SwipeActions.actionWidth,
-                      child: Material(
-                        color: action.background,
-                        child: InkWell(
-                          key: ValueKey('swipe-${action.key}-${widget.id}'),
-                          onTap: () => _run(action),
-                          child: ExcludeSemantics(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              spacing: 4,
-                              children: [
-                                KapyIcon(
-                                  action.icon,
-                                  size: 20,
-                                  color: foreground,
-                                ),
-                                Text(
-                                  action.label,
-                                  style: TextStyle(
-                                    fontFamily: AppFonts.ui,
-                                    fontSize: 12.5,
-                                    fontWeight: AppWeight.font(
-                                      AppWeight.button,
-                                    ),
-                                    fontVariations: AppWeight.wght(
-                                      AppWeight.button,
-                                    ),
-                                    color: foreground,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            AnimatedBuilder(
-              animation: _open,
-              builder: (context, child) => Transform.translate(
-                offset: Offset(-_open.value * _extent, 0),
-                child: child,
-              ),
-              child: ListenableBuilder(
-                listenable: _open,
-                builder: (context, child) => _open.value == 0
-                    ? child!
-                    : GestureDetector(
-                        onTap: () => _settle(1000),
-                        behavior: HitTestBehavior.opaque,
-                        child: AbsorbPointer(child: child),
-                      ),
-                child: ColoredBox(
-                  color: palette.paperColor,
-                  child: widget.child,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
