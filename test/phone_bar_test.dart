@@ -81,7 +81,7 @@ void main() {
       final context = tester.element(find.byType(SizedBox).last);
       final toast = find.byKey(const ValueKey('toast-surface'));
 
-      Toast.show(context, 'Removed Carol from this note');
+      Toast.show(context, 'Copied');
       await tester.pumpAndSettle();
       final top = [
         tester.getTopLeft(find.byKey(const ValueKey('phone-bar'))).dy,
@@ -105,7 +105,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      Toast.show(context, 'Removed Carol from this note');
+      Toast.show(context, 'Copied');
       await tester.pumpAndSettle();
       expect(tester.getBottomLeft(toast).dy, 852 - 34 - 16);
       expect(tester.getSize(toast).width, 393 - 32, reason: 'the same card');

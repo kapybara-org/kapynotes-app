@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../billing/billing.dart';
+import '../core/platform.dart';
 import '../core/popup_keyboard.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -397,7 +398,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       Toast.show(
         context,
         'Removed $name from this note',
-        icon: KapyIcons.checkCircleRounded,
+        icon: AppPlatform.hasPointer ? null : KapyIcons.checkCircleRounded,
         action: 'Undo',
         onAction: () => unawaited(
           undoSharing(overlay, () async {

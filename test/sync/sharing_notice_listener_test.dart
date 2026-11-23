@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/ui/sharing_notice_listener.dart';
@@ -67,8 +69,6 @@ void main() {
     });
     await tester.pump();
     expect(find.text('Someone shared "Two" with you'), findsOneWidget);
-    final icon = find.byKey(const ValueKey('toast-status-icon'));
-    expect(tester.widget<KapyIcon>(icon).icon, KapyIcons.groupOutlined);
 
     await tester.runAsync(() async {
       await tester.tap(find.text('Leave'));
@@ -77,9 +77,57 @@ void main() {
     });
     await tester.pump();
     expect(find.text('Left. Your copy stays in your notes'), findsOneWidget);
-    expect(tester.widget<KapyIcon>(icon).icon, isNot(KapyIcons.groupOutlined));
     expect(bob.bodies, ['One', 'Two']);
     await tester.pumpAndSettle(const Duration(seconds: 10));
+  });
+
+  for (final (platform, icon) in [
+    (TargetPlatform.iOS, KapyIcons.groupOutlined),
+    (TargetPlatform.macOS, KapyIcons.checkRounded),
+  ]) {
+    testWidgets(
+      'on ${platform.name}, a note shared with you shows '
+      '${icon == KapyIcons.checkRounded ? 'the tick it always has' : 'two people'}',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await tester.runAsync(() async {
+          await alice.boot();
+          await bob.boot();
+        });
+        await tester.pumpWidget(app());
+        await tester.runAsync(() async {
+          await share('One');
+          await bob.sharing.acceptInvite(server.outbox.last.token);
+          await alice.sync.syncNow();
+          await bob.syncAndSettle();
+        });
+        await tester.pump();
+        expect(find.text('Someone shared "One" with you'), findsOneWidget);
+        expect(
+          tester
+              .widget<KapyIcon>(find.byKey(const ValueKey('toast-status-icon')))
+              .icon,
+          icon,
+        );
+        await tester.pumpAndSettle(const Duration(seconds: 10));
+      },
+    );
+  }
+
+  test('only a share says it arrived', () {
+    final note = Note(
+      id: 'n',
+      body: 'Book club picks',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    expect(SharingNotice.shared(from: 'Wen', notes: [note]).arrived, isTrue);
+    expect(SharingNotice.ended(from: 'Wen', notes: [note]).arrived, isFalse);
+    expect(
+      SharingNotice.access(from: 'Wen', role: SpaceRole.member).arrived,
+      isFalse,
+    );
   });
 
   testWidgets('a share Bob accepted himself offers nothing to undo', (

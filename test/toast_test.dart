@@ -243,6 +243,20 @@ void main() {
       );
     });
 
+    testWidgets('is 52 pt inside its hairline even with nothing but words, '
+        'which sit in its middle', (tester) async {
+      final context = await phone(tester);
+      Toast.show(context, 'Copied');
+      await tester.pumpAndSettle();
+
+      final card = tester.getRect(surface);
+      expect(card.height, 52 + 1.5);
+      expect(
+        tester.getCenter(find.text('Copied')).dy,
+        moreOrLessEquals(card.center.dy, epsilon: 0.5),
+      );
+    });
+
     testWidgets("keeps the action in the app's accent", (tester) async {
       final context = await phone(tester);
       Toast.show(context, 'Removed Priya', action: 'Undo', onAction: () {});

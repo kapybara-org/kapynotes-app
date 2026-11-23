@@ -502,12 +502,6 @@ void main() {
       await settleHere(tester);
 
       expect(find.text('Removed $bobName from this note'), findsOneWidget);
-      expect(
-        tester
-            .widget<KapyIcon>(find.byKey(const ValueKey('toast-status-icon')))
-            .icon,
-        KapyIcons.checkCircleRounded,
-      );
       expect(find.byKey(ValueKey('member-row-${bob.userId}')), findsNothing);
       expect(bobOnServer(), isTrue);
 
@@ -524,6 +518,38 @@ void main() {
       expect(server.outbox.length, invitations);
       expect(alice.sharing.memberOn(note.id, bob.email), isNotNull);
     });
+
+    for (final (platform, icon) in [
+      (TargetPlatform.iOS, KapyIcons.checkCircleRounded),
+      (TargetPlatform.macOS, KapyIcons.checkRounded),
+    ]) {
+      testWidgets(
+        'on ${platform.name}, the removal’s notice shows '
+        '${icon == KapyIcons.checkRounded ? 'the tick it always has' : 'a check in a circle'}',
+        (tester) async {
+          AppPlatform.debugTargetPlatformOverride = platform;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          await sharedWithBobAndCarol(tester);
+          await openSheet(tester, alice.notes.byId(note.id)!, alice);
+          await removeBob(tester);
+
+          expect(
+            tester
+                .widget<KapyIcon>(
+                  find.byKey(const ValueKey('toast-status-icon')),
+                )
+                .icon,
+            icon,
+          );
+          await tester.tap(find.text('Undo'));
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 8));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 200)),
+          );
+        },
+      );
+    }
 
     testWidgets('without Undo, the removal reaches the server once the '
         'toast’s time is up', (tester) async {

@@ -21,6 +21,12 @@ class Toast {
   /// format bar over the keyboard: whichever reaches highest.
   static final Set<_ToastClearanceState> _clearances = {};
 
+  /// Builds the toast on screen again once the frame has laid out what it
+  /// keeps clear of, which has just come or gone: a clearance changes
+  /// mid-build or as it goes, too soon to rebuild anything then.
+  static void _clearancesChanged() => WidgetsBinding.instance
+      .addPostFrameCallback((_) => _current?.markNeedsBuild());
+
   /// Widget tests usually call `pumpAndSettle` before inspecting a toast. A
   /// production lifetime animation would make that helper advance all the way
   /// through dismissal, so tests keep transient messages still unless the
@@ -31,12 +37,14 @@ class Toast {
   /// How long a toast with an action stays: time enough to reach it.
   static const Duration actionLifetime = Duration(seconds: 4);
 
-  /// How wide a phone's card grows: the width of its bar and +, which on a
-  /// tablet stops here.
+  /// How wide a phone's card grows. A phone's is narrower, so its card runs
+  /// the width of its bar and +; from 720 pt, two panes and no bar, the card
+  /// stops here, centred.
   static const double _cardMaxWidth = 480;
 
   /// The action's height, which a phone's card lines its icon and first
-  /// line up with.
+  /// line up with, and which its words keep to at least, so every card is
+  /// the same height.
   static const double _actionHeight = 28;
 
   /// [action] names a button at the toast's end that runs [onAction], such
@@ -275,6 +283,21 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  /// How far up the screen the toast keeps: above the highest of what it
+  /// keeps clear of, such as a phone's bar or the format bar.
+  double _clear(MediaQueryData media) {
+    var clear = 0.0;
+    for (final below in Toast._clearances) {
+      final box = below.context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize || !box.attached) continue;
+      clear = math.max(
+        clear,
+        media.size.height - box.localToGlobal(Offset.zero).dy + 16,
+      );
+    }
+    return clear;
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -295,15 +318,13 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
 
     final media = MediaQuery.of(context);
-    var clear = 0.0;
-    for (final below in Toast._clearances) {
-      final box = below.context.findRenderObject();
-      if (box is! RenderBox || !box.hasSize) continue;
-      clear = math.max(
-        clear,
-        media.size.height - box.localToGlobal(Offset.zero).dy + 16,
-      );
-    }
+    final clear = _clear(media);
+    // What it keeps clear of was laid out a frame ago, so once this frame is,
+    // a toast whose clearance moved under it, as a format bar does with the
+    // keyboard, takes its new place.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _clear(MediaQuery.of(context)) != clear) setState(() {});
+    });
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontSize: AppTypeScale.body,
       color: palette.textPrimary,
@@ -384,42 +405,45 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       // The icon and the first line of words sit level with the action, so
       // words that wrap keep the action at the top.
       final line = media.textScaler.scale(AppTypeScale.body) * 1.2;
-      content = Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (widget.progress || icon != null) ...[
-            SizedBox(
-              height: Toast._actionHeight,
-              child: Center(
-                child: widget.progress
-                    ? SizedBox.square(
-                        key: const ValueKey('toast-progress-indicator'),
-                        dimension: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.75,
+      content = ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: Toast._actionHeight),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.progress || icon != null) ...[
+              SizedBox(
+                height: Toast._actionHeight,
+                child: Center(
+                  child: widget.progress
+                      ? SizedBox.square(
+                          key: const ValueKey('toast-progress-indicator'),
+                          dimension: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.75,
+                            color: palette.textSecondary,
+                          ),
+                        )
+                      : KapyIcon(
+                          icon!,
+                          key: const ValueKey('toast-status-icon'),
+                          size: 18,
                           color: palette.textSecondary,
                         ),
-                      )
-                    : KapyIcon(
-                        icon!,
-                        key: const ValueKey('toast-status-icon'),
-                        size: 18,
-                        color: palette.textSecondary,
-                      ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  top: math.max(0, (Toast._actionHeight - line) / 2),
+                ),
+                child: text,
               ),
             ),
-            const SizedBox(width: 8),
+            if (button != null) ...[const SizedBox(width: 8), button],
           ],
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                top: math.max(0, (Toast._actionHeight - line) / 2),
-              ),
-              child: text,
-            ),
-          ),
-          if (button != null) ...[const SizedBox(width: 8), button],
-        ],
+        ),
       );
     }
 
@@ -446,7 +470,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                 label: widget.message,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    minHeight: desktop ? 40 : 52,
+                    minHeight: desktop ? 40 : 0,
                     maxWidth: math.max(
                       0,
                       math.min(
@@ -521,15 +545,15 @@ class _ToastClearanceState extends State<ToastClearance> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_OnTop.of(context) && (ModalRoute.of(context)?.isCurrent ?? true)) {
-      Toast._clearances.add(this);
-    } else {
-      Toast._clearances.remove(this);
+      if (Toast._clearances.add(this)) Toast._clearancesChanged();
+    } else if (Toast._clearances.remove(this)) {
+      Toast._clearancesChanged();
     }
   }
 
   @override
   void dispose() {
-    Toast._clearances.remove(this);
+    if (Toast._clearances.remove(this)) Toast._clearancesChanged();
     super.dispose();
   }
 
