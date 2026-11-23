@@ -29,6 +29,7 @@ import 'data/shortcut_prefs.dart';
 import 'data/tags.dart';
 import 'data/task_library.dart';
 import 'data/update_checker.dart';
+import 'speech/sherpa_transcriber.dart';
 import 'speech/speech_api.dart';
 import 'sync/account.dart';
 import 'sync/auth_api.dart';
@@ -41,6 +42,7 @@ Future<void> main([List<String> args = const []]) async {
   WidgetsFlutterBinding.ensureInitialized();
   QuickCapture.startedWith(args);
   registerFontLicenses();
+  registerVadLicense();
   // After the binding has claimed the view-focus callback, so it wraps the
   // framework's handler rather than being replaced by it.
   if (AppPlatform.isMacOS) {

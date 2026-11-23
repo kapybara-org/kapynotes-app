@@ -248,6 +248,14 @@ flutter:
     # The notice KaTeX's fonts come with, which flutter_math_fork bundles
     # without: its own LICENSE is the package's, not the fonts'.
     - packages/flutter_math_fork/katex_fonts/LICENSE
+    # The voice activity model the on-device recogniser finds pauses with
+    # (lib/speech/sherpa_transcriber.dart), and its licence. Only the
+    # platforms that run that recogniser carry them: Apple's builds use the
+    # system's own and leave both out.
+    - path: assets/speech/silero_vad.onnx
+      platforms: [android, linux, windows]
+    - path: assets/speech/silero_vad-LICENSE.txt
+      platforms: [android, linux, windows]
   fonts:
     - family: Shantell Sans
       fonts:
