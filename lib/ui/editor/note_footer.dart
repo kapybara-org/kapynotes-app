@@ -14,9 +14,9 @@ String? typingStatusText(List<String> names) {
   }
   return switch (unique.length) {
     0 => null,
-    1 => '${unique[0]} is typing...',
-    2 => '${unique[0]} and ${unique[1]} are typing...',
-    _ => '${unique[0]} and ${unique.length - 1} others are typing...',
+    1 => '${unique[0]} is typing…',
+    2 => '${unique[0]} and ${unique[1]} are typing…',
+    _ => '${unique[0]} and ${unique.length - 1} others are typing…',
   };
 }
 
