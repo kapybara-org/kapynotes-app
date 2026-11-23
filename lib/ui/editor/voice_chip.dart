@@ -10,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/note_attachment.dart';
 import '../context_menu.dart';
 import 'note_image_layout.dart';
+import 'placeholder_scale.dart';
 
 /// How tall a recording's row is: Paper's 44px pill with a pointer, and the
 /// phone's 56pt card on touch.
@@ -82,7 +83,7 @@ enum VoiceChipState {
 /// action.
 Widget _hoverHint(String? message, Widget child) => message == null
     ? child
-    : Tooltip(
+    : PlaceholderTooltip(
         message: message,
         triggerMode: TooltipTriggerMode.manual,
         child: child,
@@ -421,7 +422,7 @@ class NoteVoiceChip extends StatelessWidget {
     ),
   );
 
-  Widget _removeButton(CalcPalette palette) => Tooltip(
+  Widget _removeButton(CalcPalette palette) => PlaceholderTooltip(
     message: 'Remove voice note',
     child: IconButton(
       key: const ValueKey('remove-voice-note'),
