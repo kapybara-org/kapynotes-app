@@ -692,10 +692,10 @@ class HighlightingController extends TextEditingController {
       if (image != null) {
         children.add(
           source.codeUnitAt(start) != PlaceholderSpan.placeholderCodeUnit
-              ? _StandInSpan(text: source[start], child: image.child)
+              ? _StandInSpan(text: source[start], child: _unscaled(image.child))
               : WidgetSpan(
                   alignment: PlaceholderAlignment.top,
-                  child: image.child,
+                  child: _unscaled(image.child),
                 ),
         );
         continue;
@@ -1112,7 +1112,7 @@ class HighlightingController extends TextEditingController {
         WidgetSpan(
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
-          child: drawn.child,
+          child: _unscaled(drawn.child),
         ),
         PlaceholderDimensions(
           size: Size(drawn.width * scale, drawn.height * scale),
@@ -1126,10 +1126,12 @@ class HighlightingController extends TextEditingController {
     return (
       WidgetSpan(
         alignment: PlaceholderAlignment.middle,
-        child: SizedBox(
-          width: width,
-          height: drawn.height,
-          child: Center(child: drawn.child),
+        child: _unscaled(
+          SizedBox(
+            width: width,
+            height: drawn.height,
+            child: Center(child: drawn.child),
+          ),
         ),
       ),
       PlaceholderDimensions(
@@ -1663,6 +1665,11 @@ class _Sorted<T> {
     return low;
   }
 }
+
+/// A placeholder's widget as it is built: at the size the text is before
+/// scaling, words included. The field scales the whole widget with the text,
+/// so words inside it that took the text scale too would grow twice.
+Widget _unscaled(Widget child) => MediaQuery.withNoTextScaling(child: child);
 
 /// A placeholder standing in for a character of the note, such as the
 /// title's letter that carries the room under the title, which reads to a

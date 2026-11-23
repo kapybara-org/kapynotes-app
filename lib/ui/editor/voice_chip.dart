@@ -194,10 +194,11 @@ class NoteVoiceChip extends StatelessWidget {
     _ => _titled,
   };
 
-  /// How tall the chip is when it is handed [width]: its row, and the
-  /// label's own line under it when the row would cut a status short.
-  double heightIn(BuildContext context, double width) =>
-      _height(_labelBelow(context, width));
+  /// How tall the chip is when it is handed [width] and its words are
+  /// scaled by [textScaler]: its row, and the label's own line under it when
+  /// the row would cut a status short.
+  double heightIn(BuildContext context, double width, TextScaler textScaler) =>
+      _height(_labelBelow(context, width, textScaler));
 
   double _height(double? below) =>
       below == null ? _rowHeight : _rowHeight + below + _belowInset;
@@ -213,7 +214,11 @@ class NoteVoiceChip extends StatelessWidget {
   /// with nothing more to say than "Voice note" keeps that line's room, so a
   /// recording is as tall at the end of its usual path as all along it. One
   /// that was never queued has nothing to say and keeps to the row.
-  double? _labelBelow(BuildContext context, double width) {
+  double? _labelBelow(
+    BuildContext context,
+    double width,
+    TextScaler textScaler,
+  ) {
     if (AppPlatform.hasPointer) return null;
     final palette = context.palette;
     final inherited = DefaultTextStyle.of(context);
@@ -221,7 +226,7 @@ class NoteVoiceChip extends StatelessWidget {
         TextPainter(
           text: TextSpan(text: text, style: inherited.style.merge(style)),
           textDirection: Directionality.of(context),
-          textScaler: MediaQuery.textScalerOf(context),
+          textScaler: textScaler,
           textHeightBehavior:
               inherited.textHeightBehavior ??
               DefaultTextHeightBehavior.maybeOf(context),
@@ -293,8 +298,14 @@ class NoteVoiceChip extends StatelessWidget {
   Widget _chip(BuildContext context) {
     if (AppPlatform.hasPointer) return _card(context, null);
     return LayoutBuilder(
-      builder: (context, constraints) =>
-          _card(context, _labelBelow(context, constraints.maxWidth)),
+      builder: (context, constraints) => _card(
+        context,
+        _labelBelow(
+          context,
+          constraints.maxWidth,
+          MediaQuery.textScalerOf(context),
+        ),
+      ),
     );
   }
 
