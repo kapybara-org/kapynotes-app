@@ -22,6 +22,8 @@ import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/ui/editor/editor_context_menu.dart'
+    show NoteEditorContextMenu;
 import 'package:kapy_notes/ui/editor/note_field.dart'
     show NoteField, NoteFieldState;
 
@@ -163,7 +165,10 @@ void main() {
     await wait(1.5);
     var record = find.text('Record voice note');
     if (record.evaluate().isEmpty) {
-      final more = find.byTooltip('More');
+      final more = find.descendant(
+        of: find.byType(NoteEditorContextMenu),
+        matching: find.byTooltip('More'),
+      );
       expect(more, findsOneWidget, reason: 'no Record voice note, no More');
       await touch(tester.getCenter(more));
       await wait(1.2);
