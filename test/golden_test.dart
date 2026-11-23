@@ -2082,6 +2082,33 @@ void main() {
           });
         }
       }
+
+      // The same page at Android's Large text (1.3x): its hand title takes a
+      // second line under a bar that grows to hold it (KAP-315).
+      if (brightness == Brightness.dark && phone == 'android') {
+        testWidgets('phone about & updates at 1.3x text, $name', (
+          tester,
+        ) async {
+          tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pumpPhone(
+            tester,
+            storeUpdates: fakeStoreUpdates(
+              MemoryStore(),
+              releases: aboutReleases(),
+              answer: () async => const StoreOffer(build: 47),
+            ),
+          );
+          await tapAndSettle(tester, 'page-home');
+          await tapAndSettle(tester, 'phone-account');
+          final about = find.byKey(const ValueKey('settings-section-about'));
+          await tester.ensureVisible(about);
+          await tester.pumpAndSettle();
+          await tester.tap(about);
+          await tester.pumpAndSettle();
+          await matches('about_large_text');
+        });
+      }
     }
   }
 
