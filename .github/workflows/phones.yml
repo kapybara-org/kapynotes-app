@@ -103,6 +103,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # The pub cache's key: the digest hashFiles('pubspec.lock') gives, taken
+      # before the iPhone starts booting. hashFiles has a hard 120 s limit, and
+      # it ran past that while the iPhone was booting in the background.
+      - name: Hash the lockfile
+        id: lock
+        run: |
+          hash=$(openssl dgst -sha256 -binary pubspec.lock | shasum -a 256 | cut -d' ' -f1)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
       # A fresh iPhone, booting in the background while Flutter installs. The
       # software keyboard has to come up as it does on a phone, so no hardware
       # keyboard is connected.
@@ -123,13 +132,12 @@ jobs:
           pub-cache: false
 
       # flutter-action keys its own pub cache on hashFiles('**/pubspec.lock'),
-      # a walk of the whole checkout that has run past its 120 s limit on the
-      # macOS runner. The root pubspec.lock is the only one, so this keeps the
-      # same key without the walk.
+      # a walk of the whole checkout. This keeps its path and key prefix and
+      # adds the digest from Hash the lockfile.
       - uses: actions/cache@v5
         with:
           path: ${{ steps.flutter.outputs.PUB-CACHE-PATH }}
-          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ hashFiles('pubspec.lock') }}
+          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ steps.lock.outputs.hash }}
 
       - run: flutter pub get --enforce-lockfile
 
