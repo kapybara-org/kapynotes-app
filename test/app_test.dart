@@ -58,6 +58,7 @@ import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/editor/task_details_chrome.dart';
 import 'package:kapy_notes/ui/editor/note_sliver.dart' show RenderNoteLine;
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/note_header.dart';
@@ -12822,4 +12823,76 @@ void main() {
       );
     }
   }
+
+  group('the Shift+Enter hint on an empty task line (KAP-312)', () {
+    Future<NoteField> openEmptyTask(
+      WidgetTester tester,
+      TargetPlatform platform,
+      Size size,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.runAsync(TaskFolds.open);
+      await notes.load();
+      notes.create(body: 'Errands\n- [ ] Post the parcel\n- [ ] ');
+      await pumpApp(tester, size: size);
+      await tester.pumpAndSettle();
+      final field = openNoteField(tester);
+      field.focusNode.requestFocus();
+      await tester.pump();
+      final body = field.controller.text;
+      field.controller.selection = TextSelection.collapsed(
+        offset: body.indexOf('- [ ] ', body.indexOf('parcel')) + 6,
+      );
+      await tester.pumpAndSettle();
+      return field;
+    }
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      testWidgets('on ${platform.name}, it shows on an empty task line, past '
+          'its box, and goes once there are words', (tester) async {
+        final field = await openEmptyTask(
+          tester,
+          platform,
+          const Size(1100, 760),
+        );
+        final hint = find.text('Shift+Enter adds details');
+        expect(hint, findsOneWidget);
+        final caret = tester
+            .state<NoteFieldState>(find.byType(NoteField))
+            .caretRectAt(field.controller.selection.extent)!;
+        expect(
+          tester.getTopLeft(hint).dx,
+          greaterThan(
+            tester.getTopLeft(find.byType(NoteField)).dx + caret.right,
+          ),
+        );
+
+        final body = field.controller.text;
+        final at = field.controller.selection.extentOffset;
+        field.controller.value = TextEditingValue(
+          text: '${body.substring(0, at)}Buy stamps${body.substring(at)}',
+          selection: TextSelection.collapsed(offset: at + 10),
+        );
+        await tester.pumpAndSettle();
+        expect(hint, findsNothing);
+      });
+    }
+
+    for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+      testWidgets('on a phone (${platform.name}), it never shows', (
+        tester,
+      ) async {
+        await openEmptyTask(tester, platform, const Size(393, 852));
+        expect(
+          tester
+              .widget<TaskDetailsChrome>(find.byType(TaskDetailsChrome))
+              .showHint,
+          isTrue,
+          reason: 'the note offers the hint; only the keyboard rule hides it',
+        );
+        expect(find.text('Shift+Enter adds details'), findsNothing);
+      });
+    }
+  });
 }
