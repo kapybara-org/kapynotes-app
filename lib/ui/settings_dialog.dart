@@ -4667,7 +4667,8 @@ class _SheetPage extends StatelessWidget {
 
   /// Null on the list of categories, which has nothing to go back to. A
   /// category's page, which has it, titles itself in the hand with a green
-  /// Done, as its board draws it.
+  /// Done, as its board draws it. The hand grows no further than 1.3× text,
+  /// as Home's header does, and takes a second line rather than being cut.
   final VoidCallback? onBack;
 
   /// The row a search result led to, lit over the page. Only a category's
@@ -4705,24 +4706,32 @@ class _SheetPage extends StatelessWidget {
                     icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 22),
                   ),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: back == null
-                        ? TextStyle(
+                  child: back == null
+                      ? Text(
+                          title,
+                          style: TextStyle(
                             fontSize: 17,
                             height: 22 / 17,
                             fontWeight: AppWeight.font(AppWeight.page),
                             fontVariations: AppWeight.wght(AppWeight.page),
                             color: palette.textPrimary,
-                          )
-                        : handStyle(
-                            26,
-                            32,
-                            FontWeight.w400,
-                            palette.textPrimary,
                           ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.3,
+                          child: Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: handStyle(
+                              26,
+                              32,
+                              FontWeight.w400,
+                              palette.textPrimary,
+                            ),
+                          ),
+                        ),
                 ),
                 TextButton(
                   key: const ValueKey('settings-sheet-done'),
