@@ -5,7 +5,7 @@
 set -u
 device=$1
 export KAPYNOTES_DEVICE_SHOTS=$device
-runs=${KAP324_RUNS:-8}
+runs=${KAP324_RUNS:-10}
 mkdir -p build/screenshots
 adb -s "$device" shell 'while true; do echo "$(date +%H:%M:%S.%N | cut -c1-12) $(dumpsys input_method | grep -oE "mInputShown=[a-z]+|mIsInputViewShown=[a-z]+" | tr "\n" " ")"; sleep 0.25; done' > build/screenshots/ime-poll.txt 2>&1 &
 poll=$!

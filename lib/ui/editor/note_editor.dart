@@ -454,6 +454,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// inset at zero under a keyboard that is up, so the bar goes and the editor
   /// takes the keyboard for dismissed (KAP-324).
   bool _windowMovedSinceKeyboardRequest = false;
+  DateTime? _kap324UpAt;
 
   /// Whether the soft keyboard was up the last time the window was measured,
   /// which is what turns a metrics change into "the keyboard just went".
@@ -4537,8 +4538,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // keyboard had a height; now that it has one, the cell may be under it.
     if (isUp && _editingCell != null) _ensureCellVisible();
     if (isUp) _keyboardGoneTimer?.cancel();
+    if (isUp) _kap324UpAt = DateTime.now();
     if (isUp || !wasUp) return;
     if (widget.readOnly || !_editingNote) return;
+    final upFor = _kap324UpAt == null
+        ? null
+        : DateTime.now().difference(_kap324UpAt!).inMilliseconds;
+    if (upFor != null && upFor < 1500 && _focusNode.hasFocus) {
+      debugPrint('KAP324 suspected stale zero $upFor ms after up; asking again');
+      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+    }
     // Backgrounding the app also takes the keyboard down, and focus should
     // survive that: it is the same note, still open, when the app comes back.
     final lifecycle = WidgetsBinding.instance.lifecycleState;
