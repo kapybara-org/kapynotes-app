@@ -29,6 +29,7 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/settings_search.dart';
 
+import '../support/store_updates.dart';
 import '../test_fonts.dart';
 import 'fake_server.dart';
 
@@ -169,6 +170,7 @@ Future<void> pumpSettings(
           rates: RatesRepository(store),
           notes: notes,
           account: account,
+          storeUpdates: AppPlatform.isMobile ? fakeStoreUpdates(store) : null,
           cloudAccess: cloudAccess,
           asSheet: asSheet,
           section: section,

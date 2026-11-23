@@ -14,6 +14,8 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/store_updates.dart';
+
 class MemoryFakeStore extends LocalStore {
   MemoryFakeStore() : super(fileName: 'settings-sheet-test.json');
   @override
@@ -40,6 +42,7 @@ Future<void> _pumpPhone(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  final storeUpdates = AppPlatform.isMobile ? fakeStoreUpdates(store) : null;
 
   await tester.pumpWidget(
     MaterialApp(
@@ -53,6 +56,7 @@ Future<void> _pumpPhone(
               shortcuts: shortcuts,
               rates: RatesRepository(store),
               notes: notes,
+              storeUpdates: storeUpdates,
               voicePrefs: voicePrefs,
               desktopIntegration: desktopIntegration,
             ),

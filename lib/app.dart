@@ -48,6 +48,7 @@ import 'data/notes_store.dart';
 import 'data/onboarding.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
+import 'data/store_updates.dart';
 import 'data/update_checker.dart';
 import 'images/image_picker.dart';
 import 'mcp/mcp_library.dart';
@@ -75,6 +76,7 @@ class KapyNotesApp extends StatefulWidget {
     required this.prefs,
     required this.shortcuts,
     this.updates,
+    this.storeUpdates,
     this.desktopIntegration,
     this.account,
     this.tasks,
@@ -99,6 +101,10 @@ class KapyNotesApp extends StatefulWidget {
 
   /// Null off macOS and Windows, where the app cannot update itself.
   final UpdateChecker? updates;
+
+  /// What the App Store or Google Play offers, for a test to hand over. Left
+  /// out, a phone makes its own; a computer has [updates] instead.
+  final StoreUpdates? storeUpdates;
   final DesktopIntegration? desktopIntegration;
 
   /// Null when the build has no server to sync with.
@@ -220,6 +226,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   KapyAi? _kapyAi;
   late final TitleModel? _titleModel =
       widget.titleModel ?? platformTitleModel();
+  late final StoreUpdates? _storeUpdates =
+      widget.storeUpdates ??
+      (AppPlatform.isMobile ? StoreUpdates(widget.store) : null);
 
   /// The MCP server and its settings, on the Mac and Windows only: the
   /// computers an assistant runs on, and where the app can listen locally.
@@ -659,6 +668,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _voicePrefs?.dispose();
     // Not the injected one: whoever passed it in owns it.
     if (widget.kapyAi == null) _kapyAi?.dispose();
+    if (widget.storeUpdates == null) _storeUpdates?.dispose();
     _localModels?.dispose();
     _mcp?.dispose();
     unawaited(_gemma?.unload() ?? Future<void>.value());
@@ -840,6 +850,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                   hiddenNotesGate: _hiddenNotesGate,
                   kapyAi: _kapyAi,
                   titleModel: _titleModel,
+                  storeUpdates: _storeUpdates,
                 ),
               ),
             ),

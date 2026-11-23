@@ -67,6 +67,7 @@ import '../sync/spaces.dart';
 import '../data/rates.dart';
 import 'share_dialog.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/store_updates.dart';
 import '../data/task_folds.dart';
 import '../data/update_checker.dart';
 import '../data/writing_streak.dart';
@@ -181,6 +182,7 @@ class HomePage extends StatefulWidget {
     required this.hiddenNotesGate,
     this.kapyAi,
     this.titleModel,
+    this.storeUpdates,
   });
 
   final NotesStore notes;
@@ -266,6 +268,10 @@ class HomePage extends StatefulWidget {
 
   /// The model on this device that names new notes. Null names none.
   final TitleModel? titleModel;
+
+  /// What the App Store or Google Play offers, for Settings › About &
+  /// updates on a phone. Null on a computer, which has [updates].
+  final StoreUpdates? storeUpdates;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -3439,6 +3445,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         shortcuts: widget.shortcuts,
         rates: widget.rates,
         updates: widget.updates,
+        storeUpdates: widget.storeUpdates,
         desktopIntegration: widget.desktopIntegration,
         voicePrefs: widget.voicePrefs,
         localModels: widget.localModels,
@@ -3645,6 +3652,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         shortcuts: widget.shortcuts,
         rates: widget.rates,
         updates: widget.updates,
+        storeUpdates: widget.storeUpdates,
         desktopIntegration: widget.desktopIntegration,
         voicePrefs: widget.voicePrefs,
         localModels: widget.localModels,

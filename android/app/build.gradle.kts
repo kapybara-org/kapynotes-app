@@ -123,6 +123,11 @@ dependencies {
     // the same process once it has arrived (SplitCompat).
     implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 
+    // Asking Play whether it has a newer version for this install, for
+    // Settings › About & updates. Only the question: updating happens in the
+    // Play Store, which the page links to.
+    implementation("com.google.android.play:app-update:2.1.0")
+
     // Gemini Nano through AICore, for automatic note titles. Its minSdk is 26
     // against the app's 24: see the overrideLibrary in AndroidManifest.xml.
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta5")
