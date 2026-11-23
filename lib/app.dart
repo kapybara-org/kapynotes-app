@@ -509,6 +509,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           unawaited(account?.restore());
         }());
         unawaited(widget.tasks?.load());
+        // A recording the last run was ended in the middle of, by a swipe
+        // from the app switcher or by the system, goes into its note now.
+        if (!AppPlatform.isFlutterTest) {
+          unawaited(_recording.recoverInterrupted());
+        }
         _scheduleBackgroundFetches();
       });
       binding.ensureVisualUpdate();
@@ -716,11 +721,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         // first thing a phone kills. Give them back; the next summary reloads
         // in a couple of seconds.
         unawaited(_gemma?.unload() ?? Future<void>.value());
-        // A phone that backgrounds the app has already stopped giving it the
-        // microphone, so the recording is delivered rather than left running.
-        // Deliberately not on `inactive`: that is the first moment of a phone
-        // call and the app switcher, and `record` has paused itself for both.
-        if (AppPlatform.isMobile) {
+        // A phone carries a recording on in the background, under its
+        // notification or Live Activity, and only the app going away ends
+        // it there.
+        if (AppPlatform.isMobile && state == AppLifecycleState.detached) {
           unawaited(_finishRecordingThenFlush());
           return;
         }

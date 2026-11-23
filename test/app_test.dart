@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/audio/recording_controls.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
@@ -84,7 +85,8 @@ import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
-import 'audio/voice_recording_controller_test.dart' show FakeVoiceRecorder;
+import 'audio/voice_recording_controller_test.dart'
+    show FakeRecordingControls, FakeVoiceRecorder;
 import 'kapy_icon_finder.dart';
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'support/note_driver.dart';
@@ -12663,6 +12665,201 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(menuField).controller!.text, isEmpty);
+    });
+  });
+
+  group('a phone recording away from the app (KAP-308)', () {
+    late Directory temp;
+    late FakeVoiceRecorder recorder;
+    late FakeRecordingControls controls;
+    late VoiceRecordingController recording;
+    final tone = File('test/fixtures/tone_5s.m4a').readAsBytesSync();
+
+    setUp(() {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      stubLaunchIntent(null);
+      temp = Directory.systemTemp.createTempSync('kapy-away-');
+      notes = NotesStore(store, blobs: BlobStore(directory: temp));
+      recorder = FakeVoiceRecorder(writesFile: false);
+      controls = FakeRecordingControls();
+      recording = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+        controls: controls,
+      );
+    });
+
+    tearDown(() {
+      recording.dispose();
+      AppPlatform.debugTargetPlatformOverride = null;
+      stubLaunchIntent(null, respond: false);
+      temp.deleteSync(recursive: true);
+    });
+
+    /// Starts recording into [note], with the recorder's file written here:
+    /// its own write is real file work the test's fake clock never finishes.
+    Future<void> record(WidgetTester tester, Note note) async {
+      expect(await recording.start(noteId: note.id), isTrue);
+      File(recorder.startedAt!).writeAsBytesSync(tone);
+      await tester.pump();
+    }
+
+    void leave(WidgetTester tester) {
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+    }
+
+    void comeBack(WidgetTester tester) {
+      for (final state in [
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+    }
+
+    Iterable<NoteVoiceRef> voiceIn(Note note) =>
+        notes.byId(note.id)!.attachments.whereType<NoteVoiceRef>();
+
+    /// Delivery is real file work too, so the real clock is let run, and the
+    /// test's clock is pumped for what each piece of that work comes back to.
+    Future<void> delivered(WidgetTester tester, Note note) async {
+      for (var wait = 0; wait < 100 && voiceIn(note).isEmpty; wait++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+    }
+
+    /// Ends a recording a test leaves going, so its clock is not left ticking.
+    Future<void> discard(WidgetTester tester) async {
+      unawaited(recording.cancel());
+      await tester.pump();
+    }
+
+    testWidgets('carries on in the background, and ends when the app does', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Standup');
+      await pumpApp(tester, size: const Size(393, 852), recording: recording);
+      await record(tester, note);
+
+      leave(tester);
+      await tester.pump(const Duration(minutes: 2));
+      expect(recording.isRecording, isTrue);
+      expect(recording.session!.elapsed, const Duration(minutes: 2));
+      expect(recorder.stopped, isFalse);
+      expect(controls.calls, ['show', 'prepare', 'show']);
+
+      comeBack(tester);
+      await tester.pump(const Duration(seconds: 1));
+      expect(recording.isRecording, isTrue);
+
+      leave(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.detached);
+      await delivered(tester, note);
+      await tester.pump();
+      expect(recorder.stopped, isTrue);
+      expect(recording.isRecording, isFalse);
+      expect(voiceIn(note), hasLength(1));
+      expect(controls.calls.last, 'hide');
+    });
+
+    testWidgets('a desktop going to the background is left as it was', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      final note = notes.create(body: 'Standup');
+      await pumpApp(tester, recording: recording);
+      await record(tester, note);
+
+      leave(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.detached);
+      await tester.pump(const Duration(seconds: 2));
+      expect(recording.isRecording, isTrue);
+      expect(recorder.stopped, isFalse);
+      await discard(tester);
+    });
+
+    testWidgets('Stop on its notification puts it in its note', (tester) async {
+      final note = notes.create(body: 'Standup');
+      await pumpApp(tester, size: const Size(393, 852), recording: recording);
+      await record(tester, note);
+      leave(tester);
+      await tester.pump(const Duration(seconds: 5));
+
+      await tester.runAsync(() async {
+        expect(await controls.press(RecordingCommand.stop), isTrue);
+      });
+      await tester.pump();
+      expect(recording.isRecording, isFalse);
+      expect(voiceIn(note), hasLength(1));
+    });
+
+    testWidgets('the thirty-minute cap still ends it in the background', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Standup');
+      await pumpApp(tester, size: const Size(393, 852), recording: recording);
+      await record(tester, note);
+      leave(tester);
+
+      await tester.pump(VoiceRecordingController.maxDuration);
+      expect(recording.session?.finishing ?? true, isTrue);
+      await delivered(tester, note);
+      await tester.pump();
+      expect(recording.isRecording, isFalse);
+      expect(voiceIn(note), hasLength(1));
+    });
+
+    testWidgets('a tap on its notification opens the note it is going into', (
+      tester,
+    ) async {
+      final interview = notes.create(body: 'Interview\nwith Mira');
+      notes.create(body: 'Groceries\nMilk');
+      await pumpApp(tester, size: const Size(393, 852), recording: recording);
+      await record(tester, interview);
+      leave(tester);
+
+      stubLaunchIntent('recording');
+      comeBack(tester);
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Interview\nwith Mira');
+      expect(recording.isRecording, isTrue);
+      await discard(tester);
+    });
+
+    testWidgets('a tap never opens a hidden note past its gate', (
+      tester,
+    ) async {
+      final secret = notes.create(body: 'Secret\nShh');
+      notes.hide(secret.id);
+      notes.create(body: 'Groceries\nMilk');
+      await pumpApp(
+        tester,
+        size: const Size(393, 852),
+        recording: recording,
+        hiddenNotesGate: _HiddenGate(),
+      );
+      await record(tester, secret);
+      leave(tester);
+
+      stubLaunchIntent('recording');
+      comeBack(tester);
+      await tester.pump();
+      await tester.pumpAndSettle();
+      // Back as it was, on the note that was open.
+      expect(openNoteBody(tester), 'Groceries\nMilk');
+      expect(recording.isRecording, isTrue);
+      await discard(tester);
     });
   });
 }

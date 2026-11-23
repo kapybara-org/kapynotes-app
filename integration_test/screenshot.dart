@@ -43,7 +43,15 @@ Future<void> screenshot(String name, {bool device = false}) async {
       'bytes': png!.buffer.asUint8List(),
     },
   );
-  if (!device || !_hostReadsScreens) return;
+  if (device) await deviceShot(name);
+}
+
+/// Has the run's host save the device's own screen as
+/// `build/screenshots/<name>-device.png`, and nothing of the app's: for what
+/// the system shows while the app is out of sight. Does nothing without a
+/// host that reads screens.
+Future<void> deviceShot(String name) async {
+  if (!hostReadsScreens) return;
   final shot = _hostShots[name] = Completer<void>();
   developer.postEvent('kapynotes.deviceShot', {'name': name});
   await shot.future.timeout(
@@ -52,8 +60,34 @@ Future<void> screenshot(String name, {bool device = false}) async {
   );
 }
 
-const _hostReadsScreens =
-    String.fromEnvironment('KAPYNOTES_DEVICE_SHOTS') != '';
+/// Has the run's host do something to the device the app cannot do itself:
+/// lock it, wake it, pull down its shade, press a notification's button. See
+/// `_act` in test_driver/integration_test.dart for what each [action] does.
+/// Returns why the host could not, or null once it has.
+Future<String?> deviceAction(String action) async {
+  if (!hostReadsScreens) return 'no host to $action the device';
+  final done = _hostActions[action] = Completer<String?>();
+  developer.postEvent('kapynotes.deviceAction', {'action': action});
+  return done.future.timeout(
+    const Duration(minutes: 1),
+    onTimeout: () => 'the host did not $action the device',
+  );
+}
+
+/// Whether the run's host reads the device's screen and acts on it, as
+/// tool/ci/phone_screenshots.sh has it do.
+const hostReadsScreens = String.fromEnvironment('KAPYNOTES_DEVICE_SHOTS') != '';
+
+final Map<String, Completer<String?>> _hostActions = _hearHostAct();
+
+Map<String, Completer<String?>> _hearHostAct() {
+  final waiting = <String, Completer<String?>>{};
+  developer.registerExtension('ext.kapynotes.deviceAction', (_, params) async {
+    waiting.remove(params['action'])?.complete(params['error']);
+    return developer.ServiceExtensionResponse.result('{}');
+  });
+  return waiting;
+}
 
 /// The device shots the test is waiting on, which the host answers when it
 /// has saved one or could not.

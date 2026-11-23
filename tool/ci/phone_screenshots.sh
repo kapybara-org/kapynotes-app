@@ -38,6 +38,15 @@ for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy
   drive "$test"
 done
 
+# phone_recording_away is last: it records, locks the phone and opens
+# Settings over the app, none of which the others expect. An iPhone ends an
+# app whose permissions change while it runs, so a simulator's microphone is
+# granted before the app starts; an emulator's is granted by the test's host.
+if ! adb -s "$device" get-state >/dev/null 2>&1; then
+  xcrun simctl privacy "$device" grant microphone com.kapybara.kapynotes || status=1
+fi
+drive phone_recording_away
+
 if adb -s "$device" get-state >/dev/null 2>&1; then
   mode=$(adb -s "$device" shell settings get secure navigation_mode | tr -d '\r')
   navbar threebutton

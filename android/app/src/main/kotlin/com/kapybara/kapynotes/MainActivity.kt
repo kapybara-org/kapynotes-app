@@ -16,7 +16,8 @@ import io.flutter.plugin.common.MethodChannel
  *
  * The widgets are the only things that answer anything but "normally", and
  * they do so by naming their own action on the intent that starts this
- * activity — see [QuickAction]. The answer is handed over once and then
+ * activity — see [QuickAction] — and so does a recording's notification:
+ * see [RecordingService]. The answer is handed over once and then
  * cleared, so that a later launch from the icon cannot inherit a tap on a
  * widget, and so that a Capture the app has already acted on does not open
  * the picker again the next time Dart asks.
@@ -25,6 +26,7 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingLaunch: String? = null
     private var noteTitles: NoteTitles? = null
     private var contrastSetting: ContrastSetting? = null
+    private var recordingControls: RecordingControls? = null
 
     /**
      * Lets code Play delivered after install — the speech runtime module —
@@ -46,6 +48,7 @@ class MainActivity : FlutterFragmentActivity() {
         StatusBar.register(flutterEngine.dartExecutor.binaryMessenger, this)
         noteTitles = NoteTitles.register(flutterEngine.dartExecutor.binaryMessenger)
         FileExport.register(flutterEngine.dartExecutor.binaryMessenger) { this }
+        recordingControls = RecordingControls.register(this, flutterEngine.dartExecutor.binaryMessenger)
         pendingLaunch = takeLaunchName(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -105,7 +108,20 @@ class MainActivity : FlutterFragmentActivity() {
         noteTitles = null
         contrastSetting?.close()
         contrastSetting = null
+        recordingControls?.close()
+        recordingControls = null
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    /** Notifications, asked for by [RecordingControls] as somebody records. */
+    @Deprecated("Deprecated in FragmentActivity")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        recordingControls?.onPermissionResult(requestCode)
     }
 
     /**
@@ -141,7 +157,12 @@ class MainActivity : FlutterFragmentActivity() {
      */
     private fun takeLaunchName(intent: Intent?): String? {
         val launchIntent = intent ?: return null
-        val name = QuickAction.ofIntentAction(launchIntent.action)?.launchName ?: return null
+        val name =
+            if (launchIntent.action == RecordingService.ACTION_OPEN) {
+                "recording"
+            } else {
+                QuickAction.ofIntentAction(launchIntent.action)?.launchName
+            } ?: return null
         launchIntent.action = null
         return name
     }

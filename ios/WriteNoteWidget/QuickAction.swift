@@ -10,6 +10,7 @@ import WidgetKit
 /// lets the app decide what is behind it. That is what keeps every widget
 /// here free to draw once and never refresh, and keeps a locked phone from
 /// showing anybody's writing.
+@available(iOS 17.0, *)
 enum QuickAction: String, CaseIterable {
   case write
   case dictate
@@ -78,7 +79,7 @@ let widgetOnPrimary = dynamicColor(light: 0xFCFAF4, dark: 0x1C1A17)
 let widgetTonal = dynamicColor(light: 0xE6ECDB, dark: 0x2E3828)
 let widgetOnTonal = dynamicColor(light: 0x445A2F, dark: 0xC2D6AC)
 
-private func dynamicColor(light: UInt32, dark: UInt32) -> Color {
+func dynamicColor(light: UInt32, dark: UInt32) -> Color {
   Color(
     uiColor: UIColor { traits in
       let rgb = traits.userInterfaceStyle == .dark ? dark : light
@@ -100,6 +101,7 @@ enum Figtree {
 
 /// One action's round button: one disc per tap, with nothing boxed around it.
 /// In a tinted Home Screen the disc takes the tint and the glyph stays light.
+@available(iOS 17.0, *)
 struct QuickActionDisc: View {
   let action: QuickAction
   let fill: Color
@@ -125,6 +127,7 @@ struct QuickActionDisc: View {
 /// A separate type from [QuickAction] only because `AppEnum` drags display
 /// representations and a localisation story in with it, and the widget's own
 /// drawing code wants none of that.
+@available(iOS 17.0, *)
 enum QuickActionChoice: String, AppEnum {
   case write
   case dictate
@@ -153,6 +156,7 @@ enum QuickActionChoice: String, AppEnum {
 /// The default is Write, which is what the widget did before it could be
 /// configured at all — so a widget already on somebody's Home Screen keeps
 /// doing exactly what they put it there to do.
+@available(iOS 17.0, *)
 struct SelectQuickActionIntent: WidgetConfigurationIntent {
   static var title: LocalizedStringResource = "Quick Action"
   static var description = IntentDescription("Choose what one tap does.")
