@@ -22,6 +22,8 @@ import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart'
+    show NoteField, NoteFieldState;
 
 import 'rates_support.dart';
 import 'screenshot.dart';
@@ -145,22 +147,19 @@ void main() {
     await wait(2.5);
     expect(home, findsOneWidget, reason: 'the note did not open');
 
-    final field = find.byWidgetPredicate(
-      (widget) =>
-          widget is EditableText &&
-          widget.controller.text.contains('What we said'),
-    );
-    final editable = tester.state<EditableTextState>(field.first);
-    final box = editable.renderEditable;
-    final end = box.localToGlobal(
-      box
-          .getLocalRectForCaret(
-            TextPosition(offset: editable.textEditingValue.text.length),
-          )
-          .center,
-    );
+    final fieldFinder = find.byType(NoteField);
+    final field = tester.widget<NoteField>(fieldFinder);
+    final said = field.controller.text.indexOf('What we said');
+    expect(said, isNot(-1), reason: 'the note opened without its text');
+    final caret = tester
+        .state<NoteFieldState>(fieldFinder)
+        .caretRectAt(TextPosition(offset: said + 'What we said'.length))!;
+    final line =
+        tester.getRect(fieldFinder).top +
+        caret.center.dy -
+        field.scrollController.offset;
     final width = tester.view.physicalSize.width / ratio;
-    await touch(Offset(width * 0.8, end.dy), hold: true);
+    await touch(Offset(width * 0.8, line), hold: true);
     await wait(1.5);
     var record = find.text('Record voice note');
     if (record.evaluate().isEmpty) {
