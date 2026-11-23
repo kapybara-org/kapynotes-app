@@ -13419,6 +13419,98 @@ void main() {
     }
   }
 
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets(
+      'on ${platform.name}, on a 320 pt phone, a copied result that takes '
+      "more rows than its line's writing keeps its words in place and its "
+      'check inside the line (KAP-319)',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final semantics = tester.ensureSemantics();
+        await notes.load();
+        notes.create(body: 'Trip\ny = 123456789012 km in mi\ny');
+        await pumpApp(tester, size: const Size(320, 800));
+        final chip = find.byType(ResultChip).last;
+        final result = tester.widget<ResultChip>(chip).result.text;
+        final words = find.descendant(of: chip, matching: find.text(result));
+        expect(
+          tester
+              .renderObject<RenderParagraph>(words)
+              .getBoxesForSelection(
+                TextSelection(baseOffset: 0, extentOffset: result.length),
+              )
+              .map((box) => box.top)
+              .toSet(),
+          hasLength(greaterThan(1)),
+        );
+        RenderObject? y = tester.renderObject(chip);
+        while (y is! RenderNoteLine) {
+          y = y!.parent;
+        }
+        final line = y;
+        Rect bounds() => MatrixUtils.transformRect(
+          line.getTransformTo(null),
+          Offset.zero & line.size,
+        );
+        void expectInside(Finder finder) {
+          final rect = tester.getRect(finder);
+          expect(rect.top, greaterThanOrEqualTo(bounds().top - 0.5));
+          expect(rect.bottom, lessThanOrEqualTo(bounds().bottom + 0.5));
+        }
+
+        final copied = <String>[];
+        final messenger = tester.binding.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, (
+          call,
+        ) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        });
+        addTearDown(
+          () =>
+              messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+        int spoken() => find
+            .bySemanticsLabel(RegExp(RegExp.escape(result)))
+            .evaluate()
+            .length;
+        final spokenAtRest = spoken();
+        expect(spokenAtRest, greaterThan(0));
+        final before = bounds();
+        final laidOut = tester.getRect(words);
+        expectInside(words);
+        await tester.tap(chip);
+        await tester.pump();
+        expect(copied, [tester.widget<ResultChip>(chip).result.copyText]);
+        final check = find.descendant(
+          of: chip,
+          matching: findKapyIcon(KapyIcons.checkRounded),
+        );
+        expect(check, findsOneWidget);
+        expect(bounds(), before);
+        expect(tester.getRect(words), laidOut);
+        expect(
+          tester
+              .widget<Opacity>(
+                find.ancestor(of: words, matching: find.byType(Opacity)).first,
+              )
+              .opacity,
+          0,
+        );
+        expect(spoken(), spokenAtRest);
+        expect(tester.getRect(check).right, tester.getRect(words).right);
+        expectInside(words);
+        expectInside(check);
+        await tester.pumpAndSettle(const Duration(seconds: 1));
+        expect(check, findsNothing);
+        semantics.dispose();
+      },
+    );
+  }
+
   group('the Shift+Enter hint on an empty task line (KAP-312)', () {
     Future<NoteField> openEmptyTask(
       WidgetTester tester,

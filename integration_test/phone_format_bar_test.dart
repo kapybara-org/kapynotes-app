@@ -11,6 +11,7 @@
 //
 // On the iOS Simulator turn off I/O > Keyboard > Connect Hardware Keyboard, or
 // the software keyboard never appears and the first case says so.
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -60,7 +61,15 @@ void main() {
     bool again = false,
   }) async {
     await tester.pumpWidget(const SizedBox.shrink());
+    // Each case starts with the keyboard down, whatever the last one left.
+    // A case that failed can leave a keyboard up with nothing focused under
+    // it, which nothing else would ever take down, so ask for it to go, and
+    // ask again each second in case a request lands mid-animation and is
+    // lost.
     for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
+      if (i % 10 == 0) {
+        await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      }
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(
