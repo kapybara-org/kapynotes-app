@@ -22,7 +22,6 @@ import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
-import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
@@ -31,6 +30,7 @@ import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test/fake_kapy_ai.dart';
+import 'rates_support.dart';
 import 'screenshot.dart';
 
 class _MemoryStore extends LocalStore {
@@ -105,7 +105,7 @@ void main() {
         KapyNotesApp(
           store: store,
           notes: notes,
-          rates: RatesRepository(store),
+          rates: offlineRates(store),
           prefs: prefs,
           shortcuts: ShortcutPrefs(store)..load(),
           tags: tags,
