@@ -5099,6 +5099,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// state let go of first, as opening a tab or a space does, changes
   /// nothing more.
   void _popLevel(Page<Object?> page) {
+    // The page Back was returning to, still waiting for its note, as a
+    // recording into the note left finishes: that wait is over too.
+    if (_phoneReturning case final returning?
+        when page.key == ObjectKey(returning.editor)) {
+      _selectionRequest++;
+      _phoneReturning = null;
+      _phonePagesUnder.remove(returning);
+      return _phonePageBack();
+    }
     if (page.key == ObjectKey(_phoneEditorKey)) return _phonePageBack();
     if (page.key != _phoneLevelPage) return;
     switch (_phoneLevel) {
@@ -5165,10 +5174,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Opens [id] from the note on a phone's page, on a page of its own over
-  /// that note's.
+  /// that note's. The page Back is returning to is already under it.
   void _openFromPage(String id) {
     final from = _shownNote(_selectedId)?.id;
-    if (_phonePageShown && from != null && from != id) {
+    if (_phoneReturning == null &&
+        _phonePageShown &&
+        from != null &&
+        from != id) {
       setState(() => _phonePagesUnder.add((id: from, editor: _phoneEditorKey)));
     }
     _select(id);
@@ -5191,13 +5203,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// The editor for [id] on a phone's page: the one its page already has
-  /// when Back is returning to it, else a new one.
+  /// when Back is returning to it, else a new one. Either way Back is no
+  /// longer returning: a note chosen in the meantime goes on top, with the
+  /// page Back was returning to under it.
   GlobalKey<NoteEditorState> _phoneEditorFor(String? id) {
     final returning = _phoneReturning;
+    _phoneReturning = null;
     if (returning == null || returning.id != id) {
       return GlobalKey<NoteEditorState>();
     }
-    _phoneReturning = null;
     _phonePagesUnder.remove(returning);
     return returning.editor;
   }
