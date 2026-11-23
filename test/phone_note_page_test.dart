@@ -20,6 +20,8 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/editor/note_editor.dart'
+    show NoteEditor, NoteEditorState;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/home_page.dart' show HomePage;
@@ -1041,6 +1043,22 @@ void main() {
         expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
       }, variant: variant);
     }
+
+    testWidgets('Back to the note a note was opened from keeps its editor '
+        '(KAP-306)', (tester) async {
+      seed();
+      await pump(tester);
+      final arjun = tester.state<NoteEditorState>(find.byType(NoteEditor));
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+
+      await back(tester, swipe: false);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)),
+        same(arjun),
+      );
+    });
 
     group('Back while a recording into the note left finishes (KAP-306)', () {
       late _LateRecording recording;
