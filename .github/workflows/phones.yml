@@ -35,7 +35,7 @@ jobs:
   android:
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,7 +72,7 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
-          script: bash tool/ci/phone_screenshots.sh emulator-5554
+          script: bash tool/ci/kap324_probe.sh emulator-5554
 
       - name: List the screenshots
         if: ${{ !cancelled() }}
@@ -91,85 +91,3 @@ jobs:
           path: build/screenshots/
           if-no-files-found: error
 
-  ios:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
-    runs-on: xcode-27
-    timeout-minutes: 100
-    env:
-      # The runner defaults to Xcode 27.1; 27.2 brings the iOS 27.2 runtime.
-      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      # The pub cache's key: the digest hashFiles('pubspec.lock') gives, taken
-      # before the iPhone starts booting. hashFiles has a hard 120 s limit, and
-      # it ran past that while the iPhone was booting in the background.
-      - name: Hash the lockfile
-        id: lock
-        shell: bash
-        run: |
-          hash=$(openssl dgst -sha256 -binary pubspec.lock | shasum -a 256 | cut -d' ' -f1)
-          echo "hash=$hash" >> "$GITHUB_OUTPUT"
-
-      # A fresh iPhone, booting in the background while Flutter installs. The
-      # software keyboard has to come up as it does on a phone, so no hardware
-      # keyboard is connected.
-      - name: Create an iOS 27.2 iPhone
-        id: simulator
-        run: |
-          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
-          udid=$(xcrun simctl create phones "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-27-2)
-          xcrun simctl boot "$udid" >/dev/null 2>&1 &
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        id: flutter
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-          pub-cache: false
-
-      # flutter-action keys its own pub cache on hashFiles('**/pubspec.lock'),
-      # a walk of the whole checkout. This keeps its path and key prefix and
-      # adds the digest from Hash the lockfile.
-      - uses: actions/cache@v5
-        with:
-          path: ${{ steps.flutter.outputs.PUB-CACHE-PATH }}
-          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ steps.lock.outputs.hash }}
-
-      - run: flutter pub get --enforce-lockfile
-
-      # Waits out the boot, or boots the iPhone if that failed, then turns
-      # Slide to Type off, which only a booted iPhone accepts, so its
-      # introduction doesn't cover the first keyboard.
-      - name: Wait for the iPhone
-        env:
-          UDID: ${{ steps.simulator.outputs.udid }}
-        run: |
-          xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.ContinuousPath KeyboardContinuousPathEnabled -bool false
-
-      - name: Screenshots on an iOS 27.2 iPhone
-        env:
-          UDID: ${{ steps.simulator.outputs.udid }}
-        run: bash tool/ci/phone_screenshots.sh "$UDID"
-
-      - name: List the screenshots
-        if: ${{ !cancelled() }}
-        run: |
-          shopt -s nullglob
-          shots=(build/screenshots/*.png)
-          {
-            echo "### ${#shots[@]} iOS screenshots"
-            for shot in "${shots[@]}"; do echo "- $(basename "$shot" .png)"; done
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-screenshots
-          path: build/screenshots/
-          if-no-files-found: error

@@ -981,6 +981,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (widget.readOnly || !widget.ensureKeyboardVisible) return;
     // Try as soon as the editable connection exists, then probe quickly while
     // Android is still promoting FlutterView to the served input view.
+    debugPrint('KAP324 retry show at open');
     unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
     _scheduleKeyboardRetryAt(0);
   }
@@ -1005,6 +1006,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       // A rejected Android request has no Dart acknowledgement. Backoff keeps
       // the recovery window broad without repeatedly waking an IME that has
       // already started its animation.
+      debugPrint('KAP324 retry show $index');
       unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
       _scheduleKeyboardRetryAt(index + 1);
     });
@@ -4509,6 +4511,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void didChangeMetrics() {
     final wasUp = _keyboardWasUp;
     final inset = _keyboardInset;
+    debugPrint('KAP324 metrics inset=$inset wasUp=$wasUp');
     final isUp = inset > 0;
     _keyboardWasUp = isUp;
     if (mounted && AppPlatform.isMobile && isUp != wasUp) setState(() {});
@@ -4527,6 +4530,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _keyboardGoneTimer = Timer(_keyboardGoneAfter, () {
       if (!mounted || _keyboardInset > 0) return;
       if (widget.readOnly || !_editingNote) return;
+      debugPrint('KAP324 gone timer unfocuses');
       FocusManager.instance.primaryFocus?.unfocus();
     });
   }
