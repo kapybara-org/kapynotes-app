@@ -10316,6 +10316,70 @@ void main() {
           findsWidgets,
         );
       });
+
+      testWidgets("one note for a later day, end to end on a phone: off Home's "
+          "days and out of the day groups even pinned, found by Quick find, "
+          "on its day in the week, and filled on its day in the month sheet", (
+        tester,
+      ) async {
+        await pumpLater(tester);
+        String key(DateTime day) => '${day.year}-${day.month}-${day.day}';
+        final cards = find.byKey(const ValueKey('phone-pinned-cards'));
+        expect(listed('Renewal notes'), findsNothing);
+
+        notes.togglePinned(renewal);
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(of: cards, matching: find.text('Renewal notes')),
+          findsOneWidget,
+        );
+        expect(
+          listed('Renewal notes'),
+          findsOneWidget,
+          reason: 'only its card',
+        );
+        expect(dayHeadings(tester), [
+          startsWith('Pinned'),
+          startsWith('Today'),
+        ]);
+        notes.togglePinned(renewal);
+        await tester.pumpAndSettle();
+        expect(listed('Renewal notes'), findsNothing);
+
+        await tap(tester, find.byKey(const ValueKey('sidebar-search-field')));
+        await tester.enterText(
+          find.byKey(const ValueKey('command-menu-field')),
+          'Renewal',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('command-menu')),
+            matching: find.text('Renewal notes'),
+          ),
+          findsWidgets,
+        );
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+
+        await tap(tester, find.widgetWithText(NoteRow, 'Standup'));
+        final later = inDays(1);
+        final day = find.byKey(ValueKey('day-strip-${key(later)}'));
+        if (day.evaluate().isEmpty) {
+          await tap(tester, find.byKey(const ValueKey('day-strip-forward')));
+        }
+        await tap(tester, day);
+        expect(openNoteBody(tester), startsWith('Renewal notes'));
+
+        await tap(tester, find.byKey(const ValueKey('page-more')));
+        await tap(tester, find.byKey(const ValueKey('page-more-day')));
+        expect(find.byKey(const ValueKey('day-sheet')), findsOneWidget);
+        expect(
+          tester.getSemantics(find.byKey(ValueKey('day-month-${key(later)}'))),
+          isSemantics(isSelected: true),
+        );
+        expect(days.dayOf(renewal), later);
+      });
     });
 
     testWidgets("a filter narrows Home's Pinned as it does the desktop's, and "
