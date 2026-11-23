@@ -431,6 +431,28 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Store release makes the same check: Android finds an update's notes by
+      # its build in the changelog (KAP-310). It runs before anything is
+      # uploaded, ahead of the changelog page check in Publish the update feeds.
+      - name: The changelog must list this version with this build
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          BUILD: ${{ needs.verify.outputs.build }}
+        run: |
+          set -euo pipefail
+          url=https://kapynotes.com/changelog.json
+          file="$RUNNER_TEMP/changelog.json"
+          if ! curl -fsS --max-time 20 -o "$file" "$url"; then
+            echo "::error::could not read $url"
+            exit 1
+          fi
+          listed="$(python3 -c 'import json, sys; print(" ".join(str(r.get("build")) for r in json.load(open(sys.argv[1]))["releases"] if r.get("version") == sys.argv[2]))' "$file" "$VERSION")"
+          if [ "$listed" != "$BUILD" ]; then
+            echo "::error::$url lists $VERSION with build ${listed:-none}, not $BUILD. Fix the entry in kapynotes' website/src/data/releases.ts and deploy the site before releasing."
+            exit 1
+          fi
+          echo "$url lists $VERSION as build $BUILD"
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
