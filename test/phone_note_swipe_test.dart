@@ -223,7 +223,7 @@ void main() {
       expect(notes.isPinned('budget'), isTrue);
       expect(find.text('Note pinned'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+      await tester.tap(find.byKey(const ValueKey('sidebar-view-all-pinned')));
       await tester.pumpAndSettle();
       await _open(tester, 'Budget');
       expect(find.text('Unpin'), findsOneWidget);
@@ -672,11 +672,20 @@ void main() {
       await expectSwipes(tester, 'Standup notes', 'standup');
     });
 
-    testWidgets('Pinned', (tester) async {
+    testWidgets("Pinned, but not Home's pinned cards", (tester) async {
       await notes.load();
       notes.togglePinned('budget');
       await pump(tester);
-      await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
+      final cards = find.byKey(const ValueKey('phone-pinned-cards'));
+      expect(
+        find.descendant(of: cards, matching: _row('Budget')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cards, matching: find.byType(NoteRowSwipe)),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('sidebar-view-all-pinned')));
       await tester.pumpAndSettle();
       await expectSwipes(tester, 'Budget', 'budget');
     });
@@ -712,9 +721,7 @@ void main() {
       await expectSwipes(tester, 'Budget', 'budget');
     });
 
-    testWidgets("not Drawings' cards, whose menu does the same", (
-      tester,
-    ) async {
+    testWidgets("Drawings' rows", (tester) async {
       await notes.load();
       final drawing = notes.create(drawing: true);
       await pump(tester);
@@ -722,24 +729,21 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
       await tester.pumpAndSettle();
-      final card = find.byWidgetPredicate(
+      final row = find.byWidgetPredicate(
         (widget) => widget is NoteRow && widget.note.id == drawing.id,
       );
-      expect(card, findsOneWidget);
-      expect(find.byType(NoteRowSwipe), findsNothing);
-      await _drag(tester, card, -120);
-      expect(_button('delete', drawing.id), findsNothing);
-      expect(notes.byId(drawing.id)!.isArchived, isFalse);
+      expect(
+        find.descendant(of: row, matching: find.byType(NoteRowSwipe)),
+        findsOneWidget,
+      );
+      await _drag(tester, row, -100);
+      expect(_button('pin', drawing.id).hitTestable(), findsOneWidget);
+      expect(_button('delete', drawing.id).hitTestable(), findsOneWidget);
+      await _drag(tester, row, 200);
 
-      await tester.longPress(card);
-      await tester.pumpAndSettle();
-      for (final action in ['pin', 'archive', 'delete']) {
-        expect(
-          find.byKey(ValueKey('$action-note-${drawing.id}')),
-          findsOneWidget,
-          reason: action,
-        );
-      }
+      await _drag(tester, row, -340);
+      expect(notes.byId(drawing.id)!.isArchived, isTrue);
+      expect(row, findsNothing);
     });
 
     testWidgets('not Archive, where Restore and the delete that cannot be '
