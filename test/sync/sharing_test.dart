@@ -3067,6 +3067,67 @@ void main() {
         expect(alice.sharing.isRemovalHeld(note.id, bob.email), isFalse);
       });
 
+      test('refused where the sheet that made it said so already, is no '
+          'notice as well', () async {
+        final (note, space) = await withBobAndCarol();
+        final heard = <SharingNotice>[];
+        final subscription = alice.sharing.notices.listen(heard.add);
+        addTearDown(subscription.cancel);
+        refuseNextRemoval();
+        final said = <Object>[];
+        alice.sharing.holdRemoval(
+          note.id,
+          bob.email,
+          const Duration(hours: 1),
+          onRefused: (error) {
+            said.add(error);
+            return true;
+          },
+        );
+
+        await alice.sharing.sendHeldRemovalsQuietly();
+        await Future<void>.delayed(Duration.zero);
+        expect(said.single, isA<SyncRefusedException>());
+        expect(heard, isEmpty);
+        expect(bobIn(space), isTrue);
+      });
+
+      test('refused on two notes in one go are a notice for each, naming '
+          'only its own people', () async {
+        final (note, _) = await withBobAndCarol();
+        final other = await privateNote('Theirs');
+        // Someone else stays invited, so taking Dave off asks the server.
+        await alice.sharing.addPerson(other.id, 'dave@example.com');
+        await alice.sharing.addPerson(other.id, 'erin@example.com');
+        final heard = <SharingNotice>[];
+        final subscription = alice.sharing.notices.listen(heard.add);
+        addTearDown(subscription.cancel);
+        server.onRemoval = () async =>
+            throw const SyncRefusedException(403, 'view-only', {});
+        addTearDown(() => server.onRemoval = null);
+        alice.sharing.holdRemoval(note.id, bob.email, const Duration(hours: 1));
+        alice.sharing.holdRemoval(
+          other.id,
+          'dave@example.com',
+          const Duration(hours: 1),
+        );
+
+        await alice.sharing.sendHeldRemovalsQuietly();
+        await Future<void>.delayed(Duration.zero);
+        final bobName = alice.sharing.memberOn(note.id, bob.email)!.firstName;
+        expect(heard.map((notice) => notice.message), [
+          "Couldn't remove $bobName from “Ours”.",
+          "Couldn't remove dave@example.com from “Theirs”.",
+        ]);
+      });
+
+      test('refused from a note with no title names it as a note', () {
+        expect(
+          SharingNotice.notRemoved(names: ['Bob'], title: ' ').message,
+          "Couldn't remove Bob from a note.",
+        );
+      });
+
       for (final count in [1, 2, 3, 4]) {
         test('$count refused in one go once nothing can say so are one notice '
             'naming them', () async {

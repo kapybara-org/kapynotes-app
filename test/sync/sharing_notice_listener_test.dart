@@ -136,6 +136,12 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('toast-action')), findsNothing);
+      expect(
+        tester
+            .widget<KapyIcon>(find.byKey(const ValueKey('toast-status-icon')))
+            .icon,
+        KapyIcons.errorOutlined,
+      );
       await tester.pumpAndSettle(const Duration(seconds: 10));
     });
   }
