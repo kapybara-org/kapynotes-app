@@ -3916,6 +3916,28 @@ total to usd''';
       },
     );
 
+    testWidgets(
+      'a window that moved before the note asked still gets asked again',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          harness('one\ntwo', ensureKeyboardVisible: true),
+        );
+        // A page sliding in, or the last field's keyboard going down.
+        tester.binding.handleMetricsChanged();
+        tester.state<NoteEditorState>(find.byType(NoteEditor)).focus();
+        await tester.pump();
+        tester.testTextInput.log.clear();
+        await tester.pump(const Duration(milliseconds: 450));
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          contains('TextInput.show'),
+        );
+      },
+    );
+
     // The guard used to read MediaQuery, which a Scaffold hands its body with
     // the bottom inset already taken out — so it never saw the keyboard, and
     // every note opened went on asking for one for five seconds. Pressing Back
