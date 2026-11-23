@@ -162,7 +162,7 @@ void main() {
         field.scrollController.offset;
     final width = tester.view.physicalSize.width / ratio;
     await touch(Offset(width * 0.8, line), hold: true);
-    await wait(1.5);
+    await wait(1);
     var record = find.text('Record voice note');
     if (record.evaluate().isEmpty) {
       final more = find.descendant(
@@ -171,11 +171,10 @@ void main() {
       );
       expect(more, findsOneWidget, reason: 'no Record voice note, no More');
       await touch(tester.getCenter(more));
-      await wait(1.2);
+      await wait(0.8);
       record = find.text('Record voice note');
     }
     expect(record, findsOneWidget);
-    await deviceShot('play-film-menu');
     await touch(tester.getCenter(record));
     await wait(1.5);
     expect(recording.isRecording, isTrue, reason: 'nothing recorded');
