@@ -1482,11 +1482,22 @@ class _SheetScaffold extends StatelessWidget {
             ),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                padding: EdgeInsets.fromLTRB(20, 4, 20, phone ? 8 : 12),
                 child: body,
               ),
             ),
-            if (phone) ToastClearance(cover: true, child: footer) else footer,
+            // A phone's notice takes the footer's place, from 8 under the
+            // last row: the body's last 4 are the footer's here.
+            if (phone)
+              ToastClearance(
+                cover: true,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: footer,
+                ),
+              )
+            else
+              footer,
           ],
         );
       },

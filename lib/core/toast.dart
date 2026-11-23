@@ -284,18 +284,15 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   }
 
   /// Where the toast keeps: above the highest of what it keeps clear of,
-  /// such as a phone's bar or the format bar, or over a row it takes the
-  /// place of, such as a sheet's footer. The second value is that row's
-  /// height, and the first how far its foot is from the screen's.
+  /// such as a phone's bar or the format bar, or, as the second value, from
+  /// the top of a row it takes the place of, such as a sheet's footer.
   (double, double?) _clear(MediaQueryData media) {
     var clear = 0.0;
     for (final below in Toast._clearances) {
       final box = below.context.findRenderObject();
       if (box is! RenderBox || !box.hasSize || !box.attached) continue;
       final top = box.localToGlobal(Offset.zero).dy;
-      if (below.widget.cover) {
-        return (media.size.height - top - box.size.height, box.size.height);
-      }
+      if (below.widget.cover) return (0, top);
       clear = math.max(clear, media.size.height - top + 16);
     }
     return (clear, null);
@@ -452,18 +449,19 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     }
 
     return Positioned(
+      top: cover == null ? null : 0,
       bottom: cover == null
           ? math.max(
               clear,
               (desktop ? 24 : 16) +
                   math.max(media.padding.bottom, media.viewInsets.bottom),
             )
-          : clear,
-      height: cover,
+          : 0,
       left: 16,
       right: 16,
       child: _placed(
         cover,
+        media.size.height - media.viewInsets.bottom,
         IgnorePointer(
           ignoring: widget.action == null,
           child: FadeTransition(
@@ -537,16 +535,34 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
   }
 
-  /// Centres the card on the row it takes the place of, at its own height
-  /// even where that is taller than the row.
-  static Widget _placed(double? cover, Widget toast) => cover == null
+  /// Sets the card's top on the top of the row it takes the place of, at
+  /// its own height, but never past [floor], the screen's foot or the
+  /// keyboard's top.
+  static Widget _placed(double? cover, double floor, Widget toast) =>
+      cover == null
       ? toast
-      : OverflowBox(
-          minWidth: 0,
-          minHeight: 0,
-          maxHeight: double.infinity,
+      : CustomSingleChildLayout(
+          delegate: _Cover(top: cover, floor: floor),
           child: toast,
         );
+}
+
+class _Cover extends SingleChildLayoutDelegate {
+  const _Cover({required this.top, required this.floor});
+
+  final double top;
+  final double floor;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints(maxWidth: constraints.maxWidth);
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) =>
+      Offset(0, math.min(top, floor - childSize.height));
+
+  @override
+  bool shouldRelayout(_Cover old) => top != old.top || floor != old.floor;
 }
 
 /// Keeps toasts above [child], such as a phone's bar and its + or the format
@@ -555,8 +571,11 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
 /// [ToastClearanceScope] marks one. A sheet over it takes the toast back down
 /// to the bottom edge.
 ///
-/// With [cover], the toast takes [child]'s place instead, centred on it, as
-/// a phone's notice does over a sheet's footer.
+/// With [cover], the toast takes [child]'s place instead, from its top, as a
+/// phone's notice does over a sheet's footer.
+///
+/// It lets go as its route starts to leave, so a toast still showing goes
+/// straight to its next place rather than follow a closing sheet.
 class ToastClearance extends StatefulWidget {
   const ToastClearance({super.key, this.cover = false, required this.child});
 
@@ -568,18 +587,36 @@ class ToastClearance extends StatefulWidget {
 }
 
 class _ToastClearanceState extends State<ToastClearance> {
+  bool _onTop = true;
+  ModalRoute<Object?>? _route;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_OnTop.of(context) && (ModalRoute.of(context)?.isCurrent ?? true)) {
-      if (Toast._clearances.add(this)) Toast._clearancesChanged();
-    } else if (Toast._clearances.remove(this)) {
+    _onTop = _OnTop.of(context);
+    final route = ModalRoute.of(context);
+    if (route != _route) {
+      _route?.animation?.removeStatusListener(_update);
+      _route = route?..animation?.addStatusListener(_update);
+    }
+    _update();
+  }
+
+  void _update([AnimationStatus? _]) {
+    final route = _route;
+    final keep =
+        _onTop &&
+        (route == null ||
+            route.isCurrent &&
+                route.animation?.status != AnimationStatus.reverse);
+    if (keep ? Toast._clearances.add(this) : Toast._clearances.remove(this)) {
       Toast._clearancesChanged();
     }
   }
 
   @override
   void dispose() {
+    _route?.animation?.removeStatusListener(_update);
     if (Toast._clearances.remove(this)) Toast._clearancesChanged();
     super.dispose();
   }
