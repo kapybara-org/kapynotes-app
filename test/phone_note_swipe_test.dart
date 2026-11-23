@@ -13,6 +13,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/back_entry.dart';
 import 'package:kapy_notes/ui/note_row_swipe.dart';
 import 'package:kapy_notes/ui/notes_list.dart' show NotesShow;
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
@@ -540,6 +541,38 @@ void main() {
       await tester.pumpAndSettle();
       expect(page, findsNothing);
       expect(find.byKey(const ValueKey('phone-folders')), findsOneWidget);
+    });
+
+    testWidgets('a row that goes while open leaves Back as it was', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final page = find.byKey(ValueKey(await openFolder(tester)));
+      await _open(tester, 'Budget');
+      expect(BackEntry.anyOpen, isTrue);
+
+      // The bar takes the folder's page away under the open row.
+      await tester.tap(find.byKey(const ValueKey('bar-notes')));
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(BackEntry.anyOpen, isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('bar-folders')));
+      await tester.pumpAndSettle();
+      if (page.evaluate().isEmpty) {
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget.key is ValueKey<String> &&
+                (widget.key! as ValueKey<String>).value.startsWith('folder-'),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(page, findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
     });
 
     testWidgets("Back with no row open leaves the folder's page", (
