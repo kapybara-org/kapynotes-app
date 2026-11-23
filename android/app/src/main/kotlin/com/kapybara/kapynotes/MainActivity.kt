@@ -42,6 +42,7 @@ class MainActivity : FlutterFragmentActivity() {
         AudioDecode.register(flutterEngine.dartExecutor.binaryMessenger)
         SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
         SystemRegion.register(flutterEngine.dartExecutor.binaryMessenger)
+        StoreUpdate.register(flutterEngine.dartExecutor.binaryMessenger, this)
         contrastSetting = ContrastSetting.register(this, flutterEngine.dartExecutor.binaryMessenger)
         StatusBar.register(flutterEngine.dartExecutor.binaryMessenger, this)
         noteTitles = NoteTitles.register(flutterEngine.dartExecutor.binaryMessenger)

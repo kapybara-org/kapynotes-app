@@ -25,6 +25,7 @@ import '../data/notes_store.dart';
 import '../data/rates.dart';
 import '../data/release_history.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/store_updates.dart';
 import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
@@ -57,6 +58,7 @@ import 'settings_search.dart';
 import 'settings_update_card.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart';
+import 'tasks/task_marks.dart';
 import 'tonal_button.dart';
 import 'voice_consent_sheet.dart';
 import 'voice_note_dialog.dart';
@@ -148,6 +150,7 @@ Future<void> showSettings(
   required NotesStore notes,
   Account? account,
   UpdateChecker? updates,
+  StoreUpdates? storeUpdates,
   DesktopIntegration? desktopIntegration,
   VoicePrefs? voicePrefs,
   LocalModelStore? localModels,
@@ -173,6 +176,7 @@ Future<void> showSettings(
     notes: notes,
     account: account,
     updates: updates,
+    storeUpdates: storeUpdates,
     desktopIntegration: desktopIntegration,
     voicePrefs: voicePrefs,
     localModels: localModels,
@@ -230,6 +234,7 @@ class SettingsDialog extends StatefulWidget {
     required this.notes,
     this.account,
     this.updates,
+    this.storeUpdates,
     this.desktopIntegration,
     this.voicePrefs,
     this.localModels,
@@ -291,6 +296,10 @@ class SettingsDialog extends StatefulWidget {
   final TagStore? tags;
   final List<TagEntry> Function()? listedTags;
   final UpdateChecker? updates;
+
+  /// Whether the App Store or Google Play has a newer version, and what each
+  /// version brought. A phone's [updates]: null on a computer.
+  final StoreUpdates? storeUpdates;
   final DesktopIntegration? desktopIntegration;
 
   /// The pane to open on, when something outside sent the user here to do one
@@ -530,6 +539,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     _search.addListener(_onSearchChanged);
     _shortcutFilter.addListener(() => setState(() {}));
     if (widget.asSheet) unawaited(_readVersion());
+    // The store is asked here rather than on About & updates, so the list can
+    // mark that row before it is opened. At most once a day, inside.
+    unawaited(widget.storeUpdates?.check());
     if (!widget.asSheet) HardwareKeyboard.instance.addHandler(_onFindKey);
     _shortcutError = widget.desktopIntegration?.registrationError;
     _loadSpeechState();
@@ -686,10 +698,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   bool _isAvailable(SettingsSection section) => switch (section) {
     SettingsSection.window ||
     SettingsSection.shortcuts => AppPlatform.isDesktop,
-    // A phone has no updater, but its release notes still live here, the same
-    // place a computer keeps them, and the list marks the row while this
-    // version's are unread.
-    SettingsSection.about => widget.updates != null || AppPlatform.isMobile,
+    // A phone has no updater, but its store can say what is newer, and its
+    // release notes live here, the same place a computer keeps them.
+    SettingsSection.about =>
+      widget.updates != null || widget.storeUpdates != null,
     SettingsSection.account ||
     SettingsSection.sharing => widget.account != null,
     // Present even signed out, and even with no transcription configured:
@@ -3055,6 +3067,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                                   sections: _sections,
                                   account: widget.account,
                                   prefs: widget.layoutPrefs,
+                                  storeUpdates: widget.storeUpdates,
                                   version: _version,
                                   onSelect: _openSheetSection,
                                 ),
@@ -3291,7 +3304,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     ],
     SettingsSection.about =>
       widget.updates == null
-          ? const [_QuietWhatsNewRow()]
+          ? [_StoreAboutPane(updates: widget.storeUpdates!)]
           : [
               ..._fromGroups(_aboutGroups()),
               SizedBox(height: SettingsMetrics.groupGap),
@@ -4185,13 +4198,14 @@ class _SheetGrabber extends StatelessWidget {
 
 /// The list the sheet opens on (M16): who is signed in, the categories as
 /// cards of one-line rows, and the version. A row ends on what is waiting in
-/// it, where something is: the invitations, the mode, a release's notes not
-/// yet looked at.
+/// it, where something is: the invitations, the mode, an update the store
+/// offers, a release's notes not yet looked at.
 class _SheetIndex extends StatelessWidget {
   const _SheetIndex({
     required this.sections,
     required this.account,
     required this.prefs,
+    required this.storeUpdates,
     required this.version,
     required this.onSelect,
   });
@@ -4199,6 +4213,7 @@ class _SheetIndex extends StatelessWidget {
   final List<SettingsSection> sections;
   final Account? account;
   final LayoutPrefs prefs;
+  final StoreUpdates? storeUpdates;
 
   /// The running version, empty until it has been read.
   final String version;
@@ -4241,7 +4256,11 @@ class _SheetIndex extends StatelessWidget {
       SettingsSection.about => _IndexRow(
         key: key,
         section: section,
-        value: prefs.showWhatsNew(version) ? "What's new" : null,
+        value: (storeUpdates?.updateUnseen ?? false)
+            ? 'Update available'
+            : prefs.showWhatsNew(version)
+            ? "What's new"
+            : null,
         onTap: open,
       ),
       _ => _IndexRow(key: key, section: section, onTap: open),
@@ -4288,19 +4307,16 @@ class _SheetIndex extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final account = this.account;
-    if (account == null) return _list(context);
+  Widget build(BuildContext context) => ListenableBuilder(
+    // The store's answer comes in after the list is up, and marks a row.
+    listenable: Listenable.merge([?account, ?storeUpdates]),
     // Billing and sharing come and go with the account, so they are listened
     // to as they stand at each of its changes.
-    return ListenableBuilder(
-      listenable: account,
-      builder: (context, _) => ListenableBuilder(
-        listenable: Listenable.merge([?account.billing, ?account.sharing]),
-        builder: (context, _) => _list(context),
-      ),
-    );
-  }
+    builder: (context, _) => ListenableBuilder(
+      listenable: Listenable.merge([?account?.billing, ?account?.sharing]),
+      builder: (context, _) => _list(context),
+    ),
+  );
 }
 
 /// The account at the head of the phone's list: the face and name of whoever
@@ -4649,7 +4665,10 @@ class _SheetPage extends StatelessWidget {
   final double bottomInset;
   final List<Widget> children;
 
-  /// Null on the list of categories, which has nothing to go back to.
+  /// Null on the list of categories, which has nothing to go back to. A
+  /// category's page, which has it, titles itself in the hand with a green
+  /// Done, as its board draws it. The hand grows no further than 1.3× text,
+  /// as Home's header does, and takes a second line rather than being cut.
   final VoidCallback? onBack;
 
   /// The row a search result led to, lit over the page. Only a category's
@@ -4661,6 +4680,7 @@ class _SheetPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final back = onBack;
+    final done = back == null ? palette.textPrimary : palette.accentText;
     // Opaque, because these pages slide over one another.
     return ColoredBox(
       color: palette.surfaceBackground,
@@ -4668,8 +4688,8 @@ class _SheetPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            height: 48,
-            padding: EdgeInsets.fromLTRB(back == null ? 20 : 4, 0, 8, 0),
+            constraints: BoxConstraints(minHeight: back == null ? 48 : 52),
+            padding: EdgeInsets.fromLTRB(back == null ? 20 : 6, 0, 8, 0),
             child: Row(
               children: [
                 if (back != null)
@@ -4677,33 +4697,53 @@ class _SheetPage extends StatelessWidget {
                     key: const ValueKey('settings-sheet-back'),
                     onPressed: back,
                     tooltip: 'Back',
+                    constraints: const BoxConstraints.tightFor(
+                      width: 44,
+                      height: 44,
+                    ),
+                    padding: EdgeInsets.zero,
                     color: palette.textSecondary,
-                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 20),
+                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 22),
                   ),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 17,
-                      height: 22 / 17,
-                      fontWeight: AppWeight.font(AppWeight.page),
-                      fontVariations: AppWeight.wght(AppWeight.page),
-                      color: palette.textPrimary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: back == null
+                      ? Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 17,
+                            height: 22 / 17,
+                            fontWeight: AppWeight.font(AppWeight.page),
+                            fontVariations: AppWeight.wght(AppWeight.page),
+                            color: palette.textPrimary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.3,
+                          child: Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: handStyle(
+                              26,
+                              32,
+                              FontWeight.w400,
+                              palette.textPrimary,
+                            ),
+                          ),
+                        ),
                 ),
                 TextButton(
                   key: const ValueKey('settings-sheet-done'),
                   onPressed: () =>
                       Navigator.of(context, rootNavigator: true).pop(),
                   style: TextButton.styleFrom(
-                    foregroundColor: palette.textPrimary,
+                    foregroundColor: done,
                     textStyle: chromeStyle(
                       size: 15,
                       line: 20,
-                      weight: AppWeight.button,
-                      color: palette.textPrimary,
+                      weight: back == null ? AppWeight.button : AppWeight.page,
+                      color: done,
                     ),
                   ),
                   child: const Text('Done'),
@@ -5323,7 +5363,7 @@ class _ReleaseRow extends StatelessWidget {
   /// changelog wrote in some other shape is simply left out.
   static String? _day(String date) {
     final parsed = DateTime.tryParse(date);
-    return parsed == null ? null : SidebarTimestamp.formatDay(parsed);
+    return parsed == null ? null : SidebarTimestamp.formatDay(parsed.toLocal());
   }
 
   @override
@@ -5421,48 +5461,354 @@ class _ReleaseRow extends StatelessWidget {
   }
 }
 
-/// The phone's way to the release notes, in About, where a computer keeps
-/// the same route. The list marks About & updates until it is opened for
-/// this version.
-class _QuietWhatsNewRow extends StatelessWidget {
-  const _QuietWhatsNewRow();
+/// About & updates on a phone: the version it runs and what that brought,
+/// or, once the App Store or Google Play itself offers a newer one, that
+/// version, what it brings and the way to the store. Only the store's own
+/// answer says there is one: see [StoreUpdates].
+class _StoreAboutPane extends StatefulWidget {
+  const _StoreAboutPane({required this.updates});
+
+  final StoreUpdates updates;
+
+  @override
+  State<_StoreAboutPane> createState() => _StoreAboutPaneState();
+}
+
+class _StoreAboutPaneState extends State<_StoreAboutPane> {
+  late final Listenable _listenable = Listenable.merge([
+    widget.updates,
+    widget.updates.history,
+  ]);
+
+  /// The release the changelog was last read for, so that a store answer
+  /// arriving while this is open reads the entry it names.
+  String? _readFor;
+  bool _installedOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.updates.addListener(_changed);
+    _changed();
+  }
+
+  @override
+  void dispose() {
+    widget.updates.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    final updates = widget.updates;
+    final name = updates.update?.name ?? '';
+    if (name != _readFor) {
+      _readFor = name;
+      unawaited(updates.loadNotes());
+    }
+    // An update on screen has been seen. After the frame, because the list
+    // under this page rebuilds to drop its mark.
+    if (updates.updateUnseen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.updates.markSeen();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _listenable,
+    builder: (context, _) {
+      final palette = context.palette;
+      final updates = widget.updates;
+      final offer = updates.update;
+      final version = updates.installedVersion;
+      final installed = updates.installedNote;
+      final Widget? card;
+      if (offer != null) {
+        final note = updates.noteFor(offer);
+        final named = note?.version ?? offer.version;
+        card = _StoreReleaseCard(
+          key: const ValueKey('changelog'),
+          title: named.isEmpty
+              ? 'A new version is out'
+              : 'Version $named is out',
+          subtitle: _ReleaseRow._day(note?.date ?? offer.released),
+          note: note,
+          storeNotes: offer.notes,
+          // Its words wrap rather than overflow at the largest text sizes,
+          // where a tonal button's single line would not fit.
+          action: TextButton(
+            key: const ValueKey('store-update-open'),
+            onPressed: () => unawaited(_openStoreListing(context)),
+            style: TextButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              backgroundColor: palette.tonalBackground,
+              foregroundColor: palette.tonalForeground,
+              textStyle: chromeStyle(
+                size: 15,
+                line: 20,
+                weight: AppWeight.button,
+                color: palette.tonalForeground,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.control),
+              ),
+            ),
+            child: Text(
+              AppPlatform.isIOS
+                  ? 'Update on the App Store'
+                  : 'Update on Google Play',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      } else if (version.isNotEmpty) {
+        // The store's notes stand in for the changelog's only for the version
+        // it sells, which is this one when it has nothing newer.
+        final latest = updates.latest;
+        final sold = latest?.version == version ? latest : null;
+        final subtitle = [
+          ?_ReleaseRow._day(installed?.date ?? sold?.released ?? ''),
+          if (updates.isLatest) 'You have the latest version',
+        ];
+        card = _StoreReleaseCard(
+          key: const ValueKey('changelog'),
+          title: 'Version $version',
+          subtitle: subtitle.isEmpty ? null : subtitle.join(' · '),
+          note: installed,
+          storeNotes: sold?.notes ?? '',
+        );
+      } else {
+        card = null;
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 4),
+          if (card != null) ...[
+            card,
+            SizedBox(height: SettingsMetrics.groupGap),
+          ],
+          SettingsGroup(
+            children: [
+              if (offer != null && installed != null)
+                _ReleaseRow(
+                  release: installed,
+                  installed: true,
+                  compact: false,
+                  open: _installedOpen,
+                  onToggle: () =>
+                      setState(() => _installedOpen = !_installedOpen),
+                )
+              else if (offer != null && version.isNotEmpty)
+                SettingsRow(
+                  title: version,
+                  trailing: Text(
+                    'Installed',
+                    style: TextStyle(
+                      fontSize: SettingsMetrics.subtitleSize,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                ),
+              const _ChangelogLinkRow(),
+            ],
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// Our listing, in the store's own app, or on the web where that will not
+/// open.
+Future<void> _openStoreListing(BuildContext context) async {
+  final appStore = AppPlatform.isIOS;
+  for (final listing
+      in appStore
+          ? [StoreUpdates.appStoreApp, StoreUpdates.appStorePage]
+          : [StoreUpdates.playApp, StoreUpdates.playPage]) {
+    try {
+      if (await launchUrl(listing, mode: LaunchMode.externalApplication)) {
+        return;
+      }
+    } catch (_) {
+      // On to the next way in.
+    }
+  }
+  if (!context.mounted) return;
+  Toast.show(
+    context,
+    appStore ? 'Could not open the App Store' : 'Could not open Google Play',
+    icon: KapyIcons.errorOutlined,
+    isError: true,
+  );
+}
+
+/// One release on About & updates: its version and day, what it brought,
+/// the rest of its changes a tap away, and [action] under it all.
+class _StoreReleaseCard extends StatefulWidget {
+  const _StoreReleaseCard({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.note,
+    this.storeNotes = '',
+    this.action,
+  });
+
+  final String title;
+  final String? subtitle;
+
+  /// The changelog's entry for the release, once it has one.
+  final ReleaseNote? note;
+
+  /// What the store said the release brought, for when [note] is missing.
+  final String storeNotes;
+
+  final Widget? action;
+
+  @override
+  State<_StoreReleaseCard> createState() => _StoreReleaseCardState();
+}
+
+class _StoreReleaseCardState extends State<_StoreReleaseCard> {
+  bool _allOpen = false;
+
+  /// A line that only names the release, as the App Store's notes open, says
+  /// nothing the title above them does not.
+  static final _heading = RegExp(
+    r'^Kapy Notes v?\d+(\.\d+)*$',
+    caseSensitive: false,
+  );
+  static final _marker = RegExp(r'^[-•*]\s*');
+
+  static List<String> _storeLines(String notes) => [
+    for (final line in notes.split('\n'))
+      if (line.trim() case final text
+          when text.isNotEmpty && !_heading.hasMatch(text))
+        text.replaceFirst(_marker, ''),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return SettingsGroup(
+    final note = widget.note;
+    final summary = note?.summary ?? '';
+    final lines = note?.updateHighlights ?? _storeLines(widget.storeNotes);
+    // Highlights stand in for the changes. Without them the lines above are
+    // the changes, and there is nothing more to open.
+    final rest = note != null && note.highlights.isNotEmpty
+        ? note.changes
+        : const <String>[];
+    final body = TextStyle(
+      fontSize: SettingsMetrics.subtitleSize,
+      height: 19 / 13,
+      color: palette.textSecondary,
+    );
+    Widget bullets(List<String> lines) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Semantics(
-          link: true,
-          child: InkWell(
-            key: const ValueKey('changelog'),
-            onTap: () => unawaited(openChangelogPage(context)),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 44),
-              child: Padding(
-                padding: SettingsMetrics.padding,
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: SettingsRowCopy(
-                        title: "What's new",
-                        subtitle: 'See what changed',
+        for (final line in lines)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('•', style: body),
+                const SizedBox(width: 7),
+                Expanded(child: Text(line, style: body)),
+              ],
+            ),
+          ),
+      ],
+    );
+    final sections = <Widget>[
+      Padding(
+        padding: SettingsMetrics.padding,
+        child: SettingsRowCopy(
+          title: widget.title,
+          subtitle: widget.subtitle,
+          subtitleColor: palette.textTertiary,
+        ),
+      ),
+      if (summary.isNotEmpty || lines.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (summary.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    summary,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 20 / 14,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ),
+              bullets(lines),
+            ],
+          ),
+        ),
+      if (rest.isNotEmpty)
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              button: true,
+              expanded: _allOpen,
+              child: InkWell(
+                key: const ValueKey('store-release-all-changes'),
+                onTap: () => setState(() => _allOpen = !_allOpen),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  padding: SettingsMetrics.padding,
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: SettingsRowCopy(title: 'All changes'),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    KapyIcon(
-                      KapyIcons.openExternalRounded,
-                      size: 15,
-                      color: palette.textTertiary,
-                    ),
-                  ],
+                      AnimatedRotation(
+                        duration: const Duration(milliseconds: 140),
+                        curve: Curves.easeOutCubic,
+                        turns: _allOpen ? 0.5 : 0,
+                        child: KapyIcon(
+                          KapyIcons.chevronDownRounded,
+                          size: 14,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+            if (_allOpen)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+                child: bullets(rest),
+              ),
+          ],
         ),
-      ],
-    );
+    ];
+    final action = widget.action;
+    if (action != null) {
+      sections.last = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          sections.last,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 14),
+            child: action,
+          ),
+        ],
+      );
+    }
+    return SettingsGroup(children: sections);
   }
 }
 
