@@ -5382,6 +5382,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         bottom: false,
         child: PhoneHomeSwipe(
           onTurn: turns || level ? _phoneTurn : null,
+          // Android's pages have no back swipe of their own, so there the
+          // edge goes back ahead of a row's swipe, out of a level or Tasks.
+          backFromEdge:
+              (level || _tasksMode) &&
+              Theme.of(context).platform != TargetPlatform.iOS,
           child: page,
         ),
       ),

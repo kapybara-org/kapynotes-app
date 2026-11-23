@@ -12670,6 +12670,13 @@ void main() {
       },
     };
 
+    // A row on each level, which an edge swipe starts over.
+    const rows = {
+      'Pinned': 'Lisbon trip',
+      'a folder': 'Acme brief',
+      'Archive': 'Done with',
+    };
+
     Future<(Finder, Finder)> open(WidgetTester tester, String level) async {
       await notes.load();
       final trip = notes.create(body: 'Lisbon trip\nFour days in May');
@@ -12756,6 +12763,21 @@ void main() {
         expect(shown, findsNothing);
         expect(under, findsOneWidget);
       }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+      testWidgets('on Android, a swipe in from the left edge over a row of '
+          '$level goes back one level', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        final (shown, under) = await open(tester, level);
+        final row = find.widgetWithText(NoteRow, rows[level]!);
+        await tester.timedDragFrom(
+          Offset(2, tester.getCenter(row).dy),
+          const Offset(200, 0),
+          const Duration(milliseconds: 300),
+        );
+        await tester.pumpAndSettle();
+        expect(shown, findsNothing);
+        expect(under, findsOneWidget);
+      });
 
       testWidgets("Android's Back takes $level back one level", (tester) async {
         AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
