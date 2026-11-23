@@ -480,7 +480,11 @@ void main() {
       await tester.pumpAndSettle();
 
       final removed = find.text('Removed Carol from this note');
-      await tapUntil(tester, askOk, () => removed.evaluate().isNotEmpty);
+      await tapUntil(
+        tester,
+        askOk,
+        () => removed.evaluate().isNotEmpty && sheet.evaluate().length == 1,
+      );
       expect(sheet, findsOneWidget);
       final card = tester.getRect(find.byKey(const ValueKey('toast-surface')));
       final width =
