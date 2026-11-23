@@ -352,6 +352,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   final GlobalKey<NavigatorState> _phoneNavigator = GlobalKey();
 
+  /// Phone Tasks' own navigator, under the bar, that a task's page is pushed
+  /// on (M14), so the bar stays while it shows.
+  final GlobalKey<NavigatorState> _tasksNavigator = GlobalKey();
+
   /// Whether the notes list is open over the page, in a desktop window too
   /// narrow to hold it beside the page. See [_setListShown].
   bool _listOverlaid = false;
@@ -3840,12 +3844,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Back on a phone's list, from Android's back or the edge swipe: one level
-  /// up at a time. Tasks returns to Notes and picks let go, though not on
-  /// Kapy AI, which doesn't show them; then a folder, Upcoming or Drawings
-  /// returns to Folders, another tab to Notes, and on Notes Pinned or Shared
-  /// to its Home.
+  /// up at a time. A task's page returns to Tasks, Tasks returns to Notes
+  /// and picks let go, though not on Kapy AI, which doesn't show them; then
+  /// a folder, Upcoming or Drawings returns to Folders, another tab to Notes,
+  /// and on Notes Pinned or Shared to its Home.
   void _phoneListBack() {
-    if (_tasksMode) {
+    if (_tasksNavigator.currentState?.canPop() ?? false) {
+      _tasksNavigator.currentState?.maybePop();
+    } else if (_tasksMode) {
       _showHome(tasks: false);
     } else if (_picks.on && _phoneTab != PhoneTab.kapyAi) {
       _picks.clear();
@@ -5073,27 +5079,43 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   now: widget.notes.now,
                 ),
               if (tasks != null)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _phoneHomeHeader(),
-                    Expanded(
-                      child: TasksScreen(
-                        key: _tasksPage,
-                        phone: true,
-                        controller: tasks,
-                        filter: _taskFilter,
-                        onFilter: (filter) =>
-                            setState(() => _taskFilter = filter),
-                        addFocus: _taskAddFocus,
-                        labelOf: _taskNoteLabel,
-                        onOpenNote: _openTaskNote,
-                        onOpenDone: _openTasksDone,
-                        images: widget.notes.blobs,
-                        displayTime: widget.prefs.displayTime,
+                Navigator(
+                  key: _tasksNavigator,
+                  pages: [
+                    MaterialPage(
+                      key: const ValueKey('phone-tasks'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _phoneHomeHeader(),
+                          Expanded(
+                            child: TasksScreen(
+                              key: _tasksPage,
+                              phone: true,
+                              controller: tasks,
+                              filter: _taskFilter,
+                              onFilter: (filter) =>
+                                  setState(() => _taskFilter = filter),
+                              addFocus: _taskAddFocus,
+                              labelOf: _taskNoteLabel,
+                              onOpenNote: _openTaskNote,
+                              onOpenTask: (item) {
+                                widget.prefs.rememberCaret(
+                                  item.note.id,
+                                  item.line.end,
+                                );
+                                _openTaskNote(item.note.id);
+                              },
+                              onOpenDone: _openTasksDone,
+                              images: widget.notes.blobs,
+                              displayTime: widget.prefs.displayTime,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
+                  onDidRemovePage: (_) {},
                 ),
             ],
           );

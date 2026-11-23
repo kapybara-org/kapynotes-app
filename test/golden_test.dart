@@ -107,6 +107,9 @@ Future<void> pumpForGolden(
   bool withNote = true,
   bool blankNote = false,
   bool withImages = false,
+
+  /// The picture store alone, for a picture a test puts in a note itself.
+  bool withImageStore = false,
   bool withUpdates = false,
   bool updateAvailable = false,
 
@@ -256,7 +259,7 @@ Future<void> pumpForGolden(
   final notes = NotesStore(
     store,
     now: () => _goldenNow,
-    blobs: withImages ? _imageStore : null,
+    blobs: withImages || withImageStore ? _imageStore : null,
   );
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
@@ -700,6 +703,10 @@ late Directory _imageDir;
 late BlobStore _imageStore;
 late List<String> _imageHashes;
 
+/// The chart in Send the deck's details, [_chart], at three times M14's
+/// 200 × 96.
+late String _deckHash;
+
 /// Flat-coloured rectangles rather than photographs, so the golden is about
 /// the layout — where a picture sits, how wide it is, what it does to the
 /// lines around it — and not about a JPEG decoder's rounding.
@@ -718,6 +725,47 @@ Uint8List _swatch(int width, int height, img.ColorRgb8 colour) {
       (colour.b * 0.7).round(),
     ),
   );
+  return Uint8List.fromList(img.encodePng(image, level: 1));
+}
+
+/// M14's chart, so the task page's golden pins the picture itself and not
+/// only its place: a slate sky over darker ground, a pale sun and five bars,
+/// in flat colours like the swatches.
+Uint8List _chart() {
+  final image = img.Image(width: 600, height: 288, numChannels: 3);
+  img.fill(image, color: img.ColorRgb8(67, 78, 87));
+  img.fillRect(
+    image,
+    x1: 0,
+    y1: 156,
+    x2: 600,
+    y2: 288,
+    color: img.ColorRgb8(46, 58, 64),
+  );
+  img.fillCircle(
+    image,
+    x: 504,
+    y: 68,
+    radius: 39,
+    color: img.ColorRgb8(232, 226, 214),
+  );
+  final pale = img.ColorRgb8(196, 217, 168);
+  for (final (left, top, colour) in [
+    (42, 186, pale),
+    (90, 156, pale),
+    (138, 174, pale),
+    (186, 120, img.ColorRgb8(138, 166, 118)),
+    (234, 96, img.ColorRgb8(214, 122, 86)),
+  ]) {
+    img.fillRect(
+      image,
+      x1: left,
+      y1: top,
+      x2: left + 30,
+      y2: 252,
+      color: colour,
+    );
+  }
   return Uint8List.fromList(img.encodePng(image, level: 1));
 }
 
@@ -765,6 +813,7 @@ void main() {
       await _imageStore.put(_swatch(600, 600, img.ColorRgb8(104, 168, 128))),
       await _imageStore.put(_swatch(600, 600, img.ColorRgb8(158, 130, 198))),
     ];
+    _deckHash = await _imageStore.put(_chart());
   });
 
   tearDownAll(() async {
@@ -1674,6 +1723,7 @@ void main() {
         bool firstRun = false,
         NoteDayStore? days,
         bool signedIn = false,
+        bool withImageStore = false,
         bool withDays = false,
       }) async {
         PackageInfo.setMockInitialValues(
@@ -1696,6 +1746,7 @@ void main() {
           withYesterday: !firstRun,
           days: days,
           signedIn: signedIn,
+          withImageStore: withImageStore,
           withDays: withDays,
         );
       }
@@ -1868,9 +1919,12 @@ void main() {
       // M13 with a search typed, and M13a: Do now over Up next, the line
       // after it and Later. The boards are drawn on an iPhone.
       if (phone == 'iphone') {
-        Future<void> openBoardTasks(WidgetTester tester) async {
+        Future<void> openBoardTasks(
+          WidgetTester tester, {
+          bool withImageStore = false,
+        }) async {
           final days = await boardDays();
-          await pumpPhone(tester, days: days);
+          await pumpPhone(tester, days: days, withImageStore: withImageStore);
           await seedBoardTasks(tester, days);
           await tapAndSettle(tester, 'page-home');
           await tapAndSettle(tester, 'home-title-tasks');
@@ -1892,6 +1946,54 @@ void main() {
           await tapAndSettle(tester, 'tasks-pair-right');
           await tapAndSettle(tester, 'tasks-start');
           await matches('tasks_up_next');
+        });
+
+        // M14: a task opened, pushed under the bar, its chart between the
+        // lines of its details.
+        testWidgets('phone tasks, a task opened, $name', (tester) async {
+          await openBoardTasks(tester, withImageStore: true);
+          final call = goldenNotes.notes.firstWhere(
+            (note) => note.title == 'Call with Arjun',
+          );
+          final body =
+              '${call.body}\n'
+              '  Slides 1 to 6 are done. The charts need the new numbers '
+              'from Finance.\n'
+              '  \u{FFFC}\n'
+              '  Send it before the 17:00 review.';
+          goldenNotes.updateDocument(call.id, body, call.formats, [
+            ...call.attachments,
+            NoteImageRef(
+              offset: body.indexOf('\u{FFFC}'),
+              hash: _deckHash,
+              key: Uint8List(32),
+              mime: 'image/png',
+              width: 600,
+              height: 288,
+              bytes: 4096,
+            ),
+          ]);
+          await tester.runAsync(goldenTasks.reconcileNow);
+          await tester.pumpAndSettle();
+          final deck = find.text('Send the deck').last;
+          await tester.ensureVisible(deck);
+          await tester.pumpAndSettle();
+          await tester.tap(deck);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('phone-task-open-note')),
+            findsOneWidget,
+          );
+          await _warmVisibleNoteImages(tester);
+          unawaited(tester.binding.reassembleApplication());
+          await tester.pumpAndSettle();
+          expect(
+            find.byWidgetPredicate(
+              (widget) => widget is Image && widget.image is NoteImageProvider,
+            ),
+            findsOneWidget,
+          );
+          await matches('tasks_task_opened');
         });
       }
 
