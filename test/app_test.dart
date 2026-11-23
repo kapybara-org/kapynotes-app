@@ -12984,8 +12984,7 @@ void main() {
       notes.togglePinned(trip.id);
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
-      await tester.tap(find.byKey(const ValueKey('home-pinned-card')));
-      await tester.pumpAndSettle();
+      await viewAllPinned(tester);
       final row = find.widgetWithText(NoteRow, 'Lisbon trip');
       await tester.dragFrom(
         Offset(24, tester.getCenter(row).dy),
@@ -12993,7 +12992,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('swipe-pin-${trip.id}')), findsOneWidget);
-      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pinned-page')), findsOneWidget);
     });
     testWidgets("after a note Quick find opened, the page's Home brings no "
         'Quick find back, and the next one starts empty', (tester) async {
