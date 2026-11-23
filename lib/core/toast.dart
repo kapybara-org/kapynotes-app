@@ -17,8 +17,9 @@ class Toast {
   static OverlayEntry? _current;
   static int _generation = 0;
 
-  /// What a toast keeps above, such as a phone's bar and its +.
-  static _ToastClearanceState? _clearance;
+  /// What a toast keeps above, such as a phone's bar and its +, or the
+  /// format bar over the keyboard: whichever reaches highest.
+  static final Set<_ToastClearanceState> _clearances = {};
 
   /// Widget tests usually call `pumpAndSettle` before inspecting a toast. A
   /// production lifetime animation would make that helper advance all the way
@@ -294,10 +295,15 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
 
     final media = MediaQuery.of(context);
-    final below = Toast._clearance?.context.findRenderObject();
-    final clear = below is RenderBox && below.hasSize
-        ? media.size.height - below.localToGlobal(Offset.zero).dy + 16
-        : 0.0;
+    var clear = 0.0;
+    for (final below in Toast._clearances) {
+      final box = below.context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) continue;
+      clear = math.max(
+        clear,
+        media.size.height - box.localToGlobal(Offset.zero).dy + 16,
+      );
+    }
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontSize: AppTypeScale.body,
       color: palette.textPrimary,
@@ -496,7 +502,8 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   }
 }
 
-/// Keeps toasts above [child], such as a phone's bar and its +, while its
+/// Keeps toasts above [child], such as a phone's bar and its + or the format
+/// bar over the keyboard, the highest of them on screen, while its
 /// route is the one on top, and the page around its navigator too when a
 /// [ToastClearanceScope] marks one. A sheet over it takes the toast back down
 /// to the bottom edge, over the sheet's footer.
@@ -514,15 +521,15 @@ class _ToastClearanceState extends State<ToastClearance> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_OnTop.of(context) && (ModalRoute.of(context)?.isCurrent ?? true)) {
-      Toast._clearance = this;
-    } else if (identical(Toast._clearance, this)) {
-      Toast._clearance = null;
+      Toast._clearances.add(this);
+    } else {
+      Toast._clearances.remove(this);
     }
   }
 
   @override
   void dispose() {
-    if (identical(Toast._clearance, this)) Toast._clearance = null;
+    Toast._clearances.remove(this);
     super.dispose();
   }
 

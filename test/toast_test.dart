@@ -320,6 +320,49 @@ void main() {
       expect(tester.getSize(surface).width, 393 - 32);
     });
 
+    testWidgets('keeps above the highest of what it keeps clear of', (
+      tester,
+    ) async {
+      Toast.debugAnimateLifetimeInTests = false;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      for (final order in [true, false]) {
+        late BuildContext context;
+        const low = ToastClearance(child: SizedBox(height: 60));
+        const high = ToastClearance(child: SizedBox(height: 200));
+        await tester.pumpWidget(
+          MaterialApp(
+            key: ValueKey(order),
+            theme: KapyTheme.dark(),
+            home: Scaffold(
+              body: Builder(
+                builder: (value) {
+                  context = value;
+                  return Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: order
+                          ? const [Expanded(child: low), Expanded(child: high)]
+                          : const [Expanded(child: high), Expanded(child: low)],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        Toast.show(context, 'Copied');
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(surface).bottom,
+          852 - 200 - 16,
+          reason: '$order',
+        );
+      }
+    });
+
     testWidgets('stops at 480 pt wide on a tablet', (tester) async {
       final context = await phone(tester, size: const Size(1024, 768));
       Toast.show(context, 'Copied');
