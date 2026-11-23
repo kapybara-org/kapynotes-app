@@ -1037,6 +1037,36 @@ void main() {
       }, variant: variant);
     }
 
+    testWidgets('on an iPhone, a part swipe from the left edge of a note the '
+        'week opened follows the finger over the note it came from, and let '
+        'go early it stays (KAP-306)', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      final left = tester.getTopLeft(header).dx;
+
+      final gesture = await tester.startGesture(const Offset(5, 400));
+      await gesture.moveBy(
+        const Offset(20, 0),
+        timeStamp: const Duration(milliseconds: 100),
+      );
+      await gesture.moveBy(
+        const Offset(100, 0),
+        timeStamp: const Duration(milliseconds: 900),
+      );
+      await tester.pump();
+      expect(header, findsNWidgets(2), reason: 'its own page is under it');
+      expect(tester.getTopLeft(header.last).dx, greaterThan(left + 80));
+      expect(tester.getTopLeft(header.last).dx, lessThan(left + 125));
+
+      await gesture.up(timeStamp: const Duration(milliseconds: 1700));
+      await tester.pumpAndSettle();
+      expect(header, findsOneWidget);
+      expect(tester.getTopLeft(header).dx, left);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets("Home from a note the week opened goes Home, past the notes "
         'behind it', (tester) async {
       seed();
