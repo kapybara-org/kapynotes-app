@@ -510,6 +510,79 @@ void main() {
     });
   });
 
+  group('Back', () {
+    Future<String> openFolder(WidgetTester tester) async {
+      final work = folders.create('Work')!;
+      folders.file(['offsite', 'budget'], work.id);
+      await pump(tester);
+      await tester.tap(find.byKey(const ValueKey('bar-folders')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('folder-${work.id}')));
+      await tester.pumpAndSettle();
+      return 'phone-folder-${work.id}';
+    }
+
+    testWidgets("Android's Back closes an open row before the page goes", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final page = find.byKey(ValueKey(await openFolder(tester)));
+      await _open(tester, 'Budget');
+      expect(_button('pin', 'budget').hitTestable(), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(_button('pin', 'budget').hitTestable(), findsNothing);
+      expect(tester.getTopLeft(_row('Budget')).dx, 0);
+      expect(page, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(find.byKey(const ValueKey('phone-folders')), findsOneWidget);
+    });
+
+    testWidgets("Back with no row open leaves the folder's page", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final page = find.byKey(ValueKey(await openFolder(tester)));
+      await _open(tester, 'Budget');
+      await _drag(tester, _row('Budget'), 200);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+    });
+
+    testWidgets("on an iPhone, the left edge's swipe over a row still goes "
+        'back, and a left drag from it opens nothing', (tester) async {
+      final page = find.byKey(ValueKey(await openFolder(tester)));
+      final y = tester.getCenter(_row('Budget')).dy;
+
+      await tester.dragFrom(Offset(10, y), const Offset(-200, 0));
+      await tester.pumpAndSettle();
+      expect(_button('pin', 'budget'), findsNothing);
+      expect(page, findsOneWidget);
+
+      await tester.dragFrom(Offset(10, y), const Offset(200, 0));
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(find.byKey(const ValueKey('phone-folders')), findsOneWidget);
+    });
+
+    testWidgets('on an iPhone, a row swipe from 24 pt in opens the row on '
+        "a folder's page, where the edge goes back", (tester) async {
+      final page = find.byKey(ValueKey(await openFolder(tester)));
+      await tester.dragFrom(
+        Offset(24, tester.getCenter(_row('Budget')).dy),
+        const Offset(-200, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(_button('pin', 'budget').hitTestable(), findsOneWidget);
+      expect(page, findsOneWidget);
+    });
+  });
+
   group("Home's page swipe", () {
     final tasksPage = find.byType(TasksScreen);
 

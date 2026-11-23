@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import 'back_entry.dart';
 
 /// One thing a phone row's swipe does: a button behind the row's trailing
 /// edge, or what a swipe all the way across does.
@@ -22,7 +23,8 @@ typedef NoteRowSwipeAction = ({
 /// trailing edge, such as Pin and Delete; a swipe past [fullFraction] of the
 /// row does [full], such as Archive, with a tick on iOS as it passes, and the
 /// row slides out. A swipe back, a tap anywhere but on the row's buttons, or
-/// a scroll of its list closes it, so only one row stays open.
+/// a scroll of its list closes it, so only one row stays open. So does Back:
+/// an open row is a [BackEntry], which closes before the page goes.
 ///
 /// The buttons stand in for the row's menu, whose choices VoiceOver and
 /// TalkBack already offer as actions on the row, so they keep out of the
@@ -77,6 +79,8 @@ class _NoteRowSwipeState extends State<NoteRowSwipe>
 
   ScrollPosition? _scroll;
 
+  late final _back = BackEntry(_close);
+
   double get _extent => math.min(
     widget.actions.length * NoteRowSwipe.actionWidth,
     _width * NoteRowSwipe.actionsFraction,
@@ -86,6 +90,20 @@ class _NoteRowSwipeState extends State<NoteRowSwipe>
     _width * NoteRowSwipe.fullFraction,
     _extent + NoteRowSwipe.fullPastActions,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _offset.addListener(_onSlide);
+  }
+
+  void _onSlide() {
+    if (_offset.value > 0) {
+      _back.open(context);
+    } else {
+      _back.close();
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -99,6 +117,7 @@ class _NoteRowSwipeState extends State<NoteRowSwipe>
   @override
   void dispose() {
     _scroll?.isScrollingNotifier.removeListener(_onScroll);
+    _back.close();
     _offset.dispose();
     super.dispose();
   }

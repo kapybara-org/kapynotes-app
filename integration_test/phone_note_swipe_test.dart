@@ -128,17 +128,41 @@ void main() {
 
     await tester.drag(row, const Offset(200, 0));
     await tester.pumpAndSettle();
+    // On a device a toast's lifetime is an animation, so pumpAndSettle
+    // would run the notice out; this pumps on the real clock instead.
+    final notice = find.text('Archived “Morning pages”');
     await tester.drag(row, const Offset(-340, 0));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => notice.evaluate().isNotEmpty);
     expect(notes.byId('morning')!.isArchived, isTrue);
     expect(row, findsNothing);
-    expect(find.text('Archived “Morning pages”'), findsOneWidget);
+    expect(notice, findsOneWidget);
     expect(tester.takeException(), isNull);
     await screenshot('swipe-archived-notice', device: true);
 
-    await tester.tap(find.text('Undo'));
-    await tester.pumpAndSettle();
-    expect(notes.byId('morning')!.isArchived, isFalse);
-    expect(row, findsOneWidget);
+    // The device shot may outlast the notice, so Undo is checked on a
+    // second archive, tapped as soon as its notice shows.
+    final quote = find.widgetWithText(NoteRow, 'Quote for the deck');
+    final undo = find.text('Undo');
+    await tester.drag(quote, const Offset(-340, 0));
+    await pumpUntil(
+      tester,
+      () => find.text('Archived “Quote for the deck”').evaluate().isNotEmpty,
+    );
+    expect(notes.byId('quote')!.isArchived, isTrue);
+    await tester.tap(undo.last);
+    await pumpUntil(tester, () => quote.evaluate().isNotEmpty);
+    expect(notes.byId('quote')!.isArchived, isFalse);
+    expect(quote, findsOneWidget);
   });
+}
+
+/// Pumps on the real clock until [done], for at most four seconds, leaving a
+/// toast up where pumpAndSettle would run its lifetime out.
+Future<void> pumpUntil(WidgetTester tester, bool Function() done) async {
+  for (var pass = 0; pass < 40 && !done(); pass++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+  }
 }
