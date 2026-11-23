@@ -61,7 +61,9 @@ void main() {
     final report = FlutterError.onError;
     FlutterError.onError = (details) {
       final message = details.exceptionAsString().split('\n').first;
-      final lines = details.toString().split('\n');
+      final lines = details
+          .toString(minLevel: DiagnosticLevel.debug)
+          .split('\n');
       final widget = lines.indexWhere(
         (line) => line.contains('relevant error-causing widget'),
       );

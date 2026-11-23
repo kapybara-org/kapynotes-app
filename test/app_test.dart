@@ -34,6 +34,7 @@ import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/data/task_folds.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -58,6 +59,8 @@ import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/editor/task_details_chrome.dart';
+import 'package:kapy_notes/ui/editor/note_sliver.dart' show RenderNoteLine;
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/note_header.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
@@ -13218,6 +13221,234 @@ void main() {
       expect(recording.isRecording, isTrue);
       await discard(tester);
     });
+  });
+
+  final phones = ValueVariant({TargetPlatform.iOS, TargetPlatform.android});
+  testWidgets('phones name no desktop keys or clicks on any surface: the '
+      "page, its slash menu and a task line's hint, Home, Quick find, the +, "
+      'Folders, Tasks and a task, and Settings (KAP-115)', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = phones.currentValue;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final semantics = tester.ensureSemantics();
+    final keys = RegExp(
+      r'Ctrl|Cmd|Alt ?\+|Option ?\+|Shift ?\+|[⌘⌥⌃⇧↵]|\besc\b|[Cc]lick',
+    );
+    void expectNoKeys(String where) {
+      final shown = [
+        for (final tooltip in tester.widgetList<Tooltip>(find.byType(Tooltip)))
+          tooltip.message ?? '',
+        for (final text in tester.widgetList<Text>(find.byType(Text)))
+          text.data ?? text.textSpan?.toPlainText() ?? '',
+        for (final rich in tester.widgetList<RichText>(find.byType(RichText)))
+          rich.text.toPlainText(),
+      ];
+      expect(shown.where(keys.hasMatch), isEmpty, reason: where);
+      expect(
+        find.semantics.byPredicate(
+          (node) =>
+              keys.hasMatch(node.label) ||
+              keys.hasMatch(node.tooltip) ||
+              keys.hasMatch(node.hint),
+        ),
+        findsNothing,
+        reason: where,
+      );
+    }
+
+    Future<void> tap(Finder finder) async {
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    await tester.runAsync(TaskFolds.open);
+    await notes.load();
+    notes.create(body: 'Errands\n☐ Post the parcel\n☐ ');
+    final folders = FolderStore(store);
+    await folders.load();
+    folders.create('Work');
+    await pumpApp(
+      tester,
+      size: const Size(393, 852),
+      folders: folders,
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        storage: MemoryDocStorage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The page, typing on an empty task line, where a Mac offers details.
+    final field = openNoteField(tester);
+    field.focusNode.requestFocus();
+    await tester.pump();
+    final body = field.controller.text;
+    field.controller.selection = TextSelection.collapsed(
+      offset: body.indexOf('☐ ', body.indexOf('parcel')) + 2,
+    );
+    await tester.pumpAndSettle();
+    expectNoKeys('the page');
+
+    // The slash menu.
+    final text = '${field.controller.text}\n/';
+    tester.testTextInput.updateEditingValue(
+      TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+    expectNoKeys('the slash menu');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tap(find.byKey(const ValueKey('page-home')));
+    expectNoKeys('Home');
+
+    await tap(find.byKey(const ValueKey('sidebar-search-field')));
+    expect(find.byKey(const ValueKey('command-menu-field')), findsOneWidget);
+    expectNoKeys('Quick find');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byKey(const ValueKey('phone-new')));
+    await tester.pumpAndSettle();
+    expectNoKeys("the +'s menu");
+    await tap(find.byKey(const ValueKey('phone-new-close')));
+
+    await tap(find.byKey(const ValueKey('bar-folders')));
+    expectNoKeys('Folders');
+    await tap(find.byKey(const ValueKey('bar-notes')));
+
+    await tap(find.byKey(const ValueKey('home-title-tasks')));
+    expectNoKeys('Tasks');
+    await tap(find.text('Post the parcel'));
+    expect(find.byKey(const ValueKey('phone-task-open-note')), findsOneWidget);
+    expectNoKeys("a task's page");
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tap(find.byKey(const ValueKey('phone-account')).first);
+    expectNoKeys('Settings');
+    semantics.dispose();
+  }, variant: phones);
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final (width, scale) in [(320.0, 1.0), (393.0, 1.3), (393.0, 2.0)]) {
+      testWidgets(
+        'on ${platform.name}, on a ${width.toInt()} pt phone at ${scale}x text, a long '
+        "result such as a week wraps whole, and its line grows to hold it "
+        '(KAP-143)',
+        (tester) async {
+          AppPlatform.debugTargetPlatformOverride = platform;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await notes.load();
+          notes.create(body: 'Sprint\nweek 44 2026\nNext');
+          await pumpApp(tester, size: Size(width, 800));
+          final chip = find.byType(ResultChip);
+          final result = tester.widget<ResultChip>(chip).result.text;
+          expect(result, 'Oct 26 – Nov 1, 2026');
+          final words = find.descendant(of: chip, matching: find.text(result));
+          final paragraph = tester.renderObject<RenderParagraph>(words);
+          expect(paragraph.didExceedMaxLines, isFalse);
+          expect(paragraph.debugHasOverflowShader, isFalse);
+          expect(
+            paragraph.getBoxesForSelection(
+              TextSelection(baseOffset: 0, extentOffset: result.length),
+            ),
+            isNotEmpty,
+          );
+          RenderObject? week = tester.renderObject(chip);
+          while (week is! RenderNoteLine) {
+            week = week!.parent;
+          }
+          final rect = tester.getRect(words);
+          final line = MatrixUtils.transformRect(
+            week.getTransformTo(null),
+            Offset.zero & week.size,
+          );
+          expect(rect.top, greaterThanOrEqualTo(line.top - 0.5));
+          expect(rect.bottom, lessThanOrEqualTo(line.bottom + 0.5));
+        },
+      );
+    }
+  }
+
+  group('the Shift+Enter hint on an empty task line (KAP-312)', () {
+    Future<NoteField> openEmptyTask(
+      WidgetTester tester,
+      TargetPlatform platform,
+      Size size,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.runAsync(TaskFolds.open);
+      await notes.load();
+      notes.create(body: 'Errands\n- [ ] Post the parcel\n- [ ] ');
+      await pumpApp(tester, size: size);
+      await tester.pumpAndSettle();
+      final field = openNoteField(tester);
+      field.focusNode.requestFocus();
+      await tester.pump();
+      final body = field.controller.text;
+      field.controller.selection = TextSelection.collapsed(
+        offset: body.indexOf('- [ ] ', body.indexOf('parcel')) + 6,
+      );
+      await tester.pumpAndSettle();
+      return field;
+    }
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      testWidgets('on ${platform.name}, it shows on an empty task line, past '
+          'its box, and goes once there are words', (tester) async {
+        final field = await openEmptyTask(
+          tester,
+          platform,
+          const Size(1100, 760),
+        );
+        final hint = find.text('Shift+Enter adds details');
+        expect(hint, findsOneWidget);
+        final caret = tester
+            .state<NoteFieldState>(find.byType(NoteField))
+            .caretRectAt(field.controller.selection.extent)!;
+        expect(
+          tester.getTopLeft(hint).dx,
+          greaterThan(
+            tester.getTopLeft(find.byType(NoteField)).dx + caret.right,
+          ),
+        );
+
+        final body = field.controller.text;
+        final at = field.controller.selection.extentOffset;
+        field.controller.value = TextEditingValue(
+          text: '${body.substring(0, at)}Buy stamps${body.substring(at)}',
+          selection: TextSelection.collapsed(offset: at + 10),
+        );
+        await tester.pumpAndSettle();
+        expect(hint, findsNothing);
+      });
+    }
+
+    for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+      testWidgets('on a phone (${platform.name}), it never shows', (
+        tester,
+      ) async {
+        await openEmptyTask(tester, platform, const Size(393, 852));
+        expect(
+          tester
+              .widget<TaskDetailsChrome>(find.byType(TaskDetailsChrome))
+              .showHint,
+          isTrue,
+          reason: 'the note offers the hint; only the keyboard rule hides it',
+        );
+        expect(find.text('Shift+Enter adds details'), findsNothing);
+      });
+    }
   });
 }
 

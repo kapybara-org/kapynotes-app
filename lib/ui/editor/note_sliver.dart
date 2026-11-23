@@ -59,12 +59,15 @@ typedef NoteMarks = ({
 /// [leader], when given, fills the space between the writing and the child.
 /// Every row of the writing stops [room] short of the line's end, so that
 /// the child never covers it; with none, the writing runs the full width.
+/// The line is at least [height] tall, for a child that takes more rows than
+/// the writing, and the child is then centred on the whole line.
 typedef LineTrailing = ({
   Widget child,
   Widget? leader,
   double right,
   bool firstRow,
   double room,
+  double height,
 });
 
 /// The space a line keeps between its writing, the leader of what it shows
@@ -270,7 +273,12 @@ class NoteLayout {
 
   /// Lays [line] out, unless it is already, and records its height.
   double measure(int line) {
-    final height = spanAt(line).folded ? 0.0 : paragraphOf(line).height;
+    final height = spanAt(line).folded
+        ? 0.0
+        : math.max(
+            paragraphOf(line).height,
+            trailingOf?.call(line)?.height ?? 0,
+          );
     _heights!.measure(line, height);
     return height;
   }
@@ -816,6 +824,7 @@ class _NoteLine extends MultiChildRenderObjectWidget {
       right: trailing.right,
       firstRow: trailing.firstRow,
       leader: trailing.leader != null,
+      height: trailing.height,
     ),
   };
 
@@ -834,7 +843,12 @@ class _NoteLine extends MultiChildRenderObjectWidget {
 }
 
 /// Where a line puts what it shows past its writing; see [LineTrailing].
-typedef LineTrailingPlacement = ({double right, bool firstRow, bool leader});
+typedef LineTrailingPlacement = ({
+  double right,
+  bool firstRow,
+  bool leader,
+  double height,
+});
 
 /// One line of the note: its paragraph, the widgets set in it, and what it
 /// shows past its writing, which comes after them among its children.
@@ -937,7 +951,10 @@ class RenderNoteLine extends RenderBox
     var left = trailing.right - width;
     if (left < start) left = math.min(start, size.width - width);
     left = math.max(0.0, left);
-    _trailingAt = Offset(left, row.top + (row.height - child.size.height) / 2);
+    final middle = trailing.height > row.height
+        ? size.height / 2
+        : row.top + row.height / 2;
+    _trailingAt = Offset(left, middle - child.size.height / 2);
     final leader = _leaderChild;
     if (leader == null) return;
     leader.layout(
