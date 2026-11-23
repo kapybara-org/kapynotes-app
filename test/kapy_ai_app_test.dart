@@ -17,6 +17,7 @@ import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
@@ -170,7 +171,9 @@ void main() {
       expect(
         tester
             .widget<Tooltip>(
-              find.descendant(of: _button, matching: find.byType(Tooltip)).first,
+              find
+                  .descendant(of: _button, matching: find.byType(Tooltip))
+                  .first,
             )
             .message,
         contains('J'),
@@ -1758,6 +1761,26 @@ void main() {
       await tester.tap(finder);
       await tester.pumpAndSettle();
     }
+
+    testWidgets("Back closes the model picker first, then goes Home", (
+      tester,
+    ) async {
+      await pumpPhone(tester);
+      await tap(tester, tab);
+      await tap(tester, find.byType(KapyAiModelButton));
+      final picker = find.byType(KapyAiPicker);
+      expect(picker, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
+      expect(page, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(home, findsOneWidget);
+    });
 
     testWidgets("mounts Kapy AI's page clear of the bar, lit in it; Notes and "
         'Back both go Home', (tester) async {

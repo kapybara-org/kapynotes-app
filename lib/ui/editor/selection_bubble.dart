@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
+import '../back_entry.dart';
 import '../keycap.dart';
 
 /// A block that Text ▾ turns the selection's line into.
@@ -55,6 +56,7 @@ class SelectionAction {
 /// takes it away again when the selection goes.
 class SelectionBubbleController extends ChangeNotifier {
   OverlayEntry? _entry;
+  late final _back = BackEntry(_closeStep);
   Rect _above = Rect.zero;
   Rect _below = Rect.zero;
   Rect _within = Rect.largest;
@@ -101,6 +103,7 @@ class SelectionBubbleController extends ChangeNotifier {
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
+    _back.open(context);
     _above = above;
     _below = below;
     _within = within;
@@ -120,6 +123,7 @@ class SelectionBubbleController extends ChangeNotifier {
   }
 
   void hide() {
+    _back.close();
     _entry?.remove();
     _entry = null;
     _blocksOpen = false;
@@ -166,6 +170,18 @@ class SelectionBubbleController extends ChangeNotifier {
     _blocksOpen = false;
     notifyListeners();
     block.onSelected();
+  }
+
+  /// Back closes the address field, Text ▾ or the bubble, a step at a time,
+  /// and leaves the selection.
+  void _closeStep() {
+    if (_editingLink) {
+      closeLink();
+    } else if (_blocksOpen) {
+      toggleBlocks();
+    } else {
+      hide();
+    }
   }
 
   /// Esc closes Text ▾ first, then the bubble, and leaves the selection.

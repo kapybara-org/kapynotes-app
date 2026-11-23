@@ -12277,4 +12277,242 @@ void main() {
       );
     });
   });
+  group('phone Back (KAP-305)', () {
+    final popped = <String>[];
+    setUp(() {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      popped.clear();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            if (call.method == 'SystemNavigator.pop') popped.add(call.method);
+            return null;
+          });
+    });
+    tearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    final homeTitle = find.byKey(const ValueKey('home-title-notes'));
+
+    Future<void> pumpPhone(WidgetTester tester) async {
+      await notes.load();
+      notes.create(body: 'Kept\nStill here');
+      final done = notes.create(body: 'Done with\nFiled');
+      notes.archive(done.id);
+      final secret = notes.create(body: 'Secret\nShh');
+      notes.hide(secret.id);
+      await pumpApp(
+        tester,
+        size: const Size(393, 852),
+        hiddenNotesGate: _HiddenGate(),
+      );
+      await showNotesList(tester);
+    }
+
+    for (final show in [NotesShow.archive, NotesShow.hidden]) {
+      testWidgets("Android's Back from ${show.name} goes Home and stays in "
+          'the app', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        await pumpPhone(tester);
+        await showInFilter(tester, show);
+        expect(homeTitle, findsNothing);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(popped, isEmpty);
+        expect(homeTitle, findsOneWidget);
+        expect(find.widgetWithText(NoteRow, 'Kept'), findsOneWidget);
+      });
+
+      testWidgets('on an iPhone, a swipe in from the left edge takes '
+          '${show.name} back Home', (tester) async {
+        await pumpPhone(tester);
+        await showInFilter(tester, show);
+        expect(homeTitle, findsNothing);
+
+        await tester.dragFrom(const Offset(5, 400), const Offset(200, 0));
+        await tester.pumpAndSettle();
+        expect(homeTitle, findsOneWidget);
+        expect(find.widgetWithText(NoteRow, 'Kept'), findsOneWidget);
+      });
+    }
+    group('a note opened from Quick find or a task', () {
+      final menuField = find.byKey(const ValueKey('command-menu-field'));
+      final tasksPage = find.byType(TasksScreen);
+      late Folder work;
+
+      Future<void> pumpWithFolder(WidgetTester tester) async {
+        final folders = FolderStore(store);
+        await folders.load();
+        await notes.load();
+        final brief = notes.create(body: 'Acme brief\nScope and dates');
+        notes.create(body: 'Groceries\nOat milk');
+        work = folders.create('Work')!;
+        folders.file([brief.id], work.id);
+        await pumpApp(tester, size: const Size(393, 852), folders: folders);
+        await showNotesList(tester);
+        await tester.tap(find.byKey(const ValueKey('bar-folders')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('folder-${work.id}')));
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> back(WidgetTester tester, {required bool swipe}) async {
+        if (swipe) {
+          await tester.dragFrom(const Offset(5, 400), const Offset(300, 0));
+        } else {
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pumpAndSettle();
+      }
+
+      for (final swipe in [false, true]) {
+        final how = swipe ? "iPhone's edge swipe" : "Android's Back";
+        final TestVariant<Object?> variant = swipe
+            ? TargetPlatformVariant.only(TargetPlatform.iOS)
+            : const DefaultTestVariant();
+        testWidgets('$how from a note Quick find opened over a folder goes '
+            'back to Quick find with its words, then to the folder', (
+          tester,
+        ) async {
+          if (!swipe) {
+            AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+          }
+          await pumpWithFolder(tester);
+          await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+          await tester.pumpAndSettle();
+          await tester.enterText(menuField, 'Acme');
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('command-menu-row-Acme brief')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(NoteEditor), findsOneWidget);
+
+          await back(tester, swipe: swipe);
+          expect(find.byType(NoteEditor), findsNothing);
+          expect(menuField, findsOneWidget);
+          expect(tester.widget<TextField>(menuField).controller!.text, 'Acme');
+
+          if (swipe) {
+            await tester.tap(find.byKey(const ValueKey('command-menu-cancel')));
+          } else {
+            await tester.binding.handlePopRoute();
+          }
+          await tester.pumpAndSettle();
+          expect(menuField, findsNothing);
+          expect(
+            find.byKey(ValueKey('phone-folder-${work.id}')),
+            findsOneWidget,
+          );
+          expect(popped, isEmpty);
+
+          await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+          await tester.pumpAndSettle();
+          expect(tester.widget<TextField>(menuField).controller!.text, isEmpty);
+        }, variant: variant);
+
+        testWidgets("$how from a note a task's page opened goes back to "
+            'Tasks', (tester) async {
+          if (!swipe) {
+            AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+          }
+          await notes.load();
+          notes.create(body: 'Lisbon trip\n☐ Renew the passport');
+          await pumpApp(
+            tester,
+            size: const Size(393, 852),
+            tasks: TaskLibrary(
+              notes: notes,
+              store: store,
+              storage: MemoryDocStorage(),
+            ),
+          );
+          await showNotesList(tester);
+          await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Renew the passport'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('phone-task-open-note')));
+          await tester.pumpAndSettle();
+          expect(find.byType(NoteEditor), findsOneWidget);
+
+          await back(tester, swipe: swipe);
+          expect(find.byType(NoteEditor), findsNothing);
+          expect(tasksPage.hitTestable(), findsOneWidget);
+          expect(find.text('Renew the passport'), findsOneWidget);
+        }, variant: variant);
+      }
+    });
+
+    testWidgets("a half-typed task is still in Tasks' field when Tasks opens "
+        'again', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      await notes.load();
+      notes.create(body: 'Groceries\nOat milk');
+      await pumpApp(
+        tester,
+        size: const Size(393, 852),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+      await showNotesList(tester);
+      final tasksTitle = find.byKey(const ValueKey('home-title-tasks'));
+      final field = find.byKey(const ValueKey('tasks-add-field'));
+      await tester.tap(tasksTitle);
+      await tester.pumpAndSettle();
+      await tester.enterText(field, 'Buy sta');
+      await tester.pumpAndSettle();
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(TasksScreen), findsNothing);
+      expect(popped, isEmpty);
+
+      await tester.tap(tasksTitle);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).controller!.text, 'Buy sta');
+    });
+    testWidgets("Android's Back closes a note's slash menu before the page", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      await notes.load();
+      notes.create(body: 'Phone budget\n6 * 7');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+      await tester.tap(find.widgetWithText(NoteRow, 'Phone budget'));
+      await tester.pumpAndSettle();
+      final field = openNoteField(tester);
+      field.focusNode.requestFocus();
+      await tester.pump();
+      field.controller.selection = const TextSelection.collapsed(offset: 18);
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Phone budget\n6 * 7\n/',
+          selection: TextSelection.collapsed(offset: 20),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      final menu = find.byKey(const ValueKey('slash-command-menu'));
+      expect(menu, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(find.byType(NoteEditor), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsNothing);
+      expect(popped, isEmpty);
+    });
+  });
 }

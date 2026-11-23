@@ -989,4 +989,88 @@ void main() {
     expect(PhoneNoteHeader.tasksLine(6, wed, wed), '6 tasks today');
     expect(PhoneNoteHeader.tasksLine(2, fri, wed), '2 tasks on Fri 21');
   });
+  group('Back (KAP-305)', () {
+    Future<void> tap(WidgetTester tester, String key) async {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> back(WidgetTester tester, {required bool swipe}) async {
+      if (swipe) {
+        await tester.dragFrom(const Offset(5, 400), const Offset(300, 0));
+      } else {
+        await tester.binding.handlePopRoute();
+      }
+      await tester.pumpAndSettle();
+    }
+
+    for (final swipe in [false, true]) {
+      final how = swipe ? "an iPhone's edge swipe" : "Android's Back";
+      final TestVariant<Object?> variant = swipe
+          ? TargetPlatformVariant.only(TargetPlatform.iOS)
+          : const DefaultTestVariant();
+
+      testWidgets('$how from a note the week opened comes back to the note '
+          'it was opened from, one at a time, then Home', (tester) async {
+        if (!swipe) {
+          AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        }
+        seed();
+        await pump(tester);
+        expect(openNoteBody(tester), startsWith('Call with Arjun'));
+        await open(tester, 18);
+        await open(tester, 21);
+        expect(openNoteBody(tester), startsWith('Renewal notes'));
+
+        await back(tester, swipe: swipe);
+        expect(openNoteBody(tester), startsWith('Standup notes'));
+        await back(tester, swipe: swipe);
+        expect(openNoteBody(tester), startsWith('Call with Arjun'));
+        await back(tester, swipe: swipe);
+        expect(header, findsNothing);
+        expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+      }, variant: variant);
+    }
+
+    testWidgets("Home from a note the week opened goes Home, past the notes "
+        'behind it', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      await tap(tester, 'page-home');
+      expect(header, findsNothing);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    });
+
+    testWidgets('on an iPhone, a stroke in from the left edge of a drawing '
+        "draws rather than leaving, and Back and the page's Home still "
+        'leave', (tester) async {
+      (store.data['notes.v1']! as List).add({
+        'id': 'sketch',
+        'body': 'Floor plan',
+        'createdAt': DateTime(2025, 11, 19, 9, 30).millisecondsSinceEpoch,
+        'updatedAt': DateTime(2025, 11, 19, 9, 30).millisecondsSinceEpoch,
+        'drawing': {'elements': <Object?>[]},
+      });
+      seed();
+      await pump(tester);
+      await tap(tester, 'page-home');
+      await tap(tester, 'bar-folders');
+      await tap(tester, 'folders-drawings-tile');
+      await tester.tap(find.widgetWithText(NoteRow, 'Floor plan'));
+      await tester.pumpAndSettle();
+      expect(header, findsOneWidget);
+
+      await back(tester, swipe: true);
+      expect(header, findsOneWidget);
+
+      await back(tester, swipe: false);
+      expect(header, findsNothing);
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Floor plan'));
+      await tester.pumpAndSettle();
+      await tap(tester, 'page-home');
+      expect(header, findsNothing);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  });
 }
