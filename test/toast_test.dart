@@ -387,6 +387,46 @@ void main() {
     });
   });
 
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.macOS]) {
+    testWidgets("the action is in the app's own font on ${platform.name}", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      Toast.debugAnimateLifetimeInTests = false;
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Builder(
+              builder: (value) {
+                context = value;
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      );
+
+      Toast.show(context, 'Archived', action: 'Undo', onAction: () {});
+      await tester.pumpAndSettle();
+
+      final style = tester
+          .widget<RichText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('toast-action')),
+              matching: find.byType(RichText),
+            ),
+          )
+          .text
+          .style!;
+      expect(style.fontFamily, AppFonts.ui);
+      expect(style.fontFamilyFallback, AppFonts.uiFallback);
+      expect(style.color, KapyTheme.darkPalette.accentText);
+    });
+  }
+
   testWidgets("a desktop's notice stays a pill sized to its words", (
     tester,
   ) async {

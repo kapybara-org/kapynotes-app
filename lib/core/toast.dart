@@ -347,8 +347,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
           minimumSize: const Size(0, Toast._actionHeight),
           padding: const EdgeInsets.symmetric(horizontal: 8),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: TextStyle(
-            fontSize: AppTypeScale.body,
+          textStyle: textStyle?.copyWith(
             fontWeight: AppWeight.font(AppWeight.button),
             fontVariations: AppWeight.wght(AppWeight.button),
           ),
