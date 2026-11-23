@@ -129,13 +129,15 @@ void main() {
     await tester.drag(row, const Offset(200, 0));
     await tester.pumpAndSettle();
     // On a device a toast's lifetime is an animation, so pumpAndSettle
-    // would run the notice out; this pumps on the real clock instead.
+    // would run the notice out; this pumps on the real clock instead, until
+    // the notice has faded all the way in.
     final notice = find.text('Archived “Morning pages”');
     await tester.drag(row, const Offset(-340, 0));
-    await pumpUntil(tester, () => notice.evaluate().isNotEmpty);
+    await pumpUntil(tester, () => shown(tester, notice));
     expect(notes.byId('morning')!.isArchived, isTrue);
     expect(row, findsNothing);
     expect(notice, findsOneWidget);
+    expect(shown(tester, notice), isTrue);
     expect(tester.takeException(), isNull);
     await screenshot('swipe-archived-notice', device: true);
 
@@ -146,7 +148,7 @@ void main() {
     await tester.drag(quote, const Offset(-340, 0));
     await pumpUntil(
       tester,
-      () => find.text('Archived “Quote for the deck”').evaluate().isNotEmpty,
+      () => shown(tester, find.text('Archived “Quote for the deck”')),
     );
     expect(notes.byId('quote')!.isArchived, isTrue);
     await tester.tap(undo.last);
@@ -155,6 +157,15 @@ void main() {
     expect(quote, findsOneWidget);
   });
 }
+
+/// Whether [text] is on screen with every fade above it run in.
+bool shown(WidgetTester tester, Finder text) =>
+    text.evaluate().isNotEmpty &&
+    tester
+        .widgetList<FadeTransition>(
+          find.ancestor(of: text, matching: find.byType(FadeTransition)),
+        )
+        .every((fade) => fade.opacity.value == 1);
 
 /// Pumps on the real clock until [done], for at most four seconds, leaving a
 /// toast up where pumpAndSettle would run its lifetime out.
