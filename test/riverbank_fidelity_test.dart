@@ -71,7 +71,7 @@ void main() {
     expect(style.fontFeatures, const [FontFeature.tabularFigures()]);
   });
 
-  testWidgets('See all sits at the end of the Pinned heading', (tester) async {
+  testWidgets('View all sits at the end of the Pinned heading', (tester) async {
     await pumpWindow(tester, [for (var i = 0; i < 5; i++) 'Pinned $i']);
     for (final note in goldenNotes.notes) {
       goldenNotes.togglePinned(note.id);
@@ -80,7 +80,7 @@ void main() {
 
     expect(
       tester
-          .getRect(find.byKey(const ValueKey('sidebar-see-all-pinned')))
+          .getRect(find.byKey(const ValueKey('sidebar-view-all-pinned')))
           .right,
       tester
           .getRect(find.byKey(const ValueKey('sidebar-pinned-heading')))

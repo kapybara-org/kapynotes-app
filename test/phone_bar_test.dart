@@ -18,6 +18,7 @@ void main() {
     ValueChanged<PhoneTab>? onSelected,
     VoidCallback? onCreate,
     bool showKapyAi = true,
+    bool foldersDot = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -33,6 +34,7 @@ void main() {
           createLabel: 'New note',
           onCreate: onCreate ?? () {},
           showKapyAi: showKapyAi,
+          foldersDot: foldersDot,
           createActions: const [],
           onCreateAction: (_) {},
           child: const SizedBox.expand(),
@@ -403,5 +405,51 @@ void main() {
       expect(size.width, greaterThanOrEqualTo(44), reason: key);
       expect(size.height, greaterThanOrEqualTo(44), reason: key);
     }
+  });
+
+  group("Folders' dot", () {
+    final dot = find.byKey(const ValueKey('bar-folders-dot'));
+
+    for (final tab in PhoneTab.values) {
+      testWidgets('with ${tab.name} open, a 7 pt clay dot sits on the '
+          "Folders icon's top right while something waits in Shared", (
+        tester,
+      ) async {
+        final semantics = tester.ensureSemantics();
+        await pumpBar(
+          tester,
+          scale: 1,
+          size: const Size(393, 852),
+          tab: tab,
+          foldersDot: true,
+        );
+        expect(dot, findsOneWidget);
+        expect(tester.getSize(dot), const Size.square(7));
+        expect(
+          (tester.widget<Container>(dot).decoration! as BoxDecoration).color,
+          KapyTheme.darkPalette.clay,
+        );
+        final icon = tester.getRect(
+          find.descendant(
+            of: find.byKey(const ValueKey('bar-folders')),
+            matching: findKapyIcon(KapyIcons.folderOutlined),
+          ),
+        );
+        final mark = tester.getRect(dot);
+        expect(mark.center.dx, greaterThan(icon.center.dx));
+        expect(mark.center.dy, lessThan(icon.center.dy));
+        expect(find.bySemanticsLabel('Folders, new in Shared'), findsOneWidget);
+        semantics.dispose();
+      });
+    }
+
+    testWidgets('nothing waiting, there is no dot and Folders reads its name '
+        'alone', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpBar(tester, scale: 1, size: const Size(393, 852));
+      expect(dot, findsNothing);
+      expect(find.bySemanticsLabel('Folders'), findsOneWidget);
+      semantics.dispose();
+    });
   });
 }

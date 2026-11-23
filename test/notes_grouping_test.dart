@@ -57,7 +57,7 @@ void main() {
   });
 
   test(
-    'a note given a day sits under it, and one waiting for a later day folds into Upcoming',
+    'a note given a day sits under it, and one waiting for a later day stays out until its day',
     () {
       final notes = [
         _note('call', 'Call with Arjun', DateTime(2026, 11, 19, 11, 40)),
@@ -79,13 +79,26 @@ void main() {
         ownDay: (note) => own[note.id],
       );
       expect(outline(groups), [
-        ('Upcoming', '2', 'plan trip'),
         ('Today', null, 'call'),
         ('Tue 17', null, 'tax'),
       ]);
       expect(
         [for (final group in groups) group.day],
-        [null, DateTime(2026, 11, 19), DateTime(2026, 11, 17)],
+        [DateTime(2026, 11, 19), DateTime(2026, 11, 17)],
+      );
+      expect(
+        groupNotes(
+          notes,
+          NotesGrouping.byDate,
+          today: DateTime(2026, 11, 21),
+          displayTime: shown,
+          firstTag: (_) => null,
+          ownDay: (note) => own[note.id],
+        ).first,
+        isA<NoteGroup>()
+            .having((group) => group.label, 'label', 'Today')
+            .having((group) => group.notes.single.id, 'note', 'plan'),
+        reason: 'on its day the note is in Today',
       );
       expect(
         noteDay(notes[1], shown, ownDay: DateTime(2026, 11, 21)),
@@ -94,7 +107,7 @@ void main() {
     },
   );
 
-  test('a note on today\'s own day stays in Today, not in Upcoming', () {
+  test('a note on today\'s own day stays in Today', () {
     final note = _note('call', 'Call', DateTime(2026, 11, 12, 8));
     expect(
       outline(

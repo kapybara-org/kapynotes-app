@@ -736,6 +736,7 @@ class PhoneSpaces extends StatefulWidget {
     required this.onCreateAction,
     required this.child,
     this.showKapyAi = true,
+    this.foldersDot = false,
   });
 
   final PhoneTab tab;
@@ -750,6 +751,10 @@ class PhoneSpaces extends StatefulWidget {
 
   /// Whether the build carries Kapy AI, for its tab.
   final bool showKapyAi;
+
+  /// Whether something waits in Shared, which Folders holds: a clay dot on
+  /// its icon from every tab, as Shared's tile counts it.
+  final bool foldersDot;
 
   static const double _barHeight = 56;
   static const double _barLift = 30;
@@ -834,6 +839,7 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
                           icon: item.icon,
                           label: item.label,
                           selected: item.to == widget.tab,
+                          dot: item.to == PhoneTab.folders && widget.foldersDot,
                           onPressed: () => widget.onSelected(item.to),
                         ),
                       ),
@@ -878,7 +884,8 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
 }
 
 /// One of the bar's destinations: its icon over its name in a 46 pt pill,
-/// lifted a step while it is the one on screen.
+/// lifted a step while it is the one on screen, and a 7 pt clay dot on the
+/// icon's corner while something new waits there.
 class _BarItem extends StatelessWidget {
   const _BarItem({
     super.key,
@@ -886,12 +893,14 @@ class _BarItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onPressed,
+    this.dot = false,
   });
 
   final KapyIconData icon;
   final String label;
   final bool selected;
   final VoidCallback onPressed;
+  final bool dot;
 
   @override
   Widget build(BuildContext context) {
@@ -901,7 +910,7 @@ class _BarItem extends StatelessWidget {
       container: true,
       button: true,
       selected: selected,
-      label: label,
+      label: dot ? '$label, new in Shared' : label,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
@@ -916,7 +925,26 @@ class _BarItem extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                KapyIcon(icon, size: 20, color: ink),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    KapyIcon(icon, size: 20, color: ink),
+                    if (dot)
+                      Positioned(
+                        top: -1,
+                        right: -2,
+                        child: Container(
+                          key: const ValueKey('bar-folders-dot'),
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: palette.clay,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 3),
                 Text(
                   label,
