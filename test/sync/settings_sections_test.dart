@@ -29,6 +29,7 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/settings_search.dart';
 
+import '../support/store_updates.dart';
 import '../test_fonts.dart';
 import 'fake_server.dart';
 
@@ -169,6 +170,7 @@ Future<void> pumpSettings(
           rates: RatesRepository(store),
           notes: notes,
           account: account,
+          storeUpdates: AppPlatform.isMobile ? fakeStoreUpdates(store) : null,
           cloudAccess: cloudAccess,
           asSheet: asSheet,
           section: section,
@@ -554,6 +556,40 @@ void main() {
               .height,
           greaterThan(64),
         );
+      });
+    }
+
+    // Android's Large text and iOS's largest on a 360 pt phone: the longest
+    // titles take a second line, and the bar grows to hold it.
+    for (final scale in const [1.3, 2.35]) {
+      testWidgets("a category's title stays whole at ${scale}x on a narrow "
+          'phone', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await pumpSettings(tester, size: const Size(360, 780), asSheet: true);
+
+        for (final section in [
+          SettingsSection.about,
+          SettingsSection.account,
+        ]) {
+          await tester.tap(
+            find.byKey(ValueKey('settings-section-${section.name}')),
+          );
+          await tester.pumpAndSettle();
+          final title = tester.renderObject<RenderParagraph>(
+            find.text(section.label),
+          );
+          expect(title.didExceedMaxLines, isFalse, reason: section.label);
+          expect(
+            title.size.height,
+            greaterThanOrEqualTo(title.textSize.height),
+            reason: '${section.label} is clipped by its bar',
+          );
+          await tester.tap(find.byKey(const ValueKey('settings-sheet-back')));
+          await tester.pumpAndSettle();
+        }
       });
     }
   });

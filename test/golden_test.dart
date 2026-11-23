@@ -23,6 +23,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/store_updates.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
@@ -45,6 +46,7 @@ import 'app_test.dart' show MemoryStore, openNoteBody;
 import 'billing/billing_fakes.dart';
 import 'fake_update_installer.dart';
 import 'support/note_driver.dart';
+import 'support/store_updates.dart';
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
@@ -152,6 +154,10 @@ Future<void> pumpForGolden(
   /// Signed in to an account on Pro with two invitations waiting, so that
   /// Settings has its account, its sharing and every one of its categories.
   bool signedIn = false,
+
+  /// What a phone's store says, for About & updates. Left out, a phone makes
+  /// its own, which hears nothing back in a test.
+  StoreUpdates? storeUpdates,
 
   /// Which build the image is of.
   ///
@@ -404,6 +410,7 @@ Future<void> pumpForGolden(
       shortcuts: shortcuts,
       account: account,
       updates: updates,
+      storeUpdates: storeUpdates,
       tags: goldenTags,
       folders: goldenFolders,
       days: withDays ? goldenDays : days,
@@ -1726,6 +1733,7 @@ void main() {
         bool signedIn = false,
         bool withImageStore = false,
         bool withDays = false,
+        StoreUpdates? storeUpdates,
       }) async {
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
@@ -1749,6 +1757,7 @@ void main() {
           signedIn: signedIn,
           withImageStore: withImageStore,
           withDays: withDays,
+          storeUpdates: storeUpdates,
         );
       }
 
@@ -2034,6 +2043,73 @@ void main() {
         await tapAndSettle(tester, 'settings-section-appearance');
         await matches('settings_appearance');
       });
+
+      // About & updates (1E0B-0) on the store's two answers: nothing newer
+      // than 1.35.4, and 1.35.5 waiting. Dark, as the board is drawn: both on
+      // the iPhone, and the update on Android, whose button names its store.
+      if (brightness == Brightness.dark && phone != 'se') {
+        for (final waiting in [if (phone == 'iphone') false, true]) {
+          final state = waiting ? 'update' : 'latest';
+          testWidgets('phone about & updates, $state, $name', (tester) async {
+            await pumpPhone(
+              tester,
+              storeUpdates: fakeStoreUpdates(
+                MemoryStore(),
+                releases: aboutReleases(),
+                answer: () async => platform == TargetPlatform.android
+                    ? const StoreOffer(build: 47)
+                    : StoreOffer(version: waiting ? '1.35.5' : '1.35.4'),
+              ),
+            );
+            await tapAndSettle(tester, 'page-home');
+            await tapAndSettle(tester, 'phone-account');
+            expect(
+              find.descendant(
+                of: find.byKey(const ValueKey('settings-section-about')),
+                matching: find.text('Update available'),
+              ),
+              waiting ? findsOneWidget : findsNothing,
+            );
+            await tapAndSettle(tester, 'settings-section-about');
+            expect(
+              find.text(
+                waiting
+                    ? 'Version 1.35.5 is out'
+                    : '23 Nov 2026 · You have the latest version',
+              ),
+              findsOneWidget,
+            );
+            await matches('about_$state');
+          });
+        }
+      }
+
+      // The same page at Android's Large text (1.3x): its hand title takes a
+      // second line under a bar that grows to hold it (KAP-315).
+      if (brightness == Brightness.dark && phone == 'android') {
+        testWidgets('phone about & updates at 1.3x text, $name', (
+          tester,
+        ) async {
+          tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pumpPhone(
+            tester,
+            storeUpdates: fakeStoreUpdates(
+              MemoryStore(),
+              releases: aboutReleases(),
+              answer: () async => const StoreOffer(build: 47),
+            ),
+          );
+          await tapAndSettle(tester, 'page-home');
+          await tapAndSettle(tester, 'phone-account');
+          final about = find.byKey(const ValueKey('settings-section-about'));
+          await tester.ensureVisible(about);
+          await tester.pumpAndSettle();
+          await tester.tap(about);
+          await tester.pumpAndSettle();
+          await matches('about_large_text');
+        });
+      }
     }
   }
 

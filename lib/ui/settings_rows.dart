@@ -262,6 +262,7 @@ class SettingsRowCopy extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.titleColor,
+    this.subtitleColor,
     this.changed = false,
     this.tag,
   });
@@ -269,6 +270,7 @@ class SettingsRowCopy extends StatelessWidget {
   final String title;
   final String? subtitle;
   final Color? titleColor;
+  final Color? subtitleColor;
 
   /// Marks the setting as moved off its default.
   final bool changed;
@@ -329,7 +331,9 @@ class SettingsRowCopy extends StatelessWidget {
             style: TextStyle(
               fontSize: SettingsMetrics.subtitleSize,
               height: pointer ? 16 / SettingsMetrics.subtitleSize : null,
-              color: pointer ? palette.textDescription : palette.textSecondary,
+              color:
+                  subtitleColor ??
+                  (pointer ? palette.textDescription : palette.textSecondary),
             ),
           ),
         ],
