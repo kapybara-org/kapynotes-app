@@ -10683,6 +10683,7 @@ void main() {
       final money = tags.create('Money')!;
       tags.addTag('today', trip.id);
       tags.addTag('today', money.id);
+      tags.addTag('older', trip.id);
       await pumpApp(tester, size: const Size(393, 852), tags: tags);
       await showNotesList(tester);
 
@@ -10749,6 +10750,24 @@ void main() {
             .dx,
         tester.getTopRight(time).dx,
         reason: "an untagged row keeps the dots' room, so the times line up",
+      );
+      final single = find.descendant(
+        of: row('Renewal notes'),
+        matching: find.byType(TagDots),
+      );
+      expect(tester.widget<TagDots>(single).tags, hasLength(1));
+      expect(
+        tester.getTopLeft(single).dx -
+            tester
+                .getTopRight(
+                  find.descendant(
+                    of: row('Renewal notes'),
+                    matching: find.text('11:00'),
+                  ),
+                )
+                .dx,
+        8,
+        reason: 'a single dot also sits right after its time',
       );
       for (final (title, clock) in [
         ('Stamped by a clock ahead', '8:00'),
