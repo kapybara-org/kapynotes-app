@@ -15,9 +15,14 @@ class ReleaseNote {
     required this.summary,
     required this.changes,
     this.highlights = const [],
+    this.build,
   });
 
   final String version;
+
+  /// The build number it shipped as, which is the version code Google Play
+  /// names it by. Null in an entry the changelog wrote without one.
+  final int? build;
 
   /// The day it published, as the changelog writes it: `2026-09-10`. Kept as
   /// text rather than a [DateTime] because it is a day, not an instant — the
@@ -61,12 +66,14 @@ class ReleaseNote {
     ];
     final date = decoded['date'];
     final summary = decoded['summary'];
+    final build = decoded['build'];
     return ReleaseNote(
       version: version,
       date: date is String ? date : '',
       summary: summary is String ? summary : '',
       changes: lines,
       highlights: shortLines,
+      build: build is int && build > 0 ? build : null,
     );
   }
 
@@ -76,6 +83,7 @@ class ReleaseNote {
     'summary': summary,
     'changes': changes,
     'highlights': highlights,
+    if (build != null) 'build': build,
   };
 }
 
@@ -151,10 +159,18 @@ class ReleaseHistory extends ChangeNotifier {
   /// manifest. In that case [load] would trust the cache for the rest of the
   /// day and the update pane would describe an older build. The updater only
   /// needs one exact entry, so keep an existing match and refresh otherwise.
-  Future<void> loadForVersion(String version) async {
+  Future<void> loadForVersion(String version) =>
+      _loadUnlessListed((release) => release.version == version);
+
+  /// The same for the release Google Play offers, which it names only by its
+  /// build.
+  Future<void> loadForBuild(int build) =>
+      _loadUnlessListed((release) => release.build == build);
+
+  Future<void> _loadUnlessListed(bool Function(ReleaseNote) wanted) async {
     if (_disposed) return;
     _loadCache();
-    if (_releases.any((release) => release.version == version)) return;
+    if (_releases.any(wanted)) return;
     await refresh();
   }
 

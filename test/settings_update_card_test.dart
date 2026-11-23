@@ -18,6 +18,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'fake_update_installer.dart';
+import 'support/store_updates.dart';
 import 'test_fonts.dart';
 
 class _MemoryStore extends LocalStore {
@@ -340,12 +341,15 @@ void main() {
   }
 
   // main.dart builds no UpdateChecker on a phone, so Settings gets updates:
-  // null there. What's new must not depend on one.
+  // null there, and the phone's store in its place. What's new must not
+  // depend on an updater.
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
     testWidgets('on ${platform.name}, About says what is new until it is '
-        'opened, and its notes open the changelog', (tester) async {
+        'opened, and describes the version it runs', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
+      var running = '1.0.0';
       Future<void> runVersion(String version) async {
+        running = version;
         PackageInfo.setMockInitialValues(
           appName: 'Kapy Notes',
           packageName: 'com.kapybara.kapynotes',
@@ -373,6 +377,7 @@ void main() {
                 shortcuts: ShortcutPrefs(store)..load(),
                 rates: RatesRepository(store),
                 notes: notes,
+                storeUpdates: fakeStoreUpdates(store, installed: running),
                 asSheet: true,
               ),
             ),
@@ -404,8 +409,18 @@ void main() {
       );
       await tester.tap(about);
       await tester.pumpAndSettle();
-      expect(find.text('See what changed'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('changelog')));
+      final release = find.byKey(const ValueKey('changelog'));
+      for (final text in [
+        'Version 1.0.0',
+        'The build these tests are running.',
+        'Tasks keeps one list across every note.',
+      ]) {
+        expect(
+          find.descendant(of: release, matching: find.text(text)),
+          findsOneWidget,
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('changelog-page')));
       await tester.pumpAndSettle();
       expect(
         launched.single,
@@ -551,7 +566,8 @@ void main() {
   });
 
   // A narrow Mac window is still a computer: its About pane keeps the
-  // updater and the full release history, rather than the phone's single row.
+  // updater and the full release history, rather than the phone's page of
+  // what its store offers.
   testWidgets('a narrow window with a pointer keeps the whole About pane', (
     tester,
   ) async {
@@ -581,7 +597,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('update-row')), findsOneWidget);
-    expect(find.text('See what changed'), findsNothing);
+    expect(find.byKey(const ValueKey('store-update-open')), findsNothing);
   });
 
   testWidgets('the close button uses each theme’s quiet text color', (
