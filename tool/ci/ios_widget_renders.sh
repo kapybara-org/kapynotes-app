@@ -1,7 +1,8 @@
 #!/bin/bash
-# The iOS widgets in ios/WriteNoteWidget, every size in light and dark,
-# rendered on an iPhone simulator to build/widget-renders/ios for a reviewer
-# to hold against the Widgets · v2 boards:
+# The iOS widgets in ios/WriteNoteWidget, every size in light and dark, and
+# a recording's Live Activity, rendered on an iPhone simulator to
+# build/widget-renders/ios for a reviewer to hold against the Widgets · v2
+# boards and "Recording away from the app":
 #
 #   bash tool/ci/ios_widget_renders.sh <booted simulator udid>
 #
@@ -21,7 +22,8 @@ mkdir -p "$app" "$work/ios"
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -parse-as-library \
   -target "$(uname -m)-apple-ios17.0-simulator" -module-name WidgetRenders \
   "$widget/QuickAction.swift" "$widget/WriteNoteWidget.swift" \
-  "$widget/QuickActionsWidget.swift" tool/ci/WidgetRenders.swift \
+  "$widget/QuickActionsWidget.swift" "$widget/RecordingAttributes.swift" \
+  "$widget/RecordingLiveActivity.swift" tool/ci/WidgetRenders.swift \
   -o "$app/WidgetRenders"
 xcrun actool "$widget/Assets.xcassets" --compile "$app" \
   --platform iphonesimulator --minimum-deployment-target 17.0 \

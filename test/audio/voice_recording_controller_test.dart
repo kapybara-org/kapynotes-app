@@ -1,12 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
-import 'dart:typed_data';
-
 import 'package:fake_async/fake_async.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/audio/audio_decode.dart';
+import 'package:kapy_notes/audio/recording_controls.dart';
 import 'package:kapy_notes/audio/voice_recorder.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
+import 'package:kapy_notes/core/platform.dart';
 
 /// A backend with no microphone in it.
 ///
@@ -14,7 +18,11 @@ import 'package:kapy_notes/audio/voice_recording_controller.dart';
 /// reads the file back to find the duration — a fake that wrote nothing would
 /// silently exercise only the fallback path.
 class FakeVoiceRecorder implements VoiceRecorderBackend {
-  FakeVoiceRecorder({this.permitted = true, this.bytes, this.writesFile = true});
+  FakeVoiceRecorder({
+    this.permitted = true,
+    this.bytes,
+    this.writesFile = true,
+  });
 
   bool permitted;
 
@@ -76,7 +84,57 @@ class FakeVoiceRecorder implements VoiceRecorderBackend {
   }
 }
 
+/// The notification or Live Activity, as a list of what it was asked to show.
+class FakeRecordingControls implements RecordingControls {
+  final calls = <String>[];
+  Duration? elapsed;
+  Future<bool> Function(RecordingCommand command)? _onCommand;
+
+  @override
+  set onCommand(Future<bool> Function(RecordingCommand command)? handler) =>
+      _onCommand = handler;
+
+  /// A press on one of its buttons.
+  Future<bool> press(RecordingCommand command) async =>
+      await _onCommand?.call(command) ?? false;
+
+  @override
+  Future<void> prepare() async => calls.add('prepare');
+
+  @override
+  Future<void> show({
+    required Duration elapsed,
+    required bool paused,
+    required bool interrupted,
+  }) async {
+    this.elapsed = elapsed;
+    calls.add(
+      paused
+          ? 'show paused'
+          : interrupted
+          ? 'show interrupted'
+          : 'show',
+    );
+  }
+
+  @override
+  Future<void> hide() async => calls.add('hide');
+}
+
+/// Controls whose question is answered only when [_answer] completes: a
+/// dialog left up, or a platform that never replies.
+class _UnansweredControls extends FakeRecordingControls {
+  _UnansweredControls(this._answer);
+
+  final Future<void> _answer;
+
+  @override
+  Future<void> prepare() => _answer;
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late Directory temp;
   late FakeVoiceRecorder recorder;
   late VoiceRecordingController controller;
@@ -304,6 +362,17 @@ void main() {
       });
     });
 
+    test('a tick that comes late loses no time', () {
+      // A locked phone can hold timers back. The length is read off the
+      // clock, so the second the tick was late for is still counted.
+      withClock((async, controller) {
+        async.elapse(const Duration(seconds: 2));
+        async.elapseBlocking(const Duration(seconds: 5));
+        async.elapse(const Duration(seconds: 1));
+        expect(controller.session!.elapsed, const Duration(seconds: 8));
+      });
+    });
+
     test('the clock stops while interrupted too', () {
       // A phone call must not be counted as recorded time; the file will not
       // contain it either.
@@ -323,17 +392,300 @@ void main() {
       });
     });
 
-    test('the thirty-minute cap stops the recording rather than truncating it', () {
-      withClock((async, controller) {
-        async.elapse(VoiceRecordingController.maxDuration - const Duration(seconds: 1));
-        expect(controller.session, isNotNull);
-        expect(controller.session!.finishing, isFalse);
+    test(
+      'the thirty-minute cap stops the recording rather than truncating it',
+      () {
+        withClock((async, controller) {
+          async.elapse(
+            VoiceRecordingController.maxDuration - const Duration(seconds: 1),
+          );
+          expect(controller.session, isNotNull);
+          expect(controller.session!.finishing, isFalse);
 
-        async.elapse(const Duration(seconds: 1));
-        async.flushMicrotasks();
-        // It has begun delivering itself; the file work finishes off-clock.
-        expect(controller.session?.finishing ?? true, isTrue);
-      }, dispose: false);
+          async.elapse(const Duration(seconds: 1));
+          async.flushMicrotasks();
+          // It has begun delivering itself; the file work finishes off-clock.
+          expect(controller.session?.finishing ?? true, isTrue);
+        }, dispose: false);
+      },
+    );
+  });
+
+  group('away from the app', () {
+    late FakeRecordingControls controls;
+
+    setUp(() {
+      controller.dispose();
+      recorder = FakeVoiceRecorder();
+      controls = FakeRecordingControls();
+      controller = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+        controls: controls,
+      );
+    });
+
+    File markerOf(String audioPath) =>
+        File(audioPath.replaceFirst(RegExp(r'\.m4a$'), '.json'));
+
+    test(
+      'the phone shows the recording while it runs, and not after',
+      () async {
+        await controller.start(noteId: 'n1');
+        await pumpEventQueue();
+        // Shown again once the first recording's question is answered.
+        expect(controls.calls, ['show', 'prepare', 'show']);
+
+        await controller.finishRecordingAndFlush();
+        expect(controls.calls, ['show', 'prepare', 'show', 'hide']);
+      },
+    );
+
+    test('a question nobody answers holds nothing up', () async {
+      final unanswered = Completer<void>();
+      controller.dispose();
+      recorder = FakeVoiceRecorder();
+      controller = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+        controls: _UnansweredControls(unanswered.future),
+      );
+
+      expect(await controller.start(noteId: 'n1'), isTrue);
+      expect(controller.isRecording, isTrue);
+      unanswered.complete();
+    });
+
+    test('an answer after the recording ended shows nothing', () async {
+      final answer = Completer<void>();
+      final slow = _UnansweredControls(answer.future);
+      controller.dispose();
+      recorder = FakeVoiceRecorder();
+      controller = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+        controls: slow,
+      );
+
+      await controller.start(noteId: 'n1');
+      await controller.finishRecordingAndFlush();
+      answer.complete();
+      await pumpEventQueue();
+      expect(slow.calls, ['show', 'hide']);
+    });
+
+    test('it follows a pause, a resume and an interruption', () async {
+      await controller.start(noteId: 'n1');
+      await pumpEventQueue();
+      controls.calls.clear();
+      await controller.pause();
+      await controller.resume();
+      controller.debugInterrupt();
+      expect(controls.calls, ['show paused', 'show', 'show interrupted']);
+    });
+
+    test('its buttons reach the recording', () async {
+      String? deliveredTo;
+      controller.onFinished = (result, noteId) async => deliveredTo = noteId;
+      await controller.start(noteId: 'n1');
+
+      expect(await controls.press(RecordingCommand.pause), isTrue);
+      expect(recorder.pauses, 1);
+      expect(controller.session!.paused, isTrue);
+
+      expect(await controls.press(RecordingCommand.resume), isTrue);
+      expect(recorder.resumes, 1);
+      expect(controller.session!.paused, isFalse);
+
+      expect(await controls.press(RecordingCommand.stop), isTrue);
+      expect(controller.session, isNull);
+      expect(deliveredTo, 'n1');
+    });
+
+    test('a press with nothing recording says so', () async {
+      // The iPhone ends a Live Activity that nothing is behind.
+      expect(await controls.press(RecordingCommand.stop), isFalse);
+      expect(recorder.stopped, isFalse);
+    });
+
+    test('a phone that cannot show any of it still records', () async {
+      // Notifications refused, or no Live Activities below iOS 16.1.
+      const channel = MethodChannel(PlatformRecordingControls.channelName);
+      final asked = <String>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        asked.add(call.method);
+        throw PlatformException(code: 'denied');
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      controller.dispose();
+      recorder = FakeVoiceRecorder();
+      controller = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+        controls: PlatformRecordingControls(),
+      );
+
+      expect(await controller.start(noteId: 'n1'), isTrue);
+      await pumpEventQueue();
+      expect(controller.isRecording, isTrue);
+      expect(asked, ['show', 'prepare', 'show']);
+    });
+
+    test('a press arrives over the platform channel', () async {
+      final controls = PlatformRecordingControls();
+      final pressed = <RecordingCommand>[];
+      controls.onCommand = (command) async {
+        pressed.add(command);
+        return true;
+      };
+      const codec = StandardMethodCodec();
+      Future<Object?> send(String method) async {
+        final reply = Completer<Object?>();
+        await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+              PlatformRecordingControls.channelName,
+              codec.encodeMethodCall(MethodCall(method)),
+              (data) => reply.complete(codec.decodeEnvelope(data!)),
+            );
+        return reply.future;
+      }
+
+      expect(await send('pause'), isTrue);
+      expect(await send('resume'), isTrue);
+      expect(await send('stop'), isTrue);
+      expect(await send('rewind'), isFalse);
+      expect(pressed, [
+        RecordingCommand.pause,
+        RecordingCommand.resume,
+        RecordingCommand.stop,
+      ]);
+    });
+
+    test('a recording in progress notes its note beside it', () async {
+      await controller.start(noteId: 'n1');
+      final marker = markerOf(recorder.startedAt!);
+      expect(jsonDecode(marker.readAsStringSync()), {'noteId': 'n1'});
+
+      await controller.stop();
+      expect(marker.existsSync(), isFalse);
+    });
+
+    test('a cancelled recording leaves no note of itself', () async {
+      await controller.start(noteId: 'n1');
+      final marker = markerOf(recorder.startedAt!);
+      await controller.cancel();
+      expect(marker.existsSync(), isFalse);
+    });
+
+    group('the next launch', () {
+      late Map<String, VoiceRecordingResult> delivered;
+      late int flushes;
+
+      setUp(() {
+        delivered = {};
+        flushes = 0;
+        controller.onFinished = (result, noteId) async =>
+            delivered[noteId] = result;
+        controller.onFlush = () async => flushes++;
+      });
+
+      File leftBehind(String name, String noteId, List<int> bytes) {
+        File(
+          '${temp.path}/$name.json',
+        ).writeAsStringSync(jsonEncode({'noteId': noteId}));
+        return File('${temp.path}/$name.m4a')..writeAsBytesSync(bytes);
+      }
+
+      final tone = File('test/fixtures/tone_5s.m4a').readAsBytesSync();
+
+      test('delivers what the last run never finished', () async {
+        final audio = leftBehind('voice-1-2', 'n7', tone);
+
+        await controller.recoverInterrupted();
+
+        expect(delivered.keys, ['n7']);
+        expect(delivered['n7']!.file.path, audio.path);
+        expect(delivered['n7']!.duration.inMilliseconds, closeTo(5000, 200));
+        expect(markerOf(audio.path).existsSync(), isFalse);
+        expect(flushes, 1);
+      });
+
+      test('draws its waveform from the audio', () async {
+        // One second of silence, then one at half of full scale.
+        final pcm = File('${temp.path}/decoded.pcm');
+        final samples = ByteData(32000 * 2);
+        for (var i = 16000; i < 32000; i++) {
+          samples.setInt16(i * 2, i.isEven ? 16384 : -16384, Endian.little);
+        }
+        pcm.writeAsBytesSync(samples.buffer.asUint8List());
+        const channel = MethodChannel('test/audio_decode');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          channel,
+          (call) async => {
+            'path': pcm.path,
+            'frames': 32000,
+            'sampleRate': 16000,
+          },
+        );
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        leftBehind('voice-3-4', 'n7', tone);
+
+        await controller.recoverInterrupted(
+          decoder: const AudioDecoder(channel: channel),
+        );
+
+        final peaks = delivered['n7']!.peaks;
+        expect(peaks.first, 0);
+        expect(peaks.last, greaterThan(200));
+        // The decoded copy is the caller's to throw away.
+        expect(pcm.existsSync(), isFalse);
+      });
+
+      test('leaves a file killed before it was closed to the sweep', () async {
+        final audio = leftBehind('voice-5-6', 'n7', [1, 2, 3, 4]);
+
+        await controller.recoverInterrupted();
+
+        expect(delivered, isEmpty);
+        expect(flushes, 0);
+        expect(markerOf(audio.path).existsSync(), isFalse);
+        expect(audio.existsSync(), isTrue);
+      });
+
+      test('leaves the recording in progress alone', () async {
+        await controller.start(noteId: 'n1');
+
+        await controller.recoverInterrupted();
+
+        expect(delivered, isEmpty);
+        expect(markerOf(recorder.startedAt!).existsSync(), isTrue);
+      });
+
+      test('waits for somewhere to put it', () async {
+        controller.onFinished = null;
+        final audio = leftBehind('voice-7-8', 'n7', tone);
+
+        await controller.recoverInterrupted();
+
+        expect(markerOf(audio.path).existsSync(), isTrue);
+      });
+
+      test('is not swept away first, however old', () async {
+        final audio = leftBehind('voice-9-10', 'n7', tone);
+        audio.setLastModifiedSync(
+          DateTime.now().subtract(const Duration(hours: 3)),
+        );
+
+        await VoiceRecordingController.sweepTempFiles(directory: temp);
+
+        expect(audio.existsSync(), isTrue);
+      });
     });
   });
 }

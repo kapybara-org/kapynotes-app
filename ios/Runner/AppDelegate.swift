@@ -38,5 +38,11 @@ import UIKit
     fileExportChannel = FileExport.register(
       with: engineBridge.applicationRegistrar.messenger()
     )
+    RecordingActivity.shared.register(with: engineBridge.applicationRegistrar.messenger())
+  }
+
+  override func applicationWillTerminate(_ application: UIApplication) {
+    super.applicationWillTerminate(application)
+    RecordingActivity.shared.endBeforeExit()
   }
 }
