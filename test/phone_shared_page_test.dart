@@ -398,6 +398,18 @@ void main() {
     );
   });
 
+  testWidgets('an invitation’s Decline and Accept are set in Figtree, as the '
+      'card around them is', (tester) async {
+    await shareAround(tester, invitation: true);
+    await pumpPage(tester, onOpenPerson: (_) {});
+    for (final label in ['Decline', 'Accept']) {
+      final words = tester.widget<RichText>(
+        find.descendant(of: find.text(label), matching: find.byType(RichText)),
+      );
+      expect(words.text.style?.fontFamily, AppFonts.ui, reason: label);
+    }
+  });
+
   testWidgets('without a way to open people, a heading has no ›', (
     tester,
   ) async {

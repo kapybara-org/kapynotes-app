@@ -2397,7 +2397,11 @@ class _InvitationCard extends StatelessWidget {
     ].join(' · ');
     final avatar = touch ? 32.0 : 28.0;
     final button = touch ? 36.0 : 28.0;
+    // A button's text style replaces the theme's rather than adding to it,
+    // so the face is named here.
     final label = TextStyle(
+      fontFamily: AppFonts.ui,
+      fontFamilyFallback: AppFonts.uiFallback,
       fontSize: touch ? 15 : 13,
       height: touch ? 20 / 15 : 18 / 13,
       fontWeight: AppWeight.font(AppWeight.button),
