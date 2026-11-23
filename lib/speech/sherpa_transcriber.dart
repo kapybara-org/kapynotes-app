@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
+import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import '../audio/audio_decode.dart';
@@ -25,15 +27,18 @@ class SherpaTranscriber implements Transcriber {
   SherpaTranscriber({
     required LocalModelStore models,
     AudioDecoder decoder = const AudioDecoder(),
+    AssetBundle? assets,
     LocalSpeechModel model = parakeetTdt06bV3Int8,
     String? Function()? language,
   }) : _models = models,
        _decoder = decoder,
+       _assets = assets ?? rootBundle,
        _model = model,
        _language = language ?? (() => null);
 
   final LocalModelStore _models;
   final AudioDecoder _decoder;
+  final AssetBundle _assets;
   final LocalSpeechModel _model;
   final String? Function() _language;
 
@@ -102,7 +107,9 @@ class SherpaTranscriber implements Transcriber {
       );
     }
 
+    final vad = File('${decoded.file.path}.vad.onnx');
     try {
+      final vadPath = await _unpackVad(vad);
       final words = await Isolate.run(
         () => _recognise(
           _RecogniseRequest(
@@ -110,6 +117,7 @@ class SherpaTranscriber implements Transcriber {
             decoder: '${directory.path}/decoder.int8.onnx',
             joiner: '${directory.path}/joiner.int8.onnx',
             tokens: '${directory.path}/tokens.txt',
+            vad: vadPath,
             pcmPath: decoded.file.path,
             sampleRate: decoded.sampleRate,
             frames: decoded.frames,
@@ -129,8 +137,48 @@ class SherpaTranscriber implements Transcriber {
       // leaves its scratch file behind is a leak nobody would attribute to
       // transcription.
       await decoded.dispose();
+      try {
+        if (await vad.exists()) await vad.delete();
+      } on FileSystemException {
+        // Already gone with the rest of the temporary directory.
+      }
     }
   }
+
+  /// Copies the bundled voice activity model to [to], where the native side
+  /// can open it, and answers its path.
+  ///
+  /// Null when the asset is missing or the copy fails. That costs the cuts at
+  /// pauses, not the transcript: [_recognise] falls back to cutting at the
+  /// quietest moment it can find.
+  Future<String?> _unpackVad(File to) async {
+    try {
+      final data = await _assets.load(sileroVadAsset);
+      await to.writeAsBytes(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+        flush: true,
+      );
+      return to.path;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Silero's voice activity model, which finds the pauses a recording is cut
+/// at. Bundled only for Android, Windows and Linux (see pubspec.yaml), the
+/// platforms this recogniser runs on.
+const String sileroVadAsset = 'assets/speech/silero_vad.onnx';
+
+/// Lists the voice activity model's licence on the licences page, in the
+/// builds that carry the model.
+void registerVadLicense() {
+  if (!SherpaTranscriber.isPossibleHere) return;
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks(const [
+      'Silero VAD',
+    ], await rootBundle.loadString('assets/speech/silero_vad-LICENSE.txt'));
+  });
 }
 
 /// Everything the isolate needs, and nothing that cannot cross into one.
@@ -143,6 +191,7 @@ class _RecogniseRequest {
     required this.decoder,
     required this.joiner,
     required this.tokens,
+    required this.vad,
     required this.pcmPath,
     required this.sampleRate,
     required this.frames,
@@ -152,6 +201,7 @@ class _RecogniseRequest {
   final String decoder;
   final String joiner;
   final String tokens;
+  final String? vad;
   final String pcmPath;
   final int sampleRate;
   final int frames;
@@ -159,19 +209,13 @@ class _RecogniseRequest {
 
 /// The longest run of audio handed to the model at once.
 ///
-/// Not a limit of the model — Parakeet will take far more — but of the
-/// machine: an offline recogniser holds the encoder output for the whole
-/// utterance, and thirty minutes at once is hundreds of megabytes on a phone
-/// that has better uses for them. Ninety seconds keeps the peak flat and
-/// costs nothing, because the split is made where nobody is speaking.
-const int _windowSeconds = 90;
-
-/// How far back from a window's edge to hunt for a quiet moment.
-///
-/// Fifteen seconds is long enough to find the gap between two sentences in
-/// any ordinary speech and short enough that the windows stay near their
-/// nominal length.
-const int _searchSeconds = 15;
+/// Parakeet will take far more, and was given ninety seconds until KAP-314.
+/// Over that long it now and then skips a whole passage and carries on as if
+/// nothing were missing: 129 words of one five-minute audiobook chapter, gone
+/// without a trace. Cut at pauses into twenty seconds or less, the same
+/// recordings lost no sentence and came out as accurate as transcribing one
+/// sentence at a time, and a little faster than the long windows were.
+const int _chunkSeconds = 20;
 
 /// Recognises the whole recording, in one isolate, and answers with words.
 ///
@@ -205,50 +249,215 @@ List<TimedWord> _recognise(_RecogniseRequest request) {
   );
 
   final file = File(request.pcmPath).openSync();
-  final words = <TimedWord>[];
   try {
-    var start = 0;
-    while (start < request.frames) {
-      final end = _windowEnd(file, request, start);
+    List<TimedWord> decode(int start, int end) {
       final samples = _readWindow(file, start, end - start);
-      if (samples.isEmpty) break;
-
+      if (samples.isEmpty) return const [];
       final stream = recognizer.createStream();
       try {
         stream.acceptWaveform(samples: samples, sampleRate: request.sampleRate);
         recognizer.decode(stream);
-        final result = recognizer.getResult(stream);
         final offsetMs = (start * 1000) ~/ request.sampleRate;
-        words.addAll(_wordsFrom(result, offsetMs));
+        return _wordsFrom(recognizer.getResult(stream), offsetMs);
       } finally {
         stream.free();
       }
-      start = end;
     }
+
+    final speech = _speechIn(file, request);
+    final limit = _chunkSeconds * request.sampleRate;
+    final chunks = chunksAtPauses(
+      frames: request.frames,
+      pauses: [
+        for (var i = 1; i < speech.length; i++)
+          (speech[i - 1].$2 + speech[i].$1) ~/ 2,
+      ],
+      limit: limit,
+      quietest: (from, to) => _quietestBetween(file, request, from, to),
+    );
+    return hearAgain(
+      words: [for (final (start, end) in chunks) ...decode(start, end)],
+      speech: speech,
+      frames: request.frames,
+      sampleRate: request.sampleRate,
+      limit: limit,
+      decode: decode,
+    );
   } finally {
     file.closeSync();
     recognizer.free();
   }
-  return words;
 }
 
-/// Where the next window should stop.
+/// Where to cut [frames] samples into chunks of at most [limit] samples.
 ///
-/// The end of the recording if it is close enough, otherwise the quietest
-/// 20 ms in the last [_searchSeconds] of the window — which in speech is a
-/// pause, and cutting there means no window ever starts or ends mid-word.
-int _windowEnd(RandomAccessFile file, _RecogniseRequest request, int start) {
-  final nominal = start + _windowSeconds * request.sampleRate;
-  if (nominal >= request.frames) return request.frames;
+/// Each chunk ends at the last of the [pauses] that fits in it, so no chunk
+/// starts or ends inside a word. When none fits, which is a speaker who has
+/// not stopped for twenty seconds or a recording the voice activity model
+/// could not read, it ends where [quietest] finds the quietest moment in the
+/// chunk's last third.
+@visibleForTesting
+List<(int, int)> chunksAtPauses({
+  required int frames,
+  required List<int> pauses,
+  required int limit,
+  required int Function(int from, int to) quietest,
+}) {
+  final chunks = <(int, int)>[];
+  var start = 0;
+  var next = 0;
+  while (start < frames) {
+    if (frames - start <= limit) {
+      chunks.add((start, frames));
+      break;
+    }
+    int? end;
+    while (next < pauses.length && pauses[next] <= start + limit) {
+      if (pauses[next] > start) end = pauses[next];
+      next++;
+    }
+    end ??= quietest(start + limit - limit ~/ 3, start + limit);
+    chunks.add((start, end));
+    start = end;
+  }
+  return chunks;
+}
 
-  final searchFrom = nominal - _searchSeconds * request.sampleRate;
-  final from = searchFrom < start ? start : searchFrom;
-  final samples = _readWindow(file, from, nominal - from);
-  if (samples.isEmpty) return nominal;
+/// Hears again, on its own, any stretch of [speech] the model gave no
+/// words for, and keeps the second hearing when it found more.
+///
+/// Parakeet now and then skips a whole sentence, most often when a new voice
+/// starts partway through a chunk over background noise, and far less often
+/// when it hears that sentence alone. More than three seconds of speech with
+/// no word starting in it is that skip, not a pause: the voice activity
+/// model already split the speech at every pause. Each such stretch is heard
+/// from the pause before it to the pause after it, joined with skipped
+/// neighbours while they fit in [limit]. Shorter ones are left alone, since
+/// a cough or a breath is speech to the voice activity model too.
+@visibleForTesting
+List<TimedWord> hearAgain({
+  required List<TimedWord> words,
+  required List<(int, int)> speech,
+  required int frames,
+  required int sampleRate,
+  required int limit,
+  required List<TimedWord> Function(int start, int end) decode,
+}) {
+  int ms(int sample) => (sample * 1000) ~/ sampleRate;
+  final starts = [for (final word in words) word.startMs]..sort();
+  final unheard = <(int, int)>[];
+  var next = 0;
+  for (var i = 0; i < speech.length; i++) {
+    final from = ms(speech[i].$1);
+    final to = ms(speech[i].$2);
+    while (next < starts.length && starts[next] < from) {
+      next++;
+    }
+    var last = from;
+    var longest = 0;
+    for (var k = next; k < starts.length && starts[k] <= to; k++) {
+      longest = max(longest, starts[k] - last);
+      last = starts[k];
+    }
+    if (max(longest, to - last) <= 3000) continue;
 
-  // 20 ms of audio: shorter than any syllable, long enough that one quiet
-  // sample in the middle of speech cannot win.
+    final start = i == 0 ? 0 : (speech[i - 1].$2 + speech[i].$1) ~/ 2;
+    final end = i == speech.length - 1
+        ? frames
+        : (speech[i].$2 + speech[i + 1].$1) ~/ 2;
+    if (unheard.isNotEmpty &&
+        unheard.last.$2 == start &&
+        end - unheard.last.$1 <= limit) {
+      unheard[unheard.length - 1] = (unheard.last.$1, end);
+    } else {
+      unheard.add((start, end));
+    }
+  }
+
+  var heard = words;
+  for (final (start, end) in unheard) {
+    final again = decode(start, end);
+    final before = heard.where((word) => word.startMs < ms(start)).toList();
+    final after = heard.where((word) => word.startMs >= ms(end)).toList();
+    if (again.length > heard.length - before.length - after.length) {
+      heard = [...before, ...again, ...after];
+    }
+  }
+  return heard;
+}
+
+/// Every stretch of speech in the recording, as start and end samples.
+///
+/// Found by Silero's voice activity model, a quarter of a second of quiet
+/// ending a stretch. Empty when there is no model, it will not load, or the
+/// audio is at a rate it was not trained on, which leaves every cut to
+/// [_quietestBetween] and nothing to hear again.
+List<(int, int)> _speechIn(RandomAccessFile file, _RecogniseRequest request) {
+  final model = request.vad;
+  if (model == null || request.sampleRate != 16000) return const [];
+
+  sherpa.VoiceActivityDetector? vad;
+  try {
+    final detector = vad = sherpa.VoiceActivityDetector(
+      config: sherpa.VadModelConfig(
+        sileroVad: sherpa.SileroVadModelConfig(
+          model: model,
+          minSilenceDuration: 0.25,
+          maxSpeechDuration: _chunkSeconds.toDouble(),
+        ),
+        sampleRate: request.sampleRate,
+        debug: false,
+      ),
+      bufferSizeInSeconds: 3.0 * _chunkSeconds,
+    );
+    final speech = <(int, int)>[];
+    void drain() {
+      while (!detector.isEmpty()) {
+        final segment = detector.front();
+        speech.add((segment.start, segment.start + segment.samples.length));
+        detector.pop();
+      }
+    }
+
+    // One model window per call. The detector makes a single speech or
+    // silence call for everything it is handed at once, so a second per call
+    // hides every pause shorter than that second: one five-minute chapter
+    // came out as six stretches of speech instead of sixty.
+    const window = 512;
+    final block = window * 32;
+    for (var at = 0; at < request.frames; at += block) {
+      final count = at + block > request.frames ? request.frames - at : block;
+      final samples = _readWindow(file, at, count);
+      for (var i = 0; i < samples.length; i += window) {
+        final end = i + window > samples.length ? samples.length : i + window;
+        detector.acceptWaveform(Float32List.sublistView(samples, i, end));
+      }
+      drain();
+    }
+    detector.flush();
+    drain();
+    return speech;
+  } catch (_) {
+    return const [];
+  } finally {
+    vad?.free();
+  }
+}
+
+/// The middle of the quietest 20 ms between [from] and [to].
+///
+/// 20 ms is shorter than any syllable, and long enough that one quiet sample
+/// in the middle of speech cannot win.
+int _quietestBetween(
+  RandomAccessFile file,
+  _RecogniseRequest request,
+  int from,
+  int to,
+) {
+  final samples = _readWindow(file, from, to - from);
   final step = (request.sampleRate * 20) ~/ 1000;
+  if (samples.length < step) return to;
+
   var quietestAt = 0;
   var quietest = double.infinity;
   for (var at = 0; at + step <= samples.length; at += step) {
