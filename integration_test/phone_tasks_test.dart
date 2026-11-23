@@ -54,10 +54,29 @@ void main() {
 
   testWidgets('a phone walks the Tasks states, dark and light', (tester) async {
     final semantics = tester.ensureSemantics();
+    // Each Flutter error is printed with the step it happened in: the widget
+    // that raised it, its creator, constraints and size, and never the
+    // words of a note. It still reaches the test, which fails on it.
+    var step = 'launch';
     final report = FlutterError.onError;
-    FlutterErrorDetails? reported;
     FlutterError.onError = (details) {
-      reported = details;
+      final message = details.exceptionAsString().split('\n').first;
+      final lines = details.toString().split('\n');
+      final widget = lines.indexWhere(
+        (line) => line.contains('relevant error-causing widget'),
+      );
+      debugPrint(
+        [
+          'phone_tasks, during $step: ${message.startsWith('A RenderFlex overflowed') ? message : details.exception.runtimeType}',
+          if (widget >= 0 && widget + 1 < lines.length)
+            lines[widget + 1].trim(),
+          for (final line in lines)
+            if (RegExp(
+              r'^\s*(creator|constraints|size|direction):',
+            ).hasMatch(line))
+              line.trim(),
+        ].join('\n'),
+      );
       report?.call(details);
     };
     var clock = DateTime(2026, 11, 4, 9);
@@ -99,6 +118,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull, reason: step);
 
     Future<void> tap(String key) async {
       final target = find.byKey(ValueKey(key));
@@ -110,13 +130,10 @@ void main() {
 
     Future<void> shot(String name) async {
       for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
+        step = '$name ${mode.name}';
         prefs.appearance = mode;
         await tester.pumpAndSettle();
-        final error = tester.takeException();
-        if (error != null && reported != null) {
-          FlutterError.dumpErrorToConsole(reported!, forceReport: true);
-        }
-        expect(error, isNull, reason: name);
+        expect(tester.takeException(), isNull, reason: step);
         await screenshot('tasks-$name-${mode.name}');
       }
     }
@@ -148,8 +165,12 @@ void main() {
       return labels;
     }
 
+    step = 'page-home';
     await tap('page-home');
+    expect(tester.takeException(), isNull, reason: step);
+    step = 'Tasks';
     await tap('home-title-tasks');
+    expect(tester.takeException(), isNull, reason: step);
 
     expect(find.text('What do you want to work on next?'), findsOneWidget);
     expect(find.text('First on the list'), findsOneWidget);
@@ -232,6 +253,7 @@ void main() {
     await tap('tasks-keep-going');
     expect(find.byKey(const ValueKey('tasks-pair')), findsOneWidget);
     semantics.dispose();
+    FlutterError.onError = report;
   });
 
   testWidgets('a phone shows the boards M13, M13a and M14, dark', (
