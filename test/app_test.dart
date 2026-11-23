@@ -10685,6 +10685,7 @@ void main() {
       final money = tags.create('Money')!;
       tags.addTag('today', trip.id);
       tags.addTag('today', money.id);
+      tags.addTag('older', trip.id);
       await pumpApp(tester, size: const Size(393, 852), tags: tags);
       await showNotesList(tester);
 
@@ -10722,9 +10723,16 @@ void main() {
         matching: find.text('9:00'),
       );
       expect(
-        tester.getTopLeft(dots).dx,
-        greaterThan(tester.getTopRight(time).dx),
-        reason: 'the dots come after the time',
+        tester.getTopLeft(dots).dx - tester.getTopRight(time).dx,
+        8,
+        reason: 'the dots come right after the time',
+      );
+      final timeStyle = tester.widget<Text>(time).style!;
+      expect(timeStyle.fontSize, 13);
+      expect(timeStyle.fontSize! * timeStyle.height!, closeTo(16, 0.01));
+      expect(
+        timeStyle.fontFeatures,
+        contains(const FontFeature.tabularFigures()),
       );
       expect(
         find.descendant(
@@ -10732,6 +10740,36 @@ void main() {
           matching: find.byType(TagDots),
         ),
         findsNothing,
+      );
+      expect(
+        tester
+            .getTopRight(
+              find.descendant(
+                of: row('Quote for the deck'),
+                matching: find.text('17:00'),
+              ),
+            )
+            .dx,
+        tester.getTopRight(time).dx,
+        reason: "an untagged row keeps the dots' room, so the times line up",
+      );
+      final single = find.descendant(
+        of: row('Renewal notes'),
+        matching: find.byType(TagDots),
+      );
+      expect(tester.widget<TagDots>(single).tags, hasLength(1));
+      expect(
+        tester.getTopLeft(single).dx -
+            tester
+                .getTopRight(
+                  find.descendant(
+                    of: row('Renewal notes'),
+                    matching: find.text('11:00'),
+                  ),
+                )
+                .dx,
+        8,
+        reason: 'a single dot also sits right after its time',
       );
       for (final (title, clock) in [
         ('Stamped by a clock ahead', '8:00'),
