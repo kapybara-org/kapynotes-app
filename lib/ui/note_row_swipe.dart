@@ -121,6 +121,7 @@ class _NoteRowSwipeState extends State<NoteRowSwipe>
   );
 
   void _start(DragStartDetails details) {
+    if (_leaving) return;
     _width = context.size?.width ?? 0;
     _past = false;
     _offset.stop();

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -359,6 +360,19 @@ void main() {
       expect(ticks, isEmpty);
     });
 
+    testWidgets('a second drag while the row slides out still archives', (
+      tester,
+    ) async {
+      await pump(tester);
+      final row = _row('Team offsite');
+      await tester.drag(row, const Offset(-330, 0));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.drag(row, const Offset(-60, 0));
+      await tester.pump(const Duration(seconds: 2));
+      expect(notes.byId('offsite')!.isArchived, isTrue);
+      expect(_row('Team offsite'), findsNothing);
+    });
+
     testWidgets('a swipe let go short of the point opens the row instead', (
       tester,
     ) async {
@@ -366,6 +380,92 @@ void main() {
       await _drag(tester, _row('Budget'), -200);
       expect(notes.byId('budget')!.isArchived, isFalse);
       expect(_button('delete', 'budget').hitTestable(), findsOneWidget);
+    });
+  });
+
+  testWidgets('a drag while notes are picked shows no buttons', (tester) async {
+    await pump(tester);
+    await tester.longPress(_row('Budget'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('select-note-budget')));
+    await tester.pumpAndSettle();
+    expect(find.byType(NoteRowSwipe), findsNothing);
+    await _drag(tester, _row('Groceries'), -200);
+    expect(_button('pin', 'groceries'), findsNothing);
+    expect(_button('delete', 'groceries'), findsNothing);
+  });
+
+  group('the widget alone', () {
+    var archived = 0;
+
+    Future<void> pumpRow(WidgetTester tester, {required bool full}) async {
+      archived = 0;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.reset);
+      NoteRowSwipeAction action(String key) => (
+        key: key,
+        label: key,
+        icon: KapyIcons.pinOutlined,
+        background: const Color(0xFF333333),
+        foreground: const Color(0xFFFFFFFF),
+        onPressed: () {},
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.light(),
+          home: Scaffold(
+            body: ListView(
+              children: [
+                NoteRowSwipe(
+                  id: 'row',
+                  actions: [action('pin'), action('delete')],
+                  // An archive that keeps the note, as a refusal does.
+                  full: full
+                      ? (
+                          key: 'archive',
+                          label: 'Archive',
+                          icon: KapyIcons.archiveOutlined,
+                          background: const Color(0xFF333333),
+                          foreground: const Color(0xFFFFFFFF),
+                          onPressed: () => archived++,
+                        )
+                      : null,
+                  child: const SizedBox(height: 72, child: Text('Row')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    double slid(WidgetTester tester) => -tester.getTopLeft(find.text('Row')).dx;
+
+    testWidgets('a row with no full swipe stops at its buttons', (
+      tester,
+    ) async {
+      await pumpRow(tester, full: false);
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Row')),
+      );
+      await gesture.moveBy(const Offset(-20, 0));
+      await gesture.moveBy(const Offset(-320, 0));
+      await tester.pump();
+      expect(slid(tester), NoteRowSwipe.actionWidth * 2);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(slid(tester), NoteRowSwipe.actionWidth * 2);
+    });
+
+    testWidgets('a full swipe whose note stays brings the row back', (
+      tester,
+    ) async {
+      await pumpRow(tester, full: true);
+      await _drag(tester, find.text('Row'), -330);
+      expect(archived, 1);
+      expect(slid(tester), 0);
+      expect(find.byKey(const ValueKey('swipe-archive-row')), findsNothing);
     });
   });
 
