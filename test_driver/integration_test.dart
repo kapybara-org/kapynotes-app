@@ -129,14 +129,11 @@ Future<String?> _act(String device, String action) async {
       ['pm', 'grant', _app, 'android.permission.RECORD_AUDIO'],
       ['pm', 'grant', _app, 'android.permission.POST_NOTIFICATIONS'],
     ),
-    'lock' => adb(['input', 'keyevent', 'KEYCODE_SLEEP']),
+    'lock' => _lock(device),
     'wake' => adb(['input', 'keyevent', 'KEYCODE_WAKEUP']),
     'shade' => adb(['cmd', 'statusbar', 'expand-notifications']),
     'collapse' => adb(['cmd', 'statusbar', 'collapse']),
-    'unlock' => adbBoth(
-      ['input', 'keyevent', 'KEYCODE_WAKEUP'],
-      ['wm', 'dismiss-keyguard'],
-    ),
+    'unlock' => _unlock(device),
     'other-app' => adb(['am', 'start', '-a', 'android.settings.SETTINGS']),
     'film' => _film(device),
     'cut' => _cut(device),
@@ -149,6 +146,47 @@ Future<String?> _act(String device, String action) async {
     ]),
     _ => Future.value('no such action: $action'),
   };
+}
+
+/// Runs `adb shell` on [device], and returns its output and how it ended.
+Future<ProcessResult> _adbShell(String device, List<String> arguments) =>
+    Process.run('adb', ['-s', device, 'shell', ...arguments]);
+
+/// Whether the emulator's lock screen was switched off before a test's
+/// `lock` switched it on, as `locksettings get-disabled` said, for `unlock`
+/// to put back.
+String? _lockScreenWasDisabled;
+
+/// Locks [device]. An emulator starts with its lock screen switched off, so
+/// waking it would show the app again and nothing of what a locked phone
+/// shows. Its swipe lock screen goes on first.
+Future<String?> _lock(String device) async {
+  final was = await _adbShell(device, ['locksettings', 'get-disabled']);
+  _lockScreenWasDisabled ??= '${was.stdout}'.trim();
+  for (final step in [
+    ['locksettings', 'set-disabled', 'false'],
+    ['input', 'keyevent', 'KEYCODE_SLEEP'],
+  ]) {
+    final result = await _adbShell(device, step);
+    if (result.exitCode != 0) return '${step.join(' ')}: ${result.stderr}';
+  }
+  return null;
+}
+
+/// Wakes [device], swipes its lock screen away, and switches the lock screen
+/// back off if `lock` found it off, for the tests that run after.
+Future<String?> _unlock(String device) async {
+  for (final step in [
+    ['input', 'keyevent', 'KEYCODE_WAKEUP'],
+    ['wm', 'dismiss-keyguard'],
+    if (_lockScreenWasDisabled case 'true' || 'false')
+      ['locksettings', 'set-disabled', _lockScreenWasDisabled!],
+  ]) {
+    final result = await _adbShell(device, step);
+    if (result.exitCode != 0) return '${step.join(' ')}: ${result.stderr}';
+  }
+  _lockScreenWasDisabled = null;
+  return null;
 }
 
 /// The emulator filming its own screen, from a test's `film` to its `cut`.
@@ -191,31 +229,37 @@ Future<String?> _cut(String device) async {
 
 /// Presses whatever on [device]'s screen is labelled [label], as found in
 /// the screen's accessibility tree.
+///
+/// The tree goes to a file on the device and is read back from there: with
+/// no terminal behind `adb exec-out`, a dump to /dev/tty comes back empty.
+/// A screen that is still moving cannot be dumped, so it is tried again.
 Future<String?> _tapLabel(String device, String label) async {
-  final dump = await Process.run('adb', [
-    '-s',
-    device,
-    'exec-out',
-    'uiautomator',
-    'dump',
-    '/dev/tty',
-  ]);
-  final node = RegExp(
+  const window = '/sdcard/kapynotes-window.xml';
+  final labelled = RegExp(
     'text="${RegExp.escape(label)}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"',
     caseSensitive: false,
-  ).firstMatch('${dump.stdout}');
-  if (node == null) return 'nothing on screen says $label';
-  int at(int group) => int.parse(node.group(group)!);
-  final tap = await Process.run('adb', [
-    '-s',
-    device,
-    'shell',
-    'input',
-    'tap',
-    '${(at(1) + at(3)) ~/ 2}',
-    '${(at(2) + at(4)) ~/ 2}',
-  ]);
-  return tap.exitCode == 0 ? null : '${tap.stderr}'.trim();
+  );
+  var why = '';
+  for (var attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await Future<void>.delayed(const Duration(seconds: 1));
+    await _adbShell(device, ['rm', '-f', window]);
+    final dump = await _adbShell(device, ['uiautomator', 'dump', window]);
+    final tree = await _adbShell(device, ['cat', window]);
+    final node = labelled.firstMatch('${tree.stdout}');
+    if (node == null) {
+      why = '${dump.stdout}${dump.stderr}'.trim();
+      continue;
+    }
+    int at(int group) => int.parse(node.group(group)!);
+    final tap = await _adbShell(device, [
+      'input',
+      'tap',
+      '${(at(1) + at(3)) ~/ 2}',
+      '${(at(2) + at(4)) ~/ 2}',
+    ]);
+    return tap.exitCode == 0 ? null : '${tap.stderr}'.trim();
+  }
+  return 'nothing on screen says $label: $why';
 }
 
 /// Saves what [device]'s screen shows as
