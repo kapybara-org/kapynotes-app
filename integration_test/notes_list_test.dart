@@ -16,8 +16,12 @@
 //   VoiceOver, and does them from there.
 // - D03, D04 and D07 of the final boards, over the boards' notes in a
 //   1440 × 900 window, for the design check to hold against them.
+// - KAPY-72's folder boards, d1 to d6, in the same window: Add notes beside
+//   a folder, notes dragged onto a folder and into the open one, Undo, a new
+//   folder, the empty states, and a tree note's whole-row hover.
 // Each state is taken light and dark, as screenshots in build/screenshots;
-// the boards' states dark only, as the boards draw them.
+// the boards' states dark only, as the boards draw them, with d1 and d3
+// light too.
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/semantics.dart'
     show CustomSemanticsAction, SemanticsAction, SemanticsNode;
@@ -43,6 +47,8 @@ import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/editor_panes.dart' show NoteDragFeedback;
+import 'package:kapy_notes/ui/folders_ui.dart' show TreeNoteFace;
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
@@ -76,6 +82,7 @@ void main() {
 
   const mouse = PointerDeviceKind.mouse;
   late NotesStore notes;
+  FolderStore? folderStore;
   late LayoutPrefs prefs;
   late ShortcutPrefs shortcuts;
 
@@ -112,6 +119,7 @@ void main() {
     }
     clock = DateTime.now();
     prepare?.call(tags, days);
+    folderStore = folders;
     if (folders != null) file!(folders);
     final tasks = TaskLibrary(
       notes: notes,
@@ -676,5 +684,205 @@ void main() {
       );
     }
     await boardShot(tester, 'd07-tag-picker');
+  });
+
+  // KAPY-72's folder boards on p-2-0, d1 to d6, over the boards' notes: Add
+  // notes beside a folder, the notes it adds and their Undo, notes dragged
+  // onto a folder in the tree and into the open folder, a new folder, and
+  // what each part says when it has nothing to show. Each state is taken
+  // dark, and d1 and d3 light too, as the boards draw them.
+  Finder listed(String title) =>
+      find.descendant(of: find.byType(Sidebar), matching: row(title));
+  Finder tick(String title) => find.byKey(ValueKey('add-note-${id(title)}'));
+  final addNotes = find.byKey(const ValueKey('add-notes'));
+
+  Folder folderNamed(String name, [String? parentId]) => folderStore!.tree
+      .childrenOf(parentId)
+      .singleWhere((folder) => folder.name == name);
+
+  Future<void> showFolder(WidgetTester tester, Folder folder) async {
+    for (
+      var at = folder.parentId;
+      at != null;
+      at = folderStore!.tree.byId(at)?.parentId
+    ) {
+      prefs.setFolderOpen(at, true);
+    }
+    if (!prefs.foldersShown) {
+      await click(tester, find.byKey(const ValueKey('notes-switch-folders')));
+    }
+    await click(tester, find.byKey(ValueKey('folder-${folder.id}')));
+  }
+
+  Future<void> lightShot(WidgetTester tester, String name) async {
+    prefs.appearance = AppearanceMode.light;
+    await tester.pump();
+    expect(tester.takeException(), isNull, reason: name);
+    await screenshot('board-$name-light');
+    prefs.appearance = AppearanceMode.dark;
+    await tester.pump();
+  }
+
+  /// Presses on [finder] and moves sideways, which picks up what it lists.
+  Future<TestGesture> grab(WidgetTester tester, Finder finder) async {
+    final drag = await tester.startGesture(
+      tester.getCenter(finder),
+      kind: mouse,
+    );
+    await drag.moveBy(const Offset(12, 2));
+    await tester.pump();
+    return drag;
+  }
+
+  testWidgets("KAPY-72's d1 and d2: Add notes beside Clients lists the notes "
+      'in no folder, adds the ticked ones, and Undo takes them back out', (
+    tester,
+  ) async {
+    await board(tester);
+    final clients = folderNamed('Clients', folderNamed('Work').id);
+    await showFolder(tester, clients);
+    expect(addNotes, findsOneWidget);
+    expect(tick('Call with Arjun'), findsNothing);
+    for (final title in ['Quote for the deck', 'Pricing ideas', 'Gym plan']) {
+      await click(tester, tick(title));
+    }
+    expect(find.text('Add 3 notes'), findsOneWidget);
+    await boardShot(tester, 'folders-d1-adding-notes');
+    await lightShot(tester, 'folders-d1-adding-notes');
+
+    await click(tester, find.byKey(const ValueKey('add-notes-add')));
+    expect(find.text('Added 3 notes to “Clients”'), findsOneWidget);
+    for (final title in ['Quote for the deck', 'Pricing ideas', 'Gym plan']) {
+      expect(folderStore!.tree.folderOf(id(title)), clients.id, reason: title);
+      expect(tick(title), findsNothing, reason: title);
+    }
+    await boardShot(tester, 'folders-d2-notes-added');
+
+    await click(tester, find.text('Undo'));
+    for (final title in ['Quote for the deck', 'Pricing ideas', 'Gym plan']) {
+      expect(folderStore!.tree.folderOf(id(title)), isNull, reason: title);
+      expect(tick(title), findsOneWidget, reason: title);
+    }
+    await boardShot(tester, 'folders-undo');
+  });
+
+  testWidgets("KAPY-72's d3 and d4: ticked notes dragged onto a folder in the "
+      'tree, and a note dragged from the list into the open folder', (
+    tester,
+  ) async {
+    await board(tester);
+    final clients = folderNamed('Clients', folderNamed('Work').id);
+    final personal = folderStore!.create('Personal')!;
+    await tester.pumpAndSettle();
+    await showFolder(tester, clients);
+    await click(tester, tick('Gym plan'));
+    await click(tester, tick('Spare keys'));
+
+    var drag = await grab(tester, tick('Gym plan'));
+    await drag.moveTo(
+      tester.getCenter(find.byKey(ValueKey('folder-${personal.id}'))),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(NoteDragFeedback),
+        matching: find.text('2 notes'),
+      ),
+      findsOneWidget,
+    );
+    await boardShot(tester, 'folders-d3-dragging-onto-a-folder');
+    await lightShot(tester, 'folders-d3-dragging-onto-a-folder');
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Moved 2 notes to “Personal”'), findsOneWidget);
+    expect(folderStore!.tree.folderOf(id('Gym plan')), personal.id);
+    expect(folderStore!.tree.folderOf(id('Spare keys')), personal.id);
+    await boardShot(tester, 'folders-d3-dropped');
+
+    await click(tester, find.byKey(const ValueKey('notes-switch-notes')));
+    drag = await grab(tester, listed('Pricing ideas'));
+    await drag.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('folder-page-title'))),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('folder-page-drop')), findsOneWidget);
+    await boardShot(tester, 'folders-d4-dragging-into-the-open-folder');
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Moved to “Clients”'), findsOneWidget);
+    expect(folderStore!.tree.folderOf(id('Pricing ideas')), clients.id);
+    await boardShot(tester, 'folders-d4-dropped');
+  });
+
+  testWidgets("KAPY-72's d5 and d6: New folder names a folder and opens it "
+      'with Add notes, and each part says when it has nothing to show', (
+    tester,
+  ) async {
+    await launch(
+      tester,
+      size: boardSize,
+      bodies: ['Dentist\nThursday 4pm', 'Morning pages\nThe deck, the gym'],
+      file: (_) {},
+    );
+    tester.view.physicalSize = boardSize * tester.view.devicePixelRatio;
+    addTearDown(tester.view.resetPhysicalSize);
+    prefs.appearance = AppearanceMode.dark;
+    await tester.pumpAndSettle();
+
+    await click(tester, find.byKey(const ValueKey('notes-switch-folders')));
+    expect(find.text('No folders yet'), findsOneWidget);
+    await boardShot(tester, 'folders-d6-no-folders');
+
+    await click(tester, find.byKey(const ValueKey('folders-new')));
+    expect(find.byKey(const ValueKey('folder-name-field')), findsOneWidget);
+    await boardShot(tester, 'folders-d5-naming');
+    await tester.enterText(
+      find.byKey(const ValueKey('folder-name-field')),
+      'Ideas',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('Nothing in this folder yet.'), findsOneWidget);
+    expect(addNotes, findsOneWidget);
+    await boardShot(tester, 'folders-d5-a-new-folder');
+
+    await tester.enterText(
+      find.byKey(const ValueKey('add-notes-field')),
+      'zebra',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('No notes match “zebra”'), findsOneWidget);
+    await boardShot(tester, 'folders-d6-no-match');
+
+    folderStore!.file([
+      id('Dentist'),
+      id('Morning pages'),
+    ], folderNamed('Ideas').id);
+    await tester.pumpAndSettle();
+    expect(find.text('Every note is in a folder'), findsOneWidget);
+    await boardShot(tester, 'folders-d6-every-note-filed');
+  });
+
+  testWidgets('a note in the tree lights its whole row under the pointer', (
+    tester,
+  ) async {
+    await board(tester);
+    final work = folderNamed('Work');
+    final clients = folderNamed('Clients', work.id);
+    final acme = folderNamed('Acme', clients.id);
+    prefs
+      ..setFolderOpen(work.id, true)
+      ..setFolderOpen(clients.id, true)
+      ..setFolderOpen(acme.id, true);
+    await click(tester, find.byKey(const ValueKey('notes-switch-folders')));
+    final face = find.descendant(
+      of: listed('Renewal notes'),
+      matching: find.byType(TreeNoteFace),
+    );
+    final width = tester.getSize(face).width;
+    final pointer = await hover(tester, face);
+    expect(tester.getSize(face).width, width);
+    await boardShot(tester, 'folders-whole-row-hover');
+    await pointer.removePointer();
   });
 }

@@ -116,9 +116,13 @@ typedef SidebarFolders = ({
   String? inFront,
   void Function(String folderId, {required bool behind})? onTab,
 
-  /// On a phone, what New folder beside the search field (M02) bumps to
-  /// have the tree name a new folder at its top. Null elsewhere.
+  /// What New folder bumps to have the tree name a new folder at its top: a
+  /// phone's beside the search field (M02), the desktop's under it.
   ValueNotifier<int>? newFolder,
+
+  /// A folder just named in the tree, which the desktop shows in the tab in
+  /// front with Add notes beside it. Null on a phone.
+  ValueChanged<String>? onMade,
 });
 
 /// What can be done to many picked notes at once.
@@ -455,6 +459,9 @@ class Sidebar extends StatelessWidget {
                       _ => null,
                     },
             ),
+            if (folders?.newFolder case final newFolder?
+                when !phone && _foldersTab)
+              NewFolderButton(onPressed: () => newFolder.value++),
             if (controls != null && !_foldersTab)
               if (phone && onFiltersToggled != null)
                 // A phone keeps the filter row out of the way until the
@@ -560,7 +567,7 @@ extension on Sidebar {
   Widget _buildEmpty(BuildContext context) {
     final onWhenChanged = this.onWhenChanged;
     if (query.trim().isEmpty && when != NotesWhen.anyTime) {
-      return _SidebarEmpty(
+      return SidebarEmpty(
         message: 'No ${drawings ? 'drawings' : 'notes'} ${when.phrase}',
         action: onWhenChanged == null
             ? null
@@ -576,7 +583,7 @@ extension on Sidebar {
     }
     final nothingShared = query.trim().isEmpty && _onSharedTab;
     final onStartSharing = this.onStartSharing;
-    return _SidebarEmpty(
+    return SidebarEmpty(
       message: query.trim().isEmpty
           ? archiveMode
                 ? 'Archived Notes is empty'
@@ -711,6 +718,27 @@ extension on Sidebar {
     for (final note in _picked(joining))
       if (_files(note)) note.id,
   ];
+
+  /// What dragging [note]'s row carries: the picked notes while it is one
+  /// of them, which no pane takes and a folder files. Null where there is no
+  /// pointer, or nowhere for it to go.
+  NoteDragData? _dragOf(Note note) {
+    if (!AppPlatform.hasPointer) return null;
+    if (_picking && picks!.contains(note.id)) {
+      final fileable = _fileable();
+      return fileable.isEmpty
+          ? null
+          : NoteDragData(
+              noteId: note.id,
+              title: note.title,
+              together: [for (final each in _picked()) each.id],
+              fileable: fileable,
+            );
+    }
+    final fileable = [if (_files(note)) note.id];
+    if (onOpenToSide == null && fileable.isEmpty) return null;
+    return NoteDragData(noteId: note.id, title: note.title, fileable: fileable);
+  }
 
   /// The menu a right click or long press on a row opens while notes are
   /// picked, with the row's note, [joining], among them, as the click picks
@@ -1079,6 +1107,7 @@ extension on Sidebar {
     viewOnly: shared && !_mayEdit(note),
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
+    drag: _dragOf(note),
     openElsewhere: openElsewhereIds.contains(note.id),
     ofPickedDay: ofPickedDay?.call(note) ?? false,
     onOpenInNewTab: onOpenInNewTab == null
@@ -1160,7 +1189,7 @@ extension on Sidebar {
       return [
         for (final line in tree)
           if (line case NoteLine(:final note)) note,
-        ...loose,
+        if (phone) ...loose,
       ];
     }
     final groups = _noteGroups;
@@ -1529,15 +1558,12 @@ extension on Sidebar {
         header: phoneTiles,
         phone: phone,
         newFolder: folders.newFolder,
+        onMade: folders.onMade,
         looseHeading: phone ? (label) => _PhoneDayHeading(lead: label) : null,
         noteRow: (note, inset) => _row(
           note,
           shared: sharing != null && note.isShared,
-          style: switch (inset) {
-            null when phone => NoteRowStyle.touch,
-            null => NoteRowStyle.loose,
-            _ => NoteRowStyle.filed,
-          },
+          style: inset == null ? NoteRowStyle.touch : NoteRowStyle.filed,
           inset: inset ?? 0,
         ),
       ),
@@ -2841,8 +2867,8 @@ class PhoneFiltersButton extends StatelessWidget {
 }
 
 /// How a [NoteRow] draws its note: the desktop list's row or sticky card
-/// beside the spaces rail, a phone's row, or the Folders
-/// tab's note in an open folder ([filed]) or in none ([loose]).
+/// beside the spaces rail, a phone's row, or the Folders tab's note in an
+/// open folder ([filed]).
 enum NoteRowStyle {
   row,
   card,
@@ -2851,7 +2877,6 @@ enum NoteRowStyle {
   drawingCard,
   touch,
   filed,
-  loose,
 }
 
 /// One row in the note list.
@@ -2864,6 +2889,7 @@ class NoteRow extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.onOpenToSide,
+    this.drag,
     this.openElsewhere = false,
     this.ofPickedDay = false,
     this.onOpenInNewTab,
@@ -2936,6 +2962,10 @@ class NoteRow extends StatefulWidget {
   /// Opens the note in a pane beside the focused one: from the menu, with
   /// Option- or Alt-click, and by dragging the row onto the panes.
   final VoidCallback? onOpenToSide;
+
+  /// What dragging the row carries, to the panes or a folder; null where it
+  /// doesn't drag.
+  final NoteDragData? drag;
 
   /// Whether the note is already open in a pane other than the focused one.
   final bool openElsewhere;
@@ -3447,13 +3477,6 @@ class _NoteRowState extends State<NoteRow> {
         hovering: lit,
         ringed: ringed,
       ),
-      NoteRowStyle.loose => LooseNoteFace(
-        note: note,
-        date: date,
-        selected: widget.selected,
-        hovering: lit,
-        ringed: ringed,
-      ),
       NoteRowStyle.touch when drawingRow => PhoneDrawingRowFace(
         note: note,
         date: date,
@@ -3488,7 +3511,10 @@ class _NoteRowState extends State<NoteRow> {
       ),
     };
     if (!hasMenu || !_hovering) return face;
+    // The face keeps the room it has unhovered, so the whole row lights up
+    // rather than only as much of it as its words take.
     return Stack(
+      fit: StackFit.passthrough,
       children: [
         face,
         Positioned(
@@ -3627,17 +3653,12 @@ class _NoteRowState extends State<NoteRow> {
         child: row,
       );
     }
-    // Dragged onto the panes, to open beside a note there or in its place.
-    // Only where there is a pointer to drag with and panes to take it.
-    if (widget.onOpenToSide == null ||
-        widget.selecting ||
-        !AppPlatform.hasPointer) {
-      return row;
-    }
-    return NoteDraggable(
-      data: NoteDragData(noteId: widget.note.id, title: widget.note.title),
-      child: row,
-    );
+    // Dragged onto the panes, to open beside a note there or in its place,
+    // or onto a folder to file it there.
+    return switch (widget.drag) {
+      final drag? => NoteDraggable(data: drag, child: row),
+      null => row,
+    };
   }
 }
 
@@ -3876,8 +3897,15 @@ class _DrawingsEmpty extends StatelessWidget {
   }
 }
 
-class _SidebarEmpty extends StatelessWidget {
-  const _SidebarEmpty({required this.message, this.detail, this.action});
+/// What an empty list says, in the middle of it: what is missing, and in a
+/// quieter line what will fill it.
+class SidebarEmpty extends StatelessWidget {
+  const SidebarEmpty({
+    super.key,
+    required this.message,
+    this.detail,
+    this.action,
+  });
 
   final String message;
 
