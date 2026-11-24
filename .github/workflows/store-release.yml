@@ -21,6 +21,16 @@
 # ios_submit_only, which skips the build and upload (a build number can be
 # uploaded only once) and prepares and submits the build already there.
 #
+# With android_upload_only, the Android build stops on Play's internal testing
+# track and is not sent to production. That is for a build that needs a Play
+# Console declaration first, such as a new foreground service permission: Play
+# offers the form only once a build that uses the permission is in the
+# Console, and until the form is filled in it refuses even an internal
+# release made through the API. If Play refuses the upload, the signed bundle
+# is kept as a run artifact for 3 days, to upload by hand under Testing ->
+# Internal testing. After the declaration, promote the build from the Console;
+# the run summary carries the release notes to paste into it.
+#
 # The notes files hold the text users see: What's New for the App Store (up to
 # 4000 characters) and the Play release notes (up to 500). Both are paths
 # inside this repository, for example under metadata/.
@@ -42,7 +52,9 @@
 # This repository is public, and so are its run logs and artifacts. No step
 # prints a secret, and GitHub masks them as well. The artifacts are the Dart
 # symbols, the dSYMs and the R8 mapping that make a crash from this build
-# readable; they are kept for 14 days, so copy them somewhere durable.
+# readable; they are kept for 14 days, so copy them somewhere durable. Only
+# when Play refuses the upload is the signed Android App Bundle kept too, for
+# 3 days.
 name: Store release
 
 on:
@@ -78,6 +90,11 @@ on:
         required: false
         type: boolean
         default: false
+      android_upload_only:
+        description: Android only. Upload to internal testing and stop, without sending the build to production (for a build that needs a Play Console declaration first)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -109,10 +126,15 @@ jobs:
         env:
           STORES: ${{ inputs.stores }}
           SUBMIT_ONLY: ${{ inputs.ios_submit_only }}
+          UPLOAD_ONLY: ${{ inputs.android_upload_only }}
         run: |
           set -euo pipefail
           if [ "$SUBMIT_ONLY" = true ] && [ "$STORES" != ios ]; then
             echo "::error::ios_submit_only needs stores set to ios"
+            exit 1
+          fi
+          if [ "$UPLOAD_ONLY" = true ] && [ "$STORES" != android ]; then
+            echo "::error::android_upload_only needs stores set to android"
             exit 1
           fi
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$BUILD" =~ ^[1-9][0-9]*$ ]]; then
@@ -419,16 +441,55 @@ jobs:
       # Internal first, then the same version code is promoted, so production
       # gets the exact bytes that were uploaded. --rollout 1 means everyone.
       - name: Upload to the internal track
+        id: upload
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ runner.temp }}/play-service-account.json
         run: python3 packaging/upload_play.py upload --track internal --bundle build/release/kapy-android.aab
 
+      # Only when Play refused the upload, so the bundle can be uploaded by hand.
+      # The repository is public, and a bundle Play took needs no copy here.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure() && steps.upload.outcome == 'failure'
+        with:
+          name: android-${{ inputs.version }}-bundle
+          path: build/release/kapy-android.aab
+          retention-days: 3
+          if-no-files-found: ignore
+
       - name: Promote to production for all users
+        if: ${{ !inputs.android_upload_only }}
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ runner.temp }}/play-service-account.json
         run: |
           python3 packaging/upload_play.py promote --track production --rollout 1 \
             --version-code "$BUILD" --notes-file "$PLAY_NOTES"
+
+      # A promote made in the Console does not carry the notes file, so the
+      # summary does.
+      - name: Say what is left to do in Play Console
+        if: (inputs.android_upload_only && success()) || steps.upload.outcome == 'failure'
+        env:
+          REFUSED: ${{ steps.upload.outcome == 'failure' }}
+        run: |
+          set -euo pipefail
+          {
+            if [ "$REFUSED" = true ]; then
+              echo "### Play did not take $VERSION ($BUILD)"
+              echo
+              echo "Download this run's android-$VERSION-bundle artifact (kept for 3 days), upload it under Release -> Testing -> Internal testing, fill in any declaration Play asks for, then promote version code $BUILD to production for all users."
+            else
+              echo "### $VERSION ($BUILD) is on internal testing only"
+              echo
+              echo "Nothing was sent to production. Once the Play Console declaration is in, promote version code $BUILD to production for all users from Release -> Testing -> Internal testing."
+            fi
+            echo
+            echo "Release notes to paste into the promoted release, from $PLAY_NOTES:"
+            echo
+            echo '~~~'
+            cat "$PLAY_NOTES"
+            echo
+            echo '~~~'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove the keystore and keys
         if: always()
