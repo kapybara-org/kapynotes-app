@@ -35,6 +35,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'rates_support.dart';
 import 'screenshot.dart';
+import 'sharing_support.dart' show pumpUntil, shown;
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'phone-home-integration.json');
@@ -381,13 +382,23 @@ void main() {
       expect(inSheet('Add 3 notes'), findsOneWidget);
       await board('folder-add-notes', mode);
 
-      await tap(find.byKey(const ValueKey('add-notes-add')));
+      // On a device a toast's lifetime is an animation, so pumpAndSettle
+      // would run it out: it is waited for as it arrives, with the sheet
+      // gone, and Undo is pressed right after the shot.
+      final added = find.text('Added 3 notes to “Clients”');
+      await tester.tap(find.byKey(const ValueKey('add-notes-add')));
+      await pumpUntil(
+        tester,
+        () => shown(tester, added) && sheet.evaluate().isEmpty,
+      );
       expect(sheet, findsNothing);
-      expect(find.text('Added 3 notes to “Clients”'), findsOneWidget);
+      expect(added, findsOneWidget);
       expect(row('Invoice, April'), findsOneWidget);
-      await board('folder-notes-added', mode);
+      expect(tester.takeException(), isNull);
+      await screenshot('phone-folder-notes-added-${mode.name}');
 
-      await tap(find.text('Undo'));
+      await tester.tap(find.text('Undo'));
+      await pumpUntil(tester, () => row('Invoice, April').evaluate().isEmpty);
       expect(row('Invoice, April'), findsNothing);
       await tap(find.byKey(const ValueKey('page-back')));
     }

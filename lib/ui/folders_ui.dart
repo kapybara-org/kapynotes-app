@@ -2197,67 +2197,86 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
               ],
             ),
           );
-    if (notes.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          header,
-          const Expanded(
-            child: SidebarEmpty(
-              message: 'Every note is in a folder',
-              detail: 'Notes you write outside a folder show up here.',
-            ),
-          ),
-        ],
-      );
-    }
+    final list = ListView.separated(
+      key: const ValueKey('add-notes-list'),
+      padding: phone ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      itemCount: shown.length,
+      separatorBuilder: (context, _) => phone
+          ? Divider(
+              height: AppHairline.of(context),
+              thickness: AppHairline.of(context),
+              color: palette.separator,
+            )
+          : const SizedBox(height: 2),
+      itemBuilder: (context, index) => _row(context, shown[index], ticked),
+    );
+    // With room, the list scrolls alone under the field. Where the keyboard
+    // or a large text size leaves it less than two rows, everything above
+    // Add scrolls as one instead, so nothing is cut off and Add stays put.
+    final twoRows = AppControlMetrics.scaleBar(context, 104);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        header,
-        Padding(
-          padding: phone
-              ? const EdgeInsets.fromLTRB(20, 12, 20, 8)
-              : const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: _field(context),
-        ),
-        if (shown.isEmpty)
-          Expanded(
-            child: SidebarEmpty(
-              message: 'No notes match “$query”',
-              detail: 'Notes already in a folder aren’t listed here.',
-            ),
-          )
-        else ...[
-          if (!phone)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
-              child: Row(
-                children: [
-                  Expanded(child: count),
-                  ?selectAll,
+        Expanded(
+          child: CustomScrollView(
+            primary: false,
+            slivers: [
+              SliverToBoxAdapter(child: header),
+              if (notes.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: SidebarEmpty(
+                    message: 'Every note is in a folder',
+                    detail: 'Notes you write outside a folder show up here.',
+                  ),
+                )
+              else ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: phone
+                        ? const EdgeInsets.fromLTRB(20, 12, 20, 8)
+                        : const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                    child: _field(context),
+                  ),
+                ),
+                if (shown.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: SidebarEmpty(
+                      message: 'No notes match “$query”',
+                      detail: 'Notes already in a folder aren’t listed here.',
+                    ),
+                  )
+                else ...[
+                  if (!phone)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
+                        child: Row(
+                          children: [
+                            Expanded(child: count),
+                            ?selectAll,
+                          ],
+                        ),
+                      ),
+                    ),
+                  SliverLayoutBuilder(
+                    builder: (context, constraints) => SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: math.max(
+                          constraints.viewportMainAxisExtent -
+                              constraints.precedingScrollExtent,
+                          twoRows,
+                        ),
+                        child: list,
+                      ),
+                    ),
+                  ),
                 ],
-              ),
-            ),
-          Expanded(
-            child: ListView.separated(
-              key: const ValueKey('add-notes-list'),
-              padding: phone
-                  ? EdgeInsets.zero
-                  : const EdgeInsets.fromLTRB(8, 0, 8, 8),
-              itemCount: shown.length,
-              separatorBuilder: (context, _) => phone
-                  ? Divider(
-                      height: AppHairline.of(context),
-                      thickness: AppHairline.of(context),
-                      color: palette.separator,
-                    )
-                  : const SizedBox(height: 2),
-              itemBuilder: (context, index) =>
-                  _row(context, shown[index], ticked),
-            ),
+              ],
+            ],
           ),
-        ],
+        ),
         if (shown.isNotEmpty || ticked.isNotEmpty) _foot(context, ticked),
       ],
     );

@@ -609,14 +609,24 @@ extension on Sidebar {
     }
     if (onAddNotes case final onAddNotes?
         when query.trim().isEmpty && !filtersActive) {
-      return SidebarEmpty(
-        message: 'Nothing in this folder yet',
-        action: TonalButton(
-          key: const ValueKey('phone-folder-empty-add'),
-          icon: KapyIcons.noteAddRounded,
-          label: 'Add notes',
-          onPressed: onAddNotes,
-        ),
+      // Scrolls where the keyboard or a large text size leaves it too little
+      // room, so its Add notes is never cut off.
+      return CustomScrollView(
+        primary: false,
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: SidebarEmpty(
+              message: 'Nothing in this folder yet',
+              action: TonalButton(
+                key: const ValueKey('phone-folder-empty-add'),
+                icon: KapyIcons.noteAddRounded,
+                label: 'Add notes',
+                onPressed: onAddNotes,
+              ),
+            ),
+          ),
+        ],
       );
     }
     final nothingShared = query.trim().isEmpty && _onSharedTab;

@@ -9468,6 +9468,7 @@ void main() {
       Future<void> pumpFolders(
         WidgetTester tester, {
         Size size = const Size(393, 852),
+        TextScaler? textScaler,
         bool tasks = false,
       }) async {
         folders = FolderStore(store);
@@ -9484,6 +9485,7 @@ void main() {
         await pumpApp(
           tester,
           size: size,
+          textScaler: textScaler,
           folders: folders,
           tasks: tasks
               ? TaskLibrary(
@@ -9722,6 +9724,98 @@ void main() {
           ),
           findsOneWidget,
         );
+
+        // Under a filter an empty list may only be filtered, so it doesn't
+        // say the folder is empty or offer to fill it.
+        await tester.tapAt(const Offset(196, 40));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('add-notes')), findsNothing);
+        await openPhoneFilters(tester);
+        await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tap(tester, find.byKey(const ValueKey('media-filter-Voice')));
+        expect(find.text('Nothing in this folder yet'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('phone-folder-empty-add')),
+          findsNothing,
+        );
+      });
+
+      group('with the keyboard up', () {
+        final sheet = find.byKey(const ValueKey('add-notes'));
+        final field = find.byKey(const ValueKey('add-notes-field'));
+        final add = find.byKey(const ValueKey('add-notes-add'));
+        Future<void> keyboard(WidgetTester tester, double height) async {
+          tester.view.viewInsets = FakeViewPadding(bottom: height);
+          addTearDown(tester.view.resetViewInsets);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+        }
+
+        testWidgets('on a small phone turned on its side, Add notes lets its '
+            'title and field scroll away, and Add stays on the sheet', (
+          tester,
+        ) async {
+          await pumpFolders(tester, size: const Size(375, 667));
+          final groceriesId = notes.notes
+              .firstWhere((note) => note.title == 'Groceries')
+              .id;
+          await openFolder(tester, clients);
+          await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+          await tester.showKeyboard(field);
+          tester.view.physicalSize = const Size(667, 375);
+          await keyboard(tester, 200);
+          expect(
+            tester.getRect(add).bottom,
+            lessThanOrEqualTo(tester.getRect(sheet).bottom),
+          );
+          final row = find.byKey(ValueKey('add-note-$groceriesId'));
+          await tester.ensureVisible(row);
+          await tester.pumpAndSettle();
+          await tap(tester, row);
+          await tap(tester, add);
+          expect(folders.tree.folderOf(groceriesId), clients.id);
+        });
+
+        testWidgets('at 3.1× text, Add notes with no match reads to its end', (
+          tester,
+        ) async {
+          await pumpFolders(
+            tester,
+            size: const Size(375, 667),
+            textScaler: const TextScaler.linear(3.1),
+          );
+          await openFolder(tester, work);
+          await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+          await tester.enterText(field, 'zebra');
+          await keyboard(tester, 260);
+          final detail = find.text(
+            'Notes already in a folder aren’t listed here.',
+          );
+          await tester.ensureVisible(detail);
+          await tester.pumpAndSettle();
+          expect(
+            tester.getRect(detail).bottom,
+            lessThanOrEqualTo(tester.getRect(sheet).bottom),
+          );
+        });
+
+        testWidgets("at 3.1× text, an empty folder's Add notes stays in reach "
+            'above it', (tester) async {
+          await pumpFolders(
+            tester,
+            size: const Size(375, 667),
+            textScaler: const TextScaler.linear(3.1),
+          );
+          final personal = folders.create('Personal')!;
+          await openFolder(tester, personal);
+          await keyboard(tester, 260);
+          final empty = find.byKey(const ValueKey('phone-folder-empty-add'));
+          await tester.ensureVisible(empty);
+          await tester.pumpAndSettle();
+          expect(empty.hitTestable(), findsOneWidget);
+          await tap(tester, empty);
+          expect(sheet, findsOneWidget);
+        });
       });
 
       testWidgets('Add notes lists the notes in no folder; the ticked ones go '
@@ -9753,6 +9847,10 @@ void main() {
         expect(sheet, findsOneWidget);
 
         await tap(tester, find.byKey(ValueKey('add-note-${fish.id}')));
+        expect(
+          tester.getSemantics(find.byKey(ValueKey('add-note-${fish.id}'))),
+          isSemantics(isChecked: true),
+        );
         expect(
           find.descendant(of: add, matching: find.text('Add 1 note')),
           findsOneWidget,

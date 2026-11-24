@@ -1497,6 +1497,36 @@ void main() {
       },
     );
 
+    testWidgets("a folder's row in the tree still takes a note up out of a "
+        'folder inside it, dragged from the page', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final brief = goldenNotes.create(body: 'Acme brief');
+      goldenFolders.file([brief.id], clients.id);
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      final drag = await tester.startGesture(
+        tester.getCenter(
+          find.descendant(
+            of: find.byKey(ValueKey('folder-page-${work.id}')),
+            matching: rowOf(brief.id),
+          ),
+        ),
+        kind: PointerDeviceKind.mouse,
+      );
+      await drag.moveBy(const Offset(12, 2));
+      await tester.pump();
+      await drag.moveTo(
+        tester.getCenter(find.byKey(ValueKey('folder-${work.id}'))),
+      );
+      await tester.pump();
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(brief.id), work.id);
+      expect(find.text('Moved to “Work”'), findsOneWidget);
+    });
+
     testWidgets("one of Add notes' ticked rows drags every ticked note with "
         'it, and an unticked row goes alone', (tester) async {
       await pumpWindow(tester);
