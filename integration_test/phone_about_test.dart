@@ -57,11 +57,13 @@ void main() {
     }
     releases = history.releases;
     history.dispose();
-    expect(
-      releases,
-      isNotEmpty,
-      reason: 'nothing read from ${ReleaseHistory.url}',
-    );
+    if (releases.isEmpty) {
+      fail(
+        'phone_about_test could not fetch ${ReleaseHistory.url} in 3 tries. '
+        "That's the network or the site, not the app: the About shots need "
+        "the changelog for this build's notes.",
+      );
+    }
   });
 
   Future<void> tap(WidgetTester tester, String key) async {
