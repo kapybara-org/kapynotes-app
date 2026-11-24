@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show LogicalKeyboardKey, SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
+import 'package:kapy_notes/core/phone_keyboard.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -217,6 +218,58 @@ void main() {
       isEmpty,
     );
   });
+
+  for (final (platform, kind) in [
+    (TargetPlatform.iOS, PointerDeviceKind.touch),
+    (TargetPlatform.android, PointerDeviceKind.touch),
+    (TargetPlatform.macOS, PointerDeviceKind.mouse),
+  ]) {
+    testWidgets('on ${platform.name}, a press held on a suggestion picks it, '
+        'though a press anywhere else takes the empty field’s focus', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      late Note note;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        final other = alice.notes.create(body: 'Trip');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(other.id, email: bob.email);
+        note = alice.notes.create(body: 'Holiday budget');
+        await alice.sync.syncNow();
+      });
+
+      // The app's own rule for a press outside a text field.
+      await tester.pumpWidget(
+        Actions(
+          actions: {EditableTextTapOutsideIntent: TouchUnfocusAction()},
+          child: opener(note, alice.sharing),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('share-email')), kind: kind);
+      await tester.pumpAndSettle();
+
+      final suggestion = find.byKey(ValueKey('share-suggest-${bob.email}'));
+      final press = await tester.startGesture(
+        tester.getCenter(suggestion),
+        kind: kind,
+      );
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(suggestion, findsOneWidget, reason: 'still under the press');
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('share-chip-${bob.email}')), findsOneWidget);
+    });
+  }
 
   group('a note already shared with other notes', () {
     late Note first;

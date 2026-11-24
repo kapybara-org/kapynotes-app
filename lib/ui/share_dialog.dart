@@ -725,18 +725,22 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
         onSubmit: enabled ? () => unawaited(_share()) : null,
       ),
       if (_focus.hasFocus || _rows.hasFocus || _email.text.isNotEmpty)
-        Focus(
-          focusNode: _rows,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final person in _suggestions)
-                _SuggestionRow(
-                  key: ValueKey('share-suggest-${person.email}'),
-                  person: person,
-                  onTap: enabled ? () => _addChip(person.email) : null,
-                ),
-            ],
+        // The field's own: they show only while it has focus, so a press on
+        // one must not take that focus away before it lifts.
+        TextFieldTapRegion(
+          child: Focus(
+            focusNode: _rows,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final person in _suggestions)
+                  _SuggestionRow(
+                    key: ValueKey('share-suggest-${person.email}'),
+                    person: person,
+                    onTap: enabled ? () => _addChip(person.email) : null,
+                  ),
+              ],
+            ),
           ),
         ),
       if (questionsScope && (_chips.isNotEmpty || _email.text.isNotEmpty)) ...[
