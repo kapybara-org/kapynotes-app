@@ -27,8 +27,9 @@
 # offers the form only once a build that uses the permission is in the
 # Console, and until the form is filled in it refuses even an internal
 # release made through the API. If Play refuses the upload, the signed bundle
-# is kept as a run artifact, to upload by hand under Testing -> Internal
-# testing. After the declaration, promote the build from the Console.
+# is kept as a run artifact for 3 days, to upload by hand under Testing ->
+# Internal testing. After the declaration, promote the build from the Console;
+# the run summary carries the release notes to paste into it.
 #
 # The notes files hold the text users see: What's New for the App Store (up to
 # 4000 characters) and the Play release notes (up to 500). Both are paths
@@ -51,8 +52,9 @@
 # This repository is public, and so are its run logs and artifacts. No step
 # prints a secret, and GitHub masks them as well. The artifacts are the Dart
 # symbols, the dSYMs and the R8 mapping that make a crash from this build
-# readable, and, only when Play refuses the upload, the signed Android App
-# Bundle; they are kept for 14 days, so copy them somewhere durable.
+# readable; they are kept for 14 days, so copy them somewhere durable. Only
+# when Play refuses the upload is the signed Android App Bundle kept too, for
+# 3 days.
 name: Store release
 
 on:
@@ -439,6 +441,7 @@ jobs:
       # Internal first, then the same version code is promoted, so production
       # gets the exact bytes that were uploaded. --rollout 1 means everyone.
       - name: Upload to the internal track
+        id: upload
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ runner.temp }}/play-service-account.json
         run: python3 packaging/upload_play.py upload --track internal --bundle build/release/kapy-android.aab
@@ -446,11 +449,11 @@ jobs:
       # Only when Play refused the upload, so the bundle can be uploaded by hand.
       # The repository is public, and a bundle Play took needs no copy here.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+        if: failure() && steps.upload.outcome == 'failure'
         with:
           name: android-${{ inputs.version }}-bundle
           path: build/release/kapy-android.aab
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
 
       - name: Promote to production for all users
@@ -461,13 +464,31 @@ jobs:
           python3 packaging/upload_play.py promote --track production --rollout 1 \
             --version-code "$BUILD" --notes-file "$PLAY_NOTES"
 
-      - name: Leave the build on internal testing
-        if: ${{ inputs.android_upload_only }}
+      # A promote made in the Console does not carry the notes file, so the
+      # summary does.
+      - name: Say what is left to do in Play Console
+        if: (inputs.android_upload_only && success()) || steps.upload.outcome == 'failure'
+        env:
+          REFUSED: ${{ steps.upload.outcome == 'failure' }}
         run: |
+          set -euo pipefail
           {
-            echo "### $VERSION ($BUILD) is on internal testing only"
+            if [ "$REFUSED" = true ]; then
+              echo "### Play did not take $VERSION ($BUILD)"
+              echo
+              echo "Download this run's android-$VERSION-bundle artifact (kept for 3 days), upload it under Release -> Testing -> Internal testing, fill in any declaration Play asks for, then promote version code $BUILD to production for all users."
+            else
+              echo "### $VERSION ($BUILD) is on internal testing only"
+              echo
+              echo "Nothing was sent to production. Once the Play Console declaration is in, promote version code $BUILD to production for all users from Release -> Testing -> Internal testing."
+            fi
             echo
-            echo "Nothing was sent to production. Once the Play Console declaration is in, promote version code $BUILD to production for all users from Release -> Testing -> Internal testing, and paste the release notes from $PLAY_NOTES into the promoted release."
+            echo "Release notes to paste into the promoted release, from $PLAY_NOTES:"
+            echo
+            echo '~~~'
+            cat "$PLAY_NOTES"
+            echo
+            echo '~~~'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove the keystore and keys
