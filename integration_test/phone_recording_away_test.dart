@@ -179,10 +179,15 @@ void main() {
     } else {
       // A host cannot press a Live Activity's buttons, so the app pauses for
       // the screenshot of what a pause looks like, on a light Lock Screen.
+      // A locked iPhone kept its card dark through a switch to light, so the
+      // phone is opened for the switch and locked again.
+      if (locked) expect(await deviceAction('unlock'), isNull);
       await deviceAction('light');
       await recording.pause();
       await wait(3);
       if (locked) {
+        expect(await deviceAction('lock'), isNull);
+        await wait(3);
         await deviceAction('wake');
         await wait(2);
         await deviceShot('recording-away-lock-screen-paused');

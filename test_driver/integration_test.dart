@@ -211,6 +211,21 @@ Future<String?> _act(String device, String action) async {
     return '${result.stdout}'.trim().endsWith(' 1');
   }
 
+  // Sets the simulator's appearance, and reads it back for the run's log.
+  Future<String?> appearance(String wanted) async {
+    final error = await simctl(['ui', device, 'appearance', wanted]);
+    if (error != null) return error;
+    final read = await Process.run('xcrun', [
+      'simctl',
+      'ui',
+      device,
+      'appearance',
+    ]);
+    final now = '${read.stdout}'.trim();
+    stderr.writeln('Appearance: $now');
+    return now == wanted ? null : 'the appearance is $now, not $wanted';
+  }
+
   if (_isSimulator(device)) {
     return switch (action) {
       'lock' => press('lock'),
@@ -239,7 +254,7 @@ Future<String?> _act(String device, String action) async {
       ).then((error) async => error ?? await press('home')),
       'other-app' => simctl(['launch', device, 'com.apple.Preferences']),
       'back' => simctl(['launch', device, _app]),
-      'light' || 'dark' => simctl(['ui', device, 'appearance', action]),
+      'light' || 'dark' => appearance(action),
       'system-log' => _systemLog(device),
       _ => Future.value('a simulator cannot $action'),
     };
