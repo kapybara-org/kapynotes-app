@@ -1437,43 +1437,6 @@ class _SheetScaffold extends StatelessWidget {
             color: color,
           ),
         );
-        final footer = DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: palette.textPrimary.withValues(alpha: 0.06),
-                width: AppHairline.of(context),
-              ),
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(12, phone ? 4 : 8, 12, phone ? 0 : 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      for (final action in actions)
-                        TextButton(
-                          key: action.key,
-                          onPressed: action.onPressed,
-                          style: text(palette.textSecondary),
-                          child: Text(action.label),
-                        ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  key: const ValueKey('share-done'),
-                  onPressed: onClose,
-                  style: text(palette.textPrimary),
-                  child: const Text('Done'),
-                ),
-              ],
-            ),
-          ),
-        );
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1486,22 +1449,54 @@ class _SheetScaffold extends StatelessWidget {
             ),
             Flexible(
               child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, phone ? 8 : 12),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                 child: body,
               ),
             ),
-            // A phone's notice takes the footer's place, from 8 under the
-            // last row: the body's last 4 are the footer's here.
-            if (phone)
-              ToastClearance(
-                cover: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: footer,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: palette.textPrimary.withValues(alpha: 0.06),
+                    width: AppHairline.of(context),
+                  ),
                 ),
-              )
-            else
-              footer,
+              ),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  phone ? 4 : 8,
+                  12,
+                  phone ? 0 : 8,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final action in actions)
+                            TextButton(
+                              key: action.key,
+                              onPressed: action.onPressed,
+                              style: text(palette.textSecondary),
+                              child: Text(action.label),
+                            ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      key: const ValueKey('share-done'),
+                      onPressed: onClose,
+                      style: text(palette.textPrimary),
+                      child: const Text('Done'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // A phone's sheet opens the same room in its frame.
+            if (!phone) const ToastClearance.room(),
           ],
         );
       },
@@ -2022,12 +2017,23 @@ class _MemberMenu extends StatelessWidget {
     return PopupMenuButton<String>(
       enabled: enabled,
       tooltip: _accessLabel(role),
-      onSelected: (value) => switch (value) {
-        'edit' => onAccess(SpaceRole.member),
-        'view' => onAccess(SpaceRole.viewer),
-        'report' => onReport(),
-        'block' => onBlock(),
-        _ => onRemove(),
+      // A notice showing steps out of sight while the menu is open.
+      onOpened: () => Toast.hide(true),
+      onCanceled: () => Toast.hide(false),
+      onSelected: (value) {
+        Toast.hide(false);
+        switch (value) {
+          case 'edit':
+            onAccess(SpaceRole.member);
+          case 'view':
+            onAccess(SpaceRole.viewer);
+          case 'report':
+            onReport();
+          case 'block':
+            onBlock();
+          default:
+            onRemove();
+        }
       },
       itemBuilder: (context) => [
         if (canManage) ...[
@@ -2075,16 +2081,24 @@ class _InviteMenu extends StatelessWidget {
     return PopupMenuButton<String>(
       enabled: enabled,
       tooltip: 'Invitation',
-      onSelected: (value) => switch (value) {
-        'copy' => onCopyLink(),
-        'resend' => onSendAgain(),
-        _ => onCancel(),
+      onOpened: () => Toast.hide(true),
+      onCanceled: () => Toast.hide(false),
+      onSelected: (value) {
+        Toast.hide(false);
+        switch (value) {
+          case 'copy':
+            onCopyLink();
+          case 'resend':
+            onSendAgain();
+          default:
+            onCancel();
+        }
       },
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'copy', child: Text('Copy link')),
-        const PopupMenuItem(value: 'resend', child: Text('Send again')),
-        const PopupMenuDivider(),
-        const PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'copy', child: Text('Copy link')),
+        PopupMenuItem(value: 'resend', child: Text('Send again')),
+        PopupMenuDivider(),
+        PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
       ],
       child: _AccessButton('Invited', chevron: enabled),
     );

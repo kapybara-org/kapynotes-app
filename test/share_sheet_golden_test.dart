@@ -113,4 +113,47 @@ void main() {
       );
     });
   }
+
+  for (final size in const [Size(800, 600), Size(1280, 800)]) {
+    final name = '${size.width.round()}x${size.height.round()}';
+    testWidgets('the owner’s dialog with a notice in its foot, on a mac at '
+        '$name', (tester) async {
+      late Note note;
+      await tester.runAsync(() async {
+        note = await share(SpaceRole.member);
+        await sanjay.sharing.addPerson(
+          note.id,
+          'luca@example.com',
+          role: SpaceRole.viewer,
+        );
+      });
+      await showSheet(
+        tester,
+        note,
+        sanjay,
+        size: size,
+        platform: TargetPlatform.macOS,
+      );
+      await tester.tap(find.byKey(ValueKey('member-menu-${priya.userId}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove from this note').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sharing-ask-ok')));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Removed Priya from this note'), findsOneWidget);
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/share_dialog_notice_mac_${name}_dark.png'),
+      );
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 8));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+    });
+  }
 }

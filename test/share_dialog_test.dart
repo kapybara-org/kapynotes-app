@@ -605,48 +605,212 @@ void main() {
       );
     }
 
-    testWidgets('on a phone, the removal’s notice takes the footer’s place, '
-        'clear of the row above it', (tester) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(390, 844);
-      addTearDown(tester.view.reset);
-      await sharedWithBobAndCarol(tester);
-      await openSheet(tester, alice.notes.byId(note.id)!, alice);
-      final footer = tester.getRect(
-        find.byWidgetPredicate((w) => w is ToastClearance && w.cover),
-      );
-      await removeBob(tester);
+    group('while a notice shows', () {
+      final surface = find.byKey(const ValueKey('toast-surface'));
 
-      final card = tester.getRect(find.byKey(const ValueKey('toast-surface')));
-      expect(card.height, 52 + 1.5, reason: 'its own height, not the row’s');
-      expect(card.top, lessThanOrEqualTo(footer.top));
-      expect(card.bottom, greaterThanOrEqualTo(footer.bottom));
-      for (final label in ['Stop sharing', 'Done']) {
-        final words = tester.getRect(find.text(label));
-        expect(card.contains(words.topLeft), isTrue, reason: label);
-        expect(card.contains(words.bottomRight), isTrue, reason: label);
+      Future<void> drain(WidgetTester tester) async {
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 8));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
       }
-      final above = tester.getRect(
-        find.byKey(ValueKey('member-row-${carol.userId}')),
-      );
-      expect(card.top - above.bottom, greaterThanOrEqualTo(8));
-      await tester.tap(find.text('Undo'));
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 8));
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
+
+      /// Whether [finder]'s box and the notice's card share any point.
+      bool underCard(WidgetTester tester, Finder finder) =>
+          tester.getRect(finder).overlaps(tester.getRect(surface));
+
+      for (final (platform, size, inset) in [
+        (TargetPlatform.iOS, const Size(390, 844), 34.0),
+        (TargetPlatform.macOS, const Size(800, 600), 0.0),
+        (TargetPlatform.macOS, const Size(1280, 800), 0.0),
+      ]) {
+        group('on ${platform.name} at ${size.width.round()}×'
+            '${size.height.round()}', () {
+          Future<void> openAt(WidgetTester tester) async {
+            AppPlatform.debugTargetPlatformOverride = platform;
+            addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+            tester.view.devicePixelRatio = 1;
+            tester.view.physicalSize = size;
+            tester.view.padding = FakeViewPadding(bottom: inset);
+            addTearDown(tester.view.reset);
+            await sharedWithBobAndCarol(tester);
+            await openSheet(tester, alice.notes.byId(note.id)!, alice);
+          }
+
+          testWidgets('Done and Stop sharing stay clear of it and reachable', (
+            tester,
+          ) async {
+            await openAt(tester);
+            await removeBob(tester);
+
+            expect(find.text('Undo'), findsOneWidget);
+            final done = find.byKey(const ValueKey('share-done'));
+            final stop = find.text('Stop sharing');
+            expect(underCard(tester, done), isFalse);
+            expect(underCard(tester, stop), isFalse);
+            await tester.tap(stop);
+            await tester.pumpAndSettle();
+            expect(find.byKey(const ValueKey('sharing-ask')), findsOneWidget);
+            await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+            await tester.pumpAndSettle();
+            await tester.tap(done);
+            await tester.pumpAndSettle();
+            expect(done, findsNothing, reason: 'Done closed the sheet');
+            await drain(tester);
+          });
+
+          testWidgets("a person's ⋯ menu hides the notice, and the Remove "
+              'confirmation keeps clear of it and is reachable', (
+            tester,
+          ) async {
+            await openAt(tester);
+            await removeBob(tester);
+            expect(find.text('Undo'), findsOneWidget);
+
+            await tester.tap(
+              find.byKey(ValueKey('member-menu-${carol.userId}')),
+            );
+            await tester.pumpAndSettle();
+            expect(menuItem('Remove from this note'), findsOneWidget);
+            expect(surface, findsNothing, reason: 'out of sight');
+            await tester.tap(menuItem('Remove from this note'));
+            await tester.pumpAndSettle();
+
+            final ok = find.byKey(const ValueKey('sharing-ask-ok'));
+            final cancel = find.byKey(const ValueKey('sharing-ask-cancel'));
+            expect(ok, findsOneWidget);
+            expect(find.text('Undo'), findsOneWidget, reason: 'back');
+            expect(underCard(tester, ok), isFalse);
+            expect(underCard(tester, cancel), isFalse);
+            await tester.tap(cancel);
+            await tester.pumpAndSettle();
+            expect(ok, findsNothing, reason: 'Cancel closed the ask');
+            expect(
+              find.byKey(ValueKey('member-row-${carol.userId}')),
+              findsOneWidget,
+            );
+            await drain(tester);
+          });
+
+          testWidgets('a row menu pauses the notice’s time, and it comes back '
+              'with what it had left when the menu closes', (tester) async {
+            Toast.debugAnimateLifetimeInTests = true;
+            addTearDown(() => Toast.debugAnimateLifetimeInTests = false);
+            await openAt(tester);
+            var undone = 0;
+            Toast.show(
+              tester.element(find.byKey(const ValueKey('share-done'))),
+              'Removed Bob from this note',
+              action: 'Undo',
+              onAction: () => undone++,
+            );
+            await tester.pump();
+            await tester.pump(const Duration(seconds: 1));
+
+            await tester.tap(
+              find.byKey(ValueKey('member-menu-${carol.userId}')),
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(menuItem('Remove from this note'), findsOneWidget);
+            final held = find.byKey(
+              const ValueKey('toast-surface'),
+              skipOffstage: false,
+            );
+            expect(surface, findsNothing);
+            expect(held, findsOneWidget);
+            await tester.pump(const Duration(seconds: 10));
+            expect(held, findsOneWidget, reason: 'its time is paused');
+
+            await tester.tapAt(const Offset(4, 4));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(menuItem('Remove from this note'), findsNothing);
+            expect(surface, findsOneWidget);
+            await tester.pump(const Duration(milliseconds: 2200));
+            expect(surface, findsOneWidget, reason: 'about 3 s were left');
+            await tester.tap(find.text('Undo'));
+            await tester.pump();
+            expect(undone, 1);
+            expect(surface, findsNothing);
+          });
+
+          testWidgets('a notice from a row menu’s own action replaces the one '
+              'it hid', (tester) async {
+            await openAt(tester);
+            await removeBob(tester);
+            final bobName = server.user(bob.userId).name.split(' ').first;
+            final carolName = server.user(carol.userId).name.split(' ').first;
+            expect(
+              find.text('Removed $bobName from this note'),
+              findsOneWidget,
+            );
+
+            await tester.tap(
+              find.byKey(ValueKey('member-menu-${carol.userId}')),
+            );
+            await tester.pumpAndSettle();
+            await tester.tap(menuItem('Can view'));
+            await settleHere(tester);
+            await until(
+              tester,
+              () => find.text('$carolName can view now').evaluate().isNotEmpty,
+            );
+
+            expect(find.text('$carolName can view now'), findsOneWidget);
+            expect(
+              find.text('Removed $bobName from this note', skipOffstage: false),
+              findsNothing,
+            );
+            await drain(tester);
+            await tester.pump(const Duration(seconds: 1));
+          });
+
+          if (platform == TargetPlatform.macOS) {
+            testWidgets('closing the dialog hands an Undo notice back to the '
+                'window’s foot, and Undo still works', (tester) async {
+              await openAt(tester);
+              await removeBob(tester);
+              final bobName = server.user(bob.userId).name.split(' ').first;
+
+              await tester.tap(find.byKey(const ValueKey('share-done')));
+              await tester.pumpAndSettle();
+              expect(find.byKey(const ValueKey('share-done')), findsNothing);
+              expect(find.text('Undo'), findsOneWidget);
+              expect(tester.getRect(surface).bottom, size.height - 24);
+
+              final invitations = server.outbox.length;
+              await tester.tap(find.text('Undo'));
+              final again = find.text(
+                'Invited $bobName again. They can see the note once they '
+                'accept.',
+              );
+              await until(tester, () => again.evaluate().isNotEmpty);
+              expect(again, findsOneWidget, reason: 'the removal went out');
+              expect(server.outbox.length, invitations + 1);
+              await drain(tester);
+              await tester.pump(const Duration(seconds: 1));
+            });
+          }
+        });
+      }
     });
 
-    group('on a phone, a notice over the footer', () {
+    group('on a phone, a notice at the sheet’s foot', () {
       const long =
           'Removed Christopher Montgomery-Whitfield from this note and from '
           'every other note in the share';
       final surface = find.byKey(const ValueKey('toast-surface'));
+      final done = find.byKey(const ValueKey('share-done'));
 
-      Future<void> phoneSheet(WidgetTester tester, {double inset = 0}) async {
+      /// The sheet, with [invites] people invited too, enough to make it
+      /// scroll at its tallest.
+      Future<void> phoneSheet(
+        WidgetTester tester, {
+        double inset = 0,
+        int invites = 0,
+      }) async {
         AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
         tester.view.devicePixelRatio = 1;
@@ -654,6 +818,16 @@ void main() {
         tester.view.padding = FakeViewPadding(bottom: inset);
         addTearDown(tester.view.reset);
         await sharedWithBobAndCarol(tester);
+        await tester.runAsync(() async {
+          for (var i = 1; i <= invites; i++) {
+            await alice.sharing.addPerson(
+              note.id,
+              'guest$i@example.com',
+              role: SpaceRole.viewer,
+            );
+          }
+          await alice.sync.syncNow();
+        });
         await openSheet(tester, alice.notes.byId(note.id)!, alice);
       }
 
@@ -665,61 +839,109 @@ void main() {
         );
       }
 
-      testWidgets('keeps 8 pt under the row above even on two lines', (
+      testWidgets('opens its room over 160 ms and shuts it the same way', (
         tester,
       ) async {
         await phoneSheet(tester, inset: 34);
-        Toast.show(
-          tester.element(find.byKey(const ValueKey('share-done'))),
-          long,
+        final shut = tester.getRect(done).top;
+        Toast.show(tester.element(done), 'Copied');
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        final opening = tester.getRect(done).top;
+        await tester.pump(const Duration(milliseconds: 100));
+        final open = tester.getRect(done).top;
+        expect(shut - open, 52 + 1.5 + 16);
+        expect(opening, lessThan(shut));
+        expect(opening, greaterThan(open));
+
+        Toast.showProgress(tester.element(done), 'Saving…').dismiss();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        final shutting = tester.getRect(done).top;
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(shutting, greaterThan(open));
+        expect(shutting, lessThan(shut));
+        expect(tester.getRect(done).top, shut);
+        await drain(tester);
+      });
+
+      testWidgets('at its tallest, the sheet keeps its top and takes the room '
+          'from the list, Done and Stop sharing still reachable', (
+        tester,
+      ) async {
+        await phoneSheet(tester, inset: 34, invites: 12);
+        final frame = find.byType(SharingSheetFrame);
+        final top = tester.getRect(frame).top;
+        final list = find
+            .descendant(
+              of: find.byType(SingleChildScrollView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        final scroll = tester.state<ScrollableState>(list).position;
+        expect(scroll.maxScrollExtent, greaterThan(0), reason: 'it scrolls');
+        final view = scroll.viewportDimension;
+        await removeBob(tester);
+
+        expect(tester.getRect(frame).top, top);
+        expect(
+          tester.state<ScrollableState>(list).position.viewportDimension,
+          view - (52 + 1.5 + 16),
         );
+        expect(tester.getRect(surface).top - tester.getRect(done).bottom, 8);
+        await tester.tap(find.text('Stop sharing'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('sharing-ask')), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('sharing-ask-cancel')));
+        await tester.pumpAndSettle();
+        await tester.tap(done);
+        await tester.pumpAndSettle();
+        expect(done, findsNothing, reason: 'Done closed the sheet');
+        await drain(tester);
+      });
+
+      testWidgets('sits 8 under the footer at its own height, and the sheet '
+          'gives the room back after', (tester) async {
+        await phoneSheet(tester, inset: 34);
+        final before = tester.getRect(done);
+        await removeBob(tester);
+
+        final card = tester.getRect(surface);
+        expect(card.height, 52 + 1.5, reason: 'its own height');
+        expect(card.top - tester.getRect(done).bottom, 8);
+        expect(card.bottom, 844 - 34 - 8);
+        await tester.tap(find.text('Undo'));
+        await tester.pumpAndSettle();
+        Toast.showProgress(tester.element(done), 'Saving…').dismiss();
+        await drain(tester);
+        expect(surface, findsNothing);
+        expect(tester.getRect(done), before);
+      });
+
+      testWidgets('keeps clear of Done even on two lines', (tester) async {
+        await phoneSheet(tester, inset: 34);
+        Toast.show(tester.element(done), long);
         await tester.pumpAndSettle();
 
         final card = tester.getRect(surface);
         expect(card.height, greaterThan(60), reason: 'two lines');
-        final above = tester.getRect(
-          find.byKey(ValueKey('member-row-${carol.userId}')),
-        );
-        expect(card.top - above.bottom, greaterThanOrEqualTo(8));
-        expect(card.contains(tester.getCenter(find.text('Done'))), isTrue);
-        expect(card.bottom, lessThanOrEqualTo(844));
+        expect(card.top - tester.getRect(done).bottom, 8);
+        expect(card.bottom, 844 - 34 - 8);
         await drain(tester);
       });
 
       testWidgets('stays on screen with no bottom inset', (tester) async {
         await phoneSheet(tester);
-        Toast.show(
-          tester.element(find.byKey(const ValueKey('share-done'))),
-          long,
-        );
+        Toast.show(tester.element(done), long);
         await tester.pumpAndSettle();
 
-        expect(tester.getRect(surface).bottom, lessThanOrEqualTo(844));
+        expect(tester.getRect(surface).bottom, 844 - 8 - 8);
         await drain(tester);
       });
 
-      testWidgets('steps aside while the Remove confirmation is up', (
-        tester,
-      ) async {
-        await phoneSheet(tester);
-        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
-        await tester.pumpAndSettle();
-        await tester.tap(menuItem('Remove from this note'));
-        await tester.pumpAndSettle();
-        Toast.show(
-          tester.element(find.byKey(const ValueKey('share-done'))),
-          'Copied',
-        );
-        await tester.pumpAndSettle();
-
-        expect(tester.getRect(surface).bottom, 844 - 16);
-        await drain(tester);
-      });
-
-      testWidgets('lets go of the footer as the sheet starts to close', (
-        tester,
-      ) async {
-        await phoneSheet(tester);
+      testWidgets('lets go of the sheet as it starts to close', (tester) async {
+        await phoneSheet(tester, inset: 34);
         await removeBob(tester);
         final over = tester.getRect(surface);
 
@@ -728,12 +950,12 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
         await tester.pump(const Duration(milliseconds: 16));
         expect(
-          find.byKey(const ValueKey('share-done')),
+          done,
           findsOneWidget,
           reason: 'the sheet is still on its way down',
         );
         final card = tester.getRect(surface);
-        expect(card.bottom, 844 - 16);
+        expect(card.bottom, 844 - 34 - 16);
         expect(card.bottom, isNot(over.bottom));
         await drain(tester);
       });

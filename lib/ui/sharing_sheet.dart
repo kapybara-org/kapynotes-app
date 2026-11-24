@@ -26,8 +26,8 @@ Future<T?> showSharingSheet<T>(
 }
 
 /// A phone sheet's surface: rounded top corners, a hairline along the top,
-/// the grabber, and room at the foot for the home indicator. It sizes to
-/// [child] and rides up over the keyboard.
+/// the grabber, and room at the foot for a notice and the home indicator.
+/// It sizes to [child] and rides up over the keyboard.
 class SharingSheetFrame extends StatelessWidget {
   const SharingSheetFrame({super.key, required this.child});
 
@@ -67,6 +67,7 @@ class SharingSheetFrame extends StatelessWidget {
               ),
             ),
             Flexible(child: child),
+            const ToastClearance.room(),
             SizedBox(
               height: media.viewInsets.bottom > 0
                   ? 8
