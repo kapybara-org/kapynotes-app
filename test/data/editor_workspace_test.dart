@@ -1001,6 +1001,19 @@ void main() {
       ]);
     });
 
+    test("a folder's tab opened over a day's goes with the day for Reopen "
+        'to bring back', () {
+      final workspace = _opened('alpha')
+        ..showDay(tuesday, ['bravo'])
+        ..openFolderInNewTab('work');
+      expect(workspace.leaveDay(), isTrue);
+      expect(workspace.reopen(), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha'],
+        'work',
+      ]);
+    });
+
     test('leaving the day takes the tabs it brings back out of the closed '
         'ones', () {
       final workspace = _opened('alpha')
