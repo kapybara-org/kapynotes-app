@@ -1,8 +1,63 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/data/day_tabs.dart';
+import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/data/task_library.dart';
+import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
+import 'package:kapy_notes/sync/sync_state.dart';
 
 import 'fake_server.dart';
 import 'record_device.dart';
+
+/// One device signed in through [Account], for the first run of this build
+/// and for signing out.
+class AccountDevice {
+  AccountDevice(this.server, {MemoryStore? store})
+    : store = store ?? MemoryStore() {
+    notes = NotesStore(this.store);
+    tags = TagStore(this.store);
+    dayTabs = DayTabsStore(this.store);
+    final state = SyncState(this.store);
+    tasks = TaskLibrary(
+      notes: notes,
+      store: this.store,
+      state: state,
+      storage: MemoryDocStorage(),
+    );
+    account = Account(
+      auth: auth,
+      syncApi: (_) => FakeApi(server, userId: auth.id),
+      keys: KeyStore(InMemorySecureStore()),
+      notes: notes,
+      state: state,
+      store: this.store,
+      tasks: tasks,
+      tags: tags,
+      dayTabs: dayTabs,
+    );
+  }
+
+  final FakeServer server;
+  final MemoryStore store;
+  final auth = FakeAuth(id: 'user-1');
+  late final NotesStore notes;
+  late final TaskLibrary tasks;
+  late final TagStore tags;
+  late final DayTabsStore dayTabs;
+  late final Account account;
+
+  Future<void> boot() async {
+    await notes.load();
+    await account.restore();
+  }
+
+  void dispose() => account.dispose();
+}
 
 void main() {
   late FakeServer server;
@@ -102,20 +157,49 @@ void main() {
       final (laptop, phone) = await pair();
       final notes = three(laptop);
       laptop.dayTabs.move(tue, notes, notes[2], 0);
-      await laptop.pass();
+      await passes([laptop, phone]);
+      final stale = stored()[tabsRecordOf('2026-11-18')]!.record;
 
-      final real = stored()[tabsRecordOf('2026-11-18')]!.record;
+      laptop.dayTabs.move(tue, notes, notes[2], 2);
+      await passes([laptop, phone]);
+      expect(stored()[tabsRecordOf('2026-11-18')]!.record.deletedAt, isNotNull);
+      expect(phone.dayTabs.arrange(tue, notes).order, notes);
+
       server.pushTasks('user-1', 'mallory', [
         WireTaskRecord(
           id: tabsRecordOf('2026-11-17'),
-          updatedAt: real.updatedAt,
-          payload: real.payload,
+          updatedAt: stale.updatedAt,
+          payload: stale.payload,
         ),
       ]);
       await phone.pass();
-      expect(phone.dayTabs.days, ['2026-11-18']);
+      expect(
+        phone.dayTabs.arrange(tue, notes).order,
+        notes,
+        reason: "the 18th's old order, under the 17th's id",
+      );
       laptop.dispose();
       phone.dispose();
+    },
+  );
+
+  test(
+    'a device relaunched after an order came down still takes its delete',
+    () async {
+      final (laptop, phone) = await pair();
+      final notes = three(laptop);
+      laptop.dayTabs.move(tue, notes, notes[2], 0);
+      await passes([laptop, phone]);
+      expect(phone.dayTabs.arrange(tue, notes).order.first, notes[2]);
+      phone.dispose();
+
+      final relaunched = Device(server, name: 'phone', resume: phone.store);
+      await relaunched.boot();
+      laptop.dayTabs.move(tue, notes, notes[2], 2);
+      await passes([laptop, relaunched]);
+      expect(relaunched.dayTabs.arrange(tue, notes).order, notes);
+      laptop.dispose();
+      relaunched.dispose();
     },
   );
 
@@ -160,4 +244,93 @@ void main() {
       older.dispose();
     },
   );
+  group('signed in through Account', () {
+    final day = DateTime(2026, 11, 18);
+    Future<AccountDevice> signedIn({
+      MemoryStore? store,
+      bool fresh = true,
+    }) async {
+      final d = AccountDevice(server, store: store);
+      await d.boot();
+      await d.account.signIn(email: 'a@b.co', password: 'x');
+      if (fresh) {
+        await d.account.createPassphrase('a good passphrase');
+      } else {
+        expect(await d.account.unlock('a good passphrase'), isTrue);
+      }
+      return d;
+    }
+
+    test('the first run of a day tabs build reads the stream again once, and '
+        'every order arrives', () async {
+      final first = await signedIn();
+      final notes = [
+        for (final title in ['Standup notes', 'Lunch with Maya', 'Q4 budget'])
+          first.notes.create(body: title).id,
+      ];
+      first.dayTabs.pin(day, notes, notes[2]);
+      await first.account.sync!.syncNow();
+      await until(
+        () => first.dayTabs.owed.isEmpty && stored().length == 1,
+        reason: 'the first device never sent its order',
+      );
+      final seq = stored().values.map((r) => r.seq).reduce(max);
+      first.dispose();
+
+      // A device on a build from before day tabs, which read past the
+      // order and kept its id alone.
+      final store = MemoryStore();
+      store.data['tasks.v1'] = {
+        'cursor': seq,
+        'scanned': true,
+        'entries': <Object?>[],
+        'stones': <String, Object?>{},
+      };
+      store.data['tags.v1'] = {
+        'tags': <Object?>[],
+        'notes': <Object?>[],
+        'unknown': [
+          for (final MapEntry(:key, :value) in stored().entries)
+            {
+              'id': key,
+              'updatedAt': value.record.updatedAt.millisecondsSinceEpoch,
+            },
+        ],
+      };
+      final second = await signedIn(store: store, fresh: false);
+      await until(
+        () => second.dayTabs.arrange(day, notes).pinned == 1,
+        reason: 'the order never came down',
+      );
+      expect(second.dayTabs.arrange(day, notes).order.first, notes[2]);
+      expect(second.tasks.index.cursor, seq);
+      second.dispose();
+
+      final relaunched = AccountDevice(server, store: store);
+      await relaunched.boot();
+      expect(relaunched.dayTabs.arrange(day, notes).pinned, 1);
+      expect(
+        relaunched.tasks.index.cursor,
+        seq,
+        reason: 'once, not every launch',
+      );
+      relaunched.dispose();
+    });
+
+    test('signing out keeps the orders, owed to the next account', () async {
+      final d = await signedIn();
+      final notes = [
+        for (final title in ['Standup notes', 'Lunch with Maya'])
+          d.notes.create(body: title).id,
+      ];
+      d.dayTabs.pin(day, notes, notes[1]);
+      await d.account.sync!.syncNow();
+      await until(() => d.dayTabs.owed.isEmpty);
+
+      await d.account.signOut();
+      expect(d.dayTabs.arrange(day, notes).order, [notes[1], notes[0]]);
+      expect(d.dayTabs.owed.map((r) => r.key), ['2026-11-18']);
+      d.dispose();
+    });
+  });
 }

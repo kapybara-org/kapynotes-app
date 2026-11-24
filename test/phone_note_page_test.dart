@@ -24,6 +24,7 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/day_tabs_row.dart' show DayTabsRow;
 import 'package:kapy_notes/ui/editor/note_editor.dart'
     show NoteEditor, NoteEditorState;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
@@ -721,6 +722,9 @@ void main() {
     final row = find.byKey(const ValueKey('day-tabs'));
     final monday = DateTime(2025, 11, 17);
 
+    /// Every note on Monday once Renewal notes is on it, earliest first.
+    const wholeMonday = ['mon-a', 'mon-b', 'renewal'];
+
     /// [ids] as the row shows them, from the left.
     List<String> shown(WidgetTester tester, List<String> ids) => [...ids]
       ..sort(
@@ -879,6 +883,115 @@ void main() {
       expect(openNoteBody(tester), startsWith('Budget'));
     });
 
+    /// Monday with Renewal notes on it too, its tabs given [pins] through the
+    /// store, and the list filtered to Gym, which only Gym plan and Budget
+    /// have: Gym plan open, and Monday's row showing those two.
+    Future<void> filteredToGym(
+      WidgetTester tester, {
+      required List<String> pins,
+    }) async {
+      seed();
+      final gym = tags.create('Gym')!.id;
+      tags
+        ..setTags('mon-a', [gym])
+        ..setTags('mon-b', [gym]);
+      days.setDay('renewal', monday);
+      for (final id in pins.reversed) {
+        dayTabs.pin(monday, wholeMonday, id);
+      }
+      await pump(tester);
+      await tester.tap(find.byKey(const ValueKey('page-home')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('phone-filters')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('phone-filter-row')),
+          matching: find.text('Gym'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Gym plan'));
+      await tester.pumpAndSettle();
+      await open(tester, 17);
+      expect(tab('renewal'), findsNothing);
+      expect(openNoteBody(tester), startsWith('Gym plan'));
+    }
+
+    void expectMonday(List<String> order, int pinned) {
+      final tabs = dayTabs.arrange(monday, wholeMonday);
+      expect(tabs.order, order);
+      expect(tabs.pinned, pinned);
+    }
+
+    Future<void> hold(WidgetTester tester, String id, String action) async {
+      await tester.longPress(tab(id));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(action));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('with the list filtered, a pin keeps the pin and the place '
+        "of a note the filter leaves out of the day's tabs", (tester) async {
+      await filteredToGym(tester, pins: ['renewal']);
+      expect(shown(tester, ['mon-a', 'mon-b']), ['mon-a', 'mon-b']);
+
+      await hold(tester, 'mon-b', 'Pin tab');
+      expect(shown(tester, ['mon-a', 'mon-b']), ['mon-b', 'mon-a']);
+      expectMonday(['mon-b', 'renewal', 'mon-a'], 2);
+    });
+
+    testWidgets('with the list filtered, an unpin keeps the day, and the pin '
+        'of a note the filter leaves out', (tester) async {
+      await filteredToGym(tester, pins: ['mon-a', 'renewal']);
+      expectMonday(['mon-a', 'renewal', 'mon-b'], 2);
+
+      await hold(tester, 'mon-a', 'Unpin tab');
+      expectMonday(['renewal', 'mon-a', 'mon-b'], 1);
+    });
+
+    testWidgets('with the list filtered, a drag moves a tab past the tabs it '
+        'shows, and a note the filter leaves out keeps its place', (
+      tester,
+    ) async {
+      await filteredToGym(tester, pins: ['renewal']);
+      final gesture = await tester.startGesture(tester.getCenter(tab('mon-b')));
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      for (var i = 0; i < 7; i++) {
+        await gesture.moveBy(const Offset(-20, 0));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(shown(tester, ['mon-a', 'mon-b']), ['mon-b', 'mon-a']);
+      expectMonday(['renewal', 'mon-b', 'mon-a'], 1);
+    });
+
+    testWidgets("Back from a day's one note, picked over a day's tabs, comes "
+        'back to the tabs on the tab that was open', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 17);
+      await tester.tap(tab('mon-b'));
+      await tester.pumpAndSettle();
+      final tabs = tester.state(find.byType(DayTabsRow));
+
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(row, findsNothing);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Budget'));
+      expect(shown(tester, ['mon-a', 'mon-b']), ['mon-a', 'mon-b']);
+      expect(tester.getSemantics(tab('mon-b')), isSemantics(isSelected: true));
+      expect(
+        tester.state(find.byType(DayTabsRow)),
+        same(tabs),
+        reason: 'the same page, kept under the note picked over it',
+      );
+    });
+
     testWidgets('a tab pinned from far along a crowded row comes to the '
         'front in view, as it opens there (A7)', (tester) async {
       store.data['notes.v1'] = [
@@ -911,7 +1024,10 @@ void main() {
       await tester.pumpAndSettle();
       final pinned = tester.getRect(tab('crowd-11'));
       expect(pinned.left, greaterThanOrEqualTo(tester.getRect(row).left));
-      expect(pinned.right, lessThanOrEqualTo(tester.getRect(tab('mon-a')).left));
+      expect(
+        pinned.right,
+        lessThanOrEqualTo(tester.getRect(tab('mon-a')).left),
+      );
       expect(openNoteBody(tester), startsWith('Crowd 11'));
     });
 

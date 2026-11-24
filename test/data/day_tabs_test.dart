@@ -177,6 +177,7 @@ void main() {
       String day = '2026-11-18',
       Object? order,
       Object? pinned = 1,
+      Object? at = 7,
     }) => {
       'kind': 'dayTabs',
       'day': day,
@@ -185,7 +186,7 @@ void main() {
           'order': order ?? [c, a],
           'pinned': pinned,
         },
-        'at': 7,
+        'at': at,
       },
     };
 
@@ -211,6 +212,20 @@ void main() {
       );
       expect(DayTabs.fromPayload(payload(day: 'Tue 18')), isNull);
       expect(DayTabs.fromPayload(payload(day: '2026-11-18T00:00')), isNull);
+      for (final day in ['2025-02-30', '2025-13-01', '2025-02-29']) {
+        expect(DayTabs.fromPayload(payload(day: day)), isNull, reason: day);
+      }
+      expect(
+        DayTabs.fromPayload(payload(day: '2024-02-29'))!.day,
+        '2024-02-29',
+      );
+      expect(DayTabs.fromPayload(payload(at: 9007199254740992)), isNull);
+      expect(DayTabs.fromPayload(payload(at: -1)), isNull);
+      expect(DayTabs.fromPayload(payload(at: 7.5)), isNull);
+      expect(
+        DayTabs.fromPayload(payload(at: 9007199254740991))!.tabs.at,
+        9007199254740991,
+      );
     });
 
     test('keeps fields a later build wrote, and writes them back', () {

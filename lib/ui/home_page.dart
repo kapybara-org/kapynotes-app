@@ -5893,13 +5893,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       [
         for (final note
             in counted ?? _filtered(widget.notes.search(''), anyTime: true))
-          if (_dayOfNote(note) == day) note,
+          if (!_dayOfFreshNote.containsKey(note.id) && _dayOfNote(note) == day)
+            note,
         for (final MapEntry(key: id, value: started) in _dayOfFreshNote.entries)
           if (started == day) ?widget.notes.byId(id),
       ]..sort((a, b) {
         final started = a.createdAt.compareTo(b.createdAt);
         return started != 0 ? started : a.id.compareTo(b.id);
       });
+
+  /// Every note on [day], those the list's filter leaves out too: the whole
+  /// day a pin or a move arranges, so a note out of sight keeps its place
+  /// and its pin.
+  List<String> _phoneDayIds(DateTime day) => [
+    for (final note in _phoneDayNotes(day, widget.notes.search(''))) note.id,
+  ];
 
   /// [day]'s notes in the order their tabs show, and how many from the front
   /// are pinned.
@@ -5911,8 +5919,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final tabs = widget.dayTabs;
     if (tabs == null) return (notes: notes, pinned: 0);
     final byId = {for (final note in notes) note.id: note};
-    final (:order, :pinned) = tabs.arrange(day, [...byId.keys]);
-    return (notes: [for (final id in order) byId[id]!], pinned: pinned);
+    final (:order, :pinned) = tabs.arrange(day, _phoneDayIds(day));
+    return (
+      notes: [for (final id in order) ?byId[id]],
+      pinned: order.take(pinned).where(byId.containsKey).length,
+    );
   }
 
   /// Why a day's tabs can't take an order of their own, once 2,000 days
@@ -5921,9 +5932,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       '2,000 days already have an order of their own, the most Kapy Notes '
       'keeps.';
 
+  /// Moves [id]'s tab to [to] among the tabs [day] shows: between the same
+  /// two in the day's whole order, so the notes the list's filter leaves out
+  /// keep their places.
   void _movePhoneTab(DateTime day, String id, int to) {
-    final ids = [for (final note in _phoneDayNotes(day)) note.id];
-    if (widget.dayTabs?.move(day, ids, id, to) == false) {
+    final tabs = widget.dayTabs;
+    if (tabs == null) return;
+    final ids = _phoneDayIds(day);
+    final shown = [
+      for (final note in _phoneTabsOn(day).notes)
+        if (note.id != id) note.id,
+    ];
+    if (shown.isEmpty) return;
+    final order = [...tabs.arrange(day, ids).order]..remove(id);
+    final at = to.clamp(0, shown.length);
+    final place = at < shown.length
+        ? order.indexOf(shown[at])
+        : order.indexOf(shown.last) + 1;
+    if (!tabs.move(day, ids, id, place)) {
       Toast.show(context, "Couldn't move this tab. $_tabsCap", isError: true);
     }
   }
@@ -5931,7 +5957,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _pinPhoneTab(DateTime day, String id, {required bool pin}) {
     final tabs = widget.dayTabs;
     if (tabs == null) return;
-    final ids = [for (final note in _phoneDayNotes(day)) note.id];
+    final ids = _phoneDayIds(day);
     if (pin ? tabs.pin(day, ids, id) : tabs.unpin(day, ids, id)) return;
     Toast.show(
       context,
