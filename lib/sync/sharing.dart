@@ -202,7 +202,18 @@ class Sharing extends ChangeNotifier {
         ),
   };
 
+  /// The name each member had, by address, from every space seen since the
+  /// app started.
+  final Map<String, String> _memberNames = {};
+
   void _onKeyring() {
+    for (final space in teams) {
+      for (final member in space.members) {
+        if (member.hasName) {
+          _memberNames[member.email.toLowerCase()] = member.displayName;
+        }
+      }
+    }
     final before = _guests;
     _guests = _guestSpaces();
     if (_keyring.isFresh) {
@@ -569,8 +580,16 @@ class Sharing extends ChangeNotifier {
     image: member.image,
   );
 
-  static SharePerson _invited(SpaceInvite invite) =>
-      SharePerson(email: invite.email.toLowerCase(), name: invite.displayName);
+  /// An invitation names nobody until it is accepted, so it goes by its
+  /// address, unless the person was a member while this app ran: someone
+  /// taken off a note and invited back keeps the name they had.
+  SharePerson _invited(SpaceInvite invite) {
+    final address = invite.email.toLowerCase();
+    return SharePerson(
+      email: address,
+      name: _memberNames[address] ?? invite.displayName,
+    );
+  }
 
   static List<SharePerson> _byName(Iterable<SharePerson> people) =>
       people.toList()
