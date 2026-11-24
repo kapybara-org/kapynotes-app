@@ -10,6 +10,7 @@ import 'ai/kapy_chat_book.dart';
 import 'core/keyring.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
+import 'core/phone_keyboard.dart';
 import 'core/appearance.dart';
 import 'core/desktop_integration.dart';
 import 'audio/recording_file.dart';
@@ -65,6 +66,13 @@ import 'ui/instant_capture.dart';
 import 'ui/mcp_pane.dart';
 import 'ui/menu_bar_panel.dart';
 import 'ui/tasks/tasks_controller.dart';
+
+/// Flutter's own actions, with a finger outside a text field putting a
+/// phone's keyboard away.
+final _appActions = <Type, Action<Intent>>{
+  ...WidgetsApp.defaultActions,
+  EditableTextTapOutsideIntent: TouchUnfocusAction(),
+};
 
 /// Root widget. Owns the app-wide singletons and the macOS menu bar.
 class KapyNotesApp extends StatefulWidget {
@@ -777,6 +785,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           title: AppWordmark.name,
           debugShowCheckedModeBanner: false,
           navigatorObservers: [_popupKeyboardObserver],
+          actions: _appActions,
           theme: look.light,
           darkTheme: look.dark,
           themeMode: look.mode,

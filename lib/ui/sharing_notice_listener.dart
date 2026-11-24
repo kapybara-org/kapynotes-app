@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
+import '../core/theme.dart';
 import '../core/toast.dart';
 import '../sync/account.dart';
 import '../sync/sharing.dart';
@@ -74,6 +76,9 @@ class _SharingNoticesState extends State<SharingNotices> {
     Toast.show(
       context,
       notice.message,
+      icon: notice.arrived && !AppPlatform.hasPointer
+          ? KapyIcons.groupOutlined
+          : null,
       isError: notice.isError,
       action: spaceId == null ? null : 'Leave',
       onAction: spaceId == null

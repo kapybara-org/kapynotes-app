@@ -853,7 +853,7 @@ void main() {
 
     await tester.dragFrom(
       Offset(2, tester.getCenter(find.byType(NoteRow).first).dy),
-      const Offset(200, 0),
+      const Offset(300, 0),
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('shared-page')), findsNothing);
