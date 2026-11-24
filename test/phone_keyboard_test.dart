@@ -141,6 +141,40 @@ void main() {
         expect(find.byKey(const ValueKey('kapy-ai-page')), findsNothing);
       });
 
+      testWidgets('Ask Kapy AI sits 12 above the keyboard while it’s up, and '
+          '12 above the bar once it’s down', (tester) async {
+        await _pump(tester, platform);
+        await _openKapyAiPage(tester);
+        final field = find.byKey(const ValueKey('kapy-ai-page-field'));
+        double above(double top) =>
+            top -
+            tester
+                .getRect(
+                  find
+                      .ancestor(of: field, matching: find.byType(Container))
+                      .first,
+                )
+                .bottom;
+        double bar() =>
+            tester.getRect(find.byKey(const ValueKey('phone-bar'))).top;
+        expect(above(bar()), 12);
+
+        await _tap(tester, field);
+        await _keyboard(tester, up: true);
+        expect(above(874 - 300), 12);
+
+        await tester.enterText(field, 'What is left');
+        await tester.pumpAndSettle();
+        expect(above(874 - 300), 12);
+
+        await _tapAt(
+          tester,
+          tester.getCenter(find.byKey(const ValueKey('kapy-ai-page-chats'))),
+        );
+        await _keyboard(tester, up: false);
+        expect(above(bar()), 12);
+      });
+
       testWidgets('on the Kapy AI page, the model picker and the search pill '
           'keep the keyboard', (tester) async {
         await _pump(tester, platform);
