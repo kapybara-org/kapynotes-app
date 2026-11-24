@@ -978,18 +978,58 @@ void main() {
       ]);
     });
 
+    test("a tab opened over a day's goes with the day for Reopen to bring "
+        "back, and a tab of the day's own notes goes without, after a "
+        'restart too', () {
+      final store = _MemoryStore();
+      final workspace = _opened('alpha', store: store)
+        ..showDay(tuesday, ['bravo'])
+        ..openInNewTab('charlie')
+        ..showDay(wednesday, ['delta']);
+      expect(workspace.recentlyClosed, [
+        ['charlie'],
+      ]);
+
+      final restored = _restored(store)..openInNewTab('bravo');
+      expect(restored.leaveDay(), isTrue);
+      expect(_tabsOf(restored), [
+        ['alpha'],
+      ]);
+      expect(restored.recentlyClosed, [
+        ['bravo'],
+        ['charlie'],
+      ]);
+    });
+
+    test('leaving the day takes the tabs it brings back out of the closed '
+        'ones', () {
+      final workspace = _opened('alpha')
+        ..openFolderInNewTab('work')
+        ..showDay(tuesday, ['alpha', 'bravo'])
+        ..openFolderInNewTab('work');
+      workspace
+        ..closeTab(workspace.tabs.length - 1)
+        ..closeTab(0);
+      expect(workspace.recentlyClosed, [
+        ['alpha'],
+      ]);
+
+      expect(workspace.leaveDay(), isTrue);
+      expect(workspace.canReopen, isFalse);
+    });
+
     test('a new day closes them and the tabs they took the place of, for '
-        'Reopen to bring back', () {
+        'Reopen to bring back the tabs from before first', () {
       final workspace = _opened('alpha')
         ..openInNewTab('bravo')
         ..showDay(tuesday, ['charlie']);
-      expect(workspace.rollOver(_today + 1), ['charlie', 'alpha', 'bravo']);
+      expect(workspace.rollOver(_today + 1), ['alpha', 'bravo', 'charlie']);
       expect(workspace.dayInTabs, isNull);
       expect(workspace.tabs, isEmpty);
       expect(workspace.recentlyClosed, [
-        ['charlie'],
         ['alpha'],
         ['bravo'],
+        ['charlie'],
       ]);
       expect(workspace.leaveDay(), isFalse);
     });

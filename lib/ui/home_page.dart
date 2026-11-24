@@ -2052,13 +2052,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _dayOfFreshNote[note.id] ??
       noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
 
-  /// A day picked in the page's week or its month: [notes], its notes in the
-  /// list's order, become the tabs, one to a tab and the first in front, up to
-  /// [EditorWorkspace.dayTabLimit] of them, a later day's too, though the list
-  /// leaves that day out until it comes. All of them are lit in the list,
-  /// which stays whole. A day with none opens a page to write on it, in the
-  /// folder in front if there is one. The tabs open before the first day was
-  /// picked come back with the notice's Undo, or a click on the day picked.
+  /// A day picked in the page's week or its month: [notes], its notes, the
+  /// earliest written first, become the tabs, one to a tab and the first in
+  /// front, up to [EditorWorkspace.dayTabLimit] of them, a later day's too,
+  /// though the list leaves that day out until it comes. All of them are lit
+  /// in the list, which stays whole. A day with none opens a page to write on
+  /// it, in the folder in front if there is one. The tabs open before the
+  /// first day was picked come back with the notice's Undo, or a click on the
+  /// day picked.
   void _openDay(DateTime day, List<Note> notes) {
     if (day == _workspace.dayInTabs) return _leaveDay();
     if (notes.isEmpty &&

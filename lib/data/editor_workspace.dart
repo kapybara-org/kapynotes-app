@@ -168,6 +168,10 @@ class EditorWorkspace {
   DateTime? _dayInTabs;
   _Kept? _kept;
 
+  /// The notes [showDay] opened for [_dayInTabs]: a click on the day brings
+  /// back a tab of only these, so it goes without counting as closed.
+  Set<String> _dayNotes = const {};
+
   /// The blank note the day started on.
   String? _draft;
   int _nextId = 0;
@@ -293,6 +297,7 @@ class EditorWorkspace {
     _day = today;
     _draft = null;
     _dayInTabs = null;
+    _dayNotes = const {};
     _kept = null;
 
     final raw = _store.data[storeKey];
@@ -312,6 +317,9 @@ class EditorWorkspace {
       }
       _recent.addAll(_recentOf(restored, raw['recent'], front: frontTab));
       if (raw['dayInTabs'] case final String key) _dayInTabs = dayOfKey(key);
+      if (raw['dayNotes'] case final List ids when _dayInTabs != null) {
+        _dayNotes = {...ids.whereType<String>()};
+      }
       if (raw['kept'] case final Map kept
           when _dayInTabs != null && kept['tabs'] is List) {
         final read = _readTabs(
@@ -439,14 +447,15 @@ class EditorWorkspace {
   ];
 
   /// The first open of [today], when the tabs belong to an earlier day: every
-  /// tab closes for [reopen] to bring back, the most recently used first and
-  /// then any that a day's notes took the place of, Back's walk starts over,
-  /// and the row is left empty for the caller to start the day in. Returns
-  /// the notes that closed, or null on the day the tabs already belong to.
+  /// tab closes for [reopen] to bring back, any that a day's notes took the
+  /// place of ahead of the day's, each the most recently used first, Back's
+  /// walk starts over, and the row is left empty for the caller to start the
+  /// day in. Returns the notes that closed, or null on the day the tabs
+  /// already belong to.
   List<String>? rollOver(int today) {
     if (_day == today) return null;
     _settle();
-    final closing = [..._recent, ...?_kept?.recent];
+    final closing = [...?_kept?.recent, ..._recent];
     for (final tab in closing.reversed) {
       _remember(tab);
     }
@@ -454,6 +463,7 @@ class EditorWorkspace {
     _recent.clear();
     _used.clear();
     _dayInTabs = null;
+    _dayNotes = const {};
     _kept = null;
     _front = 0;
     _day = today;
@@ -594,19 +604,23 @@ class EditorWorkspace {
   /// Opens [noteIds], [day]'s notes, as the tabs in their order, one note to
   /// a tab and the first in front, up to [dayTabLimit] of them. They take the
   /// place of the tabs open now. The tabs open before the first day was shown
-  /// are kept for [leaveDay] to bring back, and another day's tabs go: that
-  /// day is a click away. With no notes the row is left empty for the caller
-  /// to write on [day]. Returns how many tabs opened.
+  /// are kept for [leaveDay] to bring back. Another day's tabs go, for
+  /// [reopen] to bring back those holding a note that day didn't open. With
+  /// no notes the row is left empty for the caller to write on [day]. Returns
+  /// how many tabs opened.
   int showDay(DateTime day, List<String> noteIds) {
     _settle();
-    if (frontTab case final front? when _dayInTabs == null) {
+    if (_dayInTabs != null) {
+      _rememberDayTabs();
+    } else if (frontTab case final front?) {
       _kept = (tabs: [..._tabs], recent: [..._recent], front: front);
     }
     _dayInTabs = day;
+    _dayNotes = noteIds.toSet().take(dayTabLimit).toSet();
     _tabs.clear();
     _recent.clear();
     _front = 0;
-    for (final id in noteIds.toSet().take(dayTabLimit)) {
+    for (final id in _dayNotes) {
       _addTab([id], front: _tabs.isEmpty);
     }
     // The row folds the least recently used first, so the day's last notes
@@ -620,8 +634,9 @@ class EditorWorkspace {
   }
 
   /// Brings back the tabs [showDay] took the place of, as they were, the one
-  /// in front included, and closes the day's. Where none of them is left the
-  /// day's stay. Returns whether a day was shown.
+  /// in front included. The day's go, for [reopen] to bring back those
+  /// holding a note the day didn't open. Where none of the tabs from before
+  /// is left the day's stay. Returns whether a day was shown.
   bool leaveDay() {
     if (_dayInTabs == null) return false;
     _settle();
@@ -629,6 +644,7 @@ class EditorWorkspace {
     _dayInTabs = null;
     _kept = null;
     if (kept != null && kept.tabs.isNotEmpty) {
+      _rememberDayTabs();
       _tabs
         ..clear()
         ..addAll(kept.tabs);
@@ -646,6 +662,7 @@ class EditorWorkspace {
       }
       _useFront();
     }
+    _dayNotes = const {};
     _persist();
     return true;
   }
@@ -1054,6 +1071,16 @@ class EditorWorkspace {
     }
   }
 
+  /// Closes the day's tabs as they go, all but those of only notes the day
+  /// opened, which a click on the day brings back.
+  void _rememberDayTabs() {
+    for (final tab in _recent.reversed) {
+      if (tab.folderId != null || !_dayNotes.containsAll(tab.noteIds)) {
+        _remember(tab);
+      }
+    }
+  }
+
   void _remember(EditorTab tab) {
     _closed.insert(0, (notes: tab.noteIds, folderId: tab.folderId));
     if (_closed.length > closedLimit) _closed.length = closedLimit;
@@ -1179,7 +1206,10 @@ class EditorWorkspace {
       ],
       'day': ?_day,
       'draft': ?_draft,
-      if (_dayInTabs case final day?) 'dayInTabs': dayKey(day),
+      if (_dayInTabs case final day?) ...{
+        'dayInTabs': dayKey(day),
+        'dayNotes': [..._dayNotes],
+      },
       if (kept != null)
         'kept': {
           'tabs': [for (final tab in kept.tabs) _tabJson(tab)],

@@ -15,12 +15,8 @@ void main() {
   // A Thursday.
   final thursday = DateTime(2026, 11, 19);
 
-  Note note(String id, String body, DateTime edited) => Note(
-    id: id,
-    body: body,
-    createdAt: DateTime(2026, 1, 1),
-    updatedAt: edited,
-  );
+  Note note(String id, String body, DateTime edited, {DateTime? written}) =>
+      Note(id: id, body: body, createdAt: written ?? edited, updatedAt: edited);
 
   /// Pumps the strip in [room] at most, with its month over its week, keeping
   /// the day it picks filled, and hands back every day it picked with the
@@ -166,15 +162,20 @@ void main() {
     expect(dotsOf(day(16)), findsNothing);
   });
 
-  testWidgets('a click picks the day, with the notes on it, and fills it', (
-    tester,
-  ) async {
+  testWidgets('a click picks the day, with its notes the earliest written '
+      'first, and fills it', (tester) async {
     final semantics = tester.ensureSemantics();
     final picks = await pumpStrip(
       tester,
       notes: [
         note('standup', 'Standup', DateTime(2026, 11, 17, 10)),
-        note('pricing', 'Pricing ideas', DateTime(2026, 11, 17, 16)),
+        note('agenda', 'Agenda', DateTime(2026, 11, 17, 10)),
+        note(
+          'pricing',
+          'Pricing ideas',
+          DateTime(2026, 11, 17, 16),
+          written: DateTime(2026, 11, 17, 8),
+        ),
         note('renewal', 'Renewal notes', DateTime(2026, 11, 16, 9)),
       ],
       ownDay: (note) => note.id == 'renewal' ? DateTime(2026, 11, 21) : null,
@@ -182,7 +183,7 @@ void main() {
 
     await tap(tester, day(17));
     expect(picks.single.$1, DateTime(2026, 11, 17));
-    expect(picks.single.$2, ['standup', 'pricing']);
+    expect(picks.single.$2, ['pricing', 'agenda', 'standup']);
     expect(tester.getSemantics(day(17)), isSemantics(isSelected: true));
 
     await tap(tester, day(21));
@@ -305,15 +306,16 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('on a phone a day with several notes lists them, and the one '
-      'picked opens; a day with one opens it at once', (tester) async {
+  testWidgets('on a phone a day with several notes lists them, the earliest '
+      'written first, and the one picked opens; a day with one opens it at '
+      'once', (tester) async {
     final opened = <String>[];
     final picks = await pumpStrip(
       tester,
       phone: true,
       notes: [
-        note('standup', 'Standup notes', DateTime(2026, 11, 18, 10, 5)),
         note('ideas', 'Book ideas', DateTime(2026, 11, 18, 22, 10)),
+        note('standup', 'Standup notes', DateTime(2026, 11, 18, 10, 5)),
         note('pricing', 'Pricing ideas', DateTime(2026, 11, 17, 16, 20)),
       ],
       onOpenNote: opened.add,
@@ -323,6 +325,10 @@ void main() {
     expect(find.text('Wednesday, 18 November'), findsOneWidget);
     expect(find.text('2 notes'), findsOneWidget);
     expect(find.text('10:05'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Standup notes')).dy,
+      lessThan(tester.getTopLeft(find.text('Book ideas')).dy),
+    );
     expect(find.text('Pricing ideas'), findsNothing);
     await tap(tester, find.text('Book ideas'));
     expect(opened.single, 'ideas');

@@ -4012,6 +4012,7 @@ void main() {
         'list stays whole', (tester) async {
       await library(tester);
       expect(find.byType(DayStrip), findsOneWidget);
+      expect(tester.getSemantics(day(18)), isSemantics(hint: 'Opens its note'));
 
       await tap(tester, day(18));
       expect(openNoteBody(tester), 'Standup notes');
@@ -4020,14 +4021,16 @@ void main() {
       expect(lit(tester), ['Standup notes']);
       expect(headings(tester), hasLength(4));
       expect(whenChip, findsNothing);
-      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+      expect(
+        tester.getSemantics(day(18)),
+        isSemantics(isSelected: true, hint: 'Back to your tabs'),
+      );
       expect(find.text("Opened yesterday's note"), findsOneWidget);
     });
 
-    testWidgets('a day with several notes opens them as the tabs, the first '
-        'in front and all lit, and Undo brings back the tabs from before', (
-      tester,
-    ) async {
+    testWidgets('a day with several notes opens them as the tabs, the '
+        'earliest written first and in front, all lit, and Undo brings back '
+        'the tabs from before', (tester) async {
       final days = NoteDayStore(store);
       await days.load();
       await library(tester, days: days);
@@ -4042,8 +4045,8 @@ void main() {
       final kept = {for (final note in notes.allNotes) note.id};
 
       await tap(tester, day(18));
-      expect(tabTitles(tester), ['Standup notes', 'October plan']);
-      expect(openNoteBody(tester), 'Standup notes');
+      expect(tabTitles(tester), ['October plan', 'Standup notes']);
+      expect(openNoteBody(tester), 'October plan');
       expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
       expect(find.text("Opened yesterday's 2 notes"), findsOneWidget);
 
@@ -4105,8 +4108,8 @@ void main() {
       expect(days.noteIds, isEmpty);
     });
 
-    testWidgets('a day opens 12 of its notes at most, and says how many of '
-        'how many', (tester) async {
+    testWidgets('a day opens its 12 earliest written notes at most, and says '
+        'how many of how many', (tester) async {
       await library(tester);
       await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
       for (var index = 1; index <= 13; index++) {
@@ -4115,10 +4118,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await tap(tester, day(19));
-      expect(
-        tester.widget<NoteTabRow>(find.byType(NoteTabRow)).tabs,
-        hasLength(EditorWorkspace.dayTabLimit),
-      );
+      final tabs = tester.widget<NoteTabRow>(find.byType(NoteTabRow)).tabs;
+      expect(tabs, hasLength(EditorWorkspace.dayTabLimit));
+      expect(tabs.first.title, 'Call with Arjun');
       expect(find.text("Opened 12 of today's 14 notes"), findsOneWidget);
     });
 
@@ -4270,6 +4272,41 @@ void main() {
 
       await tap(tester, find.text('Undo'));
       expect(find.byKey(ValueKey('folder-page-${work.id}')), findsOneWidget);
+    });
+
+    testWidgets("an empty day picked on a folder's page writes its page in "
+        'that folder', (tester) async {
+      final folders = FolderStore(store);
+      await folders.load();
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, folders: folders, days: days);
+      final work = folders.create('Work')!;
+      prefs.foldersShown = true;
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+
+      await tap(tester, day(16));
+      expect(find.text('No notes on Mon 16'), findsOneWidget);
+      await tester.enterNote('Agenda');
+      await tester.pumpAndSettle();
+      final made = notes.allNotes.singleWhere((note) => note.title == 'Agenda');
+      expect(folders.tree.folderOf(made.id), work.id);
+      expect(days.dayOf(made.id), DateTime(2026, 11, 16));
+    });
+
+    testWidgets("a blank page under a day's tabs stays for Undo to bring "
+        'back', (tester) async {
+      await library(tester);
+      await tap(tester, find.byKey(const ValueKey('sidebar-new-note')));
+      final blank = notes.allNotes.singleWhere((note) => note.isEmpty);
+
+      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(notes.byId(blank.id), isNotNull);
+
+      await tap(tester, find.text('Undo'));
+      expect(openNoteBody(tester), blank.body.trimRight());
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "

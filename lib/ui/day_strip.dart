@@ -78,8 +78,8 @@ class DayStrip extends StatefulWidget {
   /// mark it.
   final DateTime? picked;
 
-  /// A day picked in the week or the calendar, with the notes on it in the
-  /// order [notes] has them.
+  /// A day picked in the week or the calendar, with the notes on it, the
+  /// earliest written first.
   final void Function(DateTime day, List<Note> notes) onPick;
 
   /// What the days count: the notes the list or the folder in front shows
@@ -262,13 +262,24 @@ class _DayStripState extends State<DayStrip> {
     }
   }
 
-  /// The notes on [day], in the order the strip was given them.
-  List<Note> _notesOn(DateTime day) => [
-    for (final note in widget.notes)
-      if (noteDay(note, widget.displayTime, ownDay: widget.ownDay?.call(note)) ==
-          day)
-        note,
-  ];
+  /// The notes on [day], the earliest written first, so editing one never
+  /// moves it.
+  List<Note> _notesOn(DateTime day) =>
+      [
+        for (final note in widget.notes)
+          if (noteDay(
+                note,
+                widget.displayTime,
+                ownDay: widget.ownDay?.call(note),
+              ) ==
+              day)
+            note,
+      ]..sort(
+        (a, b) => switch (a.createdAt.compareTo(b.createdAt)) {
+          0 => a.id.compareTo(b.id),
+          final order => order,
+        },
+      );
 
   /// Lists [day]'s notes 4 under the week, from the left of the day tapped
   /// [at], and opens the one picked.
