@@ -317,6 +317,26 @@ void main() {
       relaunched.dispose();
     });
 
+    test(
+      'letting go of the notes on an account switch lets go of their orders',
+      () async {
+        final d = await signedIn();
+        final notes = [
+          for (final title in ['Standup notes', 'Lunch with Maya'])
+            d.notes.create(body: title).id,
+        ];
+        d.dayTabs.pin(day, notes, notes[1]);
+        await d.account.signOut();
+
+        d.auth.id = 'user-2';
+        await d.account.signIn(email: 'c@d.co', password: 'y');
+        await d.account.resolveAccountSwitch(keepLocalNotes: false);
+        expect(d.dayTabs.days, isEmpty);
+        expect(d.dayTabs.owed, isEmpty);
+        d.dispose();
+      },
+    );
+
     test('signing out keeps the orders, owed to the next account', () async {
       final d = await signedIn();
       final notes = [

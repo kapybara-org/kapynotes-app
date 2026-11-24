@@ -5938,12 +5938,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _movePhoneTab(DateTime day, String id, int to) {
     final tabs = widget.dayTabs;
     if (tabs == null) return;
+    final shown = [for (final note in _phoneTabsOn(day).notes) note.id];
+    final from = shown.indexOf(id);
+    if (from < 0 || from == to || shown.length < 2) return;
+    shown.removeAt(from);
     final ids = _phoneDayIds(day);
-    final shown = [
-      for (final note in _phoneTabsOn(day).notes)
-        if (note.id != id) note.id,
-    ];
-    if (shown.isEmpty) return;
     final order = [...tabs.arrange(day, ids).order]..remove(id);
     final at = to.clamp(0, shown.length);
     final place = at < shown.length

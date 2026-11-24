@@ -884,17 +884,18 @@ void main() {
     });
 
     /// Monday with Renewal notes on it too, its tabs given [pins] through the
-    /// store, and the list filtered to Gym, which only Gym plan and Budget
-    /// have: Gym plan open, and Monday's row showing those two.
+    /// store, and the list filtered to Gym, which only [tagged] have: the
+    /// first of them open, and Monday's row showing just those.
     Future<void> filteredToGym(
       WidgetTester tester, {
-      required List<String> pins,
+      List<String> tagged = const ['mon-a', 'mon-b'],
+      List<String> pins = const [],
     }) async {
       seed();
       final gym = tags.create('Gym')!.id;
-      tags
-        ..setTags('mon-a', [gym])
-        ..setTags('mon-b', [gym]);
+      for (final id in tagged) {
+        tags.setTags(id, [gym]);
+      }
       days.setDay('renewal', monday);
       for (final id in pins.reversed) {
         dayTabs.pin(monday, wholeMonday, id);
@@ -911,11 +912,31 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(NoteRow, 'Gym plan'));
+      final first = const {
+        'mon-a': 'Gym plan',
+        'mon-b': 'Budget',
+        'renewal': 'Renewal notes',
+      }[tagged.first]!;
+      await tester.tap(find.widgetWithText(NoteRow, first));
       await tester.pumpAndSettle();
       await open(tester, 17);
-      expect(tab('renewal'), findsNothing);
-      expect(openNoteBody(tester), startsWith('Gym plan'));
+      for (final id in wholeMonday) {
+        expect(tab(id), tagged.contains(id) ? findsOne : findsNothing);
+      }
+      expect(openNoteBody(tester), startsWith(first));
+    }
+
+    /// Holds [id]'s tab and slides it [by] in steps of 20, then lets go.
+    Future<void> drag(WidgetTester tester, String id, List<double> by) async {
+      final gesture = await tester.startGesture(tester.getCenter(tab(id)));
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      for (final dx in by) {
+        await gesture.moveBy(Offset(dx, 0));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('Pin tab'), findsNothing, reason: 'a drag has no menu');
     }
 
     void expectMonday(List<String> order, int pinned) {
@@ -955,16 +976,27 @@ void main() {
       tester,
     ) async {
       await filteredToGym(tester, pins: ['renewal']);
-      final gesture = await tester.startGesture(tester.getCenter(tab('mon-b')));
-      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
-      for (var i = 0; i < 7; i++) {
-        await gesture.moveBy(const Offset(-20, 0));
-        await tester.pump();
-      }
-      await gesture.up();
-      await tester.pumpAndSettle();
+      await drag(tester, 'mon-b', List.filled(7, -20));
       expect(shown(tester, ['mon-a', 'mon-b']), ['mon-b', 'mon-a']);
       expectMonday(['renewal', 'mon-b', 'mon-a'], 1);
+    });
+
+    testWidgets('with the list filtered, a tab dragged to the front of the row '
+        'lands just before the tab it passed, after a note the filter leaves '
+        'out', (tester) async {
+      await filteredToGym(tester, tagged: ['mon-b', 'renewal']);
+      await drag(tester, 'renewal', List.filled(7, -20));
+      expect(shown(tester, ['mon-b', 'renewal']), ['renewal', 'mon-b']);
+      expectMonday(['mon-a', 'renewal', 'mon-b'], 0);
+    });
+
+    testWidgets('with the list filtered, a drag let go where it began changes '
+        'nothing, beside a note the filter leaves out', (tester) async {
+      await filteredToGym(tester, tagged: ['mon-a', 'renewal']);
+      await drag(tester, 'mon-a', [20, 20, 20, -20, -20, -20]);
+      expect(shown(tester, ['mon-a', 'renewal']), ['mon-a', 'renewal']);
+      expectMonday(wholeMonday, 0);
+      expect(dayTabs.owed, isEmpty);
     });
 
     testWidgets("Back from a day's one note, picked over a day's tabs, comes "
