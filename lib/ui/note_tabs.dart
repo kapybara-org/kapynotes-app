@@ -21,21 +21,30 @@ bool clickOpensTabBehind() {
 /// One open note on the tab row.
 @immutable
 class NoteTab {
-  const NoteTab({required this.id, required this.title, required this.icon});
+  const NoteTab({
+    required this.id,
+    required this.title,
+    required this.icon,
+    this.pinned,
+  });
 
   final String id;
   final String title;
 
   /// The rail's icon for where the note lives: Notes, Drawings or Shared.
   final KapyIconData icon;
+
+  /// Whether one of a day's tabs is pinned, which puts a pin in its icon's
+  /// place. Null for a tab that isn't one of a day's, which has no pin.
+  final bool? pinned;
 }
 
 /// The page header's second row: the open notes, one tab each.
 ///
 /// A tab is never squeezed. Its title shows in full up to [maxLabelWidth],
 /// and a tab that does not fit folds into "N more", the least recently used
-/// first, so the row never scrolls and never shrinks a tab to nothing. The
-/// active tab never folds.
+/// first and a pinned one of a day's last, so the row never scrolls and never
+/// shrinks a tab to nothing. The active tab never folds.
 class NoteTabRow extends StatelessWidget {
   const NoteTabRow({
     super.key,
@@ -45,6 +54,7 @@ class NoteTabRow extends StatelessWidget {
     required this.onSelect,
     required this.onClose,
     required this.onCloseOthers,
+    this.onPin,
     this.closeShortcut,
   });
 
@@ -66,6 +76,9 @@ class NoteTabRow extends StatelessWidget {
   final ValueChanged<String> onClose;
   final ValueChanged<String> onCloseOthers;
 
+  /// Pins one of a day's tabs, or with pin false unpins it.
+  final void Function(String id, {required bool pin})? onPin;
+
   /// The keys that close the active tab, as a keycap prints them.
   final String? closeShortcut;
 
@@ -77,12 +90,8 @@ class NoteTabRow extends StatelessWidget {
         color: color,
       );
 
-  static TextStyle _moreStyle(Color color) => chromeStyle(
-    size: 12,
-    line: 16,
-    weight: AppWeight.body,
-    color: color,
-  );
+  static TextStyle _moreStyle(Color color) =>
+      chromeStyle(size: 12, line: 16, weight: AppWeight.body, color: color);
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +138,14 @@ class NoteTabRow extends StatelessWidget {
                   _moreStyle(palette.textSecondary),
                 ),
               );
-          for (final id in recentIds.reversed) {
+          final pinned = {
+            for (final tab in tabs)
+              if (tab.pinned == true) tab.id,
+          };
+          for (final id in [
+            ...recentIds.reversed.where((id) => !pinned.contains(id)),
+            ...recentIds.reversed.where(pinned.contains),
+          ]) {
             if (shown.length == 1 || used(shown) + more <= room) break;
             if (id != activeId) shown.removeWhere((tab) => tab.id == id);
           }
@@ -169,6 +185,13 @@ class NoteTabRow extends StatelessWidget {
                     onClose: () => onClose(tab.id),
                     onCloseOthers: () => onCloseOthers(tab.id),
                     closeShortcut: tab.id == activeId ? closeShortcut : null,
+                    onPin: switch ((tab.pinned, onPin)) {
+                      (final pinned?, final onPin?) => () => onPin(
+                        tab.id,
+                        pin: !pinned,
+                      ),
+                      _ => null,
+                    },
                   ),
                 ],
                 if (folded.isNotEmpty) ...[
@@ -266,6 +289,7 @@ class _TabChip extends StatefulWidget {
     required this.onClose,
     required this.onCloseOthers,
     required this.closeShortcut,
+    required this.onPin,
   });
 
   final NoteTab tab;
@@ -278,6 +302,9 @@ class _TabChip extends StatefulWidget {
   final VoidCallback onClose;
   final VoidCallback onCloseOthers;
   final String? closeShortcut;
+
+  /// Pins the tab, or unpins a pinned one. Null where it has no pin.
+  final VoidCallback? onPin;
 
   /// 2 · icon 16 · 8 · the label · 4 · the × in its 20 · 2.
   static double widthFor(double labelWidth) => labelWidth + 52;
@@ -299,6 +326,12 @@ class _TabChipState extends State<_TabChip> {
       globalPosition: position,
       items: [
         for (final action in [
+          if (widget.onPin != null)
+            KapyMenuAction(
+              value: 'pin',
+              label: widget.tab.pinned == true ? 'Unpin tab' : 'Pin tab',
+              icon: KapyIcons.pinOutlined,
+            ),
           KapyMenuAction(
             value: 'close',
             label: 'Close tab',
@@ -324,6 +357,8 @@ class _TabChipState extends State<_TabChip> {
         widget.onClose();
       case 'others':
         widget.onCloseOthers();
+      case 'pin':
+        widget.onPin?.call();
     }
   }
 
@@ -348,6 +383,9 @@ class _TabChipState extends State<_TabChip> {
       excludeSemantics: true,
       onTap: widget.onSelect,
       customSemanticsActions: {
+        CustomSemanticsAction(
+          label: widget.tab.pinned == true ? 'Unpin tab' : 'Pin tab',
+        ): ?widget.onPin,
         const CustomSemanticsAction(label: 'Close tab'): widget.onClose,
       },
       child: Listener(
@@ -371,7 +409,9 @@ class _TabChipState extends State<_TabChip> {
                     child: Row(
                       children: [
                         KapyIcon(
-                          widget.tab.icon,
+                          widget.tab.pinned == true
+                              ? KapyIcons.pinOutlined
+                              : widget.tab.icon,
                           size: 16,
                           color: active
                               ? palette.textPrimary

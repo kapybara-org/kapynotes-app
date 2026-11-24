@@ -27,6 +27,7 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/folders.dart';
+import 'package:kapy_notes/data/day_tabs.dart';
 import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -153,6 +154,7 @@ Future<void> pumpApp(
   TagStore? tags,
   FolderStore? folders,
   NoteDayStore? days,
+  DayTabsStore? dayTabs,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
   VoiceRecordingController? recording,
   TaskLibrary? tasks,
@@ -188,6 +190,7 @@ Future<void> pumpApp(
     tags: tags,
     folders: folders,
     days: days,
+    dayTabs: dayTabs,
     titleModel: titleModel,
     recording: recording,
     tasks: tasks,
@@ -3866,6 +3869,7 @@ void main() {
       WidgetTester tester, {
       FolderStore? folders,
       NoteDayStore? days,
+      DayTabsStore? dayTabs,
     }) async {
       int at(int month, int day, int hour) =>
           DateTime(2026, month, day, hour).millisecondsSinceEpoch;
@@ -3887,6 +3891,7 @@ void main() {
         size: const Size(1400, 800),
         folders: folders,
         days: days,
+        dayTabs: dayTabs,
       );
     }
 
@@ -4310,6 +4315,103 @@ void main() {
 
       await tap(tester, find.text('Undo'));
       expect(openNoteBody(tester), blank.body.trimRight());
+    });
+
+    /// The tab on the row titled [title].
+    Finder tabOf(String title) => find
+        .ancestor(
+          of: find.descendant(
+            of: find.byType(NoteTabRow),
+            matching: find.text(title),
+          ),
+          matching: find.byWidgetPredicate(
+            (widget) => '${widget.key}'.contains('note-tab-'),
+          ),
+        )
+        .first;
+    Finder pinOn(String title) => find.descendant(
+      of: tabOf(title),
+      matching: findKapyIcon(KapyIcons.pinOutlined),
+    );
+    Future<void> tabMenu(WidgetTester tester, String title) async {
+      await tester.tap(tabOf(title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+    }
+
+    final wednesday = DateTime(2026, 11, 18);
+    const wednesdayNotes = ['October plan', 'Standup notes'];
+
+    testWidgets("a day with an order of its own opens in it, a pinned tab "
+        "first with a pin in its icon's place, and Pin tab and Unpin tab in "
+        "a day's tab menu arrange it again", (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final dayTabs = DayTabsStore(store);
+      await dayTabs.load();
+      await library(tester, days: days, dayTabs: dayTabs);
+      days.setDay('October plan', wednesday);
+      dayTabs.pin(wednesday, wednesdayNotes, 'Standup notes');
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(18));
+      expect(tabTitles(tester), ['Standup notes', 'October plan']);
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(pinOn('Standup notes'), findsOneWidget);
+      expect(pinOn('October plan'), findsNothing);
+
+      // Unpinned, a tab keeps its place.
+      await tabMenu(tester, 'Standup notes');
+      await tap(tester, find.text('Unpin tab'));
+      expect(tabTitles(tester), ['Standup notes', 'October plan']);
+      expect(pinOn('Standup notes'), findsNothing);
+      expect(dayTabs.arrange(wednesday, wednesdayNotes).pinned, 0);
+
+      // Pinned, it comes to the front, and the one in front stays.
+      await tabMenu(tester, 'October plan');
+      await tap(tester, find.text('Pin tab'));
+      expect(tabTitles(tester), wednesdayNotes);
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(pinOn('October plan'), findsOneWidget);
+      expect(dayTabs.arrange(wednesday, wednesdayNotes).pinned, 1);
+
+      // A tab opened over the day's has no pin to give.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      await tabMenu(tester, 'Call with Arjun');
+      expect(find.text('Close tab'), findsOneWidget);
+      expect(find.text('Pin tab'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets("a day's order changed on another device shows in its tabs "
+        'here at once, the tab in front staying', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final dayTabs = DayTabsStore(store);
+      await dayTabs.load();
+      await library(tester, days: days, dayTabs: dayTabs);
+      days.setDay('October plan', wednesday);
+      await tester.pumpAndSettle();
+      await tap(tester, day(18));
+      expect(tabTitles(tester), wednesdayNotes);
+
+      dayTabs.applyRemote(
+        DayTabs(
+          day: '2026-11-18',
+          tabs: Stamped(
+            const TabOrder(['Standup notes', 'October plan'], 1),
+            1,
+          ),
+        ),
+        1,
+      );
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['Standup notes', 'October plan']);
+      expect(openNoteBody(tester), 'October plan');
+      expect(pinOn('Standup notes'), findsOneWidget);
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "

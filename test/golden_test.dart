@@ -17,6 +17,7 @@ import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/data/day_tabs.dart';
 import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -142,6 +143,9 @@ Future<void> pumpForGolden(
 
   /// The notes' own days, for Tasks' Later row.
   NoteDayStore? days,
+
+  /// The order a person gave a day's tabs, and their pins.
+  DayTabsStore? dayTabs,
 
   /// M01's Today: three notes written this morning, one holding a
   /// recording, one a checklist and a tag, one words alone.
@@ -414,6 +418,7 @@ Future<void> pumpForGolden(
       tags: goldenTags,
       folders: goldenFolders,
       days: withDays ? goldenDays : days,
+      dayTabs: dayTabs,
       tasks: tasks,
       titleModel: _GoldenTitles(),
     ),
@@ -1372,6 +1377,35 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_week_month_open.png'),
+    );
+  });
+
+  // Mon 31 picked with Gym plan pinned: its tab first, a pin in its icon's
+  // place, and its menu open on Unpin tab.
+  testWidgets('desktop dark week, a day with a pinned tab', (tester) async {
+    final dayTabs = DayTabsStore(MemoryStore());
+    await dayTabs.load();
+    dayTabs.pin(DateTime(2026, 8, 31), ['standup', 'gym', 'books'], 'gym');
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+      dayTabs: dayTabs,
+    );
+    await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NoteTabRow),
+        matching: find.text('Gym plan'),
+      ),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_week_day_pinned.png'),
     );
   });
 
