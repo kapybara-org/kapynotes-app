@@ -15,7 +15,7 @@ import 'package:kapy_notes/ui/editor_panes.dart' show NoteDragFeedback;
 import 'package:kapy_notes/ui/folders_ui.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/notes_list.dart'
-    show NotesGroupHeading, NotesListControls;
+    show NoteCardFace, NoteListRowFace, NotesGroupHeading, NotesListControls;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -1418,6 +1418,82 @@ void main() {
       expect(find.text('Moved to “Clients”'), findsOneWidget);
     });
 
+    testWidgets('Add notes works from the keyboard: Tab reaches a note, Space '
+        'ticks it, and Enter on Add adds it', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      await tester.tap(find.byKey(const ValueKey('add-notes-field')));
+      await tester.pumpAndSettle();
+
+      Future<void> tabTo(Finder target) async {
+        bool focused() {
+          final at = FocusManager.instance.primaryFocus?.context;
+          return at != null &&
+              find
+                  .descendant(
+                    of: target,
+                    matching: find.byElementPredicate(
+                      (element) => identical(element, at),
+                    ),
+                  )
+                  .evaluate()
+                  .isNotEmpty;
+        }
+
+        for (var step = 0; step < 8 && !focused(); step++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+        }
+        expect(focused(), isTrue);
+      }
+
+      await tabTo(tick(dentist.id));
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(addLabel(tester), 'Add 1 note');
+      await tabTo(addButton);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), work.id);
+      expect(find.text('Added to “Work”'), findsOneWidget);
+    });
+
+    testWidgets('at 2× text, Add notes, its rows and New folder keep their '
+        'words whole', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      await tester.tap(tick(dentist.id));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(tester.getSize(tick(dentist.id)).height, greaterThan(48));
+      for (final finder in [
+        find.byKey(const ValueKey('folders-new')),
+        tick(dentist.id),
+        addButton,
+      ]) {
+        final box = tester.getRect(finder);
+        for (final text in tester.widgetList<Text>(
+          find.descendant(of: finder, matching: find.byType(Text)),
+        )) {
+          final rect = tester.getRect(find.byWidget(text));
+          expect(box.contains(rect.topLeft), isTrue, reason: text.data);
+          expect(
+            box.inflate(0.5).contains(rect.bottomRight),
+            isTrue,
+            reason: text.data,
+          );
+        }
+      }
+    });
+
     testWidgets('a note in the tree lights its whole row under the pointer, '
         'not only its words', (tester) async {
       await pumpWindow(tester);
@@ -1439,6 +1515,20 @@ void main() {
       addTearDown(mouse.removePointer);
       await tester.pumpAndSettle();
       expect(tester.getSize(face).width, width);
+
+      // The notes list's rows and cards keep theirs too.
+      await mouse.moveTo(Offset.zero);
+      await tapKey(tester, 'notes-switch-notes');
+      final listFace = find.descendant(
+        of: listed(call.id),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is NoteCardFace || widget is NoteListRowFace,
+        ),
+      );
+      final listWidth = tester.getSize(listFace).width;
+      await mouse.moveTo(tester.getCenter(listFace));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(listFace).width, listWidth);
     });
   });
 }
