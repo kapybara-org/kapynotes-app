@@ -18,6 +18,11 @@ on:
   pull_request:
     types: [labeled]
   workflow_dispatch:
+    inputs:
+      tests:
+        description: The only tests to run, such as phone_recording_away; empty runs them all
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -30,6 +35,7 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.47.2'
+  PHONE_TESTS: ${{ inputs.tests }}
 
 jobs:
   android:
@@ -151,6 +157,18 @@ jobs:
         run: |
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.ContinuousPath KeyboardContinuousPathEnabled -bool false
+
+      # AXe presses the iPhone's Lock and Home buttons for
+      # phone_recording_away: from Xcode 27 a simulator takes button presses
+      # only through its own HID service, which simctl has no command for.
+      - name: Install AXe
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/axe.tar.gz" https://github.com/cameroncooke/AXe/releases/download/v2.1.1/AXe-macOS-v2.1.1-universal.tar.gz
+          echo "8788838b1b32059d143cf06541b72fcaead85c16274457cdbff086510a5b17fa  $RUNNER_TEMP/axe.tar.gz" | shasum -a 256 -c -
+          mkdir "$RUNNER_TEMP/axe"
+          tar -xzf "$RUNNER_TEMP/axe.tar.gz" -C "$RUNNER_TEMP/axe"
+          echo "$RUNNER_TEMP/axe" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/axe/axe" --version
 
       - name: Screenshots on an iOS 27.2 iPhone
         env:

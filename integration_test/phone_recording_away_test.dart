@@ -181,14 +181,14 @@ void main() {
         await deviceShot('recording-away-lock-screen-paused');
       }
       await recording.resume();
-      await deviceAction('dark');
       if (locked) expect(await deviceAction('unlock'), isNull);
       await wait(2);
       expect(await deviceAction('other-app'), isNull);
       // Settings can take seconds to open on CI, and the island shows the
-      // recording only once it has.
+      // recording only once it has. Its black shows best on light Settings.
       await wait(8);
       await deviceShot('recording-away-dynamic-island');
+      await deviceAction('dark');
       // For the run's log only: whether ActivityKit started the activity
       // and the widget extension drew it.
       await deviceAction('system-log');

@@ -101,14 +101,19 @@ end run
 /// itself handled (integration_test/screenshot.dart's `deviceAction`), and
 /// returns why it could not, or null.
 ///
-/// A simulator has no lock button, so Lock and Home are chosen for it from
-/// the menus of Simulator, or of Device Hub from Xcode 27, which needs the
-/// host's permission to control the computer. Nor is its microphone granted
-/// here: an iPhone ends an app whose permissions change while it runs, so
-/// tool/ci/phone_screenshots.sh grants it before the app starts. Pressing a
-/// notification's button reads the emulator's screen for the button's
-/// label, `tap:Pause`, and unfolding a folded notification reads it for the
-/// notification's title, `expand:Recording paused`.
+/// A simulator's Lock and Home buttons are pressed with AXe
+/// (https://github.com/cameroncooke/AXe) when it is on the PATH, as on CI:
+/// from Xcode 27 a simulator takes button presses only through its own HID
+/// service, which simctl has no command for, and Device Hub shows a script on
+/// CI no menus. Without AXe they are chosen from the menus of Simulator, or of
+/// Device Hub, which needs the host's permission to control the computer.
+///
+/// Nor is a simulator's microphone granted here: an iPhone ends an app whose
+/// permissions change while it runs, so tool/ci/phone_screenshots.sh grants
+/// it before the app starts. Pressing a notification's button reads the
+/// emulator's screen for the button's label, `tap:Pause`, and unfolding a
+/// folded notification reads it for the notification's title,
+/// `expand:Recording paused`.
 Future<String?> _act(String device, String action) async {
   Future<String?> run(String executable, List<String> arguments) async {
     final result = await Process.run(executable, arguments);
@@ -161,6 +166,14 @@ Future<String?> _act(String device, String action) async {
     return chosen.exitCode == 0 ? null : '$item: ${chosen.stderr}'.trim();
   }
 
+  Future<String?> press(String button) async {
+    try {
+      return await run('axe', ['button', button, '--udid', device]);
+    } on ProcessException {
+      return simulatorMenu(button == 'lock' ? 'Lock' : 'Home');
+    }
+  }
+
   // Whether the simulator's screen has gone dark, as SpringBoard tells
   // whoever asks.
   Future<bool> screenOff() async {
@@ -177,15 +190,15 @@ Future<String?> _act(String device, String action) async {
 
   if (_isSimulator(device)) {
     return switch (action) {
-      'lock' => simulatorMenu('Lock'),
+      'lock' => press('lock'),
       // Lock again lights a screen that locking turned off, as the side
       // button does.
-      'wake' => screenOff().then((off) => off ? simulatorMenu('Lock') : null),
+      'wake' => screenOff().then((off) => off ? press('lock') : null),
       // A first Home lights a dark Lock Screen, and with no passcode either
       // press opens the phone; one more on the Home Screen does nothing.
-      'unlock' => simulatorMenu(
-        'Home',
-      ).then((error) async => error ?? await simulatorMenu('Home')),
+      'unlock' => press(
+        'home',
+      ).then((error) async => error ?? await press('home')),
       'other-app' => simctl(['launch', device, 'com.apple.Preferences']),
       'back' => simctl(['launch', device, _app]),
       'light' || 'dark' => simctl(['ui', device, 'appearance', action]),

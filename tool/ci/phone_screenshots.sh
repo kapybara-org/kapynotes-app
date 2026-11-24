@@ -13,13 +13,20 @@
 #
 # Every test file runs even when one fails, and the script exits 1 if any did.
 # A test that hangs is stopped after 10 minutes, with a screenshot of where.
+# PHONE_TESTS, when set, names the only tests to run, such as
+# `phone_recording_away`, for a run that checks one test.
 set -u
 
 device=$1
 status=0
 export KAPYNOTES_DEVICE_SHOTS=$device
 
+wanted() {
+  [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
+}
+
 drive() {
+  wanted "$1" || return 0
   flutter drive --no-pub -d "$device" \
     --driver test_driver/integration_test.dart \
     --target "integration_test/$1_test.dart" \
@@ -47,7 +54,7 @@ if ! adb -s "$device" get-state >/dev/null 2>&1; then
 fi
 drive phone_recording_away
 
-if adb -s "$device" get-state >/dev/null 2>&1; then
+if adb -s "$device" get-state >/dev/null 2>&1 && wanted phone_bar_android; then
   mode=$(adb -s "$device" shell settings get secure navigation_mode | tr -d '\r')
   navbar threebutton
   drive phone_bar_android
