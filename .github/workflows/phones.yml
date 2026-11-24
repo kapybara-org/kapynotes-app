@@ -160,8 +160,14 @@ jobs:
 
       # AXe presses the iPhone's Lock and Home buttons for
       # phone_recording_away: from Xcode 27 a simulator takes button presses
-      # only through its own HID service, which simctl has no command for.
+      # only through its own HID service, which simctl has no command for. It
+      # also reads the iPhone's screen, Dynamic Island included, which
+      # simctl's screenshot leaves out. A first read of the iPhone's
+      # accessibility loads the Xcode frameworks its touches need, which on a
+      # cold runner take longer than a touch allows.
       - name: Install AXe
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           curl -fsSL -o "$RUNNER_TEMP/axe.tar.gz" https://github.com/cameroncooke/AXe/releases/download/v2.1.1/AXe-macOS-v2.1.1-universal.tar.gz
           echo "8788838b1b32059d143cf06541b72fcaead85c16274457cdbff086510a5b17fa  $RUNNER_TEMP/axe.tar.gz" | shasum -a 256 -c -
@@ -169,6 +175,10 @@ jobs:
           tar -xzf "$RUNNER_TEMP/axe.tar.gz" -C "$RUNNER_TEMP/axe"
           echo "$RUNNER_TEMP/axe" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/axe/axe" --version
+          for try in 1 2 3; do
+            "$RUNNER_TEMP/axe/axe" describe-ui --udid "$UDID" >/dev/null && break
+            sleep 5
+          done
 
       - name: Screenshots on an iOS 27.2 iPhone
         env:

@@ -175,26 +175,33 @@ Future<String?> _act(String device, String action) async {
   }
 
   // A touch at [x], [y] on the simulator's screen, in points, lifted after
-  // [hold] seconds. A bare touch, unlike AXe's tap, reads nothing of the
-  // screen first, which the Lock Screen gives no time for.
+  // [hold] seconds. AXe readies the simulator's accessibility for each
+  // touch, which ran out of time on the Lock Screen, so a touch gets three
+  // tries.
   Future<String?> touch(int x, int y, {double hold = 0.1}) async {
-    try {
-      return await run('axe', [
-        'touch',
-        '-x',
-        '$x',
-        '-y',
-        '$y',
-        '--down',
-        '--up',
-        '--delay',
-        '$hold',
-        '--udid',
-        device,
-      ]);
-    } on ProcessException catch (error) {
-      return 'a touch needs AXe: ${error.message}';
+    String? error;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await Future<void>.delayed(const Duration(seconds: 2));
+      try {
+        error = await run('axe', [
+          'touch',
+          '-x',
+          '$x',
+          '-y',
+          '$y',
+          '--down',
+          '--up',
+          '--delay',
+          '$hold',
+          '--udid',
+          device,
+        ]);
+      } on ProcessException catch (missing) {
+        return 'a touch needs AXe: ${missing.message}';
+      }
+      if (error == null) return null;
     }
+    return error;
   }
 
   // What SpringBoard tells whoever asks about the simulator's screen:
@@ -462,26 +469,41 @@ Future<String?> _tapAgain(String device) async {
 
 /// Saves what [device]'s screen shows as
 /// `build/screenshots/<name>-device.png`, or says why it could not.
+///
+/// A simulator's screen is read with AXe when it is on the PATH, as on CI:
+/// simctl's screenshot leaves out the Dynamic Island.
 Future<String?> _readScreen(String device, String name) async {
   final file = File('build/screenshots/$name-device.png');
   await file.parent.create(recursive: true);
-  final simulator = _isSimulator(device);
-  final read = simulator
-      ? await Process.run('xcrun', [
-          'simctl',
-          'io',
-          device,
-          'screenshot',
-          file.path,
-        ])
-      : await Process.run('adb', [
-          '-s',
-          device,
-          'exec-out',
-          'screencap',
-          '-p',
-        ], stdoutEncoding: null);
+  if (_isSimulator(device)) {
+    ProcessResult read;
+    try {
+      read = await Process.run('axe', [
+        'screenshot',
+        '--udid',
+        device,
+        '--output',
+        file.path,
+      ]);
+    } on ProcessException {
+      read = await Process.run('xcrun', [
+        'simctl',
+        'io',
+        device,
+        'screenshot',
+        file.path,
+      ]);
+    }
+    return read.exitCode == 0 ? null : '${read.stderr}'.trim();
+  }
+  final read = await Process.run('adb', [
+    '-s',
+    device,
+    'exec-out',
+    'screencap',
+    '-p',
+  ], stdoutEncoding: null);
   if (read.exitCode != 0) return '${read.stderr}'.trim();
-  if (!simulator) await file.writeAsBytes(read.stdout as List<int>);
+  await file.writeAsBytes(read.stdout as List<int>);
   return null;
 }
