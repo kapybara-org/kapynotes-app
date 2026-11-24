@@ -1333,8 +1333,8 @@ void main() {
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, View all at the heading's end, and amounts in mono.
   // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so its
-  // note opens, lit in the whole list, and the fill has left today, whose
-  // weekday stays sage.
+  // notes are the tabs, lit in the whole list, with the notice that offers
+  // Undo, and the fill has left today, whose weekday stays sage.
   for (final brightness in Brightness.values) {
     testWidgets('desktop ${brightness.name} week, a day picked', (
       tester,
@@ -1372,24 +1372,6 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_week_month_open.png'),
-    );
-  });
-
-  // With the list hidden there is nothing to narrow, so a day lists its
-  // notes under the week.
-  testWidgets('desktop dark week, a day listed', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(1280, 800),
-      brightness: Brightness.dark,
-      withWeek: true,
-      sidebarVisible: false,
-    );
-    await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_dark_week_day_listed.png'),
     );
   });
 

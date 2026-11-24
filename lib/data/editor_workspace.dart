@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'local_store.dart';
+import 'note_days.dart' show dayKey, dayOfKey;
 import 'writing_streak.dart';
 
 /// Which part of a pane a dragged note is over, across its width.
@@ -99,6 +100,14 @@ typedef _Place = ({String id, bool folder});
 /// A closed tab: its notes left to right, or its folder.
 typedef _Closed = ({List<String> notes, String? folderId});
 
+/// The tabs a day's notes took the place of: in the row's order, most
+/// recently used first, and the one that was in front.
+typedef _Kept = ({
+  List<EditorTab> tabs,
+  List<EditorTab> recent,
+  EditorTab front,
+});
+
 /// The notes and folders open on the desktop: the tabs over the page, the
 /// notes side by side in the tab in front, and how wide each of them is.
 ///
@@ -106,7 +115,8 @@ typedef _Closed = ({List<String> notes, String? folderId});
 /// [openInNewTab] opens one in a tab of its own behind it. [openFolder] and
 /// [openFolderInNewTab] do the same with a folder. A note or a folder is open
 /// in one place at most: opening one that is open already brings it forward
-/// where it is.
+/// where it is. [showDay] opens a day's notes as the tabs, in place of the
+/// ones open, and [leaveDay] brings those back.
 ///
 /// Tabs belong to this device and are never synced. They come back after a
 /// restart on the same day, and [rollOver] closes them on the first open of a
@@ -125,6 +135,10 @@ class EditorWorkspace {
 
   /// How far back [back] reaches.
   static const int historyLimit = 50;
+
+  /// The most notes [showDay] opens as tabs. The row shows what fits and
+  /// folds the rest into its "N more".
+  static const int dayTabLimit = 12;
 
   final LocalStore _store;
 
@@ -148,6 +162,15 @@ class EditorWorkspace {
 
   /// The day the tabs belong to.
   int? _day;
+
+  /// The day whose notes [showDay] opened as the tabs, and the tabs they took
+  /// the place of, kept for [leaveDay].
+  DateTime? _dayInTabs;
+  _Kept? _kept;
+
+  /// The notes [showDay] opened for [_dayInTabs]: a click on the day brings
+  /// back a tab of only these, so it goes without counting as closed.
+  Set<String> _dayNotes = const {};
 
   /// The blank note the day started on.
   String? _draft;
@@ -219,8 +242,18 @@ class EditorWorkspace {
   /// Every note with a tab, on screen or behind.
   Set<String> get tabbedNoteIds => {for (final tab in _tabs) ...tab.noteIds};
 
+  /// The notes in the tabs a day's notes took the place of, for [leaveDay]
+  /// to bring back.
+  Set<String> get keptNoteIds => {
+    for (final tab in _kept?.tabs ?? const <EditorTab>[]) ...tab.noteIds,
+  };
+
   /// The day the tabs belong to.
   int? get day => _day;
+
+  /// The day whose notes [showDay] opened as the tabs, until [leaveDay]. Null
+  /// while the tabs are the reader's own.
+  DateTime? get dayInTabs => _dayInTabs;
 
   /// Where [noteId] is on screen, or -1.
   int paneOf(String noteId) => frontTab?._paneOf(noteId) ?? -1;
@@ -263,57 +296,50 @@ class EditorWorkspace {
     _step = 0;
     _day = today;
     _draft = null;
+    _dayInTabs = null;
+    _dayNotes = const {};
+    _kept = null;
 
     final raw = _store.data[storeKey];
     if (raw is Map) {
       final placed = <String>{};
       final placedFolders = <String>{};
       final saved = raw['tabs'];
-      final restored = <int, EditorTab>{};
-      for (final (index, entry) in (saved is List ? saved : [raw]).indexed) {
-        if (entry case {'folder': final String folderId}) {
-          if (!placedFolders.add(folderId)) continue;
-          final tab = _folderTab(folderId);
-          restored[index] = tab;
-          _tabs.add(tab);
-          continue;
-        }
-        if (entry is! Map || entry['panes'] is! List) continue;
-        final notes = entry['panes'] as List;
-        final weights = entry['weights'];
-        final tab = EditorTab._(_nextId++);
-        for (final (at, id) in notes.indexed) {
-          if (id is! String || !available.contains(id) || !placed.add(id)) {
-            continue;
-          }
-          final weight = weights is List && at < weights.length
-              ? weights[at]
-              : null;
-          tab._panes.add(_newPane(id));
-          tab._weights.add(
-            weight is num && weight.isFinite && weight > 0
-                ? weight.toDouble()
-                : 1,
-          );
-          if (tab._panes.length == maxPanes) break;
-        }
-        if (tab._panes.isEmpty) continue;
-        _normalize(tab);
-        if (entry['active'] case final String id when tab._paneOf(id) >= 0) {
-          tab._active = tab._paneOf(id);
-        }
-        restored[index] = tab;
-        _tabs.add(tab);
-      }
+      final restored = _readTabs(
+        saved is List ? saved : [raw],
+        available,
+        placed: placed,
+        placedFolders: placedFolders,
+      );
+      _tabs.addAll(restored.values);
       if (raw['tab'] case final int index when restored[index] != null) {
         _front = _tabs.indexOf(restored[index]!);
       }
-      _recent.addAll({
-        ?frontTab,
-        if (raw['recent'] case final List order)
-          for (final index in order) ?restored[index],
-        ..._tabs,
-      });
+      _recent.addAll(_recentOf(restored, raw['recent'], front: frontTab));
+      if (raw['dayInTabs'] case final String key) _dayInTabs = dayOfKey(key);
+      if (raw['dayNotes'] case final List ids when _dayInTabs != null) {
+        _dayNotes = {...ids.whereType<String>()};
+      }
+      if (raw['kept'] case final Map kept
+          when _dayInTabs != null && kept['tabs'] is List) {
+        final read = _readTabs(
+          kept['tabs'] as List,
+          available,
+          placed: <String>{},
+          placedFolders: <String>{},
+        );
+        final front = switch (kept['tab']) {
+          final int index => read[index],
+          _ => null,
+        };
+        if (front ?? read.values.firstOrNull case final front?) {
+          _kept = (
+            tabs: [...read.values],
+            recent: _recentOf(read, kept['recent'], front: front),
+            front: front,
+          );
+        }
+      }
       _used.addAll(
         <_Place>{
           if (frontTab?.folderId case final folderId?)
@@ -361,25 +387,88 @@ class EditorWorkspace {
     }
   }
 
+  /// The tabs [saved] holds, by their place in it, with only the notes still
+  /// [available]. A note or a folder already in [placed] or [placedFolders]
+  /// is left out, and each one taken is added there.
+  Map<int, EditorTab> _readTabs(
+    List<Object?> saved,
+    Set<String> available, {
+    required Set<String> placed,
+    required Set<String> placedFolders,
+  }) {
+    final read = <int, EditorTab>{};
+    for (final (index, entry) in saved.indexed) {
+      if (entry case {'folder': final String folderId}) {
+        if (placedFolders.add(folderId)) read[index] = _folderTab(folderId);
+        continue;
+      }
+      if (entry is! Map || entry['panes'] is! List) continue;
+      final notes = entry['panes'] as List;
+      final weights = entry['weights'];
+      final tab = EditorTab._(_nextId++);
+      for (final (at, id) in notes.indexed) {
+        if (id is! String || !available.contains(id) || !placed.add(id)) {
+          continue;
+        }
+        final weight = weights is List && at < weights.length
+            ? weights[at]
+            : null;
+        tab._panes.add(_newPane(id));
+        tab._weights.add(
+          weight is num && weight.isFinite && weight > 0
+              ? weight.toDouble()
+              : 1,
+        );
+        if (tab._panes.length == maxPanes) break;
+      }
+      if (tab._panes.isEmpty) continue;
+      _normalize(tab);
+      if (entry['active'] case final String id when tab._paneOf(id) >= 0) {
+        tab._active = tab._paneOf(id);
+      }
+      read[index] = tab;
+    }
+    return read;
+  }
+
+  /// The tabs [read], most recently used first: [front], then as [order]
+  /// lists their places, then any it leaves out in the row's order.
+  static List<EditorTab> _recentOf(
+    Map<int, EditorTab> read,
+    Object? order, {
+    required EditorTab? front,
+  }) => [
+    ...{
+      ?front,
+      if (order is List)
+        for (final index in order) ?read[index],
+      ...read.values,
+    },
+  ];
+
   /// The first open of [today], when the tabs belong to an earlier day: every
-  /// tab closes for [reopen] to bring back, the most recently used first,
-  /// Back's walk starts over, and the row is left empty for the caller to
-  /// start the day in. Returns the notes that closed, or null on the day the
-  /// tabs already belong to.
+  /// tab closes for [reopen] to bring back, any that a day's notes took the
+  /// place of ahead of the day's, each the most recently used first, Back's
+  /// walk starts over, and the row is left empty for the caller to start the
+  /// day in. Returns the notes that closed, or null on the day the tabs
+  /// already belong to.
   List<String>? rollOver(int today) {
     if (_day == today) return null;
     _settle();
-    final closing = [for (final tab in _recent) ...tab.noteIds];
-    for (final tab in _recent.reversed) {
+    final closing = [...?_kept?.recent, ..._recent];
+    for (final tab in closing.reversed) {
       _remember(tab);
     }
     _tabs.clear();
     _recent.clear();
     _used.clear();
+    _dayInTabs = null;
+    _dayNotes = const {};
+    _kept = null;
     _front = 0;
     _day = today;
     _persist();
-    return closing;
+    return [for (final tab in closing) ...tab.noteIds];
   }
 
   /// Shows [noteId] in the focused pane of the tab in front, in place of the
@@ -510,6 +599,72 @@ class EditorWorkspace {
     }
     _persist();
     return back;
+  }
+
+  /// Opens [noteIds], [day]'s notes, as the tabs in their order, one note to
+  /// a tab and the first in front, up to [dayTabLimit] of them. They take the
+  /// place of the tabs open now. The tabs open before the first day was shown
+  /// are kept for [leaveDay] to bring back. Another day's tabs go, for
+  /// [reopen] to bring back those holding a note that day didn't open. With
+  /// no notes the row is left empty for the caller to write on [day]. Returns
+  /// how many tabs opened.
+  int showDay(DateTime day, List<String> noteIds) {
+    _settle();
+    if (_dayInTabs != null) {
+      _rememberDayTabs();
+    } else if (frontTab case final front?) {
+      _kept = (tabs: [..._tabs], recent: [..._recent], front: front);
+    }
+    _dayInTabs = day;
+    _dayNotes = noteIds.toSet().take(dayTabLimit).toSet();
+    _tabs.clear();
+    _recent.clear();
+    _front = 0;
+    for (final id in _dayNotes) {
+      _addTab([id], front: _tabs.isEmpty);
+    }
+    // The row folds the least recently used first, so the day's last notes
+    // go into "N more" before its first.
+    _recent
+      ..clear()
+      ..addAll(_tabs);
+    _useFront();
+    _persist();
+    return _tabs.length;
+  }
+
+  /// Brings back the tabs [showDay] took the place of, as they were, the one
+  /// in front included. The day's go, for [reopen] to bring back those
+  /// holding a note the day didn't open. Where none of the tabs from before
+  /// is left the day's stay. Returns whether a day was shown.
+  bool leaveDay() {
+    if (_dayInTabs == null) return false;
+    _settle();
+    final kept = _kept;
+    _dayInTabs = null;
+    _kept = null;
+    if (kept != null && kept.tabs.isNotEmpty) {
+      _rememberDayTabs();
+      _tabs
+        ..clear()
+        ..addAll(kept.tabs);
+      _recent
+        ..clear()
+        ..addAll(kept.recent);
+      _front = _tabs.indexOf(
+        _tabs.contains(kept.front) ? kept.front : _recent.first,
+      );
+      for (final tab in _tabs) {
+        if (tab.folderId case final folderId?) _forgetClosedFolder(folderId);
+        for (final id in tab.noteIds) {
+          _forgetClosed(id);
+        }
+      }
+      _useFront();
+    }
+    _dayNotes = const {};
+    _persist();
+    return true;
   }
 
   /// Opens an empty pane to the right of the focused one, and focuses it.
@@ -686,10 +841,10 @@ class EditorWorkspace {
   }
 
   /// Takes notes that were archived, deleted or hidden out of the tabs, the
-  /// closed ones and Back's walk. A pane that held one closes beside other
-  /// panes, and a tab left with no note closes. With no tab open at all,
-  /// [fallbackId] opens, or else the first note there is: the page is never
-  /// blank while there is a note to show.
+  /// ones a day's notes took the place of, the closed ones and Back's walk. A
+  /// pane that held one closes beside other panes, and a tab left with no note
+  /// closes. With no tab open at all, [fallbackId] opens, or else the first
+  /// note there is: the page is never blank while there is a note to show.
   ///
   /// A pane that was already empty is left alone: it is waiting for the
   /// reader to choose, and a note arriving in it unasked would be a surprise.
@@ -714,6 +869,19 @@ class EditorWorkspace {
     for (final id in leaving) {
       _detach(id);
     }
+    if (_kept case final kept?) {
+      for (final tab in [...kept.tabs]) {
+        for (final id in tab.noteIds.where(gone)) {
+          changed = true;
+          if (tab.noteIds.length > 1) {
+            _removeAt(tab, tab._paneOf(id));
+          } else {
+            kept.tabs.remove(tab);
+            kept.recent.remove(tab);
+          }
+        }
+      }
+    }
     final fallback = available.contains(fallbackId)
         ? fallbackId
         : available.firstOrNull;
@@ -726,9 +894,9 @@ class EditorWorkspace {
     return changed;
   }
 
-  /// Takes folders that were deleted out of the tabs, the closed ones and
-  /// Back's walk. A folder's tab closes without counting as closed. Returns
-  /// whether anything changed.
+  /// Takes folders that were deleted out of the tabs, the ones a day's notes
+  /// took the place of, the closed ones and Back's walk. A folder's tab
+  /// closes without counting as closed. Returns whether anything changed.
   bool reconcileFolders(bool Function(String folderId) live) {
     bool gone(String? folderId) => folderId != null && !live(folderId);
     bool goneFolder(_Place place) => place.folder && gone(place.id);
@@ -736,7 +904,13 @@ class EditorWorkspace {
       for (final tab in _tabs)
         if (gone(tab.folderId)) tab,
     ];
+    final kept = _kept;
+    final keptLeaving = [
+      for (final tab in kept?.tabs ?? const <EditorTab>[])
+        if (gone(tab.folderId)) tab,
+    ];
     if (leaving.isEmpty &&
+        keptLeaving.isEmpty &&
         !_closed.any((tab) => gone(tab.folderId)) &&
         !_used.any(goneFolder)) {
       return false;
@@ -744,6 +918,10 @@ class EditorWorkspace {
     _settle();
     for (final tab in leaving) {
       _removeTab(_tabs.indexOf(tab));
+    }
+    for (final tab in keptLeaving) {
+      kept!.tabs.remove(tab);
+      kept.recent.remove(tab);
     }
     _closed.removeWhere((tab) => gone(tab.folderId));
     _used.removeWhere(goneFolder);
@@ -893,6 +1071,16 @@ class EditorWorkspace {
     }
   }
 
+  /// Closes the day's tabs as they go, all but those of only notes the day
+  /// opened, which a click on the day brings back.
+  void _rememberDayTabs() {
+    for (final tab in _recent.reversed) {
+      if (tab.folderId != null || !_dayNotes.containsAll(tab.noteIds)) {
+        _remember(tab);
+      }
+    }
+  }
+
   void _remember(EditorTab tab) {
     _closed.insert(0, (notes: tab.noteIds, folderId: tab.folderId));
     if (_closed.length > closedLimit) _closed.length = closedLimit;
@@ -987,24 +1175,26 @@ class EditorWorkspace {
     }
   }
 
-  void _persist({bool immediate = true}) {
-    // An empty pane is a question put to the reader, and a restart is not the
-    // moment to ask it again, so only panes holding a note are kept.
-    final value = <String, Object?>{
-      'tabs': [
-        for (final tab in _tabs)
-          if (tab.folderId case final folderId?)
-            {'folder': folderId}
-          else
-            {
-              'panes': tab.noteIds,
-              'weights': [
-                for (final (index, pane) in tab._panes.indexed)
-                  if (pane.noteId != null) tab._weights[index],
-              ],
-              'active': ?tab._panes[tab._active].noteId,
-            },
+  /// [tab] as the file keeps it: its folder, or its notes with their widths
+  /// and the focused one. An empty pane is a question put to the reader, and
+  /// a restart is not the moment to ask it again, so only panes holding a
+  /// note are kept.
+  static Map<String, Object?> _tabJson(EditorTab tab) => switch (tab.folderId) {
+    final folderId? => {'folder': folderId},
+    null => {
+      'panes': tab.noteIds,
+      'weights': [
+        for (final (index, pane) in tab._panes.indexed)
+          if (pane.noteId != null) tab._weights[index],
       ],
+      'active': ?tab._panes[tab._active].noteId,
+    },
+  };
+
+  void _persist({bool immediate = true}) {
+    final kept = _kept;
+    final value = <String, Object?>{
+      'tabs': [for (final tab in _tabs) _tabJson(tab)],
       'tab': _front,
       'recent': [for (final tab in _recent) _tabs.indexOf(tab)],
       'used': [
@@ -1016,6 +1206,16 @@ class EditorWorkspace {
       ],
       'day': ?_day,
       'draft': ?_draft,
+      if (_dayInTabs case final day?) ...{
+        'dayInTabs': dayKey(day),
+        'dayNotes': [..._dayNotes],
+      },
+      if (kept != null)
+        'kept': {
+          'tabs': [for (final tab in kept.tabs) _tabJson(tab)],
+          'tab': kept.tabs.indexOf(kept.front),
+          'recent': [for (final tab in kept.recent) kept.tabs.indexOf(tab)],
+        },
     };
     if (immediate) {
       _store.putNow(storeKey, value);
