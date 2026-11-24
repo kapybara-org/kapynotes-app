@@ -767,9 +767,7 @@ void main() {
       await expectSwipes(tester, 'Budget', 'budget');
     });
 
-    testWidgets("a folder's notes, a subfolder's, and Not in a folder", (
-      tester,
-    ) async {
+    testWidgets("a folder's notes and a subfolder's", (tester) async {
       final work = folders.create('Work')!;
       final clients = folders.create('Clients', parentId: work.id)!;
       folders.file(['offsite'], work.id);
@@ -778,8 +776,6 @@ void main() {
       await pump(tester);
       await tester.tap(find.byKey(const ValueKey('bar-folders')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('folders-loose-heading')), findsOne);
-      await expectSwipes(tester, 'Groceries', 'groceries');
 
       await tester.tap(find.byKey(ValueKey('folder-${clients.id}')));
       await tester.pumpAndSettle();

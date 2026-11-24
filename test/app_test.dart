@@ -9607,28 +9607,189 @@ void main() {
         );
       });
 
-      testWidgets('Not in a folder is a serif heading over Home rows (M02)', (
+      testWidgets('Folders lists only folders, and the notes inside one opened '
+          'in the tree: a note in no folder waits for Add notes', (
         tester,
       ) async {
         await pumpFolders(tester);
         await tap(tester, barFolders);
-        final heading = find.byKey(const ValueKey('folders-loose-heading'));
-        final words = tester.widget<Text>(
-          find.descendant(
-            of: heading,
-            matching: find.byKey(const ValueKey('phone-day-heading')),
-          ),
-        );
-        expect(words.data, 'Not in a folder');
-        final style = words.style!;
-        expect(style.fontFamily, AppFonts.title);
-        expect(style.fontSize, 19);
+        for (final folder in [work, clients, acme]) {
+          await tap(
+            tester,
+            find.byKey(ValueKey('folder-chevron-${folder.id}')),
+          );
+        }
+        expect(brief, findsOneWidget);
+        expect(groceries, findsNothing);
+        expect(find.text('Not in a folder'), findsNothing);
+      });
+
+      testWidgets('with no folders yet, Folders says so under its tiles', (
+        tester,
+      ) async {
+        folders = FolderStore(store);
+        await folders.load();
+        await notes.load();
+        notes.create(body: 'Groceries\nOat milk');
+        await pumpApp(tester, size: const Size(393, 852), folders: folders);
+        await showNotesList(tester);
+        await tap(tester, barFolders);
+        final empty = find.text('No folders yet');
+        expect(empty, findsOneWidget);
         expect(
-          find.descendant(of: heading, matching: find.text('1')),
+          find.text('Make a folder, then pick the notes that go in it.'),
+          findsOneWidget,
+        );
+        expect(
+          tester.getRect(empty).top,
+          greaterThan(tester.getRect(tile).bottom),
+        );
+        expect(groceries, findsNothing);
+      });
+
+      testWidgets("a folder's page has Add notes after its filter, 44 pt, and "
+          'an empty one says so with Add notes of its own', (tester) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        final add = find.byKey(const ValueKey('phone-add-notes'));
+        final filters = find.byKey(const ValueKey('phone-filters'));
+        final well = tester.getRect(
+          find.byKey(const ValueKey('sidebar-search-box')),
+        );
+        expect(tester.getSize(add), const Size(44, 44));
+        expect(tester.getRect(filters).left, greaterThan(well.right));
+        expect(
+          tester.getRect(add).left,
+          moreOrLessEquals(tester.getRect(filters).right),
+        );
+        expect(tester.getRect(add).center.dy, moreOrLessEquals(well.center.dy));
+        expect(find.text('Nothing in this folder yet'), findsNothing);
+
+        final personal = folders.create('Personal')!;
+        await tap(tester, find.byKey(const ValueKey('page-back')));
+        await tap(tester, find.byKey(ValueKey('folder-${personal.id}')));
+        expect(find.text('Nothing in this folder yet'), findsOneWidget);
+        await tap(tester, find.byKey(const ValueKey('phone-folder-empty-add')));
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('add-notes')),
+            matching: find.text('Add notes to Personal'),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('Add notes lists the notes in no folder; the ticked ones go '
+          'into the folder together, the sheet closes, and Undo takes them '
+          'back out', (tester) async {
+        await pumpFolders(tester);
+        final fish = notes.create(body: 'Fish market\nSaturday');
+        await openFolder(tester, clients);
+        await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+        final sheet = find.byKey(const ValueKey('add-notes'));
+        Finder inSheet(String text) =>
+            find.descendant(of: sheet, matching: find.text(text));
+        expect(inSheet('Add notes to Clients'), findsOneWidget);
+        expect(inSheet('2 not in a folder'), findsOneWidget);
+        expect(inSheet('Fish market'), findsOneWidget);
+        expect(inSheet('Groceries'), findsOneWidget);
+        expect(inSheet('Acme brief'), findsNothing);
+        expect(inSheet('Deck flow'), findsNothing);
+        expect(
+          tester.getRect(inSheet('Fish market')).top,
+          lessThan(tester.getRect(inSheet('Groceries')).top),
+        );
+        final add = find.byKey(const ValueKey('add-notes-add'));
+        expect(
+          find.descendant(of: add, matching: find.text('Add notes')),
+          findsOneWidget,
+        );
+        await tap(tester, add);
+        expect(sheet, findsOneWidget);
+
+        await tap(tester, find.byKey(ValueKey('add-note-${fish.id}')));
+        expect(
+          find.descendant(of: add, matching: find.text('Add 1 note')),
+          findsOneWidget,
+        );
+        await tap(tester, find.byKey(const ValueKey('add-notes-select-all')));
+        expect(
+          find.byKey(const ValueKey('add-notes-select-all')),
           findsNothing,
         );
-        expect(tester.widget<NoteRow>(groceries).style, NoteRowStyle.touch);
+        expect(
+          find.descendant(of: add, matching: find.text('Add 2 notes')),
+          findsOneWidget,
+        );
+        await tap(tester, add);
+        expect(sheet, findsNothing);
+        expect(folders.tree.folderOf(fish.id), clients.id);
+        expect(find.text('Added 2 notes to “Clients”'), findsOneWidget);
+        expect(find.widgetWithText(NoteRow, 'Fish market'), findsOneWidget);
+        expect(groceries, findsOneWidget);
+
+        await tap(tester, find.text('Undo'));
+        expect(folders.tree.folderOf(fish.id), isNull);
+        expect(find.widgetWithText(NoteRow, 'Fish market'), findsNothing);
+        expect(groceries, findsNothing);
       });
+
+      testWidgets("Add notes' Find a note narrows it, and with a note filed "
+          'meanwhile the sheet keeps up, then says every note is in a '
+          'folder', (tester) async {
+        await pumpFolders(tester);
+        final groceriesId = notes.notes
+            .firstWhere((note) => note.title == 'Groceries')
+            .id;
+        await openFolder(tester, clients);
+        await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+        final field = find.byKey(const ValueKey('add-notes-field'));
+        await tester.enterText(field, 'zebra');
+        await tester.pumpAndSettle();
+        expect(find.text('No notes match “zebra”'), findsOneWidget);
+        await tester.enterText(field, 'oat');
+        await tester.pumpAndSettle();
+        final row = find.byKey(ValueKey('add-note-$groceriesId'));
+        expect(row, findsOneWidget);
+        await tap(tester, row);
+
+        folders.file([groceriesId], work.id);
+        await tester.pumpAndSettle();
+        expect(row, findsNothing);
+        expect(find.text('Every note is in a folder'), findsOneWidget);
+        expect(find.byKey(const ValueKey('add-notes-add')), findsNothing);
+      });
+
+      for (final scale in [1.3, 3.1]) {
+        testWidgets('on an SE at $scale× text Add notes fits, and its rows, '
+            'Select all, field and Add take at least 44 pt', (tester) async {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pumpFolders(tester, size: const Size(375, 667));
+          final groceriesId = notes.notes
+              .firstWhere((note) => note.title == 'Groceries')
+              .id;
+          await openFolder(tester, clients);
+          expect(tester.takeException(), isNull);
+          final add = find.byKey(const ValueKey('phone-add-notes'));
+          expect(tester.getSize(add).height, greaterThanOrEqualTo(44));
+          await tap(tester, add);
+          expect(tester.takeException(), isNull);
+          for (final target in [
+            find.byKey(ValueKey('add-note-$groceriesId')),
+            find.byKey(const ValueKey('add-notes-select-all')),
+            find.byKey(const ValueKey('add-notes-field')),
+            find.byKey(const ValueKey('add-notes-add')),
+          ]) {
+            final size = tester.getSize(target);
+            expect(size.height, greaterThanOrEqualTo(44), reason: '$target');
+          }
+          await tap(tester, find.byKey(ValueKey('add-note-$groceriesId')));
+          await tap(tester, find.byKey(const ValueKey('add-notes-add')));
+          expect(tester.takeException(), isNull);
+          expect(folders.tree.folderOf(groceriesId), clients.id);
+        });
+      }
 
       testWidgets('New folder sits beside Search folders, 44 pt, and names '
           'a folder at the top of the tree (M02)', (tester) async {
@@ -9800,7 +9961,7 @@ void main() {
             tester.getRect(find.byKey(ValueKey('folder-${work.id}'))).top,
           ),
         );
-        expect(find.text('Not in a folder'), findsOneWidget);
+        expect(find.text('Not in a folder'), findsNothing);
         expect(find.byKey(const ValueKey('home-title-notes')), findsNothing);
 
         await tap(tester, barNotes);

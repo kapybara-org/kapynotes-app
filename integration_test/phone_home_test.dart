@@ -11,8 +11,10 @@
 // dot after the time. Pinned (KAP-302) is a row of cards over the days,
 // with its count and View all, which opens every pinned note two to a row;
 // Back returns to Notes: the page's arrow and a swipe in from the left edge
-// on both phones, and Android's system back. Each state is taken light and
-// dark, and the list again at 2× text, as screenshots in build/screenshots.
+// on both phones, and Android's system back. Folders lists only folders, and
+// a folder's Add notes is a sheet of the notes in no folder (KAP-342). Each
+// state is taken light and dark, and the list again at 2× text, as
+// screenshots in build/screenshots.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -54,7 +56,11 @@ void main() {
   final older = DateTime(today.year, today.month, today.day - 3);
   late LayoutPrefs prefs;
 
-  Future<void> launch(WidgetTester tester, {bool folders = false}) async {
+  Future<void> launch(
+    WidgetTester tester, {
+    bool folders = false,
+    List<String> unfiled = const [],
+  }) async {
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
     var clock = today;
@@ -79,6 +85,9 @@ void main() {
     final groceries = write('Groceries\nOat milk, lemons', 1, 18, 40);
     final reading = write('Reading list\nThe Overstory', 1, 21, 30);
     final call = write('Call with Arjun\nSend the deck', 0, 9, 12);
+    for (final (index, body) in unfiled.indexed) {
+      write(body, index * 2, 7 + index, 45);
+    }
     clock = today;
     notes.togglePinned(trip);
     notes.togglePinned(reading);
@@ -302,7 +311,7 @@ void main() {
     for (final name in ['Work', 'Clients', 'Acme', 'Product', 'Personal']) {
       expect(find.text(name), findsOneWidget, reason: name);
     }
-    expect(find.text('Not in a folder'), findsOneWidget);
+    expect(find.text('Not in a folder'), findsNothing);
     expect(find.byKey(const ValueKey('folders-upcoming-tile')), findsNothing);
     await board('m02-folders');
 
@@ -321,6 +330,67 @@ void main() {
     await board('m05-plus');
     await tap('phone-new-close');
     expect(find.byKey(const ValueKey('phone-new-close')), findsNothing);
+  });
+
+  testWidgets("Folders lists only folders, and a folder's Add notes is a sheet "
+      'of the notes in no folder: three ticked, then added, and Undo takes '
+      'them back out (KAP-342)', (tester) async {
+    await launch(
+      tester,
+      folders: true,
+      unfiled: const [
+        'Morning pages\nThree pages, longhand',
+        'Kickoff agenda, Northwind\nGoals, people, dates',
+        'Invoice, April\n1,200.00 EUR',
+        'Pricing follow-up\nSend the new tiers',
+      ],
+    );
+    Future<void> tap(Finder finder) async {
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> board(String name, AppearanceMode mode) async {
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: name);
+      await screenshot('phone-$name-${mode.name}');
+    }
+
+    final sheet = find.byKey(const ValueKey('add-notes'));
+    Finder inSheet(String text) =>
+        find.descendant(of: sheet, matching: find.text(text));
+    for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
+      prefs.appearance = mode;
+      await tap(find.byKey(const ValueKey('bar-folders')));
+      expect(find.text('Not in a folder'), findsNothing);
+      expect(row('Groceries'), findsNothing);
+      await board('folders-only-folders', mode);
+
+      await tap(find.text('Clients'));
+      await tap(find.byKey(const ValueKey('phone-add-notes')));
+      expect(inSheet('Add notes to Clients'), findsOneWidget);
+      expect(inSheet('Groceries'), findsOneWidget);
+      expect(inSheet('Call with Arjun'), findsNothing);
+      for (final title in [
+        'Kickoff agenda, Northwind',
+        'Invoice, April',
+        'Pricing follow-up',
+      ]) {
+        await tap(inSheet(title));
+      }
+      expect(inSheet('Add 3 notes'), findsOneWidget);
+      await board('folder-add-notes', mode);
+
+      await tap(find.byKey(const ValueKey('add-notes-add')));
+      expect(sheet, findsNothing);
+      expect(find.text('Added 3 notes to “Clients”'), findsOneWidget);
+      expect(row('Invoice, April'), findsOneWidget);
+      await board('folder-notes-added', mode);
+
+      await tap(find.text('Undo'));
+      expect(row('Invoice, April'), findsNothing);
+      await tap(find.byKey(const ValueKey('page-back')));
+    }
   });
   testWidgets('Archive opens from the filter, and Back comes Home with the '
       'app still open (KAP-305)', (tester) async {
