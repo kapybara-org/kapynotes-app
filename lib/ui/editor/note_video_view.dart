@@ -150,7 +150,6 @@ class _NoteVideoViewState extends State<NoteVideoView> {
               ),
             ] else
               _VideoPlaceholder(
-                palette: palette,
                 label: _failed
                     ? 'Video unavailable'
                     : _ready
@@ -266,19 +265,17 @@ class _VideoUploadCover extends StatelessWidget {
 /// What stands in a video's place until its first frame can be shown: what
 /// is happening, in words under a mark, the video's or, where the video opens
 /// in the video player, the play glyph. Nothing is drawn over the words.
+/// The card is black in either appearance, so the mark and the words keep
+/// the dark appearance's quiet ink, the way the time and the × keep white.
 class _VideoPlaceholder extends StatelessWidget {
-  const _VideoPlaceholder({
-    required this.palette,
-    required this.label,
-    required this.playable,
-  });
+  const _VideoPlaceholder({required this.label, required this.playable});
 
-  final CalcPalette palette;
   final String label;
   final bool playable;
 
   @override
   Widget build(BuildContext context) {
+    final ink = KapyTheme.darkPalette.textTertiary;
     return ColoredBox(
       color: Colors.black,
       child: Center(
@@ -288,14 +285,14 @@ class _VideoPlaceholder extends StatelessWidget {
             KapyIcon(
               playable ? KapyIcons.playRounded : KapyIcons.videoOutlined,
               size: 26,
-              color: palette.textTertiary,
+              color: ink,
             ),
             const SizedBox(height: 7),
             Text(
               label,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: palette.textTertiary,
+                color: ink,
                 fontSize: AppTypeScale.caption,
               ),
             ),

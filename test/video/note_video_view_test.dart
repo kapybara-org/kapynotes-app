@@ -47,6 +47,7 @@ void main() {
     required double scale,
     required String hash,
     NoteImageFetcher? fetch,
+    bool dark = false,
   }) async {
     AppPlatform.debugTargetPlatformOverride = platform;
     tester.platformDispatcher.textScaleFactorTestValue = scale;
@@ -54,7 +55,7 @@ void main() {
     final width = platform == TargetPlatform.android ? 372.0 : 680.0;
     await tester.pumpWidget(
       MaterialApp(
-        theme: KapyTheme.light(),
+        theme: dark ? KapyTheme.dark() : KapyTheme.light(),
         home: Scaffold(
           body: Center(
             child: NoteVideoView(
@@ -142,4 +143,21 @@ void main() {
       stacked(tester, play, 'Opens in your video player');
     });
   }
+
+  testWidgets('the mark and its words keep one light ink on the black card, '
+      'in light and in dark', (tester) async {
+    final ink = KapyTheme.darkPalette.textTertiary;
+    for (final dark in [false, true]) {
+      await pumpVideo(
+        tester,
+        platform: TargetPlatform.android,
+        scale: 1,
+        hash: 'missing',
+        dark: dark,
+      );
+      final words = tester.widget<Text>(find.text('Video unavailable'));
+      expect(words.style?.color, ink, reason: dark ? 'dark' : 'light');
+      expect(tester.widget<KapyIcon>(mark).color, ink);
+    }
+  });
 }
