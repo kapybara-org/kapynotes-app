@@ -84,6 +84,7 @@ import '../../files/file_picker.dart';
 import '../../video/video_ingest.dart';
 import '../../video/video_picker.dart';
 import 'image_drop_target.dart';
+import 'field_scroll_controller.dart';
 import 'file_chip.dart';
 import 'file_insertion.dart';
 import 'image_insertion.dart';
@@ -474,7 +475,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   final ValueNotifier<int> _correctionsArrived = ValueNotifier<int>(0);
   late HighlightingController _controller;
   final _fieldKey = GlobalKey<NoteFieldState>();
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = FieldScrollController();
 
   /// The empty line under the pointer, which shows its "+".
   final _hoverLine = ValueNotifier<int?>(null);
