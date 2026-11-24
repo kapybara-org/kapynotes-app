@@ -14,6 +14,7 @@ import '../../data/blob_store.dart';
 import '../../data/note_attachment.dart';
 import '../../images/note_image_provider.dart';
 import 'note_image_layout.dart';
+import 'placeholder_scale.dart';
 
 /// A quiet first frame in the note. Playback opens edge-to-edge so a moving
 /// surface never competes with the text somebody is editing around it.
@@ -200,19 +201,21 @@ class _NoteVideoViewState extends State<NoteVideoView> {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: IconButton(
-                      key: ValueKey(
-                        'remove-video-${widget.ref.hash}-${widget.ref.offset}',
-                      ),
-                      tooltip: 'Remove video',
-                      onPressed: widget.onRemove,
-                      icon: const KapyIcon(KapyIcons.closeRounded, size: 17),
-                      color: Colors.white,
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.black.withValues(alpha: 0.58),
-                        minimumSize: const Size.square(30),
-                        maximumSize: const Size.square(30),
-                        padding: EdgeInsets.zero,
+                    child: PlaceholderTooltip(
+                      message: 'Remove video',
+                      child: IconButton(
+                        key: ValueKey(
+                          'remove-video-${widget.ref.hash}-${widget.ref.offset}',
+                        ),
+                        onPressed: widget.onRemove,
+                        icon: const KapyIcon(KapyIcons.closeRounded, size: 17),
+                        color: Colors.white,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black.withValues(alpha: 0.58),
+                          minimumSize: const Size.square(30),
+                          maximumSize: const Size.square(30),
+                          padding: EdgeInsets.zero,
+                        ),
                       ),
                     ),
                   ),
