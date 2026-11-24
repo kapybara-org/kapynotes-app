@@ -18,7 +18,9 @@
 # as an app that hangs at launch, where that 10 minutes never starts, is
 # stopped with everything it started, counts as failed, and the next file runs.
 # PHONE_TESTS, when set, names the only tests to run, such as
-# `phone_recording_away`, for a run that checks one test.
+# `phone_recording_away`, for a run that checks one test. A name with no
+# integration_test/<name>_test.dart fails the run, so a typo that would run
+# nothing can't pass.
 set -u
 
 device=$1
@@ -31,6 +33,13 @@ mkdir -p build/screenshots
 wanted() {
   [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
 }
+
+for name in ${PHONE_TESTS:-}; do
+  if [[ ! -f integration_test/${name}_test.dart ]]; then
+    echo "::error::PHONE_TESTS names $name, which has no integration_test/${name}_test.dart"
+    exit 1
+  fi
+done
 
 drive() {
   wanted "$1" || return 0
