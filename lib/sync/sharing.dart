@@ -1210,6 +1210,7 @@ class SharingNotice {
     this.message, {
     this.leaveSpaceId,
     this.isError = false,
+    this.arrived = false,
   });
 
   factory SharingNotice.shared({
@@ -1221,6 +1222,7 @@ class SharingNotice {
         ? '$from shared ${_named(notes.single)} with you'
         : '$from shared ${notes.length} notes with you',
     leaveSpaceId: leaveSpaceId,
+    arrived: true,
   );
 
   factory SharingNotice.access({
@@ -1269,6 +1271,10 @@ class SharingNotice {
 
   /// Whether it says something went wrong.
   final bool isError;
+
+  /// Whether it says notes were shared with you, which a phone's notice
+  /// shows with two people.
+  final bool arrived;
 
   static String _named(Note note) {
     final title = note.title.trim();

@@ -9,6 +9,7 @@ import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/phone_keyboard.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/sync/identity.dart';
@@ -570,6 +571,172 @@ void main() {
       expect(bobOnServer(), isTrue);
       expect(server.outbox.length, invitations);
       expect(alice.sharing.memberOn(note.id, bob.email), isNotNull);
+    });
+
+    for (final (platform, icon) in [
+      (TargetPlatform.iOS, KapyIcons.checkCircleRounded),
+      (TargetPlatform.macOS, KapyIcons.checkRounded),
+    ]) {
+      testWidgets(
+        'on ${platform.name}, the removal’s notice shows '
+        '${icon == KapyIcons.checkRounded ? 'the tick it always has' : 'a check in a circle'}',
+        (tester) async {
+          AppPlatform.debugTargetPlatformOverride = platform;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          await sharedWithBobAndCarol(tester);
+          await openSheet(tester, alice.notes.byId(note.id)!, alice);
+          await removeBob(tester);
+
+          expect(
+            tester
+                .widget<KapyIcon>(
+                  find.byKey(const ValueKey('toast-status-icon')),
+                )
+                .icon,
+            icon,
+          );
+          await tester.tap(find.text('Undo'));
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 8));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 200)),
+          );
+        },
+      );
+    }
+
+    testWidgets('on a phone, the removal’s notice takes the footer’s place, '
+        'clear of the row above it', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.reset);
+      await sharedWithBobAndCarol(tester);
+      await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      final footer = tester.getRect(
+        find.byWidgetPredicate((w) => w is ToastClearance && w.cover),
+      );
+      await removeBob(tester);
+
+      final card = tester.getRect(find.byKey(const ValueKey('toast-surface')));
+      expect(card.height, 52 + 1.5, reason: 'its own height, not the row’s');
+      expect(card.top, lessThanOrEqualTo(footer.top));
+      expect(card.bottom, greaterThanOrEqualTo(footer.bottom));
+      for (final label in ['Stop sharing', 'Done']) {
+        final words = tester.getRect(find.text(label));
+        expect(card.contains(words.topLeft), isTrue, reason: label);
+        expect(card.contains(words.bottomRight), isTrue, reason: label);
+      }
+      final above = tester.getRect(
+        find.byKey(ValueKey('member-row-${carol.userId}')),
+      );
+      expect(card.top - above.bottom, greaterThanOrEqualTo(8));
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 8));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+    });
+
+    group('on a phone, a notice over the footer', () {
+      const long =
+          'Removed Christopher Montgomery-Whitfield from this note and from '
+          'every other note in the share';
+      final surface = find.byKey(const ValueKey('toast-surface'));
+
+      Future<void> phoneSheet(WidgetTester tester, {double inset = 0}) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.padding = FakeViewPadding(bottom: inset);
+        addTearDown(tester.view.reset);
+        await sharedWithBobAndCarol(tester);
+        await openSheet(tester, alice.notes.byId(note.id)!, alice);
+      }
+
+      Future<void> drain(WidgetTester tester) async {
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 8));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+      }
+
+      testWidgets('keeps 8 pt under the row above even on two lines', (
+        tester,
+      ) async {
+        await phoneSheet(tester, inset: 34);
+        Toast.show(
+          tester.element(find.byKey(const ValueKey('share-done'))),
+          long,
+        );
+        await tester.pumpAndSettle();
+
+        final card = tester.getRect(surface);
+        expect(card.height, greaterThan(60), reason: 'two lines');
+        final above = tester.getRect(
+          find.byKey(ValueKey('member-row-${carol.userId}')),
+        );
+        expect(card.top - above.bottom, greaterThanOrEqualTo(8));
+        expect(card.contains(tester.getCenter(find.text('Done'))), isTrue);
+        expect(card.bottom, lessThanOrEqualTo(844));
+        await drain(tester);
+      });
+
+      testWidgets('stays on screen with no bottom inset', (tester) async {
+        await phoneSheet(tester);
+        Toast.show(
+          tester.element(find.byKey(const ValueKey('share-done'))),
+          long,
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.getRect(surface).bottom, lessThanOrEqualTo(844));
+        await drain(tester);
+      });
+
+      testWidgets('steps aside while the Remove confirmation is up', (
+        tester,
+      ) async {
+        await phoneSheet(tester);
+        await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+        await tester.pumpAndSettle();
+        await tester.tap(menuItem('Remove from this note'));
+        await tester.pumpAndSettle();
+        Toast.show(
+          tester.element(find.byKey(const ValueKey('share-done'))),
+          'Copied',
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.getRect(surface).bottom, 844 - 16);
+        await drain(tester);
+      });
+
+      testWidgets('lets go of the footer as the sheet starts to close', (
+        tester,
+      ) async {
+        await phoneSheet(tester);
+        await removeBob(tester);
+        final over = tester.getRect(surface);
+
+        await tester.tapAt(const Offset(195, 40));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(
+          find.byKey(const ValueKey('share-done')),
+          findsOneWidget,
+          reason: 'the sheet is still on its way down',
+        );
+        final card = tester.getRect(surface);
+        expect(card.bottom, 844 - 16);
+        expect(card.bottom, isNot(over.bottom));
+        await drain(tester);
+      });
     });
 
     testWidgets('without Undo, the removal reaches the server once the '

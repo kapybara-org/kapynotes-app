@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import '../kapy_ai/kapy_ai_parts.dart';
 
 /// One button on the [PhoneFormatBar].
@@ -95,44 +96,47 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    return TapRegion(
-      groupId: widget.tapGroup,
-      child: Container(
-        key: const ValueKey('phone-format-bar'),
-        height: PhoneFormatBar.height + bottomInset,
-        padding: EdgeInsets.only(bottom: bottomInset),
-        decoration: BoxDecoration(
-          color: palette.kapyMenu,
-          border: Border(top: BorderSide(color: palette.separator)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                key: const ValueKey('phone-format-scroll'),
-                controller: _scroll,
-                scrollDirection: Axis.horizontal,
-                physics: const ClampingScrollPhysics(),
-                child: Row(
-                  children: [
-                    for (final action in widget.actions)
-                      _BarButton(key: ValueKey(action.key), action: action),
-                  ],
+    // Notices keep above it, at the same width, rather than cover it.
+    return ToastClearance(
+      child: TapRegion(
+        groupId: widget.tapGroup,
+        child: Container(
+          key: const ValueKey('phone-format-bar'),
+          height: PhoneFormatBar.height + bottomInset,
+          padding: EdgeInsets.only(bottom: bottomInset),
+          decoration: BoxDecoration(
+            color: palette.kapyMenu,
+            border: Border(top: BorderSide(color: palette.separator)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  key: const ValueKey('phone-format-scroll'),
+                  controller: _scroll,
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      for (final action in widget.actions)
+                        _BarButton(key: ValueKey(action.key), action: action),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Container(width: 1, height: 22, color: palette.separator),
-            _BarButton(
-              key: const ValueKey('dismiss-keyboard'),
-              width: 48,
-              action: FormatBarAction(
-                key: 'dismiss-keyboard',
-                label: 'Hide keyboard',
-                icon: KapyIcons.keyboardOutlined,
-                onPressed: widget.onDismissKeyboard,
+              Container(width: 1, height: 22, color: palette.separator),
+              _BarButton(
+                key: const ValueKey('dismiss-keyboard'),
+                width: 48,
+                action: FormatBarAction(
+                  key: 'dismiss-keyboard',
+                  label: 'Hide keyboard',
+                  icon: KapyIcons.keyboardOutlined,
+                  onPressed: widget.onDismissKeyboard,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
