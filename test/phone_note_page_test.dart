@@ -462,6 +462,223 @@ void main() {
       expect(day(9), findsOneWidget);
       expect(day(16), findsNothing);
     });
+
+    /// The days the week shows, by their keys' dates, oldest first.
+    List<String> shown() => [
+      for (final element
+          in find
+              .byWidgetPredicate(
+                (widget) => switch (widget.key) {
+                  ValueKey<String>(:final value) => value.startsWith(
+                    'day-strip-2',
+                  ),
+                  _ => false,
+                },
+              )
+              .evaluate())
+        (element.widget.key! as ValueKey<String>).value.substring(
+          'day-strip-'.length,
+        ),
+    ];
+
+    /// The seven days from [sunday], as [shown] gives them.
+    List<String> weekFrom(DateTime sunday) => [
+      for (var index = 0; index < 7; index++)
+        switch (DateTime(sunday.year, sunday.month, sunday.day + index)) {
+          final day => '${day.year}-${day.month}-${day.day}',
+        },
+    ];
+
+    testWidgets('a swipe on the days turns them under the finger, and let go '
+        'they rest on the nearest whole week (KAP-340)', (tester) async {
+      seed();
+      await pump(tester);
+      final slot = tester.getRect(day(16));
+      final gesture = await tester.startGesture(tester.getCenter(day(19)));
+      await gesture.moveBy(const Offset(-30, 0));
+      await gesture.moveBy(const Offset(-100, 0));
+      await tester.pump();
+      expect(tester.getRect(day(16)).left, moreOrLessEquals(slot.left - 100));
+      expect(day(23), findsOneWidget, reason: 'the next week follows it in');
+
+      // Let go short of half a week, it goes back.
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      expect(tester.getRect(day(16)), slot);
+
+      // Past half a week, it goes on to the next, and the note stays.
+      await tester.drag(day(19), const Offset(-220, 0));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      expect(tester.getRect(day(23)), slot);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await tester.drag(day(26), const Offset(220, 0));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+    });
+
+    testWidgets(
+      'a fling carries the days on a week or a few, as hard as it is, to '
+      'rest on a whole one (KAP-340)',
+      (tester) async {
+        seed();
+        await pump(tester);
+        final slot = tester.getRect(day(16));
+        await tester.fling(day(19), const Offset(-150, 0), 3000);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 11, 30)));
+        expect(tester.getRect(day(30)), slot);
+
+        // The hardest fling there is goes four weeks on, not months.
+        await tester.fling(day(30), const Offset(-150, 0), 8000);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 12, 28)));
+        expect(
+          tester.getRect(find.byKey(const ValueKey('day-strip-2025-12-28'))),
+          slot,
+        );
+      },
+      variant: TargetPlatformVariant(const {
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
+
+    testWidgets('a day on the week a swipe turned to opens its note, and the '
+        "note moved to another week brings that week", (tester) async {
+      seed();
+      days.setDay('tue', DateTime(2025, 11, 25));
+      await pump(tester);
+      await tester.drag(day(19), const Offset(-220, 0));
+      await tester.pumpAndSettle();
+      await open(tester, 25);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      expect(tester.getSemantics(day(25)), isSemantics(isSelected: true));
+
+      await openMore(tester);
+      await tester.tap(find.byKey(const ValueKey('page-more-day')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('day-month-2025-11-14')));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(shown(), weekFrom(DateTime(2025, 11, 9)));
+      expect(tester.getSemantics(day(14)), isSemantics(isSelected: true));
+    });
+
+    testWidgets('a swipe that starts on an arrow turns the week too, and a '
+        'drag up or down leaves it', (tester) async {
+      seed();
+      await pump(tester);
+      await tester.drag(
+        find.byKey(const ValueKey('day-strip-forward')),
+        const Offset(-220, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      await tester.drag(
+        find.byKey(const ValueKey('day-strip-back')),
+        const Offset(220, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+
+      await tester.drag(day(19), const Offset(0, 150));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      expect(find.byKey(const ValueKey('day-list-errands')), findsNothing);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+    });
+
+    testWidgets('on an iPhone, a swipe in from the left edge over the week '
+        'goes back, and one just inside it turns the week', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      final y = tester.getCenter(day(18)).dy;
+
+      // From the edge: back to the note the week opened it from.
+      await tester.dragFrom(Offset(4, y), const Offset(300, 0));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+
+      // Just inside it, on ‹: the week before, on the same note.
+      await tester.dragFrom(Offset(24, y), const Offset(220, 0));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 9)));
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      // From the edge again: Home.
+      await tester.dragFrom(Offset(4, y), const Offset(300, 0));
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+    testWidgets('two quick taps on › turn two weeks, and with animations off '
+        'a tap turns at once', (tester) async {
+      seed();
+      await pump(tester);
+      final forward = find.byKey(const ValueKey('day-strip-forward'));
+      await tester.tap(forward);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(forward);
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 30)));
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('day-strip-back')));
+      await tester.pump();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+    });
+
+    testWidgets('a screen reader turns the weeks with ‹ and ›, and with a '
+        'scroll over the days', (tester) async {
+      final semantics = tester.ensureSemantics();
+      seed();
+      await pump(tester);
+      tester.semantics.tap(find.semantics.byLabel('The week after'));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      tester.semantics.tap(find.semantics.byLabel('The week before'));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+
+      final strip = tester.getSemantics(find.byType(PageView));
+      final weeks = find.semantics.byPredicate((node) => node.id == strip.id);
+      tester.semantics.scrollLeft(scrollable: weeks);
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      tester.semantics.scrollRight(scrollable: weeks);
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      semantics.dispose();
+    });
+
+    testWidgets('at large text the days stay whole, and a swipe still turns '
+        'the week', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      seed();
+      await pump(tester, width: 375);
+      expect(tester.takeException(), isNull);
+      final strip = tester.getRect(find.byType(PageView));
+      expect(tester.getSize(day(19)).height, strip.height);
+      expect(strip.height, greaterThan(52));
+      await tester.drag(day(19), const Offset(-200, 0));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+    });
   });
 
   group('the tasks line', () {
