@@ -12,7 +12,8 @@ import 'sidebar_timestamp.dart';
 
 /// A note's header on a phone, as M07 and M09 draw it: ⌂ Home, then the
 /// note's day, Kapy AI and More. Under them, while the day has it open, the
-/// note's week and the line that opens the day's tasks, then a hairline.
+/// note's week and the line that opens the day's tasks, then on a page that
+/// shows a day's notes as tabs, those, then a hairline.
 class PhoneNoteHeader extends StatelessWidget {
   const PhoneNoteHeader({
     super.key,
@@ -26,6 +27,7 @@ class PhoneNoteHeader extends StatelessWidget {
     this.week,
     this.tasks = 0,
     this.onTasks,
+    this.tabs,
     this.members = const [],
     this.present = const [],
     this.currentUserId = '',
@@ -54,6 +56,10 @@ class PhoneNoteHeader extends StatelessWidget {
   /// The line shows only while there are some.
   final int tasks;
   final VoidCallback? onTasks;
+
+  /// A day's notes as tabs (A1), last in the header, the week or not. Under
+  /// an open week they take the place of the room that ends it.
+  final Widget? tabs;
 
   /// Who else has the note, at the left of the day button.
   final List<SpaceMember> members;
@@ -159,9 +165,10 @@ class PhoneNoteHeader extends StatelessWidget {
                   label: tasksLine(tasks, day, today),
                   onPressed: onTasks,
                 )
-              else
+              else if (tabs == null)
                 const SizedBox(height: 8),
             ],
+            ?tabs,
           ],
         ),
       ),

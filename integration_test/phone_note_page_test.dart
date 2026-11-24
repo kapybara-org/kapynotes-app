@@ -1,6 +1,7 @@
 // The phone note page, for KAPY-35 to hold against M07, M08, M11, M12 and
-// M15: the whole app over notes kept in memory, dark, on the week M09 draws,
-// with each state also read off the device's own screen, keyboard included.
+// M15, and a day's notes as tabs against KAP-345's A boards: the whole app
+// over notes kept in memory, dark, on the week M09 draws, with each state
+// also read off the device's own screen, keyboard included.
 //
 //   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/phone_note_page_test.dart -d <device> \
@@ -17,6 +18,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/data/day_tabs.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -31,6 +33,7 @@ import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
 import 'package:kapy_notes/ui/editor/note_editor.dart' show NoteEditor;
 import 'package:kapy_notes/ui/editor/note_field.dart'
     show NoteField, NoteFieldState;
+import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:material_ui/material_ui.dart';
 
 import 'rates_support.dart';
@@ -94,6 +97,18 @@ void main() {
             'first one is smaller.\n☐ Send the deck',
         DateTime(2025, 11, 19, 8, 55),
       ),
+      // KAP-345's crowded day, five weeks back, out of every calendar the
+      // other boards draw: seven notes, more than a phone's tabs show.
+      for (final (id, body, hour, minute) in [
+        ('run', 'Morning run\n5 km by the river', 6, 45),
+        ('standup', 'Standup\nDemo on Monday', 9, 0),
+        ('design', 'Design review\nThe tabs on a phone', 10, 30),
+        ('lunch', 'Lunch with Maya\nThe new place on Rua Augusta', 12, 15),
+        ('invoices', 'Invoices\nOctober for Acme', 14, 0),
+        ('reading', 'Reading list\nThe Overstory', 16, 40),
+        ('dinner', 'Dinner plan\nPasta and a salad', 19, 20),
+      ])
+        _note('oct-$id', body, DateTime(2025, 10, 17, hour, minute)),
     ];
     final prefs = LayoutPrefs(store)..load();
     prefs.appearance = AppearanceMode.dark;
@@ -101,6 +116,7 @@ void main() {
     final tags = TagStore(store, now: () => _now);
     final folders = FolderStore(store, now: () => _now);
     final days = NoteDayStore(store, now: () => _now);
+    final dayTabs = DayTabsStore(store, now: () => _now);
     final library = TaskLibrary(
       notes: notes,
       store: store,
@@ -111,6 +127,7 @@ void main() {
     await tags.load();
     await folders.load();
     await days.load();
+    await dayTabs.load();
     String? parent;
     for (final name in ['Work', 'Clients', 'Acme']) {
       parent = folders.create(name, parentId: parent)!.id;
@@ -129,6 +146,7 @@ void main() {
         tags: tags,
         folders: folders,
         days: days,
+        dayTabs: dayTabs,
         tasks: library,
       ),
     );
@@ -169,6 +187,38 @@ void main() {
     expect(find.byKey(const ValueKey('page-tasks-line')), findsOneWidget);
     expect(find.byKey(const ValueKey('note-path')), findsOneWidget);
     await shot('m07-a-note');
+
+    // KAP-340: a swipe on the week turns it, and it comes to rest on the
+    // whole next week; ‹ turns it back. Then the same light, with text at the
+    // most the header takes, 1.3×.
+    Future<void> swipeWeek(String name) async {
+      await shot('week-swipe-${name}before');
+      await tester.drag(
+        find.byKey(const ValueKey('day-strip-2025-11-19')),
+        const Offset(-220, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('day-strip-2025-11-19')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('day-strip-2025-11-26')),
+        findsOneWidget,
+      );
+      await shot('week-swipe-${name}after');
+      await tap(find.byKey(const ValueKey('day-strip-back')));
+      expect(
+        find.byKey(const ValueKey('day-strip-2025-11-19')),
+        findsOneWidget,
+      );
+    }
+
+    await swipeWeek('');
+    prefs.appearance = AppearanceMode.light;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    await tester.pumpAndSettle();
+    await swipeWeek('large-text-light-');
+    prefs.appearance = AppearanceMode.dark;
+    tester.platformDispatcher.clearTextScaleFactorTestValue();
+    await tester.pumpAndSettle();
 
     // M08: typing at the end of the first paragraph, as the board does, the
     // keyboard up. The header's buttons step back, the path and the title
@@ -272,5 +322,76 @@ void main() {
     expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
     expect(written.text, words);
     expect(notes.notes.any((note) => note.body.startsWith(words)), isTrue);
+
+    // KAP-345: Fri 17 Oct, five weeks back, a day of several, opens its
+    // notes as tabs under the week, the earliest written first, on the first.
+    await tap(find.widgetWithText(NoteRow, 'Call with Arjun'));
+    expect(find.byKey(const ValueKey('day-strip-2025-11-19')), findsOneWidget);
+    for (var week = 0; week < 5; week++) {
+      await tap(find.byKey(const ValueKey('day-strip-back')));
+    }
+    await tap(find.byKey(const ValueKey('day-strip-2025-10-17')));
+    Finder tab(String id) => find.byKey(ValueKey('day-tab-$id'));
+    final count = find.byKey(const ValueKey('day-tabs-count'));
+    final dayNotes = find.byKey(const ValueKey('day-notes-sheet'));
+    Future<void> pick(String id) async {
+      final listed = find.byKey(ValueKey('day-notes-$id'));
+      await tester.ensureVisible(listed);
+      await tester.pumpAndSettle();
+      await tap(listed);
+      expect(dayNotes, findsNothing);
+    }
+
+    expect(field().controller.text, startsWith('Morning run'));
+    expect(find.descendant(of: count, matching: find.text('7')), findsOne);
+    // A3 and A4: the count lists the day's notes in their tabs' order, and
+    // the one picked opens in its tab, which the row glides into view, faded
+    // at both ends. Opened again, the list is at the note, ticked.
+    await tap(count);
+    await pick('oct-lunch');
+    expect(field().controller.text, startsWith('Lunch with Maya'));
+    await shot('tabs-crowded-day');
+    await tap(count);
+    expect(dayNotes, findsOneWidget);
+    await shot('tabs-day-list');
+    await pick('oct-reading');
+    expect(field().controller.text, startsWith('Reading list'));
+    // A5 and A7: a hold, let go, offers Pin tab, which puts the tab first
+    // with a pin; held again, here in light, it offers Unpin tab.
+    await tester.longPress(tab('oct-reading'));
+    await tester.pumpAndSettle();
+    await shot('tabs-hold-menu-dark');
+    await tap(find.text('Pin tab'));
+    expect(
+      tester.getRect(tab('oct-reading')).left,
+      lessThan(tester.getRect(tab('oct-run')).left),
+    );
+    await shot('tabs-pinned');
+    prefs.appearance = AppearanceMode.light;
+    await tester.pumpAndSettle();
+    await tester.longPress(tab('oct-reading'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unpin tab'), findsOneWidget);
+    await shot('tabs-hold-menu-light');
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+    expect(find.text('Unpin tab'), findsNothing);
+    // A8: + starts a note on the day as the last tab, ready to type.
+    await tap(find.byKey(const ValueKey('day-tabs-new')));
+    await keyboard(up: true);
+    const plumber = 'Call the plumber';
+    field().controller.value = const TextEditingValue(
+      text: plumber,
+      selection: TextSelection.collapsed(offset: plumber.length),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('day-tabs')),
+        matching: find.text(plumber),
+      ),
+      findsOneWidget,
+    );
+    await shot('tabs-new-typing');
   });
 }

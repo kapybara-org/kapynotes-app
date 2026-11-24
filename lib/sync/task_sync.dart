@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../ai/kapy_chat_book.dart';
 import '../ai/kapy_chat_records.dart';
+import '../data/day_tabs.dart';
 import '../data/folders.dart';
 import '../data/note_days.dart';
 import '../data/tags.dart';
@@ -39,6 +40,7 @@ class TaskSync {
     required TagStore tags,
     FolderStore? folders,
     NoteDayStore? days,
+    DayTabsStore? dayTabs,
     required DocStore docs,
     required bool Function(String noteId) noteIsLive,
     required Iterable<String> Function() deletedNotes,
@@ -51,6 +53,7 @@ class TaskSync {
        _tags = tags,
        _folders = folders,
        _days = days,
+       _dayTabs = dayTabs,
        _docs = docs,
        _noteIsLive = noteIsLive,
        _deletedNotes = deletedNotes,
@@ -59,6 +62,7 @@ class TaskSync {
     _tags.addListener(_onTags);
     _folders?.addListener(_onFolders);
     _days?.addListener(_onDays);
+    _dayTabs?.addListener(_onDayTabs);
     _chats
       ?..attach(() => !_disposed && _chatsOn(), run, _chatRecordId)
       ..addListener(_onChats);
@@ -70,6 +74,7 @@ class TaskSync {
   final TagStore _tags;
   final FolderStore? _folders;
   final NoteDayStore? _days;
+  final DayTabsStore? _dayTabs;
   final DocStore _docs;
   final bool Function(String noteId) _noteIsLive;
   final KapyChatBook? _chats;
@@ -93,6 +98,12 @@ class TaskSync {
   final Map<String, String> _dayIds = {};
   final Map<String, String> _noteOfDay = {};
   bool _daysNamed = false;
+
+  /// Each ordered day's tabs record id under this account's key, both ways,
+  /// and whether every day the orders hold has one yet this pass.
+  final Map<String, String> _tabsIds = {};
+  final Map<String, String> _dayOfTabs = {};
+  bool _tabsNamed = false;
 
   /// The server's clock as of the last push it answered, which a clock that
   /// runs ahead here can't move on (see `FolderStore.prune`).
@@ -118,6 +129,10 @@ class TaskSync {
 
   void _onDays() {
     if (_days?.owes ?? false) schedule();
+  }
+
+  void _onDayTabs() {
+    if (_dayTabs?.owes ?? false) schedule();
   }
 
   void _onChats() {
@@ -215,6 +230,7 @@ class TaskSync {
     _rekey();
     _placementsNamed = false;
     _daysNamed = false;
+    _tabsNamed = false;
     final rewind = (_chats?.skipped ?? false) && _chatsSync;
     if (rewind && _index.cursor > 0) {
       _index.recordCursor(0);
@@ -316,6 +332,17 @@ class TaskSync {
                 acknowledge: () => days.acknowledge(item),
               ),
       ];
+      final dayTabs = _dayTabs;
+      final owedTabs = [
+        if (dayTabs != null)
+          for (final item in dayTabs.owed)
+            (
+              id: _tabsId(item.key),
+              updatedAt: item.updatedAt,
+              payload: item.payload,
+              acknowledge: () => dayTabs.acknowledge(item),
+            ),
+      ];
       final owedChats = [
         if (_chatsSync)
           for (final item in _chats!.owed())
@@ -329,11 +356,12 @@ class TaskSync {
       if (owed.isEmpty &&
           owedFolders.isEmpty &&
           owedDays.isEmpty &&
+          owedTabs.isEmpty &&
           owedChats.isEmpty) {
         return;
       }
       final chunks = [
-        for (final list in [owed, owedFolders, owedDays, owedChats])
+        for (final list in [owed, owedFolders, owedDays, owedTabs, owedChats])
           for (var i = 0; i < list.length; i += tasksPushMax)
             list.sublist(
               i,
@@ -368,6 +396,7 @@ class TaskSync {
         _tags.hold();
         _folders?.hold();
         _days?.hold();
+        _dayTabs?.hold();
         _chats?.hold();
         try {
           for (final item in chunk) {
@@ -378,6 +407,7 @@ class TaskSync {
           _tags.release();
           _folders?.release();
           _days?.release();
+          _dayTabs?.release();
           _chats?.release();
         }
         for (final conflict in result.conflicts) {
@@ -396,6 +426,7 @@ class TaskSync {
       _tags.hold();
       _folders?.hold();
       _days?.hold();
+      _dayTabs?.hold();
       _chats?.hold();
       try {
         for (final record in page.records) {
@@ -407,6 +438,7 @@ class TaskSync {
         _tags.release();
         _folders?.release();
         _days?.release();
+        _dayTabs?.release();
         _chats?.release();
       }
       if (!page.hasMore) break;
@@ -439,6 +471,8 @@ class TaskSync {
       );
       final dayNote = _dayNote(record.id);
       if (dayNote != null) _days?.applyRemoteDelete(dayNote, updatedAt);
+      final tabsDay = _tabsDay(record.id);
+      if (tabsDay != null) _dayTabs?.applyRemoteDelete(tabsDay, updatedAt);
       if (_chatsSync) {
         final key = _chats!.keyOfRecord(record.id);
         if (key != null) _chats.applyRemoteDelete(key, updatedAt);
@@ -530,6 +564,14 @@ class TaskSync {
           return;
         }
         _days.applyRemote(day, updatedAt);
+      case DayTabs.kind when _dayTabs != null:
+        _tags.dropUnknown(record.id);
+        final tabs = DayTabs.fromPayload(decoded);
+        if (tabs == null || _tabsId(tabs.day) != record.id) {
+          debugPrint('KapyNotes: tabs record ${record.id} is not one of ours');
+          return;
+        }
+        _dayTabs.applyRemote(tabs, updatedAt);
       default:
         _tags.keepUnknown(record.id, updatedAt);
     }
@@ -560,6 +602,24 @@ class TaskSync {
     _noteOfDay[id] = noteId;
     return id;
   }();
+
+  String _tabsId(String day) => _tabsIds[day] ??= () {
+    final id = _vault.dayTabsRecordId(day);
+    _dayOfTabs[id] = day;
+    return id;
+  }();
+
+  /// The day a deleted record ordered the tabs of, if this device holds an
+  /// order for it.
+  String? _tabsDay(String recordId) {
+    final dayTabs = _dayTabs;
+    if (dayTabs == null) return null;
+    if (!_tabsNamed) {
+      dayTabs.days.forEach(_tabsId);
+      _tabsNamed = true;
+    }
+    return _dayOfTabs[recordId];
+  }
 
   /// The note a deleted record gave a day to, if this device holds its day.
   String? _dayNote(String recordId) {
@@ -598,6 +658,7 @@ class TaskSync {
     _tags.removeListener(_onTags);
     _folders?.removeListener(_onFolders);
     _days?.removeListener(_onDays);
+    _dayTabs?.removeListener(_onDayTabs);
     _chats
       ?..removeListener(_onChats)
       ..detach();
