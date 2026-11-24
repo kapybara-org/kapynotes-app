@@ -1380,32 +1380,84 @@ void main() {
     );
   });
 
-  // Mon 31 picked with Gym plan pinned: its tab first, a pin in its icon's
-  // place, and its menu open on Unpin tab.
-  testWidgets('desktop dark week, a day with a pinned tab', (tester) async {
+  /// Mon 31's notes with Gym plan's tab pinned.
+  Future<DayTabsStore> gymPinned() async {
     final dayTabs = DayTabsStore(MemoryStore());
     await dayTabs.load();
     dayTabs.pin(DateTime(2026, 8, 31), ['standup', 'gym', 'books'], 'gym');
+    return dayTabs;
+  }
+
+  Finder tabTitled(String title) =>
+      find.descendant(of: find.byType(NoteTabRow), matching: find.text(title));
+
+  // Mon 31 picked with Gym plan pinned: its tab first, a pin in its icon's
+  // place, its × as on any tab, and its menu, opened from the tab's right
+  // end so that it covers none of the tab, on Unpin tab.
+  for (final brightness in Brightness.values) {
+    testWidgets('desktop ${brightness.name} week, a day with a pinned tab', (
+      tester,
+    ) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(1280, 800),
+        brightness: brightness,
+        withWeek: true,
+        dayTabs: await gymPinned(),
+      );
+      await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+      await tester.pumpAndSettle();
+      final tab = tester.getRect(
+        find
+            .ancestor(of: tabTitled('Gym plan'), matching: find.byType(Row))
+            .first,
+      );
+      await tester.tapAt(
+        Offset(tab.right + 1, tab.center.dy),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Unpin tab'), findsOneWidget);
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile(
+          'goldens/desktop_${brightness.name}_week_day_pinned.png',
+        ),
+      );
+    });
+  }
+
+  // The same day after the window narrows to 820, too narrow for its three
+  // tabs and for the strip's days. Gym plan, pinned, stays on the row though
+  // it is the least recently used, and Standup notes folds into "1 more" in
+  // its place.
+  testWidgets('desktop dark week, a pinned tab in a narrow window', (
+    tester,
+  ) async {
     await pumpForGolden(
       tester,
       size: const Size(1280, 800),
       brightness: Brightness.dark,
       withWeek: true,
-      dayTabs: dayTabs,
+      dayTabs: await gymPinned(),
     );
     await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NoteTabRow),
-        matching: find.text('Gym plan'),
-      ),
-      buttons: kSecondaryButton,
-    );
+    tester.view.physicalSize = const Size(820, 800);
     await tester.pumpAndSettle();
+    await tester.tap(tabTitled('Standup notes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 more'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Book ideas').last);
+    await tester.pumpAndSettle();
+    expect(tabTitled('Gym plan'), findsOneWidget);
+    expect(tabTitled('Book ideas'), findsOneWidget);
+    expect(tabTitled('Standup notes'), findsNothing);
+    expect(find.text('1 more'), findsOneWidget);
     await expectLater(
       find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_dark_week_day_pinned.png'),
+      matchesGoldenFile('goldens/desktop_dark_week_day_pinned_narrow.png'),
     );
   });
 
