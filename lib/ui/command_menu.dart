@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/phone_keyboard.dart';
 import '../core/platform.dart';
 import '../core/popup_keyboard.dart';
 import '../core/theme.dart';
@@ -925,52 +926,56 @@ class _CommandMenuState extends State<CommandMenu> {
               icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 22),
             ),
           Expanded(
-            child: Container(
-              height: 40,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: palette.wellBackground,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: sage, width: 1.5),
-              ),
-              child: Row(
-                spacing: 8,
-                children: [
-                  KapyIcon(
-                    KapyIcons.searchRounded,
-                    size: 16,
-                    color: palette.textSecondary,
-                  ),
-                  Expanded(
-                    child: TextField(
-                      key: const ValueKey('command-menu-field'),
-                      controller: picker?.query ?? _field,
-                      autofocus: true,
-                      inputFormatters: picker == null
-                          ? null
-                          : [LengthLimitingTextInputFormatter(tagNameMax)],
-                      onChanged: picker == null
-                          ? _search
-                          : (_) => picker.typed(),
-                      onSubmitted: (_) => picker == null
-                          ? _choose(_highlight)
-                          : picker.activate(),
-                      textInputAction: TextInputAction.go,
-                      style: style,
-                      cursorHeight: 20,
-                      decoration: InputDecoration.collapsed(
-                        hintText: picker != null
-                            ? ''
-                            : _scope == _Scope.drawings
-                            ? 'Search drawings'
-                            : widget.tasks == null
-                            ? 'Search notes'
-                            : 'Search notes and tasks',
-                        hintStyle: style.copyWith(color: palette.textTertiary),
+            child: KeepsKeyboard(
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: palette.wellBackground,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: sage, width: 1.5),
+                ),
+                child: Row(
+                  spacing: 8,
+                  children: [
+                    KapyIcon(
+                      KapyIcons.searchRounded,
+                      size: 16,
+                      color: palette.textSecondary,
+                    ),
+                    Expanded(
+                      child: TextField(
+                        key: const ValueKey('command-menu-field'),
+                        controller: picker?.query ?? _field,
+                        autofocus: true,
+                        inputFormatters: picker == null
+                            ? null
+                            : [LengthLimitingTextInputFormatter(tagNameMax)],
+                        onChanged: picker == null
+                            ? _search
+                            : (_) => picker.typed(),
+                        onSubmitted: (_) => picker == null
+                            ? _choose(_highlight)
+                            : picker.activate(),
+                        textInputAction: TextInputAction.go,
+                        style: style,
+                        cursorHeight: 20,
+                        decoration: InputDecoration.collapsed(
+                          hintText: picker != null
+                              ? ''
+                              : _scope == _Scope.drawings
+                              ? 'Search drawings'
+                              : widget.tasks == null
+                              ? 'Search notes'
+                              : 'Search notes and tasks',
+                          hintStyle: style.copyWith(
+                            color: palette.textTertiary,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1002,39 +1007,41 @@ class _CommandMenuState extends State<CommandMenu> {
       children: [
         for (final scope in _Scope.values)
           if (scope != _Scope.tasks || widget.tasks != null)
-            Semantics(
-              button: true,
-              selected: scope == _scope,
-              label: scope.label,
-              excludeSemantics: true,
-              onTap: () => _setScope(scope),
-              child: GestureDetector(
-                key: ValueKey('command-scope-${scope.name}'),
-                behavior: HitTestBehavior.opaque,
+            KeepsKeyboard(
+              child: Semantics(
+                button: true,
+                selected: scope == _scope,
+                label: scope.label,
+                excludeSemantics: true,
                 onTap: () => _setScope(scope),
-                child: SizedBox(
-                  height: AppControlMetrics.iconButtonExtent,
-                  child: Center(
-                    child: Container(
-                      height: 30,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: scope == _scope ? palette.textPrimary : null,
-                        border: scope == _scope
-                            ? null
-                            : Border.all(color: palette.controlBorder),
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Text(
-                        scope.label,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: AppWeight.font(AppWeight.button),
-                          fontVariations: AppWeight.wght(AppWeight.button),
-                          color: scope == _scope
-                              ? palette.paperColor
-                              : palette.textPrimary,
+                child: GestureDetector(
+                  key: ValueKey('command-scope-${scope.name}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _setScope(scope),
+                  child: SizedBox(
+                    height: AppControlMetrics.iconButtonExtent,
+                    child: Center(
+                      child: Container(
+                        height: 30,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: scope == _scope ? palette.textPrimary : null,
+                          border: scope == _scope
+                              ? null
+                              : Border.all(color: palette.controlBorder),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Text(
+                          scope.label,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: AppWeight.font(AppWeight.button),
+                            fontVariations: AppWeight.wght(AppWeight.button),
+                            color: scope == _scope
+                                ? palette.paperColor
+                                : palette.textPrimary,
+                          ),
                         ),
                       ),
                     ),
@@ -1402,59 +1409,61 @@ class _CommandMenuState extends State<CommandMenu> {
             String? count,
             bool ticked = false,
             required VoidCallback onTap,
-          }) => MouseRegion(
-            onEnter: (_) => picker.at = index,
-            child: GestureDetector(
-              key: key,
-              behavior: HitTestBehavior.opaque,
-              onTap: onTap,
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: index == picker.at
-                      ? (dark ? palette.separator : palette.controlBackground)
-                      : null,
-                  borderRadius: BorderRadius.circular(AppRadii.control),
-                ),
-                child: Row(
-                  spacing: 12,
-                  children: [
-                    leading,
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 18 / 14,
-                          fontWeight: AppWeight.font(AppWeight.body),
-                          fontVariations: AppWeight.wght(AppWeight.body),
-                          color: palette.textPrimary,
+          }) => KeepsKeyboard(
+            child: MouseRegion(
+              onEnter: (_) => picker.at = index,
+              child: GestureDetector(
+                key: key,
+                behavior: HitTestBehavior.opaque,
+                onTap: onTap,
+                child: Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: index == picker.at
+                        ? (dark ? palette.separator : palette.controlBackground)
+                        : null,
+                    borderRadius: BorderRadius.circular(AppRadii.control),
+                  ),
+                  child: Row(
+                    spacing: 12,
+                    children: [
+                      leading,
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 18 / 14,
+                            fontWeight: AppWeight.font(AppWeight.body),
+                            fontVariations: AppWeight.wght(AppWeight.body),
+                            color: palette.textPrimary,
+                          ),
                         ),
                       ),
-                    ),
-                    if (count != null)
-                      Text(
-                        count,
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 16 / 12,
-                          color: palette.textTertiary,
+                      if (count != null)
+                        Text(
+                          count,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 16 / 12,
+                            color: palette.textTertiary,
+                          ),
                         ),
+                      SizedBox(
+                        width: 16,
+                        child: ticked
+                            ? KapyIcon(
+                                KapyIcons.checkRounded,
+                                size: 14,
+                                color: palette.textPrimary,
+                              )
+                            : null,
                       ),
-                    SizedBox(
-                      width: 16,
-                      child: ticked
-                          ? KapyIcon(
-                              KapyIcons.checkRounded,
-                              size: 14,
-                              color: palette.textPrimary,
-                            )
-                          : null,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
