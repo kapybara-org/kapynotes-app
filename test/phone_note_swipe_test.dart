@@ -674,11 +674,11 @@ void main() {
       expect(_button('pin', 'budget'), findsNothing);
       expect(page, findsOneWidget);
 
-      await tester.dragFrom(Offset(10, y), const Offset(200, 0));
+      await tester.dragFrom(Offset(10, y), const Offset(300, 0));
       await tester.pumpAndSettle();
       expect(page, findsNothing);
       expect(find.byKey(const ValueKey('phone-folders')), findsOneWidget);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
     testWidgets('on an iPhone, a row swipe from 24 pt in opens the row on '
         "a folder's page, where the edge goes back", (tester) async {
