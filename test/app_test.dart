@@ -4106,6 +4106,9 @@ void main() {
       expect(openNoteBody(tester), 'Call with Arjun');
       expect({for (final note in notes.allNotes) note.id}, kept);
       expect(days.noteIds, isEmpty);
+
+      await tap(tester, day(20));
+      expect(find.text('No notes tomorrow'), findsOneWidget);
     });
 
     testWidgets('a day opens its 12 earliest written notes at most, and says '
