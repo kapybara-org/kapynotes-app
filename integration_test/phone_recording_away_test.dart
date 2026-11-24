@@ -200,6 +200,12 @@ void main() {
       // recording only once it has. Its black shows best on light Settings.
       await wait(8);
       await deviceShot('recording-away-dynamic-island');
+      // Paused only for the shot: out of sight and not recording, the app
+      // may be suspended, and the test with it.
+      await recording.pause();
+      await wait(3);
+      await deviceShot('recording-away-dynamic-island-paused');
+      await recording.resume();
       // For the run's log only: whether ActivityKit started the activity
       // and the widget extension drew it.
       await deviceAction('system-log');
