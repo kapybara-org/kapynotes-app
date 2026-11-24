@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../core/phone_keyboard.dart';
 import '../../core/theme.dart';
 import 'kapy_ai_parts.dart';
 
@@ -139,40 +140,45 @@ class KapyAiPicker extends StatelessWidget {
         ],
     ];
 
-    return Container(
-      key: const ValueKey('kapy-ai-picker'),
-      decoration: BoxDecoration(
-        color: palette.kapyMenu,
-        border: Border.all(color: palette.separator),
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        boxShadow: [
-          BoxShadow(
-            color: palette.shadowAt(0x80),
-            offset: const Offset(0, 16),
-            blurRadius: 32,
-            spreadRadius: -16,
-          ),
-        ],
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final group in groups) ...[
-              if (group != groups.first)
-                Container(
-                  height: 1,
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  color: palette.separator,
-                ),
-              for (final row in group)
-                Padding(padding: const EdgeInsets.only(bottom: 1), child: row),
-            ],
+    return KeepsKeyboard(
+      child: Container(
+        key: const ValueKey('kapy-ai-picker'),
+        decoration: BoxDecoration(
+          color: palette.kapyMenu,
+          border: Border.all(color: palette.separator),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
+          boxShadow: [
+            BoxShadow(
+              color: palette.shadowAt(0x80),
+              offset: const Offset(0, 16),
+              blurRadius: 32,
+              spreadRadius: -16,
+            ),
           ],
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final group in groups) ...[
+                if (group != groups.first)
+                  Container(
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    color: palette.separator,
+                  ),
+                for (final row in group)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 1),
+                    child: row,
+                  ),
+              ],
+            ],
+          ),
         ),
       ),
     );

@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
 import '../../core/mobile_data.dart';
+import '../../core/phone_keyboard.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../kapy_cursor_peek.dart';
@@ -163,39 +164,41 @@ class _Suggestion extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadii.control),
       side: BorderSide(color: palette.separator),
     );
-    return Material(
-      type: MaterialType.transparency,
-      shape: shape,
-      child: InkWell(
-        customBorder: shape,
-        hoverColor: palette.kapyMenu,
-        onTap: onTap,
-        child: SizedBox(
-          height: 34,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 10, right: 12),
-            child: Row(
-              children: [
-                KapyIcon(
-                  KapyIcons.sparklesOutlined,
-                  size: 14,
-                  color: palette.textSecondary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: kapyText(
-                      13,
-                      16,
-                      palette.textSubheading,
-                      weight: FontWeight.w400,
+    return KeepsKeyboard(
+      child: Material(
+        type: MaterialType.transparency,
+        shape: shape,
+        child: InkWell(
+          customBorder: shape,
+          hoverColor: palette.kapyMenu,
+          onTap: onTap,
+          child: SizedBox(
+            height: 34,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 10, right: 12),
+              child: Row(
+                children: [
+                  KapyIcon(
+                    KapyIcons.sparklesOutlined,
+                    size: 14,
+                    color: palette.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: kapyText(
+                        13,
+                        16,
+                        palette.textSubheading,
+                        weight: FontWeight.w400,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
