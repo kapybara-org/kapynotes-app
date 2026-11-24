@@ -46,6 +46,7 @@ class Device {
     required this.userId,
     required this.device,
     Directory? media,
+    Duration typingIdle = const Duration(milliseconds: 1500),
   }) {
     server.seedBundle(userId);
     store = MemoryStore();
@@ -71,6 +72,7 @@ class Device {
       images: images,
       vault: vault,
       sendDelay: const Duration(hours: 1),
+      typingIdle: typingIdle,
     );
     sharing = Sharing(
       api: api,
