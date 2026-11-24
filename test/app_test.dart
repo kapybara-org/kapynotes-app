@@ -4075,7 +4075,7 @@ void main() {
       await tap(tester, day(17));
       expect(openNoteBody(tester), 'Pricing ideas');
       expect(lit(tester), ['Pricing ideas']);
-      expect(find.text("Opened Tue 17's note"), findsOneWidget);
+      expect(find.text('Opened the note on Tue 17'), findsOneWidget);
       expect(find.text('Undo'), findsNothing);
 
       await tap(tester, day(17));
@@ -4105,8 +4105,8 @@ void main() {
       expect(days.noteIds, isEmpty);
     });
 
-    testWidgets('a day opens 12 of its notes at most, and says the rest are '
-        'in the list', (tester) async {
+    testWidgets('a day opens 12 of its notes at most, and says how many of '
+        'how many', (tester) async {
       await library(tester);
       await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
       for (var index = 1; index <= 13; index++) {
@@ -4119,10 +4119,7 @@ void main() {
         tester.widget<NoteTabRow>(find.byType(NoteTabRow)).tabs,
         hasLength(EditorWorkspace.dayTabLimit),
       );
-      expect(
-        find.text("Opened 12 of today's 14 notes. The rest are in the list."),
-        findsOneWidget,
-      );
+      expect(find.text("Opened 12 of today's 14 notes"), findsOneWidget);
     });
 
     testWidgets('Return on a day opens its notes and leaves the keyboard on '

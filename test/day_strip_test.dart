@@ -272,12 +272,14 @@ void main() {
       notes: [
         note('standup', 'Standup notes', DateTime(2026, 11, 18, 10, 5)),
         note('ideas', 'Book ideas', DateTime(2026, 11, 18, 22, 10)),
+        note('pricing', 'Pricing ideas', DateTime(2026, 11, 17, 16, 20)),
       ],
     );
     expect(
       tester.getSemantics(day(18)),
       isSemantics(hint: 'Opens its notes as tabs'),
     );
+    expect(tester.getSemantics(day(17)), isSemantics(hint: 'Opens its note'));
     expect(
       tester.getSemantics(day(16)),
       isSemantics(hint: 'Opens a page to write on it'),

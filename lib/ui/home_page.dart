@@ -2111,26 +2111,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ?.findAncestorWidgetOfExactType<DayStrip>() !=
       null;
 
-  /// What the notice says once [day]'s notes are the tabs: "Opened Tue 18's
-  /// 3 notes", "Opened today's note", "Opened 12 of Tue 18's 15 notes. The
-  /// rest are in the list.", or for a day with none, "No notes on Sat 22".
+  /// What the notice says once [day]'s notes are the tabs: "Opened today's
+  /// note", "Opened the 3 notes on Tue 18", "Opened 12 of the 15 notes on
+  /// Tue 18", or for a day with none, "No notes on Sat 22".
   String _dayOpened(DateTime day, {required int opened, required int of}) {
     final brief = SidebarTimestamp.briefDay(
       day,
       today: dayShown(widget.notes.now(), widget.prefs.displayTime),
     );
-    final (whose, on) = switch (brief) {
-      'Today' ||
-      'Yesterday' ||
-      'Tomorrow' => ("${brief.toLowerCase()}'s", brief.toLowerCase()),
-      _ => ("$brief's", 'on $brief'),
+    final near = switch (brief) {
+      'Today' || 'Yesterday' || 'Tomorrow' => brief.toLowerCase(),
+      _ => null,
     };
+    String notes(String what) =>
+        near == null ? 'the $what on $brief' : "$near's $what";
     return switch (of) {
-      0 => 'No notes $on',
-      1 => 'Opened $whose note',
-      _ when opened < of =>
-        'Opened $opened of $whose $of notes. The rest are in the list.',
-      _ => 'Opened $whose $of notes',
+      0 => near == null ? 'No notes on $brief' : 'No notes $near',
+      1 => 'Opened ${notes('note')}',
+      _ when opened < of => 'Opened $opened of ${notes('$of notes')}',
+      _ => 'Opened ${notes('$of notes')}',
     };
   }
 

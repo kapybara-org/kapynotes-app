@@ -817,6 +817,8 @@ class _DayState extends State<_Day> {
         ? 'Back to your tabs'
         : widget.count == 0
         ? 'Opens a page to write on it'
+        : widget.count == 1
+        ? 'Opens its note'
         : 'Opens its notes as tabs';
     return TextButton(
       onPressed: widget.onTap,
