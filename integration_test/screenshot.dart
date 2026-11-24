@@ -48,12 +48,13 @@ Future<void> screenshot(String name, {bool device = false}) async {
 
 /// Has the run's host save the device's own screen as
 /// `build/screenshots/<name>-device.png`, and nothing of the app's: for what
-/// the system shows while the app is out of sight. Does nothing without a
-/// host that reads screens.
-Future<void> deviceShot(String name) async {
+/// the system shows while the app is out of sight. With [island], an iPhone
+/// simulator's screen is read with its Dynamic Island, at the cost of exact
+/// colours. Does nothing without a host that reads screens.
+Future<void> deviceShot(String name, {bool island = false}) async {
   if (!hostReadsScreens) return;
   final shot = _hostShots[name] = Completer<void>();
-  developer.postEvent('kapynotes.deviceShot', {'name': name});
+  developer.postEvent('kapynotes.deviceShot', {'name': name, 'island': island});
   await shot.future.timeout(
     const Duration(minutes: 1),
     onTimeout: () => throw StateError('The host read no screen for $name.'),

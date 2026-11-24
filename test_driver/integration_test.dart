@@ -27,8 +27,9 @@ Future<void> main() async {
       switch (event.extensionKind) {
         case 'kapynotes.deviceShot':
           final name = '${event.extensionData?.data['name']}';
+          final island = event.extensionData?.data['island'] == true;
           final error = _name.hasMatch(name)
-              ? await _readScreen(device, name)
+              ? await _readScreen(device, name, island: island)
               : 'not a screenshot name: $name';
           await service.callServiceExtension(
             'ext.kapynotes.deviceShot',
@@ -470,29 +471,32 @@ Future<String?> _tapAgain(String device) async {
 /// Saves what [device]'s screen shows as
 /// `build/screenshots/<name>-device.png`, or says why it could not.
 ///
-/// A simulator's screen is read with AXe when it is on the PATH, as on CI:
-/// simctl's screenshot leaves out the Dynamic Island.
-Future<String?> _readScreen(String device, String name) async {
+/// simctl's screenshot of a simulator leaves out the Dynamic Island, so an
+/// [island] shot is read with AXe when it is on the PATH, as on CI. AXe takes
+/// the screen's sRGB for Display P3, which oversaturates it (#CF7A57 comes
+/// out #DD754E), so it reads no other shot.
+Future<String?> _readScreen(
+  String device,
+  String name, {
+  bool island = false,
+}) async {
   final file = File('build/screenshots/$name-device.png');
   await file.parent.create(recursive: true);
   if (_isSimulator(device)) {
+    final simctl = ['simctl', 'io', device, 'screenshot', file.path];
     ProcessResult read;
     try {
-      read = await Process.run('axe', [
-        'screenshot',
-        '--udid',
-        device,
-        '--output',
-        file.path,
-      ]);
+      read = island
+          ? await Process.run('axe', [
+              'screenshot',
+              '--udid',
+              device,
+              '--output',
+              file.path,
+            ])
+          : await Process.run('xcrun', simctl);
     } on ProcessException {
-      read = await Process.run('xcrun', [
-        'simctl',
-        'io',
-        device,
-        'screenshot',
-        file.path,
-      ]);
+      read = await Process.run('xcrun', simctl);
     }
     return read.exitCode == 0 ? null : '${read.stderr}'.trim();
   }
