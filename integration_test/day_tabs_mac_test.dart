@@ -124,8 +124,16 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
+    // One mouse for every click, which then leaves the week, so the picked
+    // day's tooltip covers no tab in the shots.
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(900, 600));
+    addTearDown(mouse.removePointer);
     Future<void> click(Finder target) async {
-      await tester.tap(target, kind: PointerDeviceKind.mouse);
+      final at = tester.getCenter(target);
+      await mouse.moveTo(at);
+      await mouse.down(at);
+      await mouse.up();
       await tester.pumpAndSettle();
     }
 
@@ -158,6 +166,9 @@ void main() {
       'Dinner plan',
     ]);
     expect(openNote(), startsWith('Morning run\n'));
+    await mouse.moveTo(const Offset(900, 600));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
     for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
       prefs.appearance = mode;
       await tester.pumpAndSettle();
