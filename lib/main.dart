@@ -19,6 +19,7 @@ import 'core/font_licenses.dart';
 import 'core/platform.dart';
 import 'core/quick_capture.dart';
 import 'core/window_placement.dart';
+import 'data/day_tabs.dart';
 import 'data/folders.dart';
 import 'data/note_days.dart';
 import 'data/layout_prefs.dart';
@@ -83,6 +84,7 @@ Future<void> main([List<String> args = const []]) async {
   final tags = TagStore(store);
   final folders = FolderStore(store);
   final days = NoteDayStore(store);
+  final dayTabs = DayTabsStore(store);
   // Kapy AI's chats: on this device, and synced while signed in with Pro.
   final chats = KapyChatBook(store, ready: () => notes.isLoaded);
   if (AppPlatform.isIOS) {
@@ -110,6 +112,7 @@ Future<void> main([List<String> args = const []]) async {
           tags: tags,
           folders: folders,
           days: days,
+          dayTabs: dayTabs,
           chats: chats,
         )
       : null;
@@ -181,6 +184,7 @@ Future<void> main([List<String> args = const []]) async {
       tags: tags,
       folders: folders,
       days: days,
+      dayTabs: dayTabs,
       chats: chats,
       // Here, where no test runs: see KapyNotesApp.deepLinks.
       deepLinks: DeepLinks.platform(),

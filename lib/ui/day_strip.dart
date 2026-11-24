@@ -107,11 +107,11 @@ class DayStrip extends StatefulWidget {
 
   /// A phone note's week: always seven days, the calendar week from
   /// [firstWeekday] that holds the picked day, each day its weekday over its
-  /// date across the whole width, and no month. A day with one note opens
-  /// it, a day with several lists them, and a day with none opens a page to
-  /// write on it. A swipe on it turns the weeks under the finger, a fling
-  /// carries on for as many as its speed would, and it comes to rest on a
-  /// whole week; ‹ and › turn one.
+  /// date across the whole width, and no month. A day picked goes to
+  /// [onPick], which opens its one note, its several as tabs, or with none a
+  /// page to write on it. A swipe on it turns the weeks under the finger, a
+  /// fling carries on for as many as its speed would, and it comes to rest on
+  /// a whole week; ‹ and › turn one.
   final bool phone;
 
   /// A phone's arrows: the strip's height to press, and this wide, or down
@@ -286,27 +286,14 @@ class _DayStripState extends State<DayStrip> {
   }
 
   /// A click on [day] in the week or the calendar: lists its notes where
-  /// there is no list beside the page, and otherwise picks it. On a phone it
-  /// opens a day's one note, lists several, or opens a page to write on a day
-  /// that holds none.
+  /// there is no list beside the page, and otherwise picks it, as a phone
+  /// always does.
   void _choose(DateTime day, {BuildContext? at}) {
-    if (widget.phone) {
-      final notes = _notesOn(day);
-      final onOpen = widget.onOpenNote;
-      if (notes.isEmpty) {
-        widget.onPick(day, notes);
-      } else if (notes.length == 1 && onOpen != null) {
-        onOpen(notes.single.id, behind: false);
-      } else {
-        unawaited(_list(day, at: at));
-      }
+    if (widget.phone || widget.onOpenNote == null) {
+      widget.onPick(day, _notesOn(day));
       return;
     }
-    if (widget.onOpenNote != null) {
-      unawaited(_list(day, at: at));
-      return;
-    }
-    widget.onPick(day, _notesOn(day));
+    unawaited(_list(day, at: at));
   }
 
   /// The notes on [day], in the order the strip was given them.
@@ -583,7 +570,7 @@ class _DayStripState extends State<DayStrip> {
     final today = widget.today;
     final counts = _countsByDay();
     final picked = widget.picked;
-    final filled = _listing ?? picked ?? today;
+    final filled = picked ?? today;
     final height = _Day.stackedHeight(MediaQuery.textScalerOf(context));
     // As narrow as M09 draws them, and narrower on a small phone, so each of
     // the seven days keeps 44 to tap; the arrows keep the strip's whole
@@ -612,17 +599,15 @@ class _DayStripState extends State<DayStrip> {
       children: [
         for (final day in _weekOn(page))
           Expanded(
-            child: Builder(
-              builder: (tapped) => _Day(
-                key: ValueKey('day-strip-${_date(day)}'),
-                day: day,
-                today: day == today,
-                picked: day == picked,
-                filled: day == filled,
-                count: counts[day] ?? 0,
-                stacked: true,
-                onTap: () => _choose(day, at: tapped),
-              ),
+            child: _Day(
+              key: ValueKey('day-strip-${_date(day)}'),
+              day: day,
+              today: day == today,
+              picked: day == picked,
+              filled: day == filled,
+              count: counts[day] ?? 0,
+              stacked: true,
+              onTap: () => _choose(day),
             ),
           ),
       ],
@@ -640,7 +625,6 @@ class _DayStripState extends State<DayStrip> {
           onHorizontalDragEnd: (details) => _drag?.end(details),
           onHorizontalDragCancel: () => _drag?.cancel(),
           child: SizedBox(
-            key: _weekRow,
             height: height,
             child: Row(
               children: [
