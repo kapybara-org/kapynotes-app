@@ -48,6 +48,7 @@ void main() {
     required String hash,
     NoteImageFetcher? fetch,
     bool dark = false,
+    bool increaseContrast = false,
   }) async {
     AppPlatform.debugTargetPlatformOverride = platform;
     tester.platformDispatcher.textScaleFactorTestValue = scale;
@@ -55,7 +56,9 @@ void main() {
     final width = platform == TargetPlatform.android ? 372.0 : 680.0;
     await tester.pumpWidget(
       MaterialApp(
-        theme: dark ? KapyTheme.dark() : KapyTheme.light(),
+        theme: dark
+            ? KapyTheme.dark(increaseContrast: increaseContrast)
+            : KapyTheme.light(increaseContrast: increaseContrast),
         home: Scaffold(
           body: Center(
             child: NoteVideoView(
@@ -145,19 +148,31 @@ void main() {
   }
 
   testWidgets('the mark and its words keep one light ink on the black card, '
-      'in light and in dark', (tester) async {
-    final ink = KapyTheme.darkPalette.textTertiary;
-    for (final dark in [false, true]) {
-      await pumpVideo(
-        tester,
-        platform: TargetPlatform.android,
-        scale: 1,
-        hash: 'missing',
-        dark: dark,
-      );
-      final words = tester.widget<Text>(find.text('Video unavailable'));
-      expect(words.style?.color, ink, reason: dark ? 'dark' : 'light');
-      expect(tester.widget<KapyIcon>(mark).color, ink);
+      'in light and in dark, stronger with Increase contrast', (tester) async {
+    for (final contrast in [false, true]) {
+      final dark = KapyTheme.darkPalette;
+      final ink = (contrast ? dark.withIncreasedContrast() : dark).textTertiary;
+      for (final appearance in [false, true]) {
+        // A fresh app each time, so the ink isn't read halfway through
+        // the theme's change from the last case.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await pumpVideo(
+          tester,
+          platform: TargetPlatform.android,
+          scale: 1,
+          hash: 'missing',
+          dark: appearance,
+          increaseContrast: contrast,
+        );
+        final reason = '${appearance ? 'dark' : 'light'}, contrast $contrast';
+        final words = tester.widget<Text>(find.text('Video unavailable'));
+        expect(words.style?.color, ink, reason: reason);
+        expect(tester.widget<KapyIcon>(mark).color, ink, reason: reason);
+      }
     }
+    expect(
+      KapyTheme.darkPalette.withIncreasedContrast().textTertiary,
+      isNot(KapyTheme.darkPalette.textTertiary),
+    );
   });
 }

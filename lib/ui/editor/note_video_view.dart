@@ -267,6 +267,7 @@ class _VideoUploadCover extends StatelessWidget {
 /// in the video player, the play glyph. Nothing is drawn over the words.
 /// The card is black in either appearance, so the mark and the words keep
 /// the dark appearance's quiet ink, the way the time and the × keep white.
+/// Increase contrast strengthens it, as it does every quiet text.
 class _VideoPlaceholder extends StatelessWidget {
   const _VideoPlaceholder({required this.label, required this.playable});
 
@@ -275,7 +276,12 @@ class _VideoPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ink = KapyTheme.darkPalette.textTertiary;
+    final dark = KapyTheme.darkPalette;
+    final ink =
+        (context.palette.increasedContrast
+                ? dark.withIncreasedContrast()
+                : dark)
+            .textTertiary;
     return ColoredBox(
       color: Colors.black,
       child: Center(
@@ -291,10 +297,7 @@ class _VideoPlaceholder extends StatelessWidget {
             Text(
               label,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: ink,
-                fontSize: AppTypeScale.caption,
-              ),
+              style: TextStyle(color: ink, fontSize: AppTypeScale.caption),
             ),
           ],
         ),
