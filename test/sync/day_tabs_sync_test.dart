@@ -7,6 +7,7 @@ import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/key_bundle.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
@@ -31,7 +32,9 @@ class AccountDevice {
     );
     account = Account(
       auth: auth,
-      syncApi: (_) => FakeApi(server, userId: auth.id),
+      syncApi: (_) =>
+          FakeApi(server, userId: auth.id)
+            ..keyGeneration = () => state.keyGeneration,
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
       state: state,
@@ -351,6 +354,43 @@ void main() {
       expect(d.dayTabs.arrange(day, notes).order, [notes[1], notes[0]]);
       expect(d.dayTabs.owed.map((r) => r.key), ['2026-11-18']);
       d.dispose();
+    });
+
+    test('a reset owes the orders again, so they reach a device unlocked '
+        'with the new passphrase', () async {
+      final d = await signedIn();
+      final notes = [
+        for (final title in ['Standup notes', 'Lunch with Maya'])
+          d.notes.create(body: title).id,
+      ];
+      d.dayTabs.pin(day, notes, notes[1]);
+      await d.account.sync!.syncNow();
+      await until(() => d.dayTabs.owed.isEmpty);
+
+      final prepared = await d.account.prepareReset('a new passphrase');
+      expect(await d.account.sendKeyCode(KeyProofAction.reset), isNull);
+      final code = await d.account.verifyKeyCode(
+        KeyProofAction.reset,
+        '123456',
+      );
+      expect(
+        await d.account.commitReset(prepared, proof: code.proof!),
+        isA<KeyChangeDone>(),
+      );
+      await d.account.sync!.syncNow();
+      await until(() => d.dayTabs.owed.isEmpty);
+
+      final other = AccountDevice(server);
+      await other.boot();
+      await other.account.signIn(email: 'a@b.co', password: 'x');
+      expect(await other.account.unlock('a new passphrase'), isTrue);
+      await until(
+        () => other.dayTabs.arrange(day, notes).pinned == 1,
+        reason: 'the order stayed under the old key',
+      );
+      expect(other.dayTabs.arrange(day, notes).order, [notes[1], notes[0]]);
+      d.dispose();
+      other.dispose();
     });
   });
 }
