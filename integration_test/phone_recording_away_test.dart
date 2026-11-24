@@ -144,6 +144,13 @@ void main() {
     if (locked) {
       await deviceAction('wake');
       await wait(3);
+      if (Platform.isIOS) {
+        // Answered once, as a person does, the Lock Screen's question about
+        // Live Activities leaves the card as it shows from then on.
+        await deviceAction('allow');
+        await wait(3);
+        await deviceAction('wake');
+      }
       await deviceShot('recording-away-lock-screen');
     }
     if (Platform.isAndroid) {
@@ -188,10 +195,12 @@ void main() {
       // recording only once it has. Its black shows best on light Settings.
       await wait(8);
       await deviceShot('recording-away-dynamic-island');
-      await deviceAction('dark');
       // For the run's log only: whether ActivityKit started the activity
       // and the widget extension drew it.
       await deviceAction('system-log');
+      await deviceAction('hold-island');
+      await deviceShot('recording-away-dynamic-island-expanded');
+      await deviceAction('dark');
     }
 
     final remaining = _away - DateTime.now().difference(left);

@@ -174,18 +174,41 @@ Future<String?> _act(String device, String action) async {
     }
   }
 
-  // Whether the simulator's screen has gone dark, as SpringBoard tells
-  // whoever asks.
-  Future<bool> screenOff() async {
-    final state = await Process.run('xcrun', [
+  // A touch at [x], [y] on the simulator's screen, in points, lifted after
+  // [hold] seconds. A bare touch, unlike AXe's tap, reads nothing of the
+  // screen first, which the Lock Screen gives no time for.
+  Future<String?> touch(int x, int y, {double hold = 0.1}) async {
+    try {
+      return await run('axe', [
+        'touch',
+        '-x',
+        '$x',
+        '-y',
+        '$y',
+        '--down',
+        '--up',
+        '--delay',
+        '$hold',
+        '--udid',
+        device,
+      ]);
+    } on ProcessException catch (error) {
+      return 'a touch needs AXe: ${error.message}';
+    }
+  }
+
+  // What SpringBoard tells whoever asks about the simulator's screen:
+  // `hasBlankedScreen` once it has gone dark, `lockstate` while it is locked.
+  Future<bool> springBoard(String state) async {
+    final result = await Process.run('xcrun', [
       'simctl',
       'spawn',
       device,
       'notifyutil',
       '-g',
-      'com.apple.springboard.hasBlankedScreen',
+      'com.apple.springboard.$state',
     ]);
-    return '${state.stdout}'.trim().endsWith(' 1');
+    return '${result.stdout}'.trim().endsWith(' 1');
   }
 
   if (_isSimulator(device)) {
@@ -193,7 +216,22 @@ Future<String?> _act(String device, String action) async {
       'lock' => press('lock'),
       // Lock again lights a screen that locking turned off, as the side
       // button does.
-      'wake' => screenOff().then((off) => off ? press('lock') : null),
+      'wake' => springBoard(
+        'hasBlankedScreen',
+      ).then((off) => off ? press('lock') : null),
+      // An app's first Live Activity asks under its card on the Lock Screen
+      // whether to allow the app's Live Activities. Its Allow sits at 290, 710
+      // on CI's iPhone 17; should the press open the phone, it is locked and
+      // lit again.
+      'allow' => touch(290, 710).then(
+        (error) async =>
+            error ??
+            (await springBoard('lockstate')
+                ? null
+                : await press('lock') ?? await press('lock')),
+      ),
+      // Held, the Dynamic Island opens to all it shows.
+      'hold-island' => touch(201, 32, hold: 1),
       // A first Home lights a dark Lock Screen, and with no passcode either
       // press opens the phone; one more on the Home Screen does nothing.
       'unlock' => press(
