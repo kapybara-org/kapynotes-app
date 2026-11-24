@@ -693,6 +693,8 @@ class NoteListRowFace extends StatelessWidget {
     this.snippet,
     this.place,
     this.people,
+    this.live,
+    this.viewOnly = false,
     this.ringed = false,
     this.locked = false,
     this.shared = false,
@@ -705,12 +707,19 @@ class NoteListRowFace extends StatelessWidget {
   final String date;
   final String? snippet;
 
+  /// Who is typing in the note, or in it, which a phone's row says first on
+  /// its last line, after a sage dot. Null while nobody else is.
+  final String? live;
+
+  /// Somebody else's note this account may only read, which a phone's row
+  /// says on its last line.
+  final bool viewOnly;
+
   /// The folders the note is in, as "Work › Clients", which start the second
   /// line in the date's quieter ink. Null for a note in no folder.
   final String? place;
 
-  /// Who a shared note is open to, at the end of a phone's last line, in
-  /// place of the shared mark.
+  /// Who a shared note is open to, at the end of a phone's last line.
   final Widget? people;
   final bool selected;
   final bool hovering;
@@ -728,14 +737,8 @@ class NoteListRowFace extends StatelessWidget {
     final people = this.people;
     final marks = touch
         ? const <KapyIconData>[]
-        : _marksOf(
-            glance.media,
-            locked: locked,
-            shared: shared && people == null,
-          );
-    final holds = touch
-        ? _holdsOf(palette, shared: shared && people == null)
-        : const <Widget>[];
+        : _marksOf(glance.media, locked: locked, shared: shared);
+    final holds = touch ? _holdsOf(palette) : const <Widget>[];
     final summary =
         snippet ??
         (note.isEmpty
@@ -743,6 +746,11 @@ class NoteListRowFace extends StatelessWidget {
             : touch
             ? glance.preview ?? ''
             : glance.summary);
+    // A phone's note with nothing to preview goes from its title straight to
+    // its bottom line, or ends at the title when it has none.
+    final previewed =
+        !touch || snippet != null || place != null || summary.isNotEmpty;
+    final bottom = holds.isNotEmpty || (!previewed && people != null);
     final picking = this.picking;
     final marked = selected || picking == true;
     final tagMarks = TagMarks.of(context, note.id);
@@ -812,33 +820,31 @@ class NoteListRowFace extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    if (touch)
-                      // At least as wide as the widest time, so the times line
-                      // up down the list, and the tag dots come after the
-                      // time rather than leading the title.
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 72),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              date,
-                              maxLines: 1,
-                              style: _figtree(
-                                12.5,
-                                16,
-                                FontWeight.w400,
-                                palette.textTertiary,
-                              ),
-                            ),
-                            if (tagMarks.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              TagDots(tags: tagMarks),
-                            ],
-                          ],
+                    if (touch) ...[
+                      Text(
+                        date,
+                        maxLines: 1,
+                        style: chromeStyle(
+                          size: 13,
+                          line: 16,
+                          weight: AppWeight.axisOf(FontWeight.w400),
+                          color: palette.textTertiary,
+                          tabular: true,
                         ),
-                      )
-                    else
+                      ),
+                      const SizedBox(width: 8),
+                      // The tag dots follow the time in room for the most a
+                      // row shows, kept on untagged rows so times line up.
+                      SizedBox(
+                        width: TagDots.widthFor(TagDots.most),
+                        child: tagMarks.isEmpty
+                            ? null
+                            : Align(
+                                alignment: Alignment.centerLeft,
+                                child: TagDots(tags: tagMarks),
+                              ),
+                      ),
+                    ] else
                       Text(
                         date,
                         maxLines: 1,
@@ -851,47 +857,49 @@ class NoteListRowFace extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    if (!touch) SizedBox(width: TagDots.size + 8),
-                    for (final mark in marks) ...[
-                      KapyIcon(mark, size: 14, color: palette.textMuted),
-                      const SizedBox(width: 5),
-                    ],
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            if (place case final place?)
-                              TextSpan(
-                                text: '$place · ',
-                                style: TextStyle(color: palette.textTertiary),
-                              ),
-                            TextSpan(text: summary),
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _figtree(
-                          touch ? 14 : AppTypeScale.body,
-                          touch ? 20 : 16,
-                          FontWeight.w400,
-                          note.isEmpty
-                              ? palette.textTertiary
-                              : touch
-                              ? palette.textSecondary
-                              : palette.textMuted,
+                if (previewed) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (!touch) SizedBox(width: TagDots.size + 8),
+                      for (final mark in marks) ...[
+                        KapyIcon(mark, size: 14, color: palette.textMuted),
+                        const SizedBox(width: 5),
+                      ],
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              if (place case final place?)
+                                TextSpan(
+                                  text: '$place · ',
+                                  style: TextStyle(color: palette.textTertiary),
+                                ),
+                              TextSpan(text: summary),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _figtree(
+                            touch ? 14 : AppTypeScale.body,
+                            touch ? 20 : 16,
+                            FontWeight.w400,
+                            note.isEmpty
+                                ? palette.textTertiary
+                                : touch
+                                ? palette.textSecondary
+                                : palette.textMuted,
+                          ),
                         ),
                       ),
-                    ),
-                    if (people != null && holds.isEmpty) ...[
-                      const SizedBox(width: 8),
-                      people,
+                      if (people != null && !bottom) ...[
+                        const SizedBox(width: 8),
+                        people,
+                      ],
                     ],
-                  ],
-                ),
-                if (holds.isNotEmpty) ...[
+                  ),
+                ],
+                if (bottom) ...[
                   const SizedBox(height: 3),
                   Row(
                     key: const ValueKey('note-row-holds'),
@@ -923,11 +931,13 @@ class NoteListRowFace extends StatelessWidget {
     );
   }
 
-  /// A phone row's third line, what the note holds: how far its checklist
-  /// has got, how long its recordings and videos run, how many pictures it
-  /// has, then whether it is read-only or [shared]. Each is a 14 pt icon 6
-  /// from its words, 12 from the next. Empty when it holds only words.
-  List<Widget> _holdsOf(CalcPalette palette, {required bool shared}) {
+  /// A phone row's third line: who is in the note, then what it holds: how
+  /// far its checklist has got, how long its recordings and videos run, how
+  /// many pictures it has, then whether it is read-only or [viewOnly]. Each
+  /// is a 14 pt icon 6 from its words, 12 from the next. Empty when it holds
+  /// only words and nobody else is in it. Who it is shared with is its
+  /// people's faces, or the heading over it in Shared, never a mark here.
+  List<Widget> _holdsOf(CalcPalette palette) {
     final ink = palette.textTertiary;
     final words = chromeStyle(
       size: 12,
@@ -960,6 +970,27 @@ class NoteListRowFace extends StatelessWidget {
     );
     Widget mark(KapyIconData icon) => KapyIcon(icon, size: 14, color: ink);
     return [
+      if (live case final live?)
+        Row(
+          key: const ValueKey('note-row-live'),
+          mainAxisSize: MainAxisSize.min,
+          spacing: 6,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: palette.accentText,
+                shape: BoxShape.circle,
+              ),
+            ),
+            Text(
+              live,
+              maxLines: 1,
+              style: words.copyWith(color: palette.textSecondary),
+            ),
+          ],
+        ),
       if (glance.boxes > 0)
         hold(
           ChecklistPie(
@@ -976,7 +1007,7 @@ class NoteListRowFace extends StatelessWidget {
         hold(mark(NoteMedia.video.icon), formatVoiceDuration(video)),
       if (pictures > 0) hold(mark(NoteMedia.image.icon), '$pictures'),
       if (locked) hold(mark(KapyIcons.lockRounded)),
-      if (shared) hold(mark(KapyIcons.groupOutlined)),
+      if (viewOnly) hold(mark(KapyIcons.visibilityOutlined), 'View only'),
     ];
   }
 }

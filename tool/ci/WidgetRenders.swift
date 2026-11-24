@@ -50,6 +50,30 @@ struct WidgetRenders {
     }
     save(lockBoard, .dark, "ios-lockscreen", to: out)
 
+    // A recording's Live Activity, as "Recording away from the app" (1DX9-1)
+    // draws it: the Lock Screen's card in each state and appearance, and the
+    // Dynamic Island's three sizes, around the extension's own views.
+    for glyph in ["Mic01", "Pause", "Play", "Stop"] {
+      check(UIImage(named: glyph)?.renderingMode == .alwaysTemplate, "\(glyph) is not a template glyph")
+    }
+    let recording = RecordingAttributes.ContentState(
+      startedAt: Date().addingTimeInterval(-42), elapsed: 42, paused: false, interrupted: false)
+    let paused = RecordingAttributes.ContentState(
+      startedAt: Date(), elapsed: 65, paused: true, interrupted: false)
+    let interrupted = RecordingAttributes.ContentState(
+      startedAt: Date(), elapsed: 65, paused: false, interrupted: true)
+    for scheme in [ColorScheme.light, .dark] {
+      let mode = scheme == .dark ? "dark" : "light"
+      save(lockCard(recording), scheme, "recording-lockscreen-\(mode)", to: out)
+      save(lockCard(paused), scheme, "recording-lockscreen-paused-\(mode)", to: out)
+      save(lockCard(interrupted), scheme, "recording-lockscreen-interrupted-\(mode)", to: out)
+    }
+    save(compactIsland(recording), .dark, "recording-island-compact", to: out)
+    save(compactIsland(paused), .dark, "recording-island-compact-paused", to: out)
+    save(minimalIsland(recording), .dark, "recording-island-minimal", to: out)
+    save(expandedIsland(recording), .dark, "recording-island-expanded", to: out)
+    save(expandedIsland(paused), .dark, "recording-island-expanded-paused", to: out)
+
     guard failures.isEmpty else {
       failures.forEach { print("FAIL: \($0)") }
       exit(1)
@@ -156,6 +180,56 @@ struct WidgetRenders {
   }
 
   private static let lockScreenWallpaper = rgb(0x3A3F36)
+
+  /// The Lock Screen's Live Activity: as wide as it is on an iPhone 17, in
+  /// the background the activity asks for, with the system's corners.
+  private static func lockCard(_ state: RecordingAttributes.ContentState) -> some View {
+    onWallpaper(
+      RecordingCard(state: state)
+        .frame(width: 361)
+        .background(widgetBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(16))
+  }
+
+  /// The island is black on any wallpaper; drawn on the board's dark ground.
+  private static func onIslandGround(_ island: some View) -> some View {
+    island.padding(16).background(rgb(0x2A2620))
+  }
+
+  private static func compactIsland(_ state: RecordingAttributes.ContentState) -> some View {
+    onIslandGround(
+      HStack {
+        RecordingMic(state: state, size: 18)
+        Spacer()
+        RecordingIslandTime(state: state, size: 15).frame(width: 44, alignment: .trailing)
+      }
+      .padding(.horizontal, 14)
+      .frame(width: 250, height: 37)
+      .background(Capsule().fill(.black)))
+  }
+
+  private static func minimalIsland(_ state: RecordingAttributes.ContentState) -> some View {
+    onIslandGround(
+      RecordingMic(state: state, size: 18)
+        .frame(width: 37, height: 37)
+        .background(Circle().fill(.black)))
+  }
+
+  private static func expandedIsland(_ state: RecordingAttributes.ContentState) -> some View {
+    onIslandGround(
+      VStack(spacing: 14) {
+        HStack {
+          RecordingIslandStatus(state: state)
+          Spacer()
+          RecordingIslandTime(state: state, size: 28)
+        }
+        RecordingIslandFooter(state: state)
+      }
+      .padding(EdgeInsets(top: 18, leading: 16, bottom: 18, trailing: 22))
+      .frame(width: 371)
+      .background(RoundedRectangle(cornerRadius: 44, style: .continuous).fill(.black)))
+  }
 
   private static func rgb(_ hex: UInt32) -> Color {
     Color(

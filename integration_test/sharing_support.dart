@@ -76,14 +76,18 @@ Future<void> pumpUntil(WidgetTester tester, bool Function() done) async {
 /// Takes [name]'s screenshot once the frame has caught up with the last tap:
 /// the live binding's marker where the test pressed has faded, and a toast
 /// the tap brought up has finished fading in.
-Future<void> settledShot(WidgetTester tester, String name) async {
+Future<void> settledShot(
+  WidgetTester tester,
+  String name, {
+  bool device = false,
+}) async {
   await tester.runAsync(
     () => Future<void>.delayed(const Duration(milliseconds: 300)),
   );
   for (var frame = 0; frame < 3; frame++) {
     await tester.pump();
   }
-  await screenshot(name);
+  await screenshot(name, device: device);
 }
 
 /// Taps [target], then pumps on the real clock until [done], leaving any

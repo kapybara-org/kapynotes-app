@@ -22,6 +22,7 @@ import 'package:http/testing.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -42,6 +43,7 @@ import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../test/kapy_icon_finder.dart';
 import '../test/support/sharing_devices.dart'
     show Device, FakeSend, joiningOver, opener;
 import '../test/sync/fake_server.dart' show FakeApi, FakeAuth, FakeServer;
@@ -292,6 +294,35 @@ void main() {
       expect(listed('Trip budget'), isTrue);
       expect(listed('Packing list'), isTrue);
       expect(listed('Bank details'), isFalse);
+      // 16RO-0 (KAP-313): each group headed in the serif with a › to its
+      // person, and rows with no shared mark.
+      for (final heading in ['With Carol and Priya', 'From Priya']) {
+        expect(
+          find.descendant(of: sharedPage, matching: find.text(heading)),
+          findsOneWidget,
+        );
+      }
+      expect(
+        find.descendant(
+          of: sharedPage,
+          matching: findKapyIcon(KapyIcons.chevronRightRounded),
+        ),
+        findsNWidgets(2),
+      );
+      expect(
+        find.descendant(
+          of: row('Packing list'),
+          matching: find.text('View only'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedPage,
+          matching: findKapyIcon(KapyIcons.groupOutlined),
+        ),
+        findsNothing,
+      );
       await settledShot(tester, 'phone-sharing-shared-page');
 
       await longPressRow(tester, 'Trip budget');
@@ -433,6 +464,34 @@ void main() {
         {carol.email: SpaceRole.viewer},
       );
       await settledShot(tester, 'phone-sharing-remove-undone');
+    }, skip: !phone);
+
+    // Its own scene, because the device's shot can outlast the notice that
+    // the test above still needs after the sheet closes.
+    testWidgets("Remove's notice is the phone's card, at the sheet's foot", (
+      tester,
+    ) async {
+      await shareAround(tester);
+      await openSharedPage(tester);
+      await openSheetFor(tester, 'Trip budget');
+      await tester.tap(memberMenu('user-3'));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+
+      final removed = find.text('Removed Carol from this note');
+      await tapUntil(
+        tester,
+        askOk,
+        () => removed.evaluate().isNotEmpty && sheet.evaluate().length == 1,
+      );
+      expect(sheet, findsOneWidget);
+      final card = tester.getRect(find.byKey(const ValueKey('toast-surface')));
+      final width =
+          tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      expect(card.width, moreOrLessEquals(width - 32, epsilon: 0.5));
+      expect(tester.takeException(), isNull);
+      await settledShot(tester, 'notice-removed-in-sheet', device: true);
     }, skip: !phone);
 
     testWidgets('Stop sharing, then Undo after the sheet has closed shares '

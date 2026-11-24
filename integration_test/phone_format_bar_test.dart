@@ -11,6 +11,7 @@
 //
 // On the iOS Simulator turn off I/O > Keyboard > Connect Hardware Keyboard, or
 // the software keyboard never appears and the first case says so.
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -54,9 +55,21 @@ void main() {
   NoteField field(WidgetTester tester) =>
       tester.widget<NoteField>(find.byType(NoteField));
 
-  Future<void> open(WidgetTester tester, String body) async {
+  Future<void> open(
+    WidgetTester tester,
+    String body, {
+    bool again = false,
+  }) async {
     await tester.pumpWidget(const SizedBox.shrink());
+    // Each case starts with the keyboard down, whatever the last one left.
+    // A case that failed can leave a keyboard up with nothing focused under
+    // it, which nothing else would ever take down, so ask for it to go, and
+    // ask again each second in case a request lands mid-animation and is
+    // lost.
     for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
+      if (i % 10 == 0) {
+        await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      }
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(
@@ -105,8 +118,27 @@ void main() {
         var inset = tester.view.viewInsets.bottom;
         for (var j = 0; j < 50; j++) {
           await tester.pump(const Duration(milliseconds: 100));
-          if (tester.view.viewInsets.bottom == inset) return;
-          inset = tester.view.viewInsets.bottom;
+          if (tester.view.viewInsets.bottom != inset) {
+            inset = tester.view.viewInsets.bottom;
+            continue;
+          }
+          // Android's window manager can call off a keyboard it has just
+          // shown and leave the inset at zero under a keyboard that stays up,
+          // which takes the bar with it (KAP-324). Told apart from a keyboard
+          // that really went by asking the device, that opens the note once
+          // more, with a warning, rather than failing the case on what isn't
+          // the bar's doing.
+          for (var k = 0; k < 10; k++) {
+            await tester.pump(const Duration(milliseconds: 100));
+            if (tester.view.viewInsets.bottom > 0) continue;
+            if (again || await deviceAction('keyboard-shown') != null) return;
+            await deviceAction(
+              'warn:phone_format_bar_test: the inset went to zero under a '
+              'keyboard Android still shows (KAP-324), so the note opens again',
+            );
+            return open(tester, body, again: true);
+          }
+          return;
         }
         fail(
           'The software keyboard was still coming up after 5 s; the bar '

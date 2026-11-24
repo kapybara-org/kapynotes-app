@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../billing/billing.dart';
+import '../core/platform.dart';
 import '../core/popup_keyboard.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -397,6 +398,7 @@ class _NoteShareSheetState extends State<_NoteShareSheet> {
       Toast.show(
         context,
         'Removed $name from this note',
+        icon: AppPlatform.hasPointer ? null : KapyIcons.checkCircleRounded,
         action: 'Undo',
         onAction: () => unawaited(
           undoSharing(overlay, () async {
@@ -1431,6 +1433,43 @@ class _SheetScaffold extends StatelessWidget {
             color: color,
           ),
         );
+        final footer = DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: palette.textPrimary.withValues(alpha: 0.06),
+                width: AppHairline.of(context),
+              ),
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(12, phone ? 4 : 8, 12, phone ? 0 : 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final action in actions)
+                        TextButton(
+                          key: action.key,
+                          onPressed: action.onPressed,
+                          style: text(palette.textSecondary),
+                          child: Text(action.label),
+                        ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  key: const ValueKey('share-done'),
+                  onPressed: onClose,
+                  style: text(palette.textPrimary),
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
+          ),
+        );
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1443,52 +1482,22 @@ class _SheetScaffold extends StatelessWidget {
             ),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                padding: EdgeInsets.fromLTRB(20, 4, 20, phone ? 8 : 12),
                 child: body,
               ),
             ),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: palette.textPrimary.withValues(alpha: 0.06),
-                    width: AppHairline.of(context),
-                  ),
+            // A phone's notice takes the footer's place, from 8 under the
+            // last row: the body's last 4 are the footer's here.
+            if (phone)
+              ToastClearance(
+                cover: true,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: footer,
                 ),
-              ),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  12,
-                  phone ? 4 : 8,
-                  12,
-                  phone ? 0 : 8,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          for (final action in actions)
-                            TextButton(
-                              key: action.key,
-                              onPressed: action.onPressed,
-                              style: text(palette.textSecondary),
-                              child: Text(action.label),
-                            ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      key: const ValueKey('share-done'),
-                      onPressed: onClose,
-                      style: text(palette.textPrimary),
-                      child: const Text('Done'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+              )
+            else
+              footer,
           ],
         );
       },

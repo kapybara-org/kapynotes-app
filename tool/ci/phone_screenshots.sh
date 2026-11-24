@@ -13,19 +13,52 @@
 #
 # Every test file runs even when one fails, and the script exits 1 if any did.
 # A test that hangs is stopped after 10 minutes, with a screenshot of where.
+# A file that is still running after PHONE_FILE_MINUTES (20 by default; the
+# first file, which pays for the cold build, PHONE_FIRST_FILE_MINUTES, 35), such
+# as an app that hangs at launch, where that 10 minutes never starts, is
+# stopped with everything it started, counts as failed, and the next file runs.
 set -u
 
 device=$1
 status=0
 export KAPYNOTES_DEVICE_SHOTS=$device
 
+limit=$(( ${PHONE_FIRST_FILE_MINUTES:-35} * 60 ))
+mkdir -p build/screenshots
+
 drive() {
+  set -m
   flutter drive --no-pub -d "$device" \
     --driver test_driver/integration_test.dart \
     --target "integration_test/$1_test.dart" \
     --dart-define=KAPYNOTES_SYNC=false \
     --dart-define=KAPYNOTES_DEVICE_SHOTS="$device" \
-    --timeout=600 --screenshot=build/screenshots || status=1
+    --timeout=600 --screenshot=build/screenshots &
+  local pid=$! waited=0
+  set +m
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= limit )); then
+      echo "::error::$1_test.dart was still running after $(( limit / 60 )) minutes and was stopped"
+      # The shot is put off to one side, in a group of its own: a simulator
+      # stuck enough to hang the app can hang the shot too.
+      set -m
+      if adb -s "$device" get-state >/dev/null 2>&1; then
+        adb -s "$device" exec-out screencap -p > "build/screenshots/$1-stopped.png" &
+      else
+        xcrun simctl io "$device" screenshot "build/screenshots/$1-stopped.png" >/dev/null &
+      fi
+      local shot=$!
+      set +m
+      kill -TERM -- "-$pid" 2>/dev/null
+      sleep 15
+      kill -KILL -- "-$pid" "-$shot" 2>/dev/null
+      break
+    fi
+    sleep 5
+    waited=$(( waited + 5 ))
+  done
+  wait "$pid" || status=1
+  limit=$(( ${PHONE_FILE_MINUTES:-20} * 60 ))
 }
 
 navbar() {
@@ -37,6 +70,15 @@ navbar() {
 for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_tasks phone_note_page phone_about phone_note_swipe; do
   drive "$test"
 done
+
+# phone_recording_away is last: it records, locks the phone and opens
+# Settings over the app, none of which the others expect. An iPhone ends an
+# app whose permissions change while it runs, so a simulator's microphone is
+# granted before the app starts; an emulator's is granted by the test's host.
+if ! adb -s "$device" get-state >/dev/null 2>&1; then
+  xcrun simctl privacy "$device" grant microphone com.kapybara.kapynotes || status=1
+fi
+drive phone_recording_away
 
 if adb -s "$device" get-state >/dev/null 2>&1; then
   mode=$(adb -s "$device" shell settings get secure navigation_mode | tr -d '\r')

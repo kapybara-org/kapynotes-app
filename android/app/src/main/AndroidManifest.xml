@@ -19,6 +19,15 @@
          launch: a user who never records is never asked. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!-- Keeping a recording going with the screen off or another app in
+         front: RecordingService, a foreground service of type microphone,
+         and its ongoing notification. Notifications are asked for the first
+         time somebody records, on Android 13 and later; without them the
+         recording carries on all the same, unseen. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <!-- Requested only when the camera surface is opened. Choosing an
          existing photo uses Android's system Photo Picker and needs no broad
          storage permission. -->
@@ -87,6 +96,14 @@
                 <data android:scheme="https" android:host="kapynotes.com" android:pathPrefix="/space/" />
             </intent-filter>
         </activity>
+        <!-- A recording in progress while the app is out of sight. Stops
+             with the task: a swipe from Recents ends the recording, and the
+             next launch puts it in its note. -->
+        <service
+            android:name=".RecordingService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:stopWithTask="true" />
         <!-- The square widget, one action of the three. Not exported: the
              launcher and the keyguard bind widget providers through the
              system, and nothing else has any business broadcasting to this

@@ -25,7 +25,12 @@ enum LaunchIntent {
   dictate,
 
   /// **Capture**. The same note, with its camera open over it.
-  capture;
+  capture,
+
+  /// A tap on a recording's notification on Android, or its Live Activity on
+  /// the iPhone: back to the note being recorded into. With no recording
+  /// left to go back to, an ordinary launch.
+  recording;
 
   /// Whether this arrival belongs in the note last written in.
   ///
@@ -33,8 +38,13 @@ enum LaunchIntent {
   /// not a way to add to the pile: a note per tap would shred a notebook into
   /// one-line fragments, and on a plan that caps how many notes an account
   /// may hold it would spend that allowance on them. Only an ordinary launch
-  /// starts a note.
-  bool get continuesLastNote => this != LaunchIntent.open;
+  /// starts a note, and a recording knows its own note.
+  bool get continuesLastNote => switch (this) {
+    LaunchIntent.continueWriting ||
+    LaunchIntent.dictate ||
+    LaunchIntent.capture => true,
+    LaunchIntent.open || LaunchIntent.recording => false,
+  };
 }
 
 /// The widgets' half of the app: one tap, and the user is back in the note

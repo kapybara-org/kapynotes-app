@@ -7,10 +7,12 @@ import WidgetKit
 /// Screen. Each column is a `Link`, which is how a widget offers more than
 /// the single destination `widgetURL` allows, and each one opens the app on
 /// exactly the URL the square widget would have opened it on.
+@available(iOS 17.0, *)
 struct QuickActionsEntry: TimelineEntry {
   let date: Date
 }
 
+@available(iOS 17.0, *)
 struct QuickActionsProvider: TimelineProvider {
   func placeholder(in context: Context) -> QuickActionsEntry {
     QuickActionsEntry(date: .now)
@@ -26,6 +28,7 @@ struct QuickActionsProvider: TimelineProvider {
   }
 }
 
+@available(iOS 17.0, *)
 struct QuickActionsView: View {
   var body: some View {
     HStack(spacing: 0) {
@@ -42,6 +45,7 @@ struct QuickActionsView: View {
 /// One column: a full-height third of the widget, edge to edge, so that the
 /// whole of it is the tap target and not just the disc and the word in the
 /// middle of it. Write sits on the primary disc, the other two on the tonal.
+@available(iOS 17.0, *)
 struct QuickActionTile: View {
   let action: QuickAction
 
@@ -64,6 +68,7 @@ struct QuickActionTile: View {
   }
 }
 
+@available(iOS 17.0, *)
 struct QuickActionsWidget: Widget {
   var body: some WidgetConfiguration {
     StaticConfiguration(

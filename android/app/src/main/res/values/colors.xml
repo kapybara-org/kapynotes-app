@@ -14,4 +14,7 @@
     <color name="widget_on_primary">#FCFAF4</color>
     <color name="widget_tonal">#E6ECDB</color>
     <color name="widget_on_tonal">#445A2F</color>
+    <!-- A recording's notification: the clay the app records in, behind a
+         white microphone. -->
+    <color name="recording_clay">#CF7A57</color>
 </resources>

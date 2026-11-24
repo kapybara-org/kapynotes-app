@@ -435,9 +435,11 @@ class NoteEditor extends StatefulWidget {
 class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   static const _pasteAsPlainTextLabel = 'Paste Text';
 
+  /// The first retry waits well past the 100 ms or so an IME that took the
+  /// request needs to start moving the window; see
+  /// [_windowMovedSinceKeyboardRequest].
   static const List<Duration> _keyboardRetryDelays = [
-    Duration(milliseconds: 100),
-    Duration(milliseconds: 150),
+    Duration(milliseconds: 400),
     Duration(milliseconds: 250),
     Duration(milliseconds: 400),
     Duration(milliseconds: 600),
@@ -445,6 +447,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     Duration(milliseconds: 1200),
     Duration(milliseconds: 1500),
   ];
+
+  /// Whether the window has changed since the editor last asked for the
+  /// keyboard. An IME that took the request is already moving it, and asking
+  /// again then cancels the animation it started; Android can then leave the
+  /// inset at zero under a keyboard that is up, so the bar goes and the editor
+  /// takes the keyboard for dismissed (KAP-324).
+  bool _windowMovedSinceKeyboardRequest = false;
 
   /// Whether the soft keyboard was up the last time the window was measured,
   /// which is what turns a metrics change into "the keyboard just went".
@@ -979,10 +988,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _scheduleKeyboardRetry() {
     _keyboardRetryTimer?.cancel();
     if (widget.readOnly || !widget.ensureKeyboardVisible) return;
-    // Try as soon as the editable connection exists, then probe quickly while
+    // Try as soon as the editable connection exists, then again while
     // Android is still promoting FlutterView to the served input view.
-    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+    _requestKeyboard();
     _scheduleKeyboardRetryAt(0);
+  }
+
+  void _requestKeyboard() {
+    _windowMovedSinceKeyboardRequest = false;
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
   }
 
   /// How far the soft keyboard reaches up the window, or zero when it is not
@@ -1002,10 +1016,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       if (!mounted || !_focusNode.hasFocus || _keyboardInset > 0) {
         return;
       }
-      // A rejected Android request has no Dart acknowledgement. Backoff keeps
-      // the recovery window broad without repeatedly waking an IME that has
-      // already started its animation.
-      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+      // A rejected Android request has no Dart acknowledgement, but one the
+      // IME took moves the window. Until a whole wait passes with the window
+      // still, the last request is taken to be in hand.
+      if (_windowMovedSinceKeyboardRequest) {
+        _windowMovedSinceKeyboardRequest = false;
+      } else {
+        _requestKeyboard();
+      }
       _scheduleKeyboardRetryAt(index + 1);
     });
   }
@@ -1576,7 +1594,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return session != null && session.noteId == widget.noteId ? session : null;
   }
 
-  Widget _voiceChip(NoteVoiceRef ref) {
+  NoteVoiceChip _voiceChip(NoteVoiceRef ref) {
     final player = widget.player;
     return NoteVoiceChip(
       key: ValueKey('note-voice-${ref.hash}-${ref.offset}'),
@@ -4507,6 +4525,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// is always zero, so [_keyboardWasUp] is never true.
   @override
   void didChangeMetrics() {
+    _windowMovedSinceKeyboardRequest = true;
     final wasUp = _keyboardWasUp;
     final inset = _keyboardInset;
     final isUp = inset > 0;
@@ -7742,6 +7761,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Map<int, NoteImageSpan> _buildAttachmentSpans(
     double columnWidth,
     double viewportHeight,
+    double inline,
   ) {
     final store = widget.images;
     if (_attachments.isEmpty || store == null) return const {};
@@ -7762,12 +7782,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       // Both chips stretch to whatever they are handed, and what the text
       // engine hands a placeholder is the rest of the line — so unlike an
       // image, which carries its own measured box, they have to be told the
-      // width or they would fill the column and take the slack back.
+      // width or they would fill the column and take the slack back. The
+      // field draws a placeholder's widget scaled by [inline], so the voice
+      // chip is laid out that much narrower, and the text engine is told the
+      // height it is drawn at.
       if (ref is NoteVoiceRef) {
+        final chip = _voiceChip(ref);
+        final width = columnWidth / inline;
         spans[ref.offset] = (
           width: columnWidth,
-          height: noteVoiceChipHeight + noteImageGap,
-          child: SizedBox(width: columnWidth, child: _voiceChip(ref)),
+          height: (chip.heightIn(context, width) + noteImageGap) * inline,
+          child: SizedBox(width: width, child: chip),
         );
         continue;
       }
@@ -7924,6 +7949,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       editorScale: widget.editorTextScale,
     );
     final textScaler = MediaQuery.textScalerOf(context);
+    final writingSize = textStyle.fontSize ?? kDefaultFontSize;
     final mobileTableCell = AppPlatform.isMobile ? _activeTableCell() : null;
     final statusShown = widget.readOnly || widget.typing.isNotEmpty;
 
@@ -8062,6 +8088,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   for (final MapEntry(:key, :value) in _buildAttachmentSpans(
                     drawnWidth,
                     constraints.maxHeight,
+                    textScaler.scale(writingSize) / writingSize,
                   ).entries)
                     key: (
                       width: math.min(value.width, attachmentWidth),
