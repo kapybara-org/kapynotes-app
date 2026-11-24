@@ -1,6 +1,9 @@
-// About & updates on a real phone, on the store's two answers, faked so the
-// shots never depend on what either store sells today: nothing newer than
-// the 1.35.4 this phone runs, and 1.35.5 waiting (1E0B-0).
+// About & updates on a real phone, drawn for the build being shot: its version
+// and build come from the pubspec, and what it brought from the site's
+// changelog, the same file the app reads. Only the store's answer is faked,
+// so the shots never depend on what either store sells today: this build,
+// offered to a phone that runs it and to one on the release before it
+// (1E0B-0).
 //
 //   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/phone_about_test.dart -d <device> \
@@ -16,9 +19,11 @@ import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
+import 'package:kapy_notes/data/release_history.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/store_updates.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../test/support/store_updates.dart';
 import 'rates_support.dart';
@@ -40,6 +45,25 @@ class _MemoryStore extends LocalStore {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  late PackageInfo build;
+  late List<ReleaseNote> releases;
+
+  setUpAll(() async {
+    build = await PackageInfo.fromPlatform();
+    final history = ReleaseHistory(_MemoryStore());
+    for (var attempt = 0; attempt < 3 && history.releases.isEmpty; attempt++) {
+      if (attempt > 0) await Future<void>.delayed(const Duration(seconds: 2));
+      await history.refresh();
+    }
+    releases = history.releases;
+    history.dispose();
+    expect(
+      releases,
+      isNotEmpty,
+      reason: 'nothing read from ${ReleaseHistory.url}',
+    );
+  });
+
   Future<void> tap(WidgetTester tester, String key) async {
     await tester.tap(find.byKey(ValueKey(key)));
     await tester.pumpAndSettle();
@@ -48,6 +72,20 @@ void main() {
   for (final waiting in [false, true]) {
     final state = waiting ? 'update' : 'latest';
     testWidgets('About & updates, $state, dark', (tester) async {
+      final version = build.version;
+      final number = int.parse(build.buildNumber);
+      final listed = releases.any(
+        (release) => release.version == version && release.build == number,
+      );
+      if (!listed) {
+        debugPrint(
+          '${ReleaseHistory.url} lists no $version ($number) yet, so the '
+          'About shots show no notes for it. Shoot them again once it does.',
+        );
+      }
+      final before = releases.firstWhere(
+        (release) => (compareVersions(release.version, version) ?? 0) < 0,
+      );
       final store = _MemoryStore();
       store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
       final notes = NotesStore(store);
@@ -66,10 +104,11 @@ void main() {
           shortcuts: ShortcutPrefs(store)..load(),
           storeUpdates: fakeStoreUpdates(
             _MemoryStore(),
-            releases: aboutReleases(),
-            answer: () async => play
-                ? StoreOffer(build: waiting ? 47 : 46)
-                : StoreOffer(version: waiting ? '1.35.5' : '1.35.4'),
+            installed: waiting ? before.version : version,
+            build: waiting ? before.build ?? 0 : number,
+            releases: [for (final release in releases) release.toJson()],
+            answer: () async =>
+                play ? StoreOffer(build: number) : StoreOffer(version: version),
           ),
         ),
       );
@@ -91,11 +130,17 @@ void main() {
       await tap(tester, 'settings-section-about');
       expect(
         find.text(
-          waiting
-              ? 'Version 1.35.5 is out'
-              : '23 Nov 2026 · You have the latest version',
+          !waiting
+              ? 'Version $version'
+              : listed || !play
+              ? 'Version $version is out'
+              : 'A new version is out',
         ),
         findsOneWidget,
+      );
+      expect(
+        find.textContaining('You have the latest version'),
+        waiting ? findsNothing : findsOneWidget,
       );
       expect(
         find.text(play ? 'Update on Google Play' : 'Update on the App Store'),
