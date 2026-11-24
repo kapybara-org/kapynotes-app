@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../core/phone_keyboard.dart';
 import '../../core/theme.dart';
 import 'kapy_ai_chats.dart';
 import 'kapy_ai_conversation.dart';
@@ -255,9 +256,12 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                           )
                         : _body(),
                     if (_picking) ...[
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => setState(() => _picking = false),
+                      // Closes the picker and leaves the keyboard up.
+                      KeepsKeyboard(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => setState(() => _picking = false),
+                        ),
                       ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
@@ -388,63 +392,65 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, keyboard ? 8 : 36),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 44),
-        padding: const EdgeInsets.only(left: 14, right: 8),
-        decoration: BoxDecoration(
-          color: palette.controlBackground,
-          borderRadius: BorderRadius.circular(AppRadii.control),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Focus(
-                  onKeyEvent: _onFieldKey,
-                  child: TextField(
-                    key: const ValueKey('kapy-ai-field'),
-                    controller: _field,
-                    focusNode: _fieldFocus,
-                    minLines: 1,
-                    maxLines: 4,
-                    keyboardType: TextInputType.multiline,
-                    cursorColor: palette.selectedBorder,
-                    style: kapyText(15, 20, palette.textPrimary),
-                    decoration: InputDecoration.collapsed(
-                      hintText: 'Ask about this note',
-                      hintStyle: kapyText(15, 20, palette.textTertiary),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Tooltip(
-              message: 'Ask',
-              child: Material(
-                color: palette.hover,
-                shape: const CircleBorder(),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  key: const ValueKey('kapy-ai-send'),
-                  onTap: canSend ? () => _ask(_field.text) : null,
-                  child: SizedBox.square(
-                    dimension: 28,
-                    child: Center(
-                      child: KapyIcon(
-                        KapyIcons.sendRounded,
-                        size: 16,
-                        color: canSend
-                            ? palette.textPrimary
-                            : palette.textTertiary,
+      child: KeepsKeyboard(
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.only(left: 14, right: 8),
+          decoration: BoxDecoration(
+            color: palette.controlBackground,
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Focus(
+                    onKeyEvent: _onFieldKey,
+                    child: TextField(
+                      key: const ValueKey('kapy-ai-field'),
+                      controller: _field,
+                      focusNode: _fieldFocus,
+                      minLines: 1,
+                      maxLines: 4,
+                      keyboardType: TextInputType.multiline,
+                      cursorColor: palette.selectedBorder,
+                      style: kapyText(15, 20, palette.textPrimary),
+                      decoration: InputDecoration.collapsed(
+                        hintText: 'Ask about this note',
+                        hintStyle: kapyText(15, 20, palette.textTertiary),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Ask',
+                child: Material(
+                  color: palette.hover,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    key: const ValueKey('kapy-ai-send'),
+                    onTap: canSend ? () => _ask(_field.text) : null,
+                    child: SizedBox.square(
+                      dimension: 28,
+                      child: Center(
+                        child: KapyIcon(
+                          KapyIcons.sendRounded,
+                          size: 16,
+                          color: canSend
+                              ? palette.textPrimary
+                              : palette.textTertiary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -501,11 +507,14 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                 }),
               ),
               const SizedBox(width: 2),
-              KapyAiIconButton(
-                key: const ValueKey('kapy-ai-new-chat'),
-                icon: KapyIcons.chatAddOutlined,
-                tooltip: 'New chat',
-                onPressed: _newChat,
+              // It puts the caret straight back in the field.
+              KeepsKeyboard(
+                child: KapyAiIconButton(
+                  key: const ValueKey('kapy-ai-new-chat'),
+                  icon: KapyIcons.chatAddOutlined,
+                  tooltip: 'New chat',
+                  onPressed: _newChat,
+                ),
               ),
               const SizedBox(width: 2),
               KapyAiIconButton(
@@ -569,84 +578,88 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: palette.editorBackground,
-              border: Border.all(color: palette.separator, width: 1.5),
-              borderRadius: BorderRadius.circular(AppRadii.dialog),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (noteId != null) ...[
-                    _NoteChip(
-                      title: widget.noteTitle(noteId)!,
-                      onRemove: widget.controller.detachNote,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  Focus(
-                    onKeyEvent: _onFieldKey,
-                    child: TextField(
-                      key: const ValueKey('kapy-ai-field'),
-                      controller: _field,
-                      focusNode: _fieldFocus,
-                      minLines: 1,
-                      maxLines: 6,
-                      keyboardType: TextInputType.multiline,
-                      cursorColor: palette.selectedBorder,
-                      style: kapyText(13.5, 20, palette.textPrimary),
-                      decoration: InputDecoration.collapsed(
-                        hintText: 'Ask Kapy AI…',
-                        hintStyle: kapyText(13.5, 20, palette.textTertiary),
+          KeepsKeyboard(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: palette.editorBackground,
+                border: Border.all(color: palette.separator, width: 1.5),
+                borderRadius: BorderRadius.circular(AppRadii.dialog),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (noteId != null) ...[
+                      _NoteChip(
+                        title: widget.noteTitle(noteId)!,
+                        onRemove: widget.controller.detachNote,
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: KapyAiModelButton(
-                            kapyAi: _ai,
-                            open: _picking,
-                            onPressed: () =>
-                                setState(() => _picking = !_picking),
-                          ),
+                      const SizedBox(height: 8),
+                    ],
+                    Focus(
+                      onKeyEvent: _onFieldKey,
+                      child: TextField(
+                        key: const ValueKey('kapy-ai-field'),
+                        controller: _field,
+                        focusNode: _fieldFocus,
+                        minLines: 1,
+                        maxLines: 6,
+                        keyboardType: TextInputType.multiline,
+                        cursorColor: palette.selectedBorder,
+                        style: kapyText(13.5, 20, palette.textPrimary),
+                        decoration: InputDecoration.collapsed(
+                          hintText: 'Ask Kapy AI…',
+                          hintStyle: kapyText(13.5, 20, palette.textTertiary),
                         ),
                       ),
-                      Tooltip(
-                        message: 'Ask',
-                        child: Material(
-                          color: canSend
-                              ? palette.totalPillBackground
-                              : palette.kapyHighlight,
-                          borderRadius: BorderRadius.circular(AppRadii.control),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            key: const ValueKey('kapy-ai-send'),
-                            onTap: canSend ? () => _ask(_field.text) : null,
-                            child: SizedBox.square(
-                              dimension: 28,
-                              child: Center(
-                                child: KapyIcon(
-                                  KapyIcons.sendRounded,
-                                  size: 16,
-                                  color: canSend
-                                      ? palette.totalPillText
-                                      : palette.textTertiary,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: KapyAiModelButton(
+                              kapyAi: _ai,
+                              open: _picking,
+                              onPressed: () =>
+                                  setState(() => _picking = !_picking),
+                            ),
+                          ),
+                        ),
+                        Tooltip(
+                          message: 'Ask',
+                          child: Material(
+                            color: canSend
+                                ? palette.totalPillBackground
+                                : palette.kapyHighlight,
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.control,
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              key: const ValueKey('kapy-ai-send'),
+                              onTap: canSend ? () => _ask(_field.text) : null,
+                              child: SizedBox.square(
+                                dimension: 28,
+                                child: Center(
+                                  child: KapyIcon(
+                                    KapyIcons.sendRounded,
+                                    size: 16,
+                                    color: canSend
+                                        ? palette.totalPillText
+                                        : palette.textTertiary,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

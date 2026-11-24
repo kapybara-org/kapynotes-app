@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
@@ -18,6 +21,8 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/editor/note_editor.dart'
+    show NoteEditor, NoteEditorState;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/home_page.dart' show HomePage;
@@ -131,6 +136,7 @@ void main() {
     double width = 390,
     bool withTasks = true,
     Account? account,
+    VoiceRecordingController? recording,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = Size(width, 844);
@@ -149,6 +155,7 @@ void main() {
         days: days,
         tasks: withTasks ? tasks : null,
         account: account,
+        recording: recording,
         hiddenNotesGate: _OpenGate(),
       ),
     );
@@ -1273,6 +1280,108 @@ void main() {
       }, variant: variant);
     }
 
+    testWidgets('Back to the note a note was opened from keeps its editor '
+        '(KAP-306)', (tester) async {
+      seed();
+      await pump(tester);
+      final arjun = tester.state<NoteEditorState>(find.byType(NoteEditor));
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+
+      await back(tester, swipe: false);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)),
+        same(arjun),
+      );
+    });
+
+    group('Back while a recording into the note left finishes (KAP-306)', () {
+      late _LateRecording recording;
+
+      // The recording's bar keeps a frame waiting, so time goes on by hand.
+      Future<void> settle(WidgetTester tester) async {
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      // Call with Arjun, then Standup notes from its week, recording into
+      // it, then Back, which waits for the recording to land.
+      Future<void> backWhileRecording(WidgetTester tester) async {
+        seed();
+        recording = _LateRecording('tue');
+        addTearDown(recording.dispose);
+        await pump(tester, recording: recording);
+        await open(tester, 18);
+        expect(openNoteBody(tester), startsWith('Standup notes'));
+        await tester.binding.handlePopRoute();
+        await settle(tester);
+        expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      }
+
+      Future<void> land(WidgetTester tester) async {
+        recording.finish.complete();
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('a note chosen meanwhile opens on top of the one Back went '
+          'to', (tester) async {
+        await backWhileRecording(tester);
+        await tester.tap(day(21));
+        await tester.pump();
+        await land(tester);
+        expect(openNoteBody(tester), startsWith('Renewal notes'));
+
+        await back(tester, swipe: false);
+        expect(openNoteBody(tester), startsWith('Call with Arjun'));
+        await back(tester, swipe: false);
+        expect(header, findsNothing);
+      });
+
+      testWidgets('a second Back leaves the page Back went to, and it stays '
+          'gone once the recording lands', (tester) async {
+        await backWhileRecording(tester);
+        await tester.binding.handlePopRoute();
+        await settle(tester);
+        expect(header, findsNothing);
+
+        await land(tester);
+        expect(header, findsNothing);
+        expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+      });
+    });
+
+    testWidgets('on an iPhone, a part swipe from the left edge of a note the '
+        'week opened follows the finger over the note it came from, and let '
+        'go early it stays (KAP-306)', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      final left = tester.getTopLeft(header).dx;
+
+      final gesture = await tester.startGesture(const Offset(5, 400));
+      await gesture.moveBy(
+        const Offset(20, 0),
+        timeStamp: const Duration(milliseconds: 100),
+      );
+      await gesture.moveBy(
+        const Offset(100, 0),
+        timeStamp: const Duration(milliseconds: 900),
+      );
+      await tester.pump();
+      expect(header, findsNWidgets(2), reason: 'its own page is under it');
+      expect(tester.getTopLeft(header.last).dx, greaterThan(left + 80));
+      expect(tester.getTopLeft(header.last).dx, lessThan(left + 125));
+
+      await gesture.up(timeStamp: const Duration(milliseconds: 1700));
+      await tester.pumpAndSettle();
+      expect(header, findsOneWidget);
+      expect(tester.getTopLeft(header).dx, left);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets("Home from a note the week opened goes Home, past the notes "
         'behind it', (tester) async {
       seed();
@@ -1420,5 +1529,29 @@ void main() {
       await back(tester, swipe: true);
       expect(header, findsNothing);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  });
+}
+
+/// A recording into [noteId] that lands only when [finish] completes, as a
+/// long one being written out does.
+class _LateRecording extends VoiceRecordingController {
+  _LateRecording(this.noteId);
+
+  String? noteId;
+  final finish = Completer<void>();
+
+  @override
+  bool get isRecording => noteId != null;
+
+  @override
+  VoiceRecordingSession? get session => switch (noteId) {
+    final id? => VoiceRecordingSession(noteId: id),
+    null => null,
+  };
+
+  @override
+  Future<void> finishRecordingAndFlush() => finish.future.then((_) {
+    noteId = null;
+    notifyListeners();
   });
 }

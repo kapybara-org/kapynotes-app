@@ -196,8 +196,8 @@ class _Title extends StatelessWidget {
 
 /// Home on a phone, which a sideways swipe turns between Notes and Tasks.
 /// A row's own swipe, deeper in the tree, wins the gesture first, except
-/// from the left edge while there's a level to go back to, where iOS's back
-/// swipe starts.
+/// from the left edge with [backFromEdge] on, or on a page iOS's own back
+/// swipe can leave.
 class PhoneHomeSwipe extends StatefulWidget {
   const PhoneHomeSwipe({
     super.key,
@@ -207,11 +207,11 @@ class PhoneHomeSwipe extends StatefulWidget {
   });
 
   /// Called with true for a swipe left, to Tasks, and false for a swipe
-  /// right, to Notes. Null away from Home, where a swipe does nothing.
+  /// right, to Notes or back. Null where a swipe does nothing.
   final ValueChanged<bool>? onTurn;
 
-  /// Whether a swipe from the left edge goes back ahead of a row's own. Off
-  /// on plain Home, where the edge's drags belong to the tag chips and rows.
+  /// Whether a swipe from the left edge goes back ahead of a row's own, as
+  /// iOS's back swipe does where the page has none of its own.
   final bool backFromEdge;
   final Widget child;
 
