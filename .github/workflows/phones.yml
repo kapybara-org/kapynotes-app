@@ -64,6 +64,10 @@ jobs:
       - run: flutter pub get --enforce-lockfile
 
       - name: Screenshots on an Android 16 emulator
+        # The job has 45 minutes; a file that hangs gives up 15 or 12 of them.
+        env:
+          PHONE_FIRST_FILE_MINUTES: 15
+          PHONE_FILE_MINUTES: 12
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36

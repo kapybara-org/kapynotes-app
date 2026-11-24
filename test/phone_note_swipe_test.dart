@@ -16,11 +16,12 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/back_entry.dart';
 import 'package:kapy_notes/ui/note_row_swipe.dart';
 import 'package:kapy_notes/ui/notes_list.dart' show NotesShow;
-import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
+import 'package:kapy_notes/ui/sidebar.dart' show NoteRow, archiveIcon;
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore;
+import 'kapy_icon_finder.dart';
 import 'test_fonts.dart';
 
 /// Wed 19 Nov 2025, 9:41.
@@ -170,6 +171,28 @@ void main() {
       expect(notes.byId('groceries')!.isArchived, isFalse);
     });
 
+    testWidgets('moves the whole row as one, title, preview and time', (
+      tester,
+    ) async {
+      await pump(tester);
+      final parts = [
+        find.text('Groceries'),
+        find.text('Oat milk'),
+        find.descendant(of: _row('Groceries'), matching: find.text('9:30')),
+      ];
+      final before = [for (final part in parts) tester.getTopLeft(part).dx];
+
+      await _open(tester, 'Groceries');
+      final shift = NoteRowSwipe.actionWidth * 2;
+      for (final (index, part) in parts.indexed) {
+        expect(
+          tester.getTopLeft(part).dx,
+          moreOrLessEquals(before[index] - shift, epsilon: 0.5),
+          reason: '$part',
+        );
+      }
+    });
+
     testWidgets('closes on a swipe back, and opens one row at a time', (
       tester,
     ) async {
@@ -307,6 +330,60 @@ void main() {
       expect(notes.byId('offsite')!.updatedAt, edited);
       expect(_titles(tester), before);
       expect(tester.getTopLeft(_row('Team offsite')).dx, 0);
+    });
+
+    testWidgets("past the point, shows Archive on the Pin tile's tone at "
+        'the edge the row uncovers', (tester) async {
+      await pump(tester);
+      final row = _row('Groceries');
+      final gesture = await tester.startGesture(tester.getCenter(row));
+      await gesture.moveBy(const Offset(-20, 0));
+      await gesture.moveBy(const Offset(-60, 0));
+      await tester.pump();
+      final pin = tester.widget<Material>(
+        find
+            .ancestor(
+              of: _button('pin', 'groceries'),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      await gesture.moveBy(const Offset(-260, 0));
+      await tester.pump();
+
+      final archive = _button('archive', 'groceries');
+      expect(_button('pin', 'groceries'), findsNothing);
+      expect(tester.widget<ColoredBox>(archive).color, pin.color);
+      final icon = find.descendant(
+        of: archive,
+        matching: findKapyIcon(archiveIcon),
+      );
+      expect(icon, findsOneWidget);
+      expect(
+        tester.widget<KapyIcon>(icon).color,
+        tester
+            .widget<KapyIcon>(
+              find
+                  .descendant(
+                    of: find.byType(NoteRowSwipe),
+                    matching: find.byType(KapyIcon),
+                  )
+                  .first,
+            )
+            .color,
+      );
+      expect(
+        find.descendant(of: archive, matching: find.text('Archive')),
+        findsOneWidget,
+      );
+      expect(
+        tester.getCenter(icon).dx,
+        greaterThan(tester.getRect(archive).right - NoteRowSwipe.actionWidth),
+        reason: 'at the trailing edge, which the row uncovers',
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(notes.byId('groceries')!.isArchived, isTrue);
     });
 
     testWidgets('ticks once on iOS as it passes the point of no return, and '
@@ -597,11 +674,11 @@ void main() {
       expect(_button('pin', 'budget'), findsNothing);
       expect(page, findsOneWidget);
 
-      await tester.dragFrom(Offset(10, y), const Offset(200, 0));
+      await tester.dragFrom(Offset(10, y), const Offset(300, 0));
       await tester.pumpAndSettle();
       expect(page, findsNothing);
       expect(find.byKey(const ValueKey('phone-folders')), findsOneWidget);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
     testWidgets('on an iPhone, a row swipe from 24 pt in opens the row on '
         "a folder's page, where the edge goes back", (tester) async {

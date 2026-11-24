@@ -9346,7 +9346,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(taskPage, findsNothing);
           expect(tasksPage.hitTestable(), findsOneWidget);
-        });
+        }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
         testWidgets("the system back comes back to Tasks, and only then "
             'to Notes', (tester) async {
@@ -9493,7 +9493,7 @@ void main() {
         Future<void> swipe(Finder row) async {
           await tester.dragFrom(
             Offset(2, tester.getCenter(row).dy),
-            const Offset(200, 0),
+            const Offset(300, 0),
           );
           await tester.pumpAndSettle();
         }
@@ -10649,7 +10649,7 @@ void main() {
       // Over a row, whose own swipe the edge has to win.
       await tester.dragFrom(
         Offset(2, tester.getCenter(row).dy),
-        const Offset(200, 0),
+        const Offset(300, 0),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('pinned-page')), findsNothing);
@@ -12680,6 +12680,156 @@ void main() {
       );
     });
   });
+  group('phone levels are pages (KAP-306)', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    final homeTitle = find.byKey(const ValueKey('home-title-notes'));
+    late Folder work;
+
+    // Each level opened over its tab's own page, with what shows the level
+    // and what shows the page under it.
+    final levels = <String, Future<(Finder, Finder)> Function(WidgetTester)>{
+      'Pinned': (tester) async {
+        await viewAllPinned(tester);
+        return (find.byKey(const ValueKey('pinned-page')), homeTitle);
+      },
+      'a folder': (tester) async {
+        await tester.tap(find.byKey(const ValueKey('bar-folders')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('folder-${work.id}')));
+        await tester.pumpAndSettle();
+        return (
+          find.byKey(ValueKey('phone-folder-${work.id}')),
+          find.byKey(const ValueKey('phone-folders')),
+        );
+      },
+      'Archive': (tester) async {
+        await showInFilter(tester, NotesShow.archive);
+        return (find.widgetWithText(NoteRow, 'Done with'), homeTitle);
+      },
+    };
+
+    // A row on each level, which an edge swipe starts over.
+    const rows = {
+      'Pinned': 'Lisbon trip',
+      'a folder': 'Acme brief',
+      'Archive': 'Done with',
+    };
+
+    Future<(Finder, Finder)> open(WidgetTester tester, String level) async {
+      await notes.load();
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      notes.togglePinned(trip.id);
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.togglePinned(reading.id);
+      notes.create(body: 'Kept\nStill here');
+      final done = notes.create(body: 'Done with\nFiled');
+      notes.archive(done.id);
+      final brief = notes.create(body: 'Acme brief\nScope and dates');
+      final folders = FolderStore(store);
+      await folders.load();
+      work = folders.create('Work')!;
+      folders.file([brief.id], work.id);
+      await pumpApp(tester, size: const Size(393, 852), folders: folders);
+      await showNotesList(tester);
+      final (shown, under) = await levels[level]!(tester);
+      expect(shown, findsOneWidget);
+      expect(under, findsNothing);
+      return (shown, under);
+    }
+
+    // A slow drag from the left edge, [by] past where it starts to move.
+    Future<TestGesture> drag(WidgetTester tester, double by) async {
+      final gesture = await tester.startGesture(const Offset(5, 400));
+      await gesture.moveBy(
+        const Offset(20, 0),
+        timeStamp: const Duration(milliseconds: 100),
+      );
+      await gesture.moveBy(
+        Offset(by, 0),
+        timeStamp: const Duration(milliseconds: 900),
+      );
+      await tester.pump();
+      return gesture;
+    }
+
+    testWidgets("Android's Back on Pinned lets the picks go first, then "
+        'goes Home', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final (shown, under) = await open(tester, 'Pinned');
+      await tester.longPress(find.widgetWithText(NoteRow, 'Lisbon trip'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select'));
+      await tester.pumpAndSettle();
+      final picked = find.text('1 selected');
+      expect(picked, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(picked, findsNothing);
+      expect(shown, findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(shown, findsNothing);
+      expect(under, findsOneWidget);
+    });
+
+    for (final level in levels.keys) {
+      testWidgets('on an iPhone, a part swipe from the left edge of $level '
+          'follows the finger, and let go early it stays', (tester) async {
+        final (shown, under) = await open(tester, level);
+        final left = tester.getTopLeft(shown).dx;
+
+        final gesture = await drag(tester, 100);
+        expect(under, findsOneWidget, reason: 'the page under it shows');
+        expect(tester.getTopLeft(shown).dx, greaterThan(left + 80));
+        expect(tester.getTopLeft(shown).dx, lessThan(left + 125));
+
+        await gesture.up(timeStamp: const Duration(milliseconds: 1700));
+        await tester.pumpAndSettle();
+        expect(shown, findsOneWidget);
+        expect(under, findsNothing);
+        expect(tester.getTopLeft(shown).dx, left);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+      testWidgets('on an iPhone, a whole swipe from the left edge takes '
+          '$level back one level', (tester) async {
+        final (shown, under) = await open(tester, level);
+        final gesture = await drag(tester, 300);
+        await gesture.up(timeStamp: const Duration(milliseconds: 1700));
+        await tester.pumpAndSettle();
+        expect(shown, findsNothing);
+        expect(under, findsOneWidget);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+      testWidgets('on Android, a swipe in from the left edge over a row of '
+          '$level goes back one level', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        final (shown, under) = await open(tester, level);
+        final row = find.widgetWithText(NoteRow, rows[level]!);
+        await tester.timedDragFrom(
+          Offset(2, tester.getCenter(row).dy),
+          const Offset(200, 0),
+          const Duration(milliseconds: 300),
+        );
+        await tester.pumpAndSettle();
+        expect(shown, findsNothing);
+        expect(under, findsOneWidget);
+      });
+
+      testWidgets("Android's Back takes $level back one level", (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        final (shown, under) = await open(tester, level);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(shown, findsNothing);
+        expect(under, findsOneWidget);
+      });
+    }
+  });
+
   group('phone Back (KAP-305)', () {
     final popped = <String>[];
     setUp(() {

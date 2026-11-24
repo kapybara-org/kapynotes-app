@@ -17,8 +17,15 @@ class Toast {
   static OverlayEntry? _current;
   static int _generation = 0;
 
-  /// What a toast keeps above, such as a phone's bar and its +.
-  static _ToastClearanceState? _clearance;
+  /// What a toast keeps above, such as a phone's bar and its +, or the
+  /// format bar over the keyboard: whichever reaches highest.
+  static final Set<_ToastClearanceState> _clearances = {};
+
+  /// Builds the toast on screen again once the frame has laid out what it
+  /// keeps clear of, which has just come or gone: a clearance changes
+  /// mid-build or as it goes, too soon to rebuild anything then.
+  static void _clearancesChanged() => WidgetsBinding.instance
+      .addPostFrameCallback((_) => _current?.markNeedsBuild());
 
   /// Widget tests usually call `pumpAndSettle` before inspecting a toast. A
   /// production lifetime animation would make that helper advance all the way
@@ -29,6 +36,16 @@ class Toast {
 
   /// How long a toast with an action stays: time enough to reach it.
   static const Duration actionLifetime = Duration(seconds: 4);
+
+  /// How wide a phone's card grows. A phone's is narrower, so its card runs
+  /// the width of its bar and +; from 720 pt, two panes and no bar, the card
+  /// stops here, centred.
+  static const double _cardMaxWidth = 480;
+
+  /// The action's height, which a phone's card lines its icon and first
+  /// line up with, and which its words keep to at least, so every card is
+  /// the same height.
+  static const double _actionHeight = 28;
 
   /// [action] names a button at the toast's end that runs [onAction], such
   /// as View after a note is filed away. A toast with one stays a little
@@ -67,8 +84,7 @@ class Toast {
     _showOn(
       overlay,
       message,
-      icon:
-          icon ?? (isError ? KapyIcons.errorOutlined : KapyIcons.checkRounded),
+      icon: icon,
       isError: isError,
       progress: false,
       duration: action == null
@@ -102,7 +118,7 @@ class Toast {
   static int _showOn(
     OverlayState overlay,
     String message, {
-    required KapyIconData icon,
+    required KapyIconData? icon,
     required bool isError,
     required bool progress,
     required Duration? duration,
@@ -146,7 +162,7 @@ class Toast {
     OverlayState? overlay,
     int generation,
     String message, {
-    required KapyIconData icon,
+    required KapyIconData? icon,
     required bool isError,
   }) {
     if (overlay == null || !overlay.mounted || generation != _generation) {
@@ -186,14 +202,13 @@ class ToastProgress {
   final OverlayState? _overlay;
   final int _generation;
 
-  void success(String message, {KapyIconData icon = KapyIcons.checkRounded}) =>
-      Toast._complete(
-        _overlay,
-        _generation,
-        message,
-        icon: icon,
-        isError: false,
-      );
+  void success(String message, {KapyIconData? icon}) => Toast._complete(
+    _overlay,
+    _generation,
+    message,
+    icon: icon,
+    isError: false,
+  );
 
   void error(String message) => Toast._complete(
     _overlay,
@@ -211,7 +226,7 @@ class ToastProgress {
 class _ToastBody extends StatefulWidget {
   const _ToastBody({
     required this.message,
-    required this.icon,
+    this.icon,
     required this.isError,
     required this.progress,
     required this.duration,
@@ -221,7 +236,10 @@ class _ToastBody extends StatefulWidget {
   });
 
   final String message;
-  final KapyIconData icon;
+
+  /// Null for the notice's own: a tick, or a warning for an error, on a
+  /// desktop, and on a phone a warning for an error and nothing otherwise.
+  final KapyIconData? icon;
   final bool isError;
   final bool progress;
   final (String, VoidCallback)? action;
@@ -265,6 +283,21 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  /// Where the toast keeps: above the highest of what it keeps clear of,
+  /// such as a phone's bar or the format bar, or, as the second value, from
+  /// the top of a row it takes the place of, such as a sheet's footer.
+  (double, double?) _clear(MediaQueryData media) {
+    var clear = 0.0;
+    for (final below in Toast._clearances) {
+      final box = below.context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize || !box.attached) continue;
+      final top = box.localToGlobal(Offset.zero).dy;
+      if (below.widget.cover) return (0, top);
+      clear = math.max(clear, media.size.height - top + 16);
+    }
+    return (clear, null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -274,7 +307,10 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       curve: Curves.easeOutCubic,
     );
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final compact = AppPlatform.hasPointer;
+    // A desktop's toast is a pill sized to its words. A phone's is a card as
+    // wide as the bar and its +, with an icon only where the notice brings
+    // one and no colour for an error but its words.
+    final desktop = AppPlatform.hasPointer;
     final statusColor = widget.isError ? scheme.error : scheme.primary;
     final surfaceColor = Color.alphaBlend(
       palette.textPrimary.withValues(alpha: dark ? 0.055 : 0.035),
@@ -282,142 +318,210 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
 
     final media = MediaQuery.of(context);
-    final below = Toast._clearance?.context.findRenderObject();
-    final clear = below is RenderBox && below.hasSize
-        ? media.size.height - below.localToGlobal(Offset.zero).dy + 16
-        : 0.0;
-    return Positioned(
-      bottom: math.max(
-        clear,
-        (compact ? 24 : 16) +
-            math.max(media.padding.bottom, media.viewInsets.bottom),
+    final (clear, cover) = _clear(media);
+    // What it keeps clear of was laid out a frame ago, so once this frame is,
+    // a toast whose clearance moved under it, as a format bar does with the
+    // keyboard, takes its new place.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _clear(MediaQuery.of(context)) != (clear, cover)) {
+        setState(() {});
+      }
+    });
+    final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontSize: AppTypeScale.body,
+      color: palette.textPrimary,
+      fontWeight: AppWeight.font(AppWeight.body),
+      fontVariations: AppWeight.wght(AppWeight.body),
+      height: 1.2,
+    );
+    final text = Text(
+      widget.message,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: textStyle,
+    );
+    final button = switch (widget.action) {
+      (final label, final onPressed) => TextButton(
+        key: const ValueKey('toast-action'),
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: palette.accentText,
+          minimumSize: const Size(0, Toast._actionHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: textStyle?.copyWith(
+            fontWeight: AppWeight.font(AppWeight.button),
+            fontVariations: AppWeight.wght(AppWeight.button),
+          ),
+        ),
+        child: Text(label),
       ),
+      null => null,
+    };
+
+    final Widget content;
+    if (desktop) {
+      content = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: statusColor.withValues(alpha: dark ? 0.14 : 0.10),
+            ),
+            child: widget.progress
+                ? SizedBox.square(
+                    key: const ValueKey('toast-progress-indicator'),
+                    dimension: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.75,
+                      color: statusColor,
+                    ),
+                  )
+                : KapyIcon(
+                    widget.icon ??
+                        (widget.isError
+                            ? KapyIcons.errorOutlined
+                            : KapyIcons.checkRounded),
+                    key: const ValueKey('toast-status-icon'),
+                    size: 14,
+                    color: statusColor,
+                  ),
+          ),
+          const SizedBox(width: 9),
+          Flexible(child: text),
+          if (button != null) ...[
+            const SizedBox(width: 4),
+            button,
+          ] else
+            const SizedBox(width: 3),
+        ],
+      );
+    } else {
+      final icon =
+          widget.icon ?? (widget.isError ? KapyIcons.errorOutlined : null);
+      // The icon and the first line of words sit level with the action, so
+      // words that wrap keep the action at the top.
+      final line = media.textScaler.scale(AppTypeScale.body) * 1.2;
+      content = ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: Toast._actionHeight),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.progress || icon != null) ...[
+              SizedBox(
+                height: Toast._actionHeight,
+                child: Center(
+                  child: widget.progress
+                      ? SizedBox.square(
+                          key: const ValueKey('toast-progress-indicator'),
+                          dimension: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.75,
+                            color: palette.textSecondary,
+                          ),
+                        )
+                      : KapyIcon(
+                          icon!,
+                          key: const ValueKey('toast-status-icon'),
+                          size: 18,
+                          color: palette.textSecondary,
+                        ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  top: math.max(0, (Toast._actionHeight - line) / 2),
+                ),
+                child: text,
+              ),
+            ),
+            if (button != null) ...[const SizedBox(width: 8), button],
+          ],
+        ),
+      );
+    }
+
+    return Positioned(
+      top: cover == null ? null : 0,
+      bottom: cover == null
+          ? math.max(
+              clear,
+              (desktop ? 24 : 16) +
+                  math.max(media.padding.bottom, media.viewInsets.bottom),
+            )
+          : 0,
       left: 16,
       right: 16,
-      child: IgnorePointer(
-        ignoring: widget.action == null,
-        child: FadeTransition(
-          opacity: curve,
-          child: SlideTransition(
-            position: Tween(
-              begin: const Offset(0, 0.35),
-              end: Offset.zero,
-            ).animate(curve),
-            child: Center(
-              child: Semantics(
-                liveRegion: true,
-                label: widget.message,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: compact ? 40 : 44,
-                    maxWidth: math.max(0, math.min(400, media.size.width - 32)),
-                  ),
-                  child: RepaintBoundary(
-                    key: const ValueKey('toast-repaint-boundary'),
-                    // The toast is an overlay entry too, with no route above
-                    // it to hand its text a style: see [FloatingSurface]. Its
-                    // own is complete enough today, and this is what keeps
-                    // the next line added here from arriving underlined.
-                    child: DefaultTextStyle(
-                      style: FloatingSurface.textStyle(context),
-                      child: Container(
-                        key: const ValueKey('toast-surface'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
+      child: _placed(
+        cover,
+        media.size.height - media.viewInsets.bottom,
+        IgnorePointer(
+          ignoring: widget.action == null,
+          child: FadeTransition(
+            opacity: curve,
+            child: SlideTransition(
+              position: Tween(
+                begin: const Offset(0, 0.35),
+                end: Offset.zero,
+              ).animate(curve),
+              child: Center(
+                child: Semantics(
+                  liveRegion: true,
+                  label: widget.message,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: desktop ? 40 : 0,
+                      maxWidth: math.max(
+                        0,
+                        math.min(
+                          desktop ? 400 : Toast._cardMaxWidth,
+                          media.size.width - 32,
                         ),
-                        decoration: BoxDecoration(
-                          color: surfaceColor,
-                          borderRadius: BorderRadius.circular(AppRadii.pill),
-                          border: Border.all(
-                            color: palette.controlBorder.withValues(
-                              alpha: dark ? 0.95 : 0.72,
-                            ),
-                            width: 0.75,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: compact ? 22 : 24,
-                              height: compact ? 22 : 24,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: statusColor.withValues(
-                                  alpha: dark ? 0.14 : 0.10,
+                      ),
+                    ),
+                    child: RepaintBoundary(
+                      key: const ValueKey('toast-repaint-boundary'),
+                      // The toast is an overlay entry too, with no route above
+                      // it to hand its text a style: see [FloatingSurface]. Its
+                      // own is complete enough today, and this is what keeps
+                      // the next line added here from arriving underlined.
+                      child: DefaultTextStyle(
+                        style: FloatingSurface.textStyle(context),
+                        child: Container(
+                          key: const ValueKey('toast-surface'),
+                          padding: desktop
+                              ? const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                )
+                              : EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  button == null ? 16 : 8,
+                                  12,
                                 ),
-                              ),
-                              child: widget.progress
-                                  ? SizedBox.square(
-                                      key: const ValueKey(
-                                        'toast-progress-indicator',
-                                      ),
-                                      dimension: compact ? 12 : 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.75,
-                                        color: statusColor,
-                                      ),
+                          decoration: BoxDecoration(
+                            color: surfaceColor,
+                            borderRadius: BorderRadius.circular(
+                              desktop ? AppRadii.pill : AppRadii.surface,
+                            ),
+                            border: Border.all(
+                              color: desktop
+                                  ? palette.controlBorder.withValues(
+                                      alpha: dark ? 0.95 : 0.72,
                                     )
-                                  : KapyIcon(
-                                      widget.icon,
-                                      key: const ValueKey('toast-status-icon'),
-                                      size: compact ? 14 : 16,
-                                      color: statusColor,
-                                    ),
+                                  : palette.edge,
+                              width: 0.75,
                             ),
-                            const SizedBox(width: 9),
-                            Flexible(
-                              child: Text(
-                                widget.message,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(
-                                      fontSize: AppTypeScale.body,
-                                      color: palette.textPrimary,
-                                      fontWeight: AppWeight.font(
-                                        AppWeight.body,
-                                      ),
-                                      fontVariations: AppWeight.wght(
-                                        AppWeight.body,
-                                      ),
-                                      height: 1.2,
-                                    ),
-                              ),
-                            ),
-                            if (widget.action case (
-                              final label,
-                              final onPressed,
-                            )) ...[
-                              const SizedBox(width: 4),
-                              TextButton(
-                                key: const ValueKey('toast-action'),
-                                onPressed: onPressed,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: palette.accentText,
-                                  minimumSize: const Size(0, 28),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  textStyle: TextStyle(
-                                    fontSize: AppTypeScale.body,
-                                    fontWeight: AppWeight.font(
-                                      AppWeight.button,
-                                    ),
-                                    fontVariations: AppWeight.wght(
-                                      AppWeight.button,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(label),
-                              ),
-                            ] else
-                              const SizedBox(width: 3),
-                          ],
+                          ),
+                          child: content,
                         ),
                       ),
                     ),
@@ -430,15 +534,52 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       ),
     );
   }
+
+  /// Sets the card's top on the top of the row it takes the place of, at
+  /// its own height, but never past [floor], the screen's foot or the
+  /// keyboard's top.
+  static Widget _placed(double? cover, double floor, Widget toast) =>
+      cover == null
+      ? toast
+      : CustomSingleChildLayout(
+          delegate: _Cover(top: cover, floor: floor),
+          child: toast,
+        );
 }
 
-/// Keeps toasts above [child], such as a phone's bar and its +, while its
+class _Cover extends SingleChildLayoutDelegate {
+  const _Cover({required this.top, required this.floor});
+
+  final double top;
+  final double floor;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints(maxWidth: constraints.maxWidth);
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) =>
+      Offset(0, math.min(top, floor - childSize.height));
+
+  @override
+  bool shouldRelayout(_Cover old) => top != old.top || floor != old.floor;
+}
+
+/// Keeps toasts above [child], such as a phone's bar and its + or the format
+/// bar over the keyboard, the highest of them on screen, while its
 /// route is the one on top, and the page around its navigator too when a
 /// [ToastClearanceScope] marks one. A sheet over it takes the toast back down
-/// to the bottom edge, over the sheet's footer.
+/// to the bottom edge.
+///
+/// With [cover], the toast takes [child]'s place instead, from its top, as a
+/// phone's notice does over a sheet's footer.
+///
+/// It lets go as its route starts to leave, so a toast still showing goes
+/// straight to its next place rather than follow a closing sheet.
 class ToastClearance extends StatefulWidget {
-  const ToastClearance({super.key, required this.child});
+  const ToastClearance({super.key, this.cover = false, required this.child});
 
+  final bool cover;
   final Widget child;
 
   @override
@@ -446,19 +587,37 @@ class ToastClearance extends StatefulWidget {
 }
 
 class _ToastClearanceState extends State<ToastClearance> {
+  bool _onTop = true;
+  ModalRoute<Object?>? _route;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_OnTop.of(context) && (ModalRoute.of(context)?.isCurrent ?? true)) {
-      Toast._clearance = this;
-    } else if (identical(Toast._clearance, this)) {
-      Toast._clearance = null;
+    _onTop = _OnTop.of(context);
+    final route = ModalRoute.of(context);
+    if (route != _route) {
+      _route?.animation?.removeStatusListener(_update);
+      _route = route?..animation?.addStatusListener(_update);
+    }
+    _update();
+  }
+
+  void _update([AnimationStatus? _]) {
+    final route = _route;
+    final keep =
+        _onTop &&
+        (route == null ||
+            route.isCurrent &&
+                route.animation?.status != AnimationStatus.reverse);
+    if (keep ? Toast._clearances.add(this) : Toast._clearances.remove(this)) {
+      Toast._clearancesChanged();
     }
   }
 
   @override
   void dispose() {
-    if (identical(Toast._clearance, this)) Toast._clearance = null;
+    _route?.animation?.removeStatusListener(_update);
+    if (Toast._clearances.remove(this)) Toast._clearancesChanged();
     super.dispose();
   }
 
