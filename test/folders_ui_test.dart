@@ -1425,6 +1425,152 @@ void main() {
       expect(find.text('Moved to “Clients”'), findsOneWidget);
     });
 
+    testWidgets(
+      "a card clicked with a slip on its folder's page stays where it "
+      'is, from the folder or one inside it, and of picked notes dropped '
+      'on the page only the ones from outside move',
+      (tester) async {
+        await pumpWindow(tester);
+        final work = goldenFolders.create('Work')!;
+        final clients = goldenFolders.create('Clients', parentId: work.id)!;
+        final brief = goldenNotes.create(body: 'Acme brief');
+        final call = goldenNotes.create(body: 'Call with Arjun');
+        final dentist = goldenNotes.create(body: 'Dentist');
+        goldenFolders
+          ..file([brief.id], clients.id)
+          ..file([call.id], work.id);
+        await tester.pumpAndSettle();
+        await openFolder(tester, work);
+        final page = find.byKey(ValueKey('folder-page-${work.id}'));
+        final ring = find.byKey(const ValueKey('folder-page-drop'));
+        for (final (note, slip) in [
+          (brief, const Offset(2, 0)),
+          (brief, const Offset(3, 1)),
+          (call, const Offset(2, 0)),
+        ]) {
+          final click = await tester.startGesture(
+            tester.getCenter(
+              find.descendant(of: page, matching: rowOf(note.id)),
+            ),
+            kind: PointerDeviceKind.mouse,
+          );
+          await click.moveBy(slip);
+          await tester.pump();
+          expect(ring, findsNothing, reason: '${note.title} $slip');
+          await click.up();
+          await tester.pumpAndSettle();
+        }
+        expect(goldenFolders.tree.folderOf(brief.id), clients.id);
+        expect(goldenFolders.tree.folderOf(call.id), work.id);
+        expect(find.textContaining('Moved'), findsNothing);
+
+        await tapKey(tester, 'notes-switch-notes');
+        final sweep = await tester.startGesture(
+          tester.getCenter(listed(dentist.id)),
+          kind: PointerDeviceKind.mouse,
+        );
+        await sweep.moveBy(const Offset(0, 6));
+        await tester.pump();
+        await sweep.moveTo(tester.getCenter(listed(brief.id)));
+        await tester.pump();
+        await sweep.up();
+        await tester.pumpAndSettle();
+        final drag = await grab(tester, dentist.id);
+        expect(
+          find.descendant(
+            of: find.byType(NoteDragFeedback),
+            matching: find.text('3 notes'),
+          ),
+          findsOneWidget,
+        );
+        await drag.moveTo(
+          tester.getCenter(find.byKey(const ValueKey('folder-page-title'))),
+        );
+        await tester.pump();
+        expect(ring, findsOneWidget);
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(goldenFolders.tree.folderOf(dentist.id), work.id);
+        expect(goldenFolders.tree.folderOf(brief.id), clients.id);
+        expect(goldenFolders.tree.folderOf(call.id), work.id);
+        expect(find.text('Moved to “Work”'), findsOneWidget);
+      },
+    );
+
+    testWidgets("one of Add notes' ticked rows drags every ticked note with "
+        'it, and an unticked row goes alone', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      final groceries = goldenNotes.create(body: 'Groceries');
+      final books = goldenNotes.create(body: 'Book list');
+      final gifts = goldenNotes.create(body: 'Gift ideas');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      for (final note in [dentist, groceries, books]) {
+        await tester.tap(tick(note.id));
+        await tester.pump();
+      }
+      final personalRow = find.byKey(ValueKey('folder-${personal.id}'));
+      Future<void> dragRow(String noteId, String count) async {
+        final drag = await tester.startGesture(
+          tester.getCenter(tick(noteId)),
+          kind: PointerDeviceKind.mouse,
+        );
+        await drag.moveBy(const Offset(12, 2));
+        await tester.pump();
+        expect(
+          find.descendant(
+            of: find.byType(NoteDragFeedback),
+            matching: find.text(count),
+          ),
+          findsOneWidget,
+          reason: count,
+        );
+        await drag.moveTo(tester.getCenter(personalRow));
+        await tester.pump();
+        await drag.up();
+        await tester.pumpAndSettle();
+      }
+
+      await dragRow(groceries.id, '3 notes');
+      for (final note in [dentist, groceries, books]) {
+        expect(goldenFolders.tree.folderOf(note.id), personal.id);
+      }
+      expect(goldenFolders.tree.folderOf(gifts.id), isNull);
+      expect(find.text('Moved 3 notes to “Personal”'), findsOneWidget);
+
+      await dragRow(gifts.id, 'Gift ideas');
+      expect(goldenFolders.tree.folderOf(gifts.id), personal.id);
+    });
+
+    testWidgets('filing notes counts only the ones that move, and Undo puts '
+        'back only those', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      final gym = goldenNotes.create(body: 'Gym plan');
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      goldenFolders
+        ..file([gym.id], personal.id)
+        ..file([call.id], work.id);
+      await tester.pumpAndSettle();
+      fileNotes(tester.element(find.byType(Sidebar)), goldenFolders, [
+        dentist.id,
+        gym.id,
+        call.id,
+      ], work.id);
+      await tester.pumpAndSettle();
+      expect(find.text('Moved 2 notes to “Work”'), findsOneWidget);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), isNull);
+      expect(goldenFolders.tree.folderOf(gym.id), personal.id);
+      expect(goldenFolders.tree.folderOf(call.id), work.id);
+    });
+
     testWidgets('Add notes works from the keyboard: Tab reaches a note, Space '
         'ticks it, and Enter on Add adds it', (tester) async {
       await pumpWindow(tester);

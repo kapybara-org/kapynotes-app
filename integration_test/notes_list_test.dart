@@ -62,6 +62,7 @@ import '../test/fake_kapy_ai.dart';
 import '../test/kapy_icon_finder.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
+import 'sharing_support.dart' show pumpUntil, shown;
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'notes-list-integration.json');
@@ -750,8 +751,13 @@ void main() {
     await boardShot(tester, 'folders-d1-adding-notes');
     await lightShot(tester, 'folders-d1-adding-notes');
 
-    await click(tester, find.byKey(const ValueKey('add-notes-add')));
-    expect(find.text('Added 3 notes to “Clients”'), findsOneWidget);
+    // On the Mac a toast's lifetime is an animation, so pumpAndSettle would
+    // run it out: it is waited for as it arrives, and Undo is pressed right
+    // after the shot.
+    final added = find.text('Added 3 notes to “Clients”');
+    await tester.tap(find.byKey(const ValueKey('add-notes-add')), kind: mouse);
+    await pumpUntil(tester, () => shown(tester, added));
+    expect(added, findsOneWidget);
     for (final title in ['Quote for the deck', 'Pricing ideas', 'Gym plan']) {
       expect(folderStore!.tree.folderOf(id(title)), clients.id, reason: title);
       expect(tick(title), findsNothing, reason: title);
@@ -793,8 +799,9 @@ void main() {
     await boardShot(tester, 'folders-d3-dragging-onto-a-folder');
     await lightShot(tester, 'folders-d3-dragging-onto-a-folder');
     await drag.up();
-    await tester.pumpAndSettle();
-    expect(find.text('Moved 2 notes to “Personal”'), findsOneWidget);
+    final moved = find.text('Moved 2 notes to “Personal”');
+    await pumpUntil(tester, () => shown(tester, moved));
+    expect(moved, findsOneWidget);
     expect(folderStore!.tree.folderOf(id('Gym plan')), personal.id);
     expect(folderStore!.tree.folderOf(id('Spare keys')), personal.id);
     await boardShot(tester, 'folders-d3-dropped');
@@ -808,8 +815,9 @@ void main() {
     expect(find.byKey(const ValueKey('folder-page-drop')), findsOneWidget);
     await boardShot(tester, 'folders-d4-dragging-into-the-open-folder');
     await drag.up();
-    await tester.pumpAndSettle();
-    expect(find.text('Moved to “Clients”'), findsOneWidget);
+    final into = find.text('Moved to “Clients”');
+    await pumpUntil(tester, () => shown(tester, into));
+    expect(into, findsOneWidget);
     expect(folderStore!.tree.folderOf(id('Pricing ideas')), clients.id);
     await boardShot(tester, 'folders-d4-dropped');
   });

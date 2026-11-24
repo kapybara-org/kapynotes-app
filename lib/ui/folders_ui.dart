@@ -1643,6 +1643,7 @@ class FolderPage extends StatelessWidget {
     final page = _FolderDrop(
       tree: tree,
       folderId: folderId,
+      deep: true,
       onDrop: (noteIds) => onFile(noteIds, folderId),
       builder: (context, over) => Stack(
         fit: StackFit.expand,
@@ -1929,6 +1930,7 @@ class _FolderDrop extends StatelessWidget {
     required this.folderId,
     required this.onDrop,
     required this.builder,
+    this.deep = false,
   });
 
   final FolderTree tree;
@@ -1936,11 +1938,25 @@ class _FolderDrop extends StatelessWidget {
   final ValueChanged<List<String>> onDrop;
   final Widget Function(BuildContext context, bool over) builder;
 
+  /// Whether a note anywhere inside the folder stays where it is. A folder's
+  /// page lists the notes in its folders too, so there a card let go where
+  /// it is listed moves nothing; a folder's row or card still takes a note
+  /// up out of a folder inside it.
+  final bool deep;
+
+  /// Whether letting go of [noteId] here files it somewhere new.
+  bool _moves(String noteId) => switch (tree.folderOf(noteId)) {
+    final at? when deep => !tree.isWithin(at, folderId),
+    final at => at != folderId,
+  };
+
   @override
   Widget build(BuildContext context) => DragTarget<NoteDragData>(
-    onWillAcceptWithDetails: (details) =>
-        details.data.fileable.any((id) => tree.folderOf(id) != folderId),
-    onAcceptWithDetails: (details) => onDrop(details.data.fileable),
+    onWillAcceptWithDetails: (details) => details.data.fileable.any(_moves),
+    onAcceptWithDetails: (details) => onDrop([
+      for (final id in details.data.fileable)
+        if (_moves(id)) id,
+    ]),
     builder: (context, over, _) => builder(context, over.isNotEmpty),
   );
 }

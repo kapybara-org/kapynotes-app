@@ -1,7 +1,6 @@
-// What phone_sharing_test.dart and sharing_mac_test.dart share: the people
-// on the fake sync server, the waits sharing work needs, and how a test reads
-// the colour a person sees. Not a test file itself, so neither workflow runs
-// it on its own.
+// What the integration tests share: the people on the fake sync server, the
+// waits sharing work and toasts need, and how a test reads the colour a
+// person sees. Not a test file itself, so no workflow runs it on its own.
 //
 // Every person here is a fake account on test/sync/fake_server.dart's
 // server, so nothing signs in to a real account or reaches the network.
@@ -72,6 +71,16 @@ Future<void> pumpUntil(WidgetTester tester, bool Function() done) async {
     await tester.pump();
   }
 }
+
+/// Whether [text] is on screen with every fade above it run in, as a toast
+/// is once [pumpUntil] has waited for it to show whole in a screenshot.
+bool shown(WidgetTester tester, Finder text) =>
+    text.evaluate().isNotEmpty &&
+    tester
+        .widgetList<FadeTransition>(
+          find.ancestor(of: text, matching: find.byType(FadeTransition)),
+        )
+        .every((fade) => fade.opacity.value == 1);
 
 /// Takes [name]'s screenshot once the frame has caught up with the last tap:
 /// the live binding's marker where the test pressed has faded, and a toast
