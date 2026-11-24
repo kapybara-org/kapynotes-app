@@ -4001,22 +4001,31 @@ void main() {
         if (row.ofPickedDay) row.note.title,
     ];
 
-    testWidgets('a day in the week opens its note, lit, and the list stays '
-        'whole', (tester) async {
+    /// The titles of the tabs, in the row's order. The row shows while there
+    /// are two or more.
+    List<String> tabTitles(WidgetTester tester) => [
+      for (final tab in tester.widget<NoteTabRow>(find.byType(NoteTabRow)).tabs)
+        tab.title,
+    ];
+
+    testWidgets('a day in the week opens its note as the tab, lit, and the '
+        'list stays whole', (tester) async {
       await library(tester);
       expect(find.byType(DayStrip), findsOneWidget);
 
       await tap(tester, day(18));
       expect(openNoteBody(tester), 'Standup notes');
+      expect(find.byType(NoteTabRow), findsNothing, reason: 'one tab');
       expect(rowOf(tester, 'Standup notes').selected, isTrue);
       expect(lit(tester), ['Standup notes']);
       expect(headings(tester), hasLength(4));
       expect(whenChip, findsNothing);
       expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+      expect(find.text("Opened yesterday's note"), findsOneWidget);
     });
 
-    testWidgets('a day with several notes opens the latest and lights them '
-        'all, until another day is picked or another day\'s note opens', (
+    testWidgets('a day with several notes opens them as the tabs, the first '
+        'in front and all lit, and Undo brings back the tabs from before', (
       tester,
     ) async {
       final days = NoteDayStore(store);
@@ -4024,22 +4033,139 @@ void main() {
       await library(tester, days: days);
       days.setDay('October plan', DateTime(2026, 11, 18));
       await tester.pumpAndSettle();
+      await tap(tester, find.widgetWithText(NoteRow, 'Pricing ideas'));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['Pricing ideas', 'Call with Arjun']);
+      final kept = {for (final note in notes.allNotes) note.id};
 
       await tap(tester, day(18));
+      expect(tabTitles(tester), ['Standup notes', 'October plan']);
       expect(openNoteBody(tester), 'Standup notes');
       expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
+      expect(find.text("Opened yesterday's 2 notes"), findsOneWidget);
 
-      // Another of the day's notes keeps the day lit.
+      await tap(tester, find.text('Undo'));
+      expect(tabTitles(tester), ['Pricing ideas', 'Call with Arjun']);
+      expect(openNoteBody(tester), 'Pricing ideas');
+      expect(lit(tester), isEmpty);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: false));
+      expect({for (final note in notes.allNotes) note.id}, kept);
+    });
+
+    testWidgets("a note opened from the list keeps the day picked, another "
+        'day takes its place, and a click on the day picked brings the tabs '
+        'back', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+
+      // The note takes the tab in front, and the day stays picked, so the
+      // way back stays too.
       await tap(tester, find.widgetWithText(NoteRow, 'October plan'));
-      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
+      expect(openNoteBody(tester), 'October plan');
+      expect(lit(tester), ['Standup notes']);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
 
+      // Another day's notes take the first day's place. The tabs from before
+      // are a click on it away, so the notice offers no Undo.
       await tap(tester, day(17));
       expect(openNoteBody(tester), 'Pricing ideas');
       expect(lit(tester), ['Pricing ideas']);
+      expect(find.text("Opened Tue 17's note"), findsOneWidget);
+      expect(find.text('Undo'), findsNothing);
 
-      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tap(tester, day(17));
+      expect(openNoteBody(tester), 'Call with Arjun');
       expect(lit(tester), isEmpty);
       expect(tester.getSemantics(day(17)), isSemantics(isSelected: false));
+    });
+
+    testWidgets('a day with no notes opens a page to write on it in place of '
+        'the tabs, and Undo brings them back with no note left behind', (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      final kept = {for (final note in notes.allNotes) note.id};
+
+      await tap(tester, day(16));
+      expect(find.text('No notes on Mon 16'), findsOneWidget);
+      expect(openNoteBody(tester), isEmpty);
+      expect(tester.getSemantics(day(16)), isSemantics(isSelected: true));
+
+      await tap(tester, find.text('Undo'));
+      expect(openNoteBody(tester), 'Call with Arjun');
+      expect({for (final note in notes.allNotes) note.id}, kept);
+      expect(days.noteIds, isEmpty);
+    });
+
+    testWidgets('a day opens 12 of its notes at most, and says the rest are '
+        'in the list', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      for (var index = 1; index <= 13; index++) {
+        notes.create(body: 'Errand $index');
+      }
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(19));
+      expect(
+        tester.widget<NoteTabRow>(find.byType(NoteTabRow)).tabs,
+        hasLength(EditorWorkspace.dayTabLimit),
+      );
+      expect(
+        find.text("Opened 12 of today's 14 notes. The rest are in the list."),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Return on a day opens its notes and leaves the keyboard on '
+        'the day, so Return again brings the tabs back', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      Focus.of(
+        tester.element(
+          find.descendant(of: day(18), matching: find.byType(Text)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Standup notes');
+      bool onTheWeek() =>
+          FocusManager.instance.primaryFocus?.context
+              ?.findAncestorWidgetOfExactType<DayStrip>() !=
+          null;
+      expect(onTheWeek(), isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Call with Arjun');
+      expect(onTheWeek(), isTrue);
+    });
+
+    testWidgets('what was typed stays when its tab gives way to a day, and is '
+        'there when the tabs come back', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tester.enterNote('Call with Arjun\nBring the contract');
+
+      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(
+        notes.byId('Call with Arjun')!.body,
+        contains('Bring the contract'),
+      );
+
+      await tap(tester, find.text('Undo'));
+      expect(openNoteBody(tester), 'Call with Arjun\nBring the contract');
     });
 
     testWidgets("a later day's note stays off the list until its day, and "
@@ -4126,23 +4252,8 @@ void main() {
       expect(find.byType(DayStrip), findsNothing);
     });
 
-    testWidgets('with the list hidden, a day lists its notes, and a click '
-        'opens one', (tester) async {
-      await library(tester);
-      prefs.toggleSidebar();
-      await tester.pumpAndSettle();
-
-      await tap(tester, day(18));
-      expect(find.text('Wednesday, 18 November'), findsOneWidget);
-      expect(find.text('1 note'), findsOneWidget);
-      await tap(tester, find.byKey(const ValueKey('day-list-Standup notes')));
-      expect(openNoteBody(tester), 'Standup notes');
-      // Nothing was narrowed: there was no list to narrow.
-      expect(whenChip, findsNothing);
-    });
-
     testWidgets('on a folder in front the week counts that folder alone, and '
-        'a day opens its note', (tester) async {
+        "a day's note takes the folder's place until Undo", (tester) async {
       final folders = FolderStore(store);
       await folders.load();
       await library(tester, folders: folders);
@@ -4158,6 +4269,10 @@ void main() {
       expect(dots(18), findsOneWidget);
       await tap(tester, day(18));
       expect(openNoteBody(tester), 'Standup notes');
+      expect(find.byKey(ValueKey('folder-page-${work.id}')), findsNothing);
+
+      await tap(tester, find.text('Undo'));
+      expect(find.byKey(ValueKey('folder-page-${work.id}')), findsOneWidget);
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "

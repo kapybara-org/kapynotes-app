@@ -381,7 +381,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// True for a selection frame that only previews a note. The new editor is
   /// prepared at its normal caret but cannot steal focus from either sidebar
-  /// scrubbing or an active Ctrl/Cmd switch session.
+  /// scrubbing or an active Ctrl/Cmd switch session, nor from a day of the
+  /// page's week picked from the keyboard. See [_holdEditorAutofocus].
   bool _selectionAutofocusSuppressed = false;
 
   /// The notes picked to act on together. Let go of on the way into or out
@@ -1466,11 +1467,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!keepList) _showTabOf(next);
     }
     _selectedId = next;
-    if (_pickedDay case final day?) {
-      final note = widget.notes.byId(next);
-      final nextDay = note == null ? _dayOfFreshNote[next] : _dayOfNote(note);
-      if (nextDay != day) _pickedDay = null;
-    }
     final open = _workspace.openNoteIds;
     _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
     if (!selectionPreview) _scheduleDiscardAbandonedBlanks();
@@ -1492,13 +1488,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Deletes the new notes the reader left without writing anything.
   ///
-  /// A note still open — on screen, or in a tab behind — is still being
-  /// looked at, and one mid-way through a held-key switch may be switched
-  /// back to. A note that got any writing, picture or recording is a real
-  /// note from then on, and stops being a candidate even if later emptied.
+  /// A note still open — on screen, in a tab behind, or in the tabs a day's
+  /// notes took the place of — is still being looked at, and one mid-way
+  /// through a held-key switch may be switched back to. A note that got any
+  /// writing, picture or recording is a real note from then on, and stops
+  /// being a candidate even if later emptied.
   void _discardAbandonedBlanks() {
     if (_noteSwitchWorkspace != null) return;
-    final open = _workspace.tabbedNoteIds;
+    final open = {..._workspace.tabbedNoteIds, ..._workspace.keptNoteIds};
     final recordingInto = widget.recording?.isRecording ?? false
         ? widget.recording?.session?.noteId
         : null;
@@ -1659,7 +1656,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     EditorWorkspacePreviewSession? workspacePreview,
   }) {
     if (!focusEditor) {
-      _selectionAutofocusSuppressed = true;
+      _holdEditorAutofocus();
       // A preview may only activate an editor already mounted in another
       // pane. Move focus to the shortcut scope so the active-pane marker and
       // the real keyboard focus agree, while further Tabs still reach the
@@ -1686,17 +1683,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (focusEditor && !_specialMode && _workspace.activePane != paneBefore) {
       _focusSelectedEditorHere();
     }
-    if (!focusEditor) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _selectionAutofocusSuppressed = false;
-      });
-    }
     final committed = _committedSwitchAwaitingSelection;
     if (selectionPreview && committed?.id == id) {
       _committedSwitchAwaitingSelection = null;
       _commitWorkspacePreview();
       if (committed!.focusEditor) _focusSelectedEditorHere();
     }
+  }
+
+  /// Keeps the editors that the next frame builds from taking the keyboard.
+  void _holdEditorAutofocus() {
+    _selectionAutofocusSuppressed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _selectionAutofocusSuppressed = false;
+    });
   }
 
   void _openNoteToSide(String id) {
@@ -2039,31 +2039,92 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The day a note was given, where it has one.
   DateTime? _ownDayOf(Note note) => widget.days?.dayOf(note.id);
 
-  /// The day last picked in the page's week. Its notes are lit in the list
-  /// until another day is picked or a note from another day opens.
-  DateTime? _pickedDay;
-
   /// The day [note] sits on: the one it was started from, its own, or the
   /// day it was last edited.
   DateTime _dayOfNote(Note note) =>
       _dayOfFreshNote[note.id] ??
       noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
 
-  /// A day picked in the page's week. Its latest note opens, a later day's
-  /// too, though the list leaves that day out until it comes; with no notes,
-  /// a page to write on it opens where [write] allows one. The list stays
-  /// whole.
-  void _pickDay(DateTime day, List<Note> notes, {required bool write}) {
-    if (notes.isEmpty) {
-      if (!write) return;
-      _writeOnDay(day);
-      setState(() => _pickedDay = day);
-      return;
+  /// A day picked in the page's week or its month: [notes], its notes in the
+  /// list's order, become the tabs, one to a tab and the first in front, up to
+  /// [EditorWorkspace.dayTabLimit] of them, a later day's too, though the list
+  /// leaves that day out until it comes. All of them are lit in the list,
+  /// which stays whole. A day with none opens a page to write on it, in the
+  /// folder in front if there is one. The tabs open before the first day was
+  /// picked come back with the notice's Undo, or a click on the day picked.
+  void _openDay(DateTime day, List<Note> notes) {
+    if (day == _workspace.dayInTabs) return _leaveDay();
+    if (notes.isEmpty &&
+        (widget.days == null || !(_noteLimit?.canCreate ?? true))) {
+      // No page can be made: the open note is given the day if it is blank,
+      // and otherwise the note limit says why.
+      return _writeOnDay(day);
     }
-    setState(() => _pickedDay = day);
-    _select(
-      notes.reduce((a, b) => b.updatedAt.isAfter(a.updatedAt) ? b : a).id,
+    final folderId = _folderInFront;
+    final keyboard = _weekHasKeyboard;
+    if (_cancelNoteSwitchPreview()) setState(() {});
+    _afterRecordingLeaves(_workspace.openNoteIds, () {
+      if (!mounted) return;
+      final previous = _selectedId;
+      final first = _workspace.dayInTabs == null;
+      final opened = _workspace.showDay(day, [
+        for (final note in notes) note.id,
+      ]);
+      if (keyboard) _holdEditorAutofocus();
+      setState(() => _adoptWorkspaceSelection(previous));
+      Toast.show(
+        context,
+        _dayOpened(day, opened: opened, of: notes.length),
+        icon: KapyIcons.calendarOutlined,
+        action: first ? 'Undo' : null,
+        onAction: first ? _leaveDay : null,
+      );
+      if (notes.isEmpty) {
+        _writeOnDay(day, folderId: folderId);
+      } else {
+        _afterPaneChange(focus: !keyboard);
+      }
+    });
+  }
+
+  /// Brings back the tabs open before the first day was picked.
+  void _leaveDay() {
+    if (_workspace.dayInTabs == null) return;
+    final keyboard = _weekHasKeyboard;
+    _changeTabs(_workspace.openNoteIds, () {
+      if (keyboard) _holdEditorAutofocus();
+      return _workspace.leaveDay();
+    }, focus: !keyboard);
+  }
+
+  /// Whether the keyboard is on a day of the page's week, there by Tab. A day
+  /// picked from there keeps it, so Return again brings the tabs back.
+  bool get _weekHasKeyboard =>
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<DayStrip>() !=
+      null;
+
+  /// What the notice says once [day]'s notes are the tabs: "Opened Tue 18's
+  /// 3 notes", "Opened today's note", "Opened 12 of Tue 18's 15 notes. The
+  /// rest are in the list.", or for a day with none, "No notes on Sat 22".
+  String _dayOpened(DateTime day, {required int opened, required int of}) {
+    final brief = SidebarTimestamp.briefDay(
+      day,
+      today: dayShown(widget.notes.now(), widget.prefs.displayTime),
     );
+    final (whose, on) = switch (brief) {
+      'Today' ||
+      'Yesterday' ||
+      'Tomorrow' => ("${brief.toLowerCase()}'s", brief.toLowerCase()),
+      _ => ("$brief's", 'on $brief'),
+    };
+    return switch (of) {
+      0 => 'No notes $on',
+      1 => 'Opened $whose note',
+      _ when opened < of =>
+        'Opened $opened of $whose $of notes. The rest are in the list.',
+      _ => 'Opened $whose $of notes',
+    };
   }
 
   /// The day a note started from a tapped day will be given once it has its
@@ -2075,11 +2136,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       '20,000 notes already have a day, the most Kapy Notes keeps.';
 
   /// Writes on [day]: a page with no note behind it until the first words, so
-  /// leaving it untouched leaves nothing.
-  void _writeOnDay(DateTime day) {
-    final days = widget.days;
-    if (days == null) return;
-    _createNote(titled: false, onMade: (id) => _dayOfFreshNote[id] = day);
+  /// leaving it untouched leaves nothing. With [folderId] the page goes into
+  /// that folder, as one made with the folder's tab in front does.
+  void _writeOnDay(DateTime day, {String? folderId}) {
+    if (widget.days == null) return;
+    _createNote(
+      titled: false,
+      onMade: (id) {
+        _dayOfFreshNote[id] = day;
+        if (folderId == null) return;
+        if (widget.folders?.file([id], folderId) case final refusal?) {
+          Toast.show(context, folderRefusalText(refusal), isError: true);
+        }
+      },
+    );
   }
 
   /// Gives the note whose page is open another day, or none at all.
@@ -3576,15 +3646,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   );
 
   /// The page's days, in My notes and on a folder in front, counting what
-  /// the list shows or what the folder holds; a day picked there opens its
-  /// latest note. With the list hidden and no folder in front, a day lists
-  /// its notes instead. Their
-  /// month takes the bar's top left, so the open note's folders go in the
-  /// line above its title. Kapy AI open over the page's right edge leaves
-  /// them the one button for the day.
-  Widget Function(bool compact, PlaceDays place)? _pageDays({
-    required bool listVisible,
-  }) {
+  /// the list shows or what the folder holds; a day picked there opens those
+  /// notes as the tabs ([_openDay]). Their month takes the bar's top left, so
+  /// the open note's folders go in the line above its title. Kapy AI open
+  /// over the page's right edge leaves them the one button for the day.
+  Widget Function(bool compact, PlaceDays place)? _pageDays() {
     final folderId = _folderInFront;
     if (folderId == null && (_space != LibrarySpace.notes || _specialMode)) {
       return null;
@@ -3601,9 +3667,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 (_kapyAi?.enabled ?? false) &&
                 MediaQuery.sizeOf(context).width < kapyAiOverlayBelow),
         today: dayShown(widget.notes.now(), displayTime),
-        picked: _pickedDay,
-        onPick: (day, notes) =>
-            _pickDay(day, notes, write: widget.days != null && listVisible),
+        picked: _workspace.dayInTabs,
+        onPick: _openDay,
         notes: folderId == null
             ? _filtered(widget.notes.search(''), anyTime: true)
             : widget.folders!.tree.notesIn(
@@ -3614,15 +3679,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         displayTime: displayTime,
         firstWeekday: firstWeekday(context),
         ownDay: widget.days == null ? null : _ownDayOf,
-        onOpenNote: listVisible || folderId != null ? null : _openFromDay,
+        opensTabs: true,
       ),
     );
   }
-
-  /// Opens a note from a day's list under the page's days, or with [behind]
-  /// in a tab behind, as a click in the list would.
-  void _openFromDay(String id, {required bool behind}) =>
-      behind ? _openInNewTabs([id]) : _select(id);
 
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
   /// From a list's own search field ([field]), Drawings' searches drawings
@@ -4165,7 +4225,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final space = _space;
             final listFits = _listFits;
             final listShown = _listShown;
-            final pageDays = _pageDays(listVisible: listFits && listShown);
+            final pageDays = _pageDays();
             final moreActions = _folderInFront == null
                 ? _pageActions(selected)
                 : [
@@ -4268,7 +4328,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
               grouping: widget.prefs.notesGrouping,
               ownDay: widget.days == null ? null : _ownDayOf,
-              ofPickedDay: switch (_pickedDay) {
+              ofPickedDay: switch (_workspace.dayInTabs) {
                 null => null,
                 final day => (note) => _dayOfNote(note) == day,
               },
@@ -5655,7 +5715,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               displayTime: displayTime,
               firstWeekday: firstWeekday(context),
               ownDay: widget.days == null ? null : _ownDayOf,
-              onOpenNote: (id, {required behind}) => _openFromPage(id),
+              onOpenNote: _openFromPage,
             )
           : null,
       tasks: tasks,
