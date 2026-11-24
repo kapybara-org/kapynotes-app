@@ -234,6 +234,12 @@ Future<String?> _act(String device, String action) async {
     return now == wanted ? null : 'the appearance is $now, not $wanted';
   }
 
+  // A test's warning for the run's log. On Android a test's own words reach
+  // the log behind logcat's prefix, where GitHub doesn't see a warning.
+  if (action.startsWith('warn:')) {
+    stdout.writeln('::warning::${action.substring(5)}');
+    return null;
+  }
   if (_isSimulator(device)) {
     return switch (action) {
       'lock' => press('lock'),
@@ -273,6 +279,7 @@ Future<String?> _act(String device, String action) async {
   }
   if (action == 'tap-again') return _tapAgain(device);
   return switch (action) {
+    'keyboard-shown' => _keyboardShown(device),
     'grant' => adbBoth(
       ['pm', 'grant', _app, 'android.permission.RECORD_AUDIO'],
       ['pm', 'grant', _app, 'android.permission.POST_NOTIFICATIONS'],
@@ -293,6 +300,16 @@ Future<String?> _act(String device, String action) async {
     ]),
     _ => Future.value('no such action: $action'),
   };
+}
+
+/// Null when Android's input method says its keyboard is on [device]'s
+/// screen, else what it says instead.
+Future<String?> _keyboardShown(String device) async {
+  final state = await _adbShell(device, ['dumpsys', 'input_method']);
+  final shown = RegExp(
+    r'mInputShown=(true|false)',
+  ).firstMatch('${state.stdout}')?.group(1);
+  return shown == 'true' ? null : 'the input method says mInputShown=$shown';
 }
 
 /// Runs `adb shell` on [device], and returns its output and how it ended.

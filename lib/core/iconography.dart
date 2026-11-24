@@ -52,7 +52,7 @@ class KapyIcon extends StatelessWidget {
   }
 }
 
-/// Semantic app icons, all drawn from Hugeicons' stroke-rounded family.
+/// Semantic app icons in Hugeicons' stroke-rounded family.
 class KapyIcons {
   const KapyIcons._();
 
@@ -69,10 +69,46 @@ class KapyIcons {
     0xE0DD,
     HugeIcons.strokeRoundedRemove01,
   );
-  static const archiveOutlined = KapyIconData(
-    0xE090,
-    HugeIcons.strokeRoundedArchive03,
-  );
+
+  /// The boards' plain archive box, drawn on Hugeicons' 24-unit
+  /// stroke-rounded grid because the set has no lidded box without an arrow.
+  static const archiveOutlined = KapyIconData(0xE090, [
+    [
+      'path',
+      {
+        'key': '0',
+        'd':
+            'M4.5 3H19.5C20.0523 3 20.5 3.44772 20.5 4V5.5C20.5 6.05228 20.0523 6.5 19.5 6.5H4.5C3.94772 6.5 3.5 6.05228 3.5 5.5V4C3.5 3.44772 3.94772 3 4.5 3Z',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinecap': 'round',
+        'strokeLinejoin': 'round',
+      },
+    ],
+    [
+      'path',
+      {
+        'key': '1',
+        'd':
+            'M4.5 6.5V18C4.5 19.6569 5.84315 21 7.5 21H16.5C18.1569 21 19.5 19.6569 19.5 18V6.5',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinecap': 'round',
+        'strokeLinejoin': 'round',
+      },
+    ],
+    [
+      'path',
+      {
+        'key': '2',
+        'd': 'M10.5 11H13.5',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinecap': 'round',
+        'strokeLinejoin': 'round',
+      },
+    ],
+  ]);
   static const arrowBackRounded = KapyIconData(
     0xE004,
     HugeIcons.strokeRoundedArrowLeft02,

@@ -21,11 +21,13 @@ void main() {
     },
   );
 
-  test('every KapyIcons glyph is a Hugeicons path, never a drawn one', () {
+  test('every KapyIcons glyph is a Hugeicons path, except the archive box', () {
     final source = File('lib/core/iconography.dart').readAsStringSync();
     final custom = RegExp(
-      r"static const \w+ = KapyIconData\(\s*0x[0-9A-Fa-f]+,\s*\[",
+      r"static const (\w+) = KapyIconData\(\s*0x[0-9A-Fa-f]+,\s*\[",
     );
-    expect(custom.allMatches(source).map((m) => m.group(0)), isEmpty);
+    expect(custom.allMatches(source).map((m) => m.group(1)), [
+      'archiveOutlined',
+    ]);
   });
 }

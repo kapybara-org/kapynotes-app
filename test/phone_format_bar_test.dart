@@ -4,6 +4,7 @@ import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart' show bulletPrefix;
@@ -627,4 +628,131 @@ void main() {
       });
     });
   }
+  group('a notice', () {
+    const card = ValueKey('toast-surface');
+
+    testWidgets('sits above the format bar at the same width, not over it', (
+      tester,
+    ) async {
+      await _open(
+        tester,
+        TargetPlatform.iOS,
+        'Trip budget',
+        const TextSelection.collapsed(offset: 0),
+      );
+      final bar = tester.getRect(find.byKey(_bar));
+      Toast.show(tester.element(find.byKey(_bar)), 'Copied');
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byKey(card)).bottom, bar.top - 16);
+      expect(tester.getSize(find.byKey(card)).width, 390 - 32);
+    });
+
+    testWidgets('sits on the keyboard where there is no format bar', (
+      tester,
+    ) async {
+      await _open(
+        tester,
+        TargetPlatform.android,
+        'Trip budget',
+        const TextSelection.collapsed(offset: 0),
+      );
+      await tester.tap(find.byKey(_otherField));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_bar), findsNothing);
+      Toast.show(tester.element(find.byKey(_otherField)), 'Copied');
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byKey(card)).bottom, 760 - 300 - 16);
+      expect(tester.getSize(find.byKey(card)).width, 390 - 32);
+    });
+
+    testWidgets('one already showing steps up when the format bar comes in '
+        'under it, and down when it goes', (tester) async {
+      await _open(
+        tester,
+        TargetPlatform.iOS,
+        'Trip budget',
+        const TextSelection.collapsed(offset: 0),
+      );
+      await tester.tap(find.byKey(_otherField));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_bar), findsNothing);
+      Toast.show(tester.element(find.byKey(_otherField)), 'Copied');
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byKey(card)).bottom, 760 - 300 - 16);
+
+      _field(tester).focusNode.requestFocus();
+      await tester.pumpAndSettle();
+      final bar = tester.getRect(find.byKey(_bar));
+      expect(tester.getRect(find.byKey(card)).bottom, bar.top - 16);
+
+      await tester.tap(find.byKey(_otherField));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_bar), findsNothing);
+      expect(tester.getRect(find.byKey(card)).bottom, 760 - 300 - 16);
+    });
+
+    testWidgets('one already showing keeps above the format bar as the '
+        'keyboard grows under it', (tester) async {
+      await _open(
+        tester,
+        TargetPlatform.iOS,
+        'Trip budget',
+        const TextSelection.collapsed(offset: 0),
+      );
+      Toast.show(tester.element(find.byKey(_bar)), 'Copied');
+      await tester.pumpAndSettle();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 340);
+      await tester.pumpAndSettle();
+      final bar = tester.getRect(find.byKey(_bar));
+      expect(bar.bottom, closeTo(760 - 340, 0.01));
+      expect(tester.getRect(find.byKey(card)).bottom, bar.top - 16);
+    });
+
+    testWidgets('one already showing steps down with the keyboard, the note '
+        'still focused', (tester) async {
+      await _open(
+        tester,
+        TargetPlatform.android,
+        'Trip budget',
+        const TextSelection.collapsed(offset: 0),
+      );
+      Toast.show(tester.element(find.byKey(_bar)), 'Copied');
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.byKey(card)).bottom,
+        tester.getRect(find.byKey(_bar)).top - 16,
+      );
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(_field(tester).focusNode.hasFocus, isTrue);
+      expect(find.byKey(_bar), findsNothing);
+      expect(tester.getRect(find.byKey(card)).bottom, 760 - 16);
+    });
+
+    testWidgets('on a desktop, there is no format bar and the notice stays '
+        'at the foot, a pill', (tester) async {
+      await _open(
+        tester,
+        TargetPlatform.macOS,
+        'Trip budget',
+        const TextSelection.collapsed(offset: 0),
+        keyboard: false,
+      );
+      expect(find.byKey(_bar), findsNothing);
+      Toast.show(tester.element(find.byKey(_otherField)), 'Copied');
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byKey(card)).bottom, 760 - 24);
+      expect(
+        (tester.widget<Container>(find.byKey(card)).decoration!
+                as BoxDecoration)
+            .borderRadius,
+        BorderRadius.circular(999),
+      );
+    });
+  });
 }
