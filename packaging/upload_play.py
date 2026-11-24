@@ -595,7 +595,19 @@ def upload(bundle, track):
     )
     print(f"  assigned to the {track} track")
 
-    call("POST", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit{COMMIT_QUERY}")
+    try:
+        call("POST", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit{COMMIT_QUERY}",
+             soft=True)
+    except PlayError as error:
+        if "foreground service" not in str(error).lower():
+            die(f"commit failed\n  {error}")
+        die(f"""commit failed\n  {error}
+  Play takes no build that uses a foreground service permission until the
+  Foreground service permissions declaration in App content is filled in, and
+  it offers that form only once such a build is in the Console. Nothing was
+  committed, so version code {version_code} is still free: upload this bundle
+  by hand under Testing -> Internal testing, fill in the declaration, then
+  promote it from the Console.""")
     print(f"""
   Delivered. Play processes the bundle in a few minutes, and the Console shows
   it under Release -> Testing -> {track}. Promote it from there once you have

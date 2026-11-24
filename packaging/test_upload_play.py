@@ -1,9 +1,11 @@
 import http.server
+import io
 import os
 import sys
 import tempfile
 import threading
 import unittest
+from contextlib import redirect_stderr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import upload_play
@@ -166,6 +168,34 @@ class PromoteTest(unittest.TestCase):
         upload_play.upload("unused.aab", "internal")
         self.assertEqual(len(self.commits()), 1)
         self.assertTrue(self.commits()[0].endswith(":commit?changesInReviewBehavior=ERROR_IF_IN_REVIEW"))
+
+    def refuse_commit(self, message):
+        recorded = upload_play.call
+
+        def fake_call(method, url, *, body=None, data=None, content_type=None, soft=False):
+            if ":commit" in url:
+                self.calls.append((method, url, body))
+                self.assertTrue(soft)
+                raise upload_play.PlayError(message)
+            return recorded(method, url, body=body, data=data, content_type=content_type, soft=soft)
+
+        self.patch("call", fake_call)
+        self.patch("upload_bundle", lambda edit_id, bundle: {"versionCode": 47})
+
+    def test_upload_refused_for_a_foreground_service_explains_the_console_upload(self):
+        self.refuse_commit("You must let us know whether your app uses any Foreground Service permissions.")
+        with redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            upload_play.upload("unused.aab", "internal")
+        self.assertIn("Foreground Service permissions", err.getvalue())
+        self.assertIn("version code 47 is still free", err.getvalue())
+        self.assertIn("Testing -> Internal testing", err.getvalue())
+
+    def test_upload_refused_for_another_reason_says_only_that(self):
+        self.refuse_commit("Changes are currently in review.")
+        with redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            upload_play.upload("unused.aab", "internal")
+        self.assertIn("Changes are currently in review.", err.getvalue())
+        self.assertNotIn("declaration", err.getvalue())
 
     def test_empty_notes_file_is_refused(self):
         with self.assertRaises(SystemExit):
