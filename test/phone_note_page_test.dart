@@ -1,3 +1,4 @@
+import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/app.dart';
@@ -546,6 +547,24 @@ void main() {
       }),
     );
 
+    testWidgets(
+      'a short slow fling still turns one week, either way (KAP-340)',
+      (tester) async {
+        seed();
+        await pump(tester);
+        await tester.fling(day(19), const Offset(-60, 0), 400);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+        await tester.fling(day(26), const Offset(60, 0), 400);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      },
+      variant: TargetPlatformVariant(const {
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
+
     testWidgets('a day on the week a swipe turned to opens its note, and the '
         "note moved to another week brings that week", (tester) async {
       seed();
@@ -619,16 +638,18 @@ void main() {
       expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-    testWidgets('two quick taps on › turn two weeks, and with animations off '
+    testWidgets('quick taps on › turn a week each, and with animations off '
         'a tap turns at once', (tester) async {
       seed();
       await pump(tester);
       final forward = find.byKey(const ValueKey('day-strip-forward'));
       await tester.tap(forward);
-      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(forward);
+      await tester.pump(const Duration(milliseconds: 40));
       await tester.tap(forward);
       await tester.pumpAndSettle();
-      expect(shown(), weekFrom(DateTime(2025, 11, 30)));
+      expect(shown(), weekFrom(DateTime(2025, 12, 7)));
 
       tester.platformDispatcher.accessibilityFeaturesTestValue =
           const FakeAccessibilityFeatures(disableAnimations: true);
@@ -638,20 +659,18 @@ void main() {
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('day-strip-back')));
       await tester.pump();
-      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      expect(shown(), weekFrom(DateTime(2025, 11, 30)));
     });
 
-    testWidgets('a screen reader turns the weeks with ‹ and ›, and with a '
-        'scroll over the days', (tester) async {
+    testWidgets('a screen reader turns the weeks with a scroll over the days, '
+        'and finds no ‹ or › to press', (tester) async {
       final semantics = tester.ensureSemantics();
       seed();
       await pump(tester);
-      tester.semantics.tap(find.semantics.byLabel('The week after'));
-      await tester.pumpAndSettle();
-      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
-      tester.semantics.tap(find.semantics.byLabel('The week before'));
-      await tester.pumpAndSettle();
-      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      for (final arrow in ['day-strip-back', 'day-strip-forward']) {
+        final node = tester.getSemantics(find.byKey(ValueKey(arrow)));
+        expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
+      }
 
       final strip = tester.getSemantics(find.byType(PageView));
       final weeks = find.semantics.byPredicate((node) => node.id == strip.id);

@@ -587,35 +587,27 @@ class _DayStripState extends State<DayStrip> {
     final height = _Day.stackedHeight(MediaQuery.textScalerOf(context));
     // As narrow as M09 draws them, and narrower on a small phone, so each of
     // the seven days keeps 44 to tap; the arrows keep the strip's whole
-    // height.
-    Widget arrow(
-      String key,
-      String label,
-      KapyIconData icon,
-      int by,
-      double width,
-    ) => Semantics(
-      button: true,
-      label: label,
-      onTap: () => _turn(by),
-      excludeSemantics: true,
-      child: InkResponse(
-        key: ValueKey(key),
-        onTap: () => _turn(by),
-        radius: width,
-        child: SizedBox(
-          width: width,
-          height: height,
-          child: Center(
-            child: KapyIcon(
-              icon,
-              size: 16,
-              color: context.palette.textSecondary,
+    // height. Under 44 wide they are no target for a screen reader, which
+    // turns the week with a scroll over the days.
+    Widget arrow(String key, KapyIconData icon, int by, double width) =>
+        ExcludeSemantics(
+          child: InkResponse(
+            key: ValueKey(key),
+            onTap: () => _turn(by),
+            radius: width,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Center(
+                child: KapyIcon(
+                  icon,
+                  size: 16,
+                  color: context.palette.textSecondary,
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-    );
+        );
     Widget week(BuildContext context, int page) => Row(
       children: [
         for (final day in _weekOn(page))
@@ -654,7 +646,6 @@ class _DayStripState extends State<DayStrip> {
               children: [
                 arrow(
                   'day-strip-back',
-                  'The week before',
                   KapyIcons.chevronLeftRounded,
                   -1,
                   width,
@@ -669,7 +660,6 @@ class _DayStripState extends State<DayStrip> {
                 ),
                 arrow(
                   'day-strip-forward',
-                  'The week after',
                   KapyIcons.chevronRightRounded,
                   1,
                   width,
