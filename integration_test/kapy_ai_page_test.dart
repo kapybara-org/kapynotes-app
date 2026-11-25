@@ -78,15 +78,18 @@ void main() {
               return MediaQuery(
                 data: media.copyWith(textScaler: TextScaler.linear(scale)),
                 child: Scaffold(
+                  extendBody: true,
                   body: KapyAiPage(
                     kapyAi: ai,
                     onOpenChat: () => opened++,
                     onManageAccounts: () {},
                     account: const SizedBox.square(dimension: 32),
-                    // M04's bar: 56 tall, 30 above the screen's edge on an
-                    // iPhone with its 34 pt home indicator.
-                    barClearance: media.padding.bottom - 4 + 56,
                     now: () => now,
+                  ),
+                  // M04's bar: 56 tall, 30 above the screen's edge on an
+                  // iPhone with its 34 pt home indicator.
+                  bottomNavigationBar: SizedBox(
+                    height: media.padding.bottom - 4 + 56,
                   ),
                 ),
               );
