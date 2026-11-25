@@ -9,8 +9,6 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
-import 'context_menu.dart';
-import 'note_tabs.dart' show clickOpensTabBehind;
 import 'notes_grouping.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart' show PopoverAtPoint;
@@ -51,10 +49,12 @@ typedef PlaceDays = Widget Function(Widget month, Widget? week);
 /// is Wed 19), and five, three, or today alone on a narrower page. ‹ and ›
 /// move a week at a time. A day has a dot for each of its notes, up to three.
 ///
-/// A click on a day picks it: the page opens its latest note, or a page to
-/// write on that day when it has none, and the list stays whole. The month
-/// opens a calendar that picks a day the same way. On a narrow page one button for the day
-/// stands in the month's place with no week.
+/// A click on a day picks it, with the notes on it, and the list stays whole.
+/// With [opensTabs] the page opens them as its tabs, or a page to write on
+/// that day when it has none, and a click on the picked day brings back the
+/// tabs from before. The month opens a calendar that picks a day the same
+/// way. On a narrow page one button for the day stands in the month's place
+/// with no week.
 class DayStrip extends StatefulWidget {
   const DayStrip({
     super.key,
@@ -66,9 +66,9 @@ class DayStrip extends StatefulWidget {
     required this.displayTime,
     required this.firstWeekday,
     this.ownDay,
-    this.onOpenNote,
     this.compact = false,
     this.phone = false,
+    this.opensTabs = false,
   });
 
   /// The day the list shows as today.
@@ -78,8 +78,8 @@ class DayStrip extends StatefulWidget {
   /// mark it.
   final DateTime? picked;
 
-  /// A day picked in the week or the calendar, with the notes on it, latest
-  /// edit first.
+  /// A day picked in the week or the calendar, with the notes on it, the
+  /// earliest written first.
   final void Function(DateTime day, List<Note> notes) onPick;
 
   /// What the days count: the notes the list or the folder in front shows
@@ -93,11 +93,6 @@ class DayStrip extends StatefulWidget {
 
   /// The [DateTime.weekday] the calendar's weeks start on.
   final int firstWeekday;
-
-  /// Set while there is no list on screen to narrow: a day then lists its
-  /// notes under the strip, and the one picked there opens, in a tab behind
-  /// on ⌘-click.
-  final void Function(String noteId, {required bool behind})? onOpenNote;
 
   /// Puts the month and the week where the bar has them.
   final PlaceDays place;
@@ -113,6 +108,11 @@ class DayStrip extends StatefulWidget {
   /// fling carries on for as many as its speed would, and it comes to rest on
   /// a whole week; ‹ and › turn one.
   final bool phone;
+
+  /// Whether a day picked opens its notes as the page's tabs, as a screen
+  /// reader is told, and a click on the [picked] day brings back the tabs
+  /// from before, as its tooltip says.
+  final bool opensTabs;
 
   /// A phone's arrows: the strip's height to press, and this wide, or down
   /// to the least where a narrower phone needs the room for its days.
@@ -154,16 +154,8 @@ class _DayStripState extends State<DayStrip> {
   /// How many days the week is paged away from today's, in days.
   int _shift = 0;
 
-  /// The day whose notes are listed under the strip, filled while they are.
-  DateTime? _listing;
-
   /// Whether the calendar is open, which turns its button tonal.
   bool _choosing = false;
-
-  /// The week, or with none the month's button, which a day's list opens
-  /// under.
-  final _weekRow = GlobalKey();
-  final _monthButton = GlobalKey();
 
   /// A phone's weeks, one a page, from the week that holds 1 January 1900.
   PageController? _weeks;
@@ -285,111 +277,27 @@ class _DayStripState extends State<DayStrip> {
     return {for (final day in days) day: counts[day] ?? 0};
   }
 
-  /// A click on [day] in the week or the calendar: lists its notes where
-  /// there is no list beside the page, and otherwise picks it, as a phone
-  /// always does.
-  void _choose(DateTime day, {BuildContext? at}) {
-    if (widget.phone || widget.onOpenNote == null) {
-      widget.onPick(day, _notesOn(day));
-      return;
-    }
-    unawaited(_list(day, at: at));
-  }
+  /// A click on [day] in the week or the calendar picks it.
+  void _choose(DateTime day) => widget.onPick(day, _notesOn(day));
 
-  /// The notes on [day], in the order the strip was given them.
-  List<Note> _notesOn(DateTime day) => [
-    for (final note in widget.notes)
-      if (noteDay(note, widget.displayTime, ownDay: widget.ownDay?.call(note)) ==
-          day)
-        note,
-  ];
-
-  /// Lists [day]'s notes 4 under the week, from the left of the day tapped
-  /// [at], or under the button that stands in for it, and opens the one
-  /// picked.
-  Future<void> _list(DateTime day, {BuildContext? at}) async {
-    final box =
-        (days > 0 ? _weekRow : _monthButton).currentContext?.findRenderObject()
-            as RenderBox?;
-    final tapped = at?.findRenderObject() as RenderBox?;
-    final onOpen = widget.onOpenNote;
-    if (box == null || onOpen == null) return;
-    final palette = context.palette;
-    final notes = _notesOn(day);
-    setState(() {
-      _bringIntoView(day);
-      _listing = day;
-    });
-    final noteId = await showKapyContextMenu<String>(
-      context: context,
-      globalPosition: box.localToGlobal(
-        Offset(
-          tapped == null
-              ? 0
-              : box.globalToLocal(tapped.localToGlobal(Offset.zero)).dx,
-          box.size.height + 4,
-        ),
-      ),
-      items: [
-        PopupMenuItem(
-          enabled: false,
-          height: 32,
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  SidebarTimestamp.fullDay(day),
-                  maxLines: 1,
-                  style: _figtree(13, 16, FontWeight.w500, palette.textPrimary),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                _noteCount(notes.length),
-                style: _figtree(12, 16, FontWeight.w400, palette.textTertiary),
-              ),
-            ],
-          ),
-        ),
-        for (final note in notes)
-          PopupMenuItem(
-            key: ValueKey('day-list-${note.id}'),
-            value: note.id,
-            height: 32,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    note.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _figtree(
-                      13,
-                      16,
-                      FontWeight.w400,
-                      palette.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  SidebarTimestamp.clock(widget.displayTime(note.updatedAt)),
-                  style: _figtree(
-                    12,
-                    16,
-                    FontWeight.w400,
-                    palette.textTertiary,
-                  ).copyWith(fontFeatures: _figures),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-    if (!mounted) return;
-    setState(() => _listing = null);
-    if (noteId != null) onOpen(noteId, behind: clickOpensTabBehind());
-  }
+  /// The notes on [day], the earliest written first, so editing one never
+  /// moves it.
+  List<Note> _notesOn(DateTime day) =>
+      [
+        for (final note in widget.notes)
+          if (noteDay(
+                note,
+                widget.displayTime,
+                ownDay: widget.ownDay?.call(note),
+              ) ==
+              day)
+            note,
+      ]..sort(
+        (a, b) => switch (a.createdAt.compareTo(b.createdAt)) {
+          0 => a.id.compareTo(b.id),
+          final order => order,
+        },
+      );
 
   /// Opens the calendar 4 under [button], on the month of the picked day or
   /// of the latest day in view, and does with the day picked there what a
@@ -485,10 +393,7 @@ class _DayStripState extends State<DayStrip> {
         builder: (context, constraints) =>
             _buttonWidth(context, label, compact: compact) <=
                 constraints.maxWidth
-            ? KeyedSubtree(
-                key: _monthButton,
-                child: _calendarButton(label, palette, compact: compact),
-              )
+            ? _calendarButton(label, palette, compact: compact)
             : const SizedBox.shrink(),
       ),
       compact
@@ -510,9 +415,8 @@ class _DayStripState extends State<DayStrip> {
                 final today = widget.today;
                 final shown = _shown;
                 final counts = _counts(shown);
-                final filled = _listing ?? picked ?? today;
+                final filled = picked ?? today;
                 return Row(
-                  key: _weekRow,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CompactIconButton(
@@ -530,16 +434,15 @@ class _DayStripState extends State<DayStrip> {
                     const SizedBox(width: DayStrip._arrowGap),
                     for (final (index, day) in shown.indexed) ...[
                       if (index > 0) const SizedBox(width: DayStrip._dayGap),
-                      Builder(
-                        builder: (tapped) => _Day(
-                          key: ValueKey('day-strip-${_date(day)}'),
-                          day: day,
-                          today: day == today,
-                          picked: day == picked,
-                          filled: day == filled,
-                          count: counts[day]!,
-                          onTap: () => _choose(day, at: tapped),
-                        ),
+                      _Day(
+                        key: ValueKey('day-strip-${_date(day)}'),
+                        day: day,
+                        today: day == today,
+                        picked: day == picked,
+                        filled: day == filled,
+                        count: counts[day]!,
+                        opensTabs: widget.opensTabs,
+                        onTap: () => _choose(day),
                       ),
                     ],
                     const SizedBox(width: DayStrip._arrowGap),
@@ -748,6 +651,7 @@ class _Day extends StatefulWidget {
     required this.count,
     required this.onTap,
     this.stacked = false,
+    this.opensTabs = false,
   });
 
   /// How tall a phone's day is: its weekday, its date and its dots.
@@ -778,6 +682,10 @@ class _Day extends StatefulWidget {
   final bool filled;
   final int count;
   final VoidCallback onTap;
+
+  /// Whether a click opens the day's notes as the page's tabs, or on the
+  /// picked day brings back the tabs from before.
+  final bool opensTabs;
 
   @override
   State<_Day> createState() => _DayState();
@@ -891,6 +799,15 @@ class _DayState extends State<_Day> {
               ],
             ),
           );
+    final hint = !widget.opensTabs
+        ? null
+        : widget.picked
+        ? 'Back to your tabs'
+        : widget.count == 0
+        ? 'Opens a page to write on it'
+        : widget.count == 1
+        ? 'Opens its note'
+        : 'Opens its notes as tabs';
     return TextButton(
       onPressed: widget.onTap,
       onHover: (hovered) => setState(() => _hovered = hovered),
@@ -908,8 +825,11 @@ class _DayState extends State<_Day> {
       child: Semantics(
         selected: widget.picked,
         label: _spoken(day, today: widget.today, notes: widget.count),
+        hint: hint,
         excludeSemantics: true,
-        child: column,
+        child: widget.opensTabs && widget.picked
+            ? Tooltip(message: hint, child: column)
+            : column,
       ),
     );
   }

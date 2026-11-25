@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -16,12 +15,8 @@ void main() {
   // A Thursday.
   final thursday = DateTime(2026, 11, 19);
 
-  Note note(String id, String body, DateTime edited) => Note(
-    id: id,
-    body: body,
-    createdAt: DateTime(2026, 1, 1),
-    updatedAt: edited,
-  );
+  Note note(String id, String body, DateTime edited, {DateTime? written}) =>
+      Note(id: id, body: body, createdAt: written ?? edited, updatedAt: edited);
 
   /// Pumps the strip in [room] at most, with its month over its week, keeping
   /// the day it picks filled, and hands back every day it picked with the
@@ -34,7 +29,8 @@ void main() {
     bool compact = false,
     double room = 1200,
     DateTime? Function(Note note)? ownDay,
-    void Function(String noteId, {required bool behind})? onOpenNote,
+    bool phone = false,
+    bool opensTabs = false,
   }) async {
     final picks = <(DateTime, List<String>)>[];
     var current = picked;
@@ -63,8 +59,9 @@ void main() {
                   displayTime: (at) => at,
                   firstWeekday: DateTime.monday,
                   ownDay: ownDay,
-                  onOpenNote: onOpenNote,
                   compact: compact,
+                  phone: phone,
+                  opensTabs: opensTabs,
                 ),
               ),
             ),
@@ -163,15 +160,20 @@ void main() {
     expect(dotsOf(day(16)), findsNothing);
   });
 
-  testWidgets('a click picks the day, with the notes on it, and fills it', (
-    tester,
-  ) async {
+  testWidgets('a click picks the day, with its notes the earliest written '
+      'first, and fills it', (tester) async {
     final semantics = tester.ensureSemantics();
     final picks = await pumpStrip(
       tester,
       notes: [
         note('standup', 'Standup', DateTime(2026, 11, 17, 10)),
-        note('pricing', 'Pricing ideas', DateTime(2026, 11, 17, 16)),
+        note('agenda', 'Agenda', DateTime(2026, 11, 17, 10)),
+        note(
+          'pricing',
+          'Pricing ideas',
+          DateTime(2026, 11, 17, 16),
+          written: DateTime(2026, 11, 17, 8),
+        ),
         note('renewal', 'Renewal notes', DateTime(2026, 11, 16, 9)),
       ],
       ownDay: (note) => note.id == 'renewal' ? DateTime(2026, 11, 21) : null,
@@ -179,7 +181,7 @@ void main() {
 
     await tap(tester, day(17));
     expect(picks.single.$1, DateTime(2026, 11, 17));
-    expect(picks.single.$2, ['standup', 'pricing']);
+    expect(picks.single.$2, ['pricing', 'agenda', 'standup']);
     expect(tester.getSemantics(day(17)), isSemantics(isSelected: true));
 
     await tap(tester, day(21));
@@ -260,38 +262,46 @@ void main() {
     expect(day(19), findsNothing);
   });
 
-  testWidgets('with no list to narrow, a day lists its notes, and the one '
-      'picked opens, behind on ⌘-click', (tester) async {
-    final opened = <(String, bool)>[];
+  testWidgets('a day says it opens its notes as tabs, and once picked that '
+      'it brings the tabs back', (tester) async {
+    final semantics = tester.ensureSemantics();
     final picks = await pumpStrip(
       tester,
+      opensTabs: true,
       notes: [
         note('standup', 'Standup notes', DateTime(2026, 11, 18, 10, 5)),
         note('ideas', 'Book ideas', DateTime(2026, 11, 18, 22, 10)),
         note('pricing', 'Pricing ideas', DateTime(2026, 11, 17, 16, 20)),
       ],
-      onOpenNote: (id, {required behind}) => opened.add((id, behind)),
     );
+    expect(
+      tester.getSemantics(day(18)),
+      isSemantics(hint: 'Opens its notes as tabs'),
+    );
+    expect(tester.getSemantics(day(17)), isSemantics(hint: 'Opens its note'));
+    expect(
+      tester.getSemantics(day(16)),
+      isSemantics(hint: 'Opens a page to write on it'),
+    );
+    expect(find.byTooltip('Back to your tabs'), findsNothing);
 
+    // A click picks the day with all its notes, and lists none of them.
     await tap(tester, day(18));
-    expect(find.text('Wednesday, 18 November'), findsOneWidget);
-    expect(find.text('2 notes'), findsOneWidget);
-    expect(find.text('10:05'), findsOneWidget);
-    expect(find.text('Pricing ideas'), findsNothing);
-    await tap(tester, find.text('Book ideas'));
-    expect(opened.single, ('ideas', false));
-    expect(picks, isEmpty);
-
-    await tap(tester, day(18));
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
-    await tester.tap(find.text('Standup notes'));
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
-    await tester.pumpAndSettle();
-    expect(opened.last, ('standup', true));
-
-    // A day with nothing in it says so.
-    await tap(tester, day(16));
-    expect(find.text('No notes'), findsOneWidget);
+    expect(picks.single.$1, DateTime(2026, 11, 18));
+    expect(picks.single.$2, ['standup', 'ideas']);
+    expect(find.text('Wednesday, 18 November'), findsNothing);
+    expect(
+      tester.getSemantics(day(18)),
+      isSemantics(isSelected: true, hint: 'Back to your tabs'),
+    );
+    expect(
+      find.descendant(
+        of: day(18),
+        matching: find.byTooltip('Back to your tabs'),
+      ),
+      findsOneWidget,
+    );
+    semantics.dispose();
   });
 
   testWidgets('narrow, it is one button for the day that opens the month', (
@@ -377,18 +387,5 @@ void main() {
         }
       }
     }
-  });
-
-  testWidgets('a day lists its notes from under that day', (tester) async {
-    await pumpStrip(
-      tester,
-      notes: [note('ideas', 'Book ideas', DateTime(2026, 11, 22, 9))],
-      onOpenNote: (_, {required behind}) {},
-    );
-    await tap(tester, day(22));
-    expect(
-      tester.getTopLeft(find.text('Book ideas')).dx,
-      greaterThan(tester.getTopLeft(day(22)).dx),
-    );
   });
 }

@@ -21,6 +21,17 @@ class Toast {
   /// format bar over the keyboard: whichever reaches highest.
   static final Set<_ToastClearanceState> _clearances = {};
 
+  /// The height a [ToastClearance.room] opens while a toast shows: the
+  /// card's own, and 8 above and below it.
+  static final ValueNotifier<double> _room = ValueNotifier(0);
+
+  static final ValueNotifier<bool> _hidden = ValueNotifier(false);
+
+  /// Hides the toast showing, its time paused, while [hidden]: a row's menu
+  /// does while it is open, so the menu never sits under the toast nor uses
+  /// up its Undo. A new toast shows, so a menu's own notice replaces it.
+  static void hide(bool hidden) => _hidden.value = hidden;
+
   /// Builds the toast on screen again once the frame has laid out what it
   /// keeps clear of, which has just come or gone: a clearance changes
   /// mid-build or as it goes, too soon to rebuild anything then.
@@ -124,7 +135,8 @@ class Toast {
     required Duration? duration,
     (String, VoidCallback)? action,
   }) {
-    _dismiss();
+    _current?.remove();
+    _hidden.value = false;
     final generation = ++_generation;
     late final OverlayEntry entry;
     entry = OverlayEntry(
@@ -149,7 +161,13 @@ class Toast {
           if (_generation == generation) _dismiss();
         },
         onDisposed: () {
-          if (identical(_current, entry)) _current = null;
+          if (!identical(_current, entry)) return;
+          _current = null;
+          // Its overlay went without [_dismiss], so its room goes once the
+          // frame is done, for the next toast to open its own.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_current == null) _room.value = 0;
+          });
         },
       ),
     );
@@ -192,6 +210,7 @@ class Toast {
     // invisible, endlessly animating spinner.
     entry?.remove();
     _current = null;
+    _room.value = 0;
   }
 }
 
@@ -257,6 +276,8 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     duration: const Duration(milliseconds: 160),
   )..forward();
   AnimationController? _lifetimeController;
+  final _card = GlobalKey();
+  bool _hidden = Toast._hidden.value;
 
   @override
   void initState() {
@@ -269,14 +290,34 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
               duration: duration,
               animationBehavior: AnimationBehavior.preserve,
             )
-            ..forward().then((_) {
-              if (mounted) widget.onElapsed();
-            });
+            ..addStatusListener((status) {
+              if (status == AnimationStatus.completed) widget.onElapsed();
+            })
+            ..forward();
     }
+    Toast._hidden.addListener(_hiddenChanged);
+  }
+
+  void _hiddenChanged() {
+    final lifetime = _lifetimeController;
+    if (Toast._hidden.value) {
+      lifetime?.stop();
+      setState(() => _hidden = true);
+      return;
+    }
+    if (lifetime != null && !lifetime.isCompleted) lifetime.forward();
+    // What it keeps clear of comes back with the route under the menu in
+    // the next frame, so the card shows the frame after, in its place.
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) setState(() => _hidden = false);
+      })
+      ..scheduleFrame();
   }
 
   @override
   void dispose() {
+    Toast._hidden.removeListener(_hiddenChanged);
     _lifetimeController?.dispose();
     _controller.dispose();
     widget.onDisposed();
@@ -284,15 +325,15 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   }
 
   /// Where the toast keeps: above the highest of what it keeps clear of,
-  /// such as a phone's bar or the format bar, or, as the second value, from
-  /// the top of a row it takes the place of, such as a sheet's footer.
+  /// such as a phone's bar or the format bar, or, as the second value, in
+  /// the room a sheet opens for it at its foot, by that room's bottom.
   (double, double?) _clear(MediaQueryData media) {
     var clear = 0.0;
     for (final below in Toast._clearances) {
       final box = below.context.findRenderObject();
       if (box is! RenderBox || !box.hasSize || !box.attached) continue;
       final top = box.localToGlobal(Offset.zero).dy;
-      if (below.widget.cover) return (0, top);
+      if (below.widget.room) return (0, top + box.size.height);
       clear = math.max(clear, media.size.height - top + 16);
     }
     return (clear, null);
@@ -318,14 +359,16 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
 
     final media = MediaQuery.of(context);
-    final (clear, cover) = _clear(media);
+    final (clear, room) = _clear(media);
     // What it keeps clear of was laid out a frame ago, so once this frame is,
     // a toast whose clearance moved under it, as a format bar does with the
-    // keyboard, takes its new place.
+    // keyboard, takes its new place. A sheet's room opens to the card's
+    // height once the card has one.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _clear(MediaQuery.of(context)) != (clear, cover)) {
-        setState(() {});
-      }
+      if (!mounted) return;
+      final card = _card.currentContext?.size?.height;
+      if (card != null) Toast._room.value = card + 16;
+      if (_clear(MediaQuery.of(context)) != (clear, room)) setState(() {});
     });
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontSize: AppTypeScale.body,
@@ -448,9 +491,11 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       );
     }
 
+    // The card takes every tap on it, so none lands on what is under it,
+    // and it keeps clear of what can be tapped instead.
     return Positioned(
-      top: cover == null ? null : 0,
-      bottom: cover == null
+      top: room == null ? null : 0,
+      bottom: room == null
           ? math.max(
               clear,
               (desktop ? 24 : 16) +
@@ -459,12 +504,11 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
           : 0,
       left: 16,
       right: 16,
-      child: _placed(
-        cover,
-        media.size.height - media.viewInsets.bottom,
-        IgnorePointer(
-          ignoring: widget.action == null,
-          child: FadeTransition(
+      child: Offstage(
+        offstage: _hidden,
+        child: _placed(
+          room,
+          FadeTransition(
             opacity: curve,
             child: SlideTransition(
               position: Tween(
@@ -476,6 +520,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                   liveRegion: true,
                   label: widget.message,
                   child: ConstrainedBox(
+                    key: _card,
                     constraints: BoxConstraints(
                       minHeight: desktop ? 40 : 0,
                       maxWidth: math.max(
@@ -535,23 +580,17 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
   }
 
-  /// Sets the card's top on the top of the row it takes the place of, at
-  /// its own height, but never past [floor], the screen's foot or the
-  /// keyboard's top.
-  static Widget _placed(double? cover, double floor, Widget toast) =>
-      cover == null
+  /// Sets the card in the room a sheet opens for it, 8 above that room's
+  /// [bottom].
+  static Widget _placed(double? bottom, Widget toast) => bottom == null
       ? toast
-      : CustomSingleChildLayout(
-          delegate: _Cover(top: cover, floor: floor),
-          child: toast,
-        );
+      : CustomSingleChildLayout(delegate: _InRoom(bottom), child: toast);
 }
 
-class _Cover extends SingleChildLayoutDelegate {
-  const _Cover({required this.top, required this.floor});
+class _InRoom extends SingleChildLayoutDelegate {
+  const _InRoom(this.bottom);
 
-  final double top;
-  final double floor;
+  final double bottom;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
@@ -559,10 +598,10 @@ class _Cover extends SingleChildLayoutDelegate {
 
   @override
   Offset getPositionForChild(Size size, Size childSize) =>
-      Offset(0, math.min(top, floor - childSize.height));
+      Offset(0, bottom - 8 - childSize.height);
 
   @override
-  bool shouldRelayout(_Cover old) => top != old.top || floor != old.floor;
+  bool shouldRelayout(_InRoom old) => bottom != old.bottom;
 }
 
 /// Keeps toasts above [child], such as a phone's bar and its + or the format
@@ -571,16 +610,18 @@ class _Cover extends SingleChildLayoutDelegate {
 /// [ToastClearanceScope] marks one. A sheet over it takes the toast back down
 /// to the bottom edge.
 ///
-/// With [cover], the toast takes [child]'s place instead, from its top, as a
-/// phone's notice does over a sheet's footer.
+/// [ToastClearance.room] instead opens room for the toast at a sheet's foot
+/// while one shows, under its last controls, and the toast sits in it.
 ///
 /// It lets go as its route starts to leave, so a toast still showing goes
 /// straight to its next place rather than follow a closing sheet.
 class ToastClearance extends StatefulWidget {
-  const ToastClearance({super.key, this.cover = false, required this.child});
+  const ToastClearance({super.key, required Widget this.child}) : room = false;
 
-  final bool cover;
-  final Widget child;
+  const ToastClearance.room({super.key}) : room = true, child = null;
+
+  final bool room;
+  final Widget? child;
 
   @override
   State<ToastClearance> createState() => _ToastClearanceState();
@@ -589,6 +630,23 @@ class ToastClearance extends StatefulWidget {
 class _ToastClearanceState extends State<ToastClearance> {
   bool _onTop = true;
   ModalRoute<Object?>? _route;
+  double _height = 0;
+
+  double get _room => Toast._current == null ? 0 : Toast._room.value;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.room) Toast._room.addListener(_roomChanged);
+  }
+
+  /// A room under another route keeps its height until its own is on top
+  /// again, so nothing moves behind the scrim.
+  void _roomChanged() {
+    if (!Toast._clearances.contains(this)) return;
+    setState(() => _height = _room);
+    Toast._clearancesChanged();
+  }
 
   @override
   void didChangeDependencies() {
@@ -609,6 +667,7 @@ class _ToastClearanceState extends State<ToastClearance> {
         (route == null ||
             route.isCurrent &&
                 route.animation?.status != AnimationStatus.reverse);
+    if (keep) _height = _room;
     if (keep ? Toast._clearances.add(this) : Toast._clearances.remove(this)) {
       Toast._clearancesChanged();
     }
@@ -616,13 +675,20 @@ class _ToastClearanceState extends State<ToastClearance> {
 
   @override
   void dispose() {
+    Toast._room.removeListener(_roomChanged);
     _route?.animation?.removeStatusListener(_update);
     if (Toast._clearances.remove(this)) Toast._clearancesChanged();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) =>
+      widget.child ??
+      AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        height: _height,
+      );
 }
 
 /// Wraps a navigator nested in a page, so a [ToastClearance] inside it also
