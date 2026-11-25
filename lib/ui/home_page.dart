@@ -87,6 +87,7 @@ import 'empty_state.dart';
 import 'folders_ui.dart'
     show
         FolderPage,
+        fileNotes,
         folderActions,
         folderRefusalText,
         moveNotesToFolder,
@@ -350,9 +351,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The folder whose notes a phone's Folders shows, or null for the tree.
   String? _phoneFolder;
 
-  /// Bumped by New folder beside a phone's Search folders, for the tree to
-  /// name a new folder.
-  final _phoneNewFolder = ValueNotifier(0);
+  /// Bumped by New folder, beside a phone's Search folders or under the
+  /// desktop's search field, for the tree to name a new folder.
+  final _newFolder = ValueNotifier(0);
 
   final GlobalKey<NavigatorState> _phoneNavigator = GlobalKey();
 
@@ -584,7 +585,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.desktopIntegration?.onOpenRequested = null;
     widget.desktopIntegration?.window = null;
     _desktopShortcutFocus.dispose();
-    _phoneNewFolder.dispose();
+    _newFolder.dispose();
     _kapyAi?.removeListener(_onKapyAi);
     _kapyPanel.dispose();
     _taskAddFocus.dispose();
@@ -1775,7 +1776,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   PaneDropPlan? _planDrop(NoteDragData data, int index, PaneDropZone zone) {
-    if (_specialMode || widget.notes.byId(data.noteId) == null) return null;
+    if (_specialMode ||
+        data.notes.length > 1 ||
+        widget.notes.byId(data.noteId) == null) {
+      return null;
+    }
     return _workspace.planDrop(data.noteId, index, zone);
   }
 
@@ -4327,7 +4332,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   onOpen: widget.prefs.setFolderOpen,
                   inFront: _folderInFront,
                   onTab: _openFolder,
-                  newFolder: null,
+                  newFolder: _newFolder,
+                  onMade: (folderId) {
+                    widget.prefs.addNotesShown = true;
+                    _openFolder(folderId, behind: false);
+                  },
                 ),
                 null => null,
               },
@@ -4944,11 +4953,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// as the notes list is, with the list's own cards and rows.
   Widget _buildFolderPage(String folderId, Sidebar sidebar) {
     final displayTime = widget.prefs.displayTime;
+    final folders = widget.folders!;
+    final filed = _folderNotes;
     return FolderPage(
       key: ValueKey('folder-page-$folderId'),
-      tree: widget.folders!.tree,
+      tree: folders.tree,
       folderId: folderId,
-      notes: _filtered(_folderNotes),
+      filed: filed,
+      notes: _filtered(filed),
       controls: _notesControls(LibrarySpace.notes, onFolder: true),
       cards: widget.prefs.noteCards,
       group: (notes) => groupNotes(
@@ -4962,6 +4974,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       noteTile: sidebar.noteTile,
       onTab: _openFolder,
       onMenu: (folder, at) => unawaited(_showFolderMenu(folder, at)),
+      onFile: (noteIds, into, {adding = false}) =>
+          fileNotes(context, folders, noteIds, into, adding: adding),
+      addNotes: widget.prefs.addNotesShown,
+      onAddNotes: (shown) => widget.prefs.addNotesShown = shown,
+      dateOf: (note) => SidebarTimestamp.glance(
+        note.updatedAt,
+        now: widget.notes.now(),
+        displayTime: displayTime,
+      ),
     );
   }
 
@@ -5679,7 +5700,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               inFront: null,
               onTab: (folderId, {required behind}) =>
                   setState(() => _phoneFolder = folderId),
-              newFolder: _phoneNewFolder,
+              newFolder: _newFolder,
+              onMade: null,
             )
           : null,
       phoneTiles: tree

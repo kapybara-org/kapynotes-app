@@ -7,16 +7,34 @@ import '../core/theme.dart';
 import '../data/editor_workspace.dart';
 import 'note_picks.dart';
 
-/// A note on its way to a pane: out of the notes list, or by a pane's title.
+/// A note on its way to a pane or a folder: out of a notes list, or by a
+/// pane's title.
 @immutable
 class NoteDragData {
-  const NoteDragData({required this.noteId, required this.title});
+  const NoteDragData({
+    required this.noteId,
+    required this.title,
+    this.together = const [],
+    this.fileable = const [],
+  });
 
+  /// The note grabbed, which a pane opens.
   final String noteId;
   final String title;
+
+  /// The notes picked or ticked with [noteId], itself among them, when it
+  /// was grabbed from among them; empty when it goes alone.
+  final List<String> together;
+
+  /// The notes a folder files from this drag: none where a folder takes
+  /// none, as with a drawing or someone else's note.
+  final List<String> fileable;
+
+  /// Every note the drag carries.
+  List<String> get notes => together.isEmpty ? [noteId] : together;
 }
 
-/// Lets [child] be dragged towards the panes, carrying [data].
+/// Lets [child] be dragged towards the panes or a folder, carrying [data].
 ///
 /// Only ever built where there is a mouse. The primary button alone starts a
 /// drag, so a right click still opens a row's menu, and on touch a drag is
@@ -24,6 +42,10 @@ class NoteDragData {
 /// same press picks the notes it crosses ([NoteSweep]).
 class NoteDraggable extends StatelessWidget {
   const NoteDraggable({super.key, required this.data, required this.child});
+
+  /// The drag under way, if any: every note it carries stays faded where
+  /// it is listed, the ones not under the pointer included.
+  static final ValueNotifier<NoteDragData?> carrying = ValueNotifier(null);
 
   final NoteDragData data;
   final Widget child;
@@ -35,9 +57,19 @@ class NoteDraggable extends StatelessWidget {
       // The drop targets read the pointer, not the card, so the card is set
       // off from it below rather than moved by the anchor.
       dragAnchorStrategy: pointerDragAnchorStrategy,
-      feedback: NoteDragFeedback(title: data.title),
-      childWhenDragging: Opacity(opacity: 0.45, child: child),
-      child: child,
+      feedback: NoteDragFeedback(title: data.title, count: data.notes.length),
+      onDragStarted: () => carrying.value = data,
+      // Both of these come even once the list that started the drag is gone.
+      onDragCompleted: () => carrying.value = null,
+      onDraggableCanceled: (_, _) => carrying.value = null,
+      child: ValueListenableBuilder(
+        valueListenable: carrying,
+        builder: (context, drag, child) => Opacity(
+          opacity: drag?.notes.contains(data.noteId) ?? false ? 0.45 : 1,
+          child: child,
+        ),
+        child: child,
+      ),
     );
   }
 }
@@ -47,7 +79,9 @@ class _SidewaysDraggable extends Draggable<NoteDragData> {
     super.data,
     super.dragAnchorStrategy,
     required super.feedback,
-    super.childWhenDragging,
+    super.onDragStarted,
+    super.onDragCompleted,
+    super.onDraggableCanceled,
     required super.child,
   });
 
@@ -94,54 +128,80 @@ class _SidewaysPointerState extends MultiDragPointerState {
       starter(initialPosition);
 }
 
-/// The card that follows the pointer while a note is dragged.
+/// The card that follows the pointer while a note is dragged: its title, or
+/// for several notes how many, over a second card.
 ///
 /// Below and to the right of the pointer, so neither the pointer nor the
 /// highlight under it is covered by the thing being moved.
 class NoteDragFeedback extends StatelessWidget {
-  const NoteDragFeedback({super.key, required this.title});
+  const NoteDragFeedback({super.key, required this.title, this.count = 1});
 
   final String title;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Transform.translate(
-      offset: const Offset(14, 10),
-      child: Material(
-        color: palette.surfaceBackground,
-        elevation: 6,
-        shadowColor: Colors.black.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              KapyIcon(
-                KapyIcons.descriptionOutlined,
-                size: AppControlMetrics.iconControl,
-                color: palette.textSecondary,
-              ),
-              const SizedBox(width: 7),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.control,
-                    fontWeight: AppWeight.font(AppWeight.body),
-                    fontVariations: AppWeight.wght(AppWeight.body),
-                    color: palette.textPrimary,
-                  ),
+    final radius = BorderRadius.circular(AppRadii.control);
+    final card = Material(
+      color: palette.surfaceBackground,
+      elevation: 6,
+      shadowColor: Colors.black.withValues(alpha: 0.35),
+      borderRadius: radius,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            KapyIcon(
+              KapyIcons.descriptionOutlined,
+              size: AppControlMetrics.iconControl,
+              color: palette.textSecondary,
+            ),
+            const SizedBox(width: 7),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Text(
+                count > 1 ? '$count notes' : title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: AppTypeScale.control,
+                  fontWeight: AppWeight.font(AppWeight.body),
+                  fontVariations: AppWeight.wght(AppWeight.body),
+                  color: palette.textPrimary,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+    );
+    return Transform.translate(
+      offset: const Offset(14, 10),
+      child: count == 1
+          ? card
+          : Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 3,
+                  top: 4,
+                  right: -3,
+                  bottom: -4,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: palette.controlBackground,
+                      border: Border.all(
+                        color: palette.raisedBorder ?? palette.controlBorder,
+                      ),
+                      borderRadius: radius,
+                    ),
+                  ),
+                ),
+                card,
+              ],
+            ),
     );
   }
 }

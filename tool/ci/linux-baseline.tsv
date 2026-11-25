@@ -11,8 +11,6 @@ test/billing/note_limit_ui_test.dart	a day tapped over the limit gives the open 
 test/billing/note_limit_ui_test.dart	a note past the limit opens read-only, and says why
 test/billing/note_limit_ui_test.dart	no new note starts over the limit, and it says what to do
 test/billing/note_limit_ui_test.dart	pinning a note past the limit makes it the editable one
-test/folders_ui_test.dart	beside the rail a filed note has its folders in a light line 8 above its title, which open in this tab or behind; an unfiled note has none
-test/folders_ui_test.dart	beside the rail ⌘-click or a middle click on a folder opens it in a tab behind, once, under its icon and name
 test/golden_test.dart	desktop dark folder in a tab
 test/kapy_ai_test.dart	chats Pro with sync off says they are kept here, not that they sync
 test/kapy_ai_test.dart	chats groups by day, then month, with the year when it differs

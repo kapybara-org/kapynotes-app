@@ -10,10 +10,13 @@ import '../data/folders.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
+import 'editor_panes.dart' show NoteDragData, NoteDraggable;
 import 'note_tabs.dart' show clickOpensTabBehind;
 import 'notes_grouping.dart' show NoteGroup;
-import 'notes_list.dart' show NoteCardFace, NotesGroupHeading;
+import 'notes_list.dart' show NoteCardFace, NotesGroupHeading, PickBox;
+import 'sidebar.dart' show SidebarEmpty;
 import 'tag_ui.dart' show PopoverAtPoint, TagPopover, notesCount;
+import 'tonal_button.dart';
 
 TextStyle _figtree(
   double size,
@@ -125,6 +128,8 @@ final class NoteLine extends FolderTreeLine {
 }
 
 /// The Notes | Folders switch at the foot of the Notes list beside the rail.
+/// A note dragged from the notes and held over Folders turns the list to the
+/// folders, to be dropped on one.
 class NotesFoldersSwitch extends StatelessWidget {
   const NotesFoldersSwitch({
     super.key,
@@ -141,46 +146,49 @@ class NotesFoldersSwitch extends StatelessWidget {
     Widget segment(bool forFolders) {
       final on = forFolders == folders;
       final colour = on ? palette.tonalForeground : palette.textSecondary;
-      return Expanded(
-        child: Semantics(
-          button: true,
-          selected: on,
-          child: MouseRegion(
-            cursor: on ? MouseCursor.defer : SystemMouseCursors.click,
-            child: GestureDetector(
-              key: ValueKey(
-                forFolders ? 'notes-switch-folders' : 'notes-switch-notes',
-              ),
-              behavior: HitTestBehavior.opaque,
-              onTap: on ? null : () => onChanged(forFolders),
-              child: Container(
-                decoration: on
-                    ? BoxDecoration(
-                        color: palette.tonalBackground,
-                        borderRadius: BorderRadius.circular(8),
-                      )
-                    : null,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    KapyIcon(
-                      forFolders
-                          ? KapyIcons.folderOutlined
-                          : KapyIcons.noteOutlined,
-                      size: 16,
-                      color: colour,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      forFolders ? 'Folders' : 'Notes',
-                      style: _figtree(13, 16, FontWeight.w500, colour),
-                    ),
-                  ],
-                ),
+      final face = Semantics(
+        button: true,
+        selected: on,
+        child: MouseRegion(
+          cursor: on ? MouseCursor.defer : SystemMouseCursors.click,
+          child: GestureDetector(
+            key: ValueKey(
+              forFolders ? 'notes-switch-folders' : 'notes-switch-notes',
+            ),
+            behavior: HitTestBehavior.opaque,
+            onTap: on ? null : () => onChanged(forFolders),
+            child: Container(
+              decoration: on
+                  ? BoxDecoration(
+                      color: palette.tonalBackground,
+                      borderRadius: BorderRadius.circular(8),
+                    )
+                  : null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  KapyIcon(
+                    forFolders
+                        ? KapyIcons.folderOutlined
+                        : KapyIcons.noteOutlined,
+                    size: 16,
+                    color: colour,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    forFolders ? 'Folders' : 'Notes',
+                    style: _figtree(13, 16, FontWeight.w500, colour),
+                  ),
+                ],
               ),
             ),
           ),
         ),
+      );
+      return Expanded(
+        child: forFolders && !on
+            ? _DragHold(onHeld: () => onChanged(true), child: face)
+            : face,
       );
     }
 
@@ -217,9 +225,9 @@ class NotesFoldersSwitch extends StatelessWidget {
 }
 
 /// The Folders tab beside the rail: the folder tree with the notes of each
-/// open folder, New folder, then Not in a folder. A phone's (M02) asks for a
-/// new folder from beside its search field instead, and heads the notes in no
-/// folder as Home heads a day.
+/// open folder, a new folder named at its top, and notes dropped on a folder
+/// filed in it. A phone's (M02) lists the notes in no folder after the tree,
+/// headed as Home heads a day.
 class FoldersTab extends StatefulWidget {
   const FoldersTab({
     super.key,
@@ -233,6 +241,7 @@ class FoldersTab extends StatefulWidget {
     this.header,
     this.phone = false,
     this.newFolder,
+    this.onMade,
     this.looseHeading,
   });
 
@@ -246,9 +255,13 @@ class FoldersTab extends StatefulWidget {
   /// folder's actions.
   final bool phone;
 
-  /// Notifies when a new folder is wanted at the top of the tree, from a
-  /// phone's New folder beside its search field.
+  /// Notifies when a new folder is wanted at the top of the tree, from New
+  /// folder by the search field.
   final Listenable? newFolder;
+
+  /// A folder just named in the tree, which the window shows in the tab in
+  /// front with Add notes beside it.
+  final ValueChanged<String>? onMade;
 
   /// Heads the notes in no folder, as a phone's Home heads a day; null for
   /// the small heading beside the rail.
@@ -261,8 +274,8 @@ class FoldersTab extends StatefulWidget {
   final Set<String> open;
   final void Function(String folderId, bool open) onOpen;
 
-  /// A note's row: in an open folder, its icon [inset] in, or under Not in
-  /// a folder with a null [inset].
+  /// A note's row: in an open folder, its icon [inset] in, or on a phone in
+  /// the list of notes in no folder with a null [inset].
   final Widget Function(Note note, double? inset) noteRow;
 
   /// The folder the tab in front shows, which the tree marks.
@@ -327,8 +340,11 @@ class _FoldersTabState extends State<FoldersTab> {
         ? _store.rename(renaming, name)
         : _store.checkCreate(name, parentId: _namingIn);
     if (refusal != null) return refusal;
-    if (renaming == null) _store.create(name, parentId: _namingIn);
+    final made = renaming == null
+        ? _store.create(name, parentId: _namingIn)
+        : null;
     _stopNaming();
+    if (made != null) widget.onMade?.call(made.id);
     return null;
   }
 
@@ -382,32 +398,47 @@ class _FoldersTabState extends State<FoldersTab> {
       onCancel: _stopNaming,
     );
 
-    // A phone names a new folder at the top, under the button that asked.
+    // A new folder is named at the top, under the button that asked.
     final namingTop = _naming && _namingIn == null;
-    if (widget.phone && namingTop) add((_) => field(1));
+    if (!widget.phone && tree.isEmpty && !namingTop) {
+      return const SidebarEmpty(
+        message: 'No folders yet',
+        detail: 'Make a folder, then pick the notes that go in it.',
+      );
+    }
+    if (namingTop) add((_) => field(1));
     for (final line in tree) {
       switch (line) {
         case FolderLine(:final folder):
+          Widget row({bool dropping = false}) => _FolderRow(
+            key: ValueKey('folder-${folder.id}'),
+            phone: widget.phone,
+            line: line,
+            selected: folder.id == widget.inFront,
+            dropping: dropping,
+            onToggle: () => widget.onOpen(folder.id, !line.open),
+            onTab: switch (widget.onTab) {
+              final onTab? => ({required behind}) {
+                if (!behind && !line.open && !line.empty) {
+                  widget.onOpen(folder.id, true);
+                }
+                onTab(folder.id, behind: behind);
+              },
+              null => null,
+            },
+            onMenu: (position) => unawaited(_showMenu(position, folder)),
+          );
           add(
             (_) => folder.id == _renaming
                 ? field(folder.depth, folder.name)
-                : _FolderRow(
-                    key: ValueKey('folder-${folder.id}'),
-                    phone: widget.phone,
-                    line: line,
-                    selected: folder.id == widget.inFront,
-                    onToggle: () => widget.onOpen(folder.id, !line.open),
-                    onTab: switch (widget.onTab) {
-                      final onTab? => ({required behind}) {
-                        if (!behind && !line.open && !line.empty) {
-                          widget.onOpen(folder.id, true);
-                        }
-                        onTab(folder.id, behind: behind);
-                      },
-                      null => null,
-                    },
-                    onMenu: (position) =>
-                        unawaited(_showMenu(position, folder)),
+                : widget.phone
+                ? row()
+                : _FolderDrop(
+                    tree: _store.tree,
+                    folderId: folder.id,
+                    onDrop: (noteIds) =>
+                        fileNotes(context, _store, noteIds, folder.id),
+                    builder: (_, over) => row(dropping: over),
                   ),
           );
           if (_naming && _namingIn == folder.id) {
@@ -416,9 +447,6 @@ class _FoldersTabState extends State<FoldersTab> {
         case NoteLine(:final note, :final depth):
           add((_) => widget.noteRow(note, inset(depth)));
       }
-    }
-    if (!widget.phone) {
-      add((_) => namingTop ? field(1) : _NewFolderRow(onTap: _newFolder));
     }
     if (widget.looseHeading case final heading? when loose.isNotEmpty) {
       rows.add((_) => const SizedBox(height: 22));
@@ -444,18 +472,6 @@ class _FoldersTabState extends State<FoldersTab> {
         }
         rows.add((_) => widget.noteRow(note, null));
       }
-    } else if (loose.isNotEmpty) {
-      add(
-        (_) => NotesGroupHeading(
-          key: const ValueKey('folders-loose-heading'),
-          label: 'Not in a folder',
-          detail: '${loose.length}',
-        ),
-        gap: 24,
-      );
-      for (final (index, note) in loose.indexed) {
-        add((_) => widget.noteRow(note, null), gap: index == 0 ? 8 : 2);
-      }
     }
     return ListView.builder(
       key: const ValueKey('folders-tab'),
@@ -480,6 +496,7 @@ class _FolderRow extends StatefulWidget {
     required this.onToggle,
     required this.onTab,
     required this.onMenu,
+    this.dropping = false,
   });
 
   final bool phone;
@@ -487,6 +504,9 @@ class _FolderRow extends StatefulWidget {
 
   /// Whether the tab in front shows it.
   final bool selected;
+
+  /// Whether notes dragged over it would be filed in it if let go.
+  final bool dropping;
   final VoidCallback onToggle;
   final void Function({required bool behind})? onTab;
   final ValueChanged<Offset> onMenu;
@@ -505,7 +525,10 @@ class _FolderRowState extends State<_FolderRow> {
     final folder = line.folder;
     final onTab = widget.onTab;
     final selected = widget.selected;
+    final dropping = widget.dropping;
     final phone = widget.phone;
+    // While notes are carried, a row answers the drag rather than the pointer.
+    final hovering = _hovering && NoteDraggable.carrying.value == null;
     final chevron = SizedBox(
       width: _chevronSlot(phone),
       height: double.infinity,
@@ -548,16 +571,24 @@ class _FolderRowState extends State<_FolderRow> {
             height: AppControlMetrics.scaleBar(context, phone ? 48 : 32),
             padding: EdgeInsets.only(
               left: _indent(folder.depth),
-              right: _hovering ? 4 : 8,
+              right: hovering ? 4 : 8,
             ),
             decoration: BoxDecoration(
-              color: selected
+              color: dropping
+                  ? palette.tonalBackground
+                  : selected
                   ? palette.selectedBackground
-                  : _hovering
+                  : hovering
                   ? palette.hover
                   : null,
               borderRadius: BorderRadius.circular(8),
             ),
+            foregroundDecoration: dropping
+                ? BoxDecoration(
+                    border: Border.all(color: palette.selectedBorder),
+                    borderRadius: BorderRadius.circular(8),
+                  )
+                : null,
             child: Row(
               children: [
                 if (onTab == null || line.empty)
@@ -578,7 +609,9 @@ class _FolderRowState extends State<_FolderRow> {
                 KapyIcon(
                   KapyIcons.folderOutlined,
                   size: phone ? 20 : 16,
-                  color: palette.textSecondary,
+                  color: dropping
+                      ? palette.tonalForeground
+                      : palette.textSecondary,
                 ),
                 SizedBox(width: phone ? 10 : 8),
                 Expanded(
@@ -590,12 +623,16 @@ class _FolderRowState extends State<_FolderRow> {
                       phone ? 16 : 13,
                       phone ? 22 : 16,
                       FontWeight.w400,
-                      selected ? palette.textPrimary : palette.textSecondary,
+                      dropping
+                          ? palette.tonalForeground
+                          : selected
+                          ? palette.textPrimary
+                          : palette.textSecondary,
                       axis: selected ? AppWeight.selected : AppWeight.body,
                     ),
                   ),
                 ),
-                if (_hovering)
+                if (hovering)
                   Builder(
                     builder: (button) => CompactIconButton(
                       key: ValueKey('folder-actions-${folder.id}'),
@@ -648,54 +685,50 @@ class _FolderRowState extends State<_FolderRow> {
   }
 }
 
-/// New folder, under the tree.
-class _NewFolderRow extends StatefulWidget {
-  const _NewFolderRow({required this.onTap});
+/// New folder, under the search field while the list shows the folders: as
+/// wide as the list, and in the same place however many folders there are.
+class NewFolderButton extends StatelessWidget {
+  const NewFolderButton({super.key, required this.onPressed});
 
-  final VoidCallback onTap;
-
-  @override
-  State<_NewFolderRow> createState() => _NewFolderRowState();
-}
-
-class _NewFolderRowState extends State<_NewFolderRow> {
-  bool _hovering = false;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
-      child: Semantics(
-        button: true,
-        child: GestureDetector(
+    final radius = BorderRadius.circular(AppRadii.control);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Material(
+        color: palette.raisedBackground ?? palette.cardBackground,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(
+            color: palette.raisedBorder ?? palette.controlBorder,
+          ),
+        ),
+        child: InkWell(
           key: const ValueKey('folders-new'),
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onTap,
-          child: Container(
+          borderRadius: radius,
+          hoverColor: palette.hover,
+          onTap: onPressed,
+          child: SizedBox(
             height: AppControlMetrics.scaleBar(context, 32),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(8),
-            ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 KapyIcon(
-                  KapyIcons.addRounded,
+                  KapyIcons.folderAddOutlined,
                   size: 16,
-                  color: palette.textTertiary,
+                  color: palette.accentText,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'New folder',
                   style: _figtree(
                     13,
-                    16,
-                    FontWeight.w400,
-                    palette.textTertiary,
+                    18,
+                    FontWeight.w500,
+                    palette.textSecondary,
                   ),
                 ),
               ],
@@ -898,101 +931,59 @@ class TreeNoteFace extends StatelessWidget {
   }
 }
 
-/// A note in no folder, under the tree: its title over when it was last
-/// edited, on a 48 row.
-class LooseNoteFace extends StatelessWidget {
-  const LooseNoteFace({
-    super.key,
-    required this.note,
-    required this.date,
-    required this.selected,
-    required this.hovering,
-    this.ringed = false,
-  });
-
-  final Note note;
-  final String date;
-  final bool selected;
-  final bool hovering;
-  final bool ringed;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      height: AppControlMetrics.scaleBar(context, 48),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: selected
-            ? palette.selectedBackground
-            : hovering
-            ? palette.hover
-            : null,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      foregroundDecoration: ringed
-          ? BoxDecoration(
-              border: Border.all(color: palette.selectedBorder),
-              borderRadius: BorderRadius.circular(8),
-            )
-          : null,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            note.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: _figtree(13, 16, FontWeight.w500, palette.textPrimary),
-          ),
-          Text(
-            date,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: _figtree(12, 16, FontWeight.w400, palette.textTertiary),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Move to folder… on a note's menu, or on the picked notes': files them
-/// where the list picks, and says where, with an Undo that puts each back
-/// where it was.
+/// where the list picks, as [fileNotes] does.
 Future<void> moveNotesToFolder(
   BuildContext context,
   Offset position,
   FolderStore store,
   List<String> noteIds,
 ) async {
-  final from = {for (final id in noteIds) id: store.tree.folderOf(id)};
   final picked = await _pickFolderAt(
     context,
     position,
     store: store,
-    current: from.values.toSet(),
+    current: {for (final id in noteIds) store.tree.folderOf(id)},
     check: (folderId) => store.checkFile(noteIds, folderId),
   );
   if (picked == null) return;
+  // A row the picker came from can be gone by now, as a folder made in it
+  // reshuffles the tree; the notes go where they were sent all the same.
+  if (!context.mounted) {
+    store.file(noteIds, picked.folderId);
+    return;
+  }
+  fileNotes(context, store, noteIds, picked.folderId);
+}
+
+/// Files [noteIds] in [folderId], null being My notes, and says where, with
+/// an Undo that puts each back where it was: added, when Add notes did it,
+/// and moved otherwise.
+void fileNotes(
+  BuildContext context,
+  FolderStore store,
+  List<String> noteIds,
+  String? folderId, {
+  bool adding = false,
+}) {
+  final from = {for (final id in noteIds) id: store.tree.folderOf(id)};
   final moving = [
     for (final id in noteIds)
-      if (from[id] != picked.folderId) id,
+      if (from[id] != folderId) id,
   ];
   if (moving.isEmpty) return;
-  final refusal = store.file(moving, picked.folderId);
-  if (!context.mounted) return;
+  final refusal = store.file(moving, folderId);
   if (refusal != null) {
     Toast.show(context, folderRefusalText(refusal), isError: true);
     return;
   }
-  final place = _placeName(store.tree, picked.folderId);
+  final place = _placeName(store.tree, folderId);
+  final verb = adding ? 'Added' : 'Moved';
   Toast.show(
     context,
     moving.length == 1
-        ? 'Moved to $place'
-        : 'Moved ${moving.length} notes to $place',
+        ? '$verb to $place'
+        : '$verb ${moving.length} notes to $place',
     action: 'Undo',
     onAction: () {
       final refusals = [
@@ -1584,20 +1575,27 @@ List<String> _contents(int notes, int folders) => [
 ];
 
 /// What a folder's page holds and where the folder sits: "6 notes and 1
-/// folder, in Work".
-String _holds(int notes, int folders, String place) {
+/// folder, in Work". An [empty] folder's says only where it sits, and at the
+/// top nothing, as the page itself says it is empty.
+String? _holds(int notes, int folders, String? place, {required bool empty}) {
+  if (empty) return place == null ? null : 'In $place';
   final what = _contents(notes, folders);
-  return '${what.isEmpty ? 'No notes' : what.join(' and ')}, in $place';
+  return '${what.isEmpty ? 'No notes' : what.join(' and ')}, '
+      'in ${place ?? 'My notes'}';
 }
 
 /// A folder open in a tab: its name, what it holds and where it sits, the
 /// notes list's filter and view switch, the folders in it as cards, then its
-/// notes by day, those in its folders included.
+/// notes by day, those in its folders included. Notes dropped on the page
+/// are filed in the folder, and on a card in that card's folder. Add notes
+/// stands at its right, or over its right edge where the page is narrow,
+/// until its × puts it away for the page's own Add notes to bring back.
 class FolderPage extends StatelessWidget {
   const FolderPage({
     super.key,
     required this.tree,
     required this.folderId,
+    required this.filed,
     required this.notes,
     required this.controls,
     required this.cards,
@@ -1605,10 +1603,18 @@ class FolderPage extends StatelessWidget {
     required this.noteTile,
     required this.onTab,
     required this.onMenu,
+    required this.onFile,
+    required this.addNotes,
+    required this.onAddNotes,
+    required this.dateOf,
   });
 
   final FolderTree tree;
   final String folderId;
+
+  /// The notes folders hold, before any filter: whether this one holds any,
+  /// and the ones in no folder, which Add notes offers.
+  final List<Note> filed;
 
   /// The notes a folder may hold, as the notes list's filter narrows them.
   final List<Note> notes;
@@ -1630,6 +1636,18 @@ class FolderPage extends StatelessWidget {
   /// A folder card's menu, asked for at [position].
   final void Function(Folder folder, Offset position) onMenu;
 
+  /// Files notes in a folder: this one, or a card's, [adding] when Add notes
+  /// does it.
+  final void Function(List<String> noteIds, String folderId, {bool adding})
+  onFile;
+
+  /// Whether Add notes is open: what its × and the page's Add notes set.
+  final bool addNotes;
+  final ValueChanged<bool> onAddNotes;
+
+  /// When a note in Add notes was last changed, as the notes list says it.
+  final String Function(Note note) dateOf;
+
   static const double _cardWidth = 224;
   static const double _gap = 12;
   static const double _edge = 40;
@@ -1637,13 +1655,114 @@ class FolderPage extends StatelessWidget {
   /// The most of the title's line the filter and the switch take.
   static const double _controlsWidth = 320;
 
+  /// Add notes' width, and the least the page keeps beside it before Add
+  /// notes goes over the page's edge instead.
+  static const double _panelWidth = 320;
+  static const double _pageLeast = 360;
+
   @override
   Widget build(BuildContext context) {
     final folder = tree.byId(folderId);
     if (folder == null) return const SizedBox.shrink();
     final palette = context.palette;
+    final loose = tree.notesIn(filed, null);
+    final page = _FolderDrop(
+      tree: tree,
+      folderId: folderId,
+      deep: true,
+      onDrop: (noteIds) => onFile(noteIds, folderId),
+      builder: (context, over) => Stack(
+        fit: StackFit.expand,
+        children: [
+          _page(context, folder, loose),
+          if (over)
+            IgnorePointer(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: DecoratedBox(
+                  key: const ValueKey('folder-page-drop'),
+                  decoration: BoxDecoration(
+                    color: palette.tonalBackground.withValues(alpha: 0.2),
+                    border: Border.all(color: palette.selectedBorder, width: 2),
+                    borderRadius: BorderRadius.circular(AppRadii.surface),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (!addNotes) return page;
+    final panel = _AddNotesPanel(
+      key: const ValueKey('add-notes'),
+      folder: folder,
+      notes: loose,
+      dateOf: dateOf,
+      onAdd: (noteIds) => onFile(noteIds, folderId, adding: true),
+      onClose: () => onAddNotes(false),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= _panelWidth + _pageLeast) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: page),
+              Container(
+                width: _panelWidth,
+                decoration: BoxDecoration(
+                  color: palette.surfaceBackground,
+                  border: Border(left: BorderSide(color: palette.separator)),
+                ),
+                child: panel,
+              ),
+            ],
+          );
+        }
+        final radius = BorderRadius.circular(AppRadii.surface);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            page,
+            Positioned(
+              top: 12,
+              right: 12,
+              bottom: 12,
+              width: _panelWidth,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: palette.wellBackground,
+                  border: Border.all(color: palette.separator),
+                  borderRadius: radius,
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.shadowAt(0x99),
+                      offset: const Offset(0, 24),
+                      blurRadius: 48,
+                      spreadRadius: -16,
+                    ),
+                    BoxShadow(
+                      color: palette.shadowAt(0x59),
+                      offset: const Offset(0, 2),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: ClipRRect(borderRadius: radius, child: panel),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _page(BuildContext context, Folder folder, List<Note> loose) {
+    final palette = context.palette;
     final folders = tree.childrenOf(folderId);
     final held = tree.notesIn(notes, folderId, deep: true);
+    final empty =
+        folders.isEmpty && tree.notesIn(filed, folderId, deep: true).isEmpty;
     final inside = <String, int>{};
     for (final note in held) {
       for (
@@ -1658,6 +1777,7 @@ class FolderPage extends StatelessWidget {
       final parentId? => tree.byId(parentId)?.name,
       null => null,
     };
+    final holds = _holds(held.length, folders.length, place, empty: empty);
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth - 2 * _edge;
@@ -1721,27 +1841,65 @@ class FolderPage extends StatelessWidget {
                 width: (width / 2).clamp(0, _controlsWidth),
                 child: controls,
               ),
+              if (!addNotes) ...[
+                const SizedBox(width: 12),
+                TonalButton(
+                  key: const ValueKey('folder-page-add-notes'),
+                  icon: KapyIcons.noteAddRounded,
+                  label: 'Add notes',
+                  onPressed: () => onAddNotes(true),
+                ),
+              ],
             ],
           ),
         );
-        gap(6);
-        rows.add(
-          (_) => Text(
-            _holds(held.length, folders.length, place ?? 'My notes'),
-            key: const ValueKey('folder-page-holds'),
-            style: _figtree(13, 18, FontWeight.w400, palette.textTertiary),
-          ),
-        );
+        if (holds != null) {
+          gap(6);
+          rows.add(
+            (_) => Text(
+              holds,
+              key: const ValueKey('folder-page-holds'),
+              style: _figtree(13, 18, FontWeight.w400, palette.textTertiary),
+            ),
+          );
+        }
+        if (empty) {
+          gap(36);
+          rows.add(
+            (_) => Text(
+              'Nothing in this folder yet.',
+              key: const ValueKey('folder-page-empty'),
+              style: _figtree(14, 20, FontWeight.w400, palette.textSecondary),
+            ),
+          );
+          gap(4);
+          rows.add(
+            (_) => Text(
+              loose.isEmpty
+                  ? 'Drag notes here from another folder.'
+                  : addNotes
+                  ? 'Tick notes on the right and add them, or drag notes here.'
+                  : 'Use Add notes, or drag notes here.',
+              style: _figtree(13, 18, FontWeight.w400, palette.textTertiary),
+            ),
+          );
+        }
         if (folders.isNotEmpty) {
           gap(22);
           grid(folders.length, 52, (index) {
             final inner = folders[index];
-            return _FolderCard(
-              key: ValueKey('folder-card-${inner.id}'),
-              folder: inner,
-              count: inside[inner.id] ?? 0,
-              onTab: ({required behind}) => onTab(inner.id, behind: behind),
-              onMenu: (position) => onMenu(inner, position),
+            return _FolderDrop(
+              tree: tree,
+              folderId: inner.id,
+              onDrop: (noteIds) => onFile(noteIds, inner.id),
+              builder: (_, over) => _FolderCard(
+                key: ValueKey('folder-card-${inner.id}'),
+                folder: inner,
+                count: inside[inner.id] ?? 0,
+                dropping: over,
+                onTab: ({required behind}) => onTab(inner.id, behind: behind),
+                onMenu: (position) => onMenu(inner, position),
+              ),
             );
           });
         }
@@ -1789,21 +1947,440 @@ class FolderPage extends StatelessWidget {
   }
 }
 
+/// Files the notes dropped on what [builder] builds in [folderId], and says
+/// while a drag that would file any of them there is over it: one carrying
+/// notes a folder takes, not all of them in [folderId] already.
+class _FolderDrop extends StatelessWidget {
+  const _FolderDrop({
+    required this.tree,
+    required this.folderId,
+    required this.onDrop,
+    required this.builder,
+    this.deep = false,
+  });
+
+  final FolderTree tree;
+  final String folderId;
+  final ValueChanged<List<String>> onDrop;
+  final Widget Function(BuildContext context, bool over) builder;
+
+  /// Whether a note anywhere inside the folder stays where it is. A folder's
+  /// page lists the notes in its folders too, so there a card let go where
+  /// it is listed moves nothing; a folder's row or card still takes a note
+  /// up out of a folder inside it.
+  final bool deep;
+
+  /// Whether letting go of [noteId] here files it somewhere new.
+  bool _moves(String noteId) => switch (tree.folderOf(noteId)) {
+    final at? when deep => !tree.isWithin(at, folderId),
+    final at => at != folderId,
+  };
+
+  @override
+  Widget build(BuildContext context) => DragTarget<NoteDragData>(
+    onWillAcceptWithDetails: (details) => details.data.fileable.any(_moves),
+    onAcceptWithDetails: (details) => onDrop([
+      for (final id in details.data.fileable)
+        if (_moves(id)) id,
+    ]),
+    builder: (context, over, _) => builder(context, over.isNotEmpty),
+  );
+}
+
+/// Calls [onHeld] once a dragged note has been held over [child] a moment.
+class _DragHold extends StatefulWidget {
+  const _DragHold({required this.onHeld, required this.child});
+
+  final VoidCallback onHeld;
+  final Widget child;
+
+  @override
+  State<_DragHold> createState() => _DragHoldState();
+}
+
+class _DragHoldState extends State<_DragHold> {
+  Timer? _hold;
+
+  void _letGo() {
+    _hold?.cancel();
+    _hold = null;
+  }
+
+  @override
+  void dispose() {
+    _letGo();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DragTarget<NoteDragData>(
+    onWillAcceptWithDetails: (_) {
+      _hold ??= Timer(const Duration(milliseconds: 500), () {
+        _hold = null;
+        widget.onHeld();
+      });
+      return false;
+    },
+    onLeave: (_) => _letGo(),
+    builder: (context, _, _) => widget.child,
+  );
+}
+
+/// Add notes beside a folder's page: the notes in no folder, newest first,
+/// found by what is in them, ticked by a click, and added to the folder
+/// together. A row drags as well, with the ticked ones when it is one.
+class _AddNotesPanel extends StatefulWidget {
+  const _AddNotesPanel({
+    super.key,
+    required this.folder,
+    required this.notes,
+    required this.dateOf,
+    required this.onAdd,
+    required this.onClose,
+  });
+
+  final Folder folder;
+
+  /// The notes in no folder.
+  final List<Note> notes;
+  final String Function(Note note) dateOf;
+  final ValueChanged<List<String>> onAdd;
+  final VoidCallback onClose;
+
+  @override
+  State<_AddNotesPanel> createState() => _AddNotesPanelState();
+}
+
+class _AddNotesPanelState extends State<_AddNotesPanel> {
+  final _query = TextEditingController();
+  final _ticked = <String>{};
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final notes = widget.notes;
+    final query = _query.text.trim();
+    final shown = [
+      for (final note in notes)
+        if (note.matches(query)) note,
+    ];
+    // A ticked note filed meanwhile, by a drag or on another device, has
+    // left the list.
+    final ticked = [
+      for (final note in notes)
+        if (_ticked.contains(note.id)) note.id,
+    ];
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 10, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Text(
+                'Add notes to ${widget.folder.name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _figtree(
+                  14,
+                  20,
+                  FontWeight.w600,
+                  palette.textPrimary,
+                  axis: AppWeight.section,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          CompactIconButton(
+            key: const ValueKey('add-notes-close'),
+            tooltip: 'Close',
+            extent: 28,
+            foregroundColor: palette.textTertiary,
+            onPressed: widget.onClose,
+            icon: const KapyIcon(KapyIcons.closeRounded, size: 16),
+          ),
+        ],
+      ),
+    );
+    if (notes.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          const Expanded(
+            child: SidebarEmpty(
+              message: 'Every note is in a folder',
+              detail: 'Notes you write outside a folder show up here.',
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          child: _field(context),
+        ),
+        if (shown.isEmpty)
+          Expanded(
+            child: SidebarEmpty(
+              message: 'No notes match “$query”',
+              detail: 'Notes already in a folder aren’t listed here.',
+            ),
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${notes.length} not in a folder',
+                    style: _figtree(
+                      12,
+                      16,
+                      FontWeight.w400,
+                      palette.textTertiary,
+                    ),
+                  ),
+                ),
+                if (shown.any((note) => !_ticked.contains(note.id)))
+                  InkWell(
+                    key: const ValueKey('add-notes-select-all'),
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                    onTap: () => setState(
+                      () => _ticked.addAll([for (final note in shown) note.id]),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        'Select all',
+                        style: _figtree(
+                          12,
+                          16,
+                          FontWeight.w500,
+                          palette.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              key: const ValueKey('add-notes-list'),
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              itemCount: shown.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 2),
+              itemBuilder: (context, index) =>
+                  _row(context, shown[index], ticked),
+            ),
+          ),
+        ],
+        if (shown.isNotEmpty || ticked.isNotEmpty) _foot(context, ticked),
+      ],
+    );
+  }
+
+  Widget _field(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      height: AppControlMetrics.scaleBar(context, 32),
+      padding: const EdgeInsets.only(left: 10, right: 4),
+      decoration: BoxDecoration(
+        color: palette.controlBackground,
+        borderRadius: BorderRadius.circular(AppRadii.control),
+      ),
+      child: Row(
+        children: [
+          KapyIcon(
+            KapyIcons.searchRounded,
+            size: 14,
+            color: palette.textTertiary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              key: const ValueKey('add-notes-field'),
+              controller: _query,
+              onChanged: (_) => setState(() {}),
+              style: _figtree(13, 18, FontWeight.w400, palette.textPrimary),
+              decoration: InputDecoration.collapsed(
+                hintText: 'Find a note',
+                hintStyle: _figtree(
+                  13,
+                  18,
+                  FontWeight.w400,
+                  palette.textTertiary,
+                ),
+              ),
+            ),
+          ),
+          if (_query.text.isNotEmpty)
+            CompactIconButton(
+              key: const ValueKey('add-notes-field-clear'),
+              tooltip: 'Clear',
+              extent: 24,
+              foregroundColor: palette.textTertiary,
+              onPressed: () => setState(_query.clear),
+              icon: const KapyIcon(KapyIcons.closeRounded, size: 14),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context, Note note, List<String> ticked) {
+    final palette = context.palette;
+    final on = _ticked.contains(note.id);
+    final radius = BorderRadius.circular(8);
+    return NoteDraggable(
+      data: NoteDragData(
+        noteId: note.id,
+        title: note.title,
+        together: on && ticked.length > 1 ? ticked : const [],
+        fileable: on ? ticked : [note.id],
+      ),
+      child: MergeSemantics(
+        child: Semantics(
+          checked: on,
+          child: Material(
+            color: on ? palette.selectedBackground : Colors.transparent,
+            borderRadius: radius,
+            child: InkWell(
+              key: ValueKey('add-note-${note.id}'),
+              borderRadius: radius,
+              hoverColor: palette.hover,
+              onTap: () => setState(() {
+                if (!_ticked.remove(note.id)) _ticked.add(note.id);
+              }),
+              child: Container(
+                height: AppControlMetrics.scaleBar(context, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    PickBox(checked: on),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            note.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _figtree(
+                              13,
+                              16,
+                              FontWeight.w500,
+                              palette.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            widget.dateOf(note),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                _figtree(
+                                  12,
+                                  16,
+                                  FontWeight.w400,
+                                  palette.textTertiary,
+                                ).copyWith(
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _foot(BuildContext context, List<String> ticked) {
+    final palette = context.palette;
+    final radius = BorderRadius.circular(AppRadii.control);
+    final ready = ticked.isNotEmpty;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: palette.separator)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Material(
+          color: ready ? palette.tonalBackground : palette.controlBackground,
+          borderRadius: radius,
+          child: InkWell(
+            key: const ValueKey('add-notes-add'),
+            borderRadius: radius,
+            onTap: ready
+                ? () {
+                    setState(_ticked.clear);
+                    widget.onAdd(ticked);
+                  }
+                : null,
+            child: SizedBox(
+              height: AppControlMetrics.scaleBar(context, 36),
+              child: Center(
+                child: Text(
+                  ready ? 'Add ${notesCount(ticked.length)}' : 'Add notes',
+                  style: _figtree(
+                    13,
+                    18,
+                    FontWeight.w500,
+                    ready ? palette.tonalForeground : palette.textTertiary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A folder inside the one on the page: its icon, its name and how many
 /// notes are inside it at any depth. A click shows it in this tab, ⌘-click
 /// (Ctrl-click off a Mac) or a middle click in a tab behind, and a right
-/// click opens its menu.
+/// click opens its menu. Notes dragged over it ring it, to be filed in it
+/// if let go.
 class _FolderCard extends StatefulWidget {
   const _FolderCard({
     super.key,
     required this.folder,
     required this.count,
+    required this.dropping,
     required this.onTab,
     required this.onMenu,
   });
 
   final Folder folder;
   final int count;
+  final bool dropping;
   final void Function({required bool behind}) onTab;
   final ValueChanged<Offset> onMenu;
 
@@ -1832,10 +2409,16 @@ class _FolderCardState extends State<_FolderCard> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              color: _hovering
+              color: widget.dropping
+                  ? palette.tonalBackground
+                  : _hovering
                   ? Color.alphaBlend(palette.hover, palette.controlBackground)
                   : palette.controlBackground,
-              border: Border.all(color: palette.controlBorder),
+              border: Border.all(
+                color: widget.dropping
+                    ? palette.selectedBorder
+                    : palette.controlBorder,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
