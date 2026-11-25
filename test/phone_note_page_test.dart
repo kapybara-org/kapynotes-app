@@ -1115,6 +1115,29 @@ void main() {
       expect(ticked.bottom, lessThanOrEqualTo(tester.getRect(sheet).bottom));
     });
 
+    testWidgets("on a crowded day, a new tab stays in view as its title is "
+        'typed (A8)', (tester) async {
+      store.data['notes.v1'] = [
+        ...store.data['notes.v1']! as List,
+        for (var i = 0; i < 12; i++)
+          _note('crowd-$i', 'Crowd $i', DateTime(2025, 11, 17, 8 + i)),
+      ];
+      seed();
+      await pump(tester);
+      await open(tester, 17);
+      await tester.tap(find.byKey(const ValueKey('day-tabs-new')));
+      await tester.pumpAndSettle();
+      await tester.enterNote('Call the plumber about the kitchen sink');
+      await tester.pumpAndSettle();
+      final typed = notes
+          .search('')
+          .singleWhere((note) => note.body.startsWith('Call the plumber'));
+      final shownTab = tester.getRect(tab(typed.id));
+      final count = find.byKey(const ValueKey('day-tabs-count'));
+      expect(shownTab.right, lessThanOrEqualTo(tester.getRect(count).left));
+      expect(shownTab.left, greaterThan(tester.getRect(row).left));
+    });
+
     testWidgets("a tab tells a screen reader it's open, and offers Pin tab "
         'and a move', (tester) async {
       final semantics = tester.ensureSemantics();

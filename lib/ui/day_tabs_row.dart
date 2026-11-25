@@ -102,10 +102,18 @@ class _DayTabsRowState extends State<DayTabsRow>
   bool _moreBefore = false;
   bool _moreAfter = false;
 
+  /// The open tab's title when the row last brought it into view, so a
+  /// title that grows as it is typed is followed too.
+  String? _openTitle;
+
+  String? _titleOfOpen() =>
+      widget.notes.where((note) => note.id == widget.open).firstOrNull?.title;
+
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_edges);
+    _openTitle = _titleOfOpen();
     WidgetsBinding.instance.addPostFrameCallback((_) => _showOpen());
   }
 
@@ -114,10 +122,13 @@ class _DayTabsRowState extends State<DayTabsRow>
     super.didUpdateWidget(oldWidget);
     int openAt(DayTabsRow row) =>
         row.notes.indexWhere((note) => note.id == row.open);
+    final title = _titleOfOpen();
     if (widget.open != oldWidget.open ||
         openAt(widget) != openAt(oldWidget) ||
         widget.pinned != oldWidget.pinned ||
-        widget.notes.length != oldWidget.notes.length) {
+        widget.notes.length != oldWidget.notes.length ||
+        title != _openTitle) {
+      _openTitle = title;
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _showOpen(glide: true),
       );
