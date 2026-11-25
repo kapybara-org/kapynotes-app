@@ -834,35 +834,52 @@ class _TableControlsLayerState extends State<TableControlsLayer> {
       final band = frame.band(axis, index);
       final movable = axis == TableAxis.column || index > 0;
       final row = axis == TableAxis.row;
+      // A column grip is drawn across the table's top edge, but the line
+      // above the table keeps every tap on it: the grip answers only from
+      // the edge down. On a phone its target moves down instead of losing
+      // that part, to stay 44 points tall.
+      final lift = row ? 0.0 : math.max(0.0, frame.grid.top - rect.top);
+      final target = widget.touch
+          ? rect.translate(0, lift)
+          : Rect.fromLTRB(rect.left, rect.top + lift, rect.right, rect.bottom);
       return Positioned.fromRect(
         key: ValueKey('table-${axis.name}-grip-$index'),
-        rect: handle(rect),
-        child: _Grip(
-          chip: widget.touch
-              ? Alignment(
-                  (_chipCenter(frame, axis, band).dx - rect.left) /
-                          rect.width *
-                          2 -
-                      1,
-                  (_chipCenter(frame, axis, band).dy - rect.top) /
-                          rect.height *
-                          2 -
-                      1,
-                )
-              : Alignment.center,
-          axis: axis,
-          selected: _isPicked(frame, axis, index) || drag?.from == index,
-          touch: widget.touch,
-          label: row
-              ? (index == 0 ? 'Header row' : 'Row $index')
-              : 'Column ${index + 1}',
-          onTap: () => _pick(frame, axis, index, band),
-          onDragStart: movable
-              ? (at) => _startDrag(frame, axis, index, at)
-              : null,
-          onDragUpdate: _updateDrag,
-          onDragEnd: _endDrag,
-          onDragCancel: _endGesture,
+        rect: handle(target),
+        child: Transform.translate(
+          offset: Offset(0, -lift),
+          transformHitTests: false,
+          child: OverflowBox(
+            alignment: Alignment.topCenter,
+            minHeight: rect.height,
+            maxHeight: rect.height,
+            child: _Grip(
+              chip: widget.touch
+                  ? Alignment(
+                      (_chipCenter(frame, axis, band).dx - rect.left) /
+                              rect.width *
+                              2 -
+                          1,
+                      (_chipCenter(frame, axis, band).dy - rect.top) /
+                              rect.height *
+                              2 -
+                          1,
+                    )
+                  : Alignment.center,
+              axis: axis,
+              selected: _isPicked(frame, axis, index) || drag?.from == index,
+              touch: widget.touch,
+              label: row
+                  ? (index == 0 ? 'Header row' : 'Row $index')
+                  : 'Column ${index + 1}',
+              onTap: () => _pick(frame, axis, index, band),
+              onDragStart: movable
+                  ? (at) => _startDrag(frame, axis, index, at)
+                  : null,
+              onDragUpdate: _updateDrag,
+              onDragEnd: _endDrag,
+              onDragCancel: _endGesture,
+            ),
+          ),
         ),
       );
     }

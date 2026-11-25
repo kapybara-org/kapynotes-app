@@ -16,7 +16,6 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
-import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
@@ -1886,9 +1885,17 @@ void main() {
         tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
         PhoneTab.kapyAi,
       );
+      final field = find.byKey(const ValueKey('kapy-ai-page-field'));
       expect(
-        tester.widget<KapyAiPage>(find.byType(KapyAiPage)).barClearance,
-        PhoneSpaces.clearance(tester.element(page)),
+        tester.getRect(find.byKey(const ValueKey('phone-bar'))).top -
+            tester
+                .getRect(
+                  find
+                      .ancestor(of: field, matching: find.byType(Container))
+                      .first,
+                )
+                .bottom,
+        12,
       );
 
       await tap(tester, find.byKey(const ValueKey('bar-notes')));

@@ -144,6 +144,13 @@ void main() {
     if (locked) {
       await deviceAction('wake');
       await wait(3);
+      if (Platform.isIOS) {
+        // Answered once, as a person does, the Lock Screen's question about
+        // Live Activities leaves the card as it shows from then on.
+        await deviceAction('allow');
+        await wait(3);
+        await deviceAction('wake');
+      }
       await deviceShot('recording-away-lock-screen');
     }
     if (Platform.isAndroid) {
@@ -171,8 +178,9 @@ void main() {
       await deviceAction('collapse');
     } else {
       // A host cannot press a Live Activity's buttons, so the app pauses for
-      // the screenshot of what a pause looks like, on a light Lock Screen.
-      await deviceAction('light');
+      // the screenshot of what a pause looks like. From iOS 26 the card is
+      // light or dark by the Lock Screen's wallpaper, not the phone's
+      // appearance, so on the simulator's own wallpaper it is dark.
       await recording.pause();
       await wait(3);
       if (locked) {
@@ -181,17 +189,27 @@ void main() {
         await deviceShot('recording-away-lock-screen-paused');
       }
       await recording.resume();
-      await deviceAction('dark');
       if (locked) expect(await deviceAction('unlock'), isNull);
       await wait(2);
+      // The island's black shows best on light Settings, which can take
+      // seconds to open on CI; the island shows the recording only once it
+      // has.
+      await deviceAction('light');
       expect(await deviceAction('other-app'), isNull);
-      // Settings can take seconds to open on CI, and the island shows the
-      // recording only once it has.
       await wait(8);
-      await deviceShot('recording-away-dynamic-island');
+      await deviceShot('recording-away-dynamic-island', island: true);
+      // Paused only for the shot: out of sight and not recording, the app
+      // may be suspended, and the test with it.
+      await recording.pause();
+      await wait(3);
+      await deviceShot('recording-away-dynamic-island-paused', island: true);
+      await recording.resume();
       // For the run's log only: whether ActivityKit started the activity
       // and the widget extension drew it.
       await deviceAction('system-log');
+      await deviceAction('hold-island');
+      await deviceShot('recording-away-dynamic-island-expanded', island: true);
+      await deviceAction('dark');
     }
 
     final remaining = _away - DateTime.now().difference(left);
