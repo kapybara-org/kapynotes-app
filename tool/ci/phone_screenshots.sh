@@ -74,7 +74,7 @@ navbar() {
   sleep 3
 }
 
-for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_time_line; do
+for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_time_line phone_video; do
   drive "$test"
 done
 
