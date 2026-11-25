@@ -2104,14 +2104,17 @@ class _RowMenu extends StatelessWidget {
     final button = context.findRenderObject()! as RenderBox;
     final overlay =
         Navigator.of(context).overlay!.context.findRenderObject()! as RenderBox;
+    final under =
+        PopupMenuTheme.of(context).position == PopupMenuPosition.under;
+    final offset = Offset(0, under ? button.size.height : 0);
     Toast.hide(true);
     showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromPoints(
-          button.localToGlobal(Offset.zero, ancestor: overlay),
+          button.localToGlobal(offset, ancestor: overlay),
           button.localToGlobal(
-            button.size.bottomRight(Offset.zero),
+            button.size.bottomRight(Offset.zero) + offset,
             ancestor: overlay,
           ),
         ),

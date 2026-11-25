@@ -662,6 +662,23 @@ void main() {
           Finder carolMenu() =>
               find.byKey(ValueKey('member-menu-${carol.userId}'));
 
+          if (size.width == 1280) {
+            testWidgets('a row’s ⋯ menu opens under its button when there is '
+                'room', (tester) async {
+              await openAt(tester);
+              final button = find.byKey(ValueKey('member-menu-${bob.userId}'));
+              await tester.tap(button);
+              await tester.pumpAndSettle();
+              final menu = find.byWidgetPredicate(
+                (widget) =>
+                    widget.runtimeType.toString().startsWith('_PopupMenu<'),
+              );
+              expect(tester.getRect(menu).top, tester.getRect(button).bottom);
+              await tester.tapAt(const Offset(4, 4));
+              await tester.pumpAndSettle();
+            });
+          }
+
           testWidgets('Done and Stop sharing stay clear of it and reachable', (
             tester,
           ) async {
@@ -818,10 +835,15 @@ void main() {
             expect(carolMenu(), findsNothing, reason: 'Carol left');
             expect(menuItem('Remove from this note'), findsOneWidget);
 
-            await tester.tapAt(const Offset(4, 4));
+            await tester.tap(menuItem('Remove from this note'));
             await tester.pump();
             await tester.pump(const Duration(milliseconds: 400));
             expect(menuItem('Remove from this note'), findsNothing);
+            expect(
+              find.byKey(const ValueKey('sharing-ask-ok')),
+              findsNothing,
+              reason: 'the stale menu asks nothing',
+            );
             expect(surface, findsOneWidget, reason: 'back');
             await tester.pump(const Duration(milliseconds: 2400));
             expect(surface, findsOneWidget, reason: 'about 3 s were left');
@@ -950,6 +972,18 @@ void main() {
               final bobName = server.user(bob.userId).name.split(' ').first;
 
               await tester.tap(find.byKey(const ValueKey('share-done')));
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 16));
+              expect(
+                find.byKey(const ValueKey('share-dialog')),
+                findsOneWidget,
+                reason: 'still closing',
+              );
+              expect(
+                tester.getRect(surface).bottom,
+                size.height - 24,
+                reason: 'the notice leaves as the dialog does',
+              );
               await tester.pumpAndSettle();
               expect(find.byKey(const ValueKey('share-done')), findsNothing);
               expect(find.text('Undo'), findsOneWidget);
