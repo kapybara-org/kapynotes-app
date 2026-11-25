@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kMiddleMouseButton, kSecondaryButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -10,10 +11,11 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart' show noteTagsMax;
 import 'package:kapy_notes/ui/context_menu.dart' show KapyMenuActionRow;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
+import 'package:kapy_notes/ui/editor_panes.dart' show NoteDragFeedback;
 import 'package:kapy_notes/ui/folders_ui.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/notes_list.dart'
-    show NotesGroupHeading, NotesListControls;
+    show NoteCardFace, NoteListRowFace, NotesGroupHeading, NotesListControls;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -142,10 +144,14 @@ void main() {
     Future<void> press(WidgetTester tester, ShortcutAction action) =>
         pressShortcut(tester, ShortcutPrefs.defaultFor(action));
 
+    /// ⌘-click on a Mac, and Ctrl-click on the Linux and Windows hosts.
     Future<void> commandClick(WidgetTester tester, Finder finder) async {
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      final key = AppPlatform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(key);
       await tester.tap(finder);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyUpEvent(key);
       await tester.pumpAndSettle();
     }
 
@@ -154,6 +160,7 @@ void main() {
       tester,
     ) async {
       await pumpWindow(tester);
+      goldenFolders.create('Work');
       goldenNotes.create(body: 'Dentist');
       await tester.pumpAndSettle();
       expect(
@@ -164,8 +171,11 @@ void main() {
       await tapKey(tester, 'notes-switch-folders');
       expect(goldenPrefs.foldersShown, isTrue);
       expect(find.byKey(const ValueKey('sidebar-notes-filter')), findsNothing);
-      expect(inTab(find.text('Not in a folder')), findsOneWidget);
-      expect(inTab(find.text('Dentist')), findsOneWidget);
+      expect(inTab(find.text('Work')), findsOneWidget);
+      // Beside the rail, the notes in no folder are in the notes list and in
+      // a folder's Add notes, not under the tree.
+      expect(find.text('Not in a folder'), findsNothing);
+      expect(find.text('Dentist'), findsNothing);
 
       await tapKey(tester, 'notes-switch-notes');
       expect(goldenPrefs.foldersShown, isFalse);
@@ -179,6 +189,7 @@ void main() {
     testWidgets('Drawings and Archive hold no folders, so they have no '
         'switch, and the tree is back when the notes are', (tester) async {
       await pumpWindow(tester, drawings: true);
+      goldenFolders.create('Work');
       goldenNotes.archive(goldenNotes.create(body: 'Old receipts').id);
       goldenNotes.create(body: 'Dentist');
       await tester.pumpAndSettle();
@@ -296,9 +307,9 @@ void main() {
       final personal = goldenFolders.create('Personal')!;
       goldenNotes.create(body: 'Dentist');
       await tester.pumpAndSettle();
-      await tapKey(tester, 'notes-switch-folders');
-      await tester.tap(inTab(find.text('Dentist')));
+      await tester.tap(find.text('Dentist'));
       await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
 
       await commandClick(tester, find.byKey(ValueKey('folder-${work.id}')));
       expect(tabTitles(tester), ['Dentist', 'Work']);
@@ -327,7 +338,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(pageTitle(tester), 'Office');
-      expect(onPage(find.text('No notes, in My notes')), findsOneWidget);
+      expect(onPage(find.text('Nothing in this folder yet.')), findsOneWidget);
+      expect(find.byKey(const ValueKey('folder-page-holds')), findsNothing);
     });
 
     testWidgets('a filed note has its folders in a light line 8 above its '
@@ -1037,7 +1049,6 @@ void main() {
       final work = goldenFolders.create('Work')!;
       final clients = goldenFolders.create('Clients', parentId: work.id)!;
       final filed = goldenNotes.create(body: 'Pricing ideas');
-      final loose = goldenNotes.create(body: 'Dentist');
       goldenFolders.file([filed.id], clients.id);
       goldenPrefs
         ..setFolderOpen(work.id, true)
@@ -1070,7 +1081,6 @@ void main() {
         16,
       );
       expect(tester.getSize(rowOf(filed.id)).height, 32);
-      expect(tester.getSize(rowOf(loose.id)).height, 48);
 
       final bar = find.byKey(const ValueKey('notes-folders-switch'));
       expect(tester.getSize(bar).height, 40);
@@ -1084,6 +1094,587 @@ void main() {
             .height,
         32,
       );
+    });
+
+    Finder listed(String noteId) =>
+        find.descendant(of: find.byType(Sidebar), matching: rowOf(noteId));
+
+    /// Presses on [noteId]'s row in the list and moves sideways, which picks
+    /// the note up.
+    Future<TestGesture> grab(WidgetTester tester, String noteId) async {
+      final drag = await tester.startGesture(
+        tester.getCenter(listed(noteId)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await drag.moveBy(const Offset(12, 2));
+      await tester.pump();
+      return drag;
+    }
+
+    /// How faded [noteId]'s row in the list is.
+    double fade(WidgetTester tester, String noteId) => tester
+        .widget<Opacity>(
+          find
+              .descendant(of: listed(noteId), matching: find.byType(Opacity))
+              .first,
+        )
+        .opacity;
+
+    Future<void> openFolder(WidgetTester tester, Folder folder) async {
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${folder.id}');
+    }
+
+    final panel = find.byKey(const ValueKey('add-notes'));
+    final addButton = find.byKey(const ValueKey('add-notes-add'));
+    Finder tick(String noteId) => find.byKey(ValueKey('add-note-$noteId'));
+    String addLabel(WidgetTester tester) => tester
+        .widget<Text>(
+          find.descendant(of: addButton, matching: find.byType(Text)),
+        )
+        .data!;
+
+    testWidgets('a folder opens with Add notes at its right, listing the '
+        'notes in no folder newest first; the ticked ones go in together, '
+        'and Undo takes them back out', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients')!;
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      final dentist = goldenNotes.create(body: 'Dentist');
+      final pricing = goldenNotes.create(body: 'Pricing ideas');
+      goldenFolders.file([call.id], clients.id);
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      Finder inPanel(Finder finder) =>
+          find.descendant(of: panel, matching: finder);
+
+      expect(inPanel(find.text('Add notes to Work')), findsOneWidget);
+      expect(inPanel(find.text('2 not in a folder')), findsOneWidget);
+      expect(tick(call.id), findsNothing);
+      expect(
+        tester.getRect(tick(pricing.id)).top,
+        lessThan(tester.getRect(tick(dentist.id)).top),
+      );
+      expect(tester.getSize(tick(dentist.id)).height, 48);
+      expect(tester.getRect(panel).right, tester.getRect(page()).right);
+      // One Add notes at a time: the page's own waits for the panel's ×.
+      expect(find.byKey(const ValueKey('folder-page-add-notes')), findsNothing);
+      expect(addLabel(tester), 'Add notes');
+
+      await tester.tap(tick(dentist.id));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSemantics(tick(dentist.id)),
+        isSemantics(isChecked: true),
+      );
+      expect(addLabel(tester), 'Add 1 note');
+      await tapKey(tester, 'add-notes-select-all');
+      expect(addLabel(tester), 'Add 2 notes');
+      expect(find.byKey(const ValueKey('add-notes-select-all')), findsNothing);
+
+      await tester.tap(addButton);
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), work.id);
+      expect(goldenFolders.tree.folderOf(pricing.id), work.id);
+      expect(find.text('Added 2 notes to “Work”'), findsOneWidget);
+      expect(inPanel(find.text('Every note is in a folder')), findsOneWidget);
+      expect(addButton, findsNothing);
+      expect(onPage(find.text('Dentist')), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), isNull);
+      expect(goldenFolders.tree.folderOf(pricing.id), isNull);
+      expect(tick(dentist.id), findsOneWidget);
+      expect(addLabel(tester), 'Add notes');
+    });
+
+    testWidgets('Add notes finds notes by what is in them, keeps what was '
+        'ticked through a search, and offers Add only with something to '
+        'add', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final dentist = goldenNotes.create(body: 'Dentist\nThursday 4pm');
+      final gym = goldenNotes.create(body: 'Gym plan');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      final field = find.byKey(const ValueKey('add-notes-field'));
+
+      await tester.enterText(field, 'thursday');
+      await tester.pumpAndSettle();
+      expect(tick(dentist.id), findsOneWidget);
+      expect(tick(gym.id), findsNothing);
+      await tester.tap(tick(dentist.id));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(field, 'zebra');
+      await tester.pumpAndSettle();
+      expect(find.text('No notes match “zebra”'), findsOneWidget);
+      expect(addLabel(tester), 'Add 1 note');
+      await tapKey(tester, 'add-notes-field-clear');
+      expect(tick(gym.id), findsOneWidget);
+      await tester.tap(tick(dentist.id));
+      await tester.pumpAndSettle();
+      await tester.enterText(field, 'zebra');
+      await tester.pumpAndSettle();
+      expect(addButton, findsNothing);
+
+      goldenFolders.file([dentist.id, gym.id], work.id);
+      await tester.pumpAndSettle();
+      expect(find.text('Every note is in a folder'), findsOneWidget);
+      expect(field, findsNothing);
+      expect(addButton, findsNothing);
+    });
+
+    testWidgets('New folder spans the list under the search on the Folders '
+        'side, names a folder at the top of the tree, and opens it with Add '
+        'notes; its × puts Add notes away for the page to bring back', (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      goldenNotes.create(body: 'Dentist');
+      goldenPrefs.addNotesShown = false;
+      await tester.pumpAndSettle();
+      final button = find.byKey(const ValueKey('folders-new'));
+      expect(button, findsNothing);
+
+      await tapKey(tester, 'notes-switch-folders');
+      expect(find.text('No folders yet'), findsOneWidget);
+      expect(
+        find.text('Make a folder, then pick the notes that go in it.'),
+        findsOneWidget,
+      );
+      final search = tester.getRect(
+        find.byKey(const ValueKey('sidebar-search-box')),
+      );
+      final box = tester.getRect(button);
+      expect(box.left, search.left);
+      expect(box.right, search.right);
+      expect(box.top, greaterThan(search.bottom));
+      expect(box.height, 32);
+
+      await tapKey(tester, 'folders-new');
+      await submit(tester, 'Ideas');
+      expect(names(null), ['Ideas']);
+      expect(pageTitle(tester), 'Ideas');
+      expect(goldenPrefs.addNotesShown, isTrue);
+      expect(panel, findsOneWidget);
+      expect(onPage(find.text('Nothing in this folder yet.')), findsOneWidget);
+      expect(
+        onPage(
+          find.text(
+            'Tick notes on the right and add them, or drag notes here.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('folder-page-holds')), findsNothing);
+
+      await tapKey(tester, 'add-notes-close');
+      expect(panel, findsNothing);
+      expect(goldenPrefs.addNotesShown, isFalse);
+      expect(
+        onPage(find.text('Use Add notes, or drag notes here.')),
+        findsOneWidget,
+      );
+      await tapKey(tester, 'folder-page-add-notes');
+      expect(panel, findsOneWidget);
+      expect(goldenPrefs.addNotesShown, isTrue);
+    });
+
+    testWidgets('where the page would keep less than 360 beside it, Add '
+        'notes stands over its right edge instead', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(900, 700),
+        brightness: Brightness.dark,
+        withNote: false,
+      );
+      final work = goldenFolders.create('Work')!;
+      goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+
+      final over = tester.getRect(panel);
+      final whole = tester.getRect(page());
+      expect(over.width, 320);
+      expect(over.right, whole.right - 12);
+      expect(over.top, whole.top + 12);
+    });
+
+    testWidgets('a note dragged from the list and held over Folders turns '
+        'the list to the tree, where a folder it is let go on files it', (
+      tester,
+    ) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+
+      final drag = await grab(tester, dentist.id);
+      expect(find.byType(NoteDragFeedback), findsOneWidget);
+      expect(fade(tester, dentist.id), 0.45);
+      await drag.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('notes-switch-folders'))),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(goldenPrefs.foldersShown, isFalse);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+      expect(goldenPrefs.foldersShown, isTrue);
+
+      await drag.moveTo(
+        tester.getCenter(find.byKey(ValueKey('folder-${work.id}'))),
+      );
+      await tester.pump();
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), work.id);
+      expect(find.text('Moved to “Work”'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), isNull);
+    });
+
+    testWidgets('picked notes drag together, each faded where it is listed, '
+        'into the open folder or onto a folder card on its page; Undo puts '
+        'each back in its own folder', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final personal = goldenFolders.create('Personal')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      final gym = goldenNotes.create(body: 'Gym plan');
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      goldenFolders
+        ..file([gym.id], personal.id)
+        ..file([call.id], work.id);
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      await tapKey(tester, 'notes-switch-notes');
+      final ring = find.byKey(const ValueKey('folder-page-drop'));
+      final title = find.byKey(const ValueKey('folder-page-title'));
+
+      // A note already in the folder has nowhere new to go there.
+      var drag = await grab(tester, call.id);
+      await drag.moveTo(tester.getCenter(title));
+      await tester.pump();
+      expect(ring, findsNothing);
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(call.id), work.id);
+
+      // A press swept down the list picks the rows it crosses.
+      final sweep = await tester.startGesture(
+        tester.getCenter(listed(gym.id)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await sweep.moveBy(const Offset(0, 6));
+      await tester.pump();
+      await sweep.moveTo(tester.getCenter(listed(dentist.id)));
+      await tester.pump();
+      await sweep.up();
+      await tester.pumpAndSettle();
+      drag = await grab(tester, gym.id);
+      expect(
+        find.descendant(
+          of: find.byType(NoteDragFeedback),
+          matching: find.text('2 notes'),
+        ),
+        findsOneWidget,
+      );
+      expect(fade(tester, dentist.id), 0.45);
+      expect(fade(tester, gym.id), 0.45);
+      expect(fade(tester, call.id), 1);
+      await drag.moveTo(tester.getCenter(title));
+      await tester.pump();
+      expect(ring, findsOneWidget);
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(ring, findsNothing);
+      expect(fade(tester, dentist.id), 1);
+      expect(goldenFolders.tree.folderOf(dentist.id), work.id);
+      expect(goldenFolders.tree.folderOf(gym.id), work.id);
+      expect(find.text('Moved 2 notes to “Work”'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), isNull);
+      expect(goldenFolders.tree.folderOf(gym.id), personal.id);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      drag = await grab(tester, dentist.id);
+      await drag.moveTo(
+        tester.getCenter(find.byKey(ValueKey('folder-card-${clients.id}'))),
+      );
+      await tester.pump();
+      expect(ring, findsNothing);
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), clients.id);
+      expect(find.text('Moved to “Clients”'), findsOneWidget);
+    });
+
+    testWidgets(
+      "a card clicked with a slip on its folder's page stays where it "
+      'is, from the folder or one inside it, and of picked notes dropped '
+      'on the page only the ones from outside move',
+      (tester) async {
+        await pumpWindow(tester);
+        final work = goldenFolders.create('Work')!;
+        final clients = goldenFolders.create('Clients', parentId: work.id)!;
+        final brief = goldenNotes.create(body: 'Acme brief');
+        final call = goldenNotes.create(body: 'Call with Arjun');
+        final dentist = goldenNotes.create(body: 'Dentist');
+        goldenFolders
+          ..file([brief.id], clients.id)
+          ..file([call.id], work.id);
+        await tester.pumpAndSettle();
+        await openFolder(tester, work);
+        final page = find.byKey(ValueKey('folder-page-${work.id}'));
+        final ring = find.byKey(const ValueKey('folder-page-drop'));
+        for (final (note, slip) in [
+          (brief, const Offset(2, 0)),
+          (brief, const Offset(3, 1)),
+          (call, const Offset(2, 0)),
+        ]) {
+          final click = await tester.startGesture(
+            tester.getCenter(
+              find.descendant(of: page, matching: rowOf(note.id)),
+            ),
+            kind: PointerDeviceKind.mouse,
+          );
+          await click.moveBy(slip);
+          await tester.pump();
+          expect(ring, findsNothing, reason: '${note.title} $slip');
+          await click.up();
+          await tester.pumpAndSettle();
+        }
+        expect(goldenFolders.tree.folderOf(brief.id), clients.id);
+        expect(goldenFolders.tree.folderOf(call.id), work.id);
+        expect(find.textContaining('Moved'), findsNothing);
+
+        await tapKey(tester, 'notes-switch-notes');
+        final sweep = await tester.startGesture(
+          tester.getCenter(listed(dentist.id)),
+          kind: PointerDeviceKind.mouse,
+        );
+        await sweep.moveBy(const Offset(0, 6));
+        await tester.pump();
+        await sweep.moveTo(tester.getCenter(listed(brief.id)));
+        await tester.pump();
+        await sweep.up();
+        await tester.pumpAndSettle();
+        final drag = await grab(tester, dentist.id);
+        expect(
+          find.descendant(
+            of: find.byType(NoteDragFeedback),
+            matching: find.text('3 notes'),
+          ),
+          findsOneWidget,
+        );
+        await drag.moveTo(
+          tester.getCenter(find.byKey(const ValueKey('folder-page-title'))),
+        );
+        await tester.pump();
+        expect(ring, findsOneWidget);
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(goldenFolders.tree.folderOf(dentist.id), work.id);
+        expect(goldenFolders.tree.folderOf(brief.id), clients.id);
+        expect(goldenFolders.tree.folderOf(call.id), work.id);
+        expect(find.text('Moved to “Work”'), findsOneWidget);
+      },
+    );
+
+    testWidgets("one of Add notes' ticked rows drags every ticked note with "
+        'it, and an unticked row goes alone', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      final groceries = goldenNotes.create(body: 'Groceries');
+      final books = goldenNotes.create(body: 'Book list');
+      final gifts = goldenNotes.create(body: 'Gift ideas');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      for (final note in [dentist, groceries, books]) {
+        await tester.tap(tick(note.id));
+        await tester.pump();
+      }
+      final personalRow = find.byKey(ValueKey('folder-${personal.id}'));
+      Future<void> dragRow(String noteId, String count) async {
+        final drag = await tester.startGesture(
+          tester.getCenter(tick(noteId)),
+          kind: PointerDeviceKind.mouse,
+        );
+        await drag.moveBy(const Offset(12, 2));
+        await tester.pump();
+        expect(
+          find.descendant(
+            of: find.byType(NoteDragFeedback),
+            matching: find.text(count),
+          ),
+          findsOneWidget,
+          reason: count,
+        );
+        await drag.moveTo(tester.getCenter(personalRow));
+        await tester.pump();
+        await drag.up();
+        await tester.pumpAndSettle();
+      }
+
+      await dragRow(groceries.id, '3 notes');
+      for (final note in [dentist, groceries, books]) {
+        expect(goldenFolders.tree.folderOf(note.id), personal.id);
+      }
+      expect(goldenFolders.tree.folderOf(gifts.id), isNull);
+      expect(find.text('Moved 3 notes to “Personal”'), findsOneWidget);
+
+      await dragRow(gifts.id, 'Gift ideas');
+      expect(goldenFolders.tree.folderOf(gifts.id), personal.id);
+    });
+
+    testWidgets('filing notes counts only the ones that move, and Undo puts '
+        'back only those', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final personal = goldenFolders.create('Personal')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      final gym = goldenNotes.create(body: 'Gym plan');
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      goldenFolders
+        ..file([gym.id], personal.id)
+        ..file([call.id], work.id);
+      await tester.pumpAndSettle();
+      fileNotes(tester.element(find.byType(Sidebar)), goldenFolders, [
+        dentist.id,
+        gym.id,
+        call.id,
+      ], work.id);
+      await tester.pumpAndSettle();
+      expect(find.text('Moved 2 notes to “Work”'), findsOneWidget);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), isNull);
+      expect(goldenFolders.tree.folderOf(gym.id), personal.id);
+      expect(goldenFolders.tree.folderOf(call.id), work.id);
+    });
+
+    testWidgets('Add notes works from the keyboard: Tab reaches a note, Space '
+        'ticks it, and Enter on Add adds it', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      await tester.tap(find.byKey(const ValueKey('add-notes-field')));
+      await tester.pumpAndSettle();
+
+      Future<void> tabTo(Finder target) async {
+        bool focused() {
+          final at = FocusManager.instance.primaryFocus?.context;
+          return at != null &&
+              find
+                  .descendant(
+                    of: target,
+                    matching: find.byElementPredicate(
+                      (element) => identical(element, at),
+                    ),
+                  )
+                  .evaluate()
+                  .isNotEmpty;
+        }
+
+        for (var step = 0; step < 8 && !focused(); step++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+        }
+        expect(focused(), isTrue);
+      }
+
+      await tabTo(tick(dentist.id));
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(addLabel(tester), 'Add 1 note');
+      await tabTo(addButton);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(dentist.id), work.id);
+      expect(find.text('Added to “Work”'), findsOneWidget);
+    });
+
+    testWidgets('at 2× text, Add notes, its rows and New folder keep their '
+        'words whole', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      await tester.tap(tick(dentist.id));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(tester.getSize(tick(dentist.id)).height, greaterThan(48));
+      for (final finder in [
+        find.byKey(const ValueKey('folders-new')),
+        tick(dentist.id),
+        addButton,
+      ]) {
+        final box = tester.getRect(finder);
+        for (final text in tester.widgetList<Text>(
+          find.descendant(of: finder, matching: find.byType(Text)),
+        )) {
+          final rect = tester.getRect(find.byWidget(text));
+          expect(box.contains(rect.topLeft), isTrue, reason: text.data);
+          expect(
+            box.inflate(0.5).contains(rect.bottomRight),
+            isTrue,
+            reason: text.data,
+          );
+        }
+      }
+    });
+
+    testWidgets('a note in the tree lights its whole row under the pointer, '
+        'not only its words', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final call = goldenNotes.create(body: 'Call');
+      goldenFolders.file([call.id], work.id);
+      goldenPrefs.setFolderOpen(work.id, true);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+      final face = find.descendant(
+        of: rowOf(call.id),
+        matching: find.byType(TreeNoteFace),
+      );
+      final width = tester.getSize(face).width;
+      expect(width, greaterThan(200));
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: tester.getCenter(face));
+      addTearDown(mouse.removePointer);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(face).width, width);
+
+      // The notes list's rows and cards keep theirs too.
+      await mouse.moveTo(Offset.zero);
+      await tapKey(tester, 'notes-switch-notes');
+      final listFace = find.descendant(
+        of: listed(call.id),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is NoteCardFace || widget is NoteListRowFace,
+        ),
+      );
+      final listWidth = tester.getSize(listFace).width;
+      await mouse.moveTo(tester.getCenter(listFace));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(listFace).width, listWidth);
     });
   });
 }
