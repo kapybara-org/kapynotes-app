@@ -716,12 +716,20 @@ void main() {
   }
 
   Future<void> lightShot(WidgetTester tester, String name) async {
-    prefs.appearance = AppearanceMode.light;
-    await tester.pump();
+    Future<void> wear(AppearanceMode mode, Brightness brightness) async {
+      prefs.appearance = mode;
+      await tester.pumpAndSettle();
+      expect(
+        Theme.of(tester.element(addNotes)).brightness,
+        brightness,
+        reason: name,
+      );
+    }
+
+    await wear(AppearanceMode.light, Brightness.light);
     expect(tester.takeException(), isNull, reason: name);
     await screenshot('board-$name-light');
-    prefs.appearance = AppearanceMode.dark;
-    await tester.pump();
+    await wear(AppearanceMode.dark, Brightness.dark);
   }
 
   /// Presses on [finder] and moves sideways, which picks up what it lists.
