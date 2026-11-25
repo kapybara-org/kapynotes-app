@@ -495,4 +495,65 @@ void main() {
       KapyTheme.darkPalette.accentText,
     );
   });
+
+  for (final (platform, size) in [
+    (TargetPlatform.iOS, const Size(390, 844)),
+    (TargetPlatform.macOS, const Size(1280, 800)),
+  ]) {
+    for (final undo in [false, true]) {
+      testWidgets('on ${platform.name}, a tap on a notice '
+          '${undo ? 'with' : 'without'} Undo never lands on what is under it', (
+        tester,
+      ) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        Toast.debugAnimateLifetimeInTests = false;
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.reset);
+        var under = 0;
+        var undone = 0;
+        late BuildContext context;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: KapyTheme.dark(),
+            home: Builder(
+              builder: (value) {
+                context = value;
+                return TextButton(
+                  key: const ValueKey('under'),
+                  onPressed: () => under++,
+                  child: const SizedBox.expand(),
+                );
+              },
+            ),
+          ),
+        );
+
+        Toast.show(
+          context,
+          'Archived',
+          action: undo ? 'Undo' : null,
+          onAction: undo ? () => undone++ : null,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Archived'));
+        await tester.pump();
+        expect(under, 0);
+
+        await tester.tapAt(
+          tester.getTopLeft(find.byKey(const ValueKey('toast-surface'))) -
+              const Offset(0, 8),
+        );
+        await tester.pump();
+        expect(under, 1, reason: 'just outside the card, it reaches');
+        if (undo) {
+          await tester.tap(find.text('Undo'));
+          await tester.pump();
+          expect(undone, 1);
+          expect(under, 1);
+        }
+      });
+    }
+  }
 }
