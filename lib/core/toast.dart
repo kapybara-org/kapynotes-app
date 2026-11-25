@@ -161,7 +161,13 @@ class Toast {
           if (_generation == generation) _dismiss();
         },
         onDisposed: () {
-          if (identical(_current, entry)) _current = null;
+          if (!identical(_current, entry)) return;
+          _current = null;
+          // Its overlay went without [_dismiss], so its room goes once the
+          // frame is done, for the next toast to open its own.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_current == null) _room.value = 0;
+          });
         },
       ),
     );
@@ -271,6 +277,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   )..forward();
   AnimationController? _lifetimeController;
   final _card = GlobalKey();
+  bool _hidden = Toast._hidden.value;
 
   @override
   void initState() {
@@ -295,10 +302,17 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     final lifetime = _lifetimeController;
     if (Toast._hidden.value) {
       lifetime?.stop();
-    } else if (lifetime != null && !lifetime.isCompleted) {
-      lifetime.forward();
+      setState(() => _hidden = true);
+      return;
     }
-    setState(() {});
+    if (lifetime != null && !lifetime.isCompleted) lifetime.forward();
+    // What it keeps clear of comes back with the route under the menu in
+    // the next frame, so the card shows the frame after, in its place.
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) setState(() => _hidden = false);
+      })
+      ..scheduleFrame();
   }
 
   @override
@@ -491,7 +505,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       left: 16,
       right: 16,
       child: Offstage(
-        offstage: Toast._hidden.value,
+        offstage: _hidden,
         child: _placed(
           room,
           FadeTransition(
@@ -616,6 +630,9 @@ class ToastClearance extends StatefulWidget {
 class _ToastClearanceState extends State<ToastClearance> {
   bool _onTop = true;
   ModalRoute<Object?>? _route;
+  double _height = 0;
+
+  double get _room => Toast._current == null ? 0 : Toast._room.value;
 
   @override
   void initState() {
@@ -623,8 +640,11 @@ class _ToastClearanceState extends State<ToastClearance> {
     if (widget.room) Toast._room.addListener(_roomChanged);
   }
 
+  /// A room under another route keeps its height until its own is on top
+  /// again, so nothing moves behind the scrim.
   void _roomChanged() {
-    setState(() {});
+    if (!Toast._clearances.contains(this)) return;
+    setState(() => _height = _room);
     Toast._clearancesChanged();
   }
 
@@ -647,6 +667,7 @@ class _ToastClearanceState extends State<ToastClearance> {
         (route == null ||
             route.isCurrent &&
                 route.animation?.status != AnimationStatus.reverse);
+    if (keep) _height = _room;
     if (keep ? Toast._clearances.add(this) : Toast._clearances.remove(this)) {
       Toast._clearancesChanged();
     }
@@ -660,14 +681,13 @@ class _ToastClearanceState extends State<ToastClearance> {
     super.dispose();
   }
 
-  // A sheet under another keeps its room, so nothing moves behind the scrim.
   @override
   Widget build(BuildContext context) =>
       widget.child ??
       AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOutCubic,
-        height: Toast._current == null ? 0 : Toast._room.value,
+        height: _height,
       );
 }
 

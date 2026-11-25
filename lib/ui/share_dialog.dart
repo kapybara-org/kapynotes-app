@@ -2013,52 +2013,39 @@ class _MemberMenu extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      enabled: enabled,
-      tooltip: _accessLabel(role),
-      // A notice showing steps out of sight while the menu is open.
-      onOpened: () => Toast.hide(true),
-      onCanceled: () => Toast.hide(false),
-      onSelected: (value) {
-        Toast.hide(false);
-        switch (value) {
-          case 'edit':
-            onAccess(SpaceRole.member);
-          case 'view':
-            onAccess(SpaceRole.viewer);
-          case 'report':
-            onReport();
-          case 'block':
-            onBlock();
-          default:
-            onRemove();
-        }
-      },
-      itemBuilder: (context) => [
-        if (canManage) ...[
-          PopupMenuItem(
-            value: 'edit',
-            enabled: !role.canEdit,
-            child: const Text('Can edit'),
-          ),
-          PopupMenuItem(
-            value: 'view',
-            enabled: role.canEdit,
-            child: const Text('Can view'),
-          ),
-          const PopupMenuDivider(),
-        ],
-        const PopupMenuItem(value: 'report', child: Text('Report…')),
-        const PopupMenuItem(value: 'block', child: Text('Block…')),
-        if (canRemove) ...[
-          const PopupMenuDivider(),
-          PopupMenuItem(value: 'remove', child: Text(removeLabel)),
-        ],
+  Widget build(BuildContext context) => _RowMenu(
+    enabled: enabled,
+    tooltip: _accessLabel(role),
+    onSelected: (value) => switch (value) {
+      'edit' => onAccess(SpaceRole.member),
+      'view' => onAccess(SpaceRole.viewer),
+      'report' => onReport(),
+      'block' => onBlock(),
+      _ => onRemove(),
+    },
+    items: [
+      if (canManage) ...[
+        PopupMenuItem(
+          value: 'edit',
+          enabled: !role.canEdit,
+          child: const Text('Can edit'),
+        ),
+        PopupMenuItem(
+          value: 'view',
+          enabled: role.canEdit,
+          child: const Text('Can view'),
+        ),
+        const PopupMenuDivider(),
       ],
-      child: _AccessButton(_accessLabel(role), chevron: canManage),
-    );
-  }
+      const PopupMenuItem(value: 'report', child: Text('Report…')),
+      const PopupMenuItem(value: 'block', child: Text('Block…')),
+      if (canRemove) ...[
+        const PopupMenuDivider(),
+        PopupMenuItem(value: 'remove', child: Text(removeLabel)),
+      ],
+    ],
+    child: _AccessButton(_accessLabel(role), chevron: canManage),
+  );
 }
 
 /// An invitation nobody has accepted yet.
@@ -2077,32 +2064,74 @@ class _InviteMenu extends StatelessWidget {
   final VoidCallback onCancel;
 
   @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      enabled: enabled,
-      tooltip: 'Invitation',
-      onOpened: () => Toast.hide(true),
-      onCanceled: () => Toast.hide(false),
-      onSelected: (value) {
-        Toast.hide(false);
-        switch (value) {
-          case 'copy':
-            onCopyLink();
-          case 'resend':
-            onSendAgain();
-          default:
-            onCancel();
-        }
-      },
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'copy', child: Text('Copy link')),
-        PopupMenuItem(value: 'resend', child: Text('Send again')),
-        PopupMenuDivider(),
-        PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
-      ],
-      child: _AccessButton('Invited', chevron: enabled),
-    );
+  Widget build(BuildContext context) => _RowMenu(
+    enabled: enabled,
+    tooltip: 'Invitation',
+    onSelected: (value) => switch (value) {
+      'copy' => onCopyLink(),
+      'resend' => onSendAgain(),
+      _ => onCancel(),
+    },
+    items: const [
+      PopupMenuItem(value: 'copy', child: Text('Copy link')),
+      PopupMenuItem(value: 'resend', child: Text('Send again')),
+      PopupMenuDivider(),
+      PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
+    ],
+    child: _AccessButton('Invited', chevron: enabled),
+  );
+}
+
+/// A row's menu, which hides a notice showing while it is open. The notice
+/// comes back when the menu's route ends, however it ends, even when the
+/// row has gone from under it.
+class _RowMenu extends StatelessWidget {
+  const _RowMenu({
+    required this.enabled,
+    required this.tooltip,
+    required this.items,
+    required this.onSelected,
+    required this.child,
+  });
+
+  final bool enabled;
+  final String tooltip;
+  final List<PopupMenuEntry<String>> items;
+  final ValueChanged<String> onSelected;
+  final Widget child;
+
+  void _open(BuildContext context) {
+    final button = context.findRenderObject()! as RenderBox;
+    final overlay =
+        Navigator.of(context).overlay!.context.findRenderObject()! as RenderBox;
+    Toast.hide(true);
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(
+          button.localToGlobal(Offset.zero, ancestor: overlay),
+          button.localToGlobal(
+            button.size.bottomRight(Offset.zero),
+            ancestor: overlay,
+          ),
+        ),
+        Offset.zero & overlay.size,
+      ),
+      items: items,
+    ).whenComplete(() => Toast.hide(false)).then((value) {
+      if (value != null && context.mounted) onSelected(value);
+    });
   }
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: InkWell(
+      onTap: enabled ? () => _open(context) : null,
+      canRequestFocus: enabled,
+      child: child,
+    ),
+  );
 }
 
 /// What a person row's menu opens from: their access, or that they are
