@@ -467,6 +467,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// row.
   LocalKey? _phoneDayPage;
 
+  /// The notes [_phoneDay] had when the page on top began to show its tabs,
+  /// and the note open there. Each keeps its tab until the page leaves the
+  /// day, by Back, Home or another day picked, though its first words move a
+  /// note with no day of its own to today.
+  Set<String> _phoneDayKept = const {};
+
   /// The key of the page on top of a phone's notes.
   LocalKey get _phoneTopPage => _phoneDayPage ?? ObjectKey(_phoneEditorKey);
 
@@ -1500,7 +1506,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final note = widget.notes.byId(next);
       final nextDay = note == null ? _dayOfFreshNote[next] : _dayOfNote(note);
       if (nextDay != _pickedDay) _pickedDay = null;
-      if (nextDay != _phoneDay) {
+      if (previous != next &&
+          nextDay != _phoneDay &&
+          !_phoneDayKept.contains(next)) {
         _phoneDay = null;
         _phoneDayPage = null;
       }
@@ -5036,7 +5044,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 for (final (:page, :note) in below)
                   MaterialPage(
                     key: page.page,
-                    child: _phonePage(note, page.editor, day: page.day),
+                    child: _phonePage(
+                      note,
+                      page.editor,
+                      day: page.day,
+                      kept: page.kept,
+                    ),
                   ),
                 // Until the note Back returns to is selected, its page is on
                 // top, and the note leaving has none.
@@ -5048,6 +5061,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       selected,
                       _phoneEditorKey,
                       day: _phoneDay,
+                      kept: _phoneDayKept,
                     ),
                   ),
               ],
@@ -5221,8 +5235,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Opens [id] from the note on a phone's page, on a page of its own over
-  /// that note's. The page Back is returning to is already under it.
-  void _openFromPage(String id) {
+  /// that note's, which Back comes back to with the tabs it keeps, unless
+  /// [leavingDay]. The page Back is returning to is already under it.
+  void _openFromPage(String id, {bool leavingDay = false}) {
     final from = _shownNote(_selectedId)?.id;
     if (_phoneReturning == null &&
         _phonePageShown &&
@@ -5234,6 +5249,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           editor: _phoneEditorKey,
           page: _phoneTopPage,
           day: _phoneDay,
+          kept: leavingDay ? const {} : _phoneDayKept,
         ));
         _phoneDay = null;
         _phoneDayPage = null;
@@ -5271,6 +5287,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _phonePagesUnder.remove(returning);
     _phoneDay = returning.day;
     _phoneDayPage = returning.day == null ? null : returning.page;
+    if (returning.day case final day?) {
+      _phoneDayKept = {...returning.kept, ..._phoneDayIds(day), returning.id};
+    }
     return returning.editor;
   }
 
@@ -5719,6 +5738,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Note note,
     GlobalKey<NoteEditorState> editor, {
     DateTime? day,
+    Set<String> kept = const {},
   }) {
     // A stroke from a drawing's left edge draws, so its page lets go of the
     // back swipe; Back and the page's Home still leave.
@@ -5729,7 +5749,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (didPop || BackEntry.anyOpen || !drawing) return;
         _phoneNavigator.currentState?.pop();
       },
-      child: _phonePageBody(note, editor, day),
+      child: _phonePageBody(note, editor, day, kept),
     );
   }
 
@@ -5737,6 +5757,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Note note,
     GlobalKey<NoteEditorState> editor,
     DateTime? day,
+    Set<String> kept,
   ) => Builder(
     builder: (outer) => Scaffold(
       backgroundColor: context.palette.paperColor,
@@ -5768,6 +5789,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         note.body.isNotEmpty &&
                         MediaQuery.viewInsetsOf(outer).bottom > 0,
                     tabsOn: day,
+                    kept: {...kept, note.id},
                   ),
                 ),
               Expanded(
@@ -5788,8 +5810,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A phone note's header: Home, its day, Kapy AI and More, then its week
   /// and its day's tasks, and on a page showing [tabsOn]'s notes as tabs,
-  /// those (A1). The week is only for My notes, as on a Mac.
-  Widget _phoneNoteHeader(Note note, {required bool typing, DateTime? tabsOn}) {
+  /// those and the ones it keeps, [kept] (A1). The week is only for My
+  /// notes, as on a Mac.
+  Widget _phoneNoteHeader(
+    Note note, {
+    required bool typing,
+    DateTime? tabsOn,
+    Set<String> kept = const {},
+  }) {
     final displayTime = widget.prefs.displayTime;
     final today = dayShown(widget.notes.now(), displayTime);
     final day = noteDay(
@@ -5807,7 +5835,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? _phoneTasksOn(day, today)
         : 0;
     final tabs = hasDays && tabsOn != null
-        ? _phoneTabsOn(tabsOn, counted)
+        ? _phoneTabsOn(tabsOn, counted: counted, kept: kept)
         : null;
     return PhoneNoteHeader(
       onHome: _phoneGoHome,
@@ -5839,8 +5867,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onNew: () => _writeOnDay(tabsOn),
               onList: () =>
                   unawaited(_openPhoneDayNotes(tabsOn, tabs.notes, note.id)),
-              onPin: (id, {required pin}) => _pinPhoneTab(tabsOn, id, pin: pin),
-              onMove: (id, to) => _movePhoneTab(tabsOn, id, to),
+              onPin: (id, {required pin}) =>
+                  _pinPhoneTab(tabsOn, id, pin: pin, kept: kept),
+              onMove: (id, to) => _movePhoneTab(tabsOn, id, to, kept: kept),
             ),
       tasks: tasks,
       onTasks: tasks == 0 ? null : () => unawaited(_openPhoneTasks()),
@@ -5864,10 +5893,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// back to. Picked on a page already showing a day's tabs, or on one of
   /// the day's own notes, the tabs come in place.
   void _pickPhoneDay(DateTime day) {
+    if (day == _phoneDay) return;
     final tabs = _phoneTabsOn(day).notes;
     if (tabs.isEmpty) return _writeOnDay(day);
-    if (tabs.length == 1) return _openFromPage(tabs.single.id);
-    if (day == _phoneDay) return;
+    if (tabs.length == 1) {
+      return _openFromPage(tabs.single.id, leavingDay: true);
+    }
     final open = _shownNote(_selectedId)?.id;
     final onDay = tabs.any((note) => note.id == open);
     if (_phoneDay == null && !onDay) {
@@ -5875,12 +5906,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       setState(() {
         _phoneDay = day;
         _phoneDayPage = UniqueKey();
+        _phoneDayKept = _phoneDayIds(day).toSet();
       });
       return;
     }
     setState(() {
       _phoneDayPage ??= _phoneTopPage;
       _phoneDay = day;
+      _phoneDayKept = _phoneDayIds(day).toSet();
     });
     if (!onDay) _select(tabs.first.id, focusEditor: false);
   }
@@ -5888,12 +5921,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The notes on [day] a phone's week counts, of [counted] where it has
   /// them, earliest started first, as a day shows them with no order of the
   /// person's own, and a note started on the day still blank, which the week
-  /// counts from its first words.
-  List<Note> _phoneDayNotes(DateTime day, [List<Note>? counted]) =>
+  /// counts from its first words. [kept], the notes the page showing them
+  /// keeps tabs for (see [_phoneDayKept]), stay among them though their
+  /// first words move them to today.
+  List<Note> _phoneDayNotes(
+    DateTime day, {
+    List<Note>? counted,
+    Set<String> kept = const {},
+  }) =>
       [
         for (final note
             in counted ?? _filtered(widget.notes.search(''), anyTime: true))
-          if (!_dayOfFreshNote.containsKey(note.id) && _dayOfNote(note) == day)
+          if (!_dayOfFreshNote.containsKey(note.id) &&
+              (kept.contains(note.id) || _dayOfNote(note) == day))
             note,
         for (final MapEntry(key: id, value: started) in _dayOfFreshNote.entries)
           if (started == day) ?widget.notes.byId(id),
@@ -5904,22 +5944,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Every note on [day], those the list's filter leaves out too: the whole
   /// day a pin or a move arranges, so a note out of sight keeps its place
-  /// and its pin.
-  List<String> _phoneDayIds(DateTime day) => [
-    for (final note in _phoneDayNotes(day, widget.notes.search(''))) note.id,
+  /// and its pin, and [kept], as in [_phoneDayNotes], so a kept tab keeps
+  /// its place too. The day's record can then name a note no longer on the
+  /// day, which [DayTabsStore.arrange] skips, with its pin, once the tab
+  /// goes, and the day's next pin or move leaves out.
+  List<String> _phoneDayIds(DateTime day, {Set<String> kept = const {}}) => [
+    for (final note in _phoneDayNotes(
+      day,
+      counted: widget.notes.search(''),
+      kept: kept,
+    ))
+      note.id,
   ];
 
-  /// [day]'s notes in the order their tabs show, and how many from the front
-  /// are pinned.
+  /// [day]'s notes in the order their tabs show on a page keeping [kept],
+  /// and how many from the front are pinned.
   ({List<Note> notes, int pinned}) _phoneTabsOn(
-    DateTime day, [
+    DateTime day, {
     List<Note>? counted,
-  ]) {
-    final notes = _phoneDayNotes(day, counted);
+    Set<String> kept = const {},
+  }) {
+    final notes = _phoneDayNotes(day, counted: counted, kept: kept);
     final tabs = widget.dayTabs;
     if (tabs == null) return (notes: notes, pinned: 0);
     final byId = {for (final note in notes) note.id: note};
-    final (:order, :pinned) = tabs.arrange(day, _phoneDayIds(day));
+    final (:order, :pinned) = tabs.arrange(day, _phoneDayIds(day, kept: kept));
     return (
       notes: [for (final id in order) ?byId[id]],
       pinned: order.take(pinned).where(byId.containsKey).length,
@@ -5932,17 +5981,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       '2,000 days already have an order of their own, the most Kapy Notes '
       'keeps.';
 
-  /// Moves [id]'s tab to [to] among the tabs [day] shows: between the same
-  /// two in the day's whole order, so the notes the list's filter leaves out
-  /// keep their places.
-  void _movePhoneTab(DateTime day, String id, int to) {
+  /// Moves [id]'s tab to [to] among the tabs [day] shows on a page keeping
+  /// [kept]: between the same two in the day's whole order, so the notes the
+  /// list's filter leaves out keep their places.
+  void _movePhoneTab(
+    DateTime day,
+    String id,
+    int to, {
+    required Set<String> kept,
+  }) {
     final tabs = widget.dayTabs;
     if (tabs == null) return;
-    final shown = [for (final note in _phoneTabsOn(day).notes) note.id];
+    final shown = [
+      for (final note in _phoneTabsOn(day, kept: kept).notes) note.id,
+    ];
     final from = shown.indexOf(id);
     if (from < 0 || from == to || shown.length < 2) return;
     shown.removeAt(from);
-    final ids = _phoneDayIds(day);
+    final ids = _phoneDayIds(day, kept: kept);
     final order = [...tabs.arrange(day, ids).order]..remove(id);
     final at = to.clamp(0, shown.length);
     final place = at < shown.length
@@ -5953,10 +6009,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  void _pinPhoneTab(DateTime day, String id, {required bool pin}) {
+  void _pinPhoneTab(
+    DateTime day,
+    String id, {
+    required bool pin,
+    required Set<String> kept,
+  }) {
     final tabs = widget.dayTabs;
     if (tabs == null) return;
-    final ids = _phoneDayIds(day);
+    final ids = _phoneDayIds(day, kept: kept);
     if (pin ? tabs.pin(day, ids, id) : tabs.unpin(day, ids, id)) return;
     Toast.show(
       context,
@@ -6607,12 +6668,14 @@ class _DesktopShortcuts extends StatelessWidget {
 }
 
 /// A note on a phone's page under the one on top: the note, its editor, the
-/// key of its page, and the day whose tabs the page shows, if it shows any.
+/// key of its page, the day whose tabs the page shows, if it shows any, and
+/// the notes it keeps tabs for there.
 typedef _PhoneNotePage = ({
   String id,
   GlobalKey<NoteEditorState> editor,
   LocalKey page,
   DateTime? day,
+  Set<String> kept,
 });
 
 /// A list a phone opens from its tab's own page, on a page of its own over
