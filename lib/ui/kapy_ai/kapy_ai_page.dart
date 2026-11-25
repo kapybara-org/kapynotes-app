@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../core/phone_keyboard.dart';
 import '../../core/theme.dart';
 import '../back_entry.dart';
 import '../sidebar_timestamp.dart';
@@ -22,7 +23,6 @@ class KapyAiPage extends StatefulWidget {
     required this.onOpenChat,
     required this.onManageAccounts,
     required this.account,
-    this.barClearance = 0,
     this.now = DateTime.now,
   });
 
@@ -37,11 +37,6 @@ class KapyAiPage extends StatefulWidget {
 
   /// The S button at the end of the title row, the same one Home shows.
   final Widget account;
-
-  /// From the bottom of the screen to the top of the floating bar, the home
-  /// indicator included. Ask Kapy AI sits 12 above it, and 12 above the
-  /// keyboard while the keyboard covers the bar.
-  final double barClearance;
   final DateTime Function() now;
 
   @override
@@ -144,9 +139,12 @@ class _KapyAiPageState extends State<KapyAiPage> {
                   children: [
                     _chats(palette),
                     if (_picking) ...[
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => _setPicking(false),
+                      // Closes the picker and leaves the keyboard up.
+                      KeepsKeyboard(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _setPicking(false),
+                        ),
                       ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -275,11 +273,14 @@ class _KapyAiPageState extends State<KapyAiPage> {
     );
   }
 
-  /// The whole pill takes a tap, not only its line of text.
-  Widget _searchField(CalcPalette palette) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: _searchFocus.requestFocus,
-    child: _searchPill(palette),
+  /// The whole pill takes a tap, not only its line of text, and is the
+  /// field's own, so a tap on it never puts the keyboard away.
+  Widget _searchField(CalcPalette palette) => KeepsKeyboard(
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _searchFocus.requestFocus,
+      child: _searchPill(palette),
+    ),
   );
 
   Widget _searchPill(CalcPalette palette) => Container(
@@ -402,97 +403,98 @@ class _KapyAiPageState extends State<KapyAiPage> {
   Widget _composer(CalcPalette palette) {
     final typed = _field.text.trim().isNotEmpty;
     final canSend = typed && !_ai.answering;
-    // The view's own insets: a Scaffold above has already taken the keyboard
-    // out of the page's MediaQuery by making the page shorter.
-    final keyboard = View.of(context).viewInsets.bottom > 0;
     return Padding(
+      // The bar's Scaffold pads the page by the bar's room, and drops it while
+      // the keyboard covers the bar.
       padding: EdgeInsets.fromLTRB(
         16,
         4,
         16,
-        (keyboard ? 0 : widget.barClearance) + 12,
+        MediaQuery.paddingOf(context).bottom + 12,
       ),
-      child: Container(
-        // The row's targets are 44 tall around 28 of button, so the spacing
-        // around the row gives back the 8 they add on each side.
-        padding: const EdgeInsets.fromLTRB(14, 12, 4, 2),
-        decoration: BoxDecoration(
-          color: palette.textPrimary.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              key: const ValueKey('kapy-ai-page-field'),
-              controller: _field,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onTap: () => _setPicking(false),
-              onSubmitted: (_) => _ask(),
-              cursorColor: palette.selectedBorder,
-              style: kapyText(15, 20, palette.textPrimary),
-              decoration: InputDecoration.collapsed(
-                hintText: 'Ask Kapy AI',
-                hintStyle: kapyText(15, 20, _quiet),
+      child: KeepsKeyboard(
+        child: Container(
+          // The row's targets are 44 tall around 28 of button, so the spacing
+          // around the row gives back the 8 they add on each side.
+          padding: const EdgeInsets.fromLTRB(14, 12, 4, 2),
+          decoration: BoxDecoration(
+            color: palette.textPrimary.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                key: const ValueKey('kapy-ai-page-field'),
+                controller: _field,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                onTap: () => _setPicking(false),
+                onSubmitted: (_) => _ask(),
+                cursorColor: palette.selectedBorder,
+                style: kapyText(15, 20, palette.textPrimary),
+                decoration: InputDecoration.collapsed(
+                  hintText: 'Ask Kapy AI',
+                  hintStyle: kapyText(15, 20, _quiet),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _Target(
-                      label: 'Answers with ${_ai.model.plainLabel}',
-                      onTap: _togglePicker,
-                      child: IgnorePointer(
-                        child: KapyAiModelButton(
-                          kapyAi: _ai,
-                          open: _picking,
-                          fontSize: 13,
-                          weight: FontWeight.w400,
-                          onPressed: _togglePicker,
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _Target(
+                        label: 'Answers with ${_ai.model.plainLabel}',
+                        onTap: _togglePicker,
+                        child: IgnorePointer(
+                          child: KapyAiModelButton(
+                            kapyAi: _ai,
+                            open: _picking,
+                            fontSize: 13,
+                            weight: FontWeight.w400,
+                            onPressed: _togglePicker,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                if (typed && _ai.answering)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text(
-                      'Still answering',
-                      style: kapyText(12, 16, _quiet),
+                  const SizedBox(width: 12),
+                  if (typed && _ai.answering)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        'Still answering',
+                        style: kapyText(12, 16, _quiet),
+                      ),
                     ),
-                  ),
-                _Target(
-                  key: const ValueKey('kapy-ai-page-send'),
-                  label: 'Ask',
-                  onTap: canSend ? _ask : null,
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: canSend
-                          ? palette.totalPillBackground
-                          : palette.textPrimary.withValues(alpha: 0.06),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: KapyIcon(
-                        KapyIcons.sendRounded,
-                        size: 16,
-                        color: canSend ? palette.totalPillText : _quiet,
+                  _Target(
+                    key: const ValueKey('kapy-ai-page-send'),
+                    label: 'Ask',
+                    onTap: canSend ? _ask : null,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: canSend
+                            ? palette.totalPillBackground
+                            : palette.textPrimary.withValues(alpha: 0.06),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: KapyIcon(
+                          KapyIcons.sendRounded,
+                          size: 16,
+                          color: canSend ? palette.totalPillText : _quiet,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

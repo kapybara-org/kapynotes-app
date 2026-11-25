@@ -170,6 +170,38 @@ void main() {
     expect(find.byKey(const ValueKey('note-path')), findsOneWidget);
     await shot('m07-a-note');
 
+    // KAP-340: a swipe on the week turns it, and it comes to rest on the
+    // whole next week; ‹ turns it back. Then the same light, with text at the
+    // most the header takes, 1.3×.
+    Future<void> swipeWeek(String name) async {
+      await shot('week-swipe-${name}before');
+      await tester.drag(
+        find.byKey(const ValueKey('day-strip-2025-11-19')),
+        const Offset(-220, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('day-strip-2025-11-19')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('day-strip-2025-11-26')),
+        findsOneWidget,
+      );
+      await shot('week-swipe-${name}after');
+      await tap(find.byKey(const ValueKey('day-strip-back')));
+      expect(
+        find.byKey(const ValueKey('day-strip-2025-11-19')),
+        findsOneWidget,
+      );
+    }
+
+    await swipeWeek('');
+    prefs.appearance = AppearanceMode.light;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    await tester.pumpAndSettle();
+    await swipeWeek('large-text-light-');
+    prefs.appearance = AppearanceMode.dark;
+    tester.platformDispatcher.clearTextScaleFactorTestValue();
+    await tester.pumpAndSettle();
+
     // M08: typing at the end of the first paragraph, as the board does, the
     // keyboard up. The header's buttons step back, the path and the title
     // stay in view, and the line keeps the note's own time.

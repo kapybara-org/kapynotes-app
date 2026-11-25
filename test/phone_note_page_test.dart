@@ -1,6 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/folders.dart';
@@ -17,6 +21,8 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/editor/note_editor.dart'
+    show NoteEditor, NoteEditorState;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/home_page.dart' show HomePage;
@@ -130,6 +136,7 @@ void main() {
     double width = 390,
     bool withTasks = true,
     Account? account,
+    VoiceRecordingController? recording,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = Size(width, 844);
@@ -148,6 +155,7 @@ void main() {
         days: days,
         tasks: withTasks ? tasks : null,
         account: account,
+        recording: recording,
         hiddenNotesGate: _OpenGate(),
       ),
     );
@@ -461,6 +469,241 @@ void main() {
       await tester.pumpAndSettle();
       expect(day(9), findsOneWidget);
       expect(day(16), findsNothing);
+    });
+
+    /// The days the week shows, by their keys' dates, oldest first.
+    List<String> shown() => [
+      for (final element
+          in find
+              .byWidgetPredicate(
+                (widget) => switch (widget.key) {
+                  ValueKey<String>(:final value) => value.startsWith(
+                    'day-strip-2',
+                  ),
+                  _ => false,
+                },
+              )
+              .evaluate())
+        (element.widget.key! as ValueKey<String>).value.substring(
+          'day-strip-'.length,
+        ),
+    ];
+
+    /// The seven days from [sunday], as [shown] gives them.
+    List<String> weekFrom(DateTime sunday) => [
+      for (var index = 0; index < 7; index++)
+        switch (DateTime(sunday.year, sunday.month, sunday.day + index)) {
+          final day => '${day.year}-${day.month}-${day.day}',
+        },
+    ];
+
+    testWidgets('a swipe on the days turns them under the finger, and let go '
+        'they rest on the nearest whole week (KAP-340)', (tester) async {
+      seed();
+      await pump(tester);
+      final slot = tester.getRect(day(16));
+      final gesture = await tester.startGesture(tester.getCenter(day(19)));
+      await gesture.moveBy(const Offset(-30, 0));
+      await gesture.moveBy(const Offset(-100, 0));
+      await tester.pump();
+      expect(tester.getRect(day(16)).left, moreOrLessEquals(slot.left - 100));
+      expect(day(23), findsOneWidget, reason: 'the next week follows it in');
+
+      // Let go short of half a week, it goes back.
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      expect(tester.getRect(day(16)), slot);
+
+      // Past half a week, it goes on to the next, and the note stays.
+      await tester.drag(day(19), const Offset(-220, 0));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      expect(tester.getRect(day(23)), slot);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await tester.drag(day(26), const Offset(220, 0));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+    });
+
+    testWidgets(
+      'a fling carries the days on a week or a few, as hard as it is, to '
+      'rest on a whole one (KAP-340)',
+      (tester) async {
+        seed();
+        await pump(tester);
+        final slot = tester.getRect(day(16));
+        await tester.fling(day(19), const Offset(-150, 0), 3000);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 11, 30)));
+        expect(tester.getRect(day(30)), slot);
+
+        // The hardest fling there is goes four weeks on, not months.
+        await tester.fling(day(30), const Offset(-150, 0), 8000);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 12, 28)));
+        expect(
+          tester.getRect(find.byKey(const ValueKey('day-strip-2025-12-28'))),
+          slot,
+        );
+      },
+      variant: TargetPlatformVariant(const {
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
+
+    testWidgets(
+      'a short slow fling still turns one week, either way (KAP-340)',
+      (tester) async {
+        seed();
+        await pump(tester);
+        await tester.fling(day(19), const Offset(-60, 0), 400);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+        await tester.fling(day(26), const Offset(60, 0), 400);
+        await tester.pumpAndSettle();
+        expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      },
+      variant: TargetPlatformVariant(const {
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
+
+    testWidgets('a day on the week a swipe turned to opens its note, and the '
+        "note moved to another week brings that week", (tester) async {
+      seed();
+      days.setDay('tue', DateTime(2025, 11, 25));
+      await pump(tester);
+      await tester.drag(day(19), const Offset(-220, 0));
+      await tester.pumpAndSettle();
+      await open(tester, 25);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      expect(tester.getSemantics(day(25)), isSemantics(isSelected: true));
+
+      await openMore(tester);
+      await tester.tap(find.byKey(const ValueKey('page-more-day')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('day-month-2025-11-14')));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(shown(), weekFrom(DateTime(2025, 11, 9)));
+      expect(tester.getSemantics(day(14)), isSemantics(isSelected: true));
+    });
+
+    testWidgets('a swipe that starts on an arrow turns the week too, and a '
+        'drag up or down leaves it', (tester) async {
+      seed();
+      await pump(tester);
+      await tester.drag(
+        find.byKey(const ValueKey('day-strip-forward')),
+        const Offset(-220, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      await tester.drag(
+        find.byKey(const ValueKey('day-strip-back')),
+        const Offset(220, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+
+      await tester.drag(day(19), const Offset(0, 150));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      expect(find.byKey(const ValueKey('day-list-errands')), findsNothing);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+    });
+
+    testWidgets('on an iPhone, a swipe in from the left edge over the week '
+        'goes back, and one just inside it turns the week', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      final y = tester.getCenter(day(18)).dy;
+
+      // From the edge: back to the note the week opened it from.
+      await tester.dragFrom(Offset(4, y), const Offset(300, 0));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+
+      // Just inside it, on ‹: the week before, on the same note.
+      await tester.dragFrom(Offset(24, y), const Offset(220, 0));
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 9)));
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      // From the edge again: Home.
+      await tester.dragFrom(Offset(4, y), const Offset(300, 0));
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+      expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+    testWidgets('quick taps on › turn a week each, and with animations off '
+        'a tap turns at once', (tester) async {
+      seed();
+      await pump(tester);
+      final forward = find.byKey(const ValueKey('day-strip-forward'));
+      await tester.tap(forward);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(forward);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(forward);
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 12, 7)));
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('day-strip-back')));
+      await tester.pump();
+      expect(shown(), weekFrom(DateTime(2025, 11, 30)));
+    });
+
+    testWidgets('a screen reader turns the weeks with a scroll over the days, '
+        'and finds no ‹ or › to press', (tester) async {
+      final semantics = tester.ensureSemantics();
+      seed();
+      await pump(tester);
+      for (final arrow in ['day-strip-back', 'day-strip-forward']) {
+        final node = tester.getSemantics(find.byKey(ValueKey(arrow)));
+        expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
+      }
+
+      final strip = tester.getSemantics(find.byType(PageView));
+      final weeks = find.semantics.byPredicate((node) => node.id == strip.id);
+      tester.semantics.scrollLeft(scrollable: weeks);
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
+      tester.semantics.scrollRight(scrollable: weeks);
+      await tester.pumpAndSettle();
+      expect(shown(), weekFrom(DateTime(2025, 11, 16)));
+      semantics.dispose();
+    });
+
+    testWidgets('at large text the days stay whole, and a swipe still turns '
+        'the week', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      seed();
+      await pump(tester, width: 375);
+      expect(tester.takeException(), isNull);
+      final strip = tester.getRect(find.byType(PageView));
+      expect(tester.getSize(day(19)).height, strip.height);
+      expect(strip.height, greaterThan(52));
+      await tester.drag(day(19), const Offset(-200, 0));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(shown(), weekFrom(DateTime(2025, 11, 23)));
     });
   });
 
@@ -1037,6 +1280,108 @@ void main() {
       }, variant: variant);
     }
 
+    testWidgets('Back to the note a note was opened from keeps its editor '
+        '(KAP-306)', (tester) async {
+      seed();
+      await pump(tester);
+      final arjun = tester.state<NoteEditorState>(find.byType(NoteEditor));
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+
+      await back(tester, swipe: false);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)),
+        same(arjun),
+      );
+    });
+
+    group('Back while a recording into the note left finishes (KAP-306)', () {
+      late _LateRecording recording;
+
+      // The recording's bar keeps a frame waiting, so time goes on by hand.
+      Future<void> settle(WidgetTester tester) async {
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      // Call with Arjun, then Standup notes from its week, recording into
+      // it, then Back, which waits for the recording to land.
+      Future<void> backWhileRecording(WidgetTester tester) async {
+        seed();
+        recording = _LateRecording('tue');
+        addTearDown(recording.dispose);
+        await pump(tester, recording: recording);
+        await open(tester, 18);
+        expect(openNoteBody(tester), startsWith('Standup notes'));
+        await tester.binding.handlePopRoute();
+        await settle(tester);
+        expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      }
+
+      Future<void> land(WidgetTester tester) async {
+        recording.finish.complete();
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('a note chosen meanwhile opens on top of the one Back went '
+          'to', (tester) async {
+        await backWhileRecording(tester);
+        await tester.tap(day(21));
+        await tester.pump();
+        await land(tester);
+        expect(openNoteBody(tester), startsWith('Renewal notes'));
+
+        await back(tester, swipe: false);
+        expect(openNoteBody(tester), startsWith('Call with Arjun'));
+        await back(tester, swipe: false);
+        expect(header, findsNothing);
+      });
+
+      testWidgets('a second Back leaves the page Back went to, and it stays '
+          'gone once the recording lands', (tester) async {
+        await backWhileRecording(tester);
+        await tester.binding.handlePopRoute();
+        await settle(tester);
+        expect(header, findsNothing);
+
+        await land(tester);
+        expect(header, findsNothing);
+        expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+      });
+    });
+
+    testWidgets('on an iPhone, a part swipe from the left edge of a note the '
+        'week opened follows the finger over the note it came from, and let '
+        'go early it stays (KAP-306)', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 18);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      final left = tester.getTopLeft(header).dx;
+
+      final gesture = await tester.startGesture(const Offset(5, 400));
+      await gesture.moveBy(
+        const Offset(20, 0),
+        timeStamp: const Duration(milliseconds: 100),
+      );
+      await gesture.moveBy(
+        const Offset(100, 0),
+        timeStamp: const Duration(milliseconds: 900),
+      );
+      await tester.pump();
+      expect(header, findsNWidgets(2), reason: 'its own page is under it');
+      expect(tester.getTopLeft(header.last).dx, greaterThan(left + 80));
+      expect(tester.getTopLeft(header.last).dx, lessThan(left + 125));
+
+      await gesture.up(timeStamp: const Duration(milliseconds: 1700));
+      await tester.pumpAndSettle();
+      expect(header, findsOneWidget);
+      expect(tester.getTopLeft(header).dx, left);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets("Home from a note the week opened goes Home, past the notes "
         'behind it', (tester) async {
       seed();
@@ -1184,5 +1529,29 @@ void main() {
       await back(tester, swipe: true);
       expect(header, findsNothing);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  });
+}
+
+/// A recording into [noteId] that lands only when [finish] completes, as a
+/// long one being written out does.
+class _LateRecording extends VoiceRecordingController {
+  _LateRecording(this.noteId);
+
+  String? noteId;
+  final finish = Completer<void>();
+
+  @override
+  bool get isRecording => noteId != null;
+
+  @override
+  VoiceRecordingSession? get session => switch (noteId) {
+    final id? => VoiceRecordingSession(noteId: id),
+    null => null,
+  };
+
+  @override
+  Future<void> finishRecordingAndFlush() => finish.future.then((_) {
+    noteId = null;
+    notifyListeners();
   });
 }
