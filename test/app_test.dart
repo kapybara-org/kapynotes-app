@@ -10706,7 +10706,8 @@ void main() {
       });
 
       testWidgets("a folder's page leaves its later day's note out of its "
-          'days, and its title still counts it', (tester) async {
+          "days and its title's count until its day, though pinned it stays "
+          'with Pinned and counts', (tester) async {
         final folders = FolderStore(store);
         await folders.load();
         await pumpLater(tester, folders: folders);
@@ -10721,13 +10722,37 @@ void main() {
         expect(listed('Standup'), findsOneWidget);
         expect(listed('Renewal notes'), findsNothing);
         expect(dayHeadings(tester), [startsWith('Today')]);
+        int? count() =>
+            tester.widget<PhoneListTitle>(find.byType(PhoneListTitle)).count;
+        expect(count(), 1);
+
+        notes.togglePinned(renewal);
+        await tester.pumpAndSettle();
+        expect(listed('Renewal notes'), findsOneWidget);
+        expect(count(), 2);
+
+        notes.togglePinned(renewal);
+        days.setDay(renewal, inDays(0));
+        await tester.pumpAndSettle();
+        expect(listed('Renewal notes'), findsOneWidget);
+        expect(count(), 2);
+      });
+
+      testWidgets("a folder whose only note waits for a later day counts "
+          "none on its page, and doesn't say it is empty", (tester) async {
+        final folders = FolderStore(store);
+        await folders.load();
+        await pumpLater(tester, folders: folders);
+        final work = folders.create('Work')!;
+        folders.file([renewal], work.id);
+        await tap(tester, find.byKey(const ValueKey('bar-folders')));
+        await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+        expect(listed('Renewal notes'), findsNothing);
         expect(
-          find.descendant(
-            of: find.byType(PhoneListTitle),
-            matching: find.text('2'),
-          ),
-          findsOneWidget,
+          tester.widget<PhoneListTitle>(find.byType(PhoneListTitle)).count,
+          0,
         );
+        expect(find.text('Nothing in this folder yet'), findsNothing);
       });
 
       testWidgets("Home files a note under the day it was given, as the list "
@@ -12890,9 +12915,8 @@ void main() {
     });
 
     testWidgets("a note for a later day stays off the desktop list's days, "
-        "with no Upcoming, and the window's count doesn't change", (
-      tester,
-    ) async {
+        "with no Upcoming, and out of the window's count until its day, "
+        'though pinned it stays under Pinned and counts', (tester) async {
       final days = NoteDayStore(store);
       await days.load();
       final renewal = notes.create(body: 'Renewal notes\nRead the contract');
@@ -12918,7 +12942,48 @@ void main() {
         find.descendant(of: list, matching: find.text('Standup')),
         findsOneWidget,
       );
-      expect(count(), before, reason: 'the count is what it was');
+      expect(count(), before - 1, reason: 'the count is what the list shows');
+
+      notes.togglePinned(renewal.id);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+      );
+      expect(count(), before);
+
+      notes.togglePinned(renewal.id);
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+      );
+      expect(count(), before);
+    });
+
+    testWidgets('Archived Notes lists and counts an archived note for a '
+        'later day, as it does every note in it', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      notes.archive(renewal.id);
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      await showInFilter(tester, NotesShow.archive);
+      expect(
+        find.descendant(
+          of: find.byType(Sidebar),
+          matching: find.text('Renewal notes'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<SidebarWindowBar>(find.byType(SidebarWindowBar)).count,
+        1,
+      );
     });
 
     testWidgets("a pinned note for a later day stays under Pinned, naming "

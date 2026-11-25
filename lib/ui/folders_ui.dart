@@ -1598,6 +1598,8 @@ class FolderPage extends StatelessWidget {
   final bool cards;
 
   /// [notes] in the notes list's groups: by day, unless it is set otherwise.
+  /// The page counts only what they list, so by day it leaves out a note
+  /// given a later day until its day, in its line and on its cards alike.
   final List<NoteGroup> Function(List<Note> notes) group;
 
   /// A note's card, or its row in the list view, giving only its time under
@@ -1734,11 +1736,12 @@ class FolderPage extends StatelessWidget {
   Widget _page(BuildContext context, Folder folder, List<Note> loose) {
     final palette = context.palette;
     final folders = tree.childrenOf(folderId);
-    final held = tree.notesIn(notes, folderId, deep: true);
+    final groups = group(tree.notesIn(notes, folderId, deep: true));
+    final listed = [for (final each in groups) ...each.notes];
     final empty =
         folders.isEmpty && tree.notesIn(filed, folderId, deep: true).isEmpty;
     final inside = <String, int>{};
-    for (final note in held) {
+    for (final note in listed) {
       for (
         String? at = tree.folderOf(note.id);
         at != null && at != folderId;
@@ -1751,7 +1754,7 @@ class FolderPage extends StatelessWidget {
       final parentId? => tree.byId(parentId)?.name,
       null => null,
     };
-    final holds = _holds(held.length, folders.length, place, empty: empty);
+    final holds = _holds(listed.length, folders.length, place, empty: empty);
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth - 2 * _edge;
@@ -1877,7 +1880,7 @@ class FolderPage extends StatelessWidget {
             );
           });
         }
-        for (final each in group(held)) {
+        for (final each in groups) {
           gap(24);
           rows.add(
             (_) => NotesGroupHeading(
@@ -2522,11 +2525,11 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
   }
 }
 
-/// A folder inside the one on the page: its icon, its name and how many
-/// notes are inside it at any depth. A click shows it in this tab, ⌘-click
-/// (Ctrl-click off a Mac) or a middle click in a tab behind, and a right
-/// click opens its menu. Notes dragged over it ring it, to be filed in it
-/// if let go.
+/// A folder inside the one on the page: its icon, its name and how many of
+/// the notes the page lists are inside it, at any depth. A click shows it in
+/// this tab, ⌘-click (Ctrl-click off a Mac) or a middle click in a tab behind,
+/// and a right click opens its menu. Notes dragged over it ring it, to be
+/// filed in it if let go.
 class _FolderCard extends StatefulWidget {
   const _FolderCard({
     super.key,

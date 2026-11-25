@@ -21,7 +21,13 @@ import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore, openNoteBody, pressShortcut;
 import 'golden_test.dart'
-    show goldenFolders, goldenNotes, goldenPrefs, goldenTags, pumpForGolden;
+    show
+        goldenDays,
+        goldenFolders,
+        goldenNotes,
+        goldenPrefs,
+        goldenTags,
+        pumpForGolden;
 import 'test_fonts.dart';
 
 void main() {
@@ -88,14 +94,18 @@ void main() {
   });
 
   group('beside the rail', () {
-    Future<void> pumpWindow(WidgetTester tester, {bool drawings = false}) =>
-        pumpForGolden(
-          tester,
-          size: const Size(1440, 900),
-          brightness: Brightness.dark,
-          withNote: false,
-          withDrawings: drawings,
-        );
+    Future<void> pumpWindow(
+      WidgetTester tester, {
+      bool drawings = false,
+      bool days = false,
+    }) => pumpForGolden(
+      tester,
+      size: const Size(1440, 900),
+      brightness: Brightness.dark,
+      withNote: false,
+      withDrawings: drawings,
+      withDays: days,
+    );
 
     Future<void> tapKey(WidgetTester tester, String key) async {
       await tester.tap(find.byKey(ValueKey(key)));
@@ -305,6 +315,114 @@ void main() {
 
       await press(tester, ShortcutAction.goBack);
       expect(pageTitle(tester), 'Work');
+    });
+
+    testWidgets("grouped by day, a folder's page and the list's count leave "
+        'out a note for a later day until its day, and grouped by tag or A to '
+        'Z count it; the tree lists and counts it all along', (tester) async {
+      await pumpWindow(tester, days: true);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final acme = goldenFolders.create('Acme', parentId: clients.id)!;
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      final renewal = goldenNotes.create(body: 'Renewal notes');
+      goldenFolders.file([call.id, renewal.id], acme.id);
+      await tester.pumpAndSettle();
+      int listCount() =>
+          tester.widget<SidebarWindowBar>(find.byType(SidebarWindowBar)).count;
+      final all = listCount();
+      final now = goldenNotes.now();
+      goldenDays.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${work.id}');
+      await tapKey(tester, 'folder-card-${clients.id}');
+      expect(pageTitle(tester), 'Clients');
+
+      void counts({required bool listed}) {
+        expect(
+          onPage(
+            find.text(
+              listed
+                  ? '2 notes and 1 folder, in Work'
+                  : '1 note and 1 folder, in Work',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey('folder-card-${acme.id}')),
+            matching: find.text(listed ? '2 notes' : '1 note'),
+          ),
+          findsOneWidget,
+        );
+        expect(onPage(rowOf(call.id)), findsOneWidget);
+        expect(
+          onPage(rowOf(renewal.id)),
+          listed ? findsOneWidget : findsNothing,
+        );
+        expect(listCount(), listed ? all : all - 1);
+      }
+
+      counts(listed: false);
+      goldenPrefs
+        ..setFolderOpen(clients.id, true)
+        ..setFolderOpen(acme.id, true);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('folder-${acme.id}')),
+          matching: find.text('2'),
+        ),
+        findsOneWidget,
+      );
+      expect(inTab(find.text('Renewal notes')), findsOneWidget);
+
+      for (final grouping in [NotesGrouping.byTag, NotesGrouping.aToZ]) {
+        goldenPrefs.notesGrouping = grouping;
+        await tester.pumpAndSettle();
+        counts(listed: true);
+      }
+      goldenPrefs.notesGrouping = NotesGrouping.byDate;
+      await tester.pumpAndSettle();
+      counts(listed: false);
+
+      goldenDays.setDay(renewal.id, DateTime(now.year, now.month, now.day));
+      await tester.pumpAndSettle();
+      counts(listed: true);
+    });
+
+    testWidgets('a folder whose only note waits for a later day holds no '
+        'notes on its page and its card, and never says it is empty', (
+      tester,
+    ) async {
+      await pumpWindow(tester, days: true);
+      final work = goldenFolders.create('Work')!;
+      final renewals = goldenFolders.create('Renewals', parentId: work.id)!;
+      final renewal = goldenNotes.create(body: 'Renewal notes');
+      goldenFolders.file([renewal.id], renewals.id);
+      final now = goldenNotes.now();
+      goldenDays.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+
+      await tapKey(tester, 'folder-${work.id}');
+      expect(onPage(find.text('1 folder, in My notes')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('folder-card-${renewals.id}')),
+          matching: find.text('1 note'),
+        ),
+        findsNothing,
+      );
+
+      await tapKey(tester, 'folder-card-${renewals.id}');
+      expect(onPage(find.text('No notes, in Work')), findsOneWidget);
+      expect(
+        onPage(find.byKey(const ValueKey('folder-page-empty'))),
+        findsNothing,
+      );
+      expect(onPage(rowOf(renewal.id)), findsNothing);
     });
 
     testWidgets('⌘-click or a middle click on a folder opens it in a tab '
