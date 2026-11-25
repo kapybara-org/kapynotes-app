@@ -239,9 +239,10 @@ Border? _ringOf(CalcPalette palette, {required bool ringed}) => ringed
       )
     : null;
 
-/// A tick box: the media menu's, and a note's while notes are being picked.
-class _PickBox extends StatelessWidget {
-  const _PickBox({required this.checked});
+/// A tick box: the media menu's, a note's while notes are being picked, and
+/// one in Add notes beside a folder.
+class PickBox extends StatelessWidget {
+  const PickBox({super.key, required this.checked});
 
   /// Its side, which a card's title leaves room for.
   static const double size = 16;
@@ -365,7 +366,7 @@ class NoteCardFace extends StatelessWidget {
                       children: [
                         Padding(
                           padding: EdgeInsets.only(
-                            right: picking == null ? 0 : _PickBox.size + 6,
+                            right: picking == null ? 0 : PickBox.size + 6,
                           ),
                           child: Text(
                             note.title,
@@ -423,7 +424,7 @@ class NoteCardFace extends StatelessWidget {
             ],
           ),
           if (picking != null)
-            Positioned(top: 0, right: 0, child: _PickBox(checked: picking)),
+            Positioned(top: 0, right: 0, child: PickBox(checked: picking)),
         ],
       ),
     );
@@ -493,7 +494,7 @@ class PhoneCardFace extends StatelessWidget {
         children: [
           Padding(
             padding: EdgeInsets.only(
-              right: picking == null ? 0 : _PickBox.size + 6,
+              right: picking == null ? 0 : PickBox.size + 6,
             ),
             child: Text(
               note.title,
@@ -537,7 +538,7 @@ class PhoneCardFace extends StatelessWidget {
     return Stack(
       children: [
         card,
-        Positioned(top: 14, right: 14, child: _PickBox(checked: picking)),
+        Positioned(top: 14, right: 14, child: PickBox(checked: picking)),
       ],
     );
   }
@@ -780,7 +781,7 @@ class NoteListRowFace extends StatelessWidget {
       child: Row(
         children: [
           if (picking != null) ...[
-            _PickBox(checked: picking),
+            PickBox(checked: picking),
             const SizedBox(width: 10),
           ],
           Expanded(
@@ -1169,7 +1170,7 @@ class DrawingCardFace extends StatelessWidget {
             ],
           ),
           if (picking != null)
-            Positioned(top: 4, right: 4, child: _PickBox(checked: picking)),
+            Positioned(top: 4, right: 4, child: PickBox(checked: picking)),
         ],
       ),
     );
@@ -1208,7 +1209,7 @@ class PhoneDrawingRowFace extends StatelessWidget {
       child: Row(
         children: [
           if (picking != null) ...[
-            _PickBox(checked: picking),
+            PickBox(checked: picking),
             const SizedBox(width: 10),
           ],
           Container(
@@ -1307,7 +1308,7 @@ class DrawingListRowFace extends StatelessWidget {
       child: Row(
         children: [
           if (picking != null) ...[
-            _PickBox(checked: picking),
+            PickBox(checked: picking),
             const SizedBox(width: 10),
           ],
           Container(
@@ -3035,7 +3036,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
             ),
             child: Row(
               children: [
-                _PickBox(checked: widget.ticked),
+                PickBox(checked: widget.ticked),
                 const SizedBox(width: 9),
                 if (icon != null) ...[
                   KapyIcon(icon, size: 15, color: palette.textSecondary),
@@ -3439,7 +3440,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                     ),
                   ),
                 const SizedBox(width: 9),
-                _PickBox(checked: widget.ticked),
+                PickBox(checked: widget.ticked),
               ],
             ),
           ),
@@ -3781,7 +3782,7 @@ class _FilterPopoverState extends State<_FilterPopover> {
         spacing: 12,
         children: [
           _quiet('$count'),
-          _PickBox(checked: ticked),
+          PickBox(checked: ticked),
         ],
       ),
       onTap: onTap,

@@ -4662,6 +4662,51 @@ void main() {
     });
   });
 
+  testWidgets('picked notes dragged together promise nothing over the panes, '
+      'and letting go there opens nothing', (tester) async {
+    final folders = FolderStore(store);
+    await folders.load();
+    await pumpApp(tester, size: const Size(1400, 800), folders: folders);
+    notes.create(body: 'Alpha');
+    notes.create(body: 'Bravo');
+    notes.create(body: 'Charlie');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Alpha'));
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tap(find.widgetWithText(NoteRow, 'Bravo'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.widgetWithText(NoteRow, 'Bravo')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byType(NoteDragFeedback),
+        matching: find.text('2 notes'),
+      ),
+      findsOneWidget,
+    );
+    final pane = tester.getRect(find.byType(EditorPaneFrame));
+    for (final to in [pane.centerRight - const Offset(24, 0), pane.center]) {
+      await gesture.moveTo(to);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      for (final promise in ['Open on the right', 'Open here', 'Swap places']) {
+        expect(find.text(promise), findsNothing, reason: promise);
+      }
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorPaneFrame), findsOneWidget);
+    expect(bodyInPane(tester, 0), 'Alpha');
+  });
+
   testWidgets('dragging a note opens it beside a pane, in place, or moves it', (
     tester,
   ) async {
