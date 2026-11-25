@@ -760,9 +760,6 @@ class PhoneSpaces extends StatefulWidget {
   static const double _barLift = 30;
   static const double _plusExtent = 56;
 
-  /// From the bottom of the screen to the top of the pill.
-  static double clearance(BuildContext context) => _lift(context) + _barHeight;
-
   /// From the bottom of the screen to the pill: M01's 30 on an iPhone, over
   /// its home indicator, and on Android 8 above the system's navigation,
   /// whether three buttons or the gesture handle, but never lower than 30.

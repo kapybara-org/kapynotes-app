@@ -14,6 +14,7 @@ import '../../data/blob_store.dart';
 import '../../data/note_attachment.dart';
 import '../../images/note_image_provider.dart';
 import 'note_image_layout.dart';
+import 'placeholder_scale.dart';
 
 /// A quiet first frame in the note. Playback opens edge-to-edge so a moving
 /// surface never competes with the text somebody is editing around it.
@@ -121,7 +122,7 @@ class _NoteVideoViewState extends State<NoteVideoView> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (_controller case final controller?)
+            if (_controller case final controller?) ...[
               FittedBox(
                 fit: BoxFit.contain,
                 child: SizedBox(
@@ -129,33 +130,33 @@ class _NoteVideoViewState extends State<NoteVideoView> {
                   height: controller.value.size.height,
                   child: VideoPlayer(controller),
                 ),
-              )
-            else
-              _VideoUnavailable(
-                palette: palette,
+              ),
+              ColoredBox(color: Colors.black.withValues(alpha: 0.12)),
+              Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.62),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(13),
+                    child: KapyIcon(
+                      KapyIcons.playRounded,
+                      size: 25,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ] else
+              _VideoPlaceholder(
                 label: _failed
                     ? 'Video unavailable'
                     : _ready
                     ? 'Opens in your video player'
                     : 'Loading video…',
+                playable: _ready,
               ),
-            ColoredBox(color: Colors.black.withValues(alpha: 0.12)),
-            Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.62),
-                  shape: BoxShape.circle,
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.all(13),
-                  child: KapyIcon(
-                    KapyIcons.playRounded,
-                    size: 25,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
             Positioned(
               left: 10,
               bottom: 8,
@@ -200,19 +201,21 @@ class _NoteVideoViewState extends State<NoteVideoView> {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: IconButton(
-                      key: ValueKey(
-                        'remove-video-${widget.ref.hash}-${widget.ref.offset}',
-                      ),
-                      tooltip: 'Remove video',
-                      onPressed: widget.onRemove,
-                      icon: const KapyIcon(KapyIcons.closeRounded, size: 17),
-                      color: Colors.white,
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.black.withValues(alpha: 0.58),
-                        minimumSize: const Size.square(30),
-                        maximumSize: const Size.square(30),
-                        padding: EdgeInsets.zero,
+                    child: PlaceholderTooltip(
+                      message: 'Remove video',
+                      child: IconButton(
+                        key: ValueKey(
+                          'remove-video-${widget.ref.hash}-${widget.ref.offset}',
+                        ),
+                        onPressed: widget.onRemove,
+                        icon: const KapyIcon(KapyIcons.closeRounded, size: 17),
+                        color: Colors.white,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black.withValues(alpha: 0.58),
+                          minimumSize: const Size.square(30),
+                          maximumSize: const Size.square(30),
+                          padding: EdgeInsets.zero,
+                        ),
                       ),
                     ),
                   ),
@@ -259,14 +262,26 @@ class _VideoUploadCover extends StatelessWidget {
   }
 }
 
-class _VideoUnavailable extends StatelessWidget {
-  const _VideoUnavailable({required this.palette, required this.label});
+/// What stands in a video's place until its first frame can be shown: what
+/// is happening, in words under a mark, the video's or, where the video opens
+/// in the video player, the play glyph. Nothing is drawn over the words.
+/// The card is black in either appearance, so the mark and the words keep
+/// the dark appearance's quiet ink, the way the time and the × keep white.
+/// Increase contrast strengthens it, as it does every quiet text.
+class _VideoPlaceholder extends StatelessWidget {
+  const _VideoPlaceholder({required this.label, required this.playable});
 
-  final CalcPalette palette;
   final String label;
+  final bool playable;
 
   @override
   Widget build(BuildContext context) {
+    final dark = KapyTheme.darkPalette;
+    final ink =
+        (context.palette.increasedContrast
+                ? dark.withIncreasedContrast()
+                : dark)
+            .textTertiary;
     return ColoredBox(
       color: Colors.black,
       child: Center(
@@ -274,17 +289,15 @@ class _VideoUnavailable extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             KapyIcon(
-              KapyIcons.videoOutlined,
+              playable ? KapyIcons.playRounded : KapyIcons.videoOutlined,
               size: 26,
-              color: palette.textTertiary,
+              color: ink,
             ),
             const SizedBox(height: 7),
             Text(
               label,
-              style: TextStyle(
-                color: palette.textTertiary,
-                fontSize: AppTypeScale.caption,
-              ),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: ink, fontSize: AppTypeScale.caption),
             ),
           ],
         ),

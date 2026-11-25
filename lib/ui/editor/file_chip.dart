@@ -10,6 +10,7 @@ import '../../files/file_opener.dart';
 import '../../images/note_image_provider.dart';
 import '../context_menu.dart';
 import 'note_image_layout.dart';
+import 'placeholder_scale.dart';
 
 /// How tall a file sits in the text. Fixed, like a recording's chip, so a
 /// state change never reflows the note under the reader.
@@ -165,7 +166,7 @@ class _NoteFileChipState extends State<NoteFileChip> {
         padding: const EdgeInsets.only(bottom: noteImageGap),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
-          child: Tooltip(
+          child: PlaceholderTooltip(
             message: hint,
             triggerMode: TooltipTriggerMode.manual,
             child: GestureDetector(
@@ -243,7 +244,7 @@ class _NoteFileChipState extends State<NoteFileChip> {
                       bottom: 0,
                       right: 6,
                       child: Center(
-                        child: Tooltip(
+                        child: PlaceholderTooltip(
                           message: 'Remove file',
                           child: IconButton(
                             key: const ValueKey('remove-note-file'),

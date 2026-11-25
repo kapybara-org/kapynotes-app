@@ -23,7 +23,12 @@ void main() {
   setUp(() {
     server = FakeServer();
     sanjay = Device(server, userId: 'user-1', device: 'a');
-    priya = Device(server, userId: 'user-2', device: 'b');
+    priya = Device(
+      server,
+      userId: 'user-2',
+      device: 'b',
+      typingIdle: const Duration(seconds: 30),
+    );
     server.user(sanjay.userId).name = 'Sanjay Rao';
     server.user(priya.userId).name = 'Priya Nair';
   });

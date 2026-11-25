@@ -218,6 +218,33 @@ void main() {
     );
   });
 
+  testWidgets('someone taken off a note and invited back keeps their name '
+      'in the heading', (tester) async {
+    late Note flat;
+    await tester.runAsync(() async {
+      for (final device in [sam, aoife, kwame]) {
+        await device.boot();
+      }
+      flat = sam.notes.create(body: 'Flat 4B bills');
+      await sam.sync.syncNow();
+      await sam.sharing.shareNoteWith(flat.id, email: aoife.email);
+      await sam.sharing.addPerson(flat.id, kwame.email);
+      await join(aoife);
+      await join(kwame);
+      await sam.sharing.refresh();
+      await sam.sharing.removeFromNote(flat.id, kwame.email);
+      await sam.sharing.addPerson(flat.id, kwame.email);
+      await sam.sharing.refresh();
+    });
+    final group = sam.sharing.groupOf(sam.notes.byId(flat.id)!)!;
+    expect(group.people.map((person) => person.isInvited), [false, true]);
+
+    await pumpShared(tester);
+
+    expect(find.text('With Aoife, waiting for Kwame'), findsOneWidget);
+    expectUnder(tester, 'Flat 4B bills', 'With Aoife, waiting for Kwame');
+  });
+
   testWidgets('a note moves between groups as its people change', (
     tester,
   ) async {

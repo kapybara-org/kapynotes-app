@@ -17,6 +17,8 @@
 # first file, which pays for the cold build, PHONE_FIRST_FILE_MINUTES, 35), such
 # as an app that hangs at launch, where that 10 minutes never starts, is
 # stopped with everything it started, counts as failed, and the next file runs.
+# PHONE_TESTS, when set, names the only tests to run, such as
+# `phone_recording_away`, for a run that checks one test.
 set -u
 
 device=$1
@@ -26,7 +28,12 @@ export KAPYNOTES_DEVICE_SHOTS=$device
 limit=$(( ${PHONE_FIRST_FILE_MINUTES:-35} * 60 ))
 mkdir -p build/screenshots
 
+wanted() {
+  [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
+}
+
 drive() {
+  wanted "$1" || return 0
   set -m
   flutter drive --no-pub -d "$device" \
     --driver test_driver/integration_test.dart \
@@ -67,7 +74,7 @@ navbar() {
   sleep 3
 }
 
-for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe; do
+for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_time_line phone_video; do
   drive "$test"
 done
 
@@ -80,7 +87,7 @@ if ! adb -s "$device" get-state >/dev/null 2>&1; then
 fi
 drive phone_recording_away
 
-if adb -s "$device" get-state >/dev/null 2>&1; then
+if adb -s "$device" get-state >/dev/null 2>&1 && wanted phone_bar_android; then
   mode=$(adb -s "$device" shell settings get secure navigation_mode | tr -d '\r')
   navbar threebutton
   drive phone_bar_android

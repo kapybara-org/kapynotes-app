@@ -523,9 +523,12 @@ void main() {
     double drawn(WidgetTester tester) =>
         tester.getSize(find.byKey(const ValueKey('voice-chip-pill'))).height;
 
-    double promised(WidgetTester tester, double phone) => tester
-        .widget<NoteVoiceChip>(find.byType(NoteVoiceChip))
-        .heightIn(tester.element(find.byType(NoteVoiceChip)), column(phone));
+    double promised(WidgetTester tester, double phone) {
+      final chip = tester.element(find.byType(NoteVoiceChip));
+      return tester
+          .widget<NoteVoiceChip>(find.byType(NoteVoiceChip))
+          .heightIn(chip, column(phone), MediaQuery.textScalerOf(chip));
+    }
 
     bool cut(WidgetTester tester, String words) => tester
         .renderObject<RenderParagraph>(find.text(words))
@@ -580,6 +583,15 @@ void main() {
         points: const ['Ship it.'],
       ),
     );
+    final briefly = recording(
+      durationMs: 123000,
+      summary: VoiceSummary(
+        engine: 'cf/llama',
+        at: 1,
+        title: 'Standup',
+        points: const ['Ship it.'],
+      ),
+    );
 
     testWidgets('is as tall at its title as all the way there', (tester) async {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
@@ -591,6 +603,7 @@ void main() {
         (VoiceChipState.summarising, null),
         (VoiceChipState.done, summarised),
         (VoiceChipState.done, null),
+        (VoiceChipState.idle, briefly),
       ];
       for (final bold in [false, true]) {
         tester.platformDispatcher.accessibilityFeaturesTestValue =

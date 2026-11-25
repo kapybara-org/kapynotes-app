@@ -10,6 +10,8 @@
 // comes up over the bar. A tap on the empty page above it puts the keyboard
 // away, and the bar takes a tap again. Both states are device shots, the
 // keyboard included, where tool/ci/phone_screenshots.sh names the device.
+// Ask Kapy AI sits 12 above the keyboard while it's up and 12 above the bar
+// once it's down, typed in or not (KAP-343).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
@@ -92,21 +94,55 @@ void main() {
         )
         .focusNode
         .hasFocus;
+    double above(double top) =>
+        top -
+        tester
+            .getRect(
+              find.ancestor(of: field, matching: find.byType(Container)).first,
+            )
+            .bottom;
+    double keyboard() =>
+        (tester.view.physicalSize.height - tester.view.viewInsets.bottom) /
+        tester.view.devicePixelRatio;
+    double bar() => tester.getRect(find.byKey(const ValueKey('phone-bar'))).top;
+    final chats = find.byKey(const ValueKey('kapy-ai-page-chats'));
+
     await tester.tap(field);
     await until(() => tester.view.viewInsets.bottom > 0, 'the keyboard');
     expect(focused(), isTrue);
+    await until(
+      () => (above(keyboard()) - 12).abs() < 1,
+      'Ask Kapy AI 12 above the keyboard',
+    );
     await screenshot('kapy-ai-page-keyboard-up', device: true);
 
-    await tester.tapAt(
-      tester.getCenter(find.byKey(const ValueKey('kapy-ai-page-chats'))),
-    );
+    await tester.tapAt(tester.getCenter(chats));
     await until(
       () => tester.view.viewInsets.bottom == 0,
       'the keyboard to go down',
     );
     expect(focused(), isFalse);
     expect(tester.takeException(), isNull);
+    expect(above(bar()), moreOrLessEquals(12, epsilon: 1));
     await screenshot('kapy-ai-page-keyboard-closed', device: true);
+
+    await tester.tap(field);
+    await until(() => tester.view.viewInsets.bottom > 0, 'the keyboard again');
+    tester.widget<TextField>(field).controller!.text = 'What is left';
+    await until(
+      () => (above(keyboard()) - 12).abs() < 1,
+      'Ask Kapy AI 12 above the keyboard, typed in',
+    );
+    await tester.tapAt(tester.getCenter(chats));
+    await until(
+      () => tester.view.viewInsets.bottom == 0,
+      'the keyboard to go down again',
+    );
+    expect(
+      above(bar()),
+      moreOrLessEquals(12, epsilon: 1),
+      reason: 'typed in, then put away',
+    );
 
     await tester.tap(find.byKey(const ValueKey('bar-notes')));
     await tester.pumpAndSettle();
