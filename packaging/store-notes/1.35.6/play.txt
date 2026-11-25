@@ -1,0 +1,8 @@
+Easier keyboard, tidier notices.
+
+- Tap outside a field to put the keyboard away, and Ask Kapy AI sits just above it.
+- Notices are a full-width card and no longer cover the format bar.
+- A note's time line returns under its title when the keyboard goes.
+- A loading video's play button no longer covers its words.
+- With large text, words in attachments no longer grow too much.
+- A tap just above a table lands on that line.

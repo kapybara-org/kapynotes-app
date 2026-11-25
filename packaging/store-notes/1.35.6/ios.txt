@@ -1,0 +1,13 @@
+Kapy Notes 1.35.6
+
+- The swipe back from the left edge now follows your finger, from Pinned, a folder, Shared, Drawings, Archive, Hidden and a note opened from another note. Let go past halfway to go back, or sooner and the page springs back.
+- A tap outside a text field puts the keyboard away. Kapy AI's Send button and suggestions, and the format bar, keep it up.
+- Ask Kapy AI sits just above the keyboard as soon as it comes up.
+- Notices are a full-width card above the bar, and sit above the format bar instead of covering it.
+- When the keyboard goes away, a note's time line comes back under its title.
+- A video that's still loading or can't be played no longer has its play button over its words.
+- With large text, the words in a note's voice notes, files and videos grow as much as the text, and attachments stay clear of the line under them.
+- A tap on the line just above a table puts the caret on that line.
+- If you undo taking someone off a note, Shared shows their name again instead of their email address, until the app restarts.
+- The archive icon is now a plain box.
+- Pressing and holding a suggested person in the Share sheet no longer loses the pick.
