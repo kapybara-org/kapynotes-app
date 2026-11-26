@@ -3619,11 +3619,74 @@ void main() {
       await press(tester, ShortcutAction.closeTab);
       expect(openNoteBody(tester), 'Second note');
 
-      // ⇧⌘T brings back the tab closed last, in front.
+      // ⇧⌘T brings back the tab closed last, in front and where it was.
       await press(tester, ShortcutAction.reopenTab);
       expect(openNoteBody(tester), 'First note');
-      expect(tabTitles(tester), ['Second note', 'First note']);
+      expect(tabTitles(tester), ['First note', 'Second note']);
       expect(notes.notes, hasLength(3), reason: 'a tab closes no note');
+    });
+
+    testWidgets('⇧⌘T again goes on back through the closed tabs, each to its '
+        'place on the row with its caret where it was', (tester) async {
+      await threeNotes(tester);
+      notes.create(body: 'Fourth note');
+      await tester.pumpAndSettle();
+      for (final title in ['Second note', 'Third note', 'Fourth note']) {
+        await clickWith(tester, LogicalKeyboardKey.metaLeft, title);
+      }
+      expect(tabTitles(tester), [
+        'First note',
+        'Second note',
+        'Third note',
+        'Fourth note',
+      ]);
+
+      await tester.tap(tab('Third note'));
+      await tester.pumpAndSettle();
+      openNoteField(tester).controller.selection =
+          const TextSelection.collapsed(offset: 3);
+      await tester.pump();
+      await press(tester, ShortcutAction.closeTab);
+      await tester.tap(tab('First note'));
+      await tester.pumpAndSettle();
+      await press(tester, ShortcutAction.closeTab);
+      expect(tabTitles(tester), ['Second note', 'Fourth note']);
+      expect(find.text('Closed "First note"'), findsOneWidget);
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note', 'Fourth note']);
+      expect(
+        find.text('Closed "First note"'),
+        findsNothing,
+        reason: 'the toast offers back a tab that is back',
+      );
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'Third note');
+      expect(
+        openNoteField(tester).controller.selection,
+        const TextSelection.collapsed(offset: 3),
+      );
+      expect(tabTitles(tester), [
+        'First note',
+        'Second note',
+        'Third note',
+        'Fourth note',
+      ]);
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(tabTitles(tester), hasLength(4), reason: 'none is left closed');
+    });
+
+    testWidgets('a new install answers its shortcuts before anything is '
+        'clicked', (tester) async {
+      await pumpApp(tester, firstRun: true, size: const Size(1400, 800));
+      expect(prefs.sidebarVisible, isTrue);
+
+      // The welcome note waits untouched, without a caret.
+      await press(tester, ShortcutAction.toggleSidebar);
+      expect(prefs.sidebarVisible, isFalse);
     });
 
     testWidgets('a middle click and the menu open a tab behind too', (

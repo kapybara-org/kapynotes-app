@@ -1917,9 +1917,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Opens the tab closed last again, in front.
+  /// Opens the tab closed last again, in front and in its place on the row,
+  /// and takes down the toast that offered it back.
   void _reopenTab() {
     if (!_workspace.canReopen) return;
+    Toast.withdraw(_reopenTab);
     _changeTabs(_workspace.openNoteIds, _workspace.reopen);
   }
 
@@ -4244,7 +4246,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 : null,
             onDeleteNote: _removeOpenNote,
             onToggleKapyAi: _kapyAi == null ? null : _toggleKapyAi,
-            autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
         );
@@ -6635,7 +6636,6 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onDeleteNote,
     required this.onToggleKapyAi,
     required this.shortcuts,
-    required this.autofocus,
   });
 
   final Widget child;
@@ -6712,7 +6712,6 @@ class _DesktopShortcuts extends StatelessWidget {
   /// Null where Kapy AI is not built in, which leaves its chord unbound.
   final VoidCallback? onToggleKapyAi;
   final ShortcutPrefs shortcuts;
-  final bool autofocus;
 
   ShortcutBinding get _find => ShortcutBinding(
     logicalKey: LogicalKeyboardKey.keyF,
@@ -6797,7 +6796,7 @@ class _DesktopShortcuts extends StatelessWidget {
       },
       child: FocusScope(
         node: focusNode,
-        autofocus: autofocus,
+        autofocus: true,
         onKeyEvent: _pairKey,
         child: child,
       ),

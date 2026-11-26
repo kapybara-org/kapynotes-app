@@ -15,6 +15,7 @@ class Toast {
   const Toast._();
 
   static OverlayEntry? _current;
+  static VoidCallback? _currentAction;
   static int _generation = 0;
 
   /// What a toast keeps clear of: above a phone's bar and its +, or the
@@ -32,6 +33,14 @@ class Toast {
   /// does while it is open, so the menu never sits under the toast nor uses
   /// up its Undo. A new toast shows, so a menu's own notice replaces it.
   static void hide(bool hidden) => _hidden.value = hidden;
+
+  /// Takes down the toast showing if its button runs [onAction]: an offer of
+  /// something since done another way.
+  static void withdraw(VoidCallback onAction) {
+    if (_current == null || _currentAction != onAction) return;
+    _generation++;
+    _dismiss();
+  }
 
   /// Builds the toast on screen again once the frame has laid out what it
   /// keeps clear of, which has just come or gone: a clearance changes
@@ -180,6 +189,7 @@ class Toast {
       ),
     );
     _current = entry;
+    _currentAction = action?.$2;
     overlay.insert(entry);
     return generation;
   }
@@ -218,6 +228,7 @@ class Toast {
     // invisible, endlessly animating spinner.
     entry?.remove();
     _current = null;
+    _currentAction = null;
     _room.value = 0;
   }
 }
