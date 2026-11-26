@@ -523,12 +523,9 @@ Future<void> showTagPickerAt(
 ) async {
   final shelf = TagShelf.maybeOf(context);
   if (shelf == null) return;
-  await showGeneralDialog<void>(
+  await showKapyPopover<void>(
     context: context,
-    barrierDismissible: true,
     barrierLabel: 'Close tags',
-    barrierColor: Colors.transparent,
-    transitionDuration: Duration.zero,
     pageBuilder: (context, _, _) => CustomSingleChildLayout(
       delegate: PopoverAtPoint(position),
       child: TagPicker(

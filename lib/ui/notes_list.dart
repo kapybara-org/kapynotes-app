@@ -16,6 +16,7 @@ import '../data/tags.dart';
 import '../data/task_lines.dart';
 import 'checklist_pie.dart';
 import 'compact_icon_button.dart';
+import 'context_menu.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
 import 'editor/voice_chip.dart' show formatVoiceDuration;
@@ -2234,11 +2235,9 @@ class _NotesFilterState extends State<_NotesFilter> {
     final button = context.findRenderObject()! as RenderBox;
     final origin = button.localToGlobal(Offset.zero);
     final shelf = TagShelf.maybeOf(context);
-    return showGeneralDialog<void>(
+    return showKapyPopover<void>(
       context: context,
-      barrierDismissible: true,
       barrierLabel: 'Close the filter',
-      barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 140),
       transitionBuilder: (context, animation, _, child) => FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),

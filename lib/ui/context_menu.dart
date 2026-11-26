@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 
 /// The quiet desktop menu used by note rows and things embedded in a note.
 ///
@@ -45,6 +46,36 @@ Future<T?> showKapyContextMenu<T>({
       requestFocus: requestFocus,
     ),
   );
+}
+
+/// A picker or a field over the window, such as the tag list, with no
+/// barrier to see: a click outside closes it unless [barrierDismissible] is
+/// false. To a desktop's toasts it is a menu, so a notice stays where it is.
+Future<T?> showKapyPopover<T>({
+  required BuildContext context,
+  required String barrierLabel,
+  required RoutePageBuilder pageBuilder,
+  bool barrierDismissible = true,
+  Duration transitionDuration = Duration.zero,
+  RouteTransitionsBuilder? transitionBuilder,
+}) => Navigator.of(context, rootNavigator: true).push(
+  _KapyPopoverRoute<T>(
+    pageBuilder: pageBuilder,
+    barrierDismissible: barrierDismissible,
+    barrierLabel: barrierLabel,
+    transitionDuration: transitionDuration,
+    transitionBuilder: transitionBuilder,
+  ),
+);
+
+class _KapyPopoverRoute<T> extends RawDialogRoute<T> with ToastMenuRoute<T> {
+  _KapyPopoverRoute({
+    required super.pageBuilder,
+    required super.barrierDismissible,
+    required super.barrierLabel,
+    required super.transitionDuration,
+    required super.transitionBuilder,
+  }) : super(barrierColor: Colors.transparent);
 }
 
 /// The shared compact surface for popup-route and editable-text menus.
@@ -91,7 +122,7 @@ class KapyContextMenuSurface extends StatelessWidget {
   }
 }
 
-class _KapyContextMenuRoute<T> extends PopupRoute<T> {
+class _KapyContextMenuRoute<T> extends PopupRoute<T> with ToastMenuRoute<T> {
   _KapyContextMenuRoute({
     required this.position,
     required this.preferredBounds,

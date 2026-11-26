@@ -9,6 +9,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
+import 'context_menu.dart';
 import 'notes_grouping.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart' show PopoverAtPoint;
@@ -309,12 +310,9 @@ class _DayStripState extends State<DayStrip> {
     final picked = widget.picked;
     final shown = picked ?? _shown.lastOrNull ?? today;
     setState(() => _choosing = true);
-    final day = await showGeneralDialog<DateTime>(
+    final day = await showKapyPopover<DateTime>(
       context: context,
-      barrierDismissible: true,
       barrierLabel: 'Close the calendar',
-      barrierColor: Colors.transparent,
-      transitionDuration: Duration.zero,
       pageBuilder: (context, _, _) => CustomSingleChildLayout(
         delegate: PopoverAtPoint(
           box.localToGlobal(Offset(0, box.size.height + 4)),
