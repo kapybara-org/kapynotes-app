@@ -1767,9 +1767,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Opens an empty pane beside the focused note, for the next note chosen.
+  /// The note's editor lets go of the keyboard first: More hands it back to
+  /// that editor as it closes, which would focus the note's pane again.
   void _splitEditor() {
     if (_usesCompactLayout || _specialMode || !_workspace.canSplit) return;
     final previous = _selectedId;
+    _selectedEditor?.releaseKeyboard();
     setState(() {
       _workspace.split();
       _adoptWorkspaceSelection(previous);
