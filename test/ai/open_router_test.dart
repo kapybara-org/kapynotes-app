@@ -12,7 +12,7 @@ import 'package:kapy_notes/sync/key_store.dart';
 
 import 'ai_fakes.dart';
 
-const _key = 'sk-or-v1-0123456789abcdef4f2a';
+const _key = 'sk-or-v1-0123456789abcdefwxyz';
 
 void main() {
   late InMemorySecureStore secrets;
@@ -100,7 +100,7 @@ void main() {
 
       final state = openRouter.state;
       expect(state.status, KapyAccountStatus.connected);
-      expect(state.detail, '4f2a');
+      expect(state.detail, 'wxyz');
       expect(state.models.map((m) => m.label), ['Fast', 'Careful']);
     },
   );
@@ -145,7 +145,7 @@ void main() {
     final next = account();
     await next.load();
     expect(next.state.status, KapyAccountStatus.connected);
-    expect(next.state.detail, '4f2a');
+    expect(next.state.detail, 'wxyz');
   });
 
   test(
@@ -293,7 +293,7 @@ void main() {
         ai.accounts
             .firstWhere((a) => a.kind == KapyAccountKind.openRouter)
             .detail,
-        '4f2a',
+        'wxyz',
       );
       ai.pickModel(KapyModel.cloud);
       await ai.ask('Lisbon?');
@@ -309,7 +309,7 @@ void main() {
         expect(call.url.toString(), isNot(contains(_key)));
       }
       expect(jsonEncode(store.data), isNot(contains(_key)));
-      expect(jsonEncode(store.data), isNot(contains('4f2a')));
+      expect(jsonEncode(store.data), isNot(contains('wxyz')));
       expect(await secrets.read('kapynotes.openRouterKey'), _key);
     },
   );
