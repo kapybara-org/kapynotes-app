@@ -3440,6 +3440,30 @@ void main() {
     expect(notes.byId(second.id)?.isArchived, isFalse);
   });
 
+  testWidgets(
+    'Split view from More takes the keyboard from the editor that had it, so '
+    'the list fills the new pane',
+    (tester) async {
+      await pumpApp(tester);
+      notes.create(body: 'Alpha');
+      notes.create(body: 'Bravo');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Alpha'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(fieldInPane(tester, 0).focusNode.hasFocus, isTrue);
+
+      await pickPageAction(tester, 'split');
+      expect(fieldInPane(tester, 0).focusNode.hasFocus, isFalse);
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'empty-pane');
+      await tester.tap(find.widgetWithText(NoteRow, 'Bravo'));
+      await tester.pumpAndSettle();
+      expect(bodyInPane(tester, 0), 'Alpha');
+      expect(bodyInPane(tester, 1), 'Bravo');
+    },
+  );
+
   testWidgets('three panes answer the split, focus and close shortcuts', (
     tester,
   ) async {
@@ -3865,7 +3889,11 @@ void main() {
     late FakeVoiceRecorder recorder;
     late VoiceRecordingController recording;
 
-    for (final platform in [TargetPlatform.linux, TargetPlatform.macOS]) {
+    for (final platform in [
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    ]) {
       testWidgets('the shortcut on ${platform.name} says "No microphone '
           'found" and records nothing', (tester) async {
         AppPlatform.debugTargetPlatformOverride = platform;
@@ -4537,11 +4565,6 @@ void main() {
       expect(tabTitles(tester), wednesdayNotes);
 
       await pickPageAction(tester, 'split');
-      await pressShortcut(
-        tester,
-        shortcuts.bindingFor(ShortcutAction.focusSecondPane)!,
-      );
-      await tester.pumpAndSettle();
       await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
       await pressShortcut(
         tester,
@@ -4559,6 +4582,25 @@ void main() {
       expect(find.text('Pin tab'), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
+    });
+
+    testWidgets("Split view from a day's tabs leaves the keyboard in the new "
+        'pane, so the list fills it', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final dayTabs = DayTabsStore(store);
+      await dayTabs.load();
+      await library(tester, days: days, dayTabs: dayTabs);
+      days.setDay('October plan', wednesday);
+      await tester.pumpAndSettle();
+      await tap(tester, day(18));
+      expect(tabTitles(tester), wednesdayNotes);
+
+      await pickPageAction(tester, 'split');
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'empty-pane');
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      expect(bodyInPane(tester, 0), 'October plan');
+      expect(bodyInPane(tester, 1), 'Call with Arjun');
     });
 
     testWidgets("a day's order changed on another device shows in its tabs "

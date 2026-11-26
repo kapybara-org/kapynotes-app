@@ -968,6 +968,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _scheduleKeyboardRetry();
   }
 
+  /// Lets go of the keyboard, and of the one a closing menu is about to hand
+  /// back to this editor.
+  void releaseKeyboard() => _focusNode.unfocus();
+
   /// Places the caret after the note's final character and brings it on
   /// screen. A new note the person names opens with its title selected.
   void focusAtEnd() {

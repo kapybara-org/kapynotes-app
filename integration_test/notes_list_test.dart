@@ -19,6 +19,8 @@
 // - KAPY-72's folder boards, d1 to d6, in the same window: Add notes beside
 //   a folder, notes dragged onto a folder and into the open one, Undo, a new
 //   folder, the empty states, and a tree note's whole-row hover.
+// - Move to folder… on a row's menu (KAP-377): its list opens where the menu
+//   was, from the same corner, on the board and in a 400 wide window.
 // - ⌘F's find bar in a note (KAP-389): no matches, the second of three, and
 //   the match esc leaves selected.
 // Each state is taken light and dark, as screenshots in build/screenshots;
@@ -82,7 +84,7 @@ class _MemoryStore extends LocalStore {
 }
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   kapyAiAvailable = true;
 
   const mouse = PointerDeviceKind.mouse;
@@ -1049,6 +1051,72 @@ void main() {
     expect(tester.getSize(face).width, width);
     await boardShot(tester, 'folders-whole-row-hover');
     await pointer.removePointer();
+  });
+
+  /// Right-clicks [title]'s row near its end, light then dark, and takes its
+  /// menu as [name]-menu and Move to folder…'s list as [name]-picker, which
+  /// hangs from the menu's top right corner inside the window. Esc closes it.
+  /// The menu's route cancels the right-click it opens under, and the live
+  /// binding passes that cancel on only while device pointer events reach the
+  /// app (KAPY-45). Without it the row keeps the press, and the dark pass's
+  /// right-click opens nothing.
+  Future<void> moveToFolderShots(
+    WidgetTester tester,
+    String title,
+    String name,
+  ) async {
+    final menu = find.byKey(const ValueKey('kapy-context-menu'));
+    final picker = find.byKey(const ValueKey('folder-picker'));
+    final window = (Offset.zero & tester.getSize(find.byType(KapyNotesApp)))
+        .deflate(8);
+    for (final mode in [AppearanceMode.light, AppearanceMode.dark]) {
+      prefs.appearance = mode;
+      await tester.pumpAndSettle();
+      binding.shouldPropagateDevicePointerEvents = true;
+      try {
+        await tester.tapAt(
+          tester.getRect(row(title)).centerRight - const Offset(16, 0),
+          buttons: kSecondaryButton,
+          kind: mouse,
+        );
+        await tester.pumpAndSettle();
+      } finally {
+        binding.shouldPropagateDevicePointerEvents = false;
+      }
+      final sat = tester.getRect(menu);
+      expect(tester.takeException(), isNull, reason: name);
+      await screenshot('notes-list-$name-menu-${mode.name}');
+      await click(tester, find.byKey(ValueKey('folder-note-${id(title)}')));
+      final opened = tester.getRect(picker);
+      expect(opened.topRight, sat.topRight, reason: name);
+      expect(window.intersect(opened), opened, reason: name);
+      await screenshot('notes-list-$name-picker-${mode.name}');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing, reason: name);
+    }
+  }
+
+  testWidgets("KAP-377: Move to folder… on a row's menu opens its list where "
+      'the menu was, from the same corner', (tester) async {
+    await board(tester);
+    await moveToFolderShots(tester, 'Quote for the deck', 'kap377-board');
+  });
+
+  testWidgets('KAP-377: in a 400 wide window, the list opens where the menu '
+      'was and keeps inside the window', (tester) async {
+    await launch(
+      tester,
+      size: const Size(400, 640),
+      bodies: ['Gym plan\nVoice note', 'Pricing ideas\n1,799 INR a seat'],
+      file: (folders) {
+        folders
+          ..create('Work')
+          ..create('Home');
+      },
+    );
+    await click(tester, find.byKey(const ValueKey('page-show-list')));
+    await moveToFolderShots(tester, 'Pricing ideas', 'kap377-narrow');
   });
 
   testWidgets('KAP-389: ⌘F finds words in the open note, Enter steps, and '

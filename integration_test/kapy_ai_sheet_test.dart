@@ -30,6 +30,7 @@ import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test/fake_kapy_ai.dart';
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -153,9 +154,25 @@ void main() {
           tester.view.devicePixelRatio *
           (1 - kapyAiSheetRest);
       bool resting() => (tester.getRect(sheet).top - rest).abs() < 1;
-      expect(resting(), isTrue, reason: 'the sheet rests over the note');
-
       final field = find.byKey(const ValueKey('kapy-ai-field'));
+      // The note asked for the keyboard as it opened and the sheet put it
+      // away, which can be halfway in (KAP-359), so the rest is checked once
+      // the keyboard has settled. The same race is then made likely: the
+      // keyboard is asked for and put away as soon as it starts to come up.
+      await settleKeyboard(tester, up: false);
+      expect(resting(), isTrue, reason: 'the sheet rests over the note');
+      await tester.tap(field);
+      for (var i = 0; i < 100 && tester.view.viewInsets.bottom == 0; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      FocusManager.instance.primaryFocus?.unfocus();
+      await settleKeyboard(tester, up: false);
+      expect(
+        resting(),
+        isTrue,
+        reason: 'the sheet rests over the note with the keyboard put away',
+      );
+
       await tester.tap(field);
       await tester.pumpAndSettle();
       await tester.enterText(field, question);
@@ -188,10 +205,8 @@ void main() {
       );
 
       FocusManager.instance.primaryFocus?.unfocus();
-      await until(
-        () => tester.view.viewInsets.bottom == 0 && resting(),
-        'the keyboard to go down and the sheet to rest over the note',
-      );
+      await settleKeyboard(tester, up: false);
+      await until(resting, 'the sheet to rest over the note');
 
       expect(answerText, findsOneWidget);
       final over = tester.getRect(sheet);
