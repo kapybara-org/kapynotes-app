@@ -2977,45 +2977,47 @@ class _SettingsDialogState extends State<SettingsDialog>
   }) {
     final palette = context.palette;
     final surface = palette.surfaceBackground;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _paneHeader(title: title, summary: summary),
-        Expanded(
-          child: Stack(
-            children: [
-              Positioned.fill(child: pane),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 64,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        stops: const [0, 0.85],
-                        colors: [surface.withValues(alpha: 0), surface],
+    return FocusTraversalGroup(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _paneHeader(title: title, summary: summary),
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(child: pane),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 64,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: const [0, 0.85],
+                          colors: [surface.withValues(alpha: 0), surface],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        if (footer != null)
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: palette.paneEdge)),
+              ],
             ),
-            child: footer,
           ),
-      ],
+          if (footer != null)
+            Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: palette.paneEdge)),
+              ),
+              child: footer,
+            ),
+        ],
+      ),
     );
   }
 
@@ -3150,73 +3152,75 @@ class _SettingsDialogState extends State<SettingsDialog>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: _navWidth,
-            padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
-            decoration: BoxDecoration(
-              color: palette.sidebarBackground,
-              border: Border(right: BorderSide(color: palette.paneEdge)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  height: 26,
-                  padding: const EdgeInsets.only(left: 10),
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Settings',
-                    style: chromeStyle(
-                      size: 13,
-                      line: 18,
-                      weight: AppWeight.button,
-                      color: palette.textPrimary,
+          FocusTraversalGroup(
+            child: Container(
+              width: _navWidth,
+              padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+              decoration: BoxDecoration(
+                color: palette.sidebarBackground,
+                border: Border(right: BorderSide(color: palette.paneEdge)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    height: 26,
+                    padding: const EdgeInsets.only(left: 10),
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Settings',
+                      style: chromeStyle(
+                        size: 13,
+                        line: 18,
+                        weight: AppWeight.button,
+                        color: palette.textPrimary,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                // Settings opened on purpose, sent to one pane, leaves the
-                // keyboard to whatever that pane wanted it for.
-                _searchField(autofocus: widget.section == null),
-                const SizedBox(height: 14),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final updates = widget.updates;
-                      // Every category stays in view, so the card gets only
-                      // what the rail leaves: its rows, a gap and the version.
-                      final left =
-                          constraints.maxHeight -
-                          _sections.length * _SettingsRail.itemHeight -
-                          (updates == null ? 0 : 28);
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _SettingsRail(
-                              sections: _sections,
-                              changed: _changedSections,
-                              // No category is the one on show while results
-                              // are.
-                              selected: _searching ? null : section,
-                              onSelect: _selectFromRail,
+                  const SizedBox(height: 14),
+                  // Settings opened on purpose, sent to one pane, leaves the
+                  // keyboard to whatever that pane wanted it for.
+                  _searchField(autofocus: widget.section == null),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final updates = widget.updates;
+                        // Every category stays in view, so the card gets only
+                        // what the rail leaves: its rows, a gap and the version.
+                        final left =
+                            constraints.maxHeight -
+                            _sections.length * _SettingsRail.itemHeight -
+                            (updates == null ? 0 : 28);
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: _SettingsRail(
+                                sections: _sections,
+                                changed: _changedSections,
+                                // No category is the one on show while results
+                                // are.
+                                selected: _searching ? null : section,
+                                onSelect: _selectFromRail,
+                              ),
                             ),
-                          ),
-                          if (updates != null) ...[
-                            SettingsUpdateCard(
-                              updates: updates,
-                              layoutPrefs: widget.layoutPrefs,
-                              maxHeight: left,
-                            ),
-                            const SizedBox(height: 10),
-                            _VersionStatus(updates: updates),
+                            if (updates != null) ...[
+                              SettingsUpdateCard(
+                                updates: updates,
+                                layoutPrefs: widget.layoutPrefs,
+                                maxHeight: left,
+                              ),
+                              const SizedBox(height: 10),
+                              _VersionStatus(updates: updates),
+                            ],
                           ],
-                        ],
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           Expanded(

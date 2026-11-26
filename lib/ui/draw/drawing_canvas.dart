@@ -12,6 +12,7 @@ import '../../data/notes_store.dart';
 import '../back_forward.dart';
 import '../compact_icon_button.dart';
 import '../editor/editor_formatting.dart';
+import '../focus_ring.dart';
 import 'drawing_geometry.dart';
 import 'drawing_painter.dart';
 
@@ -179,11 +180,11 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   String? _textId;
   Offset? _textAt;
   final TextEditingController _textController = TextEditingController();
-  final FocusNode _textFocus = FocusNode(debugLabel: 'drawing text');
+  final FocusNode _textFocus = NoRingFocusNode(debugLabel: 'drawing text');
 
   late final TextEditingController _titleController;
   final FocusNode _titleFocus = FocusNode(debugLabel: 'drawing title');
-  final FocusNode _canvasFocus = FocusNode(debugLabel: 'drawing canvas');
+  final FocusNode _canvasFocus = NoRingFocusNode(debugLabel: 'drawing canvas');
 
   NoteDrawing get drawing => _drawing;
   DrawTool get tool => _tool;

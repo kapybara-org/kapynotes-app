@@ -17,7 +17,7 @@ import 'notes_grouping.dart' show NoteGroup;
 import 'notes_list.dart' show NoteCardFace, NotesGroupHeading, PickBox;
 import 'sharing_sheet.dart' show SharingSheetFrame;
 import 'sidebar.dart' show SidebarEmpty;
-import 'tag_ui.dart' show PopoverAtPoint, TagPopover, notesCount;
+import 'tag_ui.dart' show TagPopover, notesCount;
 import 'tonal_button.dart';
 
 TextStyle _figtree(
@@ -354,7 +354,13 @@ class _FoldersTabState extends State<FoldersTab> {
   }
 
   Future<void> _showMenu(Offset position, Folder folder) async {
-    final choice = await showFolderMenu(context, position, folder);
+    var spot = spotAt(position);
+    final choice = await showFolderMenu(
+      context,
+      position,
+      folder,
+      onClosed: (placed) => spot = placed,
+    );
     if (!mounted) return;
     switch (choice) {
       case 'rename':
@@ -368,7 +374,7 @@ class _FoldersTabState extends State<FoldersTab> {
         await runFolderAction(
           context,
           action,
-          position,
+          spot,
           store: _store,
           notes: widget.notes,
           folder: folder,
@@ -913,17 +919,18 @@ class TreeNoteFace extends StatelessWidget {
   }
 }
 
-/// Move to folder… on a note's menu, or on the picked notes': files them
-/// where the list picks, as [fileNotes] does.
+/// Move to folder… on a note's menu, or on the picked notes': opens the
+/// folder list from [spot] and files them where it picks, as [fileNotes]
+/// does.
 Future<void> moveNotesToFolder(
   BuildContext context,
-  Offset position,
+  MenuSpot spot,
   FolderStore store,
   List<String> noteIds,
 ) async {
   final picked = await _pickFolderAt(
     context,
-    position,
+    spot,
     store: store,
     current: {for (final id in noteIds) store.tree.folderOf(id)},
     check: (folderId) => store.checkFile(noteIds, folderId),
@@ -1014,28 +1021,31 @@ List<List<KapyMenuAction>> folderActions({bool newInside = true}) => [
   ],
 ];
 
-/// [folder]'s menu at [position], and the action picked from it.
+/// [folder]'s menu at [position], and the action picked from it. [onClosed]
+/// is told where the menu sat, for the list or the field its action opens.
 Future<String?> showFolderMenu(
   BuildContext context,
   Offset position,
   Folder folder, {
   bool newInside = true,
+  ValueSetter<MenuSpot>? onClosed,
 }) => showKapyContextMenu<String>(
   context: context,
   globalPosition: position,
+  onClosed: onClosed,
   items: kapyMenuItems((
     heading: null,
     groups: folderActions(newInside: newInside),
   ), key: (value) => '$value-folder-${folder.id}'),
 );
 
-/// Does [action], one of [folderActions], to [folder] from a menu at
-/// [position]. Rename and New folder inside take the name in a field there.
+/// Does [action], one of [folderActions], to [folder] from a menu that sat
+/// at [spot]. Rename and New folder inside take the name in a field there.
 /// [notes] are the ones folders hold, which Delete counts.
 Future<void> runFolderAction(
   BuildContext context,
   String action,
-  Offset position, {
+  MenuSpot spot, {
   required FolderStore store,
   required List<Note> notes,
   required Folder folder,
@@ -1044,14 +1054,14 @@ Future<void> runFolderAction(
     case 'rename':
       await _nameFolderAt(
         context,
-        position,
+        spot,
         initial: folder.name,
         submit: (name) => store.rename(folder.id, name),
       );
     case 'new':
       await _nameFolderAt(
         context,
-        position,
+        spot,
         submit: (name) {
           final refusal = store.checkCreate(name, parentId: folder.id);
           if (refusal == null) store.create(name, parentId: folder.id);
@@ -1059,18 +1069,18 @@ Future<void> runFolderAction(
         },
       );
     case 'move':
-      await _moveFolder(context, position, store, folder);
+      await _moveFolder(context, spot, store, folder);
     case 'delete':
       await _deleteFolder(context, store, notes, folder);
   }
 }
 
-/// A field at [position] that names a folder, starting from [initial]. ↵
+/// A field from [spot] that names a folder, starting from [initial]. ↵
 /// hands the name to [submit] and closes, unless [submit] says why not; esc
 /// or a click outside closes it.
 Future<void> _nameFolderAt(
   BuildContext context,
-  Offset position, {
+  MenuSpot spot, {
   String initial = '',
   required FolderRefusal? Function(String name) submit,
 }) => showGeneralDialog<void>(
@@ -1079,7 +1089,7 @@ Future<void> _nameFolderAt(
   barrierColor: Colors.transparent,
   transitionDuration: Duration.zero,
   pageBuilder: (context, _, _) => CustomSingleChildLayout(
-    delegate: PopoverAtPoint(position),
+    delegate: PopoverAtSpot(spot, mediaPadding: MediaQuery.paddingOf(context)),
     child: TagPopover(
       key: const ValueKey('folder-name-popover'),
       child: _FolderNameField(
@@ -1148,14 +1158,14 @@ Future<void> _deleteFolder(
 /// where, with an Undo that puts it back.
 Future<void> _moveFolder(
   BuildContext context,
-  Offset position,
+  MenuSpot spot,
   FolderStore store,
   Folder folder,
 ) async {
   final from = folder.parentId;
   final picked = await _pickFolderAt(
     context,
-    position,
+    spot,
     store: store,
     current: {from},
     moving: folder.id,
@@ -1184,11 +1194,11 @@ String _placeName(FolderTree tree, String? folderId) =>
       null => 'My notes',
     };
 
-/// Opens the folder list at [position] and returns the place picked: a
+/// Opens the folder list from [spot] and returns the place picked: a
 /// folder's id, or null for My notes. Nothing comes back when it's closed.
 Future<({String? folderId})?> _pickFolderAt(
   BuildContext context,
-  Offset position, {
+  MenuSpot spot, {
   required FolderStore store,
   required Set<String?> current,
   String? moving,
@@ -1200,7 +1210,7 @@ Future<({String? folderId})?> _pickFolderAt(
   barrierColor: Colors.transparent,
   transitionDuration: Duration.zero,
   pageBuilder: (context, _, _) => CustomSingleChildLayout(
-    delegate: PopoverAtPoint(position),
+    delegate: PopoverAtSpot(spot, mediaPadding: MediaQuery.paddingOf(context)),
     child: _FolderPicker(
       store: store,
       current: current,
@@ -1253,14 +1263,32 @@ class _FolderPicker extends StatefulWidget {
 }
 
 class _FolderPickerState extends State<_FolderPicker> {
+  static const double _rowHeight = 30;
+
   final _query = TextEditingController();
+  final _scroll = ScrollController();
   int _at = 0;
   FolderRefusal? _refusal;
 
   @override
   void dispose() {
     _query.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Scrolls the list just far enough to show the row at [index], as ↑↓
+  /// reach past either end of what shows.
+  void _reveal(int index) {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    final top = index * _rowHeight;
+    final bottom = top + _rowHeight - position.viewportDimension;
+    if (position.pixels > top) {
+      position.jumpTo(top);
+    } else if (position.pixels < bottom) {
+      position.jumpTo(bottom);
+    }
   }
 
   /// My notes and every folder in the tree's order, or those whose names
@@ -1339,6 +1367,7 @@ class _FolderPickerState extends State<_FolderPicker> {
           final index = (at + delta * step) % count;
           if (enabled(index)) {
             setState(() => _at = index);
+            _reveal(index);
             return;
           }
         }
@@ -1362,7 +1391,7 @@ class _FolderPickerState extends State<_FolderPicker> {
             behavior: HitTestBehavior.opaque,
             onTap: on ? () => choose(index) : null,
             child: Container(
-              height: 30,
+              height: _rowHeight,
               padding: EdgeInsets.only(left: 8 + (depth - 1) * 12.0, right: 8),
               decoration: BoxDecoration(
                 color: index == at && on ? palette.hover : null,
@@ -1493,10 +1522,13 @@ class _FolderPickerState extends State<_FolderPicker> {
                         inputFormatters: [
                           LengthLimitingTextInputFormatter(folderNameMax),
                         ],
-                        onChanged: (_) => setState(() {
-                          _at = 0;
-                          _refusal = null;
-                        }),
+                        onChanged: (_) {
+                          setState(() {
+                            _at = 0;
+                            _refusal = null;
+                          });
+                          _reveal(0);
+                        },
                         style: _figtree(
                           13,
                           16,
@@ -1520,12 +1552,15 @@ class _FolderPickerState extends State<_FolderPicker> {
                 ),
               ),
             ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 30.0 * 9),
-              child: ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: rows,
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: _rowHeight * 9),
+                child: ListView(
+                  controller: _scroll,
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: rows,
+                ),
               ),
             ),
             if (refusal != null)
