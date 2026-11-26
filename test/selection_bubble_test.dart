@@ -313,6 +313,24 @@ void main() {
       );
     });
 
+    testWidgets('keeps over the foot of a pane that ends above the window\'s', (
+      tester,
+    ) async {
+      window(tester);
+      await tester.pumpWidget(_app());
+      // Near the foot of a short pane, with no room over the selection.
+      const pane = Rect.fromLTRB(120, 100, 520, 200);
+      await _show(
+        tester,
+        above: const Rect.fromLTWH(130, 150, 40, 22),
+        within: pane,
+      );
+      expect(
+        tester.getRect(_bubble).bottom,
+        lessThanOrEqualTo(pane.bottom - 8),
+      );
+    });
+
     testWidgets('Text ▾ opens upward with each block and its key, and esc '
         'closes it before the bubble', (tester) async {
       window(tester);
@@ -624,6 +642,49 @@ void main() {
       await wheel(600);
       await settle();
       expect(_bubble, findsOneWidget);
+      expect(controller.selection.isCollapsed, isFalse);
+    });
+
+    testWidgets('stays off while its selection is just out of sight', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final body = [
+        'Title',
+        for (var line = 1; line <= 60; line++) 'Line $line',
+        'the words to format',
+        'The end',
+      ].join('\n');
+      await tester.pumpWidget(_editor(body));
+      await tester.pumpAndSettle();
+      await _select(tester, 'words');
+      expect(_bubble, findsOneWidget);
+      final editable = NoteDriver(tester);
+      final controller = _controller(tester);
+      final pane = tester.getRect(find.byType(NoteEditor));
+      final words = editable.toGlobal(
+        editable.boxesFor(controller.selection).first.toRect().topLeft,
+      );
+      // Just under the pane's foot: laid out, but not shown.
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: const Offset(600, 400),
+          scrollDelta: Offset(0, words.dy - pane.bottom - 4),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 160));
+      await tester.pumpAndSettle();
+      expect(
+        editable
+            .toGlobal(
+              editable.boxesFor(controller.selection).first.toRect().topLeft,
+            )
+            .dy,
+        greaterThan(pane.bottom),
+      );
+      expect(_bubble, findsNothing);
       expect(controller.selection.isCollapsed, isFalse);
     });
 
