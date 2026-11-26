@@ -3898,6 +3898,33 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _revealFound();
   }
 
+  /// F3 steps through the matches from the note as well as from the bar, and
+  /// ⌘G on a Mac, where F3 is the system's. Shift steps back.
+  KeyEventResult _findKey(FocusNode node, KeyEvent event) {
+    if (!_findOpen) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    for (final (activator, back) in [
+      (const SingleActivator(LogicalKeyboardKey.f3), false),
+      (const SingleActivator(LogicalKeyboardKey.f3, shift: true), true),
+      if (AppPlatform.isMacOS) ...[
+        (const SingleActivator(LogicalKeyboardKey.keyG, meta: true), false),
+        (
+          const SingleActivator(
+            LogicalKeyboardKey.keyG,
+            meta: true,
+            shift: true,
+          ),
+          true,
+        ),
+      ],
+    ]) {
+      if (!activator.accepts(event, keyboard)) continue;
+      _stepFind(back: back);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   /// Closes the find bar, with the match it was on selected in the note and
   /// the keyboard back in the note.
   void _closeFind() {
@@ -8598,26 +8625,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return ImageDropTarget(
       enabled: !widget.readOnly && widget.images != null,
       onFiles: (files) => unawaited(insertDroppedMedia(files)),
-      // F3 steps through the matches from the note as well as from the bar,
-      // and ⌘G on a Mac, where F3 is the system's.
-      child: CallbackShortcuts(
-        bindings: {
-          if (_findOpen) ...{
-            const SingleActivator(LogicalKeyboardKey.f3): _stepFind,
-            const SingleActivator(LogicalKeyboardKey.f3, shift: true): () =>
-                _stepFind(back: true),
-            if (AppPlatform.isMacOS) ...{
-              const SingleActivator(LogicalKeyboardKey.keyG, meta: true):
-                  _stepFind,
-              const SingleActivator(
-                LogicalKeyboardKey.keyG,
-                meta: true,
-                shift: true,
-              ): () =>
-                  _stepFind(back: true),
-            },
-          },
-        },
+      // Without semantics of its own, which would gather the page's labels
+      // into one.
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        includeSemantics: false,
+        onKeyEvent: _findKey,
         child: page,
       ),
     );
