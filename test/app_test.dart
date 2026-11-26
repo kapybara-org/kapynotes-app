@@ -14452,6 +14452,32 @@ void main() {
     }
   });
 
+  testWidgets(
+    'on Linux a window left with a note open draws nothing more, its caret '
+    'showing, 10 seconds after the last key',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(tester);
+
+      await tester.enterNote('Coffee: 12.40\nOats: 3.99\ntotal');
+      final driver = NoteDriver(tester);
+      expect(driver.state.layout.marks.caretColor, isNotNull);
+      await tester.binding.delayed(const Duration(milliseconds: 500));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+      expect(driver.state.layout.marks.caretColor, isNotNull);
+      await tester.binding.delayed(const Duration(minutes: 5));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(tester.binding.transientCallbackCount, 0);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
+  );
+
   group('what was typed is written', () {
     late _WriteLog log;
 
