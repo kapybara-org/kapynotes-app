@@ -53,7 +53,7 @@ fi
 
 for platform; do
   archive="litertlm-$platform.tar.gz"
-  sum=$(grep -A1 "'$archive':" "$hook" | sed -n "s/^ *'\([0-9a-f]\{64\}\)',$/\1/p")
+  sum=$(grep -A1 "'$archive':" "$hook" | sed -n "s/^ *'\([0-9a-f]\{64\}\)',$/\1/p" || true)
   [[ -n $sum ]] || { echo "gemma_natives.sh: the hook pins no $archive, so it ships nothing for $platform" >&2; exit 1; }
   if [[ -f $marker && -d $cache/$platform ]]; then
     echo "gemma_natives.sh: $platform $version is already in $cache"
@@ -62,7 +62,7 @@ for platform; do
   url="https://github.com/DenisovAV/flutter_gemma/releases/download/native-v$version/$archive"
   tmp=$(mktemp -d "$cache/.tmp-$platform-XXXX")
   echo "gemma_natives.sh: fetching $url"
-  curl -fsSL --retry 8 --retry-all-errors --retry-delay 15 --connect-timeout 20 -o "$tmp/$archive" "$url"
+  curl -fsSL --retry 8 --retry-all-errors --retry-delay 15 --connect-timeout 20 --speed-limit 1000 --speed-time 30 -o "$tmp/$archive" "$url"
   if command -v sha256sum >/dev/null; then check=(sha256sum -c -); else check=(shasum -a 256 -c -); fi
   echo "$sum  $tmp/$archive" | "${check[@]}" >/dev/null || {
     echo "gemma_natives.sh: $archive does not match the sha256 the hook pins ($sum)" >&2
