@@ -31,6 +31,17 @@
 # Internal testing. After the declaration, promote the build from the Console;
 # the run summary carries the release notes to paste into it.
 #
+# With android_promote_only, the Android job builds and uploads nothing: it
+# promotes build_number, already on Play's internal testing track, to
+# production for all users with the Play notes file. That is for a run whose
+# upload went through but whose promote was held back because Google was still
+# reviewing the previous release. It refuses if the build is not on internal,
+# and stops without changing anything while Google still has changes in
+# review. android_promote_dry_run has Play check that promote and then
+# discards it, so nothing is sent for review. It can't tell whether Google is
+# still reviewing an earlier change: only the real promote finds that out, and
+# then it changes nothing.
+#
 # The notes files hold the text users see: What's New for the App Store (up to
 # 4000 characters) and the Play release notes (up to 500). Both are paths
 # inside this repository, for example under metadata/.
@@ -95,6 +106,16 @@ on:
         required: false
         type: boolean
         default: false
+      android_promote_only:
+        description: Android only. Skip the build and upload, and promote build_number from internal testing to production for all users (after a promote held back by a review)
+        required: false
+        type: boolean
+        default: false
+      android_promote_dry_run:
+        description: With android_promote_only. Have Play check the promote, then discard it without committing anything. It can't see a review still in progress; only the real promote finds that out, and then it changes nothing
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -127,6 +148,8 @@ jobs:
           STORES: ${{ inputs.stores }}
           SUBMIT_ONLY: ${{ inputs.ios_submit_only }}
           UPLOAD_ONLY: ${{ inputs.android_upload_only }}
+          PROMOTE_ONLY: ${{ inputs.android_promote_only }}
+          DRY_RUN: ${{ inputs.android_promote_dry_run }}
         run: |
           set -euo pipefail
           if [ "$SUBMIT_ONLY" = true ] && [ "$STORES" != ios ]; then
@@ -135,6 +158,14 @@ jobs:
           fi
           if [ "$UPLOAD_ONLY" = true ] && [ "$STORES" != android ]; then
             echo "::error::android_upload_only needs stores set to android"
+            exit 1
+          fi
+          if [ "$PROMOTE_ONLY" = true ] && { [ "$STORES" != android ] || [ "$UPLOAD_ONLY" = true ]; }; then
+            echo "::error::android_promote_only needs stores set to android, without android_upload_only"
+            exit 1
+          fi
+          if [ "$DRY_RUN" = true ] && [ "$PROMOTE_ONLY" != true ]; then
+            echo "::error::android_promote_dry_run needs android_promote_only"
             exit 1
           fi
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$BUILD" =~ ^[1-9][0-9]*$ ]]; then
@@ -360,21 +391,25 @@ jobs:
           persist-credentials: false
 
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        if: ${{ !inputs.android_promote_only }}
         with:
           distribution: temurin
           java-version: '17'
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        if: ${{ !inputs.android_promote_only }}
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: false
 
       - run: flutter pub get --enforce-lockfile
+        if: ${{ !inputs.android_promote_only }}
 
       # key.properties is gitignored and read by android/app/build.gradle.kts.
       # The alias is fixed at "upload", the alias of the Mac's keystore.
       - name: Write the upload keystore and key.properties
+        if: ${{ !inputs.android_promote_only }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -400,6 +435,7 @@ jobs:
           } > android/key.properties
 
       - name: Build the app bundle
+        if: ${{ !inputs.android_promote_only }}
         run: |
           set -euo pipefail
           FLUTTER="$(command -v flutter)"
@@ -407,12 +443,14 @@ jobs:
           packaging/release.sh android
 
       - name: Bundle the Dart symbols and the R8 mapping
+        if: ${{ !inputs.android_promote_only }}
         run: |
           set -euo pipefail
           (cd "build/release/symbols/$VERSION" && zip -qr "../../kapy-android-$VERSION-symbols.zip" android)
           cp build/app/outputs/mapping/release/mapping.txt "build/release/kapy-android-$VERSION-mapping.txt"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !inputs.android_promote_only }}
         with:
           name: android-${{ inputs.version }}-symbols
           path: |
@@ -442,6 +480,7 @@ jobs:
       # gets the exact bytes that were uploaded. --rollout 1 means everyone.
       - name: Upload to the internal track
         id: upload
+        if: ${{ !inputs.android_promote_only }}
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ runner.temp }}/play-service-account.json
         run: python3 packaging/upload_play.py upload --track internal --bundle build/release/kapy-android.aab
@@ -460,9 +499,13 @@ jobs:
         if: ${{ !inputs.android_upload_only }}
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ runner.temp }}/play-service-account.json
+          DRY_RUN: ${{ inputs.android_promote_dry_run }}
         run: |
-          python3 packaging/upload_play.py promote --track production --rollout 1 \
-            --version-code "$BUILD" --notes-file "$PLAY_NOTES"
+          set -euo pipefail
+          args=(promote --track production --rollout 1 --from-track internal
+                --version-code "$BUILD" --notes-file "$PLAY_NOTES")
+          if [ "$DRY_RUN" = true ]; then args+=(--validate-only); fi
+          python3 packaging/upload_play.py "${args[@]}"
 
       # A promote made in the Console does not carry the notes file, so the
       # summary does.

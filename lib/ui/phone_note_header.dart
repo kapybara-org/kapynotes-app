@@ -209,6 +209,7 @@ class _HomeButton extends StatelessWidget {
       button: true,
       label: 'Home',
       excludeSemantics: true,
+      onTap: onPressed,
       child: TextButton(
         key: const ValueKey('page-home'),
         onPressed: onPressed,
@@ -269,6 +270,7 @@ class _DayButton extends StatelessWidget {
       toggled: open,
       label: open ? 'Hide the week' : 'Show the week',
       excludeSemantics: true,
+      onTap: onPressed,
       child: InkResponse(
         key: const ValueKey('page-day'),
         onTap: onPressed,

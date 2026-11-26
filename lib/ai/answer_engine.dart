@@ -62,10 +62,23 @@ class AnswerAccountRejected extends AnswerFailure {
   final KapyAccountKind account;
 }
 
-/// Anything else, in a sentence the panel can show as it is.
+/// Kapy AI Cloud needs someone signed in: nobody is on this device, or the
+/// session has ended.
+class AnswerSignInNeeded extends AnswerFailure {
+  const AnswerSignInNeeded();
+}
+
+/// Kapy AI Cloud is part of Pro, and the server says this account has none.
+class AnswerProNeeded extends AnswerFailure {
+  const AnswerProNeeded();
+}
+
+/// Anything else, in a sentence the panel can show as it is. [retry] is false
+/// when asking again can't change the answer.
 class AnswerFailed extends AnswerFailure {
-  const AnswerFailed(this.message);
+  const AnswerFailed(this.message, {this.retry = true});
   final String message;
+  final bool retry;
 
   @override
   String toString() => message;

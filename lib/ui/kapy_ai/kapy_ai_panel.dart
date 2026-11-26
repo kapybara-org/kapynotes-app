@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../ai/kapy_ai.dart';
 import '../../core/phone_keyboard.dart';
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import 'kapy_ai_chats.dart';
 import 'kapy_ai_conversation.dart';
 import 'kapy_ai_parts.dart';
@@ -91,6 +92,8 @@ class KapyAiPanel extends StatefulWidget {
     required this.onOpenNote,
     required this.onManageAccounts,
     required this.onClose,
+    this.onSignIn,
+    this.onUpgrade,
     this.now = DateTime.now,
     this.compact = false,
     this.inSheet = false,
@@ -117,6 +120,10 @@ class KapyAiPanel extends StatefulWidget {
 
   /// Settings › Voice & AI at Your accounts.
   final VoidCallback onManageAccounts;
+
+  /// Kapy AI Cloud's card: sign in, and see Pro.
+  final VoidCallback? onSignIn;
+  final VoidCallback? onUpgrade;
   final VoidCallback onClose;
   final DateTime Function() now;
 
@@ -375,6 +382,8 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                     widget.onExpand?.call();
                   },
                   onManageAccounts: widget.onManageAccounts,
+                  onSignIn: widget.onSignIn,
+                  onUpgrade: widget.onUpgrade,
                   now: widget.now(),
                   compact: true,
                 ),
@@ -557,6 +566,8 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       onOpenNote: widget.onOpenNote,
       onPickAnother: () => setState(() => _picking = true),
       onManageAccounts: widget.onManageAccounts,
+      onSignIn: widget.onSignIn,
+      onUpgrade: widget.onUpgrade,
       now: widget.now(),
     );
   }
@@ -769,12 +780,14 @@ class KapyAiDock extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(child: child),
-            Container(
-              width: kapyAiPanelWidth,
-              decoration: BoxDecoration(
-                border: Border(left: BorderSide(color: palette.separator)),
+            ToastClearance.beside(
+              child: Container(
+                width: kapyAiPanelWidth,
+                decoration: BoxDecoration(
+                  border: Border(left: BorderSide(color: palette.separator)),
+                ),
+                child: panel,
               ),
-              child: panel,
             ),
           ],
         );
@@ -788,29 +801,31 @@ class KapyAiDock extends StatelessWidget {
             right: 12,
             bottom: 12,
             width: kapyAiPanelWidth,
-            child: DecoratedBox(
-              key: const ValueKey('kapy-ai-overlay'),
-              decoration: BoxDecoration(
-                color: palette.wellBackground,
-                border: Border.all(color: palette.separator),
-                borderRadius: BorderRadius.circular(AppRadii.surface),
-                boxShadow: [
-                  BoxShadow(
-                    color: palette.shadowAt(0x99),
-                    offset: const Offset(0, 24),
-                    blurRadius: 48,
-                    spreadRadius: -16,
-                  ),
-                  BoxShadow(
-                    color: palette.shadowAt(0x59),
-                    offset: const Offset(0, 2),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadii.surface),
-                child: panel,
+            child: ToastClearance.beside(
+              child: DecoratedBox(
+                key: const ValueKey('kapy-ai-overlay'),
+                decoration: BoxDecoration(
+                  color: palette.wellBackground,
+                  border: Border.all(color: palette.separator),
+                  borderRadius: BorderRadius.circular(AppRadii.surface),
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.shadowAt(0x99),
+                      offset: const Offset(0, 24),
+                      blurRadius: 48,
+                      spreadRadius: -16,
+                    ),
+                    BoxShadow(
+                      color: palette.shadowAt(0x59),
+                      offset: const Offset(0, 2),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadii.surface),
+                  child: panel,
+                ),
               ),
             ),
           ),
