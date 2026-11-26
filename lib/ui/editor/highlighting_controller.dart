@@ -15,6 +15,7 @@ import 'markdown_editing.dart';
 import 'markdown_syntax.dart';
 import 'note_math.dart';
 import 'note_sliver.dart';
+import 'placeholder_scale.dart';
 
 /// One image, already sized and built, ready to be dropped into the span tree
 /// at its placeholder.
@@ -692,10 +693,13 @@ class HighlightingController extends TextEditingController {
       if (image != null) {
         children.add(
           source.codeUnitAt(start) != PlaceholderSpan.placeholderCodeUnit
-              ? _StandInSpan(text: source[start], child: image.child)
+              ? _StandInSpan(
+                  text: source[start],
+                  child: PlaceholderScale(child: image.child),
+                )
               : WidgetSpan(
                   alignment: PlaceholderAlignment.top,
-                  child: image.child,
+                  child: PlaceholderScale(child: image.child),
                 ),
         );
         continue;
@@ -1112,7 +1116,7 @@ class HighlightingController extends TextEditingController {
         WidgetSpan(
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
-          child: drawn.child,
+          child: PlaceholderScale(child: drawn.child),
         ),
         PlaceholderDimensions(
           size: Size(drawn.width * scale, drawn.height * scale),
@@ -1126,10 +1130,12 @@ class HighlightingController extends TextEditingController {
     return (
       WidgetSpan(
         alignment: PlaceholderAlignment.middle,
-        child: SizedBox(
-          width: width,
-          height: drawn.height,
-          child: Center(child: drawn.child),
+        child: PlaceholderScale(
+          child: SizedBox(
+            width: width,
+            height: drawn.height,
+            child: Center(child: drawn.child),
+          ),
         ),
       ),
       PlaceholderDimensions(

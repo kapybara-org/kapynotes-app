@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart' show HapticFeedback;
@@ -102,10 +103,23 @@ class _DayTabsRowState extends State<DayTabsRow>
   bool _moreBefore = false;
   bool _moreAfter = false;
 
+  /// The titles up to the open tab's when the row last brought it into view,
+  /// so a title that grows before it, or its own as it is typed, is followed
+  /// too.
+  List<String> _titlesToOpen = const [];
+
+  List<String> _titlesUpToOpen() => [
+    for (final note in widget.notes.take(
+      widget.notes.indexWhere((note) => note.id == widget.open) + 1,
+    ))
+      note.title,
+  ];
+
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_edges);
+    _titlesToOpen = _titlesUpToOpen();
     WidgetsBinding.instance.addPostFrameCallback((_) => _showOpen());
   }
 
@@ -114,10 +128,13 @@ class _DayTabsRowState extends State<DayTabsRow>
     super.didUpdateWidget(oldWidget);
     int openAt(DayTabsRow row) =>
         row.notes.indexWhere((note) => note.id == row.open);
+    final titles = _titlesUpToOpen();
     if (widget.open != oldWidget.open ||
         openAt(widget) != openAt(oldWidget) ||
         widget.pinned != oldWidget.pinned ||
-        widget.notes.length != oldWidget.notes.length) {
+        widget.notes.length != oldWidget.notes.length ||
+        !listEquals(titles, _titlesToOpen)) {
+      _titlesToOpen = titles;
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _showOpen(glide: true),
       );
@@ -204,10 +221,14 @@ class _DayTabsRowState extends State<DayTabsRow>
     final index = widget.notes.indexWhere((note) => note.id == widget.open);
     if (index < 0) return;
     final widths = _widths(context);
-    final margin = _fade - _gap / 2;
-    final left = _leftOf(widths, index) - margin;
-    final right = _leftOf(widths, index) + _slot(widths[index]) + margin;
     final position = _scroll.position;
+    final slot = _slot(widths[index]);
+    final margin = math.min(
+      _fade - _gap / 2,
+      math.max(0.0, (position.viewportDimension - slot) / 2),
+    );
+    final left = _leftOf(widths, index) - margin;
+    final right = _leftOf(widths, index) + slot + margin;
     var to = position.pixels;
     if (left < to) {
       to = left;

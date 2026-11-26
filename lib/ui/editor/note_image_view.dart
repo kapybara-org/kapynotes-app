@@ -14,6 +14,7 @@ import '../../images/note_image_provider.dart';
 import '../context_menu.dart';
 import '../tonal_button.dart';
 import 'note_image_layout.dart';
+import 'placeholder_scale.dart';
 
 /// The sizes the menu offers, as a fraction of the writing column.
 const Map<String, double> noteImageSizeChoices = {
@@ -430,19 +431,21 @@ class _NoteImageViewState extends State<NoteImageView> {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: IconButton(
-                      key: ValueKey(
-                        'remove-image-${widget.ref.hash}-${widget.ref.offset}',
-                      ),
-                      tooltip: 'Remove image',
-                      onPressed: widget.onRemove,
-                      icon: const KapyIcon(KapyIcons.closeRounded, size: 17),
-                      color: Colors.white,
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.black.withValues(alpha: 0.58),
-                        minimumSize: const Size.square(30),
-                        maximumSize: const Size.square(30),
-                        padding: EdgeInsets.zero,
+                    child: PlaceholderTooltip(
+                      message: 'Remove image',
+                      child: IconButton(
+                        key: ValueKey(
+                          'remove-image-${widget.ref.hash}-${widget.ref.offset}',
+                        ),
+                        onPressed: widget.onRemove,
+                        icon: const KapyIcon(KapyIcons.closeRounded, size: 17),
+                        color: Colors.white,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black.withValues(alpha: 0.58),
+                          minimumSize: const Size.square(30),
+                          maximumSize: const Size.square(30),
+                          padding: EdgeInsets.zero,
+                        ),
                       ),
                     ),
                   ),

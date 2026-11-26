@@ -391,7 +391,7 @@ class FolderTree {
     return path.reversed.toList();
   }
 
-  /// The folder a note sits in, or null for "Not in a folder".
+  /// The folder a note sits in, or null for a note in no folder.
   String? folderOf(String noteId) => _nearest[_placed[noteId]];
 
   /// [pathOf] the note's folder; empty for a note in My notes itself.

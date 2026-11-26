@@ -76,14 +76,15 @@ Future<void> _pump(
           textScaler: TextScaler.linear(textScale),
         ),
         child: Scaffold(
+          extendBody: true,
           body: KapyAiPage(
             kapyAi: ai,
             onOpenChat: onOpenChat ?? () {},
             onManageAccounts: onManage ?? () {},
             account: _account,
-            barClearance: 86,
             now: () => _now,
           ),
+          bottomNavigationBar: const SizedBox(height: 86),
         ),
       ),
     ),
@@ -418,8 +419,6 @@ void main() {
     );
     expect(852 - box().bottom, 86 + 12);
 
-    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-    addTearDown(tester.view.resetViewInsets);
     await _pump(tester, _ai(), keyboard: 300);
     expect(852 - 300 - box().bottom, 12);
   });

@@ -27,8 +27,9 @@ Future<void> main() async {
       switch (event.extensionKind) {
         case 'kapynotes.deviceShot':
           final name = '${event.extensionData?.data['name']}';
+          final island = event.extensionData?.data['island'] == true;
           final error = _name.hasMatch(name)
-              ? await _readScreen(device, name)
+              ? await _readScreen(device, name, island: island)
               : 'not a screenshot name: $name';
           await service.callServiceExtension(
             'ext.kapynotes.deviceShot',
@@ -101,14 +102,19 @@ end run
 /// itself handled (integration_test/screenshot.dart's `deviceAction`), and
 /// returns why it could not, or null.
 ///
-/// A simulator has no lock button, so Lock and Home are chosen for it from
-/// the menus of Simulator, or of Device Hub from Xcode 27, which needs the
-/// host's permission to control the computer. Nor is its microphone granted
-/// here: an iPhone ends an app whose permissions change while it runs, so
-/// tool/ci/phone_screenshots.sh grants it before the app starts. Pressing a
-/// notification's button reads the emulator's screen for the button's
-/// label, `tap:Pause`, and unfolding a folded notification reads it for the
-/// notification's title, `expand:Recording paused`.
+/// A simulator's Lock and Home buttons are pressed with AXe
+/// (https://github.com/cameroncooke/AXe) when it is on the PATH, as on CI:
+/// from Xcode 27 a simulator takes button presses only through its own HID
+/// service, which simctl has no command for, and Device Hub shows a script on
+/// CI no menus. Without AXe they are chosen from the menus of Simulator, or of
+/// Device Hub, which needs the host's permission to control the computer.
+///
+/// Nor is a simulator's microphone granted here: an iPhone ends an app whose
+/// permissions change while it runs, so tool/ci/phone_screenshots.sh grants
+/// it before the app starts. Pressing a notification's button reads the
+/// emulator's screen for the button's label, `tap:Pause`, and unfolding a
+/// folded notification reads it for the notification's title,
+/// `expand:Recording paused`.
 Future<String?> _act(String device, String action) async {
   Future<String?> run(String executable, List<String> arguments) async {
     final result = await Process.run(executable, arguments);
@@ -161,18 +167,71 @@ Future<String?> _act(String device, String action) async {
     return chosen.exitCode == 0 ? null : '$item: ${chosen.stderr}'.trim();
   }
 
-  // Whether the simulator's screen has gone dark, as SpringBoard tells
-  // whoever asks.
-  Future<bool> screenOff() async {
-    final state = await Process.run('xcrun', [
+  Future<String?> press(String button) async {
+    try {
+      return await run('axe', ['button', button, '--udid', device]);
+    } on ProcessException {
+      return simulatorMenu(button == 'lock' ? 'Lock' : 'Home');
+    }
+  }
+
+  // A touch at [x], [y] on the simulator's screen, in points, lifted after
+  // [hold] seconds. AXe readies the simulator's accessibility for each
+  // touch, which ran out of time on the Lock Screen, so a touch gets three
+  // tries.
+  Future<String?> touch(int x, int y, {double hold = 0.1}) async {
+    String? error;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await Future<void>.delayed(const Duration(seconds: 2));
+      try {
+        error = await run('axe', [
+          'touch',
+          '-x',
+          '$x',
+          '-y',
+          '$y',
+          '--down',
+          '--up',
+          '--delay',
+          '$hold',
+          '--udid',
+          device,
+        ]);
+      } on ProcessException catch (missing) {
+        return 'a touch needs AXe: ${missing.message}';
+      }
+      if (error == null) return null;
+    }
+    return error;
+  }
+
+  // What SpringBoard tells whoever asks about the simulator's screen:
+  // `hasBlankedScreen` once it has gone dark, `lockstate` while it is locked.
+  Future<bool> springBoard(String state) async {
+    final result = await Process.run('xcrun', [
       'simctl',
       'spawn',
       device,
       'notifyutil',
       '-g',
-      'com.apple.springboard.hasBlankedScreen',
+      'com.apple.springboard.$state',
     ]);
-    return '${state.stdout}'.trim().endsWith(' 1');
+    return '${result.stdout}'.trim().endsWith(' 1');
+  }
+
+  // Sets the simulator's appearance, and reads it back for the run's log.
+  Future<String?> appearance(String wanted) async {
+    final error = await simctl(['ui', device, 'appearance', wanted]);
+    if (error != null) return error;
+    final read = await Process.run('xcrun', [
+      'simctl',
+      'ui',
+      device,
+      'appearance',
+    ]);
+    final now = '${read.stdout}'.trim();
+    stderr.writeln('Appearance: $now');
+    return now == wanted ? null : 'the appearance is $now, not $wanted';
   }
 
   // A test's warning for the run's log. On Android a test's own words reach
@@ -183,18 +242,33 @@ Future<String?> _act(String device, String action) async {
   }
   if (_isSimulator(device)) {
     return switch (action) {
-      'lock' => simulatorMenu('Lock'),
+      'lock' => press('lock'),
       // Lock again lights a screen that locking turned off, as the side
       // button does.
-      'wake' => screenOff().then((off) => off ? simulatorMenu('Lock') : null),
+      'wake' => springBoard(
+        'hasBlankedScreen',
+      ).then((off) => off ? press('lock') : null),
+      // An app's first Live Activity asks under its card on the Lock Screen
+      // whether to allow the app's Live Activities. Its Allow sits at 290, 710
+      // on CI's iPhone 17; should the press open the phone, it is locked and
+      // lit again.
+      'allow' => touch(290, 710).then(
+        (error) async =>
+            error ??
+            (await springBoard('lockstate')
+                ? null
+                : await press('lock') ?? await press('lock')),
+      ),
+      // Held, the Dynamic Island opens to all it shows.
+      'hold-island' => touch(201, 32, hold: 1),
       // A first Home lights a dark Lock Screen, and with no passcode either
       // press opens the phone; one more on the Home Screen does nothing.
-      'unlock' => simulatorMenu(
-        'Home',
-      ).then((error) async => error ?? await simulatorMenu('Home')),
+      'unlock' => press(
+        'home',
+      ).then((error) async => error ?? await press('home')),
       'other-app' => simctl(['launch', device, 'com.apple.Preferences']),
       'back' => simctl(['launch', device, _app]),
-      'light' || 'dark' => simctl(['ui', device, 'appearance', action]),
+      'light' || 'dark' => appearance(action),
       'system-log' => _systemLog(device),
       _ => Future.value('a simulator cannot $action'),
     };
@@ -413,26 +487,44 @@ Future<String?> _tapAgain(String device) async {
 
 /// Saves what [device]'s screen shows as
 /// `build/screenshots/<name>-device.png`, or says why it could not.
-Future<String?> _readScreen(String device, String name) async {
+///
+/// simctl's screenshot of a simulator leaves out the Dynamic Island, so an
+/// [island] shot is read with AXe when it is on the PATH, as on CI. AXe takes
+/// the screen's sRGB for Display P3, which oversaturates it (#CF7A57 comes
+/// out #DD754E), so it reads no other shot.
+Future<String?> _readScreen(
+  String device,
+  String name, {
+  bool island = false,
+}) async {
   final file = File('build/screenshots/$name-device.png');
   await file.parent.create(recursive: true);
-  final simulator = _isSimulator(device);
-  final read = simulator
-      ? await Process.run('xcrun', [
-          'simctl',
-          'io',
-          device,
-          'screenshot',
-          file.path,
-        ])
-      : await Process.run('adb', [
-          '-s',
-          device,
-          'exec-out',
-          'screencap',
-          '-p',
-        ], stdoutEncoding: null);
+  if (_isSimulator(device)) {
+    final simctl = ['simctl', 'io', device, 'screenshot', file.path];
+    ProcessResult read;
+    try {
+      read = island
+          ? await Process.run('axe', [
+              'screenshot',
+              '--udid',
+              device,
+              '--output',
+              file.path,
+            ])
+          : await Process.run('xcrun', simctl);
+    } on ProcessException {
+      read = await Process.run('xcrun', simctl);
+    }
+    return read.exitCode == 0 ? null : '${read.stderr}'.trim();
+  }
+  final read = await Process.run('adb', [
+    '-s',
+    device,
+    'exec-out',
+    'screencap',
+    '-p',
+  ], stdoutEncoding: null);
   if (read.exitCode != 0) return '${read.stderr}'.trim();
-  if (!simulator) await file.writeAsBytes(read.stdout as List<int>);
+  await file.writeAsBytes(read.stdout as List<int>);
   return null;
 }

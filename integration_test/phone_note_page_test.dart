@@ -393,5 +393,33 @@ void main() {
       findsOneWidget,
     );
     await shot('tabs-new-typing');
+    // An earlier day's tab keeps its place, its pin too, till the day is
+    // left, though its note's first words move it to today.
+    await tester.ensureVisible(tab('oct-reading'));
+    await tester.pumpAndSettle();
+    await tap(tab('oct-reading'));
+    const reading = 'Reading list for the trip';
+    field().controller.value = const TextEditingValue(
+      text: reading,
+      selection: TextSelection.collapsed(offset: reading.length),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: tab('oct-reading'), matching: find.text(reading)),
+      findsOneWidget,
+    );
+    expect(
+      tester.getRect(tab('oct-reading')).left,
+      lessThan(tester.getRect(tab('oct-run')).left),
+    );
+    await shot('tabs-earlier-typing');
+    await tester.ensureVisible(tab('oct-run'));
+    await tester.pumpAndSettle();
+    await tap(tab('oct-run'));
+    expect(field().controller.text, startsWith('Morning run'));
+    expect(
+      tester.getRect(tab('oct-reading')).left,
+      lessThan(tester.getRect(tab('oct-run')).left),
+    );
   });
 }

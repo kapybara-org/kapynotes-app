@@ -271,6 +271,34 @@ void main() {
       await expectOneUndo(desk, _body);
     }, variant: _mac);
 
+    testWidgets('a click on the line just above the table lands on that line', (
+      tester,
+    ) async {
+      final (desk, frame) = await open(tester);
+      final above = _body.indexOf('|') - 1;
+      final at = Offset(cell(frame, 1, 0).dx, frame.grid.top - 3);
+      expect(
+        desk.at(above).dy,
+        greaterThan(frame.grid.top - 20),
+        reason: 'the line above ends just above the table',
+      );
+      await hover(tester, cell(frame, 1, 0));
+      await hover(tester, at);
+      expect(
+        find.byKey(const ValueKey('table-column-grip-0')),
+        findsOneWidget,
+        reason: 'the grip still shows, drawn across the top edge',
+      );
+      await desk.click(at);
+      expect(
+        find.byKey(ValueKey('table-menu-${TableCommand.deleteColumn.name}')),
+        findsNothing,
+      );
+      expect(desk.selection.isCollapsed, isTrue);
+      expect(desk.selection.baseOffset, above);
+      expect(desk.text, _body);
+    }, variant: _mac);
+
     testWidgets('menu moves a row down', (tester) async {
       final (desk, _) = await open(tester);
       await pickRow(desk, 1);
@@ -796,6 +824,30 @@ void main() {
         reason: 'the grip stays inside the table',
       );
     }, variant: _phone);
+    testWidgets('a tap on the line just above the table lands on that line', (
+      tester,
+    ) async {
+      final desk = await editCell(tester);
+      final frame = frameOf(desk);
+      final above = _body.indexOf('|') - 1;
+      final x = cell(frame, 0, 0).dx;
+      expect(
+        desk.at(above).dy,
+        greaterThan(frame.grid.top - 20),
+        reason: 'the line above ends just above the table',
+      );
+      await tester.tapAt(Offset(x, frame.grid.top - 3));
+      await desk.settle();
+      expect(
+        find.byKey(ValueKey('table-menu-${TableCommand.deleteColumn.name}')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('table-cell-editor')), findsNothing);
+      expect(desk.selection.isCollapsed, isTrue);
+      expect(desk.selection.baseOffset, above);
+      expect(desk.text, _body);
+    }, variant: _phone);
+
     testWidgets('grips are at least 44 points', (tester) async {
       await editCell(tester);
       for (final key in ['table-row-grip-2', 'table-column-grip-0']) {

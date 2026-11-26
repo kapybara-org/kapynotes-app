@@ -84,6 +84,7 @@ import '../../files/file_picker.dart';
 import '../../video/video_ingest.dart';
 import '../../video/video_picker.dart';
 import 'image_drop_target.dart';
+import 'field_scroll_controller.dart';
 import 'file_chip.dart';
 import 'file_insertion.dart';
 import 'image_insertion.dart';
@@ -474,7 +475,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   final ValueNotifier<int> _correctionsArrived = ValueNotifier<int>(0);
   late HighlightingController _controller;
   final _fieldKey = GlobalKey<NoteFieldState>();
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = FieldScrollController();
 
   /// The empty line under the pointer, which shows its "+".
   final _hoverLine = ValueNotifier<int?>(null);
@@ -7758,19 +7759,29 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// A number in a table's cell: a sign, a currency, digits and a percent.
   static final _tableNumber = RegExp(r'^[+\-−]?[₹$€£]?\d[\d.,]*%?$');
 
+  /// What stands in each attachment's place in the text, [drawnWidth] wide.
+  ///
+  /// The field draws a placeholder's widget scaled by [inline], the text
+  /// scale at the size of the note's words, the way it draws the words. So
+  /// each attachment is laid out at its size over [inline], with its own
+  /// words unscaled, and the text engine is told the size it comes out at:
+  /// it grows with the writing, and its words grow once.
   Map<int, NoteImageSpan> _buildAttachmentSpans(
-    double columnWidth,
+    double drawnWidth,
     double viewportHeight,
     double inline,
   ) {
     final store = widget.images;
     if (_attachments.isEmpty || store == null) return const {};
+    final columnWidth = drawnWidth / inline;
 
     // Tall images are capped rather than allowed to fill the screen: a note is
     // writing with pictures in it, not a gallery with captions.
-    final maxHeight = viewportHeight.isFinite && viewportHeight > 0
-        ? viewportHeight * 0.6
-        : 420.0;
+    final maxHeight =
+        (viewportHeight.isFinite && viewportHeight > 0
+            ? viewportHeight * 0.6
+            : 420.0) /
+        inline;
     final body = _controller.text;
 
     final spans = <int, NoteImageSpan>{};
@@ -7782,17 +7793,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       // Both chips stretch to whatever they are handed, and what the text
       // engine hands a placeholder is the rest of the line — so unlike an
       // image, which carries its own measured box, they have to be told the
-      // width or they would fill the column and take the slack back. The
-      // field draws a placeholder's widget scaled by [inline], so the voice
-      // chip is laid out that much narrower, and the text engine is told the
-      // height it is drawn at.
+      // width or they would fill the column and take the slack back.
       if (ref is NoteVoiceRef) {
         final chip = _voiceChip(ref);
-        final width = columnWidth / inline;
         spans[ref.offset] = (
           width: columnWidth,
-          height: (chip.heightIn(context, width) + noteImageGap) * inline,
-          child: SizedBox(width: width, child: chip),
+          height:
+              chip.heightIn(context, columnWidth, TextScaler.noScaling) +
+              noteImageGap,
+          child: SizedBox(width: columnWidth, child: chip),
         );
         continue;
       }
@@ -7911,7 +7920,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         ),
       );
     }
-    return spans;
+    return {
+      for (final MapEntry(key: offset, value: span) in spans.entries)
+        offset: (
+          width: span.width * inline,
+          height: span.height * inline,
+          child: span.child,
+        ),
+    };
   }
 
   @override

@@ -277,7 +277,7 @@ class _DayStripState extends State<DayStrip> {
     return {for (final day in days) day: counts[day] ?? 0};
   }
 
-  /// A click on [day] in the week or the calendar picks it, with its notes.
+  /// A click on [day] in the week or the calendar picks it.
   void _choose(DateTime day) => widget.onPick(day, _notesOn(day));
 
   /// The notes on [day], the earliest written first, so editing one never

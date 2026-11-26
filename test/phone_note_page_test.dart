@@ -1115,6 +1115,253 @@ void main() {
       expect(ticked.bottom, lessThanOrEqualTo(tester.getRect(sheet).bottom));
     });
 
+    testWidgets("on a crowded day, a new tab stays in view as its title is "
+        'typed (A8)', (tester) async {
+      store.data['notes.v1'] = [
+        ...store.data['notes.v1']! as List,
+        for (var i = 0; i < 12; i++)
+          _note('crowd-$i', 'Crowd $i', DateTime(2025, 11, 17, 8 + i)),
+      ];
+      seed();
+      await pump(tester);
+      await open(tester, 17);
+      await tester.tap(find.byKey(const ValueKey('day-tabs-new')));
+      await tester.pumpAndSettle();
+      await tester.enterNote('Call the plumber about the kitchen sink');
+      await tester.pumpAndSettle();
+      final typed = notes
+          .search('')
+          .singleWhere((note) => note.body.startsWith('Call the plumber'));
+      final shownTab = tester.getRect(tab(typed.id));
+      final count = find.byKey(const ValueKey('day-tabs-count'));
+      expect(shownTab.right, lessThanOrEqualTo(tester.getRect(count).left));
+      expect(shownTab.left, greaterThan(tester.getRect(row).left));
+    });
+
+    testWidgets("an earlier day's tab keeps its place, on the same page, as "
+        'its first words move its note to today, and the page keeps its '
+        "day's tabs as Back comes to it from another day", (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 17);
+      final headers = find.byKey(
+        const ValueKey('phone-note-header'),
+        skipOffstage: false,
+      );
+      await tester.showNoteKeyboard();
+      tester.testTextInput.enterText('Gym plan\nLegs and arms');
+      for (var frame = 0; frame < 25; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        expect(
+          headers,
+          findsNWidgets(2),
+          reason: 'the page is not pushed again',
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(shown(tester, ['mon-b', 'mon-a']), ['mon-a', 'mon-b']);
+      expect(tester.getSemantics(tab('mon-a')), isSemantics(isSelected: true));
+      expect(tasksLine, findsNothing, reason: "today's tasks, not Mon 17's");
+
+      await open(tester, 21);
+      expect(openNoteBody(tester), startsWith('Renewal notes'));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Gym plan\nLegs and arms');
+      expect(shown(tester, ['mon-b', 'mon-a']), ['mon-a', 'mon-b']);
+      await tester.tap(tab('mon-b'));
+      await tester.pumpAndSettle();
+      await tester.enterNote('Budget\nRent and bills');
+      await tester.pumpAndSettle();
+      await tester.tap(tab('mon-a'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Gym plan\nLegs and arms');
+      expect(shown(tester, ['mon-b', 'mon-a']), ['mon-a', 'mon-b']);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      await open(tester, 19);
+      expect(shown(tester, ['arjun', 'errands', 'mon-b', 'mon-a']), [
+        'mon-a',
+        'mon-b',
+        'errands',
+        'arjun',
+      ]);
+    });
+
+    testWidgets("a tab whose note's first words moved it to today stays for a "
+        'drag, a pin, its day tapped again and another tab, till another day '
+        'leaves the day, which then skips it', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 17);
+      await tester.enterNote('Gym plan\nLegs and arms');
+      await tester.pumpAndSettle();
+
+      await open(tester, 17);
+      expect(openNoteBody(tester), startsWith('Gym plan'));
+      await drag(tester, 'mon-b', List.filled(7, -20));
+      expect(shown(tester, ['mon-a', 'mon-b']), ['mon-b', 'mon-a']);
+      await hold(tester, 'mon-b', 'Pin tab');
+      await hold(tester, 'mon-b', 'Unpin tab');
+      expect(shown(tester, ['mon-a', 'mon-b']), ['mon-b', 'mon-a']);
+
+      await tester.tap(tab('mon-b'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Budget'));
+      expect(shown(tester, ['mon-a', 'mon-b']), ['mon-b', 'mon-a']);
+      await tester.tap(tab('mon-a'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Gym plan'));
+      expect(
+        find.byKey(const ValueKey('phone-note-header'), skipOffstage: false),
+        findsNWidgets(2),
+      );
+      await tester.tap(tab('mon-b'));
+      await tester.pumpAndSettle();
+
+      await open(tester, 21);
+      expect(openNoteBody(tester), startsWith('Renewal notes'));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Budget'));
+      expect(tab('mon-a'), findsNothing);
+      expect(tab('mon-b'), findsOneWidget);
+    });
+
+    testWidgets('a note that came to the day after its tabs opened keeps its '
+        'tab while open, though it is moved to another day', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 17);
+      days.setDay('tue', monday);
+      await tester.pumpAndSettle();
+      await tester.tap(tab('tue'));
+      await tester.pumpAndSettle();
+      days.setDay('tue', DateTime(2025, 11, 21));
+      await tester.pumpAndSettle();
+      await tester.enterNote('Standup notes\nShip it today');
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(tester.getSemantics(tab('tue')), isSemantics(isSelected: true));
+    });
+
+    testWidgets('a note opened over the day from its tasks, and Back, keeps '
+        'a tab whose note has left the day', (tester) async {
+      seed();
+      await pump(tester);
+      await open(tester, 19);
+      days.setDay('errands', DateTime(2025, 11, 21));
+      await tester.pumpAndSettle();
+      expect(shown(tester, ['arjun', 'errands']), ['errands', 'arjun']);
+
+      await tester.tap(tasksLine);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('tasks-later')));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), isNot(startsWith('Call with Arjun')));
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(shown(tester, ['arjun', 'errands']), ['errands', 'arjun']);
+    });
+
+    /// Twelve more notes on Monday, more than its row shows at once.
+    void crowdMonday() => store.data['notes.v1'] = [
+      ...store.data['notes.v1']! as List,
+      for (var i = 0; i < 12; i++)
+        _note('crowd-$i', 'Crowd $i', DateTime(2025, 11, 17, 8 + i)),
+    ];
+    final rowScroll = find.descendant(
+      of: row,
+      matching: find.byType(SingleChildScrollView),
+    );
+
+    testWidgets('a crowded row scrolled by hand stays put as the open note '
+        'changes under its title, and follows a title typed', (tester) async {
+      crowdMonday();
+      seed();
+      days.setDay('mon-a', monday);
+      await pump(tester);
+      await open(tester, 17);
+      Future<Rect> scrollAway() async {
+        await tester.drag(rowScroll, const Offset(-3000, 0));
+        await tester.pumpAndSettle();
+        final away = tester.getRect(tab('mon-a'));
+        expect(away.right, lessThan(tester.getRect(row).left));
+        return away;
+      }
+
+      var away = await scrollAway();
+      await tester.enterNote('Gym plan\nLegs and arms');
+      await tester.pumpAndSettle();
+      expect(tester.getRect(tab('mon-a')), away);
+
+      await tester.enterNote('Gym plan for the week\nLegs and arms');
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(tab('mon-a')).left,
+        greaterThan(tester.getRect(row).left),
+      );
+
+      away = await scrollAway();
+      await tester.enterNote('Gym plan for the week\nLegs, arms and back');
+      await tester.pumpAndSettle();
+      expect(tester.getRect(tab('mon-a')), away);
+    });
+
+    testWidgets('on a crowded day, the row follows the open tab as an earlier '
+        'tab grows and pushes it along', (tester) async {
+      crowdMonday();
+      seed();
+      days.setDay('crowd-10', monday);
+      await pump(tester);
+      await open(tester, 17);
+      await tester.drag(rowScroll, const Offset(-3000, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(tab('crowd-11'));
+      await tester.pumpAndSettle();
+      notes.updateBody(
+        'crowd-10',
+        'Crowd 10, and a much longer title than it had',
+      );
+      await tester.pumpAndSettle();
+      final count = find.byKey(const ValueKey('day-tabs-count'));
+      expect(
+        tester.getRect(tab('crowd-11')).right,
+        lessThanOrEqualTo(tester.getRect(count).left),
+      );
+    });
+
+    testWidgets(
+      'at 320 and large text, a new tab with its fades wider than the '
+      'row glides one way as its title is typed',
+      (tester) async {
+        tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        crowdMonday();
+        seed();
+        await pump(tester, width: 320);
+        await open(tester, 17);
+        await tester.tap(find.byKey(const ValueKey('day-tabs-new')));
+        await tester.pumpAndSettle();
+        final scroll = tester
+            .widget<SingleChildScrollView>(rowScroll)
+            .controller!;
+        const title = 'Call the plumber about the kitchen sink';
+        final offsets = <double>[];
+        for (var typed = 1; typed <= title.length; typed++) {
+          await tester.enterNote(title.substring(0, typed));
+          await tester.pumpAndSettle();
+          offsets.add(scroll.offset);
+        }
+        expect(offsets, [...offsets]..sort());
+      },
+    );
+
     testWidgets("a tab tells a screen reader it's open, and offers Pin tab "
         'and a move', (tester) async {
       final semantics = tester.ensureSemantics();

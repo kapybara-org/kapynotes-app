@@ -113,6 +113,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _notesGroupingKey = 'notesGrouping.v1';
   static const String _foldersShownKey = 'foldersShown.v1';
   static const String _openFoldersKey = 'openFolders.v1';
+  static const String _addNotesShownKey = 'addNotesShown.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
   static const String _windowXKey = 'windowX.v1';
@@ -173,6 +174,7 @@ class LayoutPrefs extends ChangeNotifier {
   NotesGrouping _notesGrouping = NotesGrouping.byDate;
   bool _foldersShown = false;
   Set<String> _openFolders = const {};
+  bool _addNotesShown = true;
   Size _windowSize = defaultWindowSize;
   Offset? _windowPosition;
   bool _readyToTypeOnOpen = true;
@@ -243,6 +245,10 @@ class LayoutPrefs extends ChangeNotifier {
 
   /// The folders open in that tree, so it opens the way it was left.
   Set<String> get openFolders => _openFolders;
+
+  /// Whether a folder's page has Add notes beside it: until its × closes
+  /// it, and again once the page's Add notes or a new folder opens it.
+  bool get addNotesShown => _addNotesShown;
   Size get windowSize => _windowSize;
   Offset? get windowPosition => _windowPosition;
 
@@ -433,6 +439,7 @@ class LayoutPrefs extends ChangeNotifier {
       orElse: () => NotesGrouping.byDate,
     );
     _foldersShown = _store.read<bool>(_foldersShownKey) ?? false;
+    _addNotesShown = _store.read<bool>(_addNotesShownKey) ?? true;
     final open = _store.data[_openFoldersKey];
     _openFolders = Set.unmodifiable({
       if (open is List)
@@ -954,6 +961,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _foldersShown) return;
     _foldersShown = value;
     _store.putNow(_foldersShownKey, value);
+    notifyListeners();
+  }
+
+  set addNotesShown(bool value) {
+    if (value == _addNotesShown) return;
+    _addNotesShown = value;
+    _store.putNow(_addNotesShownKey, value);
     notifyListeners();
   }
 

@@ -23,7 +23,6 @@ class KapyAiPage extends StatefulWidget {
     required this.onOpenChat,
     required this.onManageAccounts,
     required this.account,
-    this.barClearance = 0,
     this.now = DateTime.now,
   });
 
@@ -38,11 +37,6 @@ class KapyAiPage extends StatefulWidget {
 
   /// The S button at the end of the title row, the same one Home shows.
   final Widget account;
-
-  /// From the bottom of the screen to the top of the floating bar, the home
-  /// indicator included. Ask Kapy AI sits 12 above it, and 12 above the
-  /// keyboard while the keyboard covers the bar.
-  final double barClearance;
   final DateTime Function() now;
 
   @override
@@ -409,15 +403,14 @@ class _KapyAiPageState extends State<KapyAiPage> {
   Widget _composer(CalcPalette palette) {
     final typed = _field.text.trim().isNotEmpty;
     final canSend = typed && !_ai.answering;
-    // The view's own insets: a Scaffold above has already taken the keyboard
-    // out of the page's MediaQuery by making the page shorter.
-    final keyboard = View.of(context).viewInsets.bottom > 0;
     return Padding(
+      // The bar's Scaffold pads the page by the bar's room, and drops it while
+      // the keyboard covers the bar.
       padding: EdgeInsets.fromLTRB(
         16,
         4,
         16,
-        (keyboard ? 0 : widget.barClearance) + 12,
+        MediaQuery.paddingOf(context).bottom + 12,
       ),
       child: KeepsKeyboard(
         child: Container(
