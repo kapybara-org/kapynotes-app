@@ -511,6 +511,7 @@ void main() {
       WidgetTester tester, {
       double width = 820,
       ValueNotifier<double>? list,
+      double foot = 0,
       double panel = 0,
     }) async {
       Toast.debugAnimateLifetimeInTests = false;
@@ -520,7 +521,7 @@ void main() {
       late BuildContext context;
       await tester.pumpWidget(
         MaterialApp(
-          key: ValueKey((width, list?.value, panel)),
+          key: ValueKey((width, list?.value, foot, panel)),
           theme: KapyTheme.dark(),
           home: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -530,7 +531,16 @@ void main() {
                 ToastClearance.beside(
                   child: ValueListenableBuilder(
                     valueListenable: list,
-                    builder: (_, value, _) => SizedBox(width: value),
+                    builder: (_, value, _) => SizedBox(
+                      width: value,
+                      child: Column(
+                        children: [
+                          const Spacer(),
+                          if (foot > 0)
+                            ToastClearance(child: SizedBox(height: foot)),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               Expanded(
@@ -679,6 +689,21 @@ void main() {
       Navigator.pop(dialog);
       await tester.pumpAndSettle();
       expect(tester.getCenter(surface).dx, (412 + 820) / 2);
+    });
+
+    testWidgets("keeps above the list's foot where it centres on the window "
+        'over the list, and not where it keeps beside the list', (
+      tester,
+    ) async {
+      for (final (width, bottom) in [
+        (820.0, 800.0 - 24),
+        (600.0, 800.0 - 80),
+      ]) {
+        opened(await window(tester, width: width, list: listOf(336), foot: 64));
+        await tester.pumpAndSettle();
+
+        expect(tester.getRect(surface).bottom, bottom, reason: '$width');
+      }
     });
 
     testWidgets("leaves a phone's card on the window", (tester) async {

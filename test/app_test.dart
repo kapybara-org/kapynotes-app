@@ -12303,6 +12303,72 @@ void main() {
       expect(tester.getRect(find.byType(Sidebar)).right, 226);
       expect(tester.getCenter(notice).dx, (226 + 700) / 2);
     });
+
+    // KAPY-35 on #358: a notice centred on the window over the list sat on
+    // the list's Notes and Folders switch.
+    testWidgets('a notice centred on the window over the list keeps above '
+        "the list's Notes and Folders switch", (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final folders = FolderStore(store);
+      await folders.load();
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      final folderSwitch = find.byKey(const ValueKey('notes-folders-switch'));
+      await pumpApp(tester, size: const Size(600, 720), folders: folders);
+      Toast.show(tester.element(find.byType(PagePane)), 'Note pinned');
+      await tester.pumpAndSettle();
+      final low = tester.getRect(notice).bottom;
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(notice).dx, 300);
+      expect(
+        tester.getRect(notice).bottom,
+        lessThanOrEqualTo(tester.getRect(folderSwitch).top - 16),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(notice).bottom, low);
+    });
+
+    testWidgets('a notice beside the list keeps low as the list slides open, '
+        'its Notes and Folders switch beside it', (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final folders = FolderStore(store);
+      await folders.load();
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      await pumpApp(
+        tester,
+        size: const Size(820, 720),
+        folders: folders,
+        sidebarVisible: false,
+      );
+      Toast.show(tester.element(find.byType(PagePane)), 'Note pinned');
+      await tester.pumpAndSettle();
+      final low = tester.getRect(notice).bottom;
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      for (var frame = 1; frame <= 12; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getRect(notice).bottom, low, reason: 'frame $frame');
+      }
+      await tester.pumpAndSettle();
+      expect(tester.getRect(notice).bottom, low);
+      expect(
+        low,
+        greaterThan(
+          tester
+              .getRect(find.byKey(const ValueKey('notes-folders-switch')))
+              .top,
+        ),
+      );
+      expect(
+        tester.getCenter(notice).dx,
+        tester.getCenter(find.byType(PagePane)).dx,
+      );
+    });
   });
 
   group('window chrome', () {

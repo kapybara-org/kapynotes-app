@@ -337,12 +337,15 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   /// for it at its foot, by that room's bottom; and on a desktop, from left
   /// to right, the page between what it keeps beside: right of one on the
   /// window's left, as the notes list is, and left of one on its right, as
-  /// Kapy AI's panel is. The list slid shut keeps it nowhere.
+  /// Kapy AI's panel is. The list slid shut keeps it nowhere. What it keeps
+  /// clear of inside what it keeps beside, as the list's Notes and Folders
+  /// switch, it keeps above only where it centres on the window over it.
   ({double clear, double? room, double left, double right}) _clear(
     MediaQueryData media,
   ) {
     final width = media.size.width;
     var clear = 0.0;
+    var inside = 0.0;
     var left = 0.0;
     var right = width;
     for (final clearance in Toast._clearances) {
@@ -353,7 +356,14 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
         return (clear: 0, room: rect.bottom, left: 0, right: width);
       }
       if (!clearance.widget.beside) {
-        clear = math.max(clear, media.size.height - rect.top + 16);
+        final above = media.size.height - rect.top + 16;
+        final outer = clearance.context
+            .findAncestorStateOfType<_ToastClearanceState>();
+        if (outer?.widget.beside ?? false) {
+          inside = math.max(inside, above);
+        } else {
+          clear = math.max(clear, above);
+        }
       } else if (AppPlatform.hasPointer && rect.width > 0) {
         if (rect.center.dx < width / 2) {
           left = math.max(left, rect.right);
@@ -363,8 +373,12 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       }
     }
     if (right - left < Toast._minRoomBeside) {
-      left = 0;
-      right = width;
+      return (
+        clear: math.max(clear, inside),
+        room: null,
+        left: 0,
+        right: width,
+      );
     }
     return (clear: clear, room: null, left: left, right: right);
   }
@@ -641,7 +655,9 @@ class _InRoom extends SingleChildLayoutDelegate {
 /// [ToastClearance.beside] keeps a desktop's toasts beside [child] instead,
 /// as the notes list and Kapy AI's panel do, so a toast centres on the page
 /// between them and follows the list as it slides open or shut. A dialog or
-/// a menu over them takes it back to the middle of the window.
+/// a menu over them takes it back to the middle of the window, and so does a
+/// page too narrow between them, where a toast also keeps above a
+/// [ToastClearance] inside [child], as the list's Notes and Folders switch.
 ///
 /// It lets go as its route starts to leave, so a toast still showing goes
 /// straight to its next place rather than follow a closing sheet.
