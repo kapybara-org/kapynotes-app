@@ -579,7 +579,31 @@ void main() {
       },
     );
 
-    testWidgets('the app quit while Undo shows keeps the note for the next '
+    testWidgets('leaving the app while Undo shows deletes the note, before '
+        'a phone can close the app unseen', (tester) async {
+      await _pump(tester);
+      prefs.askBeforeDeleting = false;
+      final second = _note('Second');
+      await _delete(tester, 'Second');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      expect(notes.isDeleting(second.id), isTrue);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      final relaunched = NotesStore(store);
+      await relaunched.load();
+
+      expect(relaunched.byId(second.id), isNull);
+      expect(
+        relaunched.tombstones.map((stone) => stone.id),
+        contains(second.id),
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('Undo'), findsNothing);
+      expect(notes.byId(second.id), isNull);
+    });
+
+    testWidgets('the app killed while Undo shows keeps the note for the next '
         'launch', (tester) async {
       await _pump(tester);
       prefs.askBeforeDeleting = false;

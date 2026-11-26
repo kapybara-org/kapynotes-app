@@ -37,6 +37,13 @@ class Toast {
   /// up its Undo. A new toast shows, so a menu's own notice replaces it.
   static void hide(bool hidden) => _hidden.value = hidden;
 
+  /// Ends a toast whose [show] onGone is still to run, as its time running
+  /// out would: for the app leaving the foreground, where a phone stops
+  /// drawing, and the toast's time with it, and may close the app unseen.
+  static void giveUpUndo() {
+    if (_whenGone != null) _dismiss();
+  }
+
   /// Builds the toast on screen again once the frame has laid out what it
   /// keeps clear of, which has just come or gone: a clearance changes
   /// mid-build or as it goes, too soon to rebuild anything then.
