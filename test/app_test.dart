@@ -4034,6 +4034,22 @@ void main() {
       expect(find.text("Opened yesterday's note"), findsOneWidget);
     });
 
+    testWidgets("a note typed in from a picked day moves under Today and stays "
+        "lit while the day's notes are the tabs", (tester) async {
+      await library(tester);
+      await tap(tester, day(18));
+      expect(lit(tester), ['Standup notes']);
+
+      await tester.enterNote('Standup notes\nShip it');
+      await tester.pumpAndSettle();
+      expect(headings(tester), ['Today', 'Tue 17', 'Tue 20 Oct']);
+      expect(lit(tester), ['Standup notes']);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+
+      await tap(tester, day(18));
+      expect(lit(tester), isEmpty);
+    });
+
     testWidgets('a day with several notes opens them as the tabs, the '
         'earliest written first and in front, all lit, and Undo brings back '
         'the tabs from before', (tester) async {
