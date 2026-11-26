@@ -31,8 +31,11 @@ SwitchAudioSource -t output -s 'BlackHole 2ch'
 grant="INSERT OR REPLACE INTO access
   (service, client, client_type, auth_value, auth_reason, auth_version)
   VALUES ('kTCCServiceMicrophone', 'com.kapybara.kapynotes', 0, 2, 4, 1);"
-sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "$grant"
+# The system's database always exists. The user's only once something has
+# asked it a question, which on a fresh runner nothing has.
 sudo sqlite3 '/Library/Application Support/com.apple.TCC/TCC.db' "$grant"
+user_db="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
+if [[ -f $user_db ]]; then sqlite3 "$user_db" "$grant"; fi
 
 nohup bash -c "while true; do
   say -a 'BlackHole 2ch' 'Kapy Notes is listening to this test.'
