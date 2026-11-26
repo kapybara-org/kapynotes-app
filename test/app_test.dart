@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart'
@@ -14450,6 +14451,105 @@ void main() {
       });
     }
   });
+
+  group('what was typed is written', () {
+    late _WriteLog log;
+
+    setUp(() {
+      log = _WriteLog();
+      store = log;
+      notes = NotesStore(store);
+      prefs = LayoutPrefs(store);
+      rates = RatesRepository(store);
+      shortcuts = ShortcutPrefs(store);
+    });
+
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    Future<void> typeThen(
+      WidgetTester tester,
+      String text,
+      FutureOr<void> Function() ending,
+      String reason,
+    ) async {
+      await tester.enterNote(text);
+      expect(log.written, isNot(contains(text)), reason: reason);
+      await ending();
+      await tester.pump();
+      expect(log.written, contains(text), reason: reason);
+    }
+
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    ]) {
+      testWidgets('on ${platform.name}, as the app leaves the screen, closes '
+          'or is asked to quit', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        stubLaunchIntent(null);
+        addTearDown(() => stubLaunchIntent(null, respond: false));
+        await notes.load();
+        notes.create(body: 'Groceries');
+        final phone =
+            platform == TargetPlatform.iOS ||
+            platform == TargetPlatform.android;
+        await pumpApp(
+          tester,
+          size: phone ? const Size(420, 800) : const Size(1100, 760),
+        );
+        for (final state in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+          AppLifecycleState.detached,
+        ]) {
+          await typeThen(
+            tester,
+            'Typed before ${state.name}',
+            () => tester.binding.handleAppLifecycleStateChanged(state),
+            state.name,
+          );
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.resumed,
+          );
+          await tester.pump();
+        }
+        await typeThen(
+          tester,
+          'Typed before quitting',
+          () => tester.binding.handleRequestAppExit(),
+          'quit',
+        );
+      }, variant: TargetPlatformVariant.only(platform));
+    }
+
+    testWidgets('as another note is opened', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      await notes.load();
+      notes.create(body: 'Groceries');
+      notes.create(body: 'Standup');
+      await pumpApp(tester);
+      await typeThen(tester, 'Standup moved to 10', () async {
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is NoteCardFace && widget.note.title == 'Groceries',
+          ),
+        );
+      }, 'switch');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
+}
+
+/// A store that keeps what its last write would have put on disk.
+class _WriteLog extends MemoryStore {
+  String written = '';
+
+  @override
+  Future<void> flush() async => written = jsonEncode(data);
 }
 
 /// Android 14's text scale, which grows large type less than small: the
