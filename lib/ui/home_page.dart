@@ -554,6 +554,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _showTabOf(_selectedId);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
+    widget.dayTabs?.addListener(_onDayTabsChanged);
     if (widget.folders case final folders?) {
       folders.addListener(_onFoldersChanged);
       unawaited(
@@ -605,6 +606,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_statusBarHidden) unawaited(StatusBar.setHidden(false));
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
+    widget.dayTabs?.removeListener(_onDayTabsChanged);
     widget.folders?.removeListener(_onFoldersChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
     widget.account?.removeListener(_offerRecoveryKey);
@@ -2101,14 +2103,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _dayOfFreshNote[note.id] ??
       noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
 
-  /// A day picked in the page's week or its month: [notes], its notes, the
-  /// earliest written first, become the tabs, one to a tab and the first in
-  /// front, up to [EditorWorkspace.dayTabLimit] of them, a later day's too,
-  /// though the list leaves that day out until it comes. All of them are lit
-  /// in the list, which stays whole. A day with none opens a page to write on
-  /// it, in the folder in front if there is one. The tabs open before the
-  /// first day was picked come back with the notice's Undo, or a click on the
-  /// day picked.
+  /// A day picked in the page's week or its month: [notes], its notes, become
+  /// the tabs in the day's own order where it has one, pinned tabs first, and
+  /// otherwise the earliest written first. They open one to a tab, the first
+  /// in front, up to [EditorWorkspace.dayTabLimit] of them, a later day's
+  /// too, though the list leaves that day out until it comes. All of them are
+  /// lit in the list, which stays whole. A day with none opens a page to
+  /// write on it, in the folder in front if there is one. The tabs open
+  /// before the first day was picked come back with the notice's Undo, or a
+  /// click on the day picked.
   void _openDay(DateTime day, List<Note> notes) {
     if (day == _workspace.dayInTabs) return _leaveDay();
     if (notes.isEmpty &&
@@ -2124,9 +2127,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       final previous = _selectedId;
       final first = _workspace.dayInTabs == null;
-      final opened = _workspace.showDay(day, [
-        for (final note in notes) note.id,
-      ]);
+      final ids = [for (final note in notes) note.id];
+      final opened = _workspace.showDay(
+        day,
+        widget.dayTabs?.arrange(day, ids).order ?? ids,
+      );
       if (keyboard) _holdEditorAutofocus();
       setState(() => _adoptWorkspaceSelection(previous));
       Toast.show(
@@ -2152,6 +2157,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (keyboard) _holdEditorAutofocus();
       return _workspace.leaveDay();
     }, focus: !keyboard);
+  }
+
+  /// A day's tabs arranged anew, here or on another device: the tabs of the
+  /// day open now take the new order, the one in front staying in front.
+  void _onDayTabsChanged() {
+    final day = _workspace.dayInTabs;
+    final tabs = widget.dayTabs;
+    if (day == null || tabs == null) return;
+    final order = tabs.arrange(day, [..._workspace.dayNoteIds]).order;
+    if (_workspace.arrangeDay(order)) setState(() {});
   }
 
   /// Whether the keyboard is on a day of the page's week, there by Tab. A day
@@ -4953,6 +4968,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The open tabs, under the toolbar while there is more than one.
   Widget _buildTabRow() {
     final front = _workspace.frontTab;
+    final day = _workspace.dayInTabs;
+    final ofDay = _workspace.dayNoteIds;
+    var pinned = const <String>{};
+    if ((day, widget.dayTabs) case (final day?, final tabs?)) {
+      final arranged = tabs.arrange(day, [...ofDay]);
+      pinned = arranged.order.take(arranged.pinned).toSet();
+    }
     return NoteTabRow(
       tabs: [
         for (final tab in _workspace.tabs)
@@ -4964,13 +4986,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 icon: KapyIcons.folderOutlined,
               ),
           ] else if (widget.notes.byId(tab.noteId) case final note?)
-            NoteTab(id: '${tab.id}', title: note.title, icon: _tabIcon(note)),
+            NoteTab(
+              id: '${tab.id}',
+              title: note.title,
+              icon: _tabIcon(note),
+              pinned:
+                  widget.dayTabs != null &&
+                      tab.noteIds.length == 1 &&
+                      ofDay.contains(note.id)
+                  ? pinned.contains(note.id)
+                  : null,
+            ),
       ],
       activeId: front == null ? null : '${front.id}',
       recentIds: [for (final tab in _workspace.recentTabs) '${tab.id}'],
       onSelect: _activateTab,
       onClose: _closeTab,
       onCloseOthers: _closeOtherTabs,
+      onPin: day == null
+          ? null
+          : (id, {required pin}) {
+              final tab = _workspace.tabs.firstWhere(
+                (tab) => '${tab.id}' == id,
+              );
+              if (tab.noteId case final noteId?) {
+                _pinDayTab(
+                  day,
+                  noteId,
+                  pin: pin,
+                  kept: {..._workspace.dayNoteIds},
+                );
+              }
+            },
       // While the tab is split, the chord closes its focused pane first.
       closeShortcut: _workspace.isSplit
           ? null
@@ -6006,7 +6053,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onList: () =>
                   unawaited(_openPhoneDayNotes(tabsOn, tabs.notes, note.id)),
               onPin: (id, {required pin}) =>
-                  _pinPhoneTab(tabsOn, id, pin: pin, kept: kept),
+                  _pinDayTab(tabsOn, id, pin: pin, kept: kept),
               onMove: (id, to) => _movePhoneTab(tabsOn, id, to, kept: kept),
             ),
       tasks: tasks,
@@ -6147,7 +6194,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  void _pinPhoneTab(
+  void _pinDayTab(
     DateTime day,
     String id, {
     required bool pin,
