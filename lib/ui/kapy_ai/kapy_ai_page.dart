@@ -171,7 +171,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                     style: uiStyle(
                       17,
                       24,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textPrimary,
                     ),
                   ),
