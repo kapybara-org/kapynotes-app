@@ -1018,6 +1018,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         }
         return;
       }
+      if (!await recording.hasMicrophone()) {
+        if (mounted) {
+          progress.error('No microphone found');
+        } else {
+          progress.dismiss();
+        }
+        return;
+      }
       final started = await recording.start(noteId: id);
       if (!mounted) {
         progress.dismiss();

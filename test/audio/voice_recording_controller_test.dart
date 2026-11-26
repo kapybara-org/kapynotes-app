@@ -20,11 +20,15 @@ import 'package:kapy_notes/core/platform.dart';
 class FakeVoiceRecorder implements VoiceRecorderBackend {
   FakeVoiceRecorder({
     this.permitted = true,
+    this.microphone = true,
     this.bytes,
     this.writesFile = true,
   });
 
   bool permitted;
+
+  /// Whether the computer has a microphone at all.
+  bool microphone;
 
   /// Whether `start` puts real bytes on disk. Off for the clock tests, which
   /// run inside `fakeAsync` where real file I/O would never complete.
@@ -45,6 +49,9 @@ class FakeVoiceRecorder implements VoiceRecorderBackend {
 
   @override
   Future<bool> hasPermission() async => permitted;
+
+  @override
+  Future<bool> hasMicrophone() async => microphone;
 
   @override
   Future<void> start(String path) async {

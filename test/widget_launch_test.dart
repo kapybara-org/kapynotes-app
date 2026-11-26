@@ -444,6 +444,9 @@ class _SilentRecorder implements VoiceRecorderBackend {
   Future<bool> hasPermission() async => permitted;
 
   @override
+  Future<bool> hasMicrophone() async => true;
+
+  @override
   Future<void> start(String path) async => startedAt = path;
 
   @override

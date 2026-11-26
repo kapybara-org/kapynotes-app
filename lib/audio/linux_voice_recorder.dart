@@ -63,6 +63,34 @@ class LinuxVoiceRecorder implements VoiceRecorderBackend {
   @override
   Future<bool> hasPermission() async => true;
 
+  /// Asks the sound server, through the ffmpeg that would record, what it
+  /// can record from. With no sound server, or no ffmpeg, there is nothing.
+  @override
+  Future<bool> hasMicrophone() async {
+    try {
+      final result = await Process.run(ffmpegExecutable, [
+        '-hide_banner',
+        '-sources',
+        'pulse',
+      ]);
+      return listsMicrophone('${result.stdout}');
+    } on ProcessException {
+      return false;
+    }
+  }
+
+  /// Whether `ffmpeg -sources pulse` lists a source that is not a monitor.
+  ///
+  /// A sound server with no microphone still lists its outputs' monitors,
+  /// `auto_null.monitor` on a computer with no sound card at all, and its
+  /// default source is then one of them. Recording that records silence, so
+  /// a monitor is no microphone.
+  @visibleForTesting
+  static bool listsMicrophone(String sources) => RegExp(
+    r'^[* ] (\S+) \[',
+    multiLine: true,
+  ).allMatches(sources).any((source) => !source.group(1)!.endsWith('.monitor'));
+
   @override
   Future<void> start(String path) async {
     final config = VoiceRecorder.config;

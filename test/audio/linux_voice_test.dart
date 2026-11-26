@@ -27,6 +27,38 @@ void main() {
       ? false
       : 'needs ffmpeg on PATH and a PulseAudio server to capture from';
 
+  group('a microphone', () {
+    // What ffmpeg 7.1's `-sources pulse` prints, read off a PulseAudio
+    // server with nothing but its null sink, then with a source added.
+    const nullSinkOnly = '''
+Auto-detected sources for pulse:
+* auto_null.monitor [Monitor of Dummy Output] (none)
+''';
+    const withSource = '''
+Auto-detected sources for pulse:
+  auto_null.monitor [Monitor of Dummy Output] (none)
+* fakemic [Null Input] (none)
+''';
+
+    test('is a source that is not a monitor', () {
+      expect(LinuxVoiceRecorder.listsMicrophone(withSource), isTrue);
+    });
+
+    test('is not an output\'s monitor, which records silence', () {
+      expect(LinuxVoiceRecorder.listsMicrophone(nullSinkOnly), isFalse);
+    });
+
+    test('is not there when there is no sound server to ask', () {
+      expect(LinuxVoiceRecorder.listsMicrophone(''), isFalse);
+      expect(
+        LinuxVoiceRecorder.listsMicrophone(
+          'Auto-detected sources for pulse:\n',
+        ),
+        isFalse,
+      );
+    });
+  });
+
   late Directory temp;
   late VoiceRecordingController controller;
 
