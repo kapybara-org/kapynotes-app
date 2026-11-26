@@ -3889,7 +3889,11 @@ void main() {
     late FakeVoiceRecorder recorder;
     late VoiceRecordingController recording;
 
-    for (final platform in [TargetPlatform.linux, TargetPlatform.macOS]) {
+    for (final platform in [
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    ]) {
       testWidgets('the shortcut on ${platform.name} says "No microphone '
           'found" and records nothing', (tester) async {
         AppPlatform.debugTargetPlatformOverride = platform;
