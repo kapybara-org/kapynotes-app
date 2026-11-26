@@ -1682,13 +1682,15 @@ class FolderPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: page),
-              Container(
-                width: _panelWidth,
-                decoration: BoxDecoration(
-                  color: palette.surfaceBackground,
-                  border: Border(left: BorderSide(color: palette.separator)),
+              ToastClearance.beside(
+                child: Container(
+                  width: _panelWidth,
+                  decoration: BoxDecoration(
+                    color: palette.surfaceBackground,
+                    border: Border(left: BorderSide(color: palette.separator)),
+                  ),
+                  child: panel,
                 ),
-                child: panel,
               ),
             ],
           );
@@ -1703,26 +1705,28 @@ class FolderPage extends StatelessWidget {
               right: 12,
               bottom: 12,
               width: _panelWidth,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: palette.wellBackground,
-                  border: Border.all(color: palette.separator),
-                  borderRadius: radius,
-                  boxShadow: [
-                    BoxShadow(
-                      color: palette.shadowAt(0x99),
-                      offset: const Offset(0, 24),
-                      blurRadius: 48,
-                      spreadRadius: -16,
-                    ),
-                    BoxShadow(
-                      color: palette.shadowAt(0x59),
-                      offset: const Offset(0, 2),
-                      blurRadius: 8,
-                    ),
-                  ],
+              child: ToastClearance.beside(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: palette.wellBackground,
+                    border: Border.all(color: palette.separator),
+                    borderRadius: radius,
+                    boxShadow: [
+                      BoxShadow(
+                        color: palette.shadowAt(0x99),
+                        offset: const Offset(0, 24),
+                        blurRadius: 48,
+                        spreadRadius: -16,
+                      ),
+                      BoxShadow(
+                        color: palette.shadowAt(0x59),
+                        offset: const Offset(0, 2),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(borderRadius: radius, child: panel),
                 ),
-                child: ClipRRect(borderRadius: radius, child: panel),
               ),
             ),
           ],

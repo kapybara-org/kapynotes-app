@@ -337,9 +337,10 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   /// for it at its foot, by that room's bottom; and on a desktop, from left
   /// to right, the page between what it keeps beside: right of one on the
   /// window's left, as the notes list is, and left of one on its right, as
-  /// Kapy AI's panel is. The list slid shut keeps it nowhere. What it keeps
-  /// clear of inside what it keeps beside, as the list's Notes and Folders
-  /// switch, it keeps above only where it centres on the window over it.
+  /// Kapy AI's panel and a folder's Add notes are. The list slid shut keeps
+  /// it nowhere. What it keeps clear of inside what it keeps beside, as the
+  /// list's Notes and Folders switch, it keeps above only where it centres
+  /// on the window over it.
   ({double clear, double? room, double left, double right}) _clear(
     MediaQueryData media,
   ) {
@@ -653,11 +654,12 @@ class _InRoom extends SingleChildLayoutDelegate {
 /// while one shows, under its last controls, and the toast sits in it.
 ///
 /// [ToastClearance.beside] keeps a desktop's toasts beside [child] instead,
-/// as the notes list and Kapy AI's panel do, so a toast centres on the page
-/// between them and follows the list as it slides open or shut. A dialog or
-/// a menu over them takes it back to the middle of the window, and so does a
-/// page too narrow between them, where a toast also keeps above a
-/// [ToastClearance] inside [child], as the list's Notes and Folders switch.
+/// as the notes list, Kapy AI's panel and a folder's Add notes do, so a
+/// toast centres on the page between them and follows the list as it slides
+/// open or shut. A dialog or a menu over them takes it back to the middle of
+/// the window, and so does a page too narrow between them, where a toast
+/// also keeps above a [ToastClearance] inside [child], as the list's Notes
+/// and Folders switch.
 ///
 /// It lets go as its route starts to leave, so a toast still showing goes
 /// straight to its next place rather than follow a closing sheet.
