@@ -134,6 +134,13 @@ class KapyAiPanel extends StatefulWidget {
 class _KapyAiPanelState extends State<KapyAiPanel> {
   final _field = TextEditingController();
   final _fieldFocus = FocusNode(debugLabel: 'kapy-ai-composer');
+
+  /// Holds focus for a click anywhere in the panel, so its Esc reaches here
+  /// rather than the note behind it.
+  final _panelFocus = FocusNode(
+    debugLabel: 'kapy-ai-panel',
+    skipTraversal: true,
+  );
   final _menu = GlobalKey();
   bool _chats = false;
   bool _picking = false;
@@ -161,6 +168,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     widget.controller.keep(_field.text);
     _field.dispose();
     _fieldFocus.dispose();
+    _panelFocus.dispose();
     super.dispose();
   }
 
@@ -206,11 +214,15 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     _fieldFocus.requestFocus();
   }
 
-  /// Esc closes what is on top first: the picker, then the panel.
+  /// Esc closes what is on top first: the picker, then the panel. While an
+  /// input method is composing in the field, Esc is the input method's.
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent ||
         event.logicalKey != LogicalKeyboardKey.escape) {
       return KeyEventResult.ignored;
+    }
+    if (_field.value.isComposingRangeValid) {
+      return KeyEventResult.skipRemainingHandlers;
     }
     if (_picking) {
       setState(() => _picking = false);
@@ -237,62 +249,68 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   }
 
   @override
-  Widget build(BuildContext context) => Focus(
-    onKeyEvent: _onKey,
-    child: Material(
-      key: const ValueKey('kapy-ai-panel'),
-      type: MaterialType.transparency,
-      child: ListenableBuilder(
-        listenable: Listenable.merge([_ai, widget.controller]),
-        builder: (context, _) {
-          final noteId = _noteId;
-          if (widget.compact && noteId != null) return _compact(noteId);
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _header(),
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _chats
-                        ? KapyAiChats(
-                            kapyAi: _ai,
-                            now: widget.now(),
-                            onOpened: () => setState(() => _chats = false),
-                          )
-                        : _body(),
-                    if (_picking) ...[
-                      // Closes the picker and leaves the keyboard up.
-                      KeepsKeyboard(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => setState(() => _picking = false),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-                        child: Align(
-                          alignment: Alignment.bottomCenter,
-                          child: KapyAiPicker(
-                            key: _menu,
-                            kapyAi: _ai,
-                            onPick: _pick,
-                            onManageAccounts: () {
-                              setState(() => _picking = false);
-                              widget.onManageAccounts();
-                            },
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) {
+      if (!widget.inSheet && !_panelFocus.hasFocus) _panelFocus.requestFocus();
+    },
+    child: Focus(
+      focusNode: _panelFocus,
+      onKeyEvent: _onKey,
+      child: Material(
+        key: const ValueKey('kapy-ai-panel'),
+        type: MaterialType.transparency,
+        child: ListenableBuilder(
+          listenable: Listenable.merge([_ai, widget.controller]),
+          builder: (context, _) {
+            final noteId = _noteId;
+            if (widget.compact && noteId != null) return _compact(noteId);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _header(),
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _chats
+                          ? KapyAiChats(
+                              kapyAi: _ai,
+                              now: widget.now(),
+                              onOpened: () => setState(() => _chats = false),
+                            )
+                          : _body(),
+                      if (_picking) ...[
+                        // Closes the picker and leaves the keyboard up.
+                        KeepsKeyboard(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => setState(() => _picking = false),
                           ),
                         ),
-                      ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: KapyAiPicker(
+                              key: _menu,
+                              kapyAi: _ai,
+                              onPick: _pick,
+                              onManageAccounts: () {
+                                setState(() => _picking = false);
+                                widget.onManageAccounts();
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              if (!_chats) _composer(),
-            ],
-          );
-        },
+                if (!_chats) _composer(),
+              ],
+            );
+          },
+        ),
       ),
     ),
   );
@@ -792,44 +810,51 @@ class KapyAiDock extends StatelessWidget {
           ],
         );
       }
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          child,
-          Positioned(
-            top: 12,
-            right: 12,
-            bottom: 12,
-            width: kapyAiPanelWidth,
-            child: ToastClearance.beside(
-              child: DecoratedBox(
-                key: const ValueKey('kapy-ai-overlay'),
-                decoration: BoxDecoration(
-                  color: palette.wellBackground,
-                  border: Border.all(color: palette.separator),
-                  borderRadius: BorderRadius.circular(AppRadii.surface),
-                  boxShadow: [
-                    BoxShadow(
-                      color: palette.shadowAt(0x99),
-                      offset: const Offset(0, 24),
-                      blurRadius: 48,
-                      spreadRadius: -16,
-                    ),
-                    BoxShadow(
-                      color: palette.shadowAt(0x59),
-                      offset: const Offset(0, 2),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadii.surface),
-                  child: panel,
+      // Over a page narrower than the panel and its margins, the panel takes
+      // the page's width less the margins, rather than running off its left.
+      return LayoutBuilder(
+        builder: (context, box) => Stack(
+          fit: StackFit.expand,
+          children: [
+            child,
+            Positioned(
+              top: 12,
+              right: 12,
+              bottom: 12,
+              width: math.min(
+                kapyAiPanelWidth,
+                math.max(0.0, box.maxWidth - 24),
+              ),
+              child: ToastClearance.beside(
+                child: DecoratedBox(
+                  key: const ValueKey('kapy-ai-overlay'),
+                  decoration: BoxDecoration(
+                    color: palette.wellBackground,
+                    border: Border.all(color: palette.separator),
+                    borderRadius: BorderRadius.circular(AppRadii.surface),
+                    boxShadow: [
+                      BoxShadow(
+                        color: palette.shadowAt(0x99),
+                        offset: const Offset(0, 24),
+                        blurRadius: 48,
+                        spreadRadius: -16,
+                      ),
+                      BoxShadow(
+                        color: palette.shadowAt(0x59),
+                        offset: const Offset(0, 2),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadii.surface),
+                    child: panel,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     },
   );
