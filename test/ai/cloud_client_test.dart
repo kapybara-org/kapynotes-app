@@ -108,7 +108,7 @@ void main() {
     () async {
       expect(
         () => client(
-          (_) => http.Response('{}', 401),
+          (_) => http.Response('{"error":"unauthorized"}', 401),
         ).answer(KapyModel.cloud, request),
         throwsA(isA<AnswerSignInNeeded>()),
       );
@@ -120,6 +120,15 @@ void main() {
       );
     },
   );
+
+  test("a 401 that isn't the server's own is tried again", () async {
+    expect(
+      () => client(
+        (_) => http.Response('<html>Sign in to the Wi-Fi</html>', 401),
+      ).answer(KapyModel.cloud, request),
+      throwsA(isA<AnswerFailed>().having((e) => e.retry, 'retry', isTrue)),
+    );
+  });
 
   test('429 is the limit, with its usage', () async {
     final cloud = client(

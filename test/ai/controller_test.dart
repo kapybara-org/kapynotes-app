@@ -164,10 +164,10 @@ void main() {
       expect(locked.upgrade, isTrue);
     });
 
-    Future<KapyPending?> cloudSays(int status) async {
+    Future<KapyPending?> cloudSays(int status, [String body = '{}']) async {
       server = (request) => request.url.path.endsWith('/ai/usage')
           ? http.Response(jsonEncode(_usage), 200)
-          : http.Response('{}', status);
+          : http.Response(body, status);
       final ai = await build(billing: await billingOn(pro: true));
       await ai.ask('Lisbon?');
       await ai.proceed();
@@ -181,9 +181,18 @@ void main() {
     });
 
     test('the server ending the session asks them to sign in', () async {
-      final locked = await cloudSays(401) as KapyCloudLocked;
+      final locked =
+          await cloudSays(401, '{"error":"unauthorized"}') as KapyCloudLocked;
       expect(locked.signIn, isTrue);
       expect(locked.upgrade, isFalse);
+    });
+
+    test("a 401 that isn't the server's, from a Wi-Fi sign-in page, is "
+        'tried again', () async {
+      final failed =
+          await cloudSays(401, '<html>Sign in to the Wi-Fi</html>')
+              as KapyFailed;
+      expect(failed.retry, isTrue);
     });
 
     test('only what a retry can fix is tried again', () async {

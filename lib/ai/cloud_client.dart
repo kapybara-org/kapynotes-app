@@ -89,7 +89,7 @@ class KapyCloudClient implements AnswerEngine {
     switch (response.statusCode) {
       case 200:
         return body;
-      case 401:
+      case 401 when body['error'] == 'unauthorized':
         throw const AnswerSignInNeeded();
       case 402:
         throw const AnswerProNeeded();
