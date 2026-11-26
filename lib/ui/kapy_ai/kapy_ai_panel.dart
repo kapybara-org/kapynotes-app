@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
 import '../../core/phone_keyboard.dart';
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import 'kapy_ai_chats.dart';
@@ -136,7 +137,8 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   final _fieldFocus = FocusNode(debugLabel: 'kapy-ai-composer');
 
   /// Holds focus for a click anywhere in the panel, so its Esc reaches here
-  /// rather than the note behind it.
+  /// rather than the note behind it. Only where there is a pointer: on a
+  /// phone or tablet, taking focus from the note drops its keyboard.
   final _panelFocus = FocusNode(
     debugLabel: 'kapy-ai-panel',
     skipTraversal: true,
@@ -251,7 +253,9 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   @override
   Widget build(BuildContext context) => Listener(
     onPointerDown: (_) {
-      if (!widget.inSheet && !_panelFocus.hasFocus) _panelFocus.requestFocus();
+      if (AppPlatform.hasPointer && !_panelFocus.hasFocus) {
+        _panelFocus.requestFocus();
+      }
     },
     child: Focus(
       focusNode: _panelFocus,

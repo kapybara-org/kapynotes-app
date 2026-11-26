@@ -327,6 +327,26 @@ void main() {
       expect(_panel, findsNothing);
     });
 
+    testWidgets('a click elsewhere in it leaves the field focused', (
+      tester,
+    ) async {
+      notes.create(body: 'Trip budget');
+      await _pump(tester);
+      await _toggleWithKeys(tester);
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-field')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.descendant(of: _panel, matching: find.text('Kapy AI')).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        FocusManager.instance.primaryFocus?.debugLabel,
+        'kapy-ai-composer',
+      );
+    });
+
     testWidgets('Esc closes it from the field and from anywhere in it, but '
         'not while an input method is composing', (tester) async {
       notes.create(body: 'Trip budget');
@@ -374,6 +394,33 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(_panel, findsOneWidget, reason: 'Esc ends the composing first');
+    });
+
+    testWidgets('on a tablet, a tap in it leaves the keyboard up', (
+      tester,
+    ) async {
+      notes.create(body: 'Trip budget');
+      await _pump(
+        tester,
+        size: const Size(1366, 1024),
+        platform: TargetPlatform.iOS,
+      );
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(NoteField));
+      await tester.pumpAndSettle();
+      tester.testTextInput.log.clear();
+
+      await tester.tap(
+        find.descendant(of: _panel, matching: find.text('Kapy AI')).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-field')));
+      await tester.pumpAndSettle();
+
+      expect([
+        for (final call in tester.testTextInput.log) call.method,
+      ], isNot(contains('TextInput.hide')));
     });
 
     for (final platform in [TargetPlatform.linux, TargetPlatform.macOS]) {
