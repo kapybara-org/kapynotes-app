@@ -174,7 +174,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final List<Color> tagDots;
 
   /// Whether this is Increase contrast's version of the palette, which also
-  /// draws keyboard focus as a ring rather than a tint.
+  /// draws the keyboard focus ring wider.
   final bool increasedContrast;
 
   /// The shadow a black at [alpha] casts in dark, scaled by [shadow]'s own
@@ -1321,8 +1321,8 @@ class KapyTheme {
   const KapyTheme._();
 
   /// A filled control's background in each state: [fill] at rest, with a
-  /// little of its [ink] laid over it when hovered or focused and a little
-  /// more while pressed, and [disabled] when it has nothing to do. The accent
+  /// little of its [ink] laid over it when hovered and a little more while
+  /// pressed, and [disabled] when it has nothing to do. The accent
   /// button and the tonal one share it, so both answer the pointer alike.
   static WidgetStateProperty<Color> fillStates(
     Color fill, {
@@ -1333,8 +1333,7 @@ class KapyTheme {
     if (states.contains(WidgetState.pressed)) {
       return Color.alphaBlend(ink.withValues(alpha: 0.13), fill);
     }
-    if (states.contains(WidgetState.hovered) ||
-        states.contains(WidgetState.focused)) {
+    if (states.contains(WidgetState.hovered)) {
       return Color.alphaBlend(ink.withValues(alpha: 0.07), fill);
     }
     return fill;
@@ -2209,7 +2208,7 @@ class KapyTheme {
       canvasColor: palette.surfaceBackground,
       cardColor: palette.surfaceBackground,
       dividerColor: palette.separator,
-      focusColor: accent.withValues(alpha: 0.14),
+      focusColor: Colors.transparent,
       hoverColor: palette.hover,
       highlightColor: Colors.transparent,
       splashColor: accent.withValues(alpha: 0.08),
@@ -2291,19 +2290,12 @@ class KapyTheme {
             if (states.contains(WidgetState.pressed)) {
               return accent.withValues(alpha: 0.11);
             }
-            if (states.contains(WidgetState.hovered) ||
-                states.contains(WidgetState.focused)) {
+            if (states.contains(WidgetState.hovered)) {
               return palette.hover;
             }
             return Colors.transparent;
           }),
           overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-          side: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.focused)) {
-              return BorderSide(color: palette.selectedBorder, width: 1);
-            }
-            return BorderSide.none;
-          }),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadii.control),
@@ -2372,8 +2364,7 @@ class KapyTheme {
                 if (states.contains(WidgetState.pressed)) {
                   return accent.withValues(alpha: 0.13);
                 }
-                if (states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.focused)) {
+                if (states.contains(WidgetState.hovered)) {
                   return palette.hover;
                 }
                 return Colors.transparent;
@@ -2383,9 +2374,6 @@ class KapyTheme {
                   return BorderSide(
                     color: palette.controlBorder.withValues(alpha: 0.55),
                   );
-                }
-                if (states.contains(WidgetState.focused)) {
-                  return BorderSide(color: palette.selectedBorder, width: 1.25);
                 }
                 return BorderSide(color: palette.controlBorder);
               }),
@@ -2418,8 +2406,7 @@ class KapyTheme {
                 if (states.contains(WidgetState.pressed)) {
                   return accent.withValues(alpha: 0.14);
                 }
-                if (states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.focused)) {
+                if (states.contains(WidgetState.hovered)) {
                   return accent.withValues(alpha: 0.08);
                 }
                 return Colors.transparent;

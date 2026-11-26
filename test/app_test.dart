@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart'
@@ -3647,11 +3648,74 @@ void main() {
       await press(tester, ShortcutAction.closeTab);
       expect(openNoteBody(tester), 'Second note');
 
-      // ⇧⌘T brings back the tab closed last, in front.
+      // ⇧⌘T brings back the tab closed last, in front and where it was.
       await press(tester, ShortcutAction.reopenTab);
       expect(openNoteBody(tester), 'First note');
-      expect(tabTitles(tester), ['Second note', 'First note']);
+      expect(tabTitles(tester), ['First note', 'Second note']);
       expect(notes.notes, hasLength(3), reason: 'a tab closes no note');
+    });
+
+    testWidgets('⇧⌘T again goes on back through the closed tabs, each to its '
+        'place on the row with its caret where it was', (tester) async {
+      await threeNotes(tester);
+      notes.create(body: 'Fourth note');
+      await tester.pumpAndSettle();
+      for (final title in ['Second note', 'Third note', 'Fourth note']) {
+        await clickWith(tester, LogicalKeyboardKey.metaLeft, title);
+      }
+      expect(tabTitles(tester), [
+        'First note',
+        'Second note',
+        'Third note',
+        'Fourth note',
+      ]);
+
+      await tester.tap(tab('Third note'));
+      await tester.pumpAndSettle();
+      openNoteField(tester).controller.selection =
+          const TextSelection.collapsed(offset: 3);
+      await tester.pump();
+      await press(tester, ShortcutAction.closeTab);
+      await tester.tap(tab('First note'));
+      await tester.pumpAndSettle();
+      await press(tester, ShortcutAction.closeTab);
+      expect(tabTitles(tester), ['Second note', 'Fourth note']);
+      expect(find.text('Closed "First note"'), findsOneWidget);
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note', 'Fourth note']);
+      expect(
+        find.text('Closed "First note"'),
+        findsNothing,
+        reason: 'the toast offers back a tab that is back',
+      );
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'Third note');
+      expect(
+        openNoteField(tester).controller.selection,
+        const TextSelection.collapsed(offset: 3),
+      );
+      expect(tabTitles(tester), [
+        'First note',
+        'Second note',
+        'Third note',
+        'Fourth note',
+      ]);
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(tabTitles(tester), hasLength(4), reason: 'none is left closed');
+    });
+
+    testWidgets('a new install answers its shortcuts before anything is '
+        'clicked', (tester) async {
+      await pumpApp(tester, firstRun: true, size: const Size(1400, 800));
+      expect(prefs.sidebarVisible, isTrue);
+
+      // The welcome note waits untouched, without a caret.
+      await press(tester, ShortcutAction.toggleSidebar);
+      expect(prefs.sidebarVisible, isFalse);
     });
 
     testWidgets('a middle click and the menu open a tab behind too', (
@@ -4103,6 +4167,22 @@ void main() {
         isSemantics(isSelected: true, hint: 'Back to your tabs'),
       );
       expect(find.text("Opened yesterday's note"), findsOneWidget);
+    });
+
+    testWidgets("a note typed in from a picked day moves under Today and stays "
+        "lit while the day's notes are the tabs", (tester) async {
+      await library(tester);
+      await tap(tester, day(18));
+      expect(lit(tester), ['Standup notes']);
+
+      await tester.enterNote('Standup notes\nShip it');
+      await tester.pumpAndSettle();
+      expect(headings(tester), ['Today', 'Tue 17', 'Tue 20 Oct']);
+      expect(lit(tester), ['Standup notes']);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+
+      await tap(tester, day(18));
+      expect(lit(tester), isEmpty);
     });
 
     testWidgets('a day with several notes opens them as the tabs, the '
@@ -7565,6 +7645,8 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(1));
     });
 
@@ -7856,6 +7938,8 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(1));
     });
   });
@@ -7975,8 +8059,10 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
-      expect(notes.tombstones.single.id, third.id);
       expect(find.text('Note deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.tombstones.single.id, third.id);
     });
 
     testWidgets('backing out of the question keeps the note', (tester) async {
@@ -8002,8 +8088,10 @@ void main() {
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
-      expect(notes.tombstones, hasLength(3));
       expect(find.text('3 notes deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.tombstones, hasLength(3));
       // The notes that were never archived are untouched.
       expect(notes.notes, isEmpty);
     });
@@ -8051,6 +8139,8 @@ void main() {
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(3));
     });
 
@@ -8533,6 +8623,9 @@ void main() {
         expect(notes.byId('first'), isNotNull);
 
         await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(NoteRow, 'First note'), findsNothing);
+        Toast.debugTimeUp();
         await tester.pumpAndSettle();
         expect(notes.byId('first'), isNull);
         expect(notes.tombstones, hasLength(1));
@@ -11792,6 +11885,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.byId(offsite.id), isNull);
     });
 
@@ -14832,6 +14927,105 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.linux),
   );
+
+  group('what was typed is written', () {
+    late _WriteLog log;
+
+    setUp(() {
+      log = _WriteLog();
+      store = log;
+      notes = NotesStore(store);
+      prefs = LayoutPrefs(store);
+      rates = RatesRepository(store);
+      shortcuts = ShortcutPrefs(store);
+    });
+
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    Future<void> typeThen(
+      WidgetTester tester,
+      String text,
+      FutureOr<void> Function() ending,
+      String reason,
+    ) async {
+      await tester.enterNote(text);
+      expect(log.written, isNot(contains(text)), reason: reason);
+      await ending();
+      await tester.pump();
+      expect(log.written, contains(text), reason: reason);
+    }
+
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    ]) {
+      testWidgets('on ${platform.name}, as the app leaves the screen, closes '
+          'or is asked to quit', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        stubLaunchIntent(null);
+        addTearDown(() => stubLaunchIntent(null, respond: false));
+        await notes.load();
+        notes.create(body: 'Groceries');
+        final phone =
+            platform == TargetPlatform.iOS ||
+            platform == TargetPlatform.android;
+        await pumpApp(
+          tester,
+          size: phone ? const Size(420, 800) : const Size(1100, 760),
+        );
+        for (final state in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+          AppLifecycleState.detached,
+        ]) {
+          await typeThen(
+            tester,
+            'Typed before ${state.name}',
+            () => tester.binding.handleAppLifecycleStateChanged(state),
+            state.name,
+          );
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.resumed,
+          );
+          await tester.pump();
+        }
+        await typeThen(
+          tester,
+          'Typed before quitting',
+          () => tester.binding.handleRequestAppExit(),
+          'quit',
+        );
+      }, variant: TargetPlatformVariant.only(platform));
+    }
+
+    testWidgets('as another note is opened', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      await notes.load();
+      notes.create(body: 'Groceries');
+      notes.create(body: 'Standup');
+      await pumpApp(tester);
+      await typeThen(tester, 'Standup moved to 10', () async {
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is NoteCardFace && widget.note.title == 'Groceries',
+          ),
+        );
+      }, 'switch');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
+}
+
+/// A store that keeps what its last write would have put on disk.
+class _WriteLog extends MemoryStore {
+  String written = '';
+
+  @override
+  Future<void> flush() async => written = jsonEncode(data);
 }
 
 /// Android 14's text scale, which grows large type less than small: the

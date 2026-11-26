@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -669,9 +670,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('confirm-delete')));
     await tester.pumpAndSettle();
     expect(notes.notes.map((n) => n.title), ['Second', 'First']);
-    expect(notes.tombstones, hasLength(2));
     expect(find.text('2 notes deleted'), findsOneWidget);
     expect(_picked(tester), isEmpty);
+    Toast.debugTimeUp();
+    await tester.pumpAndSettle();
+    expect(notes.tombstones, hasLength(2));
 
     await _click(tester, 'First', holding: LogicalKeyboardKey.shiftLeft);
     await _click(tester, 'Second');
@@ -773,6 +776,8 @@ void main() {
       expect(find.text('Delete 2 notes?'), findsOneWidget);
       expect(find.byKey(const ValueKey('delete-stop-asking')), findsNothing);
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      Toast.debugTimeUp();
       await tester.pumpAndSettle();
       expect(
         notes.allNotes.map((note) => note.title),

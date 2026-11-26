@@ -552,12 +552,11 @@ time. Notes are kept newest-updated-first on load and move to the top as soon
 as they are edited. During a search, the timestamp is temporarily replaced by
 the matching line so body-only results still have context.
 
-### Split view (`lib/data/editor_workspace.dart`, `lib/ui/editor_panes.dart`)
+### Split view and tabs (`lib/data/editor_workspace.dart`, `lib/ui/editor_panes.dart`, `lib/ui/note_tabs.dart`)
 
 A desktop-width window can put up to three notes side by side. Each pane holds
 exactly one note, and a note is only ever open in one pane: choosing a note
-that is already on screen focuses its pane rather than opening it twice. There
-are no tabs piling up behind a pane.
+that is already on screen focuses its pane rather than opening it twice.
 
 - The split button in the title bar (⌘\ or Ctrl+\\) opens an empty pane beside
   the focused note, and the next note chosen from the list goes into it.
@@ -580,6 +579,11 @@ back at the next launch; an empty pane does not. A window too narrow for the not
 beside a note shows only the focused pane's note, and the rest return when it
 widens. Only the focused pane reports presence in a shared note, and a
 recording is delivered before a change would take its note off the screen.
+
+Tabs keep more notes open behind the one in front. `⌘W` / `Ctrl+W` closes the
+tab in front, and `⇧⌘T` / `Ctrl+Shift+T` opens the tab closed last again,
+back in its place on the row. Pressing it again carries on through the tabs
+closed before it, newest first, as far back as the last 20.
 
 ### Storage (`lib/data/`)
 
@@ -690,7 +694,7 @@ The spec described an Electron build. These changed for Flutter:
 - Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` find in the open note,
   `⇧⌘F` / `Ctrl+Shift+F` search every note, `⌘/Ctrl K` link the selected
   words, `⌘/Ctrl S` toggle sidebar, `⇧⌘⌫` / `Ctrl+Shift+Delete` archive the
-  note. Two more are
+  note, `⇧⌘T` / `Ctrl+Shift+T` reopen closed tabs, the last first. Two more are
   registered with the OS and answer from inside any other app — which also
   means every other app loses them while this one runs, so they sit on chords
   little else uses: `⇧⌥⌘L` / `Alt+Shift+L` summons the window, `⇧⌥⌘N` /

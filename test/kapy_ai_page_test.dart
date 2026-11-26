@@ -1,3 +1,4 @@
+import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -408,6 +409,79 @@ void main() {
     }
     handle.dispose();
   });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on ${platform.name} a screen reader presses New chat, Ask '
+        'and the picker as a tap does (KAP-365)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final semantics = tester.ensureSemantics();
+      final ai = _ai()..openChat('a');
+      ai.calls.clear();
+      var opened = 0;
+      await _pump(tester, ai, onOpenChat: () => opened++);
+      SemanticsNode node(String key) =>
+          tester.getSemantics(find.byKey(ValueKey(key)));
+      Future<void> press(SemanticsNode node) async {
+        tester.semantics.tap(
+          find.semantics.byPredicate((n) => n.id == node.id),
+        );
+        await tester.pump();
+      }
+
+      final newChat = node('kapy-ai-page-new-chat');
+      expect(
+        newChat,
+        isSemantics(label: 'New chat', isButton: true, hasTapAction: true),
+      );
+      await press(newChat);
+      expect(ai.calls, ['newChat']);
+      expect(opened, 1);
+
+      ai.calls.clear();
+      expect(
+        node('kapy-ai-page-send'),
+        isSemantics(
+          label: 'Ask',
+          isButton: true,
+          isEnabled: false,
+          hasTapAction: false,
+        ),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('kapy-ai-page-field')),
+        'What is due on Friday?',
+      );
+      await tester.pump();
+      final ask = node('kapy-ai-page-send');
+      expect(
+        ask,
+        isSemantics(
+          label: 'Ask',
+          isButton: true,
+          isEnabled: true,
+          hasTapAction: true,
+        ),
+      );
+      await press(ask);
+      expect(ai.calls, ['ask:What is due on Friday?:']);
+      expect(opened, 2);
+
+      final picker = node('kapy-ai-model-button');
+      expect(
+        picker,
+        isSemantics(
+          label: 'Answers with Kapy AI Cloud',
+          isButton: true,
+          hasTapAction: true,
+        ),
+      );
+      await press(picker);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('kapy-ai-picker')), findsOneWidget);
+      semantics.dispose();
+    });
+  }
 
   testWidgets('with the keyboard up, Ask Kapy AI sits just above it', (
     tester,
