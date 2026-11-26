@@ -494,6 +494,71 @@ void main() {
       await settledShot(tester, 'notice-removed-in-sheet', device: true);
     }, skip: !phone);
 
+    testWidgets('in a sheet at its tallest, the notice takes its room from '
+        'the list', (tester) async {
+      await shareAround(tester);
+      await tester.runAsync(() async {
+        for (var i = 1; i <= 12; i++) {
+          await account.sharing!.addPerson(
+            tripId,
+            'guest$i@example.com',
+            role: SpaceRole.viewer,
+          );
+        }
+        await account.sync!.syncNow();
+      });
+      await openSharedPage(tester);
+      await openSheetFor(tester, 'Trip budget');
+      final top = tester.getRect(sheet).top;
+      await tester.tap(memberMenu('user-3'));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+
+      final removed = find.text('Removed Carol from this note');
+      await tapUntil(
+        tester,
+        askOk,
+        () => removed.evaluate().isNotEmpty && sheet.evaluate().length == 1,
+      );
+      expect(tester.getRect(sheet).top, top);
+      expect(tester.takeException(), isNull);
+      await settledShot(tester, 'notice-in-tall-sheet', device: true);
+    }, skip: !phone);
+
+    testWidgets('a row menu hides the notice, and the Remove confirmation '
+        'keeps clear of it', (tester) async {
+      await shareAround(tester);
+      await openSharedPage(tester);
+      await openSheetFor(tester, 'Trip budget');
+      await tester.tap(memberMenu('user-3'));
+      await tester.pumpAndSettle();
+      await tester.tap(menuItem('Remove from this note'));
+      await tester.pumpAndSettle();
+      final removed = find.text('Removed Carol from this note');
+      await tapUntil(
+        tester,
+        askOk,
+        () => removed.evaluate().isNotEmpty && sheet.evaluate().length == 1,
+      );
+
+      final card = find.byKey(const ValueKey('toast-surface'));
+      await tester.tap(memberMenu('user-2'));
+      await pumpUntil(
+        tester,
+        () => menuItem('Remove from this note').evaluate().isNotEmpty,
+      );
+      expect(card, findsNothing, reason: 'out of sight under the menu');
+      await settledShot(tester, 'notice-hidden-under-menu', device: true);
+
+      await tester.tap(menuItem('Remove from this note'));
+      await pumpUntil(tester, () => askOk.evaluate().isNotEmpty);
+      expect(card, findsOneWidget, reason: 'back once the menu closed');
+      expect(tester.getRect(askOk).overlaps(tester.getRect(card)), isFalse);
+      expect(tester.takeException(), isNull);
+      await settledShot(tester, 'notice-under-remove-confirm', device: true);
+    }, skip: !phone);
+
     testWidgets('Stop sharing, then Undo after the sheet has closed shares '
         'the note again', (tester) async {
       await shareAround(tester);

@@ -34,11 +34,14 @@ String dayKey(DateTime day) =>
     '${day.month.toString().padLeft(2, '0')}-'
     '${day.day.toString().padLeft(2, '0')}';
 
-/// [key] as the day it names, or null when it is not one.
+/// [key] as the day it names, or null when it is not one: a date the
+/// calendar has, so never 30 February, which would roll on into March.
 DateTime? dayOfKey(String key) {
   if (key.length != noteDayMaxChars || !_dayPattern.hasMatch(key)) return null;
-  final day = DateTime.tryParse(key);
-  return day == null ? null : DateTime(day.year, day.month, day.day);
+  final parsed = DateTime.tryParse(key);
+  if (parsed == null) return null;
+  final day = DateTime(parsed.year, parsed.month, parsed.day);
+  return dayKey(day) == key ? day : null;
 }
 
 /// A note's own day: the calendar date it was given. A note with no record of

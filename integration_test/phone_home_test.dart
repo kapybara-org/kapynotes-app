@@ -11,8 +11,10 @@
 // dot after the time. Pinned (KAP-302) is a row of cards over the days,
 // with its count and View all, which opens every pinned note two to a row;
 // Back returns to Notes: the page's arrow and a swipe in from the left edge
-// on both phones, and Android's system back. Each state is taken light and
-// dark, and the list again at 2× text, as screenshots in build/screenshots.
+// on both phones, and Android's system back. Folders lists only folders, and
+// a folder's Add notes is a sheet of the notes in no folder (KAP-342). Each
+// state is taken light and dark, and the list again at 2× text, as
+// screenshots in build/screenshots.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -33,6 +35,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'rates_support.dart';
 import 'screenshot.dart';
+import 'sharing_support.dart' show pumpUntil, shown;
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'phone-home-integration.json');
@@ -54,7 +57,12 @@ void main() {
   final older = DateTime(today.year, today.month, today.day - 3);
   late LayoutPrefs prefs;
 
-  Future<void> launch(WidgetTester tester, {bool folders = false}) async {
+  Future<void> launch(
+    WidgetTester tester, {
+    bool folders = false,
+    bool renewalInAcme = false,
+    List<String> unfiled = const [],
+  }) async {
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
     var clock = today;
@@ -79,6 +87,9 @@ void main() {
     final groceries = write('Groceries\nOat milk, lemons', 1, 18, 40);
     final reading = write('Reading list\nThe Overstory', 1, 21, 30);
     final call = write('Call with Arjun\nSend the deck', 0, 9, 12);
+    for (final (index, body) in unfiled.indexed) {
+      write(body, index * 2, 7 + index, 45);
+    }
     clock = today;
     notes.togglePinned(trip);
     notes.togglePinned(reading);
@@ -102,7 +113,7 @@ void main() {
       final personal = folderStore.create('Personal')!;
       folderStore.file([trip, reading], personal.id);
       folderStore.file([offsite], work.id);
-      folderStore.file([call], acme.id);
+      folderStore.file([call, if (renewalInAcme) renewal], acme.id);
       prefs.setFolderOpen(work.id, true);
       prefs.setFolderOpen(clients.id, true);
       for (final (title, hour) in [('Shelf plan', 8), ('Deck flow', 9)]) {
@@ -302,7 +313,7 @@ void main() {
     for (final name in ['Work', 'Clients', 'Acme', 'Product', 'Personal']) {
       expect(find.text(name), findsOneWidget, reason: name);
     }
-    expect(find.text('Not in a folder'), findsOneWidget);
+    expect(find.text('Not in a folder'), findsNothing);
     expect(find.byKey(const ValueKey('folders-upcoming-tile')), findsNothing);
     await board('m02-folders');
 
@@ -322,6 +333,95 @@ void main() {
     await tap('phone-new-close');
     expect(find.byKey(const ValueKey('phone-new-close')), findsNothing);
   });
+
+  testWidgets("Folders lists only folders, and a folder's Add notes is a sheet "
+      'of the notes in no folder: three ticked, then added, and Undo takes '
+      'them back out (KAP-342)', (tester) async {
+    await launch(
+      tester,
+      folders: true,
+      unfiled: const [
+        'Morning pages\nThree pages, longhand',
+        'Kickoff agenda, Northwind\nGoals, people, dates',
+        'Invoice, April\n1,200.00 EUR',
+        'Pricing follow-up\nSend the new tiers',
+      ],
+    );
+    Future<void> tap(Finder finder) async {
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> board(String name, AppearanceMode mode) async {
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: name);
+      await screenshot('phone-$name-${mode.name}');
+    }
+
+    final sheet = find.byKey(const ValueKey('add-notes'));
+    Finder inSheet(String text) =>
+        find.descendant(of: sheet, matching: find.text(text));
+    for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
+      prefs.appearance = mode;
+      await tap(find.byKey(const ValueKey('bar-folders')));
+      expect(find.text('Not in a folder'), findsNothing);
+      expect(row('Groceries'), findsNothing);
+      await board('folders-only-folders', mode);
+
+      await tap(find.text('Clients'));
+      await tap(find.byKey(const ValueKey('phone-add-notes')));
+      expect(inSheet('Add notes to Clients'), findsOneWidget);
+      expect(inSheet('Groceries'), findsOneWidget);
+      expect(inSheet('Call with Arjun'), findsNothing);
+      for (final title in [
+        'Kickoff agenda, Northwind',
+        'Invoice, April',
+        'Pricing follow-up',
+      ]) {
+        await tap(inSheet(title));
+      }
+      expect(inSheet('Add 3 notes'), findsOneWidget);
+      await board('folder-add-notes', mode);
+
+      // On a device a toast's lifetime is an animation, so pumpAndSettle
+      // would run it out: it is waited for as it arrives, with the sheet
+      // gone, and Undo is pressed right after the shot.
+      final added = find.text('Added 3 notes to “Clients”');
+      await tester.tap(find.byKey(const ValueKey('add-notes-add')));
+      await pumpUntil(
+        tester,
+        () => shown(tester, added) && sheet.evaluate().isEmpty,
+      );
+      expect(sheet, findsNothing);
+      expect(added, findsOneWidget);
+      expect(row('Invoice, April'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await screenshot('phone-folder-notes-added-${mode.name}');
+
+      await tester.tap(find.text('Undo'));
+      await pumpUntil(tester, () => row('Invoice, April').evaluate().isEmpty);
+      expect(row('Invoice, April'), findsNothing);
+      await tap(find.byKey(const ValueKey('page-back')));
+    }
+  });
+  testWidgets("a folder's page counts what it lists: Renewal notes, in Acme "
+      "for the day after tomorrow, is out of Clients' title until its day, "
+      'and the tree still counts it (KAP-352)', (tester) async {
+    await launch(tester, folders: true, renewalInAcme: true);
+    Future<void> tap(Finder finder) async {
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    await tap(find.byKey(const ValueKey('bar-folders')));
+    await shot(tester, 'kap352-folders');
+    await tap(find.text('Clients'));
+    expect(row('Call with Arjun'), findsOneWidget);
+    expect(row('Renewal notes'), findsNothing);
+    expect(tester.widget<PhoneListTitle>(find.byType(PhoneListTitle)).count, 1);
+    await shot(tester, 'kap352-clients');
+  });
+
   testWidgets('Archive opens from the filter, and Back comes Home with the '
       'app still open (KAP-305)', (tester) async {
     await launch(tester);

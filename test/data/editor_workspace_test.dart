@@ -841,4 +841,210 @@ void main() {
       expect(workspace.backNoteId, isNull, reason: 'Back shows the folder');
     });
   });
+
+  group("a day's notes", () {
+    final tuesday = DateTime(2026, 11, 17);
+    final wednesday = DateTime(2026, 11, 18);
+
+    test('take the place of the tabs, one to a tab and the first in front, '
+        'and leaving the day brings the tabs back as they were', () {
+      final workspace = _opened('alpha')
+        ..openToSide('charlie')
+        ..openInNewTab('bravo')
+        ..activateTab(1);
+      expect(workspace.dayInTabs, isNull);
+
+      expect(workspace.showDay(tuesday, ['delta', 'alpha', 'delta']), 2);
+      expect(workspace.dayInTabs, tuesday);
+      expect(_tabsOf(workspace), [
+        ['delta'],
+        ['alpha'],
+      ]);
+      expect(workspace.selectedNoteId, 'delta');
+      expect(_recent(workspace), ['delta', 'alpha']);
+
+      expect(workspace.leaveDay(), isTrue);
+      expect(workspace.dayInTabs, isNull);
+      expect(_tabsOf(workspace), [
+        ['alpha', 'charlie'],
+        ['bravo'],
+      ]);
+      expect(workspace.selectedNoteId, 'bravo');
+      expect(_recent(workspace), ['bravo', 'charlie']);
+      expect(workspace.canReopen, isFalse, reason: 'no tab was closed');
+      expect(workspace.leaveDay(), isFalse);
+    });
+
+    test('another day takes the place of the first, and leaving brings back '
+        'the tabs from before either', () {
+      final workspace = _opened('alpha')..showDay(tuesday, ['bravo']);
+      expect(workspace.showDay(wednesday, ['charlie', 'delta']), 2);
+      expect(workspace.dayInTabs, wednesday);
+      expect(_tabsOf(workspace), [
+        ['charlie'],
+        ['delta'],
+      ]);
+
+      expect(workspace.leaveDay(), isTrue);
+      expect(_tabsOf(workspace), [
+        ['alpha'],
+      ]);
+    });
+
+    test('open as tabs up to the limit, and the row folds the last first', () {
+      final many = [for (var index = 0; index < 20; index++) 'note $index'];
+      final workspace = _opened('note 0', available: many);
+      expect(workspace.showDay(tuesday, many), EditorWorkspace.dayTabLimit);
+      final opened = many.take(EditorWorkspace.dayTabLimit).toList();
+      expect(_tabsOf(workspace), [
+        for (final id in opened) [id],
+      ]);
+      expect(_recent(workspace), opened);
+    });
+
+    test('leave the row empty when there are none, for a page to write on '
+        'that day', () {
+      final workspace = _opened('alpha');
+      expect(workspace.showDay(tuesday, const []), 0);
+      expect(workspace.tabs, isEmpty);
+      expect(workspace.selectedNoteId, isNull);
+      expect(workspace.dayInTabs, tuesday);
+
+      workspace.open('bravo');
+      expect(_tabsOf(workspace), [
+        ['bravo'],
+      ]);
+      expect(workspace.leaveDay(), isTrue);
+      expect(_tabsOf(workspace), [
+        ['alpha'],
+      ]);
+    });
+
+    test('survive a restart, with the tabs they took the place of', () {
+      final store = _MemoryStore();
+      _opened('alpha', store: store)
+        ..openToSide('bravo')
+        ..openInNewTab('charlie')
+        ..openFolderInNewTab('work')
+        ..activateTab(1)
+        ..showDay(tuesday, ['delta']);
+
+      final restored = _restored(store);
+      expect(restored.dayInTabs, tuesday);
+      expect(_rowOf(restored), [
+        ['delta'],
+      ]);
+      expect(restored.leaveDay(), isTrue);
+      const before = [
+        ['alpha', 'bravo'],
+        ['charlie'],
+        'work',
+      ];
+      expect(_rowOf(restored), before);
+      expect(restored.selectedNoteId, 'charlie');
+
+      final left = _restored(store);
+      expect(left.dayInTabs, isNull);
+      expect(_rowOf(left), before);
+      expect(left.leaveDay(), isFalse);
+    });
+
+    test('notes and folders that go away leave the tabs a day took the place '
+        'of, and with none of those left the day stays', () {
+      final workspace = _opened('alpha')
+        ..openToSide('bravo')
+        ..openInNewTab('charlie')
+        ..openFolderInNewTab('work')
+        ..showDay(tuesday, ['delta']);
+
+      expect(workspace.reconcile(['alpha', 'charlie', 'delta']), isTrue);
+      expect(workspace.reconcileFolders((id) => id != 'work'), isTrue);
+      expect(_rowOf(workspace), [
+        ['delta'],
+      ]);
+      expect(workspace.leaveDay(), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha'],
+        ['charlie'],
+      ]);
+
+      workspace
+        ..showDay(wednesday, ['delta'])
+        ..reconcile(['delta']);
+      expect(workspace.leaveDay(), isTrue);
+      expect(workspace.dayInTabs, isNull);
+      expect(_rowOf(workspace), [
+        ['delta'],
+      ]);
+    });
+
+    test("a tab opened over a day's goes with the day for Reopen to bring "
+        "back, and a tab of the day's own notes goes without, after a "
+        'restart too', () {
+      final store = _MemoryStore();
+      final workspace = _opened('alpha', store: store)
+        ..showDay(tuesday, ['bravo'])
+        ..openInNewTab('charlie')
+        ..showDay(wednesday, ['delta']);
+      expect(workspace.recentlyClosed, [
+        ['charlie'],
+      ]);
+
+      final restored = _restored(store)..openInNewTab('bravo');
+      expect(restored.leaveDay(), isTrue);
+      expect(_tabsOf(restored), [
+        ['alpha'],
+      ]);
+      expect(restored.recentlyClosed, [
+        ['bravo'],
+        ['charlie'],
+      ]);
+    });
+
+    test("a folder's tab opened over a day's goes with the day for Reopen "
+        'to bring back', () {
+      final workspace = _opened('alpha')
+        ..showDay(tuesday, ['bravo'])
+        ..openFolderInNewTab('work');
+      expect(workspace.leaveDay(), isTrue);
+      expect(workspace.reopen(), isTrue);
+      expect(_rowOf(workspace), [
+        ['alpha'],
+        'work',
+      ]);
+    });
+
+    test('leaving the day takes the tabs it brings back out of the closed '
+        'ones', () {
+      final workspace = _opened('alpha')
+        ..openFolderInNewTab('work')
+        ..showDay(tuesday, ['alpha', 'bravo'])
+        ..openFolderInNewTab('work');
+      workspace
+        ..closeTab(workspace.tabs.length - 1)
+        ..closeTab(0);
+      expect(workspace.recentlyClosed, [
+        ['alpha'],
+      ]);
+
+      expect(workspace.leaveDay(), isTrue);
+      expect(workspace.canReopen, isFalse);
+    });
+
+    test('a new day closes them and the tabs they took the place of, for '
+        'Reopen to bring back the tabs from before first', () {
+      final workspace = _opened('alpha')
+        ..openInNewTab('bravo')
+        ..showDay(tuesday, ['charlie']);
+      expect(workspace.rollOver(_today + 1), ['alpha', 'bravo', 'charlie']);
+      expect(workspace.dayInTabs, isNull);
+      expect(workspace.tabs, isEmpty);
+      expect(workspace.recentlyClosed, [
+        ['alpha'],
+        ['bravo'],
+        ['charlie'],
+      ]);
+      expect(workspace.leaveDay(), isFalse);
+    });
+  });
 }
