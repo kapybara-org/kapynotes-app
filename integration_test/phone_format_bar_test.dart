@@ -309,8 +309,8 @@ void main() {
     );
   });
 
-  testWidgets('Attach leads the bar and offers Photo, Video, Voice recording '
-      'and File', (tester) async {
+  testWidgets('Attach leads the bar and offers Photo, Video, Voice note and '
+      'File', (tester) async {
     await open(tester, 'Trip budget');
     final bar = tester.getRect(find.byKey(_bar));
     final attach = tester.getRect(find.byKey(const ValueKey('format-attach')));
@@ -332,7 +332,7 @@ void main() {
         ))
           (tile.title! as Text).data,
       ],
-      ['Photo', 'Video', 'Voice recording', 'File'],
+      ['Photo', 'Video', 'Voice note', 'File'],
     );
 
     await tester.tap(find.byKey(const ValueKey('attach-voice')));

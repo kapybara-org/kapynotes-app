@@ -32,7 +32,8 @@ class FormatBarAction {
 
 /// The row above a phone's software keyboard while a note is being written:
 /// one tap per markdown action, scrolling sideways, with the key that puts
-/// the keyboard away fixed on the right.
+/// the keyboard away fixed on the right. Where the row scrolls, its buttons
+/// widen a little so that it ends on a whole one rather than cut one off.
 ///
 /// Its buttons are plain gesture targets, so a tap never takes focus from the
 /// note or ends its selection, and the bar is a [TapRegion] of [tapGroup] so
@@ -53,6 +54,18 @@ class PhoneFormatBar extends StatefulWidget {
   static const double _target = 44;
   static const double _tile = 38;
 
+  /// The room past the last whole button, before the divider: what a 412 pt
+  /// Android phone has with buttons at [_target].
+  static const double _peek = 11;
+
+  /// Each button's width in a row [room] wide holding [count]: [_target], or
+  /// a little more where they don't all fit, so the row ends on a whole
+  /// button and [_peek].
+  static double _width(double room, int count) {
+    final whole = ((room - _peek) / _target).floor();
+    return whole < 1 || whole >= count ? _target : (room - _peek) / whole;
+  }
+
   @override
   State<PhoneFormatBar> createState() => _PhoneFormatBarState();
 }
@@ -67,7 +80,7 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
   }
 
   /// Brings a button that has just lit up into view: Code, inside a code
-  /// block, is at the far end of a row that opened at Heading.
+  /// block, is past the end of a row that opens at Attach.
   @override
   void didUpdateWidget(PhoneFormatBar old) {
     super.didUpdateWidget(old);
@@ -82,8 +95,12 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
       final position = _scroll.position;
-      final left = index * PhoneFormatBar._target;
-      final right = left + PhoneFormatBar._target;
+      final width = PhoneFormatBar._width(
+        position.viewportDimension,
+        widget.actions.length,
+      );
+      final left = index * width;
+      final right = left + width;
       if (left < position.pixels) {
         _scroll.jumpTo(left);
       } else if (right > position.pixels + position.viewportDimension) {
@@ -111,17 +128,29 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
           child: Row(
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  key: const ValueKey('phone-format-scroll'),
-                  controller: _scroll,
-                  scrollDirection: Axis.horizontal,
-                  physics: const ClampingScrollPhysics(),
-                  child: Row(
-                    children: [
-                      for (final action in widget.actions)
-                        _BarButton(key: ValueKey(action.key), action: action),
-                    ],
-                  ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = PhoneFormatBar._width(
+                      constraints.maxWidth,
+                      widget.actions.length,
+                    );
+                    return SingleChildScrollView(
+                      key: const ValueKey('phone-format-scroll'),
+                      controller: _scroll,
+                      scrollDirection: Axis.horizontal,
+                      physics: const ClampingScrollPhysics(),
+                      child: Row(
+                        children: [
+                          for (final action in widget.actions)
+                            _BarButton(
+                              key: ValueKey(action.key),
+                              width: width,
+                              action: action,
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
               Container(width: 1, height: 22, color: palette.separator),
@@ -144,7 +173,7 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
 }
 
 class _BarButton extends StatelessWidget {
-  const _BarButton({super.key, required this.action, this.width = 44});
+  const _BarButton({super.key, required this.action, required this.width});
 
   final FormatBarAction action;
   final double width;
@@ -206,8 +235,8 @@ class _BarButton extends StatelessWidget {
 enum FormatBarAttachment { photo, video, voice, file }
 
 /// The small sheet the attach button opens, one row for each thing a note
-/// can take that is not text. Voice recording is left out where [voice] is
-/// false, as Commands leaves out Voice note.
+/// can take that is not text. Voice note is left out where [voice] is false,
+/// as Commands leaves it out.
 Future<FormatBarAttachment?> chooseAttachment(
   BuildContext context, {
   required bool voice,
@@ -221,7 +250,7 @@ Future<FormatBarAttachment?> chooseAttachment(
         for (final (choice, label, icon) in const [
           (FormatBarAttachment.photo, 'Photo', KapyIcons.photoLibraryOutlined),
           (FormatBarAttachment.video, 'Video', KapyIcons.videoOutlined),
-          (FormatBarAttachment.voice, 'Voice recording', KapyIcons.micRounded),
+          (FormatBarAttachment.voice, 'Voice note', KapyIcons.micRounded),
           (FormatBarAttachment.file, 'File', KapyIcons.attachFileRounded),
         ])
           if (voice || choice != FormatBarAttachment.voice)

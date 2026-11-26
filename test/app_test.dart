@@ -8039,8 +8039,8 @@ void main() {
       expect(find.byKey(const ValueKey('slash-command-drawing')), findsNothing);
     });
 
-    testWidgets('Voice recording from the bar\'s attach sheet records into '
-        'the open note, at the caret', (tester) async {
+    testWidgets('Voice note from the bar\'s attach sheet records into the '
+        'open note, at the caret', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       // Notices come and go as they do in the app, so Recording started is
