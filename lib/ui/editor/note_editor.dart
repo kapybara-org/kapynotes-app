@@ -8559,10 +8559,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 },
               ),
               PasteTextIntent: CallbackAction<PasteTextIntent>(
-                onInvoke: (intent) {
-                  unawaited(handlePaste(intent.cause));
-                  return null;
-                },
+                onInvoke: (intent) => handlePaste(intent.cause),
               ),
             },
             // A cleared shortcut binds nothing; the footer button beside it is
