@@ -1749,7 +1749,14 @@ class _SettingsDialogState extends State<SettingsDialog>
             'zoom-setting',
             'Zoom',
             subtitle: 'The whole window',
-            keywords: ['ui scale', 'bigger', 'larger', 'smaller', 'magnify'],
+            keywords: [
+              'ui scale',
+              'bigger',
+              'larger',
+              'smaller',
+              'magnify',
+              'text size',
+            ],
             value: zoomPercent,
             changed: zoom != 1,
             onReset: prefs.resetZoom,
@@ -2505,7 +2512,16 @@ class _SettingsDialogState extends State<SettingsDialog>
       'shortcut-row-${action.name}',
       _shortcutLabel(action),
       subtitle: action.description,
-      keywords: ['shortcut', 'hotkey', 'keyboard', ?binding?.displayLabel],
+      keywords: [
+        'shortcut',
+        'hotkey',
+        'keyboard',
+        if (action == ShortcutAction.zoomIn ||
+            action == ShortcutAction.zoomOut ||
+            action == ShortcutAction.resetZoom)
+          'text size',
+        ?binding?.displayLabel,
+      ],
       value: binding?.displayLabel ?? 'None',
       changed: changed,
       onReset: reset,
