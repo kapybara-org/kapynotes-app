@@ -26,6 +26,7 @@ class ImageSync {
     required SyncApi api,
     required BlobStore store,
     required NotesStore notes,
+    this.onStorage,
     this.downloadRetryDelays = const [
       Duration(milliseconds: 300),
       Duration(milliseconds: 1200),
@@ -39,6 +40,12 @@ class ImageSync {
   final BlobStore _store;
   final NotesStore _notes;
   final List<Duration> downloadRetryDelays;
+
+  /// Told about room on the server: with what [note] holds that it turned
+  /// away because the account counting it is full, and with null once an
+  /// upload has been let in, which means there is room again. Nothing else
+  /// changes: the item stays where it is and the next pass tries again.
+  final void Function(Note note, NoteAttachmentRef? refused)? onStorage;
 
   /// Hashes currently being fetched, so ten images in one note that all point
   /// at the same picture cost one download rather than ten.
@@ -155,6 +162,9 @@ class ImageSync {
       // thumbnail interruption never retransmits and bills the full image.
       debugPrint('KapyNotes: could not upload image ${current.hash}: $error');
       _setProgress(current.hash, null);
+      if (error is SyncRefusedException && error.code == storageFullCode) {
+        onStorage?.call(note, current);
+      }
       return current.attachmentId == null ? null : current;
     }
   }
@@ -188,11 +198,14 @@ class ImageSync {
       _release(_slots.remove(slotKey)!);
       slot = null;
     }
-    slot ??= _slots[slotKey] = await _api.createAttachment(
-      noteId: note.id,
-      spaceId: note.spaceId,
-      bytes: body.length,
-    );
+    if (slot == null) {
+      slot = _slots[slotKey] = await _api.createAttachment(
+        noteId: note.id,
+        spaceId: note.spaceId,
+        bytes: body.length,
+      );
+      onStorage?.call(note, null);
+    }
 
     try {
       await _api.putBlob(slot.uploadUrl, body, onProgress: onProgress);
