@@ -35,8 +35,16 @@ class JustAudioBackend implements VoicePlayerBackend {
   /// audio session.
   AudioPlayer get _live => _player ??= AudioPlayer();
 
+  /// just_audio_windows answers the load with no length and reports it a
+  /// moment later, once the file has opened (KAP-398).
   @override
-  Future<Duration?> load(File file) => _live.setFilePath(file.path);
+  Future<Duration?> load(File file) async =>
+      await _live.setFilePath(file.path) ??
+      await _live.durationStream
+          .firstWhere(
+            (duration) => duration != null && duration > Duration.zero,
+          )
+          .timeout(const Duration(seconds: 2), onTimeout: () => null);
 
   @override
   Future<void> play() => _live.play();
@@ -245,7 +253,9 @@ class VoicePlayer extends ChangeNotifier {
     _notify();
 
     try {
-      _duration = await _backend.load(file);
+      final duration = await _backend.load(file);
+      if (_disposed || request != _request) return;
+      _duration = duration;
       await _backend.setSpeed(_speed);
       if (from != null) await _moveTo(from);
     } catch (error) {

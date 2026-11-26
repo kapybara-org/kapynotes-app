@@ -853,6 +853,194 @@ void main() {
       expect(goldenFolders.tree.folderOf(note.id), isNull);
     });
 
+    /// Where the menu a right click at [click] opens sits, and where the
+    /// folder list its Move to folder… opens, which esc then closes.
+    Future<(Rect, Rect)> moveFrom(
+      WidgetTester tester,
+      String noteId,
+      Offset click,
+    ) async {
+      await tester.tapAt(
+        click,
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      final menu = tester.getRect(
+        find.byKey(const ValueKey('kapy-context-menu')),
+      );
+      await tapKey(tester, 'folder-note-$noteId');
+      final picker = find.byKey(const ValueKey('folder-picker'));
+      final opened = tester.getRect(picker);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
+      return (menu, opened);
+    }
+
+    testWidgets('Move to folder… opens where its menu was, hung from the '
+        'corner the menu hung from', (tester) async {
+      await pumpWindow(tester);
+      goldenFolders.create('Work');
+      final note = goldenNotes.create(body: 'Pricing ideas');
+      await tester.pumpAndSettle();
+      final row = tester.getRect(rowOf(note.id));
+
+      // Clicked near the row's end, the menu hangs from its top right corner,
+      // and so does the list; near the row's start, both from the top left.
+      final end = row.centerRight - const Offset(16, 0);
+      final (menuAtEnd, pickerAtEnd) = await moveFrom(tester, note.id, end);
+      expect(end.dx, greaterThan(menuAtEnd.center.dx));
+      expect(pickerAtEnd.topRight, menuAtEnd.topRight);
+
+      final start = row.centerLeft + const Offset(16, 0);
+      final (menuAtStart, pickerAtStart) = await moveFrom(
+        tester,
+        note.id,
+        start,
+      );
+      expect(start.dx, lessThan(menuAtStart.center.dx));
+      expect(pickerAtStart.topLeft, menuAtStart.topLeft);
+
+      await tester.tap(rowOf(note.id));
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'page-more');
+      final more = tester.getRect(
+        find.byKey(const ValueKey('kapy-context-menu')),
+      );
+      await tapKey(tester, 'page-more-folder');
+      expect(
+        tester.getRect(find.byKey(const ValueKey('folder-picker'))).topRight,
+        more.topRight,
+      );
+    });
+
+    testWidgets('in a 400 wide window, Move to folder… opens where its menu '
+        'was and keeps 8 inside the window, its list shortening when the '
+        'window is short', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(400, 800),
+        brightness: Brightness.dark,
+        withNote: false,
+      );
+      final note = goldenNotes.create(body: 'Pricing ideas');
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'page-show-list');
+      final row = tester.getRect(rowOf(note.id));
+      const window = Rect.fromLTRB(8, 8, 392, 792);
+
+      final end = row.centerRight - const Offset(8, 0);
+      final (menuAtEnd, pickerAtEnd) = await moveFrom(tester, note.id, end);
+      expect(pickerAtEnd.topRight, menuAtEnd.topRight);
+      expect(window.intersect(pickerAtEnd), pickerAtEnd);
+
+      final start = row.centerLeft + const Offset(8, 0);
+      final (menuAtStart, pickerAtStart) = await moveFrom(
+        tester,
+        note.id,
+        start,
+      );
+      expect(pickerAtStart.topLeft, menuAtStart.topLeft);
+      expect(window.intersect(pickerAtStart), pickerAtStart);
+
+      for (var i = 1; i <= 12; i++) {
+        goldenFolders.create('Folder $i');
+      }
+      tester.view.physicalSize = const Size(400, 300);
+      await tester.pumpAndSettle();
+      final (_, short) = await moveFrom(
+        tester,
+        note.id,
+        tester.getRect(rowOf(note.id)).centerRight - const Offset(8, 0),
+      );
+      expect(const Rect.fromLTRB(8, 8, 392, 292).intersect(short), short);
+    });
+
+    testWidgets("in a 300 tall window, the tag list from a note's menu "
+        'shortens to fit', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(400, 800),
+        brightness: Brightness.dark,
+        withNote: false,
+      );
+      for (var i = 1; i <= 12; i++) {
+        goldenTags.create('Tag $i');
+      }
+      final note = goldenNotes.create(body: 'Pricing ideas');
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'page-show-list');
+      tester.view.physicalSize = const Size(400, 300);
+      await tester.pumpAndSettle();
+      await tester.tapAt(
+        tester.getRect(rowOf(note.id)).centerRight - const Offset(8, 0),
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'tags-note-${note.id}');
+      expect(find.byKey(const ValueKey('tag-picker-field')), findsOneWidget);
+    });
+
+    testWidgets('Move to folder… works from the keyboard: ↓ in More reaches '
+        'it, ↵ opens the list on the menu with its field ready, and ↓ there '
+        'keeps the folder it reaches in sight', (tester) async {
+      await pumpWindow(tester);
+      final folders = [
+        for (var i = 1; i <= 14; i++)
+          goldenFolders.create('Folder ${i.toString().padLeft(2, '0')}')!,
+      ];
+      final note = goldenNotes.create(body: 'Pricing ideas');
+      await tester.pumpAndSettle();
+      await tester.tap(rowOf(note.id));
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'page-more');
+      final menu = tester.getRect(
+        find.byKey(const ValueKey('kapy-context-menu')),
+      );
+
+      final item = find.byKey(const ValueKey('page-more-folder'));
+      FocusNode itemFocus() => Focus.of(
+        tester.element(
+          find.descendant(of: item, matching: find.byType(KapyMenuActionRow)),
+        ),
+      );
+      for (var i = 0; i < 20 && !itemFocus().hasPrimaryFocus; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+      }
+      expect(itemFocus().hasPrimaryFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      final picker = find.byKey(const ValueKey('folder-picker'));
+      expect(tester.getRect(picker).topRight, menu.topRight);
+      final field = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('folder-picker-field')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(field.focusNode.hasPrimaryFocus, isTrue);
+
+      for (var i = 0; i < 12; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+      }
+      final list = tester.getRect(
+        find.descendant(of: picker, matching: find.byType(ListView)),
+      );
+      final reached = tester.getRect(
+        find.byKey(ValueKey('folder-pick-${folders[11].id}')),
+      );
+      expect(reached.top, greaterThanOrEqualTo(list.top));
+      expect(reached.bottom, lessThanOrEqualTo(list.bottom));
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(note.id), folders[11].id);
+    });
+
     testWidgets("a drawing can't be filed, so its menu has no Move to "
         'folder…', (tester) async {
       await pumpWindow(tester, drawings: true);

@@ -1,3 +1,4 @@
+import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -308,6 +309,48 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(44), reason: 'example $i');
     }
   });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets(
+      'on ${platform.name} a screen reader presses a chat and a starting '
+      'question as a tap does (KAP-365)',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final semantics = tester.ensureSemantics();
+        SemanticsNode node(String key) =>
+            tester.getSemantics(find.byKey(ValueKey(key)));
+        Future<void> press(String key) async {
+          final id = node(key).id;
+          tester.semantics.tap(find.semantics.byPredicate((n) => n.id == id));
+          await tester.pump();
+        }
+
+        final ai = _ai();
+        var opened = 0;
+        await _pump(tester, ai, onOpenChat: () => opened++);
+        expect(node('kapy-ai-page-chat-c'), isSemantics(hasTapAction: true));
+        await press('kapy-ai-page-chat-c');
+        expect(ai.calls, ['openChat:c']);
+        expect(opened, 1);
+
+        final empty = _ai(chats: const []);
+        await _pump(tester, empty, onOpenChat: () => opened++);
+        expect(
+          node('kapy-ai-page-example-0'),
+          isSemantics(
+            label: 'What did I plan for this week?',
+            isButton: true,
+            hasTapAction: true,
+          ),
+        );
+        await press('kapy-ai-page-example-0');
+        expect(empty.calls, ['newChat', 'ask:What did I plan for this week?:']);
+        expect(opened, 2);
+        semantics.dispose();
+      },
+    );
+  }
 
   testWidgets('a tap anywhere on the search well puts the cursor in it', (
     tester,

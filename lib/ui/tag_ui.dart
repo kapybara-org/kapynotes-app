@@ -486,12 +486,14 @@ class _TagPickerState extends State<TagPicker> {
                 ),
               ),
             ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 30.0 * 8),
-              child: ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: rows,
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 30.0 * 8),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: rows,
+                ),
               ),
             ),
             if (problem != null)
@@ -514,11 +516,11 @@ class _TagPickerState extends State<TagPicker> {
   );
 }
 
-/// The tag list for [noteIds] at [position], from a note's menu or the
-/// picked notes'.
+/// The tag list for [noteIds], opened from [spot]: where a note's menu or
+/// the picked notes' sat, so it takes the menu's place.
 Future<void> showTagPickerAt(
   BuildContext context,
-  Offset position,
+  MenuSpot spot,
   List<String> noteIds,
 ) async {
   final shelf = TagShelf.maybeOf(context);
@@ -530,7 +532,10 @@ Future<void> showTagPickerAt(
     barrierColor: Colors.transparent,
     transitionDuration: Duration.zero,
     pageBuilder: (context, _, _) => CustomSingleChildLayout(
-      delegate: PopoverAtPoint(position),
+      delegate: PopoverAtSpot(
+        spot,
+        mediaPadding: MediaQuery.paddingOf(context),
+      ),
       child: TagPicker(
         shelf: shelf,
         noteIds: noteIds,

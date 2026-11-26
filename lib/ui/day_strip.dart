@@ -693,7 +693,6 @@ class _Day extends StatefulWidget {
 
 class _DayState extends State<_Day> {
   bool _hovered = false;
-  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -725,11 +724,7 @@ class _DayState extends State<_Day> {
         ? Container(
             constraints: const BoxConstraints(minHeight: _Day.phoneHeight),
             decoration: BoxDecoration(
-              color: filled
-                  ? palette.controlBackground
-                  : _focused
-                  ? palette.hover
-                  : null,
+              color: filled ? palette.controlBackground : null,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(
@@ -772,7 +767,7 @@ class _DayState extends State<_Day> {
                   decoration: BoxDecoration(
                     color: filled
                         ? palette.tonalBackground
-                        : _hovered || _focused
+                        : _hovered
                         ? palette.controlBackground
                         : null,
                     borderRadius: BorderRadius.circular(6),
@@ -811,7 +806,6 @@ class _DayState extends State<_Day> {
     return TextButton(
       onPressed: widget.onTap,
       onHover: (hovered) => setState(() => _hovered = hovered),
-      onFocusChange: (focused) => setState(() => _focused = focused),
       style: TextButton.styleFrom(
         minimumSize: Size.zero,
         padding: EdgeInsets.zero,
@@ -980,8 +974,7 @@ class _DayPickerState extends State<DayPicker> {
           backgroundColor: WidgetStateProperty.resolveWith(
             (states) => filled
                 ? palette.tonalBackground
-                : states.contains(WidgetState.hovered) ||
-                      states.contains(WidgetState.focused)
+                : states.contains(WidgetState.hovered)
                 ? palette.controlBackground
                 : null,
           ),

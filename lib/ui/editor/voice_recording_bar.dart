@@ -406,8 +406,7 @@ class _StopButton extends StatelessWidget {
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               final alpha = states.contains(WidgetState.pressed)
                   ? 0.22
-                  : states.contains(WidgetState.hovered) ||
-                        states.contains(WidgetState.focused)
+                  : states.contains(WidgetState.hovered)
                   ? 0.17
                   : 0.12;
               return recording.withValues(alpha: alpha);

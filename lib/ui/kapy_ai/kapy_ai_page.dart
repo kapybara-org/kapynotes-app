@@ -274,6 +274,7 @@ class _Example extends StatelessWidget {
       button: true,
       label: question,
       excludeSemantics: true,
+      onTap: onTap,
       child: Material(
         color: palette.fillRest,
         borderRadius: shape,

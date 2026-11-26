@@ -34,6 +34,7 @@ import 'core/quick_capture.dart';
 import 'core/deep_links.dart';
 import 'core/system_contrast.dart';
 import 'core/theme.dart';
+import 'core/toast.dart';
 import 'core/window_material.dart';
 import 'data/auto_titles.dart';
 import 'data/engine_provider.dart';
@@ -58,6 +59,7 @@ import 'mcp/mcp_service.dart';
 import 'sync/account.dart';
 import 'sync/key_store.dart';
 import 'ui/app_logo.dart';
+import 'ui/focus_ring.dart';
 import 'ui/home_page.dart';
 import 'ui/hidden_notes_gate.dart';
 import 'ui/join/join_link_listener.dart';
@@ -723,11 +725,13 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.account?.billing?.refreshIfStale() ?? Future<void>.value(),
       );
     } else {
-      // Leaving the foreground or closing gives up Undo on a removal still
-      // held for it: it goes now, while the app can still send it.
+      // Leaving the foreground or closing gives up Undo on a delete or a
+      // removal still held for it: it goes now, while the app can still save
+      // and send it.
       if (state == AppLifecycleState.hidden ||
           state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
+        Toast.giveUpUndo();
         unawaited(
           widget.account?.sharing?.sendHeldRemovalsQuietly() ??
               Future<void>.value(),
@@ -806,7 +810,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           builder: (context, child) {
             final asks = _systemAsksForContrast;
             final solid = !_glassBehindWindow || asks;
-            Widget result = child ?? const SizedBox.shrink();
+            Widget result = FocusRing(child: child ?? const SizedBox.shrink());
             if (widget.prefs.transparencyEnabled && solid) {
               final theme = Theme.of(context);
               final palette = theme.extension<CalcPalette>()!;

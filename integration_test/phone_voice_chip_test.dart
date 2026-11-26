@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -103,7 +104,7 @@ void main() {
         );
         await tester.pumpAndSettle(const Duration(seconds: 1));
         FocusManager.instance.primaryFocus?.unfocus();
-        await tester.pumpAndSettle(const Duration(seconds: 1));
+        await settleKeyboard(tester, up: false);
 
         expect(find.byType(NoteVoiceChip), findsNWidgets(2));
         expect(tester.takeException(), isNull);
