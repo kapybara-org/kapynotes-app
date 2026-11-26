@@ -10,6 +10,7 @@ import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/notes_grouping.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/tag_colours.dart';
+import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -286,6 +287,61 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  testWidgets('in a 400 px window the keyboard goes into When in the '
+      "menu's place and back out of it", (tester) async {
+    desktop(TargetPlatform.macOS);
+    final back = find.byKey(const ValueKey('notes-view-back'));
+    final whenRow = find.byKey(const ValueKey('notes-filter-when'));
+    bool focused(Finder finder) {
+      final at = FocusManager.instance.primaryFocus?.context;
+      if (at is! Element) return false;
+      final target = tester.element(finder);
+      var inside = identical(at, target);
+      at.visitAncestorElements((element) {
+        inside = inside || identical(element, target);
+        return !inside;
+      });
+      return inside;
+    }
+
+    await pumpView(tester, window: const Size(400, 720), listWidth: 400);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.pump();
+    for (var i = 0; i < 20 && !focused(whenRow); i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(back, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(
+      focused(back),
+      isTrue,
+      reason: 'the submenu starts at its first row',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(menu, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(
+      focused(find.byKey(const ValueKey('notes-filter-all'))),
+      isTrue,
+      reason: 'the menu starts again at its first row',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(menu, findsNothing);
+    expect(focused(view), isTrue, reason: 'focus goes back to the View icon');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets("an iPad's View icon opens the touch popover, which adds "
       'Group by and Layout', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -423,6 +479,37 @@ void main() {
       );
       expect(
         find.bySemanticsLabel('$label, back to All notes'),
+        findsOneWidget,
+      );
+      semantics.dispose();
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets("in Drawings it names No tag and goes back to All drawings", (
+      tester,
+    ) async {
+      desktop(TargetPlatform.macOS);
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.light(),
+          home: Material(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: NotesFilterChip(
+                show: NotesShow.all,
+                media: null,
+                tags: const TagFilter(none: true),
+                when: NotesWhen.anyTime,
+                onClear: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('No tag'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('No tag, back to All drawings'),
         findsOneWidget,
       );
       semantics.dispose();

@@ -12484,6 +12484,17 @@ void main() {
         expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
         expect(chip, findsNothing);
         expect(spaceCount(tester), '2');
+
+        // The chip gives every kind back too.
+        await tick('voice');
+        await tick('video');
+        expect(rowTitles(tester), ['Floor plan']);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+        await tester.pumpAndSettle();
+        expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
+        expect(chip, findsNothing);
       },
     );
 
