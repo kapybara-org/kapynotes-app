@@ -128,11 +128,7 @@ void main() {
       style.foregroundColor!.resolve({WidgetState.disabled}),
       palette.textTertiary,
     );
-    expect(style.side!.resolve({}), BorderSide.none);
-    expect(
-      style.side!.resolve({WidgetState.focused}),
-      BorderSide(color: palette.selectedBorder, width: 1),
-    );
+    expect(style.side, isNull);
   });
 
   testWidgets('the band has a hairline along its bottom, but none under the '
