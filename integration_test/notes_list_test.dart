@@ -33,6 +33,7 @@ import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/day_tabs.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -107,11 +108,13 @@ void main() {
     notes = NotesStore(store, now: () => clock);
     final tags = TagStore(store);
     final days = NoteDayStore(store);
+    final dayTabs = DayTabsStore(store);
     prefs = LayoutPrefs(store)..load();
     shortcuts = ShortcutPrefs(store)..load();
     await notes.load();
     await tags.load();
     await days.load();
+    await dayTabs.load();
     final folders = file == null ? null : FolderStore(store);
     await folders?.load();
     for (final body in bodies) {
@@ -138,6 +141,7 @@ void main() {
         shortcuts: shortcuts,
         tags: tags,
         days: days,
+        dayTabs: dayTabs,
         tasks: tasks,
         folders: folders,
         kapyAi: FakeKapyAi(),
@@ -695,6 +699,50 @@ void main() {
       tester.widget<NoteField>(openNote).controller.text,
       startsWith('Call with Arjun\n'),
     );
+  });
+
+  // A day's tab pinned from its menu (KAP-348): it comes to the front with a
+  // pin in its icon's place and keeps its ×, and Unpin tab gives it back its
+  // icon where it is. The menu is the tab in front's, so it shows Close tab's
+  // keys.
+  testWidgets("A day's tab menu: Pin tab brings the tab to the front with a "
+      'pin, and Unpin tab takes the pin away', (tester) async {
+    await board(tester);
+    await click(tester, row('Call with Arjun'));
+    final now = notes.now();
+    await click(
+      tester,
+      find.byKey(ValueKey('day-strip-${now.year}-${now.month}-${now.day}')),
+    );
+    final tabs = find.byType(NoteTabRow);
+    List<NoteTab> shown() => tester.widget<NoteTabRow>(tabs).tabs;
+    Finder tab(String title) =>
+        find.descendant(of: tabs, matching: find.text(title));
+    final title = shown()[1].title;
+    expect([for (final each in shown()) each.pinned], everyElement(isFalse));
+
+    await click(tester, tab(title));
+    await tester.tap(tab(title), buttons: kSecondaryButton, kind: mouse);
+    await tester.pumpAndSettle();
+    expect(find.text('Pin tab'), findsOneWidget);
+    expect(find.text('Close tab'), findsOneWidget);
+    await boardShot(tester, 'day-tab-menu');
+
+    await click(tester, find.text('Pin tab'));
+    expect(shown().first.title, title);
+    expect(shown().first.pinned, isTrue);
+    expect(
+      tester.widget<NoteField>(openNote).controller.text,
+      startsWith('$title\n'),
+    );
+    await boardShot(tester, 'day-tab-pinned');
+
+    await tester.tap(tab(title), buttons: kSecondaryButton, kind: mouse);
+    await tester.pumpAndSettle();
+    await click(tester, find.text('Unpin tab'));
+    expect(shown().first.title, title);
+    expect(shown().first.pinned, isFalse);
+    await boardShot(tester, 'day-tab-unpinned');
   });
 
   testWidgets("D07's board: + Tag lists every tag in its colour, the note's "
