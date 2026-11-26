@@ -878,25 +878,21 @@ void main() {
       return (menu, opened);
     }
 
-    /// The menu keeps a corner at [click], and the list hangs from that corner.
+    /// The click is on the menu's top or bottom edge, within its width, so
+    /// on no item, and the list hangs from the menu's corner on the click's
+    /// side of it.
     void expectHung(Rect menu, Rect opened, Offset click) {
-      final menuCorners = [
-        menu.topLeft,
-        menu.topRight,
-        menu.bottomLeft,
-        menu.bottomRight,
-      ];
-      final at = menuCorners.indexWhere(
-        (corner) => (corner - click).distance < 0.5,
+      expect(
+        click.dy == menu.top || click.dy == menu.bottom,
+        isTrue,
+        reason: '$menu has no edge at $click',
       );
-      expect(at, isNot(-1), reason: '$menu has no corner at $click');
-      final openedCorner = [
-        opened.topLeft,
-        opened.topRight,
-        opened.bottomLeft,
-        opened.bottomRight,
-      ][at];
-      expect(openedCorner, menuCorners[at]);
+      expect(click.dx, inInclusiveRange(menu.left, menu.right));
+      Offset corner(Rect rect) => Offset(
+        click.dx > menu.center.dx ? rect.right : rect.left,
+        click.dy > menu.center.dy ? rect.bottom : rect.top,
+      );
+      expect(corner(opened), corner(menu));
     }
 
     testWidgets('Move to folder… opens where its menu was, hung from the '
@@ -1003,8 +999,10 @@ void main() {
       expect(find.byKey(const ValueKey('tag-picker-field')), findsOneWidget);
     });
 
-    testWidgets("a note's menu, opened mid-list in a short window, keeps a "
-        'corner at the pointer and no item under it', (tester) async {
+    testWidgets("a note's menu, opened mid-list in a short window, has the "
+        'pointer on its top or bottom edge and no item under it', (
+      tester,
+    ) async {
       await pumpWindow(tester);
       final notes = [
         for (var i = 1; i <= 3; i++) goldenNotes.create(body: 'Note $i'),
@@ -1025,15 +1023,11 @@ void main() {
         find.byKey(const ValueKey('kapy-context-menu')),
       );
       expect(
-        [
-          menu.topLeft,
-          menu.topRight,
-          menu.bottomLeft,
-          menu.bottomRight,
-        ].any((corner) => (corner - at).distance < 0.01),
+        at.dy == menu.top || at.dy == menu.bottom,
         isTrue,
-        reason: '$menu has no corner at $at',
+        reason: '$menu has no edge at $at',
       );
+      expect(at.dx, inInclusiveRange(menu.left, menu.right));
       final underPointer = {
         for (final entry in tester.hitTestOnBinding(at).path) entry.target,
       };

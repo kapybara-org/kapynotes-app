@@ -49,6 +49,14 @@ void main() {
     );
   });
 
+  test("a note row's menu that fits the list on neither side stays inside it, "
+      'with the pointer on its top edge', () {
+    const list = Rect.fromLTRB(0, 0, 300, 600);
+    final placed = place(const Offset(150, 100), list: list);
+    expect(placed.left, 12, reason: 'the list starts at 8, the window gap');
+    expect(placed.top, 100);
+  });
+
   test('too wide for either side, it narrows to the side with more room '
       'and keeps a corner at the pointer', () {
     expect(

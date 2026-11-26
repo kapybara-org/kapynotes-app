@@ -138,21 +138,10 @@ class TagPopover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final laid = constraints.maxWidth.isFinite
-            ? width.clamp(0, constraints.maxWidth).toDouble()
-            : width;
-        return _box(palette, laid);
-      },
-    );
-  }
-
-  Widget _box(CalcPalette palette, double laid) {
     return Material(
       type: MaterialType.transparency,
       child: Container(
-        width: laid,
+        width: width,
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
           color: palette.controlBackground,

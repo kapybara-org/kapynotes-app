@@ -204,7 +204,8 @@ class _KapyContextMenuRoute<T> extends PopupRoute<T> {
 /// side fits, it opens on the side with more room and shrinks to that room,
 /// so it scrolls rather than sliding back over the pointer. A note row's
 /// menu hangs left from the click while the notes list, [preferredBounds],
-/// holds it.
+/// holds it, from the right when it doesn't fit on the left, and inside the
+/// list when it fits on neither.
 class KapyMenuLayout extends SingleChildLayoutDelegate {
   const KapyMenuLayout({
     required this.position,
@@ -247,15 +248,31 @@ class KapyMenuLayout extends SingleChildLayoutDelegate {
     final safe = _clear(mediaPadding).deflateRect(Offset.zero & size);
     final Offset(:dx, :dy) = position;
     final list = preferredBounds?.intersect(safe);
-    final hangLeft =
-        (list != null && dx - childSize.width >= list.left + _preferredGap) ||
-        dx + childSize.width > safe.right;
+    final holds =
+        list != null && list.width >= childSize.width + _preferredGap * 2;
+    final fitsLeft =
+        dx - childSize.width >= (holds ? list.left + _preferredGap : safe.left);
+    final fitsRight =
+        dx + childSize.width <=
+        (holds ? list.right - _preferredGap : safe.right);
     final below = safe.bottom - dy;
     final openDown = childSize.height <= below || below >= dy - safe.top;
+    final left = dx - childSize.width;
+    final double x;
+    if (holds) {
+      x = fitsLeft
+          ? left
+          : fitsRight
+          ? dx
+          : left.clamp(
+              list.left + _preferredGap,
+              list.right - childSize.width - _preferredGap,
+            );
+    } else {
+      x = fitsRight ? dx : left;
+    }
     return Offset(
-      (hangLeft ? dx - childSize.width : dx)
-          .clamp(safe.left, safe.right - childSize.width)
-          .toDouble(),
+      x.clamp(safe.left, safe.right - childSize.width).toDouble(),
       (openDown ? dy : dy - childSize.height)
           .clamp(safe.top, safe.bottom - childSize.height)
           .toDouble(),
