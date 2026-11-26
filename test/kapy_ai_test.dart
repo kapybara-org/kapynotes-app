@@ -592,7 +592,7 @@ void main() {
         ),
       );
 
-      expect(find.text('ON THIS DEVICE'), findsOneWidget);
+      expect(find.text('On this device'), findsOneWidget);
       expect(find.text('Apple Intelligence'), findsWidgets);
       expect(find.text('On this Mac'), findsNWidgets(2));
       expect(find.text('Codex on this Mac'), findsNothing);
@@ -672,7 +672,7 @@ void main() {
         [
           'On this device',
           'Answers stay on this computer',
-          'KAPY AI',
+          'Kapy AI',
           'Kapy AI Cloud',
           'Part of Pro',
         ],
@@ -1320,11 +1320,11 @@ void main() {
       await open(tester);
 
       for (final label in [
-        'TODAY',
-        'YESTERDAY',
-        'PREVIOUS 7 DAYS',
-        'OCTOBER',
-        'MARCH 2025',
+        'Today',
+        'Yesterday',
+        'Previous 7 days',
+        'October',
+        'March 2025',
       ]) {
         expect(find.text(label), findsOneWidget, reason: label);
       }
@@ -1364,8 +1364,8 @@ void main() {
 
       expect(find.text('Lisbon ideas'), findsOneWidget);
       expect(find.text('Trip budget'), findsNothing);
-      expect(find.text('YESTERDAY'), findsOneWidget);
-      expect(find.text('TODAY'), findsNothing);
+      expect(find.text('Yesterday'), findsOneWidget);
+      expect(find.text('Today'), findsNothing);
     });
 
     testWidgets('opens a chat', (tester) async {

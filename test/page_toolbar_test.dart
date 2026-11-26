@@ -22,7 +22,6 @@ void main() {
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-
   Widget harness(
     PageToolbar toolbar, {
     double width = 1016,
@@ -225,15 +224,11 @@ void main() {
     }
     expect(compact.last, isFalse);
 
-    await tester.pumpWidget(
-      harness(toolbar(days: days), width: 719),
-    );
+    await tester.pumpWidget(harness(toolbar(days: days), width: 719));
     expect(compact.last, isTrue);
     expect(find.byKey(week), findsNothing);
     expect(tester.getTopLeft(find.byKey(month)).dx, rect.left + 10);
-    await tester.pumpWidget(
-      harness(toolbar(days: days), width: 720),
-    );
+    await tester.pumpWidget(harness(toolbar(days: days), width: 720));
     expect(compact.last, isFalse);
   });
 
@@ -506,7 +501,7 @@ void main() {
       expect(style(text).fontWeight, FontWeight.w400);
       expect(style(text).color, KapyTheme.darkPalette.textTertiary);
     }
-    expect(style('Clients').fontWeight, FontWeight.w500);
+    expect(style('Clients').fontWeight, FontWeight.w400);
     expect(style('Clients').color, KapyTheme.darkPalette.textPrimary);
     expect(fold, findsNothing);
     // All of it shows, so hovering has nothing to add.
@@ -590,17 +585,13 @@ void main() {
 
   testWidgets('a narrower page keeps the last level, after a fold, then on '
       'its own, and hovering shows the whole path', (tester) async {
-    await tester.pumpWidget(
-      harness(toolbar(listVisible: false), width: 640),
-    );
+    await tester.pumpWidget(harness(toolbar(listVisible: false), width: 640));
     expect(onPath('Clients'), findsOneWidget);
     expect(onPath('My notes'), findsNothing);
     expect(fold, findsOneWidget);
     expect(find.byTooltip('My notes › Work › Clients'), findsOneWidget);
 
-    await tester.pumpWidget(
-      harness(toolbar(listVisible: false), width: 520),
-    );
+    await tester.pumpWidget(harness(toolbar(listVisible: false), width: 520));
     expect(onPath('Clients'), findsOneWidget);
     expect(onPath('My notes'), findsNothing);
     expect(fold, findsNothing);
@@ -626,7 +617,7 @@ void main() {
     );
     expect(
       tester.widget<Text>(onPath('Shelf plan')).style!.fontWeight,
-      FontWeight.w500,
+      FontWeight.w400,
     );
     expect(
       find.descendant(

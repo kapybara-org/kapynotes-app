@@ -346,9 +346,9 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: kapyText(
-                      17,
-                      22,
-                      palette.textPrimary,
+                      AppTypeScale.title,
+                      20,
+                      palette.textHeading,
                       weight: FontWeight.w600,
                     ),
                   ),

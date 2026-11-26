@@ -4887,7 +4887,7 @@ class _ChangedCount extends StatelessWidget {
     );
     return Padding(
       key: const ValueKey('settings-changed-count'),
-      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
       child: Row(
         children: [
           Expanded(
