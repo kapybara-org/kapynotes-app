@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +21,7 @@ import 'editor/voice_chip.dart';
 import 'settings_rows.dart' show SettingsPie, SettingsSegmented;
 import 'tag_colours.dart';
 import 'tonal_button.dart';
+import 'voice_note_ask.dart';
 
 /// What the dialog can offer beyond playback, decided by the caller.
 ///
@@ -42,6 +44,7 @@ class VoiceNoteActions {
     this.onSaveSummaryInstruction,
     this.summaryInstruction,
     this.failureReason,
+    this.ask,
   });
 
   final void Function(String text)? onInsert;
@@ -77,6 +80,9 @@ class VoiceNoteActions {
   final String? summaryInstruction;
 
   final String? failureReason;
+
+  /// Kapy AI, for questions about the recording. Null where it is off.
+  final VoiceAskActions? ask;
 }
 
 /// Opens a recording: a dialog on desktop, a tall sheet on a phone.
@@ -185,6 +191,9 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
 
   /// The row the play head is in, lit while this recording is loaded.
   int? _playingRow;
+
+  /// The rows the answer in Ask's drawer draws on, edged in green.
+  Set<int> _cited = const {};
   final ScrollController _transcriptScroll = ScrollController();
 
   /// Search in the transcript: each match is a row and where in its text.
@@ -396,6 +405,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     final palette = context.palette;
     final insertable = _textOf(summary: _onSummary);
     final insert = widget.actions.onInsert;
+    final ask = widget.actions.ask;
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -424,19 +434,45 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                   Navigator.of(context).maybePop();
                 },
         ),
-        Expanded(child: _content(palette)),
+        Expanded(
+          child: ask == null
+              ? _content(palette)
+              : VoiceAsk(
+                  actions: ask,
+                  ref: _ref,
+                  page: _content(palette),
+                  unavailable: _askUnavailable(ask),
+                  compact: widget.asSheet,
+                  onPlay: (at) => unawaited(_seekTo(at)),
+                  onCited: _cite,
+                  onInsert: insert == null
+                      ? null
+                      : (text) {
+                          insert(text);
+                          Navigator.of(context).maybePop();
+                        },
+                  onCopy: (text) => unawaited(_copy(text)),
+                ),
+        ),
       ],
     );
 
     if (widget.asSheet) {
-      return FractionallySizedBox(
-        heightFactor: 0.92,
-        child: Container(
-          decoration: BoxDecoration(
-            color: palette.surfaceBackground,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      // The keyboard lifts the whole sheet, so Ask's bar stays above it.
+      final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+      return Padding(
+        padding: EdgeInsets.only(bottom: keyboard),
+        child: FractionallySizedBox(
+          heightFactor: 0.92,
+          child: Container(
+            decoration: BoxDecoration(
+              color: palette.surfaceBackground,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+            ),
+            child: SafeArea(top: false, bottom: keyboard == 0, child: body),
           ),
-          child: SafeArea(top: false, child: body),
         ),
       );
     }
@@ -444,6 +480,35 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
       backgroundColor: palette.surfaceBackground,
       child: SizedBox(width: 620, height: 700, child: body),
     );
+  }
+
+  /// Why Ask can't take a question about this recording, said in its bar,
+  /// or null when it can.
+  String? _askUnavailable(VoiceAskActions ask) {
+    if (ask.hidden) return "Kapy AI doesn't read hidden notes";
+    if (_ref.transcript?.segments.isNotEmpty ?? false) return null;
+    return switch (widget.state) {
+      VoiceChipState.transcribing ||
+      VoiceChipState.waiting ||
+      VoiceChipState.retrying => 'Ask once the transcript is ready',
+      _ => 'Ask needs a transcript',
+    };
+  }
+
+  /// Edges the rows an answer draws on, and on a computer brings the first
+  /// of them into view on the transcript.
+  void _cite(List<Duration> moments) {
+    final starts = {for (final at in moments) at.inMilliseconds};
+    final rows = {
+      for (final (index, row) in _layout().indexed)
+        if (starts.contains(row.paragraph.first.s)) index,
+    };
+    setState(() {
+      _cited = rows;
+      if (rows.isNotEmpty && !widget.asSheet) _onSummary = false;
+    });
+    if (rows.isEmpty || widget.asSheet) return;
+    _reveal(rows.reduce(min));
   }
 
   /// "Wed 19 Nov · 8:55 · 2:03": the day and time it was recorded, with the
@@ -812,6 +877,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         }
         final row = rows[index];
         final lit = index == _playingRow;
+        final cited = _cited.contains(index);
         final start = Duration(milliseconds: row.paragraph.first.s);
         return Container(
           key: _rowKeys[index],
@@ -821,7 +887,11 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
           ),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: lit ? palette.accent.withValues(alpha: 0.13) : null,
+            color: lit
+                ? palette.accent.withValues(alpha: 0.13)
+                : cited
+                ? palette.accent.withValues(alpha: 0.06)
+                : null,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
@@ -842,7 +912,9 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: 46,
+                    // A cited row gives ten of these to its green edge, so
+                    // its words stay in line with the rest.
+                    width: cited ? 36 : 46,
                     child: Text(
                       formatVoiceDuration(start),
                       style: TextStyle(
@@ -855,19 +927,35 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                         fontVariations: AppWeight.wght(
                           lit ? AppWeight.page : AppWeight.body,
                         ),
-                        color: lit ? palette.accentText : palette.textTertiary,
+                        color: lit || cited
+                            ? palette.accentText
+                            : palette.textTertiary,
                       ),
                     ),
                   ),
                   Expanded(
-                    // SelectableText's own onTap, not a GestureDetector
-                    // around it: the selection recognisers inside are deeper
-                    // in the arena and win every tap. Selecting a quote out
-                    // of the transcript still works; this is only the tap.
-                    child: SelectableText.rich(
-                      _marked(row.text, index, palette),
-                      onTap: () => unawaited(_seekTo(start)),
-                      style: _reading.copyWith(color: palette.textPrimary),
+                    child: Container(
+                      padding: EdgeInsets.only(left: cited ? 8 : 0),
+                      decoration: cited
+                          ? BoxDecoration(
+                              border: Border(
+                                left: BorderSide(
+                                  color: palette.accent,
+                                  width: 2,
+                                ),
+                              ),
+                            )
+                          : null,
+                      // SelectableText's own onTap, not a GestureDetector
+                      // around it: the selection recognisers inside are
+                      // deeper in the arena and win every tap. Selecting a
+                      // quote out of the transcript still works; this is
+                      // only the tap.
+                      child: SelectableText.rich(
+                        _marked(row.text, index, palette),
+                        onTap: () => unawaited(_seekTo(start)),
+                        style: _reading.copyWith(color: palette.textPrimary),
+                      ),
                     ),
                   ),
                 ],

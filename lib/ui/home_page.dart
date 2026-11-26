@@ -53,6 +53,7 @@ import '../data/notes_store.dart';
 import '../data/onboarding.dart';
 import 'editor/voice_chip.dart';
 import 'editor/voice_insertion.dart';
+import 'voice_note_ask.dart';
 import 'voice_note_dialog.dart';
 import '../speech/speech_api.dart';
 import '../speech/speech_errors.dart';
@@ -1205,6 +1206,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final noteId = _selectedId;
     final note = widget.notes.byId(noteId ?? '');
     final canEdit = _canWriteNote(note);
+    final ai = _kapyAiOn ? _kapyAi : null;
     await openVoiceNoteDialog(
       context,
       ref: ref,
@@ -1267,6 +1269,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             : (instruction) =>
                   widget.voicePrefs!.summaryInstruction = instruction,
         failureReason: _failureReasonFor(ref),
+        ask: ai == null || note == null
+            ? null
+            : VoiceAskActions(
+                kapyAi: ai,
+                noteId: note.id,
+                hidden: note.isHidden,
+                onManageAccounts: () => _manageKapyAccounts(ai),
+                onSignIn: _kapySignIn,
+                onUpgrade: _kapyUpgrade,
+              ),
       ),
     );
   }
@@ -3510,24 +3522,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     controller: _kapyPanel,
     noteTitle: _kapyNoteTitle,
     onOpenNote: onOpenNote,
-    onManageAccounts: () => _showSettings(
-      section: SettingsSection.voice,
-      reveal: ai.accounts.isEmpty
-          ? 'kapy-ai-toggle'
-          : kapyAccountRowId(ai.accounts.first.kind),
-    ),
-    onSignIn: widget.account == null
-        ? null
-        : () => _showSettings(section: SettingsSection.account),
-    onUpgrade: switch (widget.account?.billing) {
-      final billing? => () => unawaited(
-        showProSheet(context, billing: billing),
-      ),
-      null => null,
-    },
+    onManageAccounts: () => _manageKapyAccounts(ai),
+    onSignIn: _kapySignIn,
+    onUpgrade: _kapyUpgrade,
     onClose: onClose,
     now: widget.notes.now,
   );
+
+  /// Settings › Voice & AI, at the accounts Kapy AI can answer with.
+  void _manageKapyAccounts(KapyAi ai) => _showSettings(
+    section: SettingsSection.voice,
+    reveal: ai.accounts.isEmpty
+        ? 'kapy-ai-toggle'
+        : kapyAccountRowId(ai.accounts.first.kind),
+  );
+
+  VoidCallback? get _kapySignIn => widget.account == null
+      ? null
+      : () => _showSettings(section: SettingsSection.account);
+
+  VoidCallback? get _kapyUpgrade => switch (widget.account?.billing) {
+    final billing? => () => unawaited(showProSheet(context, billing: billing)),
+    null => null,
+  };
 
   /// The page with Kapy AI's panel beside it or over it, while it is open.
   Widget _withKapyAi(Widget page) {

@@ -643,4 +643,8 @@ class KapyIcons {
     0xE0F0,
     HugeIcons.strokeRoundedSlidersHorizontal,
   );
+  static const messageQuestionRounded = KapyIconData(
+    0xE0F1,
+    HugeIcons.strokeRoundedMessageQuestion,
+  );
 }
