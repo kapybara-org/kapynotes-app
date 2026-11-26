@@ -554,13 +554,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                     key: _card,
                     constraints: BoxConstraints(
                       minHeight: desktop ? 40 : 0,
-                      maxWidth: math.max(
-                        0,
-                        math.min(
-                          desktop ? 400 : Toast._cardMaxWidth,
-                          right - left - 32,
-                        ),
-                      ),
+                      maxWidth: desktop ? 400 : Toast._cardMaxWidth,
                     ),
                     child: RepaintBoundary(
                       key: const ValueKey('toast-repaint-boundary'),
