@@ -917,40 +917,39 @@ void main() {
     expect(find.byType(NoteVideoViewer), findsOneWidget);
   });
 
-  testWidgets(
-    'the bar\'s picture button opens capture and inserts its result',
-    (tester) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      var opened = 0;
-      await tester.pumpWidget(
-        harness(
-          'a note',
-          attachments: const [],
-          imageAcquirer: (_) async {
-            opened++;
-            return [XFile.fromData(Uint8List(0), name: 'camera.jpg')];
-          },
-          imageIngestor: (_, _) async =>
-              ImageBatch(images: [at(0)], rejections: const []),
-        ),
-      );
-      await tester.pump();
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      addTearDown(tester.view.resetViewInsets);
-      tester.widget<NoteField>(noteField).focusNode.requestFocus();
-      await tester.pumpAndSettle();
+  testWidgets('the bar\'s attach button opens capture and inserts its result', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    var opened = 0;
+    await tester.pumpWidget(
+      harness(
+        'a note',
+        attachments: const [],
+        imageAcquirer: (_) async {
+          opened++;
+          return [XFile.fromData(Uint8List(0), name: 'camera.jpg')];
+        },
+        imageIngestor: (_, _) async =>
+            ImageBatch(images: [at(0)], rejections: const []),
+      ),
+    );
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    tester.widget<NoteField>(noteField).focusNode.requestFocus();
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey('format-attach')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('attach-photo')));
-      await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('format-attach')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('attach-photo')));
+    await tester.pumpAndSettle();
 
-      expect(opened, 1);
-      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
-      expect(find.byType(NoteImageView), findsOneWidget);
-    },
-  );
+    expect(opened, 1);
+    expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+    expect(find.byType(NoteImageView), findsOneWidget);
+  });
 
   testWidgets('the image shortcut opens the same picker as the footer', (
     tester,

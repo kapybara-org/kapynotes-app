@@ -662,6 +662,22 @@ void main() {
         }
       });
 
+      testWidgets('a screen reader hears attach as Attach', (tester) async {
+        final semantics = tester.ensureSemantics();
+        await _open(
+          tester,
+          platform,
+          'Trip',
+          const TextSelection.collapsed(offset: 4),
+          images: BlobStore(),
+        );
+        expect(
+          tester.getSemantics(find.byKey(const ValueKey('format-attach'))),
+          isSemantics(label: 'Attach', isButton: true, isEnabled: true),
+        );
+        semantics.dispose();
+      });
+
       testWidgets('attach offers Photo, Video, Voice note and File, and Voice '
           'note starts one', (tester) async {
         var recordings = 0;
@@ -731,7 +747,7 @@ void main() {
         expect(tester.getRect(code).right, lessThanOrEqualTo(row.right + 0.01));
       });
 
-      testWidgets('the picture button is dimmed without a place to keep one', (
+      testWidgets('the attach button is dimmed without a place to keep one', (
         tester,
       ) async {
         await _open(
